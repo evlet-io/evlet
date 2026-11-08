@@ -310,7 +310,7 @@ class RouteTable:
         segment = '/' + path.split('/')[1]
         serves = self._segments.get(segment)
         if serves is None:
-            # Python page routes and the host root belong to the desk shell, mounted at /.
+            # The host root belongs to the desk shell, mounted at /.
             return 'evlet.desk', '/', path
         return serves, segment, path[len(segment):]
 
@@ -325,13 +325,6 @@ class RouteTable:
         rows = [header, *((row.host, row.path, row.serves, row.realm, row.source) for row in self._rows)]
         widths = [max(len(row[index]) for row in rows) + 3 for index in range(4)]
         return '\n'.join(''.join(value.ljust(width) for value, width in zip(row, widths)) + row[4] for row in rows)
-
-
-def _views(definition):
-    views = list(definition.views)
-    if definition.ui is not None:
-        views.extend(definition.ui.views.values())
-    return [view for view in views if getattr(view, 'route', None)]
 
 
 ROUTES_NAMES = {'primary': (Host, 'Host("erp.example.com")'), 'hosts': (tuple, 'a tuple of Host(...)'),
@@ -383,13 +376,13 @@ def resolve_routes(definitions=(), instance_config=None, routes_module=None, *, 
         if not path.startswith('/api'):
             segments[path] = serves
 
-    def claim(path, owner, hint, page=False):
+    def claim(path, owner, hint):
         key = path.split('/')[1].lower()
         if reserved(path) and not (owner == 'evlet.docs' and key == 'docs'):
             raise ValueError(f'{owner} wants {path} on {label}, which is reserved for the framework. {hint}')
-        if key in owners and not (page and owners[key][1]):
-            raise ValueError(f'{owners[key][0]} and {owner} both want /{key} on {label}. Move one in {where}.')
-        owners.setdefault(key, (owner, page))
+        if key in owners:
+            raise ValueError(f'{owners[key]} and {owner} both want /{key} on {label}. Move one in {where}.')
+        owners[key] = owner
 
     if docs_on:
         claim(docs_path, 'evlet.docs', f'Choose another path in {where}.')
@@ -444,13 +437,6 @@ def resolve_routes(definitions=(), instance_config=None, routes_module=None, *, 
         claim(path, identity, f'Move it in {where}.')
         segments['/' + path.split('/')[1]] = identity
         rows.append(Route(label, path, identity, frontend.auth or 'public', 'routes.py' if frontend in moves else 'app ' + identity.split('.')[0]))
-    for app, definition in definitions:
-        for view in _views(definition):
-            first = view.route.split('/')[1] if view.route.startswith('/') else ''
-            if not first or first.startswith('{'):
-                raise ValueError(f'{app} page {view.name} route {view.route} must start with a fixed segment')
-            claim(view.route, f'{app} page {view.name}', f'Change the route in app {app}.', page=True)
-            rows.append(Route(label, view.route, 'evlet.desk', 'desk', 'app ' + app))
     root = None
     if primary and primary.root is not None:
         if primary.root not in frontends or primary.root in off_primary:

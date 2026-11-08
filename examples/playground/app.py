@@ -21,7 +21,6 @@ from .settings import ProjectPreferences, ProjectSettings
 from .prints import PRINTS, REPORTS as PRINTED_REPORTS
 from .reports import REPORTS
 from .slips import SLIPS
-from .ui import playground_ui
 
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
 PORTAL_RULES = {
@@ -156,7 +155,7 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=N
     def queue_rebuild(tx, user, customer):
         # Rebuilds every customer's balance; Controls > Jobs shows its progress.
         return jobs.enqueue(tx, 'rebuild_points', {}, user=user)
-    app = Application(database, name="Evlet Playground", playground=True, ui=playground_ui(), auth=auth, policy=policy, routes=routes,
+    app = Application(database, name="Evlet Playground", playground=True, auth=auth, policy=policy, routes=routes,
                       storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
                       actions=(Action(Project, 'start', 'Start project', start_project),
                                Action(Project, 'complete', 'Complete project', complete_project),

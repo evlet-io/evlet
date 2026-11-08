@@ -247,10 +247,9 @@ def test_lock_database_mismatch_fails_closed(project):
         runtime(project)
 
 
-def test_view_action_and_permission_registration(project):
+def test_action_and_permission_registration(project):
     package = project / 'apps/notes/notes'
     (package / 'hooks.py').write_text('''from evlet import AppDefinition, Action, Rule
-from evlet.ui import PageView, Column, Text
 from .models import models, NotesItem
 from .migrations import migrations
 
@@ -259,14 +258,12 @@ def rename(tx, user, record):
 
 app = AppDefinition(models=models, migrations=migrations,
     actions=(Action(NotesItem, 'rename', 'Rename', rename),),
-    permissions={('viewer', NotesItem): Rule(operations=())},
-    views=(PageView('notes_home', route='/notes', title='Notes', layout=Column(children=[Text('Notes page')])),))
+    permissions={('viewer', NotesItem): Rule(operations=())})
 ''')
     install(project, 'acme', app_name='notes', trust=True)
     app = runtime(project)
     model = app.registry.models['notesitem']
     assert not app.business.policy.allows(User(1, 'read', 'viewer'), model, 'read')
-    assert app.ui.resolve('/notes', app.registry.ui_schema(), User(1, 'owner', 'admin'))['view']['title'] == 'Notes'
     item = app.database.create(model, title='Before')
     with app.database.transaction() as tx:
         app.business.actions[model, 'rename'].handler(tx, User(1, 'owner', 'admin'), item)

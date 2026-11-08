@@ -237,19 +237,6 @@ class System:
 
     # ---------- attention ----------
 
-    def extension_problems(self):
-        """Screen extensions that fail on this instance's form layouts, such as one that targets a removed section."""
-        business = self.controls.business
-        ui = getattr(business, 'ui', None)
-        if ui is None or not ui.extensions or not self.controls.custom.layouts:
-            return []
-        user = User(0, 'schema', 'admin')
-        try:
-            ui.compile(business.schema(user), user)
-        except ValueError as exc:
-            return [str(exc)]
-        return []
-
     def attention(self, apps, failed):
         from .controls import SCHEDULE
         items = []
@@ -280,8 +267,6 @@ class System:
                 add('hash', 'naming', f'A {key} naming series is skipped', error)
             else:
                 add('layers', 'naming' if kind == 'naming' else 'models', f'The {key} {kind} override no longer applies. The app file is used.', error)
-        for error in self.extension_problems():
-            add('layers', 'models', 'A screen extension no longer fits the form layout', error)
         reason = self.controls.business.settings.two_step_problem()
         if reason:
             roles = ', '.join(self.controls.settings['security.two_step_roles'])

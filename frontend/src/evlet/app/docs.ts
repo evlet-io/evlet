@@ -64,18 +64,6 @@ class PlanProject(Slip):
 
 app = Application(database, auth=auth, slips=[PlanProject])`;
 
-const pageCode = `from evlet.ui import PageView, Column, Card, Text, Button, Navigate
-
-welcome = PageView(
-    name="welcome", route="/welcome", title="Welcome",
-    layout=Column(children=[
-        Card(title="Your workspace", children=[
-            Text("A page defined in Python."),
-            Button("Open notes", on_click=Navigate.to_list(Note)),
-        ]),
-    ]),
-)`;
-
 interface Topic { id: string; title: string; render: (ctx: AppContext) => Child }
 
 const code = (text: string) => html`<div class="ev-code"><div><span>Python</span><button type="button" class="link" on:click=${() => void copyText(text, 'the example')}>Copy</button></div><pre><code>${text}</code></pre></div>`;
@@ -131,7 +119,7 @@ const TOPICS: Topic[] = [
         ['View', 'The page: a list, a board, a record or these docs.'], ['Layers', 'Menus, dialogs, drawers, toasts and the search palette.']]))}
     ${section('From a model to its screens', p('Lists show Meta.list_fields (up to eight), with the title pinned. A model with a State also gets a board and saved views per state. A record shows the title, the State as steps with its moves, a summary strip, a Details tab built from Meta.layout, one tab per Table and the side panel.'), code(screensCode))}
     ${section('Routes', p('Every model has /app/model, /app/model/new and /app/model/123. Lists keep their search, sort, page and view in the address, so a link opens the same list. A record keeps its tab: /app/invoice/42?tab=lines.'),
-      p('Reports run at /reports/name, with the filters they ran with, the sort and the page in the address. Python pages (PageView) and native panels keep their Python API but are not rendered here.'), code(pageCode))}
+      p('Reports run at /reports/name, with the filters they ran with, the sort and the page in the address.'))}
   </article>` },
   { id: 'state', title: 'Rules and actions', render: () => html`<article class="ev-doc-article">
     ${section('The model decides; the screen explains', p('Calculated values show their rule. Rules hide and clear fields, make them required, or lock them, and say why in place. The browser evaluates the same finite rules as the server, and the server checks every write again.'), code(rulesCode))}

@@ -5,9 +5,7 @@ import types
 import pytest
 
 import evlet
-import evlet.ui
 from evlet.cli.install import install
-from evlet.ui import ViewRegistry
 from test_business import client, hashed, secured  # noqa: F401
 from test_cli_lifecycle import change_model, environment_stub, project, runtime  # noqa: F401
 from test_controls import DESK, add_user, hosts, on_host, password, save  # noqa: F401
@@ -252,23 +250,6 @@ def test_apps_show_a_waiting_migration_and_the_shell_command(project, hashed):
 
 # ---------- overrides and export ----------
 
-def layouts(compiled):
-    """(title, field names) of each FormLayout in a compiled view."""
-    found = []
-
-    def walk(node):
-        if isinstance(node, dict):
-            if node.get('type') == 'FormLayout':
-                found.append((node['props'].get('title'), [child['props']['field'] for child in node['slots']['children']]))
-            for value in node.values():
-                walk(value)
-        elif isinstance(node, list):
-            for value in node:
-                walk(value)
-    walk(compiled)
-    return found
-
-
 def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path, hashed):
     app = build(tmp_path, *models())
     add_user(app, 'admin', 'admin')
@@ -290,13 +271,9 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     exported = {item['file']: item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1]}
     folder = 'test_customization'
     assert sorted(exported) == ['instances/<name>/config.py', 'instances/<name>/routes.py', f'{folder}.py',
-                                f'{folder}/permissions.py', f'{folder}/views/__init__.py']
+                                f'{folder}/permissions.py']
     for file, code in exported.items():
         compile(code, file, 'exec')
-    # FormLayout has no collapse options, so the export says where they go.
-    assert "    # Meta.layout: Section('More', ..., collapsed='empty')" in exported[f'{folder}/views/__init__.py']
-    assert "    # Meta.layout: Section('Main', ..., flow='columns')" in exported[f'{folder}/views/__init__.py']
-    assert "# Meta.tabs = ('details', 'activity')\n# Meta.default_tab = 'details'\n" in exported[f'{folder}/views/__init__.py']
 
     Customer, Lead, Invoice, _ = (app.registry.models[name] for name in ('customer', 'lead', 'invoice', 'order'))
     names = {**{key: getattr(evlet, key) for key in evlet.__all__}, 'Customer': Customer, 'Lead': Lead, 'Invoice': Invoice}
@@ -315,13 +292,11 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     assert (type(lead['lpo']).__name__, lead['lpo'].label, lead['lpo'].help_text) == ('Text', 'LPO number', 'From the purchase order')
     assert lead['lpo'].tooltip == 'Ask the customer if it is missing'
     assert list(invoice.Meta.naming.series) == series and invoice.Meta.naming.date_field == 'posting_date'
-
-    views = {}
-    exec(exported[f'{folder}/views/__init__.py'], {key: getattr(evlet.ui, key) for key in dir(evlet.ui)} | {'Lead': Lead}, views)
-    schema = admin('GET', '/api/schema')[1]
-    compiled = {view['name']: view for view in ViewRegistry([views['lead_form'], views['lead_list']]).compile(schema)['views']}
-    assert layouts(compiled['lead.form']) == [(section['title'], [item['name'] for item in section['fields']]) for section in sections]
-    assert compiled['lead.list']['options'] == {'columns': ['title', 'value'], 'page_size': 25, 'order_by': 'title', 'open_in': 'panel'}
+    # The layout and list overrides become Meta options on the same class.
+    meta = lead['Meta']
+    assert [(item.title, item.fields, item.collapsible, item.collapsed, item.flow) for item in meta.layout] == [
+        ('Main', ('title', 'source'), False, False, 'columns'), ('More', ('value', 'customer', 'notes'), True, 'empty', 'rows')]
+    assert (meta.tabs, meta.default_tab, meta.list_fields, meta.open_in) == (('details', 'activity'), 'details', ('title', 'value'), 'panel')
 
     routes = {}
     exec(exported['instances/<name>/routes.py'], names, routes)
@@ -329,8 +304,9 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     assert 'security = Security(lockout=4)' in exported['instances/<name>/config.py']
 
     one = admin('GET', '/api/_controls/overrides/export?kind=list&key=Lead')[1]
-    assert one == [{'file': f'{folder}/views/__init__.py',
-                    'code': "lead_list = ListView(model=Lead, columns=['title', 'value'], page_size=25, order_by='title', open_in='panel')\n"}]
+    assert one == [{'file': f'{folder}.py',
+                    'code': "class Lead(Model):\n    class Meta:\n        list_fields = ('title', 'value')\n        open_in = 'panel'\n"
+                            "        # Page size 25 and sort 'title' have no Meta option; they stay instance overrides.\n"}]
     custom = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'custom')
     assert custom['key'] == 'Lead' and custom['value'][0]['name'] == 'x_lpo' and custom['changed_by'] == 'admin'
     assert admin('GET', '/api/_controls/overrides/export?kind=perm')[0] == 200

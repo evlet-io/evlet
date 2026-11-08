@@ -17,29 +17,6 @@ def dispatch(application, scope):
     host = dict(scope.get('headers', [])).get(b'host', b'')
     if path == '/_/tls-allowed':
         return _tls_allowed(application, scope)
-    if path in ('/api/ui', '/api/ui/resolve'):
-        application._method(method, ['GET'])
-        user = None
-        if application.business:
-            application.business.auth.guard(scope)
-            user, _ = application.business.auth.session(scope)
-            schema = application.business.schema(user)
-        else:
-            schema = application.registry.ui_schema()
-        if path == '/api/ui':
-            return 200, {'name': application.name, **application.ui.compile(schema, user)}, []
-        try:
-            query = parse_qs(scope.get('query_string', b'').decode('ascii'), strict_parsing=True, max_num_fields=2)
-            if set(query) - {'frontend'} != {'path'} or any(len(values) != 1 for values in query.values()): raise ValueError()
-            frontend = query.get('frontend', ['evlet.desk'])[0]
-            base = application.routes.base(host, frontend)
-            if base is None or frontend != 'evlet.desk' and application.routes.frontend(frontend).kind != 'evlet':
-                raise LookupError()
-            return 200, application.ui.resolve(query['path'][0], schema, user, frontend=frontend, base=base), []
-        except (ValueError, UnicodeError):
-            raise HTTPError(422, 'Supply one valid view path')
-        except LookupError:
-            raise HTTPError(404, 'View not found or not permitted')
     if not path.startswith('/api/') and method == 'GET':
         if application.business: application.business.auth.guard(scope)
         from .serving import static_response
@@ -81,7 +58,6 @@ def _record_segment(segment):
 
 def _serves(application, frontend, base, rest):
     """Whether a matched framework frontend serves the browser shell at this path."""
-    from .registry import route_pattern
     path = base.rstrip('/') + rest
     if frontend == 'evlet.desk':
         # Eva's screens (/eva, /eva/tasks), only where config.py turned Eva on; the page asks /api/_eva who may use it.
@@ -90,7 +66,7 @@ def _serves(application, frontend, base, rest):
         if base == '/app':
             match = GENERATED.fullmatch(path)
             return bool(match) and match[1] in application.registry.exposed and _record_segment(match[2])
-        return path == '/' or any(view.route and route_pattern(view.route).fullmatch(path) for view in application.ui.views.values())
+        return path == '/'
     if frontend == 'evlet.login':
         return path == '/login'
     if frontend == 'evlet.docs':

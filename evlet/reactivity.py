@@ -1,13 +1,20 @@
-"""Bounded expressions using the existing neutral Expression instruction shape."""
+"""Bounded expressions for string compute= rules, as neutral {op, args} instructions."""
 
 import ast
+from dataclasses import dataclass
 from functools import lru_cache
 from decimal import Decimal, localcontext, ROUND_HALF_EVEN
 
 from .declarations import Ref
 from .fields import Decimal as DecimalField, Integer, MISSING
-from .ui.expressions import Expression
 from .calc import is_finite
+
+
+@dataclass(frozen=True)
+class Expression:
+    """One instruction: an operation name and its arguments, which may be expressions too."""
+    op: str
+    args: tuple
 
 OPS = {ast.Add: 'add', ast.Sub: 'sub', ast.Mult: 'mul', ast.Div: 'div',
        ast.Eq: 'eq', ast.NotEq: 'ne', ast.Lt: 'lt', ast.LtE: 'lte', ast.Gt: 'gt', ast.GtE: 'gte',

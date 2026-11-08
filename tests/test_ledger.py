@@ -449,7 +449,6 @@ def test_a_ledger_model_has_no_public_surface(points):
     assert {'pointmove', 'pointbalance', 'reading'}.isdisjoint(entry['name'] for entry in admin('GET', '/api/_discovery')[1]['models'])
     assert {'PointMove', 'PointBalance', 'Reading'}.isdisjoint(model['name'] for model in admin('GET', '/api/_controls/state')[1]['models'])
     assert {'pointmove', 'pointbalance', 'reading'}.isdisjoint(entry['name'] for entry in app.business.registry.ui_schema()['models'])
-    assert 'PointMove' not in str(admin('GET', '/api/ui')[1])
     search = admin('GET', '/api/_search?q=Aisha')
     assert search[0] in (200, 404) and 'pointmove' not in str(search[1])
     # A normal model's Link to a ledger row: the plain integer id, read only, with no target to follow.

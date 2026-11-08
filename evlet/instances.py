@@ -24,7 +24,6 @@ from .storage import LocalFileStorage
 from .migrations import Migration
 from .permissions import Policy
 from .models import Registry
-from .ui import ViewRegistry
 from .routing import resolve_routes
 
 
@@ -89,6 +88,9 @@ class AppDefinition:
     connectors: tuple = ()
 
     def __post_init__(self):
+        # Python pages were removed in 0.4. Older app scaffolds still pass views=() and that keeps working.
+        if tuple(self.views) or self.ui is not None:
+            raise ValueError('Python pages (views and ui) were removed in Evlet 0.4: delete them from AppDefinition')
         for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes', 'connectors'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if not callable(self.actions):
@@ -349,7 +351,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     secure = routes.primary is not None
     auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=not secure,
                      trusted_proxies=config.trusted_proxies, security=config.security)
-    rules, views, schedules, roles = {}, ViewRegistry(), [], {role: role for role in ('admin', 'editor', 'viewer', 'portal')}
+    rules, schedules, roles = {}, [], {role: role for role in ('admin', 'editor', 'viewer', 'portal')}
     for name, definition in definitions:
         for role, base in definition.roles.items():
             if roles.setdefault(role, base) != base:
@@ -357,22 +359,6 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
         if rules.keys() & definition.permissions.keys():
             raise ValueError('Two apps registered the same permission rule')
         rules.update(definition.permissions)
-        if definition.ui is not None:
-            if not isinstance(definition.ui, ViewRegistry):
-                raise ValueError(f'{name}.ui must be a ViewRegistry')
-            for view in definition.ui.views.values():
-                views.register(view)
-            for target, layer, callback, extension in definition.ui.extensions:
-                views.extend(target, callback, layer=layer, name=name + '.' + extension)
-            # Custom renderers must already be included in the framework build.
-            for component in definition.ui.components.catalog():
-                existing = {item['name']: item for item in views.components.catalog()}
-                if component['name'] not in existing:
-                    views.components.register(definition.ui.components.get(component['name']))
-                elif existing[component['name']] != component:
-                    raise ValueError(f'Conflicting component contract: {component["name"]}')
-        for view in definition.views:
-            views.register(view)
         schedules.extend(definition.schedules)
     policy = Policy(registry, rules=rules, roles=roles)
     events = EventStore(database)
@@ -385,7 +371,7 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     for _, definition in definitions:
         actions.extend(definition.actions(services) if callable(definition.actions) else definition.actions)
     options = {key: tuple(item for _, definition in definitions for item in getattr(definition, key)) for key in ('children', 'attachments')}
-    app = Application(database, auth=auth, policy=policy, ui=views, events=events, jobs=jobs,
+    app = Application(database, auth=auth, policy=policy, events=events, jobs=jobs,
                       reports=tuple(report for _, definition in definitions for report in definition.reports),
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
                       storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, ai=config.ai, **options)

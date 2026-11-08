@@ -93,7 +93,7 @@ def test_empty_model_and_unregistered_model(tmp_path):
 
 def test_field_named_storage_name_is_data_not_the_table_name(tmp_path):
     from evlet import Text
-    from evlet.ui.expressions import model_key
+    from evlet.models import storage_name as model_key
     class Bin(Model):
         storage_name = Text()
     db = Database(tmp_path / "bin.sqlite3", Registry(Bin))

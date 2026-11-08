@@ -76,7 +76,7 @@ def test_framework_pages_answer_404_on_a_sub_host(portal, path):
 
 
 @pytest.mark.parametrize('method,path', [('GET', '/api/project'), ('GET', '/api/schema'), ('GET', '/api/auth/users'), ('POST', '/api/auth/setup'),
-                                         ('GET', '/api/ui'), ('GET', '/api/_events/stream'), ('GET', '/api/_discovery'), ('POST', '/api/_draft/project'),
+                                         ('GET', '/api/_events/stream'), ('GET', '/api/_discovery'), ('POST', '/api/_draft/project'),
                                          ('POST', '/api/invoice/1/actions/send'), ('GET', '/api/_services/playground.anything'), ('GET', '/api')])
 def test_the_api_outside_the_scope_is_404_on_a_sub_host(portal, method, path):
     _, _, buyer = sign_in(portal, 'buyer', PORTAL)

@@ -1,8 +1,7 @@
 """Keep recorded UI contracts equal to real Python HTTP responses.
 
 The UI framework's browser tests replay frontend/src/evlet/tests/api-fixture.json and
-screens-fixture.json. tests/fixtures holds the Python page (/api/ui) and record contracts,
-which the browser UI no longer renders but which stay part of the HTTP API.
+screens-fixture.json. tests/fixtures holds the model schema and record contracts.
 """
 
 import json
@@ -12,7 +11,7 @@ import re
 from scripts.generate_ui_fixtures import generate
 
 
-def test_page_and_record_fixtures_match_http_contracts():
+def test_schema_and_record_fixtures_match_http_contracts():
     fixtures = Path(__file__).resolve().parents[1] / 'tests/fixtures'
     for name, actual in generate().items():
         assert json.loads((fixtures / name).read_text()) == actual, name

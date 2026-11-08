@@ -255,12 +255,6 @@ class Business:
             self.prints.initialize()
         if self.events:
             self.events.initialize()
-        if getattr(self, 'ui', None):
-            from .auth import User
-            with using(self.database):
-                for role in self.policy.roles:
-                    user = User(0, 'schema', role)
-                    self.ui.compile(self.schema(user), user)
         if self.jobs:
             self.jobs.policy = self.policy
             self.jobs.initialize()
