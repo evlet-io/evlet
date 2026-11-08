@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sqlite3
 
-from evlet import (AddField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
+from evlet import (AddField, AddIndex, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
                    Link, LongText, Migration, Model, PostgreSQLDatabase, Recompute, Registry, RenameField, RetireField, RichText, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, Invoice, registry
@@ -166,6 +166,9 @@ class PointBalance(Model):
 
 # Customer points: an append-only ledger and its balance cache (docs/ledger.md).
 migrations.append(Migration('0013_points', CreateModel(PointMove), CreateModel(PointBalance)))
+
+# Open tasks of a project: a Meta.indexes entry on a normal model.
+migrations.append(Migration('0014_project_task_index', AddIndex('projecttask', ('project', 'done'))))
 
 
 def legacy_registry():

@@ -88,14 +88,60 @@ with database.transaction() as tx:
 ```
 
 - `tx.insert_many(model, rows)` validates every row like a create, then inserts them all with one
-  prepared statement and returns their ids in order. It is for ledger models only.
+  prepared statement and returns their ids in order. It is for ledger models only. A row may give
+  an `id` that `tx.reserve_ids` returned in the same transaction (below).
 - `tx.update` and `tx.delete` work on a mutable ledger model. On an append-only one they are
-  refused before any SQL.
+  refused before any SQL. Raw SQL that updates or deletes rows of an append-only table is refused
+  by the database triggers, and Evlet raises `ConflictError` (`step is append only: its rows are
+  never changed or deleted`) on SQLite and PostgreSQL alike. The transaction rolls back.
 - Field types validate values before SQL. All SQL is parameterised and identifiers are validated.
 - Measures (`Sum`, `Count`, `Min`, `Max`, grouping) are exact on SQLite and PostgreSQL. A report's
   `run()` reads a ledger model through `self.context.aggregate` and `self.context.list`, which
   apply the person's `Rule(scope=...)` on the model, so declare `permissions` on a ledger model
   whose reports need row scopes ([reports.md](reports.md)).
+
+## Reserving ids (`tx.reserve_ids`)
+
+Rows written in one batch sometimes point at each other: a row that names itself as the first of
+its chain, or a reversal that names the row it reverses. Reserve their ids first, then give them
+to `insert_many`:
+
+```python
+class Step(Model):
+    serial = Text(required=True)
+    previous = Link('step')
+    root = Link('step')
+
+    class Meta:
+        ledger = True
+        append_only = True
+        indexes = [('serial', 'id')]       # the latest row per serial, read by id
+
+
+with database.transaction() as tx:
+    first, second = tx.reserve_ids(Step, 2)
+    tx.insert_many(Step, [
+        {'id': first, 'serial': 'S1', 'root': first},
+        {'id': second, 'serial': 'S1', 'previous': first, 'root': first},
+        {'serial': 'S2'},               # no id: the table's next id, after the reserved ones
+    ])
+```
+
+- `tx.reserve_ids(model, count)` returns `count` new ids (1 to 100,000) of a ledger model, in
+  increasing order. It works inside `database.transaction()` only.
+- `insert_many` (and `tx.create`) accept an `id` only when this transaction reserved it, and each
+  reserved id once. Any other `id` is refused with a `ValidationError`, because an id the
+  database did not hand out could clash with a later row.
+- Rows inserted later without an id never take a reserved id, in this transaction or a later one.
+- Foreign keys are checked as each row is inserted. A row may link to its own id and to rows
+  earlier in the batch; put a row before the rows that link to it.
+- **SQLite.** The ids follow the table's last id, under the transaction's write lock
+  (`BEGIN IMMEDIATE`, one writer at a time). A rollback hands them back, so the next transaction
+  may reserve the same numbers.
+- **PostgreSQL.** The ids come from the table's identity sequence with `nextval`. A rollback does
+  not return them, so ids may have gaps. They are never handed out twice.
+
+Ids always increase, but gaps are normal. Never read meaning into them, such as a count of rows.
 
 ## Options
 
@@ -104,11 +150,11 @@ with database.transaction() as tx:
 | `append_only` | `False` | Database triggers refuse `UPDATE` and `DELETE` (and so `REPLACE`, upsert updates and, on PostgreSQL, `TRUNCATE`), as on `evlet_audit`. The session refuses updates and deletes first, with a clear error. Inserts work |
 | `journal` | `None` | The [Journal](journal.md): `created`, `changed` and `deleted` entries per row, written by the session as the engine or as `tx.actor`. `Journal(tamper_evident=True)` hashes them and `evlet journal verify` checks them |
 | `timestamps` | `None` | `"created"` adds `created_at`, `"modified"` adds `modified_at`, `"both"` adds both. The framework fills them on insert and update; a write that names them is refused |
-| `indexes` | `[]` | Composite and unique indexes: `("a", "b")` or `(("a", "b"), {"unique": True})`. A single field can also take `index=True` or `unique=True` |
+| `indexes` | `[]` | Composite and unique indexes: `("a", "b")` or `(("a", "b"), {"unique": True})`. An entry may name the row `id`, such as `("serial", "id")`. Normal models declare them the same way ([model-engine.md](model-engine.md#composite-and-unique-indexes)). A single field can also take `index=True` or `unique=True` |
 | `period` | `None` | [Closed periods](model-engine.md#closed-periods), exactly as for normal models, `unlocked_periods(reason)` included |
 
-`append_only`, `timestamps` and `indexes` are for ledger models only; a normal model that sets
-them is refused.
+`append_only` and `timestamps` are for ledger models only; a normal model that sets them is
+refused. A write that breaks a unique `indexes` entry raises `ValidationError` naming its fields.
 
 Journaling every row of a large append-only ledger doubles the writes, and the rows already
 never change, so it is rarely needed. Use it for a mutable ledger whose changes must be traced.
@@ -122,7 +168,7 @@ model.
 - `AddField` adds a nullable field or one with a default. Turning `timestamps` on later is
   `AddField('pointmove', 'created_at', DateTime())` (or `modified_at`).
 - `AddIndex('pointmove', 'member')` indexes one field. `AddIndex('pointmove', ('member', 'on_date'))`
-  adds a `Meta.indexes` entry, with `unique=True` when it is unique.
+  adds a `Meta.indexes` entry, with `unique=True` when it is unique. An entry may name `id`.
 - `SetAppendOnly('pointmove', True)` turns append only on, also for a table that has rows: it only
   adds the triggers. `SetAppendOnly('pointmove', False)` turns it off and is the only way to.
 - On an append-only model, `RenameField`, `RetireField`, `DropField` and `AlterField` raise

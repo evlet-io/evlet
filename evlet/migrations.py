@@ -11,7 +11,7 @@ import sqlite3
 from .audit import COLUMNS as AUDIT_COLUMNS, add_columns as add_audit_columns, column_sql as audit_column_sql
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
 from .identity import RecordId
-from . import ledger as ledgers
+from . import indexes as model_indexes, ledger as ledgers
 from .models import identifier, storage_name
 from .naming import declared_name, standard
 
@@ -90,11 +90,10 @@ def _create(connection, table, model):
             _index(connection, table, name, unique=field.unique, columns=index_columns(name, field))
         if field.kind == 'sequence':
             _sequence_index(connection, table, name, field)
-    if ledgers.is_ledger(model):
-        for covered, unique in model.__indexes__:
-            _index(connection, table, '_'.join(covered), unique=unique, columns=covered)
-        if model.__append_only__:
-            ledgers.add_triggers(connection, False, table)
+    for covered, unique in model.__indexes__:
+        _index(connection, table, '_'.join(covered), unique=unique, columns=covered)
+    if ledgers.is_ledger(model) and model.__append_only__:
+        ledgers.add_triggers(connection, False, table)
 
 
 def _metadata(connection):
@@ -206,10 +205,10 @@ def _check(connection, registry, *, rows=False):
             if index['unique']:
                 unique.add(fields)
         if unique != {(key,) for key, field in model.__fields__.items() if field.unique and (key in present or not standard(field))} \
-                | ledger_indexes(model, unique=True):
+                | model_indexes.declared(model, unique=True):
             raise SchemaError(f'{name}: unique constraints differ from models')
         if any(index_columns(key, field) not in indexed for key, field in model.__fields__.items() if field.index) \
-                or not ledger_indexes(model) <= indexed:
+                or not model_indexes.declared(model) <= indexed:
             raise SchemaError(f'{name}: an explicit index migration is required')
         if ledger and ledgers.has_triggers(connection, False, name) != model.__append_only__:
             raise SchemaError(f'{name}: the append-only triggers differ from Meta.append_only; run explicit migrations')
@@ -223,13 +222,6 @@ def _check(connection, registry, *, rows=False):
                     raise SchemaError(f'{name} #{RecordId(row["id"])}: stored data fails validation: {exc}') from exc
     if connection.execute('PRAGMA foreign_key_check').fetchone() is not None:
         raise SchemaError('Stored data contains a broken foreign key')
-
-
-def ledger_indexes(model, *, unique=None):
-    """The column tuples of a ledger model's Meta.indexes; with unique=True only the unique ones."""
-    if not ledgers.is_ledger(model):
-        return set()
-    return {covered for covered, is_unique in model.__indexes__ if unique is None or is_unique}
 
 
 def ledger_switch(saved, registry):
@@ -373,8 +365,8 @@ class RenameField:
 
 @dataclass(frozen=True)
 class AddIndex:
-    """Index one field (`field` names it), or add a ledger model's Meta.indexes entry (`field` is a tuple of
-    field names, such as ("member", "on_date"))."""
+    """Index one field (`field` names it), or add a Meta.indexes entry (`field` is a tuple of field names,
+    such as ("member", "on_date"); the row `id` may be one of them)."""
     table: str
     field: str | tuple
     unique: bool = False
@@ -426,7 +418,7 @@ class CreateModel:
         ledger = ledgers.schema(self.model)
         return {'operation': 'create_model', 'name': storage_name(self.model),
                 'fields': [field.metadata() for field in self.model.__fields__.values() if not standard(field)],
-                **({'ledger': ledger} if ledger is not None else {})}
+                **({'ledger': ledger} if ledger is not None else model_indexes.entry(self.model))}
 
     def apply(self, connection):
         _create(connection, storage_name(self.model), self.model)
@@ -964,6 +956,7 @@ def _planned_definition(saved, pending, steps=None):
                                 'fields': [field.metadata() for field in model.__fields__.values() if not standard(field)]}
                 if ledgers.schema(model) is not None:
                     models[name]['ledger'] = ledgers.schema(model)
+                models[name].update(model_indexes.entry(model))
                 continue
             if operation.table not in models:
                 raise SchemaError(f'Unknown migration table: {operation.table}')
@@ -978,14 +971,12 @@ def _planned_definition(saved, pending, steps=None):
                 ledger['append_only'] = operation.enabled
                 continue
             if isinstance(operation, AddIndex) and operation.composite():
-                if ledger is None:
-                    raise SchemaError(f'{operation.table}: an index over several fields is a Meta.indexes entry of a ledger model; '
-                                      'index one field with AddIndex(table, field)')
-                if set(operation.field) - set(fields):
+                if set(operation.field) - set(fields) - {'id'}:
                     raise SchemaError('Index field does not exist')
-                if any(tuple(item['fields']) == operation.field for item in ledger['indexes']):
+                entries = ledger['indexes'] if ledger is not None else models[operation.table].setdefault('indexes', [])
+                if any(tuple(item['fields']) == operation.field for item in entries):
                     raise SchemaError(f'{operation.table}: the index {operation.field} already exists')
-                ledger['indexes'].append({'fields': list(operation.field), 'unique': operation.unique})
+                entries.append({'fields': list(operation.field), 'unique': operation.unique})
                 continue
             if isinstance(operation, AddField):
                 if operation.name in fields or operation.name == 'id':
@@ -1058,24 +1049,25 @@ def differences(planned, current):
                     if old[field].get(key) != new[field].get(key):
                         result.append((name, field, f'{name}.{field}: {key} is {old[field].get(key)!r} after the migrations '
                                                     f'and {new[field].get(key)!r} in the models'))
-    return result + ledger_differences(planned, current)
+    return result + option_differences(planned, current)
 
 
-def ledger_differences(planned, current):
-    """(model, None, text) items for ledger options that differ between two comparable schemas."""
-    before = {model['name']: model.get('ledger') for model in planned['models']}
-    after = {model['name']: model.get('ledger') for model in current['models']}
+def option_differences(planned, current):
+    """(model, None, text) items for ledger options and Meta.indexes that differ between two comparable schemas."""
+    before = {model['name']: model for model in planned['models']}
+    after = {model['name']: model for model in current['models']}
     result = []
     for name in sorted(before.keys() & after.keys()):
         old, new = before[name], after[name]
-        if old is None or new is None or old == new:
-            continue
-        if old['append_only'] != new['append_only']:
-            result.append((name, None, f'{name}: append_only is {old["append_only"]!r} after the migrations and '
-                                       f'{new["append_only"]!r} in the models (SetAppendOnly)'))
-        if ledgers.indexes_of(old) != ledgers.indexes_of(new):
-            result.append((name, None, f'{name}: Meta.indexes differ: {sorted(ledgers.indexes_of(old))} after the migrations and '
-                                       f'{sorted(ledgers.indexes_of(new))} in the models (AddIndex with a tuple of fields)'))
+        if ('ledger' in old) != ('ledger' in new):
+            continue  # ledger_switch refuses it.
+        if 'ledger' in old and old['ledger']['append_only'] != new['ledger']['append_only']:
+            result.append((name, None, f'{name}: append_only is {old["ledger"]["append_only"]!r} after the migrations and '
+                                       f'{new["ledger"]["append_only"]!r} in the models (SetAppendOnly)'))
+        was, now = model_indexes.of(model_indexes.saved(old)), model_indexes.of(model_indexes.saved(new))
+        if was != now:
+            result.append((name, None, f'{name}: Meta.indexes differ: {sorted(was)} after the migrations and '
+                                       f'{sorted(now)} in the models (AddIndex with a tuple of fields)'))
     return result
 
 
@@ -1097,6 +1089,10 @@ def _normalized(schema):
         model['fields'].sort(key=lambda field: field['name'])
         if 'ledger' in model:
             model['ledger']['indexes'].sort(key=lambda item: (item['fields'], item['unique']))
+        if not model.get('indexes', True):
+            del model['indexes']  # An empty list is the same as none.
+        if 'indexes' in model:
+            model['indexes'].sort(key=lambda item: (item['fields'], item['unique']))
     return schema
 
 
@@ -1334,9 +1330,12 @@ def _frozen_class(model, base, fields, storage=None):
             lines.append('        append_only = True')
         if model.__timestamps__:
             lines.append(f'        timestamps = {model.__timestamps__!r}')
-        if model.__indexes__:
-            entries = [repr(covered) if not unique else f'({covered!r}, {{"unique": True}})' for covered, unique in model.__indexes__]
-            lines.append(f'        indexes = [{", ".join(entries)}]')
+    if model.__indexes__:
+        # Meta.indexes shape the table too.
+        if not ledgers.is_ledger(model):
+            lines += ['', '    class Meta:']
+        entries = [repr(covered) if not unique else f'({covered!r}, {{"unique": True}})' for covered, unique in model.__indexes__]
+        lines.append(f'        indexes = [{", ".join(entries)}]')
     if len(lines) == 1:
         lines.append('    pass')
     return lines, names
@@ -1418,16 +1417,15 @@ def suggest(registry, planned, name='0002_changes', tables=None):
                 code, used = field_code(model.__app_stored__[key])
                 operations.append(f'AlterField({table!r}, {key!r}, {code})')
                 names |= used | {'AlterField'}
-    planned_ledgers = {model['name']: model.get('ledger') for model in _comparable(planned)['models']}
+    planned_models = {model['name']: model for model in _comparable(planned)['models']}
     for table, model in registry.models.items():
-        old = planned_ledgers.get(table)
-        if old is None or not ledgers.is_ledger(model) or tables is not None and table not in tables:
+        old = planned_models.get(table)
+        if old is None or ('ledger' in old) != ledgers.is_ledger(model) or tables is not None and table not in tables:
             continue
-        new = ledgers.schema(model)
-        if old['append_only'] != new['append_only']:
-            operations.append(f'SetAppendOnly({table!r}, {new["append_only"]!r})')
+        if ledgers.is_ledger(model) and old['ledger']['append_only'] != model.__append_only__:
+            operations.append(f'SetAppendOnly({table!r}, {model.__append_only__!r})')
             names.add('SetAppendOnly')
-        for covered, unique in sorted(ledgers.indexes_of(new) - ledgers.indexes_of(old)):
+        for covered, unique in sorted(set(model.__indexes__) - model_indexes.of(model_indexes.saved(old))):
             operations.append(f'AddIndex({table!r}, {covered!r}' + (', unique=True)' if unique else ')'))
             names.add('AddIndex')
     if not operations and not notes:

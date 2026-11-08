@@ -23,6 +23,11 @@ UI_NAMES = ("Bind", "Button", "Card", "Column", "ComponentDefinition", "CustomCo
             "FormView", "Grid", "ListView", "Navigate", "PageView", "Select", "Text", "TextInput", "ViewRegistry",
             "When")
 
+# Methods trusted code calls on the transaction session (`with database.transaction() as tx`), which is
+# not exported itself.
+SESSION = ("aggregate", "count", "create", "delete", "get", "insert_many", "list", "lock", "reserve_ids",
+           "unlocked_periods", "update")
+
 # Methods and decorators apps call on exported names, beyond their constructors.
 MEMBERS = {"Model": ("to_dict", "validate"), "Child": ("to_dict", "validate"), "validate": ("confirm", "cancel"),
            "action": ("confirm", "cancel")}
@@ -60,6 +65,8 @@ def current():
     for owner, names in MEMBERS.items():
         for name in names:
             api["evlet"][f"{owner}.{name}"] = normalise(signature(getattr(getattr(evlet, owner), name)))
+    from evlet.database import Session
+    api["evlet.Session"] = {name: normalise(signature(getattr(Session, name))) for name in SESSION}
     # The options a model's Meta may declare, such as api and period.
     from evlet.ui.metadata import META_OPTIONS
     api["evlet"]["Model.Meta"] = f"options{sorted(META_OPTIONS)}"

@@ -10,7 +10,7 @@ import re
 import sqlite3
 
 from .auth import AccessError
-from .database import ConflictError, ROW_LIMIT
+from .database import ConflictError, ROW_LIMIT, conflict
 from .declarations import Ref
 from .fields import CurrentUser, MISSING, Link
 from .identity import RecordId
@@ -395,7 +395,7 @@ class Context:
     def _savepoint(self):
         """One document operation is all or nothing even when trusted code catches its failure and the
         outer transaction commits: any exception rolls back to a savepoint taken before it. A unique or
-        foreign key violation surfaces as ConflictError."""
+        foreign key violation surfaces as ConflictError, a unique Meta.indexes entry as ValidationError."""
         connection, name = self._tx.connection, f'evlet_operation_{len(self._active)}'
         connection.execute(f'SAVEPOINT {name}')
         try:
@@ -409,7 +409,7 @@ class Context:
                 raise exc from None
             driver = getattr(self._business.database, 'driver', None)
             if isinstance(exc, sqlite3.IntegrityError) or driver is not None and isinstance(exc, driver.IntegrityError):
-                raise ConflictError('A unique value or linked record constraint was violated') from exc
+                raise conflict(self._business.registry, exc) from exc
             raise
         connection.execute(f'RELEASE SAVEPOINT {name}')
 

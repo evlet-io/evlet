@@ -10,9 +10,9 @@ from .migrations import (Applied, SchemaError, AddField, AddIndex, AddTable, Alt
                          Recompute, RetireField, RunData, retired_columns, step_arguments, destructive, maintenance_steps, run_data,
                          _metadata, _definition, _migration_plan, _history, _same, _comparable, mismatch, link_target, plan_from,
                          _planned_definition, _recompute, recomputes, index_columns, stored_columns, app_fields, instance_columns,
-                         standard_fields, leftover_standard, audit_columns, SetAppendOnly, ledger_indexes, ledger_switch,
+                         standard_fields, leftover_standard, audit_columns, SetAppendOnly, ledger_switch,
                          ledger_tables)
-from . import ledger as ledgers
+from . import indexes as model_indexes, ledger as ledgers
 from .naming import declared_name, standard
 from .audit import add_columns as add_audit_columns, column_sql as audit_column_sql
 
@@ -24,6 +24,11 @@ def validate_indexes(registry):
         for name, field in model.__fields__.items():
             if isinstance(field, Text) and (field.index or field.unique) and field.max_length > 500:
                 raise SchemaError(f'{table}.{name}: PostgreSQL indexed text requires max_length <= 500')
+        for covered in model_indexes.declared(model):
+            for name in covered:
+                field = model.__fields__.get(name)
+                if isinstance(field, Text) and field.max_length > 500:
+                    raise SchemaError(f'{table}.{name}: PostgreSQL indexed text requires max_length <= 500 (Meta.indexes)')
 
 
 def column(name, field):
@@ -87,11 +92,10 @@ def create(db, table, model):
             index(db, table, name, field.unique, index_columns(name, field))
         if field.kind == 'sequence':
             sequence_index(db, table, name, field)
-    if ledgers.is_ledger(model):
-        for covered, unique in model.__indexes__:
-            index(db, table, ':'.join(covered), unique, covered)
-        if model.__append_only__:
-            ledgers.add_triggers(db, True, table)
+    for covered, unique in model.__indexes__:
+        index(db, table, ':'.join(covered), unique, covered)
+    if ledgers.is_ledger(model) and model.__append_only__:
+        ledgers.add_triggers(db, True, table)
 
 
 def tables(db):
@@ -137,11 +141,11 @@ def check(db, registry, rows=False):
             raise SchemaError(f'{table}: primary key differs from models')
         if {tuple(r['fields']) for r in indexes if r['indisunique'] and not r['indisprimary'] and not set(r['fields']) & skip} \
                 != {(name,) for name, field in model.__fields__.items() if field.unique and (name in present or not standard(field))} \
-                | ledger_indexes(model, unique=True):
+                | model_indexes.declared(model, unique=True):
             raise SchemaError(f'{table}: unique constraints differ from models')
         indexed = {tuple(r['fields']) for r in indexes}
         if any(index_columns(name, field) not in indexed for name, field in model.__fields__.items() if field.index) \
-                or not ledger_indexes(model) <= indexed:
+                or not model_indexes.declared(model) <= indexed:
             raise SchemaError(f'{table}: an explicit index migration is required')
         if ledger and ledgers.has_triggers(db, True, table) != model.__append_only__:
             raise SchemaError(f'{table}: the append-only triggers differ from Meta.append_only; run explicit migrations')

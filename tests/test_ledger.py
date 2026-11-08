@@ -200,9 +200,9 @@ def test_declarations_a_ledger_model_refuses(namespace, meta, message):
         ledger_class({'amount': Integer(), **namespace}, **meta)
 
 
-@pytest.mark.parametrize('option', ['append_only', 'timestamps', 'indexes'])
+@pytest.mark.parametrize('option', ['append_only', 'timestamps'])
 def test_ledger_options_need_meta_ledger(option):
-    value = {'append_only': True, 'timestamps': 'created', 'indexes': [('amount',)]}[option]
+    value = {'append_only': True, 'timestamps': 'created'}[option]
     with pytest.raises(ValueError, match=f'Meta.{option} is for ledger models; set Meta.ledger = True as well'):
         type('Plain', (Model,), {'Meta': type('Meta', (), {option: value}), 'amount': Integer()})
 
@@ -336,9 +336,10 @@ def test_foreign_keys_hold_between_ledger_and_normal_models(points):
     with pytest.raises(ConflictError):
         with app.database.transaction() as tx:
             tx.delete(Member, aisha)
+    omar = member(app, 'Omar')
     with pytest.raises(ConflictError):
         with app.database.transaction() as tx:
-            tx.create(PointBalance, member=aisha, points='1.00', last_move=row + 100)
+            tx.create(PointBalance, member=omar, points='1.00', last_move=row + 100)
 
 
 def test_the_journal_records_ledger_rows_and_detects_tampering(points):
@@ -562,7 +563,7 @@ def test_postgres_migrations_create_add_and_toggle(pg_dsn):
     database.initialize()
     with database.transaction() as tx:
         assert tx.update(second, 1, reading=5).reading == 5
-    with pytest.raises(ConflictError):
+    with pytest.raises(ValidationError, match='Another record already has the same site and reading'):
         with database.transaction() as tx:
             tx.create(second, reading=5)
     with pytest.raises(SchemaError, match='append only'):

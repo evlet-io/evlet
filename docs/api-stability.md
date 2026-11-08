@@ -51,6 +51,18 @@ production ready, but the rules below hold from 0.3 on.
   with a tuple of fields, and `evlet ledger list`. A key's lock number (BLAKE2b of its canonical
   JSON) never changes between releases ([ledger.md](ledger.md)).
 
+- **Indexes, id reservation and append-only errors.** `Meta.indexes` on normal models, with the
+  same entry form as ledger models, and the saved schema's `indexes` list on a normal model's
+  entry (left out when there are none). A broken unique entry raises `ValidationError` with the
+  entry's fields as keys (HTTP 422). Ledger entries may name `id`. `Session.reserve_ids(model,
+  count)` and an `id` in `insert_many` rows for reserved ids. A raw update or delete that an
+  append-only table refuses raises `ConflictError` on SQLite and PostgreSQL
+  ([model-engine.md](model-engine.md#composite-and-unique-indexes), [ledger.md](ledger.md)).
+
+- **Aggregates in a transaction.** `Session.aggregate(model, *, measures, group_by=(), filters=None)`
+  (`tx.aggregate`), with the arguments, limits and result of `Database.aggregate`
+  ([measures.md](measures.md#ad-hoc-aggregates-in-python)). `evlet.measures` itself stays internal.
+
 - **Job progress.** `JobContext.progress(done, total=None, message='')`, `JobContext.checkpoint`,
   `Task(..., resumable=True)` with its return-value contract (a JSON checkpoint, or `None` when
   done), `progress` in `GET /api/_jobs/<id>`, and `evlet jobs list`

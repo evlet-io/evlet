@@ -185,7 +185,8 @@ def test_an_upgraded_playground_keeps_invoice_numbers_as_names_and_continues_the
 
     # evlet migrate: app migrations first, then framework step 0003.
     current = Database(path, registry)
-    assert current.migrate(migrations) == ['0007_employees', '0008_record_names', '0009_ledger', '0010_invoice_project', '0011_project_brief', '0012_invoice_payment_status', '0013_points']
+    assert current.migrate(migrations) == ['0007_employees', '0008_record_names', '0009_ledger', '0010_invoice_project', '0011_project_brief', '0012_invoice_payment_status', '0013_points',
+                                              '0014_project_task_index']
     assert '0003_record_names' in framework.upgrade(current)
     assert not framework.pending(current)
     assert {'name', 'title', 'customer_name'} <= set(columns(path, 'customer')) and 'number' not in Invoice.__fields__

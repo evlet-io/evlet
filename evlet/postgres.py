@@ -6,7 +6,7 @@ import os
 import threading
 import sqlite3
 
-from .database import Database, Session, ConflictError, using
+from .database import Database, Session, conflict, using
 from .identity import RecordId
 from .models import identifier, ValidationError
 
@@ -104,6 +104,16 @@ class Connection:
             raise LockTimeout() from None
         if previous is not None:
             self.raw.execute("SELECT set_config('lock_timeout', %s, true), set_config('statement_timeout', %s, true)", previous)
+
+    def reserve(self, table, count):
+        """Session.reserve_ids on PostgreSQL: `count` values of the table's identity sequence, in order."""
+        pq = self.database.driver.pq
+        if self.raw.info.transaction_status != pq.TransactionStatus.INTRANS \
+                or self.raw.execute("SELECT current_setting('transaction_read_only')").fetchone()[0] == 'on':
+            raise ValueError('tx.reserve_ids works inside database.transaction()')
+        rows = self.raw.execute("SELECT nextval(pg_get_serial_sequence(%s, 'id')) FROM generate_series(1, %s)",
+                                (identifier(table), count)).fetchall()
+        return sorted(row[0] for row in rows)
 
     def commit(self):
         self.raw.commit()
@@ -204,8 +214,14 @@ class PostgreSQLDatabase(Database):
                     raw.rollback()
         except self.driver.DataError:
             raise ValidationError({'_form': 'Value cannot be stored by PostgreSQL'}) from None
-        except self.driver.IntegrityError:
-            raise ConflictError('A unique value or linked record constraint was violated') from None
+        except self.driver.IntegrityError as exc:
+            raise conflict(self.registry, exc) from None
+        except self.driver.errors.RaiseException as exc:
+            # Append-only triggers made before they raised an integrity error (evlet/ledger.py).
+            from .ledger import APPEND_ONLY
+            if not (exc.diag.message_primary or '').endswith(' ' + APPEND_ONLY):
+                raise sqlite3.OperationalError('PostgreSQL operation failed') from None
+            raise conflict(self.registry, exc) from None
         except self.driver.Error:
             # Never put connection strings, SQL values, or server details in HTTP errors.
             raise sqlite3.OperationalError('PostgreSQL operation failed') from None
