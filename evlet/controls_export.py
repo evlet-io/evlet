@@ -171,11 +171,9 @@ class Exporter:
         return lines
 
     def list_view(self, value):
-        """Meta.list_fields and Meta.open_in; page size, sort and list tabs stay as notes."""
+        """Meta.list_fields, open_in, list_tabs and list_tab; page size and sort stay as a note."""
         lines = [f"list_fields = {literal(tuple(name for name in value['columns'] if name != 'id'))}"]
-        if 'open_in' in value:
-            lines.append(f"open_in = {value['open_in']!r}")
-        lines += [f'# {key} = {value[key]!r}' for key in ('list_tabs', 'list_tab') if key in value]
+        lines += [f'{key} = {value[key]!r}' for key in ('open_in', 'list_tabs', 'list_tab') if key in value]
         lines.append(f"# Page size {value['page_size']} and sort {value['sort']!r} have no Meta option; they stay instance overrides.")
         return lines
 

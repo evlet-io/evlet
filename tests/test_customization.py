@@ -15,8 +15,8 @@ from test_controls import add_user, password, save  # noqa: F401
 from test_postgres import pg_dsn  # noqa: F401
 
 
-def models():
-    """Fresh classes per test: instance fields are attached to the classes themselves."""
+def models(lead_meta=None):
+    """Fresh classes per test: instance fields are attached to the classes themselves. lead_meta is Lead's Meta."""
     class Customer(Model):
         customer_name = Text(required=True)
 
@@ -26,6 +26,8 @@ def models():
         value = Decimal(scale=2)
         customer = Link(Customer)
         notes = LongText()
+        if lead_meta is not None:
+            Meta = lead_meta
 
     class Invoice(Model):
         reference = Text(unique=True)

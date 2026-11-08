@@ -104,10 +104,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
-- **Controls, Export as code writes `Meta` options.** A form layout override exports as
-  `Meta.layout = (Section(...), ...)` with `Meta.tabs` and `Meta.default_tab`, and a list
-  override as `Meta.list_fields` and `Meta.open_in`, on the model's class in its models file.
-  Before, it wrote `FormView` and `ListView` code that the browser never read.
+- **Controls, Export as code now writes code that works.** It used to export form layout and
+  list overrides as `FormView` and `ListView` code, which the browser ignored, so pasting it
+  changed nothing. It now writes `Meta` options on the model's class in its models file:
+  `layout = (Section(...), ...)` with `tabs` and `default_tab`, and `list_fields`, `open_in`,
+  `list_tabs` and `list_tab`. Pasted into the model, they give the same screens as the
+  overrides. Field widths follow the field type, and a list's page size and sort stay instance
+  overrides; the export says so in a comment.
 - **The list filter panel is a side panel.** It docks beside the table inside the page, with
   no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
   sit on top and saved filters below; each half scrolls on its own. Escape closes it.
