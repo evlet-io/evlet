@@ -7,27 +7,9 @@ import sys
 import pytest
 
 from evlet import ConnectorError, HTTPClient
-from evlet.cli import main, scaffold
+from evlet.cli import main
 from tests.test_connector import live_connector, project_path, signed, wire_server
 from tests.test_business import hashed, PASSWORD
-
-
-def test_scaffold_runs_an_authenticated_persistent_application(tmp_path):
-    target = scaffold(tmp_path / 'starter')
-    assert sorted(path.name for path in target.iterdir()) == ['.gitignore', 'README.md', 'app.py', 'models.py']
-    with pytest.raises(FileExistsError): scaffold(target)
-    root = str(Path(__file__).resolve().parents[1])
-    code = '''from app import create_app
-from models import Item
-app = create_app(); app.initialize()
-assert app.business.auth.setup_needed()
-item = app.database.create(Item, title='Persistent')
-restarted = create_app(); restarted.initialize()
-assert restarted.database.get(Item, item.id).title == 'Persistent'
-assert restarted.business.auth.allow_setup
-'''
-    subprocess.run([sys.executable, '-c', code], cwd=target, env={**os.environ, 'PYTHONPATH': root}, check=True)
-    assert (target / '.data' / 'application.sqlite3').is_file()
 
 
 def test_cli_login_describe_and_logout_keep_credentials_private(live_connector, tmp_path, monkeypatch, capsys):

@@ -87,7 +87,7 @@ Do not delete rows from `evlet_framework_migrations` or edit the `evlet` lock en
 to force startup.
 
 Applications started outside an instance, such as `evlet playground`, tests and
-the `evlet new` starter, apply framework migrations themselves when they start, so
+an `Application` built in your own code, apply framework migrations themselves when they start, so
 a new database needs no extra step. Processes that start together take turns; the
 first applies the steps and the others find them applied. Do not keep data you care about in those.
 

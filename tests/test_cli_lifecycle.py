@@ -315,13 +315,11 @@ def test_fetch_uses_staging_and_does_not_run_python(project, tmp_path, monkeypat
     assert not list((destination / 'apps').glob('.fetch-*'))
 
 
-def test_cli_lists_and_backward_compatible_starter(project, capsys, tmp_path):
+def test_cli_lists_apps_and_instances(project, capsys):
     main(['--project', str(project), 'app', '--list'])
     assert 'notes\t0.1.0' in capsys.readouterr().out
     main(['instance', '--list', '--project', str(project)])
     assert 'acme\tno installed apps' in capsys.readouterr().out
-    main(['new', str(tmp_path / 'old_starter')])
-    assert (tmp_path / 'old_starter/app.py').is_file()
 
 
 def test_registration_ignores_stale_same_timestamp_bytecode(project):

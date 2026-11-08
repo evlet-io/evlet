@@ -121,7 +121,7 @@ const TOPICS: Topic[] = [
       p('Save this in app.py. It defines a model and a protected local application:'), code(startCode))}
     ${section('2. Open the app', terminal('uvicorn app:app --host 127.0.0.1 --port 8000 --reload'),
       p('Open http://127.0.0.1:8000. Create the first administrator account, then sign in. Docs opens first. Choose Notes in the sidebar to create and edit a record.'),
-      p('App uses a local SQLite database in .data and loopback-only authentication. Supply an explicit database and authentication configuration when deploying. For a scaffold with separate model and application files, run evlet new my_app and follow its README.'))}
+      p('App uses a local SQLite database in .data and loopback-only authentication. Supply an explicit database and authentication configuration when deploying. For a project with separate apps and sites, run evlet setup myproject --app notes --instance acme --dev.'))}
     ${section('3. Shape the screens from the model', p('Every model gets a list, a board when it has a State, and a record view. Meta options choose the columns, sections, key fields and related records. See How screens are built.'))}
     ${section('4. Keep control of the details', p('Use Application with your existing database, registry, policy, actions and storage when you need explicit configuration. The screens use the same query and mutation endpoints.'))}
   </article>` },
