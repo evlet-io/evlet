@@ -125,9 +125,9 @@ so an explicit choice wins in both directions.
 | `--shadow-lg` | `0 2px 6px rgba(16,24,40,.06),0 18px 48px rgba(16,24,40,.16)` | `0 2px 6px rgba(0,0,0,.3),0 18px 48px rgba(0,0,0,.5)` |
 | `--font` | `"Inter Variable",Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif` | `same` |
 | `--mono` | `"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace` | `same` |
-| `--r-sm` | `6px` | `same` |
-| `--r` | `8px` | `same` |
-| `--r-lg` | `12px` | `same` |
+| `--r-sm` | `4px` | `same` |
+| `--r` | `4px` | `same` |
+| `--r-lg` | `4px` | `same` |
 | `--sidebar-w` | `248px` | `same` |
 | `--topbar-h` | `52px` | `same` |
 
@@ -171,15 +171,20 @@ green, unqualified slate, converted violet.
 
 ### Spacing, radius, elevation
 
-- Radius: `--r-sm` 6px (small controls, nav items), `--r` 8px (buttons,
-  inputs, cards, popover items), `--r-lg` 12px (panels, tables, modals,
-  grids). Modals and floating panels go to 14 to 16px. Pills 6px, chips 5px,
-  switches fully round.
+- Radius: one small corner throughout, 4px. `--r` for buttons, inputs,
+  selects and nav items; `--r-lg` for cards, panels, tables, grids, summary
+  strips, menus, modals, toasts and floating bars; `--r-sm` for icon buttons and
+  rows inside menus. All three are 4px today and are kept apart so each group
+  can change on its own. Use the tokens, not fixed values. Pills 6px, chips
+  5px, icon tiles keep their own rounding; avatars and switches fully round.
 - Controls: buttons and inputs 32px high, small 28px; nav items 32px; table
   rows 44px; grid rows 38px; top bar and brand row 52px.
 - Gutters: page padding 24px top, 28px sides (16px on phones). Gaps between
   panels 16px, between cards 12px, inside toolbars 8px.
-- Shadows: `--shadow-sm` on resting controls, `--shadow-md` on hover and cards
+- Buttons are flat: primary is one solid accent fill, secondary a flat surface
+  with a plain 1px border, with no shadow, inner highlight or pressed look.
+  Hover only darkens the fill; the focus ring stays.
+- Shadows: `--shadow-sm` on resting inputs, `--shadow-md` on hover and cards
   in focus, `--shadow-lg` on floating things (popover, modal, drawer, toast,
   floating button). Never stack shadows on flat panels.
 
@@ -215,7 +220,7 @@ icon only (`.c-*`), not the background. The full subset used:
 - **Row 1, brand** (white, 52px, grey line under it): the evlet.io horizontal
   logo (folded leaf mark and `evlet` wordmark, 26px high), with a white wordmark
   in the dark theme. Collapsed, the mark only.
-- **App switcher** (top of the sidebar body): a white card, radius 9px, hairline
+- **App switcher** (top of the sidebar body): a white card, radius `--r-lg`, hairline
   border, no shadow, with the app's tinted tile, the app name and its workspace
   under it, and up-down arrows. It opens a small grid of the apps in this
   workspace, the current one tinted. Collapsed, the tile only.
@@ -225,7 +230,7 @@ icon only (`.c-*`), not the background. The full subset used:
   Inbox (unread badge), My tasks (due count); group "Records" (Leads, Deals,
   Invoices, Contacts, Organizations, Reports, with counts); group "Saved views"
   (coloured dots). Bottom: Doc layout, Library. Footer: account and theme
-  toggle. The active nav item is a white card, radius 9px, with a hairline ring
+  toggle. The active nav item is a white card, radius `--r`, with a hairline ring
   and no shadow.
 - **Top bar** (52px): breadcrumbs (menu button first on phones), then search
   field (240px, `⌘K` hint), notifications bell with a dot, shortcuts help, and a

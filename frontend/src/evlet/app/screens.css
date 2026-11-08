@@ -18,7 +18,7 @@
 .ev-login-brand{display:flex;align-items:center;gap:12px;font-size:15px}
 .ev-login-brand .ev-lockup{height:30px}
 .ev-login-brand span{color:var(--fg-3)}
-.ev-login-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-md);padding:28px}
+.ev-login-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-md);padding:28px}
 .ev-login-card h1{font-size:21px;font-weight:650;letter-spacing:-.02em;margin:14px 0 4px}
 .ev-login-card>p{color:var(--fg-3);margin:0 0 20px}
 .ev-login-card form{display:grid;gap:6px}
@@ -145,7 +145,7 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-files{display:grid;gap:10px}
 .ev-print-body{display:grid;gap:12px;min-height:0}
 .ev-print-design{display:grid;gap:4px;font-size:13px;max-width:320px}
-.ev-print-frame{width:100%;height:min(72vh,900px);border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.ev-print-frame{width:100%;height:min(72vh,900px);border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface)}
 .ev-print-note{margin:0;font-size:12px}
 .ev-print-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .ev-print.drawer{width:min(760px,100vw)}
@@ -169,14 +169,14 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-revisions th, .ev-revisions td { padding: 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .ev-revision-record dl { display: grid; grid-template-columns: minmax(100px, 1fr) 3fr; gap: 8px 16px; }
 .ev-revision-record dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.ev-revision-record article { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.ev-revision-record article { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-lg); }
 
 /* ---------- slips ---------- */
 .modal.slip { width: min(760px, 100%); }
 .slip .slip-group { grid-column: 1 / -1; margin: 6px 0 -4px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); }
 .slip .slip-group:first-child { margin-top: 0; }
 .slip-table { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.slip-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r); }
+.slip-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-lg); }
 .slip-table table { width: 100%; min-width: 420px; border-collapse: collapse; font-size: 13px; }
 .slip-table th { padding: 7px 8px; text-align: left; font-size: 11.5px; font-weight: 600; color: var(--fg-3); background: var(--bg-subtle); border-bottom: 1px solid var(--border); }
 .slip-table th .req { color: var(--t-rose); margin-left: 2px; }

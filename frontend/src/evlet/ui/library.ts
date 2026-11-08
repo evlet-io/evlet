@@ -197,12 +197,12 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     toolbar: () => Toolbar({ left: [SearchInput({ value: cell(''), placeholder: 'Search deals' }), Filters({ filters })], right: [ListSummary([{ label: 'Open', value: '12' }, { label: 'Pipeline', value: 'AED 1.15M' }])] }),
     'split-view': () => {
       const open = cell(true), width = cell(260);
-      return html`<div style="width:100%;height:180px;position:relative;border:1px solid var(--border);border-radius:12px;overflow:hidden">${SplitView({
+      return html`<div style="width:100%;height:180px;position:relative;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden">${SplitView({
         main: html`<div style="padding:12px">${Button({ label: () => open.get() ? 'Close the panel' : 'Open the panel', size: 'small', onClick: () => open.set(!open.peek()) })}</div>`,
         side: () => html`<p class="muted" style="padding:12px">Side panel</p>`, open, width, label: 'Resize the sample panel', minSide: 160, minMain: 120, initial: 260, breakpoint: 360,
       })}</div>`;
     },
-    'doc-frame': () => html`<div style="width:100%;border:1px solid var(--border);border-radius:12px;overflow:hidden">${DocFrame({ tint: 'blue', main: html`<p class="muted">Main column</p>`, side: html`<p class="muted">Side panel</p>` })}</div>`,
+    'doc-frame': () => html`<div style="width:100%;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden">${DocFrame({ tint: 'blue', main: html`<p class="muted">Main column</p>`, side: html`<p class="muted">Side panel</p>` })}</div>`,
     'side-block': () => html`<div style="width:300px">${SideBlock({ title: 'Tags', body: row(Chip({ label: 'Hot', icon: 'flame', tone: 'rose' }), AddChip({ label: 'Tag' })) })}</div>`,
     drawer: () => Button({ label: 'Open a drawer', icon: 'panel-right', onClick: () => openDrawer({ title: 'Contact', body: () => KeyValueList([f.email, f.phone, f.tags], { save: () => true }),
       footer: close => Button({ label: 'Open record', variant: 'primary', onClick: () => { close(); toast('Opened the record'); } }) }) }),
@@ -234,7 +234,7 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     'action-dialog': () => Button({ label: 'Record payment', icon: 'wallet', onClick: () => openPayment() }),
     'peek-drawer': () => Button({ label: 'Peek a contact', icon: 'panel-right', onClick: () => openDrawer({ title: 'Contact', body: () => html`<div class="peek-top">${Avatar({ name: 'Khalid Al Mansoori', size: 'xl' })}<div><h2>Khalid Al Mansoori</h2><div class="sub">Finance manager, Al Sahra Trading</div></div></div>${KeyValueList([f.email, f.phone, f.tags], { save: () => true })}`,
       footer: close => Button({ label: 'Open record', variant: 'primary', onClick: () => { close(); toast('Opened the record'); } }) }) }),
-    'side-panel': () => html`<div class="doc-side" style="width:320px;border:1px solid var(--border);border-radius:12px">${SideBlock({ title: 'Key fields', body: KeyValueList([f.select, f.currency], { save: () => true }), action: LinkButton({ label: 'All fields' }) })}
+    'side-panel': () => html`<div class="doc-side" style="width:320px;border:1px solid var(--border);border-radius:var(--r-lg)">${SideBlock({ title: 'Key fields', body: KeyValueList([f.select, f.currency], { save: () => true }), action: LinkButton({ label: 'All fields' }) })}
       ${SideBlock({ title: 'Tags', body: row(Chip({ label: 'Renewal' }), AddChip({ label: 'Tag' })) })}</div>`,
   };
 }
