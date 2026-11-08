@@ -62,7 +62,7 @@ class JobContext:
     idempotency_key: str
     # The value the last committed step of a resumable task returned; None before the first step.
     checkpoint: object = None
-    _report: object = field(default=None, repr=False, compare=False)
+    _report: object = field(default=None, init=False, repr=False, compare=False)
 
     def progress(self, done, total=None, message=''):
         """Record how far the job is. It is saved with the handler's writes, so a rolled-back step leaves the last
@@ -381,7 +381,8 @@ class JobQueue:
         else:
             def report(done, total, message):
                 tx.connection.execute(sql, (job_id, done, total, message, int(time.time())))
-        context = JobContext(job_id, self.tenant, row['attempts'], user, stable_key, checkpoint, report)
+        context = JobContext(job_id, self.tenant, row['attempts'], user, stable_key, checkpoint)
+        object.__setattr__(context, '_report', report)
         return task, context, json.loads(row['payload'])
 
     @staticmethod
