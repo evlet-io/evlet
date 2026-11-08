@@ -21,3 +21,4 @@ export * from './pickers';
 export * from './theme';
 export * from './time';
 export * from './money';
+export * from './shortcuts';

@@ -762,6 +762,43 @@ A save removes the saver's entry, and deleting a record removes everyone's, in t
 transaction. The format of `changes` is in
 [internal/unsaved-changes.md](internal/unsaved-changes.md).
 
+### Keyboard shortcuts
+
+Lists, record forms and dialogs follow the keys people know from other apps. Mod is ⌘ on a Mac and
+Ctrl on Windows and Linux; the help sheet, tooltips and menus write each key the way the platform
+does (⌘S and ⇧⌘D on a Mac, Ctrl+S and Ctrl+Shift+D elsewhere).
+
+| Keys | Where | What it does |
+|---|---|---|
+| Mod+S | Record form, new or saved | Save, as the Save (or Create) button does: the same checks, errors and jump to the first error. With nothing changed it does nothing. It works while typing in a field or the rich text editor, and never opens the browser's Save Page |
+| Mod+S | Dialog | The main action: Confirm, Save, Run, Hand in for a slip |
+| Mod+Shift+D | Saved record | Delete: opens the usual confirmation. Only where the record's More menu has Delete (the role may delete, the record is not locked or posted) |
+| Mod+Shift+D | New record | Discard it and go back to the list, asking first when something was typed |
+| Mod+Shift+D | Dialog | Cancel, as Esc does |
+| Alt+N (⌥N) | List and record page | A new record of the model, on its page or in the side panel as the list's New does |
+| C | List | A new record (kept from before) |
+| / | List | Focus the list's search |
+| Enter | List row | Open the focused row |
+| ← → ↑ ↓ | Dialog actions | Move between the footer's buttons, wrapping; Enter presses the focused one |
+| ? | Anywhere | The shortcut sheet: this screen's keys, then those that work everywhere and in a dialog |
+
+- **New is Alt+N, not Ctrl+N.** Browsers keep Ctrl+N and ⌘N for a new window, so a page can't use them.
+  Alt+N is read from the physical key, because Option+N on a Mac types an accent.
+- **No Duplicate yet.** Records have no duplicate or copy action today, so Alt+Shift+D (⌥⇧D), the key
+  kept for it, does nothing. A model action can be added later and bound to it.
+- **Plain keys stay out of the way.** C, / and ? never fire while typing in a field. Mod+S does.
+- **One screen at a time.** A shortcut acts on the screen that holds the focus. With a record open in a
+  side panel, the keys act on that record while the focus is inside the panel, and on the list
+  otherwise (Alt+N from the panel opens the new record in the panel). Nothing on the screen fires while
+  a dialog is open: the dialog answers Mod+S and Mod+Shift+D itself.
+- **A held key acts once.** Key repeat never saves, deletes or opens a second record.
+- **Dialogs.** A dialog without a field (a confirm, the unsaved-changes prompt) focuses its main
+  action, so Enter answers it. A dialog that asks for input (an action's inputs, a move's values, a
+  slip) focuses its first field, and Mod+S submits it. Focus stays in the dialog and goes back to
+  what opened it.
+- **Delete always asks.** Mod+Shift+D only opens the confirmation, with Delete focused. Deleting takes
+  a second, separate key: Enter or Mod+S. An arrow key moves to Cancel.
+
 ### Ids, names and titles
 
 Record addresses use the record's text id, `/app/invoice/01hc1sd9vc1ye`, so changing a name never

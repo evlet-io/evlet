@@ -39,6 +39,8 @@ import { presentSlip, takePrefill } from './slips';
 import { openEvaPanel } from '../eva/chat';
 import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
+import { SCREEN_KEYS, useShortcuts } from './shortcuts';
+import { ariaKeys, commitTyped, formatKeys, withShortcut } from '../ui/shortcuts';
 
 const RESERVED = new Set(['tab', 'slip']);
 // A reactive part inside a list of children (arrays are read once; a template hole stays live).
@@ -398,6 +400,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       } catch (error) { close(); toast(error instanceof ApiError ? error.message : 'Not deleted.', { icon: 'info' }); }
     } } }) });
 
+  // A record that ever posted is kept (its entries name it), so the server refuses its delete.
+  const canDelete = () => !isNew && model.api !== 'read' && Boolean(model.permissions?.delete) && !locked.peek() && extras.peek()._deletable !== false;
   const moreItems = (): MenuItem[] => {
     const items: MenuItem[] = [{ label: 'Copy link', icon: 'link', onSelect: () => void copyText(location.href, 'the link') }];
     if (!isNew) items.push({ label: 'Copy record ID', icon: 'copy', onSelect: () => void copyText(String(store.id), 'the record ID') },
@@ -408,8 +412,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (now._void) items.push({ label: `Void ${model.label.toLowerCase()}`, icon: 'circle-x', danger: true, disabled: !now._void.allowed, onSelect: () => correct('void') });
     if (now._repost) items.push({ label: `Repost ${model.label.toLowerCase()}`, icon: 'repeat', disabled: !now._repost.allowed, onSelect: () => correct('repost') });
     if (now._unpost) items.push({ label: `Unpost ${model.label.toLowerCase()}`, icon: 'rotate-ccw', danger: true, disabled: !now._unpost.allowed, onSelect: () => correct('unpost') });
-    // A record that ever posted is kept (its entries name it), so the server refuses its delete.
-    if (!isNew && model.api !== 'read' && model.permissions?.delete && !locked.peek() && now._deletable !== false) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, onSelect: remove });
+    if (canDelete()) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, hint: formatKeys(SCREEN_KEYS.remove), onSelect: remove });
     return items;
   };
 
@@ -794,11 +797,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const saveBarView = () => isNew
     ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => { forget(); panel ? panel.close() : void router.go('list', { model: name }); } })}
         <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
-        ${Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save() })}</div>`
+        ${withSaveKeys(Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save(),
+          tip: withShortcut(`Create ${model.label.toLowerCase()}`, SCREEN_KEYS.save) }))}</div>`
     : when(() => store.dirty.get(), () => html`<div class="ev-savebar" role="region" aria-label="Unsaved changes">
         <span class="grow">${Icon('pencil', { size: 'sm' })} Unsaved changes</span>
         ${Button({ label: 'Discard', variant: 'ghost', onClick: () => { forget(); void store.revert(); } })}
-        ${Button({ label: () => store.saving.get() ? 'Saving…' : 'Save', variant: 'primary', icon: 'check', disabled: () => store.saving.get(), onClick: () => void save() })}</div>`);
+        ${withSaveKeys(Button({ label: () => store.saving.get() ? 'Saving…' : 'Save', variant: 'primary', icon: 'check', disabled: () => store.saving.get(), onClick: () => void save(), tip: withShortcut('Save', SCREEN_KEYS.save) }))}</div>`);
   const saveBar = saveBarView();
 
   // ---------- side panel ----------
@@ -823,7 +827,30 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   frame.addEventListener('keydown', event => {
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && (isNew || store.dirty.peek())) { event.preventDefault(); void save(); }
   });
+  // Keyboard shortcuts (docs/ui.md#keyboard-shortcuts). In a side panel they act while the focus is inside it;
+  // New then comes from the list, which opens the new record in the panel.
+  const noun = model.label.toLowerCase();
+  const canCreate = model.api !== 'read' && model.permissions?.create !== false;
+  // A new record's Discard: it asks first when something was typed, then leaves like Cancel.
+  const discardNew = async () => {
+    if (changedNew() && !(await confirmDiscard())) return;
+    leaving = true;
+    forget();
+    if (panel) panel.close(); else void router.go('list', { model: name });
+  };
+  useShortcuts({ root: frame, inner: Boolean(panel), area: panel ? () => frame.parentElement?.closest<HTMLElement>('[role="region"]') ?? frame : undefined, actions: () => ({
+    // Save does what the Save (or Create) button does, with the same checks; with nothing changed it does nothing.
+    save: canWrite ? { label: isNew ? `Create the ${noun}` : 'Save changes', run: () => { commitTyped(); if (isNew || store.dirty.peek()) void save(); } } : null,
+    remove: isNew ? { label: `Discard the new ${noun}`, run: () => void discardNew() } : canDelete() ? { label: `Delete this ${noun}`, run: remove } : null,
+    create: !panel && canCreate && !isNew ? { label: `New ${noun}`, run: () => void router.go('create', { model: name }) } : null,
+  }) });
   return frame;
+}
+
+/** The Save button announces its shortcut to assistive technology too. */
+function withSaveKeys(button: HTMLButtonElement): HTMLButtonElement {
+  button.setAttribute('aria-keyshortcuts', ariaKeys(SCREEN_KEYS.save));
+  return button;
 }
 
 // ---------- action dialog ----------

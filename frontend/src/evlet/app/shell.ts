@@ -8,7 +8,7 @@ import { html, listen, when, type Child } from '../dom';
 import { cell, derive, effect } from '../reactive';
 import { Icon, IconButton, IconTile, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
-import { mountToasts, openModal, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
+import { mountToasts, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
 import { Lockup, Logo } from './login';
 import { resolveTheme, systemScheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
@@ -22,6 +22,7 @@ import { presentSlip } from './slips';
 import { customizeAccess, openWorkspaceEditor } from './workspace-editor';
 import { isExplorer, openExplorer } from './explorer';
 import { SHELL_ICONS } from './nav-icons';
+import { openShortcutSheet } from './shortcuts';
 
 const PHONE = '(max-width: 760px)';
 const isPhone = () => { try { return Boolean(window.matchMedia?.(PHONE)?.matches); } catch { return false; } };
@@ -244,6 +245,5 @@ const SHORTCUTS: Array<[string, string]> = [
 
 export function openShortcuts(docs = true) {
   const shown = SHORTCUTS.filter(([, what]) => docs || what !== 'Go to Docs');
-  return openModal({ title: 'Keyboard shortcuts', icon: 'command', tint: 'slate', narrow: true,
-    body: () => html`<dl class="ev-keys">${shown.map(([keys, what]) => html`<dt>${keys.split(' or ').map((part, index) => [index ? ' or ' : '', Key(part)])}</dt><dd>${what}</dd>`)}</dl>` });
+  return openShortcutSheet(shown);
 }

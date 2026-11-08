@@ -276,7 +276,9 @@ mark only.
 |---|---|
 | `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, StatCard (also exported as Stat), Sparkline, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
-| `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText` |
+| `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText`, `DialogFooter`, `primaryAction(panel)`: the footer's main action, which a dialog without a field focuses and Mod+S presses; the arrow keys move between footer actions and Mod+Shift+D cancels |
+| `shortcuts.ts` | `isMac`, `keyMatches(event, 'Mod+S')`, `formatKeys(combo)` (⌘S or Ctrl+S), `withShortcut(label, combo)` for tooltips, `ariaKeys(combo)` for `aria-keyshortcuts`, `isTyping`, `commitTyped` ([keyboard shortcuts](ui.md#keyboard-shortcuts)) |
+| `../app/shortcuts.ts` | `useShortcuts({ root, inner, area, actions, help })`: a screen binds Save, Delete, New and Duplicate; one document listener runs the action of the screen holding the focus. `openShortcutSheet(everywhere)` is the ? sheet |
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type (RichTextField and RichTextView for rich text), `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |

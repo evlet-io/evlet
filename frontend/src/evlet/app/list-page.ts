@@ -31,6 +31,8 @@ import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } fr
 import { REPORT_ICON, reportsFor } from './report-page';
 import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, trendValues, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
+import { SCREEN_KEYS, useShortcuts } from './shortcuts';
+import { ariaKeys, withShortcut } from '../ui/shortcuts';
 import { recordId } from '../ids';
 
 export const PAGE_SIZE = 50;
@@ -255,6 +257,13 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   // ---------- header, views and toolbar ----------
 
   const create = () => openIn === 'panel' ? void router.navigate(listHref('new'), { replace: panelOpen.peek() }) : void router.go('create', { model: name });
+  // New, with its shortcut (Alt+N, or C) in the tooltip.
+  const newButton = () => {
+    const button = Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', hideLabelOnPhone: true, onClick: create,
+      tip: withShortcut(`New ${model.label.toLowerCase()}`, SCREEN_KEYS.create) });
+    button.setAttribute('aria-keyshortcuts', `${ariaKeys(SCREEN_KEYS.create)} C`);
+    return button;
+  };
   if (canCreate) ctx.createHere.set(create);
   onCleanup(() => { if (ctx.createHere.peek() === create) ctx.createHere.set(null); });
 
@@ -284,7 +293,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     // Reports declared for this model (Report.model) open from here.
     reportsFor(ctx, name).length ? MenuButton({ label: 'Reports', icon: REPORT_ICON, hideLabelOnPhone: true, menuLabel: `${model.label} reports`,
       items: reportsFor(ctx, name).map(report => ({ label: report.label, icon: REPORT_ICON, tint: 'rose' as const, onSelect: () => void router.go('report', { report: report.name }) })) }) : null,
-    canCreate ? Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', hideLabelOnPhone: true, onClick: create }) : null,
+    canCreate ? newButton() : null,
   ].filter(Boolean) as Child[] });
 
   // A Link's tabs are its most used values (and the open one), so they are drawn again when those change.
@@ -631,6 +640,10 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const split = SplitView({ main, side: panel, open: panelOpen, overlay, width: ctx.prefs.cell(`panelWidth.${name}`, 480),
     label: `Resize the ${model.label.toLowerCase()} panel` });
   split.classList.add('ev-list-split');
+  // Alt+N opens a new record, here or in the panel (docs/ui.md#keyboard-shortcuts); C, / and Enter on a row are the shell's and the table's.
+  useShortcuts({ root: split, actions: () => ({ create: canCreate ? { label: `New ${model.label.toLowerCase()}`, run: create } : null }),
+    help: () => [...(canCreate ? [['C', `New ${model.label.toLowerCase()}`] as [string, string]] : []), ...(search ? [['/', 'Search the list'] as [string, string]] : []),
+      ['Enter', `Open the focused ${model.label.toLowerCase()}`]] });
   split.append(html`<p class="ev-sr" aria-live="polite">${announce}</p>`);
   // Escape closes the panel (dialogs and menus close first: they are outside it).
   split.addEventListener('keydown', event => {

@@ -61,6 +61,8 @@
 .ev-contract tbody th{font-weight:550;white-space:nowrap;width:1%}
 .ev-keys{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0;align-items:center}
 .ev-keys dd{margin:0;color:var(--fg-2)}
+.ev-keys-h{margin:0 0 6px;font-size:12px;font-weight:600;color:var(--fg-3);text-transform:uppercase;letter-spacing:.04em}
+.ev-keys-g + .ev-keys-g{margin-top:18px}
 
 /* ---------- lists ---------- */
 .ev-row-link{font-weight:550;color:var(--fg)}
