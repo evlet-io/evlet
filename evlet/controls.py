@@ -1196,7 +1196,11 @@ class Controls:
     def workspace_route(self, scope, body, user):
         """GET /api/_controls/workspaces, PUT and DELETE /api/_controls/workspaces/<key>: the site's workspace overrides."""
         if self.routes is None or getattr(self.business, 'workspaces', None) is None or not self.customizes(scope, user):
-            raise AccessError(403, WORKSPACE_ACCESS)
+            # Like the rest of Controls, the area stays hidden (404). Someone who already opens Controls sees it
+            # exists, so they get 403 with the reason instead.
+            if self.routes is not None and self.allows(scope, user):
+                raise AccessError(403, WORKSPACE_ACCESS)
+            raise AccessError(404, NOT_FOUND)
         required = self.routes.controls.require_two_step or user.role in self.settings['security.two_step_roles'] and self.business.settings.possible()
         if required and not user.two_step:
             raise AccessError(403, TWO_STEP)

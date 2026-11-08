@@ -479,8 +479,10 @@ routes and are not part of `POST /api/_controls/overrides`, the Overrides page o
 always has it and portal roles never do. It works like "Opens Controls" but is separate from it: a
 role with only Customize workspaces reaches the workspace routes and nothing else in Controls, and
 "Opens Controls" alone does not give it. The same hosts, allowed networks and two-step rules as
-Controls apply, and a change asks for a fresh two-step code. Everyone else gets 403 on every
-workspace route.
+Controls apply, and a change asks for a fresh two-step code. Like the rest of Controls, the routes
+stay hidden from everyone else: they answer 404. The one exception is a person who already opens
+Controls but whose role lacks Customize workspaces. Controls is not hidden from them, so they get
+403 with the reason.
 
 | Route | Does |
 |---|---|

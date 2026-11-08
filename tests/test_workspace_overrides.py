@@ -114,26 +114,36 @@ def test_every_change_is_audited(app):
 
 
 def test_who_may_change_workspaces(app):
-    planner, clerk, editor, viewer = (client(app, role) for role in ('planner', 'clerk', 'editor', 'viewer'))
+    admin = client(app)
+    # ops opens Controls but can't customize workspaces.
+    assert admin('POST', '/api/_controls/roles', {'id': 'ops', 'base': 'editor'})[0] == 201
+    assert admin('PATCH', '/api/_controls/roles/ops', {'opens_controls': True})[0] == 200
+    assert admin('POST', '/api/auth/users', {'username': 'ops', 'password': PASSWORD, 'role': 'ops'})[0] == 201
+    planner, clerk, editor, viewer, ops = (client(app, role) for role in ('planner', 'clerk', 'editor', 'viewer', 'ops'))
     body = {'label': 'Planned'}
     assert planner('GET', ROUTE)[0] == 200
     assert planner('PUT', ROUTE + '/sales', body)[0] == 200
     assert planner('DELETE', ROUTE + '/sales')[0] == 200
+    requests = (('GET', ROUTE, None), ('PUT', ROUTE + '/sales', body), ('DELETE', ROUTE + '/sales', None),
+                ('PUT', ROUTE + '/mine', {'custom': True, 'label': 'Mine', 'groups': []}), ('POST', ROUTE, body), ('GET', ROUTE + '/sales', None))
+    # Without access the area stays hidden, like the rest of Controls.
     for refused in (clerk, editor, viewer):
-        for method, path, data in (('GET', ROUTE, None), ('PUT', ROUTE + '/sales', body), ('DELETE', ROUTE + '/sales', None),
-                                   ('PUT', ROUTE + '/mine', {'custom': True, 'label': 'Mine', 'groups': []}), ('POST', ROUTE, body)):
+        for method, path, data in requests:
             status, payload, _ = refused(method, path, data)
-            assert status == 403 and 'Customize workspaces' in payload['error'], (method, path, payload)
+            assert status == 404 and payload == {'error': 'Route not found'}, (method, path, payload)
+    # Someone who already opens Controls is told why.
+    for method, path, data in requests:
+        status, payload, _ = ops(method, path, data)
+        assert status == 403 and 'Customize workspaces' in payload['error'], (method, path, payload)
     # The flag alone does not open the rest of Controls, and only an admin can give it.
     assert planner('GET', '/api/_controls/state')[0] == 404
     assert planner('PATCH', '/api/_controls/roles/clerk', {'customize_workspaces': True})[0] == 404
-    admin = client(app)
     assert admin('PATCH', '/api/_controls/roles/admin', {'customize_workspaces': False})[0] == 422
     assert admin('PATCH', '/api/_controls/roles/portal', {'customize_workspaces': True})[0] == 422
     assert admin('PATCH', '/api/_controls/roles/clerk', {'customize_workspaces': 'yes'})[0] == 422
     # Taking the flag away takes the routes away at once.
     assert admin('PATCH', '/api/_controls/roles/planner', {'customize_workspaces': False})[0] == 200
-    assert planner('GET', ROUTE)[0] == 403
+    assert planner('GET', ROUTE)[0] == 404
     # The generic overrides route does not take workspace changes.
     status, payload, _ = admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'workspace', 'key': 'sales', 'value': body}]})
     assert status == 422 and payload['fields'] == {'changes.0': 'Choose a known kind of change.'}

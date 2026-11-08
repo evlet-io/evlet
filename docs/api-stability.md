@@ -101,7 +101,8 @@ production ready, but the rules below hold from 0.3 on.
   `slip`, `url`) and `source` values. The report catalog's `source_kind` (`"ledger"`, `"model"` or
   null) is public too ([ui.md](ui.md#workspaces), [reports.md](reports.md)). So are the workspace
   override routes (`/api/_controls/workspaces`), their value format, the `custom` source and the
-  role flag `customize_workspaces` ([controls.md](controls.md#workspaces)).
+  role flag `customize_workspaces`, with their answers to people without access: 404, or 403 for
+  someone who opens Controls without the flag ([controls.md](controls.md#workspaces)).
 
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
