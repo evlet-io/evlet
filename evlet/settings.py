@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 from . import secrets as vault
 from .auth import AccessError, User, _encode, _scrypt, client_network, hashing_slot, password_hash
 from .fields import MISSING, Email, Field
-from .models import ValidationError
+from .models import ValidationError, checked_body
 
 logger = logging.getLogger(__name__)
 
@@ -445,9 +445,7 @@ class Settings:
 
     @staticmethod
     def _body(body, allowed):
-        if not isinstance(body, dict) or not body or set(body) - set(allowed):
-            raise ValidationError({'_form': 'Send ' + ', '.join(allowed)})
-        return body
+        return checked_body(body, allowed, 'Send ' + ', '.join(allowed), nonempty=True)
 
     # ---------- profile ----------
 

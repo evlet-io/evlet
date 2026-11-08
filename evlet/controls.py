@@ -16,7 +16,7 @@ from .fields import Layer
 from .fields import Link
 from .database import NotFoundError
 from .identity import path_id
-from .models import ValidationError, identifier
+from .models import ValidationError, checked_body, identifier
 from .periods import TABLE as PERIOD_LOCKS
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
@@ -764,8 +764,7 @@ class Controls:
         from .periods import scope_key, set_lock
         if user.role != 'admin':
             raise AccessError(403, 'Only an admin can change period locks.')
-        if not isinstance(body, dict) or set(body) != {'scope', 'date'}:
-            raise ValidationError({'_form': 'Send scope and date.'})
+        checked_body(body, {'scope', 'date'}, 'Send scope and date.', exact=True)
         try:
             value = None if body['date'] is None else date.fromisoformat(body['date']) if isinstance(body['date'], str) and len(body['date']) == 10 else ''
         except ValueError:
@@ -809,8 +808,7 @@ class Controls:
         return page
 
     def add_user(self, actor, body):
-        if not isinstance(body, dict) or set(body) - {'username', 'password', 'role'}:
-            raise ValidationError({'_form': 'Use username, password and role'})
+        checked_body(body, {'username', 'password', 'role'}, 'Use username, password and role')
         if body.get('role') == 'admin' and actor.role != 'admin':
             raise AccessError(403, ADMIN_ONLY)
         return self.business.auth.add_user(dict(body), lambda connection, user: audit(
@@ -819,8 +817,8 @@ class Controls:
     def change_user(self, actor, user_id, body):
         if isinstance(body, dict) and body and not set(body) - {'allow_eva', 'allow_mcp'}:
             return self.ai_access(actor, user_id, body)
-        if not isinstance(body, dict) or not body or set(body) - {'role', 'active', 'password', 'sessions', 'revoke_keys', 'two_step'}:
-            raise ValidationError({'_form': 'Use role, active, password, sessions, revoke_keys, two_step, or allow_eva and allow_mcp on their own'})
+        checked_body(body, {'role', 'active', 'password', 'sessions', 'revoke_keys', 'two_step'},
+                     'Use role, active, password, sessions, revoke_keys, two_step, or allow_eva and allow_mcp on their own', nonempty=True)
         if 'sessions' in body and body['sessions'] != 'end':
             raise ValidationError({'sessions': 'Use "end" to sign out every session'})
         revoke = body.get('revoke_keys', False)
@@ -903,8 +901,7 @@ class Controls:
     def create_role(self, actor, body):
         if actor.role != 'admin':
             raise AccessError(403, ADMIN_ONLY)
-        if not isinstance(body, dict) or set(body) - {'id', 'base', 'realm', 'description'}:
-            raise ValidationError({'_form': 'Use id, base, realm and description'})
+        checked_body(body, {'id', 'base', 'realm', 'description'}, 'Use id, base, realm and description')
         realm = body.get('realm', 'desk')
         role, base, description = body.get('id'), body.get('base', PORTAL if realm == 'portal' else 'editor'), body.get('description', '')
         if not isinstance(role, str) or not ROLE_ID.fullmatch(role):
@@ -926,8 +923,7 @@ class Controls:
         self.refresh()
 
     def change_role(self, actor, role, body):
-        if not isinstance(body, dict) or not body or set(body) - {'opens_controls', 'description'}:
-            raise ValidationError({'_form': 'Use opens_controls or description'})
+        checked_body(body, {'opens_controls', 'description'}, 'Use opens_controls or description', nonempty=True)
         if 'opens_controls' in body and type(body['opens_controls']) is not bool:
             raise ValidationError({'opens_controls': 'Use true or false'})
         if 'description' in body and (not isinstance(body['description'], str) or len(body['description']) > 200):
@@ -1019,8 +1015,7 @@ class Controls:
 
     def create_key(self, actor, body, personal=False):
         allowed = {'name', 'scope'} if personal else {'name', 'scope', 'user'}
-        if not isinstance(body, dict) or set(body) - allowed:
-            raise ValidationError({'_form': 'Use ' + ', '.join(sorted(allowed))})
+        checked_body(body, allowed, 'Use ' + ', '.join(sorted(allowed)))
         name = body.get('name')
         if not isinstance(name, str) or not name.strip():
             raise ValidationError({'name': 'Give the key a name so you can recognise it later.'})

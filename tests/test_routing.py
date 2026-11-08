@@ -10,8 +10,6 @@ from evlet.cli.install import install
 from evlet.cli.main import main
 from evlet.instances import load_runtime
 from evlet.routing import RESERVED, host_name, reserved, resolve_routes
-from evlet.ui import Column, PageView, Text, ViewRegistry
-from evlet.ui.registry import route_pattern
 from evlet.ui.serving import STATIC, static_response
 from test_business import http, secured, hashed
 from test_cli_lifecycle import create_app, environment_stub, project, runtime
@@ -24,8 +22,7 @@ def legacy_served(app, path):
     known_report = path.startswith('/reports/') and path.removeprefix('/reports/') in app.business.forms.reports
     # The report index came with the report view; it is served when the application has reports.
     known_report = known_report or (path == '/reports' and bool(app.business.forms.reports))
-    custom = any(view.route and route_pattern(view.route).fullmatch(path) for view in app.ui.views.values())
-    allowed = builtin or (generated and generated[1] in app.registry.models) or known_report or custom
+    allowed = builtin or (generated and generated[1] in app.registry.models) or known_report
     return bool(allowed) and static_response(path) is not None
 
 
@@ -80,8 +77,8 @@ def test_session_tells_the_browser_whether_docs_are_on(secured):
     assert http(secured, 'GET', '/api/auth/session')[1]['application']['docs'] == '/docs'
 
 
-def app(name, *frontends, views=()):
-    return name, AppDefinition(frontends=frontends, views=views)
+def app(name, *frontends):
+    return name, AppDefinition(frontends=frontends)
 
 
 def test_two_apps_with_the_same_default_path_fail_naming_both():
@@ -108,26 +105,6 @@ def test_reserved_paths_match_per_segment_and_ignore_case():
     with pytest.raises(TypeError):
         RESERVED['crm'] = 'locked'
     resolve_routes([app('crm', Frontend('apis', path='/apis'))])
-    resolve_routes([app('crm', views=(PageView('feed', route='/Apis/feed'),))])
-
-
-@pytest.mark.parametrize('route', ['/API/feed', '/Docs', '/settings/mine', '/_/x', '/Reports/q', '/print/{id:int}'])
-def test_page_view_on_a_reserved_path_fails_naming_the_app(route):
-    with pytest.raises(ValueError, match=f'^notes page feed wants {re.escape(route)} on localhost, which is reserved for the framework. Change the route in app notes.$'):
-        resolve_routes([('notes', AppDefinition(views=(PageView('feed', route=route),)))])
-    with pytest.raises(ValueError, match='Reserved route namespace'):
-        ViewRegistry([PageView('feed', route=route)])
-
-
-def test_pages_share_segments_but_not_with_frontends():
-    pages = (PageView('board', route='/board'), PageView('card', route='/board/{id:int}'))
-    resolve_routes([app('notes', views=pages), app('crm', views=(PageView('other', route='/board/all'),))])
-    with pytest.raises(ValueError, match='notes.board and crm page other both want /board'):
-        resolve_routes([app('notes', Frontend('board', path='/board')), app('crm', views=(PageView('other', route='/Board/all'),))])
-    with pytest.raises(ValueError, match='must start with a fixed segment'):
-        resolve_routes([app('notes', views=(PageView('any', route='/{slug}'),))])
-    with pytest.raises(ValueError, match='fixed segment'):
-        ViewRegistry([PageView('any', route='/{slug}')])
 
 
 def test_routes_py_moves_frontends_and_redirects_the_root():

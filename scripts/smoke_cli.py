@@ -122,7 +122,6 @@ def main():
             client.request('POST', '/api/auth/setup', {'username': 'owner', 'password': password})
             client = client.login('owner', password)
             assert client.get('/api/customer')['total'] == 1
-            assert any(view['name'] == 'projects_demo' for view in client.get('/api/ui')['views'])
         with server('playground') as url:
             port = url.rsplit(':', 1)[1]
             output = command('dev-link', '--playground', '--port', port).stdout

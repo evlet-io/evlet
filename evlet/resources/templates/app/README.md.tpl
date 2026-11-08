@@ -16,6 +16,6 @@ migration: stop the server, add a migration, then run `evlet migrate demo`.
 Released migration definitions must remain frozen. Instance data is outside this
 app, in `instances/demo/`. Never commit that data or secrets to the app repository.
 
-`{{name}}/hooks.py` declares models, actions, views, permissions and migrations.
+`{{name}}/hooks.py` declares models, actions, permissions and migrations.
 Read `evlet docs` for the package contract, dependencies, tasks and deployment.
 Tests run with `python -m pytest` after installing pytest in your environment.

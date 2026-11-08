@@ -76,7 +76,7 @@ def test_framework_pages_answer_404_on_a_sub_host(portal, path):
 
 
 @pytest.mark.parametrize('method,path', [('GET', '/api/project'), ('GET', '/api/schema'), ('GET', '/api/auth/users'), ('POST', '/api/auth/setup'),
-                                         ('GET', '/api/ui'), ('GET', '/api/_events/stream'), ('GET', '/api/_discovery'), ('POST', '/api/_draft/project'),
+                                         ('GET', '/api/_events/stream'), ('GET', '/api/_discovery'), ('POST', '/api/_draft/project'),
                                          ('POST', '/api/invoice/1/actions/send'), ('GET', '/api/_services/playground.anything'), ('GET', '/api')])
 def test_the_api_outside_the_scope_is_404_on_a_sub_host(portal, method, path):
     _, _, buyer = sign_in(portal, 'buyer', PORTAL)
@@ -275,15 +275,6 @@ def test_docs_move_and_limit_to_roles(portal):
             Docs(path=path)
     with pytest.raises(ValueError, match='crm.help and evlet.docs both want /help|evlet.docs and crm.help both want /help'):
         resolve_routes([('crm', AppDefinition(frontends=(Frontend('help', path='/help'),)))], None, {'docs': Docs(path='/help')})
-
-
-def test_view_registry_resolves_generated_routes_under_a_frontend_base(portal):
-    from evlet import User
-    schema = portal.business.schema(User(1, 'admin', 'admin'))
-    assert portal.ui.resolve('/app/customer/0000000000003', schema)['params'] == {'id': '0000000000003'}
-    assert portal.ui.resolve('/crm/customer/new', schema, frontend='crm.crm', base='/crm')['view']['kind'] == 'form'
-    with pytest.raises(LookupError):
-        portal.ui.resolve('/app/customer', schema, frontend='crm.crm', base='/crm')
 
 
 def test_sub_host_declarations_are_checked():

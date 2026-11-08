@@ -6,7 +6,6 @@ from uuid import uuid4
 import hashlib
 import inspect
 import json
-import re
 
 from .auth import AccessError
 from .identity import RecordId, path_id, text as text_id

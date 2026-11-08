@@ -145,6 +145,16 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-view-all:hover{text-decoration:underline}
 .ev-pager{display:flex;align-items:center;justify-content:flex-end;gap:2px;padding:6px 10px;border-top:1px solid var(--divider);font-size:12px}
 .ev-pager .num{margin-right:6px}
+/* A declared record layout (record-blocks.ts): blocks stack with the sections' spacing. */
+.ev-layout > .ev-block{margin-bottom:14px}
+.ev-html{padding:12px 16px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);font-size:13.5px;line-height:1.55}
+.ev-html .rt-view > :first-child{margin-top:0} .ev-html .rt-view > :last-child{margin-bottom:0}
+.ev-block-note{margin:0;padding:12px 16px}
+.ev-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;margin:0;background:var(--divider)}
+.ev-stat{padding:12px 16px;background:var(--surface)}
+.ev-stat dt{font-size:12px;color:var(--fg-3)}
+.ev-stat dd{margin:2px 0 0;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
+.ev-chart-stat{overflow:hidden}
 .ev-files{display:grid;gap:10px}
 .ev-print-body{display:grid;gap:12px;min-height:0}
 .ev-print-design{display:grid;gap:4px;font-size:13px;max-width:320px}

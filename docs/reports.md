@@ -70,7 +70,9 @@ that is not `autorun`.
 | `source` | `'model.field'`: the column, its values and its total are left out for anyone who cannot read that field |
 
 `Chart(type, x, y, label=None)`: `type` is `bar` or `line`, `x` a column for the labels and `y`
-one to four number columns. It draws the rows on the current page.
+one to four number columns. It draws the rows on the current page. The same class with `model=`
+is a record layout block over related records' measures ([ui.md](ui.md#record-layouts)); a
+report chart takes no `model`, `link` or `filters`, and no `'stat'` type.
 
 ## Running
 

@@ -19,12 +19,12 @@ from evlet import User
 from .models import Employee
 
 TEAM = (
-    # (name, reports to, account)
-    ('Mariam Haddad', None, 'manager'),
-    ('Omar Khalil', 'Mariam Haddad', 'member'),
-    ('Sara Nasser', 'Omar Khalil', None),
-    ('Ravi Menon', 'Mariam Haddad', None),
-    ('Priya Shah', None, 'outsider'),
+    # (name, reports to, account, department)
+    ('Mariam Haddad', None, 'manager', 'operations'),
+    ('Omar Khalil', 'Mariam Haddad', 'member', 'operations'),
+    ('Sara Nasser', 'Omar Khalil', None, 'operations'),
+    ('Ravi Menon', 'Mariam Haddad', None, 'finance'),
+    ('Priya Shah', None, 'outsider', 'sales'),
 )
 
 
@@ -33,9 +33,9 @@ def seed_team(app, password):
     ids, accounts = {}, {}
     # Employee keeps its history (track_changes), so records are written through a Context, as the demo.
     with app.business.context(User(0, 'team-demo', 'admin')) as context:
-        for name, manager, _ in TEAM:
-            ids[name] = context.create(Employee, full_name=name, reports_to=ids.get(manager))['id']
-    for name, _, account in TEAM:
+        for name, manager, _, department in TEAM:
+            ids[name] = context.create(Employee, full_name=name, reports_to=ids.get(manager), department=department)['id']
+    for name, _, account, _ in TEAM:
         if account is not None:
             user = app.business.auth.create_user(username=account, password=password, role='viewer')
             app.business.auth.link_user(user.id, Employee, ids[name], actor='team-demo')

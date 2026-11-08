@@ -2,7 +2,7 @@
 // most records first; relations without records are left out (the Related tab lists them). Five rows show at first
 // and "Show all" expands the rest in place.
 
-import { html, when, type Child } from '../dom';
+import { html, type Child } from '../dom';
 import type { Cell, Readable } from '../reactive';
 import { Icon } from '../ui/base';
 

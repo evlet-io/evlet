@@ -34,8 +34,8 @@ pinning keep the first column pinned. A child table's Focus view keeps the recor
 save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`, `list_tab`, `autosave`, `status`, `board`,
-`summary`, `side_blocks` and `panel`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+`layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`,
+`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks` and `panel`. See "What the model decides" in [ui-framework.md](ui-framework.md).
 
 ### Each fact once on the record page
 
@@ -107,6 +107,86 @@ not True or False fails when the registry is built.
   field and tab, and the Side panel card for the summary strip and blocks
   ([controls.md](controls.md)).
 
+### Record layouts
+
+`Meta.layout` can declare the whole record page instead of sections only. It is a list of `Tab`s,
+or of plain blocks when there are no tabs. A tab holds blocks in order:
+
+```python
+from evlet import Chart, Count, Html, Model, Ref, Related, Section, Tab
+
+
+class Employee(Model):
+    class Meta:
+        layout = (
+            Tab('Profile', (
+                Section('Employee', ('full_name', 'email', 'department', 'reports_to')),
+                Html('<p>Skills of <strong>{full_name}</strong> are kept with the record.</p>'),
+                'skills',                                  # a Table field, inside the tab
+            )),
+            Tab('Team', (
+                Chart('stat', y='people', model='employee', link='reports_to', label='Direct reports'),
+                Chart('bar', x='department', y='people', model='employee', link='reports_to'),
+                Related('employee', 'reports_to', label='Direct reports', fields=('full_name', 'email'), order='full_name'),
+                Related('employee', 'reports_to', label='Same department', filters={'department': Ref('department')}),
+            )),
+        )
+        measures = {'people': Count()}
+```
+
+| Block | What it shows |
+|---|---|
+| `Section(...)` or `('Title', fields)` | Fields, as before. |
+| A `Table` field name | The child table, inside the tab or the form instead of on its own tab. |
+| `Related(model, link=None, *, label, filters, fields, limit, order)` | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. |
+| `Html(content)` | Text from the app. `{field}` shows that field of the record. |
+| `Chart(type, x=None, y=..., *, model, link=None, filters, label)` | Declared measures of `model` over the records that point to this one: `'stat'` numbers, or `'bar'` or `'line'` grouped by `x` (`'status'`, `'due:month'`). |
+
+- **Tabs.** A `Tab(title, blocks, *, name=None, panel=True)` is named by its title in lowercase with
+  underscores (`Tab('Long text', ...)` is `long_text`), or by `name=`. `Meta.tabs`,
+  `Meta.default_tab`, `Meta.panel` and the address (`?tab=t-<name>`) use that name, and a tab named
+  `details` keeps the Details address. Layout tabs replace Details. Activity, Revisions and
+  Postings stay, and a Table that no block places keeps its own tab. Without tabs, the blocks show
+  on Details in order: a Table can sit between two sections of the form.
+- **Fields no section lists** show as Other, last on the first tab, as before.
+- **`link`** is the other model's Link field to this one. Leave it out when there is exactly one.
+- **Filters** use the list filter syntax on the other model's own fields, as a dict
+  (`{'status__ne': 'done'}`) or a list of conditions. `Ref('field')` compares with a field of this
+  record (eq, ne, gt, gte, lt, lte); the page reads it from the saved record. Paths and child-row
+  filters are refused.
+- **Charts** use only measures declared in the other model's `Meta.measures`, without `model=`
+  (model-level). Up to four. They read the aggregate route with the same filters, so they count
+  only records the person may read, and they draw like a report chart.
+- **Html** keeps to the rich text allowlist: paragraphs, h2 and h3 headings, lists, quotes, code,
+  strong, em, links and line breaks. Scripts, styles, frames, forms and event attributes fail when
+  the class is defined; anything else outside the list is dropped. Record values are always
+  inserted as text, never as markup. `{{` and `}}` are literal braces. It is the app's own trusted
+  text: never put user-entered HTML in it.
+- **The automatic Related tab and side block** turn off for a model whose layout declares a
+  `Related` block. Name `related` in `Meta.tabs` to keep the tab, or in `Meta.side_blocks` to keep
+  the side block. A model without Related blocks keeps both, as before.
+- **Permissions.** Related rows come from `GET /api/{model}` with the block's filters and
+  `[link, "eq", <record id>]`, and charts from `GET /api/{model}/aggregate`, so row scopes, field
+  permissions and filter checks apply as for any list. `/api/schema` leaves out a Related or Chart
+  block the role cannot use (the model, its Link, a filter field or every measure unreadable) and
+  cuts Related columns and order to readable fields.
+- **Loading.** A block asks for its rows when it first scrolls into view, and a save of the
+  record loads shown blocks again. A related record and a chart need a saved record, so a new
+  record shows only its sections, tables and Html.
+- **Side panel and phones.** In a list's side panel the tabs show as on the page, `panel=False`
+  on a `Tab` leaves it out, and the side column's blocks close the first tab. Blocks stack at
+  phone width, and the tabs move by keyboard (arrow keys) like the other record tabs.
+- **Errors.** An unknown model, field, Link or Table name, a bad filter or operator, a `Ref` to a
+  field the model does not show, an unknown measure or group field, a Tab inside a Tab, mixing
+  Tabs with plain blocks, two sections with one title, or a Tab named like a record tab fails
+  when the registry is built, naming the model, the tab and the block.
+
+`/api/schema` sends the layout as `record_layout`: `{"tabs": [{"name", "label", "blocks"}]}` or
+`{"blocks": [...]}`, each block with its `kind` (`section`, `table`, `related`, `html`, `chart`).
+Sections are named by title and keep their fields in `layout`, which every other client reads as
+before. A model whose layout has only sections has no `record_layout`, and its page is unchanged.
+The Playground's Employee page uses every block type.
+
 ### List tabs
 
 A list shows a row of tabs above the toolbar: All, then one tab per value of one field, each with
@@ -175,9 +255,6 @@ interface does not show them (owner decision 3 in [handoff-plan.md](internal/han
 
 | Python API | Status |
 | --- | --- |
-| Python pages: `PageView`, `ListView`, `FormView`, layouts, `ViewRegistry` extensions and `CustomComponent` | Compiled and served by `GET /api/ui` and `GET /api/ui/resolve`. A page route opens Docs in the browser. Use generated screens and `Meta` options instead |
-| The Playground's Projects demo and Layouts page (`examples/playground/ui.py`) | Registered as Python pages, so not rendered |
-| Native TS/JS panels (`evlet/native.py`, `views/` modules in an app) | Built, hashed and served from `/assets/apps/...` for signed-in users as before. No screen mounts them |
 | The older record-bound forms (`dialog: true` actions) | Run through their existing routes. Use [slips](slips.md) for forms |
 | Account management | `/api/auth/users` routes are unchanged. `/settings/accounts` shows a notice |
 
@@ -234,7 +311,6 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | `/eva`, `/eva/<chat>`, `/eva/tasks` | Eva's chat and scheduled tasks ([eva.md](eva.md)). Served only when config.py turns Eva on; the page asks `/api/_eva` and shows nothing of Eva to people without it |
 | `/reports`, `/reports/<name>` | The reports this role may run, and one report's view ([reports.md](reports.md)) |
 | `/?explorer=reports`, `data`, `dashboards` | The Explorer ([below](#explorer)) |
-| Registered Python page routes | Served, then open Docs |
 
 ## Sidebar and workspaces
 
@@ -318,8 +394,7 @@ Role, field and record permissions stay on the server.
 `App` is a local convenience entry point. Its default database is `.data/notes.sqlite3`;
 its default authentication allows initial setup and insecure cookies only on exact
 loopback origins on port 8000. A deployed site must supply its database and explicit
-`LocalAuth` configuration. Existing `Application(database, auth=..., ...)` consumers
-can pass `views=[...]` or `ui=ViewRegistry(...)` without changing model APIs.
+`LocalAuth` configuration.
 
 ## Records and concurrency
 
@@ -528,195 +603,27 @@ There is no OR group between rows, because the server combines filters only with
 are no saved filters yet, because Evlet has no place to keep them. The list tabs
 ([List tabs](#list-tabs)) stay above the toolbar.
 
-## Python page API
+## Python pages (removed in 0.4)
 
-This part documents the Python page API. It compiles and validates pages and serves
-them through `/api/ui`; the browser interface does not render them.
-
-### Two ways to define a page
-
-```python
-from evlet.ui import PageView, Column, Card, Text, Button, Navigate
-
-welcome = PageView(
-    name="welcome", route="/welcome", title="Welcome",
-    layout=Column(gap=16, children=[
-        Card(title="Your workspace", children=[
-            Text("Your application is ready.", id="greeting"),
-            Button("Open notes", on_click=Navigate.to_list(Note)),
-        ]),
-    ]),
-)
-```
-
-The same objects can be built incrementally:
-
-```python
-welcome = PageView(name="welcome", route="/welcome", title="Welcome")
-welcome.layout = Column(gap=16)
-card = welcome.add(Card(title="Your workspace"))
-card.add(Text("Your application is ready.", id="greeting"))
-card.add(Button("Open notes", on_click=Navigate.to_list(Note)))
-```
-
-`add`, `insert`, `find`, `remove` and `replace` operate during authoring.
-`SchemaCompiler().compile(view)` validates the tree and returns an immutable byte
-snapshot. `to_dict()` returns a fresh copy. Schemas contain data and registered
-operations, never callables or executable source. `class_name` maps to the browser
-class property. `style` accepts safe CSS property values.
-
-Assign explicit IDs to elements referenced by extensions or actions. Other IDs
-are derived deterministically from view names and positions. Inserting siblings
-can change positional IDs; explicit IDs remain stable. Duplicate IDs, reused or
-cyclic nodes, unsupported props/events/slots, unsafe values and missing event
-targets are rejected with errors identifying the component.
-
-### Contracts
-
-`ComponentDefinition` declares name, category, property types, defaults, events,
-slots, bindings, accessibility notes, renderer name and compatibility version.
-`ui.components.catalog()` returns inspectable metadata.
-
-`/api/schema` retains model schema version 1 and UI metadata version 1.
-`/api/ui` provides the separate version 1 component/view schema. Both endpoints
-are authenticated when the application uses authentication. Generated UI metadata
-is filtered by the same model and field policy as the existing schema endpoint.
-Custom pages can specify `roles=("admin",)` and `requires=(Customer,)`.
-A page's UI visibility is not a replacement for server-side authorization.
-
-`TextInput`, `NumberInput`, `CurrencyInput` and model `Field` definitions accept
-`prefix` and `suffix`. These are display labels; they do not alter stored values
-or convert currency.
-
-```python
-CurrencyInput(label="Amount", prefix="AED", bindings={"value": Bind("amount")})
-TextInput(label="Website", prefix="https://", bindings={"value": Bind("domain")})
-view.field("budget").prefix = "AED"
-```
-
-Python layouts include Row, Column, Grid, Stack, Container, Section, Card, Split,
-Panel and FormLayout. A FormLayout uses 12 columns; a Field can set `width=6` or
-`width=12`.
-
-### Page routes
-
-Generated page names keep the routes `/app/note`, `/app/note/new`, `/app/note/01hc1sd9vc1ye`
-and `/app/note/01hc1sd9vc1ye/view`. The last segment is the record's text id; an older
-bookmark with a decimal id (`/app/note/42`) opens the same record and the address changes
-to its text id. Explicit pages use their registered routes. Custom parameters
-use `/orders/{reference}` or `/orders/{id:int}` and are available in view state.
-The route resolver rejects ambiguous routes. Routes start with a fixed segment, and
-the first segments in `evlet.routing.RESERVED` (such as `/api`, `/app`, `/assets`,
-`/docs`, `/login`, `/reports`, `/settings`, `/health` and anything starting with `_`)
-are reserved, ignoring case. See [routing.md](routing.md).
-
-`Navigate.to`, `to_list`, `to_record`, `to_new` and `back` are page operations.
-`GET /api/ui/resolve?path=/app/note/01hc1sd9vc1ye` resolves only views available to the
-authenticated user. Record loading still performs record-level checks through the
-existing API.
-
-### State and events
-
-```python
-from evlet.ui import Bind, When, Select, TextInput
-
-page.state = {"kind": "Person", "company": ""}
-page.add(Select(label="Customer type", options=["Person", "Company"],
-                bindings={"value": Bind("kind")}))
-page.add(TextInput(
-    label="Company name", bindings={"value": Bind("company")},
-    visible=When.state("kind").eq("Company"),
-    required=When.state("kind").eq("Company"),
-))
-```
-
-View state is local to a view, record state to its document and component state to
-each component; event payloads are available as
-`When.state("value", scope="component")`. Application state is shared for the
-signed-in workspace. Session identity and tenant fields are read-only in declarative
-state.
-
-Expressions support equality, inequality, ordering, contains, `&`, `|`, `~` and
-conditional values with `.otherwise(yes, no)`. Use `When.field("status")` for
-record values. `view.computed` maps scoped paths to expressions; circular
-computed dependencies fail compilation. The compiler emits the dependency index.
-
-Events use registered operations: Navigate, Refresh, SetValue, ResetValue,
-OpenDialog, CloseDialog, ShowNotification, ExecuteAction and SubmitForm. A handler
-can contain an ordered list. Model actions go through authenticated server routes.
-UI-required or hidden fields never relax the server's validation rules.
-
-### Model views
-
-```python
-from evlet.ui import ListView, FormView, FormLayout, Field
-
-customer_list = ListView(
-    model=Customer, columns=["name", "email", "active"],
-    page_size=25, searchable=True, sortable=True, filterable=True,
-)
-customer_form = FormView(
-    model=Customer,
-    layout=FormLayout(children=[Field("name"), Field("email")]),
-)
-```
-
-Model views keep their generated name and route. Use PageView for a custom route.
-Generated forms preserve the model's named layout groups. The first group has
-ID `main_details`; later groups use `section_2`, `section_3`, and so on. The browser
-interface reads `Model.Meta` for its screens, not these views.
-
-### Extensions
-
-```python
-from evlet.ui import ViewRegistry, Card, Text
-
-ui = ViewRegistry([welcome])
-
-@ui.extend("customer.form", name="customer_help")
-def customer_help(view):
-    view.field("email").width = 12
-    view.add(Card(id="help", title="Contact details", children=[
-        Text("Use the address this customer checks.")
-    ]), after="main_details")
-```
-
-Order: framework defaults, application definitions, application extensions, site
-extensions. Extensions run in registration order within each layer. Repeated names
-in the same layer/target, missing targets and duplicate component IDs fail
-explicitly. A later assignment to a property intentionally overrides the earlier
-value. Applied extension metadata is inspectable in `/api/ui`.
-
-### Custom components
-
-```python
-from evlet.ui import ComponentDefinition, CustomComponent
-
-ui.components.register(ComponentDefinition(
-    name="Schedule", category="custom", renderer="Schedule", version=1,
-    props={"compact": "boolean"}, defaults={"compact": True},
-))
-page.add(CustomComponent("Schedule", compact=True))
-```
-
-The contract is validated and appears in `/api/ui`. The browser renderer registry
-(`registerComponent`, `registerLazyComponent`) belonged to the SolidJS interface and
-has been removed; no browser code renders custom components now.
+Evlet 0.4 removed the Python page API (`evlet.ui` `PageView`, `ListView`, `FormView`, layouts,
+`ViewRegistry` extensions and `CustomComponent`), its `GET /api/ui` and `GET /api/ui/resolve`
+routes, and native TS/JS panels from an app's `views/` folder. The browser never rendered them.
+Shape screens with generated views and `Model.Meta` options instead; the
+[upgrade note](../CHANGELOG.md) says what an app changes.
 
 ## Work across the UI boundary
 
-Browser code lives in `frontend/`. Python UI definitions, model screen metadata,
-compilation and browser routes live in `evlet/ui/`. `Application` delegates UI
-routes through one dispatch hook; record operations, authentication, permissions,
-storage and jobs remain with their existing services. Imports from
-`evlet.metadata` remain supported through a compatibility re-export.
+Browser code lives in `frontend/`. Model screen metadata and browser routes live in
+`evlet/ui/`. `Application` delegates browser routes through one dispatch hook; record
+operations, authentication, permissions, storage and jobs remain with their existing
+services.
 
 Recorded contracts, each compared with fresh authenticated ASGI responses by
 `tests/test_ui_contracts.py`:
 
 - `frontend/src/evlet/tests/api-fixture.json` and `screens-fixture.json`: the responses
   the browser tests replay (generator `scripts/generate_ui_framework_fixtures.py`).
-- `tests/fixtures/ui-fixture.json`: the Playground's `/api/ui` response and model schema.
+- `tests/fixtures/ui-fixture.json`: the Playground's model schema.
 - `tests/fixtures/record-fixture.json`: a paginated record list, a record with child
   rows, and an event page. Only the opaque random cursor value is normalized.
 

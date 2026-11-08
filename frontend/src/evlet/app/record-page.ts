@@ -7,14 +7,14 @@
 import { html, match, when, type Child } from '../dom';
 import { ApiError, ValidationError, type RecordData } from '../api';
 import { legacyRecordId, recordId } from '../ids';
-import { batch, cell, derive, effect, onCleanup, runWithOwner, untrack, type Readable } from '../reactive';
+import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Readable } from '../reactive';
 import type { Route } from '../router';
 import { RecordStore, type Field, type Rules } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
-import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, stateTint, statusTint, type FieldLike } from '../ui/fields';
+import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
 import { autofocusForm, initialFocusField } from '../ui/autofocus';
 import { flowGrid, FoldSection, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
 import { NoteComposer } from './composer';
@@ -30,6 +30,8 @@ import { extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, keyFi
   summaryFields, titleOf, LIST_KEYS, panelView, type PanelView, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
+import { declaresRelated, HtmlContent, layoutBlocks, layoutTabId, MeasureChart, placedTables, RelatedRecords, type BlockRecord } from './record-blocks';
+import type { LayoutBlock, LayoutTab } from '../model/schema';
 import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
 import { filterFields } from './filters';
 import { Revisions } from './revisions';
@@ -196,7 +198,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const has = (field: string) => store.root.fields.has(field);
   const sequence = sequenceField(model), numbered = numberField(model);
   const stateValue = state ? () => String(store.field(state.field).value.get() ?? '') : () => '';
-  const recordId = () => store.id;
 
   // ---------- title and crumbs ----------
 
@@ -612,15 +613,25 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const tables = (model.children ?? []).filter(child => store.root.tables.has(child.name));
   const journal = Boolean(model.journal) && !isNew;
   const relations = !isNew ? (model.relations ?? []).filter(relation => ctx.schema.schema.models.some(item => item.name === relation.model)) : [];
+  // A declared record layout (Meta.layout with Tabs or blocks, record-blocks.ts). Its Tabs replace Details, a Table it
+  // places has no tab of its own, and once it lists related records itself the automatic Related tab and side block
+  // are off, unless Meta.tabs or Meta.side_blocks names 'related'.
+  const layout = model.record_layout ?? null;
+  const placed = placedTables(layout ?? undefined);
+  const ownRelated = declaresRelated(layout ?? undefined);
+  const relatedTab = !ownRelated || (model.tabs ?? []).includes('related');
+  const relatedSide = !ownRelated || (model.side_blocks ?? []).includes('related');
+  const layoutTabs = layout?.tabs ? layout.tabs.filter(tab => tabBlocks(tab.blocks).length) : null;
+  const tabTables = tables.filter(child => !placed.has(child.name));
   // Nothing is asked for until the Related block or a Related tab section shows (related-data.ts).
   const related = relatedPages(relations, (relation, page) => ctx.api.related(model.name, store.id!, relation, page), store.etag,
     error => error instanceof ApiError ? error.message : 'Not loaded.');
   const tabItems: TabItem[] = [
     ...(journal ? [{ id: 'activity', label: 'Activity' }] : []),
-    { id: 'details', label: 'Details' },
+    ...(layoutTabs ? layoutTabs.map(tab => ({ id: layoutTabId(tab), label: tab.label })) : [{ id: 'details', label: 'Details' }]),
     ...(model.lifecycle && !isNew ? [{ id: 'revisions', label: 'Revisions' }] : []),
-    ...tables.map(child => ({ id: `t-${child.name}`, label: child.label, count: () => store.table(child.name).rows.get().length })),
-    ...(relations.length ? [{ id: 'related', label: 'Related' }] : []),
+    ...tabTables.map(child => ({ id: `t-${child.name}`, label: child.label, count: () => store.table(child.name).rows.get().length })),
+    ...(relations.length && relatedTab ? [{ id: 'related', label: 'Related' }] : []),
   ];
   // A record that has posted nothing yet still lists each target, with zero rows.
   const postings = !isNew && model.effects?.length ? derive(() => extras.get()._effects?.some(item => item.rows || item.reversals) ? extras.get()._effects! : null) : null;
@@ -649,6 +660,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const tabs = Tabs({ tabs: tabItems, active, label: `${model.label} sections`, doc: true, idPrefix: `ev-rec-${name}` });
 
   const details = () => {
+    if (layout) return layoutContent(layout.blocks ?? [], true);
     const groups = panelSections();
     // In a side panel, only tables whose tab it shows.
     const linked = tables.filter(child => !shows || shows.tab(`t-${child.name}`));
@@ -671,6 +683,69 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     // panel leaves anything out, the full page is one click away.
     return panel ? [...sectionsShown, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relations, related, active, shows)}</div>`, fullPageNote] : sectionsShown;
   };
+  // ---------- a declared record layout ----------
+
+  // What a block reads of this record: saved values for filters, shown values for Html, and the etag to reload on.
+  const blockRecord: BlockRecord = {
+    id: String(store.id), version: store.etag,
+    saved: field => (options.detail.get() as Record<string, unknown> | null)?.[field] ?? null,
+    current: field => has(field) ? view(field).value.get() : (options.detail.get() as Record<string, unknown> | null)?.[field] ?? null,
+  };
+  // Sections the layout does not place (Other, or one a Controls layout added) go last on the first tab.
+  function unplaced(): LayoutBlock[] {
+    const named = new Set(layout ? layoutBlocks(layout).flatMap(block => block.kind === 'section' ? [block.label] : []) : []);
+    return sections(model).filter(section => !named.has(section.label)).map(section => ({ kind: 'section', label: section.label }));
+  }
+  // Related records and charts need a saved record; a Table shows where the side panel shows its tab.
+  function blockShown(block: LayoutBlock) {
+    return block.kind === 'related' || block.kind === 'chart' ? !isNew
+      : block.kind === 'table' ? tables.some(child => child.name === block.name) && (!shows || shows.tab(`t-${block.name}`)) : true;
+  }
+  function sectionShown(label: string) { return panelSections().some(section => section.label === label); }
+  /** The blocks of one tab (or of a layout without Tabs) this record and this view show. */
+  function tabBlocks(blocks: LayoutBlock[], first = false): LayoutBlock[] {
+    return [...blocks, ...(first ? unplaced() : [])].filter(block => block.kind === 'section' ? sectionShown(block.label) : blockShown(block));
+  }
+  const layoutContent = (blocks: LayoutBlock[], first: boolean) => {
+    const shown = tabBlocks(blocks, first);
+    const groups = panelSections(), all = sections(model);
+    const lastSection = shown.map(block => block.kind).lastIndexOf('section');
+    // Tables the layout does not place keep their tabs; the first tab links to them, as Details does.
+    const links = first && !isNew ? tabTables.filter(child => !shows || shows.tab(`t-${child.name}`)).map(child => html`<button type="button" class="fs-link" on:click=${() => active.set(`t-${child.name}`)}>${IconTile('rows-3', { tint: look.tint, size: 30 })}
+      <span class="grow"><b>${() => { const count = store.table(child.name).rows.get().length; return count ? `${count} ${count === 1 ? 'row' : 'rows'}` : `No ${child.label.toLowerCase()} yet`; }}</b>
+      <span class="muted">${child.label}</span></span>${Icon('chevron-right', { size: 'sm', className: 'muted' })}</button>`) : [];
+    const parts = shown.map((block, position) => {
+      switch (block.kind) {
+        case 'section': {
+          const section = groups.find(group => group.label === block.label)!, index = all.findIndex(group => group.label === block.label);
+          if (isNew) {
+            const fields = section.fields.filter(meta => (!meta.read_only || meta.name === model.naming?.field) && !meta.compute && !isStateField(model, meta)).map(meta => view(meta.name));
+            return fields.length ? FoldSection({ title: section.label, fields, folds, ...foldOf(section, index),
+              body: flowGrid(fields.map(field => ({ node: fieldFor({ field, links: ctx.links }), wide: Boolean(field.meta.wide ?? field.meta.type === 'longtext') })), section.flow) }) : null;
+          }
+          return FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
+            extra: position === lastSection && links.length ? links : null, flow: section.flow, fold: { folds, ...foldOf(section, index) } });
+        }
+        case 'table': return html`<div class="ev-block ev-table-block">${tablePanel(tables.find(child => child.name === block.name)!)}</div>`;
+        case 'related': return RelatedRecords(ctx, block, blockRecord);
+        case 'html': return HtmlContent(ctx, model, block, blockRecord);
+        case 'chart': return MeasureChart(ctx, block, blockRecord);
+      }
+    });
+    const content = html`<div class=${isNew ? 'ev-new-form ev-layout' : 'ev-layout'}>${parts}${lastSection < 0 && links.length ? html`<div class="ev-block">${links}</div>` : null}</div>`;
+    // In a side panel the first tab also closes with the side column's blocks, as Details does.
+    return panel && first ? [content, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relatedSide ? relations : [], related, active, shows)}</div>`, fullPageNote] : content;
+  };
+  /** The tab a field's section is on: Details without Tabs. */
+  const fieldTab = (name: string) => {
+    if (!layoutTabs) return 'details';
+    const label = sections(model).find(section => section.fields.some(meta => meta.name === name))?.label;
+    const tab = layoutTabs.find(item => item.blocks.some(block => block.kind === 'section' && block.label === label)) ?? layoutTabs[0];
+    return layoutTabId(tab);
+  };
+  /** Tabs that show fields: the Key fields side block hides on them. */
+  const formTabs = new Set(layoutTabs ? layoutTabs.filter((tab, index) => tabBlocks(tab.blocks, index === 0).some(block => block.kind === 'section')).map(layoutTabId) : ['details']);
+
   // Sections people open and close (evlet.Section), remembered per user and model by title; the app's
   // collapsed value is where they start. In the narrow side panel every section can close.
   const folds = new Folds(prefs.formSections(name), isNew);
@@ -680,14 +755,18 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // A refused save: open the sections with errors, then scroll to and focus the first one.
   const showErrors = () => {
     const fields = sections(model).flatMap(section => section.fields).filter(meta => has(meta.name)).map(meta => view(meta.name));
-    if (!fields.some(field => field.error.peek())) return;
-    if (active.peek() !== 'details') active.set('details');
+    const failed = fields.find(field => field.error.peek());
+    if (!failed) return;
+    const tab = fieldTab(failed.meta.name);
+    if (active.peek() !== tab) active.set(tab);
     revealFirstError(frame, fields);
   };
   // A #field address (/app/invoice/7#due) opens that field's section and focuses it.
-  const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target)) { if (active.peek() !== 'details') active.set('details'); revealField(frame, target); } };
+  const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target)) { const tab = fieldTab(target); if (active.peek() !== tab) active.set(tab); revealField(frame, target); } };
   if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
   const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
+  // The first layout Tab this view shows: it takes the unplaced sections and, in a side panel, the side column's blocks.
+  const firstTab = (): LayoutTab | undefined => layoutTabs?.find(tab => tabItems.some(item => item.id === layoutTabId(tab)));
   const tablePanel = (child: { name: string; label: string }) => panel ? ChildRows({ table: store.table(child.name), title: child.label,
     locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, onOpenFull: () => expand(`t-${child.name}`),
     totals: model.fields.filter(meta => (meta.compute as any)?.$expr === 'aggregate' && (meta.compute as any).table === child.name && has(meta.name))
@@ -701,10 +780,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   const panels = [
     journal ? TabPanel(tabs, 'activity', active, () => Activity(ctx, model, store)) : null,
-    TabPanel(tabs, 'details', active, details),
+    ...(layoutTabs ? layoutTabs.map(tab => TabPanel(tabs, layoutTabId(tab), active, () => layoutContent(tab.blocks, tab === firstTab()))) : [TabPanel(tabs, 'details', active, details)]),
     model.lifecycle && !isNew ? TabPanel(tabs, 'revisions', active, () => Revisions(ctx, model, store.id!)) : null,
-    ...tables.map(child => TabPanel(tabs, `t-${child.name}`, active, () => tablePanel(child))),
-    relations.length ? TabPanel(tabs, 'related', active, () => Related(ctx, model, store.id!, relations, related)) : null,
+    ...tabTables.map(child => TabPanel(tabs, `t-${child.name}`, active, () => tablePanel(child))),
+    relations.length && relatedTab ? TabPanel(tabs, 'related', active, () => Related(ctx, model, store.id!, relations, related)) : null,
     postings ? TabPanel(tabs, 'postings', active, () => Postings(ctx, postings)) : null,
   ];
 
@@ -722,7 +801,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- side panel ----------
 
-  const side = isNew || panel ? undefined : SidePanel(ctx, model, store, view, relations, related, active);
+  const side = isNew || panel ? undefined : SidePanel(ctx, model, store, view, relatedSide ? relations : [], related, active, null, formTabs);
 
   // A new record focuses its first editable field, in an open section of the Details tab: when it opens, and
   // again once its draft is restored or set aside (the restore bar held the focus).
@@ -790,7 +869,7 @@ const SIDE_BLOCKS = ['key_fields', 'related', 'files', 'info'] as const;
 type SideBlockName = typeof SIDE_BLOCKS[number];
 
 function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, relations: NonNullable<ScreenModel['relations']>, related: (name: string) => RelatedPage,
-  active: { get(): string; set(value: string): void }, panel: PanelView | null = null): Child {
+  active: { get(): string; set(value: string): void }, panel: PanelView | null = null, formTabs: ReadonlySet<string> = new Set(['details'])): Child {
   // In a list's side panel (narrow): what model.panel lets it show, in its order.
   const narrow = panel !== null;
   const has = (field: string) => store.root.fields.has(field);
@@ -799,8 +878,8 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
     // the fields already are. A narrow panel shows key fields in its header.
     key_fields: () => {
       const keys = narrow ? [] : keyFields(model).filter(meta => has(meta.name));
-      return keys.length ? when(() => active.get() !== 'details', () => SideBlock({ title: 'Key fields',
-        action: html`<button type="button" class="h-link" on:click=${() => active.set('details')}>All fields</button>`,
+      return keys.length ? when(() => !formTabs.has(active.get()), () => SideBlock({ title: 'Key fields',
+        action: html`<button type="button" class="h-link" on:click=${() => active.set([...formTabs][0] ?? 'details')}>All fields</button>`,
         body: KeyValueList(keys.map(meta => view(meta.name)), { links: ctx.links }) })) : null;
     },
     // Only relations with records; empty ones are listed in the Related tab. A narrow panel has the Related tab only.

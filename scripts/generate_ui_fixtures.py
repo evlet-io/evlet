@@ -1,4 +1,4 @@
-"""Record the Playground's Python page (/api/ui) and record contracts through real ASGI routes.
+"""Record the Playground's model schema and record contracts through real ASGI routes.
 
 Writes tests/fixtures/ui-fixture.json and record-fixture.json; tests/test_ui_contracts.py compares.
 Run from the repository root: .venv/bin/python -m scripts.generate_ui_fixtures
@@ -44,7 +44,6 @@ async def collect(app):
     login, headers = await request('POST', '/api/auth/login', {'username': 'owner', 'password': password})
     cookie = headers[b'set-cookie'].decode().split(';', 1)[0]
     csrf = login['csrf']
-    ui, _ = await request('GET', '/api/ui')
     schema, _ = await request('GET', '/api/schema')
     await request('POST', '/api/customer', {'customer_name': 'Acme', 'email': 'hello@example.test'})
     created, _ = await request('POST', '/api/project', {
@@ -57,7 +56,7 @@ async def collect(app):
     # Cursors are opaque random tokens. Preserve their format, normalize only the value.
     assert re.fullmatch('[0-9a-f]{48}', events['cursor'])
     events['cursor'] = '0' * 48
-    return {'ui-fixture.json': {'ui': ui, 'models': schema['models']},
+    return {'ui-fixture.json': {'models': schema['models']},
             'record-fixture.json': {'list': records, 'detail': detail, 'events': events}}
 
 

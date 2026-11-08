@@ -80,6 +80,13 @@ changes one discovered relation:
   leading `-` for descending order. Reference fields cannot be used.
 - `hidden=True` removes the relation from the schema and the related route.
 
+In `Meta.relations`, `Related` names its Link and takes no `filters` or `fields`. The same class
+is also a record layout block in `Meta.layout`, where `link` may be left out and `filters`, `fields`
+and `limit` shape one list on the record page; see [ui.md](ui.md#record-layouts). A model whose
+layout declares a `Related` block no longer shows the automatic Related tab and side block unless
+`Meta.tabs` or `Meta.side_blocks` names `related`; the relations stay in the schema and the related
+route.
+
 Declared relations come first, in the order of `Meta.relations`; the others follow
 by name. Registration fails when a `Related` names something that is not a Link
 from a root model to this model, names a hidden Link, is declared twice, orders by

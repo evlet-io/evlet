@@ -39,7 +39,7 @@ evlet dev --instance local --watch
 ```
 
 A new app has one Python package root: `apps/selling/__init__.py`, `models/`,
-and `pyproject.toml`. `reports/`, `services/`, `migrations/` and `views/` are
+and `pyproject.toml`. `reports/`, `services/` and `migrations/` are
 optional. Its generated setuptools configuration supports ordinary imports,
 editable installation, source distributions and wheels without an import-path
 change in the caller. Build/install prepare declared Python dependencies and
@@ -276,27 +276,6 @@ to the external receiver. Leases fence completion; they cannot undo an external
 effect or guarantee exactly-once delivery. Retries and receiver deduplication
 remain necessary. No new broker or worker service is required.
 
-## Native extensions
-
-Optional `views/**/*.ts` or `.js` modules export
-`extension = {name, target, override?, render(context)}`. Node 24 strips TS types
-and prepares an app-owned ESM module graph. Relative imports require explicit
-`.ts/.js` extensions. The deliberately small host contract does not compile JSX
-or resolve arbitrary npm packages; use a compatible prebuilt JS module for those
-assets. No separate frontend app, SSR host or alternate framework is introduced.
-
-`render` returns a title, escaped text `content` or a native neutral `layout`,
-optional initial `state`, button `actions` and `dispose()`. Native layouts reuse
-the existing component/operation renderer, including tables, menus and dialogs.
-The context provides the current readable record/report result, authenticated
-`request`, notifications and the framework dialog controller. Targets include
-model/report IDs and `model.resource.dialog_action`. Identical target/name slots
-need `override=true`; dependency order determines layering. Presentation never
-changes backend permissions or validation. Assets use the same generation hash
-as metadata, require authenticated target access, and expose only allowlisted
-client modules. Python sources and source maps are not served. Cleanup runs on
-unmount. See `examples/amendment/views/models/sales_order.ts`.
-
 ## Upgrade and recovery
 
 Keep existing migrations frozen. Moving an app from nested to flat layout changes
@@ -319,7 +298,7 @@ change.
 
 `examples/amendment` is a flat, installable app with masters, Sales Order/owned
 items, exact totals, stock preview, a source-bound Work Order planning dialog,
-manual/automatic reports, nested services, cron and a native panel. It is a
+manual/automatic reports, nested services and cron. It is a
 framework fixture, not a complete manufacturing product. Planning rechecks row
 ownership, item/company/unit/BOM, remaining non-cancelled commitments, source
 revision and idempotency, then creates all selected Work Orders together.

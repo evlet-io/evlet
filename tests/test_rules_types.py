@@ -151,7 +151,7 @@ def test_initial_and_rules_join_the_dependency_order_and_cycles_fail():
                                                   'flag': Boolean(compute=F('shift.starts') == None)}))  # noqa: E711
 
 
-def test_document_sessions_report_rule_states_and_observe_them():
+def test_document_sessions_report_rule_states():
     plan = Registry(Deal, Client, Product).plans[Deal]
     document = Document(plan, {'stage': 'open', 'reason': 'dropped'})
     root = document.root.handle
@@ -159,15 +159,10 @@ def test_document_sessions_report_rule_states_and_observe_them():
     assert document.rule_states(root)['reason'] == {'applies': False, 'required': False, 'locked': False}
     # Undecided rules fail closed: no client means credit_days is unknown, so the note is required.
     assert document.rule_states(root)['note']['required'] is True
-    seen = []
-    stop = document.observe_rules(root, seen.append)
     document.set(root, 'stage', 'lost')
-    assert seen[-1]['reason'] == {'applies': True, 'required': True, 'locked': False}
-    document.set(root, 'title', 'unrelated')
-    assert len(seen) == 1
-    stop()
+    assert document.rule_states(root)['reason'] == {'applies': True, 'required': True, 'locked': False}
     document.set(root, 'stage', 'won')
-    assert len(seen) == 1 and document.rule_states(root)['discount']['locked'] is True
+    assert document.rule_states(root)['discount']['locked'] is True
 
 
 # initial= over HTTP
@@ -320,6 +315,18 @@ class Contact(Model):
     price = Currency(currency='AED')
     code = Text(default='USD')
     local = Currency(currency='code')
+
+
+def test_time_and_datetime_refuse_hour_24_on_every_python():
+    from evlet import DateTime
+    assert Time().validate('00:00') == time(0, 0) and Time().validate('23:59:59') == time(23, 59, 59)
+    for bad in ('24:00', '24:00:00', '9:30', '12:60', '12:00:60', '12:00:00.5', '1200'):
+        with pytest.raises(ValueError):
+            Time().validate(bad)
+    assert DateTime().validate('2026-01-01T23:59:59Z').hour == 23
+    for bad in ('2026-01-01T24:00:00Z', '2026-01-01 24:00+04:00', '2026-01-01T9:00:00Z', '2026-01-01T10:00:00'):
+        with pytest.raises(ValueError):
+            DateTime().validate(bad)
 
 
 def test_new_types_validate_and_serialize():

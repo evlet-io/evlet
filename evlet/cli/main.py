@@ -160,7 +160,6 @@ def parser():
     dev_link.add_argument('--playground', action='store_true', help='Use the running evlet playground even inside a project')
     for command in commands.choices.values():
         command.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
-    commands.add_parser('new', help='Create the original standalone starter', add_help=False)
     from .connector import add_commands
     add_commands(commands)
     return result
@@ -168,9 +167,6 @@ def parser():
 
 def main(argv=None):
     values = list(sys.argv[1:] if argv is None else argv)
-    if values and values[0] == 'new':
-        from .legacy import main as legacy
-        return legacy(values)
     command_parser = parser()
     args = command_parser.parse_args(values)
     if args.command in ('login', 'logout', 'describe', 'mcp'):

@@ -87,12 +87,26 @@ Do not delete rows from `evlet_framework_migrations` or edit the `evlet` lock en
 to force startup.
 
 Applications started outside an instance, such as `evlet playground`, tests and
-the `evlet new` starter, apply framework migrations themselves when they start, so
+an `Application` built in your own code, apply framework migrations themselves when they start, so
 a new database needs no extra step. Processes that start together take turns; the
 first applies the steps and the others find them applied. Do not keep data you care about in those.
 
 Main uses a development version between releases; a source build is not the same
 artifact as the last PyPI release.
+
+### From 0.3 to 0.4
+
+Evlet 0.4 removes code the browser never used. Check each app before you upgrade:
+
+- Search the app for `evlet.ui` imports. Delete `PageView`, `ListView`, `FormView` and
+  `ViewRegistry` definitions and move what they set into `Model.Meta`: `layout` with
+  `Section(...)`, `list_fields`, `tabs`, `default_tab` and `open_in`. Controls, Export as code
+  writes these for an instance's layout and list overrides.
+- An `AppDefinition(views=views)` whose `views` is empty keeps working. Remove `ui=` and any
+  non-empty `views=`; Evlet refuses them at start-up.
+- Delete `.ts` and `.js` panel modules under `views/` and their `package-data` entry.
+- Replace `from evlet.metadata import ...` with `from evlet.ui.metadata import ...`. That module
+  is internal, so prefer `Registry.ui_schema()` or `/api/schema` where they cover the need.
 
 ## Retire an app
 

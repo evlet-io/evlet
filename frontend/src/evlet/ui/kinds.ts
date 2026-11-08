@@ -112,8 +112,6 @@ export function parseDuration(text: string): number {
 
 // ---------- dates and times ----------
 
-const pad = (number: number) => String(number).padStart(2, '0');
-
 /** The person's date format, as typed in a message: DD-MM-YYYY, MM/DD/YYYY or YYYY-MM-DD. */
 const dayHint = () => ({ DMY: 'DD-MM-YYYY', MDY: 'MM/DD/YYYY', YMD: 'YYYY-MM-DD' })[dateOrder()];
 

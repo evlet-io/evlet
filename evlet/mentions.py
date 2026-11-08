@@ -15,7 +15,7 @@ import time
 
 from .auth import AccessError, User
 from .database import NotFoundError
-from .models import ValidationError
+from .models import ValidationError, checked_body
 
 KIND = 'mention'
 PAGE = 50
@@ -141,8 +141,7 @@ def route(business, scope, body, user):
         if path == '/api/_inbox/count' and method == 'GET':
             return 200, {'unread': unread(tx.connection, user.id)}, []
         if path == '/api/_inbox/read' and method == 'POST':
-            if not isinstance(body, dict) or set(body) - {'ids', 'all'}:
-                raise ValidationError({'ids': 'Send ids or all'})
+            checked_body(body, {'ids', 'all'}, 'Send ids or all', field='ids')
             now = int(time.time())
             if body.get('all') is True:
                 tx.connection.execute('UPDATE evlet_inbox SET read_at=? WHERE user_id=? AND read_at IS NULL', (now, user.id))

@@ -16,7 +16,7 @@ from tempfile import TemporaryDirectory
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
                    Move, MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome,
-                   Report, Column, Chart, Count)
+                   Report, Column, Chart, Count, Html, Ref, Section, Tab)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
 from evlet.audit import fixed_times
@@ -615,10 +615,86 @@ def record_reports(folder):
     return out
 
 
+class Site(Model):
+    """For the screens: a record layout with Tabs, a placed Table, Related, Html and Chart blocks."""
+    permissions = ALL
+    title = Text(required=True, label='Site name')
+    region = Select(('north', 'south'), default='north')
+    notes = LongText()
+
+    class Visit(Child):
+        note = Text(default='')
+        hours = Decimal(default=0, minimum='0')
+
+    visits = Table(Visit)
+
+    class Meta:
+        layout = (
+            Tab('Overview', (
+                Section('Site', ('title', 'region')),
+                Html('<p>Work at <strong>{title}</strong> in {region}. Write {{braces}} as they are.</p>'),
+                Chart('stat', y=('hours', 'jobs'), model='job', label='Totals'),
+                Chart('bar', x='status', y='hours', model='job', label='Hours by status'),
+            )),
+            Tab('Work', (
+                Related('job', label='Open jobs', filters={'status__ne': 'done'}, fields=('title', 'status', 'hours'), limit=2, order='-hours'),
+                Related('job', label='Same region', filters={'region': Ref('region')}),
+                'visits',
+            )),
+        )
+
+
+class Job(Model):
+    permissions = ALL
+    site = Link(Site, required=True)
+    title = Text(required=True)
+    status = Select(('open', 'done'), default='open')
+    region = Select(('north', 'south'), default='north')
+    hours = Decimal(default=0, minimum='0')
+
+    class Meta:
+        measures = {'hours': Sum('hours'), 'jobs': Count()}
+
+
+def record_layouts(folder):
+    """Responses a declared record layout reads: the schema, a record whose title holds markup, its related
+    jobs through the list route and its charts through the aggregate route."""
+    database = Database(folder / 'layouts.sqlite3', Registry(Site, Job))
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    app = Application(database, auth=auth)
+    app.initialize()
+    http(app, 'POST', '/api/auth/setup', {'username': 'owner', 'password': PASSWORD})
+    status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
+    cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
+    admin = lambda method, path, body=None: http(app, method, path, body, cookie=cookie, csrf=csrf)  # noqa: E731
+    out = {}
+
+    def keep(name, response):
+        status, payload, headers = response
+        out[name] = {'status': status, 'body': payload, 'etag': headers.get(b'etag', b'').decode() or None}
+        return payload
+
+    keep('layout_schema', admin('GET', '/api/schema'))
+    site = keep('layout_site', admin('POST', '/api/site', {'title': 'Dock <script>alert(1)</script> & Co', 'region': 'north',
+                                                           'children': {'visits': [{'_key': 'visit-1', 'note': 'Survey', 'hours': '2'}]}}))
+    keep('layout_site_detail', admin('GET', f"/api/site/{site['id']}"))
+    for title, status, region, hours in (('Survey', 'open', 'north', '3.5'), ('Design', 'open', 'south', '8'),
+                                         ('Build', 'done', 'north', '12'), ('Review', 'open', 'north', '1.5')):
+        assert admin('POST', '/api/job', {'site': site['id'], 'title': title, 'status': status, 'region': region, 'hours': hours})[0] == 201
+    query = lambda filters: quote(json.dumps(filters))  # noqa: E731
+    keep('layout_open_jobs', admin('GET', f"/api/job?limit=2&offset=0&order_by=-hours&filters={query([['site', 'eq', site['id']], ['status', 'ne', 'done']])}"))
+    keep('layout_same_region', admin('GET', f"/api/job?limit=5&offset=0&filters={query([['site', 'eq', site['id']], ['region', 'eq', 'north']])}"))
+    keep('layout_totals', admin('GET', f"/api/job/aggregate?measures=hours,jobs&filters={query([['site', 'eq', site['id']]])}"))
+    keep('layout_by_status', admin('GET', f"/api/job/aggregate?measures=hours&group_by=status&filters={query([['site', 'eq', site['id']]])}"))
+    database.close()
+    return out
+
+
 def generate():
     """Both fixtures, recorded from fresh databases. Ids count up per table so the recording is stable."""
     with TemporaryDirectory() as directory, sequential_ids(), fixed_times():
-        return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory)), **record_reports(Path(directory))}}
+        return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory)), **record_reports(Path(directory)),
+                                                                          **record_layouts(Path(directory))}}
 
 
 def main():

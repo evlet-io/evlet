@@ -329,6 +329,17 @@ def random_scenario(seed, steps=40):
     return ('invoice-random-' + str(seed), 'invoice', data, commands)
 
 
+def sources(document, row=None, *, identities=True):
+    """A document's source-only data, to rebuild it from scratch and compare with the incremental result."""
+    row = row or document.root
+    result = dict(row.values)
+    if identities:
+        result.update({**({'id': row.id} if row.id is not None else {}), **({'_key': row.key} if row.parent else {})})
+    if row.children:
+        result['children'] = {table: [sources(document, item, identities=identities) for item in items] for table, items in row.children.items()}
+    return result
+
+
 def handle(document, label):
     return document.root.handle if label == '' else document.find(label)
 

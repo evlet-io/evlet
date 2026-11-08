@@ -138,6 +138,10 @@ trusted code catches a failed operation inside one `Context` and the transaction
 commits, the failed operation leaves nothing behind: no counter step, no state change, no
 number. A unique or foreign key violation inside an operation is raised as `ConflictError`.
 
+A move's `run` method that writes other rows through `self.context.session` shares this
+transaction and savepoint: if the move fails, those rows go too, and the number is not used up
+([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+
 ### Clashes
 
 A number can already be taken in its scope, for example after a repair inside

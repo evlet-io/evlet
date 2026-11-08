@@ -8,29 +8,18 @@ secrets and connector secrets (see [Controls](controls.md#connectors-and-secrets
 writing our own cipher is not an option. The connector calls the same authenticated HTTP routes used by
 the browser, so tenant, account, model, row, field, and action checks stay on the
 server. It has no database handle, arbitrary SQL, Python execution, or file tool.
+No context it reaches opens the transaction session of a move or action handler
+([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 The same tools are also served over HTTP at `/_/mcp` with OAuth sign-in; see
 [Remote MCP with OAuth](#remote-mcp-with-oauth).
 
 ## Start an application
 
-From an environment with the framework and Uvicorn installed:
-
-```bash
-python -m evlet new ./my-app
-cd my-app
-python -m uvicorn app:create_app --factory --host 127.0.0.1 --port 8000
-```
-
-The destination must not exist. This writes `models.py`, `app.py`, `.gitignore`,
-and a README. `Item` demonstrates required text, a boolean default, and neutral
-list/search metadata. It uses public framework exports, persists in `.data/`, and
-starts with local authentication. No account or password is generated.
-
-Run `npm --prefix frontend run dev` from the framework checkout in another terminal.
-Open `http://127.0.0.1:5173`, create your administrator, and add an Item. The browser
-interface discovers the new model without a custom component. Ports 8000 and
-5173 must be available. This starter is for local development; its exact loopback
-origins, setup endpoint, and non-Secure cookies are not deployment configuration.
+Create a project, an app and a site with `evlet setup` and start it with `evlet dev`, as
+[getting-started.md](getting-started.md) shows. Open the site, create your administrator,
+and add an Item. The browser interface discovers the new model without a custom component.
+The development server is for local work; its loopback origins and setup endpoint are not
+deployment configuration.
 
 For application changes:
 

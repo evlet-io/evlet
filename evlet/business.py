@@ -255,12 +255,6 @@ class Business:
             self.prints.initialize()
         if self.events:
             self.events.initialize()
-        if getattr(self, 'ui', None):
-            from .auth import User
-            with using(self.database):
-                for role in self.policy.roles:
-                    user = User(0, 'schema', role)
-                    self.ui.compile(self.schema(user), user)
         if self.jobs:
             self.jobs.policy = self.policy
             self.jobs.initialize()
@@ -352,12 +346,6 @@ class Business:
             result['printing'] = {'available': available()}
         if getattr(self, 'slips', None) and self.slips.slips:
             result['slips'] = self.slips.schema(user)
-        if getattr(self, 'build_manifest', None) and self.build_manifest.get('native', {}).get('panels'):
-            result['native_panels'] = []
-            from .native import can_access
-            for panel in self.build_manifest['native']['panels']:
-                if can_access(self, panel['target'], user):
-                    result['native_panels'].append({**panel, 'url': '/assets/apps/' + self.build_manifest['fingerprint'] + '/' + panel['app'] + '/' + panel['file']})
         if self.events or self.jobs:
             result['capabilities'] = {'events': self.events is not None, 'jobs': self.jobs is not None}
         if self.tenant:
@@ -497,6 +485,10 @@ class Business:
                          for relation in self.visible_relations(user, model)]
             if relations:
                 entry['relations'] = relations
+            # Meta.layout's Tabs and blocks: Related and Chart blocks only over what this role may read.
+            if 'record_layout' in entry:
+                from .ui.metadata import layout_for_role
+                entry['record_layout'] = layout_for_role(self, user, model, entry['record_layout'], readable)
             plan = self.registry.plans.get(model)
             if plan is not None:
                 entry['calculation'] = self.calculation_projection(user, model, plan)
@@ -741,7 +733,7 @@ class Business:
         return visible
 
     def model_dispatch(self, scope, body, user, model, parts):
-        path, method = scope['path'], scope['method']
+        method = scope['method']
         if len(parts) >= 5 and parts[4] in ('confirm', 'cancel', 'reopen', 'history', 'revisions', 'snapshot', 'diff'):
             from .lifecycle import route
             return route(self, scope, body, user, model, parts)
@@ -780,7 +772,6 @@ class Business:
         # Attachments and line pages have their own routes on every model.
         own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines', 'related', 'prints')
         if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not legacy_action and not own_route:
-            from .documents import Context
             record_id = None
             if len(parts) >= 4:
                 if path_id(parts[3]) is None:
@@ -1232,7 +1223,6 @@ class Business:
 
     def lines(self, scope, user, model, record_id, path):
         """GET /api/{model}/{id}/lines/{name}[/{row id}/{name}...]: one page of a readable owned collection."""
-        from .documents import owned_rows
         try:
             raw = scope.get('query_string', b'')
             query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=2) if len(raw) <= 256 else None

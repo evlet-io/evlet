@@ -55,6 +55,14 @@ class ValidationError(ValueError):
         super().__init__("; ".join(f"{key}: {value}" for key, value in errors.items()))
 
 
+def checked_body(body, allowed, message, *, exact=False, nonempty=False, field='_form'):
+    """A JSON request body that is an object with only the allowed keys (exactly those when exact)."""
+    keys = set(body) if isinstance(body, dict) else None
+    if keys is None or (keys != set(allowed) if exact else keys - set(allowed)) or nonempty and not keys:
+        raise ValidationError({field: message})
+    return body
+
+
 class ModelType(type):
     def __new__(mcls, name, bases, namespace):
         fields = {}
@@ -348,11 +356,11 @@ class Registry:
         for model in models:
             for field in model.__declared_fields__.values():
                 check_currency_source(model, field)
-        from .ui.metadata import check_tabs, view_for
+        from .ui.metadata import check_tabs, tab_names, view_for
         for model in models:
             view = view_for(model)
             tables = [child.name for child in self.children if child.parent is model]
-            check_tabs(tables, view['tabs'], view['default_tab'], f'{model.__name__}.Meta.tabs')
+            check_tabs(tables, view['tabs'], view['default_tab'], f'{model.__name__}.Meta.tabs', tab_names(model))
         self.models = MappingProxyType(registered)
         self.resources = MappingProxyType(resources)
         for model in models:
@@ -388,6 +396,9 @@ class Registry:
         configure(self, child_models)
         from .measures import compile_declared
         self.measures = MappingProxyType(compile_declared(self, models))
+        # Record layouts with Tabs, Related, Html, Chart or Table blocks (Meta.layout, evlet/ui/metadata.py).
+        from .ui.metadata import compile_layouts
+        self.layouts = MappingProxyType(compile_layouts(self))
         # Rows documents post to other models (Meta.effects); the targets' rows are read only.
         from .effects import compile_effects
         self.effects, self.effect_targets = compile_effects(self, models, child_models)

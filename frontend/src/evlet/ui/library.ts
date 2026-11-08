@@ -11,15 +11,15 @@ import type { RecordStore } from '../model/record';
 import { formatMoney } from '../model/format';
 import catalog from './catalog.json';
 import {
-  AddChip, Avatar, Button, Checkbox, Chip, CountBadge, Divider, EmptyState, FilterChip, Icon, IconButton, IconTile, InfoNote, Key, LinkButton, ProgressBar,
+  AddChip, Avatar, Button, Checkbox, Chip, CountBadge, Divider, EmptyState, Icon, IconButton, IconTile, InfoNote, Key, LinkButton, ProgressBar,
   QuickAddInput, RecordMark, ScoreBars, SearchInput, SegmentedControl, Sparkline, StatCard, StateBanner, StatusPill, SummaryStrip, Switch,
 } from './base';
 import { ChildRows, ChildTable } from './childtable';
 import { SplitView } from './split';
 import { tint, type Tint } from './core';
-import { DocFrame, DocHeader, LockBanner, MoveButton, SideBlock, StatusFlow, TabPanel, Tabs, type Lifecycle } from './doc';
+import { DocFrame, DocHeader, LockBanner, MoveButton, SideBlock, StatusFlow, Tabs, type Lifecycle } from './doc';
 import { BaseField, displayValue, localField, type FieldLike } from './fields';
-import { FormSection, InlineValue, KeyValueList } from './inline';
+import { FormSection, KeyValueList } from './inline';
 import { DialogFooter, Menu, MenuButton, openDrawer, openModal, openPopover, toast } from './layers';
 import { Board, BoardCard, BulkBar, Filters, ListSummary, PageHeader, Toolbar, type ActiveFilter } from './list';
 import { DateRangePanel, rangePresets, rangeText, type DateRange } from './pickers';

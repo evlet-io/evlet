@@ -10,21 +10,11 @@ import { apply, conflicts, type Conflict, type NodeChanges } from '../model/unsa
 import { Button, SegmentedControl, StateBanner } from '../ui/base';
 import { displayValue, localField } from '../ui/fields';
 import { DialogFooter, openModal, toast } from '../ui/layers';
+import { relativeTime } from '../ui/time';
 import type { UnsavedEntry } from './client';
 import type { AppContext } from './context';
 import type { ScreenModel } from './meta';
 import { keepsUnsaved, unsavedInfo } from './unsaved';
-
-/** "just now", "5 minutes ago", "yesterday", "3 days ago". */
-export function relativeTime(seconds: number, now = Date.now() / 1000): string {
-  const ago = Math.max(0, Math.floor(now - seconds));
-  if (ago < 45) return 'just now';
-  const unit = (value: number, name: string) => `${value} ${name}${value === 1 ? '' : 's'} ago`;
-  if (ago < 3600) return unit(Math.max(1, Math.round(ago / 60)), 'minute');
-  if (ago < 86400) return unit(Math.round(ago / 3600), 'hour');
-  const days = Math.round(ago / 86400);
-  return days === 1 ? 'yesterday' : unit(days, 'day');
-}
 
 type Bar =
   | { kind: 'server'; entry: UnsavedEntry; note: string }
@@ -88,11 +78,11 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
     const current = bar.peek()!;
     if (current.kind === 'note') return StateBanner({ tone: 'neutral', text: current.text, actions: [Button({ label: 'Dismiss', size: 'small', variant: 'ghost', onClick: () => bar.set(null) })] });
     if (current.kind === 'local') return StateBanner({ tone: 'info', icon: 'history',
-      text: `Restore your unfinished new ${model.label.toLowerCase()} from ${relativeTime(current.saved_at)}?`,
+      text: `Restore your unfinished new ${model.label.toLowerCase()} from ${relativeTime(new Date(current.saved_at * 1000))}?`,
       actions: [Button({ label: 'Start fresh', size: 'small', variant: 'ghost', onClick: () => void discard() }),
         Button({ label: 'Restore', size: 'small', variant: 'primary', onClick: () => restoreLocal(current.changes) })] });
     return StateBanner({ tone: 'info', icon: 'history',
-      text: `You have unsaved changes from ${relativeTime(current.entry.saved_at)}.${current.entry.stale ? ' This record was saved since.' : ''}${current.note}`,
+      text: `You have unsaved changes from ${relativeTime(new Date(current.entry.saved_at * 1000))}.${current.entry.stale ? ' This record was saved since.' : ''}${current.note}`,
       actions: [Button({ label: 'Discard', size: 'small', variant: 'ghost', onClick: () => void discard() }),
         Button({ label: 'Restore', size: 'small', variant: 'primary', onClick: () => restoreServer(current.entry) })] });
   })}</div>`;

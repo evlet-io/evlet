@@ -18,6 +18,7 @@ import { fieldFor, localField } from '../ui/fields';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, openDrawer, openModal, openPopover, toast } from '../ui/layers';
 import { PageHeader, Toolbar } from '../ui/list';
+import { CHART_ROWS, plotChart } from '../ui/chart';
 import { ColumnsMenu, DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { ReportPage as Page } from './client';
 import type { AppContext } from './context';
@@ -394,59 +395,14 @@ function ReportChart(ctx: AppContext, report: ReportSchema, rows: () => Row[]): 
   const spec = report.chart!;
   const xColumn = report.columns.find(column => column.name === spec.x)!;
   const series = spec.y.map(key => report.columns.find(column => column.name === key)!).filter(Boolean);
-  const W = 720, H = 220, L = 56, R = 12, T = 16, B = 30;
-  const draw = () => {
-    const list = rows().slice(0, 40);
-    const values = list.flatMap(row => series.map(column => Number(row[column.name]) || 0));
-    const top = niceTop(Math.max(0, ...values)), bottom = Math.min(0, ...values);
-    const span = top - bottom || 1;
-    const y = (value: number) => T + (top - value) / span * (H - T - B);
-    const band = (W - L - R) / Math.max(1, list.length);
-    const label = (row: Row) => cellText(ctx, xColumn, row[xColumn.name]);
-    const tip = (row: Row, column: ReportColumn) => svg('title', {}, [`${label(row)}: ${columnLabel(column)} ${cellText(ctx, column, row[column.name])}`]);
-    // Axis values are fractions of the scale: formatNumber takes them as fixed decimal text.
-    const shortNumber = (value: number) => Math.abs(value) >= 1e6 ? `${formatNumber((value / 1e6).toFixed(1), 1)}M` : Math.abs(value) >= 1e3 ? `${formatNumber((value / 1e3).toFixed(1), 1)}k` : formatNumber(value.toFixed(0), 0);
-    const parts: SVGElement[] = [];
-    for (const value of [0, 0.25, 0.5, 0.75, 1].map(step => bottom + span * step)) {
-      parts.push(svg('line', { class: 'grid', x1: L, x2: W - R, y1: y(value), y2: y(value) }),
-        svg('text', { class: 'tick', x: L - 8, y: y(value) + 4, 'text-anchor': 'end' }, [shortNumber(value)]));
-    }
-    series.forEach((column, s) => {
-      const at = (row: Row) => y(Number(row[column.name]) || 0);
-      if (spec.type === 'line') {
-        parts.push(svg('polyline', { class: `s${s}`, fill: 'none', 'stroke-width': 2, points: list.map((row, i) => `${L + band * (i + 0.5)},${at(row)}`).join(' ') }));
-        list.forEach((row, i) => parts.push(svg('circle', { class: `s${s}`, r: 3, cx: L + band * (i + 0.5), cy: at(row) }, [tip(row, column)])));
-        return;
-      }
-      const width = band * 0.7 / series.length;
-      list.forEach((row, i) => parts.push(svg('rect', { class: `s${s}`, rx: 3, x: L + band * (i + 0.15) + width * s, width: Math.max(1, width - 2),
-        y: Math.min(at(row), y(0)), height: Math.abs(at(row) - y(0)) }, [tip(row, column)])));
-    });
-    const every = Math.ceil(list.length / 12);
-    list.forEach((row, i) => { if (!(i % every)) parts.push(svg('text', { class: 'tick', x: L + band * (i + 0.5), y: H - 10, 'text-anchor': 'middle' }, [clip(label(row), 14)])); });
-    return svg('svg', { viewBox: `0 0 ${W} ${H}`, role: 'img', 'aria-label': `${spec.label || report.label} chart` }, parts);
-  };
+  const draw = () => plotChart<Row>({ type: spec.type, rows: rows(), label: row => cellText(ctx, xColumn, row[xColumn.name]), title: `${spec.label || report.label} chart`,
+    series: series.map(column => ({ label: columnLabel(column), value: row => Number(row[column.name]) || 0, text: row => cellText(ctx, column, row[column.name]) })) });
   const host = html`<div class="ev-report-chart-plot"></div>` as HTMLElement;
   effect(() => { host.replaceChildren(draw()); });
   return html`<section class="ev-report-chart" aria-label="Chart"><div class="ev-report-chart-h"><h3>${spec.label || series.map(columnLabel).join(' and ')}</h3>
     <span class="ev-report-legend">${series.length > 1 ? series.map((column, s) => html`<span><i class=${`sw s${s}`}></i>${columnLabel(column)}</span>`) : null}</span>
-    <span class="muted">${() => rows().length > 40 ? 'First 40 rows of this page' : 'Rows on this page'}</span></div>${host}</section>` as HTMLElement;
+    <span class="muted">${() => rows().length > CHART_ROWS ? 'First 40 rows of this page' : 'Rows on this page'}</span></div>${host}</section>` as HTMLElement;
 }
-
-/** An SVG element; text children become text nodes, so nothing is parsed from markup. */
-function svg(tag: string, attributes: Record<string, string | number>, children: Array<SVGElement | string> = []): SVGElement {
-  const element = document.createElementNS('http://www.w3.org/2000/svg', tag);
-  for (const [key, value] of Object.entries(attributes)) element.setAttribute(key, String(value));
-  element.append(...children);
-  return element;
-}
-
-function niceTop(value: number) {
-  if (value <= 0) return 1;
-  const power = 10 ** Math.floor(Math.log10(value));
-  return [1, 2, 2.5, 5, 10].map(step => step * power).find(step => step >= value)!;
-}
-const clip = (text: string, size: number) => text.length > size ? `${text.slice(0, size - 1)}…` : text;
 
 // ---------- print ----------
 

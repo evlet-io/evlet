@@ -1191,10 +1191,8 @@ class Document:
             for scope, model, name in field['reads']:
                 if scope == 'lookup':
                     self.lookup_fields.setdefault(model, set()).add(name)
-        self.observers, self.table_observers, self.rule_observers = {}, {}, {}
-        self.revision, self.structure_revision, self._next = 0, 0, 0
+        self.revision, self._next = 0, 0
         self._batch = None
-        self._publishing = self._disposed = False
         self.trace, self.deps = {}, {}
         # Initial suggestions waiting to be written, and fields the host set in the current write (touched).
         self.armed, self.touched = set(), set()
@@ -1423,10 +1421,9 @@ class Document:
     # Commands
 
     def batch(self, run):
-        self._usable()
         outer = self._batch is None
         if outer:
-            self._batch = {'snapshot': self._capture(), 'bound': set(self.deps), 'sources': set(), 'membership': set(), 'moved': set(), 'structure': False, 'order': set(), 'touched': set()}
+            self._batch = {'snapshot': self._capture(), 'bound': set(self.deps), 'sources': set(), 'membership': set(), 'moved': set(), 'structure': False, 'touched': set()}
         if not outer:
             # A nested batch is one command: if its error is caught, its changes are undone.
             return self._command(lambda: check_async(run(self)))
@@ -1440,19 +1437,14 @@ class Document:
         if outer:
             batch, self._batch = self._batch, None
             try:
-                notify = self._commit(batch)
+                self._commit(batch)
             except BaseException:
                 self._restore(batch['snapshot'])
                 raise
-            # The batch is committed; observer failures are reported after publication, never rolled back.
-            failures = self._publish(*notify)
-            if failures:
-                raise failures[0]
 
     def _command(self, run):
         if self._batch is None:
             return self.batch(lambda _: run())
-        self._usable()
         # A command whose error the batch catches must not leave the document half changed.
         snapshot = self._capture(), {key: set(value) if isinstance(value, set) else value for key, value in self._batch.items()}
         try:
@@ -1462,12 +1454,6 @@ class Document:
             self._batch.clear()
             self._batch.update(snapshot[1])
             raise
-
-    def _usable(self):
-        if self._disposed:
-            raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'This document session was disposed')
-        if self._publishing:
-            raise CalcError('REACTIVE_REENTRANCY', 'Observers cannot change the document during publication')
 
     def set(self, handle, field, value):
         def run():
@@ -1584,7 +1570,6 @@ class Document:
             if items is None or not isinstance(handles, list) or sorted(map(str, handles)) != sorted(row.handle for row in items):
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Reorder needs every row of the collection exactly once')
             parent_row.children[table] = [self.rows[handle] for handle in handles]
-            self._batch['order'].add((owner, table))
             self._batch['structure'] = True
         self._command(run)
 
@@ -1633,17 +1618,14 @@ class Document:
     def _capture(self):
         return ({handle: (row, dict(row.values), {table: list(items) for table, items in row.children.items()}, row.parent)
                  for handle, row in self.rows.items()}, dict(self.results), self._next, dict(self.counts),
-                {key: list(items) for key, items in self.observers.items()},
-                {key: list(items) for key, items in self.table_observers.items()}, dict(self.trace),
-                (self.today, self.lookups, dict(self.misses)), (set(self.armed), {key: list(items) for key, items in self.rule_observers.items()}))
+                dict(self.trace), (self.today, self.lookups, dict(self.misses)), set(self.armed))
 
     def _restore(self, snapshot):
-        rows, results, counter, counts, observers, tables, trace, (self.today, self.lookups, self.misses), (self.armed, self.rule_observers) = snapshot
+        rows, results, counter, counts, trace, (self.today, self.lookups, self.misses), self.armed = snapshot
         for handle, (row, values, children, owner) in rows.items():
             row.values, row.children, row.parent = values, children, owner
         self.rows = {handle: state[0] for handle, state in rows.items()}
         self.results, self._next, self.counts, self.trace = results, counter, counts, trace
-        self.observers, self.table_observers = observers, tables
         self._bind()
 
     def _commit(self, batch):
@@ -1660,81 +1642,12 @@ class Document:
         updated = self._settle(batch['sources'] | batch['membership'], fresh, batch['touched'],
                                {node for node in fresh if node[1].endswith(':initial')})
         if not (updated or batch['sources'] or batch['structure']):
-            return [], []
+            return
         if batch['structure'] or any(not key[0].startswith('@') for key in batch['sources']):
             self._pristine = False
         elif self._pristine:
             self._take_locks(saved=True)
         self.revision += 1
-        if batch['structure']:
-            self.structure_revision += 1
-        for node in [key for key in self.observers if key[0] not in self.rows]:
-            self.observers.pop(node)
-        for key in [key for key in self.table_observers if key[0] not in self.rows]:
-            self.table_observers.pop(key)
-        for key in [key for key in self.rule_observers if key not in self.rows]:
-            self.rule_observers.pop(key)
-        notify = [(node, listeners) for node, listeners in self.observers.items() if node in updated or node in batch['sources']]
-        tables = [(key, listeners) for key, listeners in self.table_observers.items()
-                  if (key[0], '#' + key[1]) in batch['membership'] or key in batch['order']]
-        rules = {node[0] for node in updated if node[1].rpartition(':')[2] in RULES}
-        tables += [((handle, None), listeners) for handle, listeners in self.rule_observers.items() if handle in rules]
-        return notify, tables
-
-    def _publish(self, notify, tables):
-        self._publishing, failures = True, []
-        try:
-            for (handle, field), listeners in notify:
-                outcome = self.result(self.rows[handle], field)
-                for listener in list(listeners):
-                    try: listener(outcome)
-                    except Exception as exc: failures.append(exc)
-            for (handle, table), listeners in tables:
-                payload = self.rule_states(handle) if table is None else [row.handle for row in self.rows[handle].children[table]]
-                for listener in list(listeners):
-                    try: listener(payload)
-                    except Exception as exc: failures.append(exc)
-        finally:
-            self._publishing = False
-        return failures
-
-    # Observation and diagnostics
-
-    def observe(self, handle, field, listener):
-        self._usable()
-        if field not in self.schema[self._row(handle).path]['fields']:
-            raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Unknown field {field}')
-        listeners = self.observers.setdefault((handle, field), [])
-        listeners.append(listener)
-
-        def unsubscribe():
-            if listener in self.observers.get((handle, field), []):
-                self.observers[handle, field].remove(listener)
-        return unsubscribe
-
-    def observe_table(self, handle, table, listener):
-        self._usable()
-        if table not in self.schema[self._row(handle).path]['tables']:
-            raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Unknown collection {table}')
-        listeners = self.table_observers.setdefault((handle, table), [])
-        listeners.append(listener)
-
-        def unsubscribe():
-            if listener in self.table_observers.get((handle, table), []):
-                self.table_observers[handle, table].remove(listener)
-        return unsubscribe
-
-    def observe_rules(self, handle, listener):
-        """Call listener(rule_states(handle)) after each batch that changes one of this row's rule results."""
-        self._usable()
-        self._row(handle)
-        listeners = self.rule_observers.setdefault(handle, [])
-        listeners.append(listener)
-
-        def unsubscribe():
-            if listener in self.rule_observers.get(handle, []):
-                self.rule_observers[handle].remove(listener)
-        return unsubscribe
 
     def decided(self, row, field, kind, undecided):
         """A rule's Boolean result, or `undecided` when it has no ready true/false value."""
@@ -1751,7 +1664,6 @@ class Document:
 
     def rebase(self):
         """After the host saves this document: its current locks become the saved state."""
-        self._usable()
         self._take_locks(saved=False)
         for row in self.rows.values():
             row.created = False
@@ -1779,22 +1691,6 @@ class Document:
                 states[name] = {'applies': applies, 'required': applies and required, 'locked': self.locked(row, name)}
         return dict(sorted(states.items()))
 
-    def subscriptions(self):
-        return (sum(len(items) for items in self.observers.values()) + sum(len(items) for items in self.table_observers.values())
-                + sum(len(items) for items in self.rule_observers.values()))
-
-    def explain(self, handle, field):
-        row = self._row(handle)
-        node = (handle, field)
-        computed = node in self.deps
-        return {'role': 'computed' if computed else 'source', 'target': row.label + field,
-                'owner': row.parent.label.rstrip('.') if row.parent else None,
-                'inputs': sorted(row_address(self, item) for item in self.deps.get(node, ())),
-                'dependents': sorted(row_address(self, item) for item in self.dependents.get(node, ())),
-                'state': self.result(row, field).public(), 'evaluations': self.counts.get(node, 0),
-                'language': self.plan['language'], 'profile': self.plan['numeric_profile'],
-                'plan': self.hash, 'revision': self.revision}
-
     def find(self, label):
         """Row handle by its label path, e.g. 'items.k1'."""
         for handle, row in self.rows.items():
@@ -1821,31 +1717,6 @@ class Document:
         if row.children:
             result['children'] = {table: [self._snapshot(item) for item in items] for table, items in row.children.items()}
         return result
-
-    def sources(self, row=None, *, identities=True):
-        """Source-only data, e.g. to duplicate a document or rebuild it from scratch."""
-        row = row or self.root
-        result = dict(row.values)
-        if identities:
-            result.update({**({'id': row.id} if row.id is not None else {}), **({'_key': row.key} if row.parent else {})})
-        if row.children:
-            result['children'] = {table: [self.sources(item, identities=identities) for item in items] for table, items in row.children.items()}
-        return result
-
-    def dispose(self):
-        if self._disposed:
-            return
-        if self._publishing:
-            raise CalcError('REACTIVE_REENTRANCY', 'Observers cannot dispose the document during publication')
-        self.observers.clear()
-        self.table_observers.clear()
-        self.rule_observers.clear()
-        self.armed.clear()
-        self.rows.clear()
-        self.results.clear()
-        self.misses.clear()
-        self.deps, self.dependents, self.order = {}, {}, []
-        self._disposed = True
 
 
 def row_address(document, node):

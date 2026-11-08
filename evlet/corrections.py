@@ -20,7 +20,7 @@ from .audit import actor_id, touch
 from .auth import AccessError
 from .fields import Link, Reference
 from .identity import RecordId
-from .models import ValidationError, identifier
+from .models import ValidationError, checked_body, identifier
 from . import periods
 from .permissions import CHUNK, corrects, trusted
 
@@ -663,8 +663,7 @@ def dispatch(business, scope, body, user, model, record_id, operation):
         if b'if-match' not in dict(scope.get('headers', [])):
             raise AccessError(428, 'A current If-Match revision is required')
         business.check_revision(scope, context._tx, user, record)
-        if not isinstance(body, dict) or set(body) - {'reason'}:
-            raise ValidationError({'_form': 'Send only a reason'})
+        checked_body(body, {'reason'}, 'Send only a reason')
         result = getattr(context, operation)(model, record_id, body.get('reason'))
         extra = business.availability(context, model, context._tx.get(model, result['id']))
     etag = business.revision(result)

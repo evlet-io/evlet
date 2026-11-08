@@ -13,20 +13,18 @@ import sys
 
 import evlet
 import evlet.fields
-import evlet.ui
 
 SNAPSHOT = Path(__file__).parent / "fixtures" / "public-api.json"
 REGENERATE = ".venv/bin/python tests/test_public_api.py"
-
-# The evlet.ui names the app docs (docs/ui.md, docs/customizing.md) and the Playground use.
-UI_NAMES = ("Bind", "Button", "Card", "Column", "ComponentDefinition", "CustomComponent", "Field", "FormLayout",
-            "FormView", "Grid", "ListView", "Navigate", "PageView", "Select", "Text", "TextInput", "ViewRegistry",
-            "When")
 
 # Methods trusted code calls on the transaction session (`with database.transaction() as tx`), which is
 # not exported itself.
 SESSION = ("aggregate", "count", "create", "delete", "get", "insert_many", "list", "lock", "reserve_ids",
            "unlocked_periods", "update")
+
+# Members of the document context (`self.context` in model code) that only trusted handler code uses, which
+# is not exported itself: `session` is open only in a Move run method or an @action handler.
+CONTEXT = ("session",)
 
 # Methods and decorators apps call on exported names, beyond their constructors.
 MEMBERS = {"Model": ("to_dict", "validate"), "Child": ("to_dict", "validate"), "validate": ("confirm", "cancel"),
@@ -57,16 +55,16 @@ def normalise(text):
 
 def current():
     # Every field forwards its keywords to Field, which is not exported itself.
-    api = {"evlet": {}, "evlet.fields": {"Field": normalise(signature(evlet.fields.Field))}, "evlet.ui": {}}
+    api = {"evlet": {}, "evlet.fields": {"Field": normalise(signature(evlet.fields.Field))}}
     for name in sorted(evlet.__all__):
         api["evlet"][name] = normalise(signature(getattr(evlet, name)))
-    for name in UI_NAMES:
-        api["evlet.ui"][name] = normalise(signature(getattr(evlet.ui, name)))
     for owner, names in MEMBERS.items():
         for name in names:
             api["evlet"][f"{owner}.{name}"] = normalise(signature(getattr(getattr(evlet, owner), name)))
     from evlet.database import Session
     api["evlet.Session"] = {name: normalise(signature(getattr(Session, name))) for name in SESSION}
+    from evlet.documents import Context
+    api["evlet.Context"] = {name: type(inspect.getattr_static(Context, name)).__name__ for name in CONTEXT}
     # The options a model's Meta may declare, such as api and period.
     from evlet.ui.metadata import META_OPTIONS
     api["evlet"]["Model.Meta"] = f"options{sorted(META_OPTIONS)}"
@@ -77,7 +75,7 @@ def test_public_api_matches_snapshot():
     expected = json.loads(SNAPSHOT.read_text())
     actual = current()
     lines = []
-    for module in ("evlet", "evlet.fields", "evlet.ui"):
+    for module in ("evlet", "evlet.fields", "evlet.Session", "evlet.Context"):
         before, after = expected.get(module, {}), actual[module]
         for name in sorted(before.keys() - after.keys()):
             lines.append(f"  removed {module}.{name}")

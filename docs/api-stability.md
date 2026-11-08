@@ -8,18 +8,18 @@ production ready, but the rules below hold from 0.3 on.
 
 - **Root exports.** Every name in `evlet.__all__`: fields, `Model`, `Child`, `Registry`,
   migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), lifecycle
-  (`State`, `Move`, `action`, `validate`), form sections (`Section`), slips, measures, settings, connectors, storage,
-  jobs, routing and the application classes. Import them from `evlet`, not from the
-  module that defines them.
+  (`State`, `Move`, `action`, `validate`), form sections and record layouts (`Section`, `Tab`,
+  `Html`, and `Related` and `Chart` as layout blocks), slips, measures, settings, connectors,
+  storage, jobs, routing and the application classes. Import them from `evlet`, not from the
+  module that defines them. `AppDefinition(views=())` stays accepted for apps scaffolded
+  before 0.4; a non-empty `views` or a `ui` registry is refused.
 - **Field keywords.** The keywords every field takes (`required`, `default`, `label`,
   `help_text`, `visible_if` and the rest), which are defined once on the field base class.
 - **Lifecycle decorators.** `validate.confirm`, `validate.cancel`, `action.confirm` and
   `action.cancel`, plus `Model.to_dict` and `Model.validate`.
-- **`evlet.ui` names used in the app docs.** `Bind`, `Button`, `Card`, `Column`,
-  `ComponentDefinition`, `CustomComponent`, `Field`, `FormLayout`, `FormView`, `Grid`,
-  `ListView`, `Navigate`, `PageView`, `Select`, `Text`, `TextInput`, `ViewRegistry` and
-  `When`. The browser does not render Python pages today ([ui.md](ui.md)), but their API
-  stays.
+- **No `evlet.ui` page names.** The Python page API was removed in 0.4 without a
+  deprecation release, by owner decision, since the browser never rendered it
+  ([CHANGELOG.md](../CHANGELOG.md)). `evlet.ui.metadata` stays internal.
 
 - **Record times.** Record details carry `_audit` (`created_at`, `created_by`, `modified_at`,
   `modified_by`), and the column names `evlet_created_at`, `evlet_created_by`, `evlet_modified_at`
@@ -59,9 +59,23 @@ production ready, but the rules below hold from 0.3 on.
   append-only table refuses raises `ConflictError` on SQLite and PostgreSQL
   ([model-engine.md](model-engine.md#composite-and-unique-indexes), [ledger.md](ledger.md)).
 
-- **Aggregates in a transaction.** `Session.aggregate(model, *, measures, group_by=(), filters=None)`
-  (`tx.aggregate`), with the arguments, limits and result of `Database.aggregate`
-  ([measures.md](measures.md#ad-hoc-aggregates-in-python)). `evlet.measures` itself stays internal.
+- **Aggregates in a transaction.** `Session.aggregate(model, *, measures, group_by=(), filters=None,
+  limit=None, after=None)` (`tx.aggregate`), with the arguments, limits and result of
+  `Database.aggregate` ([measures.md](measures.md#ad-hoc-aggregates-in-python)). `evlet.measures`
+  itself stays internal.
+
+- **Trusted set-based queries.** `limit` (1 to 10,000) and `after` on `Session.aggregate` and
+  `Database.aggregate` page through any number of groups in a stable order
+  ([measures.md](measures.md#paging-through-many-groups)). `Session.list`, `Session.count`,
+  `Session.aggregate` and their `Database` forms take `in` and `nin` lists of up to 30,000
+  values in all per query
+  ([model-engine.md](model-engine.md#long-in-lists-in-trusted-code)). HTTP, `Context`, Eva,
+  tools, MCP and Connector keep 100 values per `in` and 500 groups per aggregate.
+
+- **The transaction session in handlers.** `self.context.session` in a Move's `run` method or an
+  `@action` handler: the move or action's own `evlet.Session`, open only while the method runs and
+  refused (`AccessError`, 403) on every other context
+  ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 
 - **Job progress.** `JobContext.progress(done, total=None, message='')`, `JobContext.checkpoint`,
   `Task(..., resumable=True)` with its return-value contract (a JSON checkpoint, or `None` when
@@ -113,7 +127,7 @@ Apps must not depend on these. They can change in any release without a deprecat
 
 - Modules and names that are not listed above, even when they can be imported, such as
   `evlet.lifecycle`, `evlet.database` helpers, `evlet.cli`, `evlet.controls_*`,
-  `evlet.postgres_schema` and `evlet.native`.
+  `evlet.postgres_schema` and `evlet.ui.metadata`.
 - Names that start with an underscore, and dunder attributes such as `__fields__`.
 - Methods of exported classes that the app guides do not document, such as `Policy.scope_sql`
   or `Registry.plan_for`.

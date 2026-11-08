@@ -8,6 +8,31 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Record layouts.** `Meta.layout` can declare the whole record page: `Tab(title, blocks)`s, or
+  plain blocks without tabs, holding `Section`s, `Table` field names (the table shows inside the tab
+  or the form instead of on its own tab), `Related(model, link=None, filters=..., fields=..., limit=...,
+  order=..., label=...)` lists of related records, `Html(...)` text from the app with `{field}`
+  values, and `Chart('stat' | 'bar' | 'line', x=..., y=..., model=..., link=...)` blocks over the
+  related model's declared measures. Filters use the list syntax and `Ref('field')` compares with
+  a field of the record. Related rows come from the list route and charts from the aggregate route,
+  so row scopes and field permissions apply; `/api/schema` sends the layout as `record_layout`, cut
+  to what each role reads. Everything is checked when the registry is built. A model whose layout
+  declares a `Related` block no longer shows the automatic Related tab and side block unless
+  `Meta.tabs` or `Meta.side_blocks` names `related`. Models with sections only are unchanged. Html
+  keeps to the rich text allowlist and inserts record values as text only. Controls "Export as
+  code" writes the full `Meta.layout`. The Playground's Employee uses every block
+  ([docs/ui.md](docs/ui.md#record-layouts)).
+
+- **`self.context.session` in run methods and actions.** A Move's `run` method and an `@action`
+  handler can write other rows, such as ledger rows, in the move or action's own transaction:
+  `self.context.session` is its `evlet.Session`, with `tx.lock`, `tx.insert_many`,
+  `tx.reserve_ids` and `tx.aggregate`. The State change, the Sequence number, the record's changes
+  and those rows commit together, and any failure rolls all of it back. It is trusted code that
+  bypasses row and field permissions. It is open only while the handler runs; every other context
+  refuses it with `AccessError` (403), including services, reports and everything Eva, assistants,
+  tools, MCP and the connector reach. Before, this needed a legacy `Action` and `tx.maintenance()`.
+  The Playground's Recognise action on an employee writes its Recognition ledger this way
+  ([docs/states-actions.md](docs/states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 - **`evlet setup` in one go.** `evlet setup myproject --app notes,crm --instance acme --dev` creates
   the project, apps and instance, installs the apps in dependency order and starts `evlet dev` on
   loopback. `--get URL,URL` fetches apps from Git with the `app --get` checks and trust question;
@@ -24,6 +49,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   value unique per record. The entries are part of the saved schema and the startup check, and
   `AddIndex(table, ("a", "b"), unique=True)` adds one. Models without `Meta.indexes` are unchanged
   ([docs/model-engine.md](docs/model-engine.md#composite-and-unique-indexes)).
+- **Paged aggregates and long `in` lists for trusted batch code.** `tx.aggregate(...)` and
+  `database.aggregate(...)` take `limit` (1 to 10,000) and `after` (the previous page's last
+  group) to walk any number of groups in a stable order, each exactly once, a page at a time.
+  Trusted session queries (`tx.list`, `tx.count`, `tx.aggregate` and the `database` forms)
+  take `in` and `nin` lists of up to 30,000 values in all, each bound as a parameter. Jobs that
+  chunked lists to 100 values and groupings to 500 groups can drop the chunking. HTTP,
+  `Context`, Eva, tools, MCP and Connector keep their limits of 100 values and 500 groups
+  ([docs/measures.md](docs/measures.md#paging-through-many-groups),
+  [docs/model-engine.md](docs/model-engine.md#long-in-lists-in-trusted-code)).
 - **`tx.aggregate(...)`.** The transaction session runs the same exact aggregates as
   `database.aggregate`, with the same arguments, limits and result, and sees the transaction's own
   writes. Use it instead of the internal `evlet.measures.aggregate(tx, ...)`
@@ -94,6 +128,21 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Controls, Export as code now writes code that works.** It used to export form layout and
+  list overrides as `FormView` and `ListView` code, which the browser ignored, so pasting it
+  changed nothing. It now writes `Meta` options on the model's class in its models file:
+  `layout = (Section(...), ...)` with `tabs` and `default_tab`, and `list_fields`, `open_in`,
+  `list_tabs` and `list_tab`. Pasted into the model, they give the same screens as the
+  overrides. Field widths follow the field type, and a list's page size and sort stay instance
+  overrides; the export says so in a comment.
+- **Aggregate filters on row-scoped Links.** `GET /api/{model}/aggregate` (and `context.aggregate`)
+  now allow an `eq` or `in` filter on a Link to a model the caller reads under a row scope when
+  every id is a record the caller can read, as lists already did. Other ids still answer 403
+  ([docs/measures.md](docs/measures.md#permissions)).
+- **`Related` and `Chart` take more arguments.** `Related(model, link=None, ..., filters=None,
+  fields=())`: `link` stays required in `Meta.relations`, which refuses `filters` and `fields`.
+  `Chart(type, x=None, ..., model=None, link=None, filters=None)`: a report chart still needs `x`
+  and takes none of the new ones. Existing calls are unchanged.
 - **The list filter panel is a side panel.** It docks beside the table inside the page, with
   no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
   sit on top and saved filters below; each half scrolls on its own. Escape closes it.
@@ -147,6 +196,39 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   phone drawer.
 - **Recent records moved from the sidebar to a history button left of search.** It lists them
   newest first with the model and when each was opened, and has a Clear action.
+
+### Upgrade notes
+
+- **Python pages are gone.** If an app imports `evlet.ui` page names (`PageView`, `ListView`,
+  `FormView`, `Column`, `ViewRegistry` and the rest), delete those definitions and shape the
+  generated screens with `Model.Meta` (`layout`, `list_fields`, `tabs`, `open_in`, `panel`). An
+  `AppDefinition` may still pass `views=()`, as older app scaffolds do; a non-empty `views` or a
+  `ui` registry is refused at start-up with a message that says so. `Application` and `App` no
+  longer take `views` or `ui`. Clients that called `/api/ui` read `/api/schema` instead
+  ([docs/app-upgrades.md](docs/app-upgrades.md#from-03-to-04)).
+- **Native panels are gone.** Remove `.ts` and `.js` modules from an app's `views/` folder and
+  the matching `package-data` line from its `pyproject.toml`. A build no longer runs Node for them.
+- **`evlet new` is gone.** Use `evlet setup myproject --app notes --instance acme --dev`.
+- **`evlet.metadata` is gone.** `field_schema`, `label_for`, `ui_schema` and `view_for` live in
+  `evlet.ui.metadata`, which is internal ([docs/api-stability.md](docs/api-stability.md#internal)).
+
+### Removed
+
+These were never rendered or called at run time. Nothing an app or a person uses in the browser
+changes.
+
+- The Python page API in `evlet.ui` (definitions, compiler, component contracts, view registry
+  and page expressions), and the `GET /api/ui` and `GET /api/ui/resolve` routes. Python page
+  routes no longer claim paths in the route table. The Playground's Projects demo and Layouts
+  pages, which were Python pages, are removed with it.
+- Native TS/JS panels: `evlet/native.py`, `native_panels` in `/api/schema`, and
+  `/assets/apps/...`.
+- The `evlet new` standalone starter (`evlet/cli/legacy.py`). The nested app layout and
+  `evlet app <name> --legacy` stay; apps such as Finance use that layout.
+- The `evlet.metadata` compatibility module.
+- `evlet.calc.Document.observe`, `observe_table`, `observe_rules`, `subscriptions`, `explain`
+  and `dispose`. The server settles a document once and reads its snapshot; the browser engine
+  keeps all of them.
 
 ## 0.3.0 (05-11-2026)
 

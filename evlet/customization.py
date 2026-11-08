@@ -337,6 +337,11 @@ class Customization:
         """Tabs a record page of the model can show, in their usual order: Activity, Details, Revisions, its child
         tables, Related and Postings. Meta.tabs and the Controls tab order name these."""
         tables = [child.name for child in self.registry.children if child.parent is model]
+        # Tabs in Meta.layout take the place of Details, and a Table placed in the layout has no tab of its own.
+        layout = getattr(self.registry, 'layouts', {}).get(model)
+        if layout and 'tabs' in layout:
+            placed = {block['name'] for tab in layout['tabs'] for block in tab['blocks'] if block['kind'] == 'table'}
+            return ['activity', *(tab['name'] for tab in layout['tabs']), 'revisions', *(name for name in tables if name not in placed), 'related', 'postings']
         return ['activity', 'details', 'revisions', *tables, 'related', 'postings']
 
     def check_layout(self, model, _, value):
@@ -449,7 +454,7 @@ class Customization:
             raise ValueError(str(exc).replace(f'{model.__name__}.Meta.', 'The list view ')) from None
 
     def check_naming(self, model, _, value, saved=False):
-        from .sequences import NamingRules, SERIES_ID, check_order
+        from .sequences import SERIES_ID, check_order
         if not isinstance(value, list) or not 1 <= len(value) <= 20:
             raise ValueError('Keep between 1 and 20 series.')
         series = []
@@ -992,6 +997,7 @@ class Customization:
         rules = self.naming.get(model)
         # Record page tabs the form layout can order: the record's own tabs, then each child table with its label.
         labels = {child.name: child.label for child in self.registry.children if child.parent is model}
+        labels.update((tab['name'], tab['label']) for tab in getattr(self.registry, 'layouts', {}).get(model, {}).get('tabs', ()))
         tabs = [{'name': name, 'label': labels.get(name, name.capitalize())} for name in self.tab_names(model)]
         return {'table': table, 'records': count, 'fields_detail': fields, 'tabs': tabs,
                 'naming': None if rules is None else {'field': rules.field, 'date_field': rules.date_field}}

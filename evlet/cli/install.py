@@ -8,7 +8,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 
-from ..instances import (read_instance, read_lock, require_consistent, database_state,
+from ..instances import (read_instance, require_consistent, database_state,
                          build_instance, register_schedules)
 from ..packages import resolve_packages, portable_lock_entry
 from .project import child, instance_guard, atomic_json, json_text, sync_directory

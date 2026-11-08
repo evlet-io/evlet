@@ -38,7 +38,7 @@ from .connectors import (ADDRESS, NOT_ALLOWED, REJECTED, TIMEOUT, UNREACHABLE, C
                          safe_address, scrub, state_context)
 from .controls import NOT_FOUND, audit
 from .fields import Email
-from .models import ValidationError, identifier
+from .models import ValidationError, checked_body, identifier
 
 logger = logging.getLogger(__name__)
 SETTING = 'mail.personal'
@@ -354,8 +354,7 @@ class Mailboxes:
         """Connect any mailbox with IMAP and SMTP details and a password, after both servers accept it."""
         self.require_on()
         allowed = {'address', 'imap_host', 'imap_port', 'imap_security', 'smtp_host', 'smtp_port', 'smtp_security', 'username', 'password'}
-        if not isinstance(body, dict) or set(body) - allowed:
-            raise ValidationError({'_form': 'Send ' + ', '.join(sorted(allowed)) + '.'})
+        checked_body(body, allowed, 'Send ' + ', '.join(sorted(allowed)) + '.')
         errors = {}
         address = body.get('address')
         if not isinstance(address, str) or not ADDRESS.fullmatch(address.strip()):
@@ -483,8 +482,7 @@ class Mailboxes:
     def start(self, user, body, origin):
         """POST .../oauth: the provider's sign-in address with a single-use state and a PKCE challenge."""
         self.require_on()
-        if not isinstance(body, dict) or set(body) != {'provider'}:
-            raise ValidationError({'provider': 'Choose microsoft or google.'})
+        checked_body(body, {'provider'}, 'Choose microsoft or google.', exact=True, field='provider')
         config = self.provider(body['provider'])
         try:
             authorize = safe_url(config['authorize_url'], fetch=False)[0]

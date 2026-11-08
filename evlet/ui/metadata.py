@@ -86,6 +86,142 @@ class Section:
             raise ValueError(f'{where}: panel must be True or False')
 
 
+# Record tabs a Tab cannot be named after: the record page's own (a Tab may be called Details).
+OWN_TABS = tuple(name for name in TABS if name != 'details')
+# At most this many Tabs, and blocks in one Tab (or in a layout without Tabs).
+MAX_TABS = 8
+MAX_BLOCKS = 12
+PLACEHOLDER = re.compile(r'\{\{|\}\}|\{([a-z_][a-z0-9_]*)\}|[{}]')
+UNSAFE_HTML = re.compile(r'<\s*/?\s*(script|style|iframe|frame|object|embed|form|input|button|svg|math|link|meta|base)\b'
+                         r'|\son[a-z]+\s*=|javascript\s*:', re.IGNORECASE)
+
+
+class Tab:
+    """A record page tab in Model.Meta.layout, holding blocks in order: Section(...) or ('Title', fields) pairs,
+    Table field names, Related(...), Html(...) and Chart(...).
+
+    `name` (default: the title in lowercase with underscores) is how Meta.tabs, Meta.default_tab, Meta.panel and
+    the address (?tab=) name it. `panel=False` leaves the tab out when a list opens the record in its side panel."""
+
+    __slots__ = ('title', 'blocks', 'name', 'panel')
+
+    def __init__(self, title, blocks, *, name=None, panel=True):
+        if not isinstance(title, str) or not title.strip():
+            raise ValueError('Give every Tab a title')
+        if not isinstance(blocks, (tuple, list)):
+            raise ValueError(f'Tab {title!r}: list its blocks as a tuple, such as (Section(...), "lines", Related(...))')
+        name = re.sub(r'[^a-z0-9]+', '_', title.lower()).strip('_') if name is None else name
+        if type(name) is not str or not re.fullmatch(r'[a-z][a-z0-9_]{0,62}', name):
+            raise ValueError(f'Tab {title!r}: give it a name of lowercase letters, digits and underscores, such as name="overview"')
+        if type(panel) is not bool:
+            raise ValueError(f'Tab {title!r}: panel must be True or False')
+        self.title, self.blocks, self.name, self.panel = title, tuple(blocks), name, panel
+
+    def __repr__(self):
+        name = re.sub(r'[^a-z0-9]+', '_', self.title.lower()).strip('_')
+        return (f'Tab({self.title!r}, {self.blocks!r}' + (f', name={self.name!r}' if self.name != name else '')
+                + (', panel=False)' if self.panel is False else ')'))
+
+
+class Html:
+    """Static content in Model.Meta.layout, written by the app (trusted code, never by users).
+
+    It keeps to the rich text allowlist (paragraphs, h2 and h3 headings, lists, quotes, code, strong, em, links and
+    line breaks); scripts, styles, frames and event attributes are refused. `{field}` shows that field of the record,
+    formatted and always escaped as text; `{{` and `}}` are literal braces."""
+
+    __slots__ = ('content',)
+
+    def __init__(self, content):
+        if not isinstance(content, str) or not content.strip():
+            raise ValueError('Html needs its content as text')
+        if UNSAFE_HTML.search(content):
+            raise ValueError('Html keeps to the rich text allowlist: no scripts, styles, frames, forms or event attributes')
+        self.content = content
+
+    def __repr__(self):
+        return f'Html({self.content!r})'
+
+    def fields(self):
+        """The field names its {field} placeholders show."""
+        names = []
+        for match in PLACEHOLDER.finditer(self.content):
+            if match[0] in ('{', '}'):
+                raise ValueError('Html: write {field} to show a field, and {{ or }} for a literal brace')
+            if match[1]:
+                names.append(match[1])
+        return names
+
+    def markup(self):
+        """The sanitised HTML the schema sends; a placeholder lost in an attribute is refused."""
+        from ..richtext import sanitise
+        markup = sanitise(self.content)[0]
+        if not markup:
+            raise ValueError('Html has no content left after keeping to the rich text allowlist')
+        kept = [match[1] for match in PLACEHOLDER.finditer(markup) if match[1]]
+        if sorted(kept) != sorted(self.fields()):
+            raise ValueError('Html: put {field} placeholders in the text, not in attributes')
+        return markup
+
+
+def layout_blocks(model, layout, visible):
+    """The blocks of Meta.layout in order, as (tab, kind, block) with tab None in a layout without Tabs, and the Tabs.
+
+    Kinds: 'section' (a Section or a ('Title', fields) pair), 'table' (a Table field name), 'related', 'html'
+    and 'chart'. Raises ValueError for a block in the wrong place, an unknown Table or a repeated one."""
+    from ..forms import Chart
+    from ..meaning import Related
+    where = f'{model.__name__}.Meta.layout'
+    if not isinstance(layout, (tuple, list)):
+        raise ValueError(f'{where}: list its sections, or its Tabs, as a tuple')
+    tabbed = [isinstance(entry, Tab) for entry in layout]
+    if any(tabbed) and not all(tabbed):
+        raise ValueError(f'{where}: put every block inside a Tab, or use no Tabs at all')
+    tabs = list(layout) if any(tabbed) else []
+    if len(tabs) > MAX_TABS:
+        raise ValueError(f'{where}: use at most {MAX_TABS} Tabs')
+    tables = getattr(model, '__tables__', {})
+    entries, placed, names = [], set(), set()
+    for tab, blocks in ([(tab, tab.blocks) for tab in tabs] if tabs else [(None, tuple(layout))]):
+        inside = f'{where} Tab {tab.title!r}' if tab else where
+        if tab is not None:
+            if tab.name in OWN_TABS or tab.name in tables or tab.name in names:
+                raise ValueError(f'{inside}: name {tab.name!r} is taken; give the Tab another name=')
+            names.add(tab.name)
+        for block in blocks:
+            if isinstance(block, Tab):
+                raise ValueError(f'{inside}: a Tab cannot hold another Tab')
+            if isinstance(block, Section) or isinstance(block, (tuple, list)):
+                entries.append((tab, 'section', block))
+            elif isinstance(block, str):
+                if block not in tables:
+                    raise ValueError(f'{inside}: {block!r} is not a Table field of {model.__name__}. Put fields in a Section, '
+                                     f'and name Table fields ({", ".join(tables) or "none"}) on their own')
+                if block in placed:
+                    raise ValueError(f'{inside}: Table {block!r} is placed more than once')
+                placed.add(block)
+                entries.append((tab, 'table', block))
+            elif isinstance(block, Related):
+                if block.hidden:
+                    raise ValueError(f'{inside}: a Related block shows records; hidden=True belongs in Meta.relations')
+                entries.append((tab, 'related', block))
+            elif isinstance(block, Html):
+                unknown = [name for name in block.fields() if name not in visible]
+                if unknown:
+                    raise ValueError(f'{inside}: Html shows unknown or hidden fields: {", ".join(unknown)}')
+                block.markup()
+                entries.append((tab, 'html', block))
+            elif isinstance(block, Chart):
+                if block.model is None:
+                    raise ValueError(f'{inside}: a layout Chart names the model whose records it charts, such as Chart("bar", x="status", y="hours", model="task")')
+                entries.append((tab, 'chart', block))
+            else:
+                raise ValueError(f'{inside}: use Section(...), a Table field name, Related(...), Html(...) or Chart(...), not {block!r}')
+        if len(blocks) > MAX_BLOCKS:
+            raise ValueError(f'{inside}: use at most {MAX_BLOCKS} blocks')
+    return entries, tabs
+
+
 def view_for(model):
     meta = getattr(model, 'Meta', None)
     allowed = META_OPTIONS
@@ -94,7 +230,6 @@ def view_for(model):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
     # App fields only: instance fields (x_) differ per database and are added by Controls. The standard
     # name shows (first) on models whose naming fills it; the standard title follows its source and never shows.
-    from ..naming import standard
     named = getattr(getattr(meta, 'naming', None), 'field', None) == 'name' and standard(model.__app_fields__.get('name')) == 'name'
     visible = {name: field for name, field in model.__app_fields__.items()
                if (standard(field) == 'name' and named) or (not standard(field) and not field.hidden)}
@@ -154,9 +289,14 @@ def view_for(model):
     layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
     used = []
     groups = []
-    if not isinstance(layout, (tuple, list)) or len(layout) > 8:
+    entries, layout_tabs = layout_blocks(model, layout, visible)
+    # Blocks besides sections, or Tabs, make a record layout (record_layout in the schema, added by the registry).
+    blocks = bool(layout_tabs) or any(kind != 'section' for _, kind, _ in entries)
+    if not blocks and len(layout) > 8:
         raise ValueError('Use at most eight layout groups')
-    for group in layout:
+    for _, kind, group in entries:
+        if kind != 'section':
+            continue
         section = group if isinstance(group, Section) else None
         if section is not None:
             section.check(model.__name__)
@@ -180,9 +320,12 @@ def view_for(model):
         groups.append({'label': 'Other', 'fields': rest, 'collapsible': False, 'collapsed': False, 'flow': 'rows'})
     titles = [group['label'] for group in groups]
     if len(set(titles)) != len(titles):
+        if blocks:
+            raise ValueError(f'{model.__name__}.Meta.layout: give sections different titles, so the record layout can place them'
+                             + (' (Other holds the fields no section lists)' if rest else ''))
         if getattr(meta, 'panel', None) is not None or any(group.get('panel') is False for group in groups):
             raise ValueError(f'{model.__name__}.Meta.layout: give sections different titles, so the side panel can name them')
-    panel = panel_for(model, meta, groups, visible)
+    panel = panel_for(model, meta, groups, visible, layout_tabs, entries)
     for group in groups:
         group.pop('panel', None)
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
@@ -196,56 +339,66 @@ def view_for(model):
             **({'panel': panel} if panel is not None else {})}
 
 
-def panel_names(model, groups, visible):
+def panel_names(model, groups, visible, layout_tabs=()):
     """The names Meta.panel may use, each with its kind: section titles, fields, Table fields (their tabs), the
-    record tabs, the summary strip and the side blocks. A section or field wins over a record tab or block of the
-    same name, so a field called info is the field."""
+    record tabs, the layout's Tabs, the summary strip and the side blocks. A section or field wins over a record tab
+    or block of the same name, so a field called info is the field."""
     names = {name: 'tabs' for name in TABS}
     names.update((name, 'blocks') for name in PANEL_BLOCKS if name != 'related')
     names.update((name, 'tabs') for name in getattr(model, '__tables__', {}))
+    names.update((tab.name, 'tabs') for tab in layout_tabs)
     names.update((name, 'fields') for name in visible)
     names.update((group['label'], 'sections') for group in groups)
     return names
 
 
-def panel_for(model, meta, groups, visible):
+def panel_for(model, meta, groups, visible, layout_tabs=(), entries=()):
     """What a record opened in a list's side panel leaves out, or None when it shows everything.
 
     The result lists hidden names by kind ({'sections', 'fields', 'tabs', 'blocks'}, each sorted) and, for
     Meta.panel, the order it names tabs and blocks in. Meta.panel wins over panel=False flags. Display only:
-    permissions never read it. Related means the tab (the panel has no Related block)."""
+    permissions never read it. Related means the tab (the panel has no Related block). With Tabs in Meta.layout,
+    a named Tab keeps every section in it, and a named section or field keeps its Tab."""
     tables = getattr(model, '__tables__', {})
+    declared = [tab.name for tab in layout_tabs]
+    # The tab each section lives on: Details without Tabs; with them its Tab, and Other on the first.
+    home = {group['label']: declared[0] if declared else 'details' for group in groups}
+    home.update((block.title if isinstance(block, Section) else block[0], tab.name) for tab, kind, block in entries if kind == 'section' and tab)
     keep = getattr(meta, 'panel', None)
     where = f'{model.__name__}.Meta.panel'
     if keep is None:
         hidden = {'sections': [group['label'] for group in groups if group.get('panel') is False],
                   'fields': [name for name, field in visible.items() if field.panel is False],
-                  'tabs': [name for name, table in tables.items() if getattr(table, 'panel', True) is False], 'blocks': []}
+                  'tabs': [name for name, table in tables.items() if getattr(table, 'panel', True) is False]
+                  + [tab.name for tab in layout_tabs if tab.panel is False], 'blocks': []}
         hidden = {kind: sorted(names) for kind, names in hidden.items() if names}
         return hidden or None
     if not isinstance(keep, (tuple, list)) or any(type(name) is not str or not name for name in keep) or len(set(keep)) != len(keep):
         raise ValueError(f'{where}: list what the side panel shows once each, such as ("Contact", "notes", "activity")')
-    known = panel_names(model, groups, visible)
+    known = panel_names(model, groups, visible, layout_tabs)
     unknown = [name for name in keep if name not in known]
     if unknown:
         raise ValueError(f'{where} names unknown elements: {", ".join(unknown)}. Use section titles, field names, '
-                         f'tabs ({", ".join((*TABS, *tables))}) or blocks ({", ".join(name for name in PANEL_BLOCKS if name != "related")})')
+                         f'tabs ({", ".join(dict.fromkeys((*TABS, *tables, *declared)))}) or blocks ({", ".join(name for name in PANEL_BLOCKS if name != "related")})')
     kept = {kind: {name for name in keep if known[name] == kind} for kind in PANEL_KINDS}
-    # 'details' keeps every section; a named section keeps its fields; a named field keeps its section with only it.
-    every = 'details' in kept['tabs']
-    shown_sections = {group['label'] for group in groups if every or group['label'] in kept['sections']
+    # A kept tab keeps every section on it ('details' every section without Tabs); a named section keeps its fields;
+    # a named field keeps its section with only it.
+    shown_sections = {group['label'] for group in groups if home[group['label']] in kept['tabs'] or group['label'] in kept['sections']
                       or any(name in kept['fields'] for name in group['fields'])}
-    whole = {group['label'] for group in groups if every or group['label'] in kept['sections']}
+    whole = {group['label'] for group in groups if home[group['label']] in kept['tabs'] or group['label'] in kept['sections']}
+    needed = {home[label] for label in shown_sections}
     hidden = {
         'sections': sorted(group['label'] for group in groups if group['label'] not in shown_sections),
         # Fields of a hidden section go with it; a section shown for some of its fields hides the rest.
         'fields': sorted(name for group in groups for name in group['fields']
                          if group['label'] in shown_sections and group['label'] not in whole and name not in kept['fields']),
-        'tabs': sorted(name for name in (*TABS, *tables) if name != 'details' and name not in kept['tabs']),
+        'tabs': sorted(name for name in dict.fromkeys((*TABS, *tables, *declared))
+                       if name != 'details' and name not in kept['tabs'] and name not in needed),
         'blocks': sorted(name for name in PANEL_BLOCKS if name != 'related' and name not in kept['blocks']),
     }
-    # The order tabs and blocks show in; a section or field stands for the Details tab, where they live.
-    order = list(dict.fromkeys('details' if known[name] in ('sections', 'fields') else name for name in keep))
+    # The order tabs and blocks show in; a section or field stands for the tab it lives on.
+    order = list(dict.fromkeys(home[name] if known[name] == 'sections' else next((home[group['label']] for group in groups if name in group['fields']), 'details')
+                               if known[name] == 'fields' else name for name in keep))
     return {**{kind: names for kind, names in hidden.items() if names}, 'order': order}
 
 
@@ -278,12 +431,213 @@ def list_tabs_for(model, meta, fields=None):
     return {'field': name, 'kind': kind, 'default': default}
 
 
-def check_tabs(tables, tabs, default_tab, where):
-    """Raise ValueError when tab names are neither record page tabs nor this model's Table fields."""
-    known = (*TABS, *tables)
+def check_tabs(tables, tabs, default_tab, where, layout_tabs=()):
+    """Raise ValueError when tab names are neither record page tabs, this model's Table fields nor its layout's Tabs."""
+    known = tuple(dict.fromkeys((*TABS, *tables, *layout_tabs)))
     unknown = [name for name in (*tabs, *((default_tab,) if default_tab else ())) if name not in known]
     if unknown:
         raise ValueError(f'{where} names unknown tabs: {", ".join(dict.fromkeys(unknown))}. Use {", ".join(known)}')
+
+
+def tab_names(model):
+    """The names of the Tabs in a model's Meta.layout, in order (none without Tabs)."""
+    layout = getattr(getattr(model, 'Meta', None), 'layout', ())
+    return [tab.name for tab in layout if isinstance(tab, Tab)] if isinstance(layout, (tuple, list)) else []
+
+
+# Filter operators that may compare with a field of the record (Ref('field')).
+REF_OPERATORS = ('eq', 'ne', 'gt', 'gte', 'lt', 'lte')
+# Columns a Related block shows at most, and the rows it shows a page by default and at most.
+RELATED_FIELDS = 6
+RELATED_ROWS, RELATED_MAX = 5, 20
+
+
+def layout_filters(registry, model, source, filters, where):
+    """A block's filters as [[field, operator, value], ...] on source, validated like list filters. A Ref('field')
+    value compares with that field of the record, sent as {"$expr": "ref", "args": [field]}."""
+    from ..declarations import Ref
+    from ..query import ChildGroup, KIND_OPERATORS, SqlQuery, conditions
+    from ..models import ValidationError
+    if filters is None:
+        return []
+    try:
+        items = conditions(filters)
+    except ValidationError as error:
+        raise ValueError(f'{where}: {"; ".join(error.errors.values()) if hasattr(error, "errors") else error}') from None
+    visible = {name for name, field in model.__app_fields__.items() if not field.hidden or name == 'id'}
+    result = []
+    for item in items:
+        if isinstance(item, ChildGroup) or '__' in item.path or '.' in item.path:
+            raise ValueError(f'{where}: filter {item.label!r} must name a field of {source.__name__} itself, not a path or child rows')
+        field = source.__fields__.get(item.path) if item.path != 'id' else None
+        if item.path != 'id' and (field is None or not field.stored or getattr(field, 'hidden', False)):
+            raise ValueError(f'{where}: filter {item.label!r} names no stored, visible field of {source.__name__}')
+        kind = 'link' if item.path == 'id' else field.kind
+        if item.operator not in KIND_OPERATORS.get(kind, ()):
+            raise ValueError(f'{where}: filter {item.label!r}: {kind} fields do not take {item.operator}')
+        value = item.value
+        if isinstance(value, Ref):
+            if item.operator not in REF_OPERATORS or '.' in value.path:
+                raise ValueError(f"{where}: filter {item.label!r}: Ref('field') compares with one field of the record, using "
+                                 f"{', '.join(REF_OPERATORS)}")
+            if value.path not in visible and value.path != 'id':
+                raise ValueError(f'{where}: filter {item.label!r}: Ref({value.path!r}) is not a visible field of {model.__name__}')
+            result.append([item.path, item.operator, {'$expr': 'ref', 'args': [value.path]}])
+            continue
+        if item.path != 'id':
+            try:
+                compiler = SqlQuery(registry, source)
+                compiler.where([[item.path, item.operator, value]])
+            except ValidationError as error:
+                raise ValueError(f'{where}: filter {item.label!r}: {next(iter(getattr(error, "errors", {}).values()), error)}') from None
+            if item.operator not in ('isnull',):
+                value = serialize_filter_value(field, value)
+        result.append([item.path, item.operator, value])
+    return result
+
+
+def serialize_filter_value(field, value):
+    """A literal filter value as JSON: one value, or each value of an in, nin or between list."""
+    def one(item):
+        return None if item is None else field.serialize(field.clean(item))
+    try:
+        return [one(item) for item in value] if isinstance(value, (list, tuple)) else one(value)
+    except (ValueError, TypeError):
+        return value
+
+
+def back_link(model, source, link, where):
+    """The Link field of source that points to model: `link`, or the only one when it is left out."""
+    from ..fields import Link
+    links = [name for name, field in source.__declared_fields__.items() if isinstance(field, Link) and field.target is model and not field.hidden]
+    if link is None:
+        if len(links) != 1:
+            raise ValueError(f'{where}: {source.__name__} has ' + (f'{len(links)} Links to {model.__name__} ({", ".join(links)}); name one as link='
+                             if links else f'no visible Link to {model.__name__}'))
+        return links[0]
+    if link not in links:
+        raise ValueError(f'{where}: {source.__name__}.{link} is not a visible Link to {model.__name__}')
+    return link
+
+
+def layout_block(registry, model, kind, block, where):
+    """One block of a record layout as the neutral schema sends it."""
+    from ..measures import declared
+    if kind == 'section':
+        return {'kind': 'section', 'label': block.title if isinstance(block, Section) else block[0]}
+    if kind == 'table':
+        return {'kind': 'table', 'name': block}
+    if kind == 'html':
+        return {'kind': 'html', 'html': block.markup()}
+    source = registry.resolve(block.model)
+    children = {child.model for child in registry.children}
+    if source in children or getattr(source, '__ledger__', False):
+        raise ValueError(f'{where}: {source.__name__} rows belong to their document; a {kind} block lists root models')
+    link = back_link(model, source, block.link, where)
+    filters = layout_filters(registry, model, source, block.filters, where)
+    visible = {name for name, field in source.__app_fields__.items() if not field.hidden}
+    if kind == 'related':
+        unknown = [name for name in block.fields if name not in visible]
+        if unknown:
+            raise ValueError(f'{where}: Related fields are unknown or hidden on {source.__name__}: {", ".join(unknown)}')
+        if len(block.fields) > RELATED_FIELDS:
+            raise ValueError(f'{where}: a Related block shows at most {RELATED_FIELDS} fields')
+        if block.limit is not None and block.limit > RELATED_MAX:
+            raise ValueError(f'{where}: a Related block shows 1 to {RELATED_MAX} rows a page')
+        for entry in block.order:
+            name = entry.lstrip('-')
+            if name != 'id' and (name not in source.__fields__ or not source.__fields__[name].stored or source.__fields__[name].kind == 'reference'):
+                raise ValueError(f'{where}: Related order must name stored fields of {source.__name__} (not References)')
+        return {'kind': 'related', 'model': registry.name_for(source), 'link': link, 'label': block.label or view_for(source)['plural'],
+                'filters': filters, 'fields': list(block.fields), 'limit': block.limit or RELATED_ROWS, 'order': list(block.order)}
+    measures = {item.name: item for item in declared(registry, source) if item.link is None}
+    unknown = [name for name in block.y if name not in measures]
+    if unknown:
+        raise ValueError(f'{where}: Chart y names declared measures of {source.__name__} (Meta.measures, not per record): '
+                         f'{", ".join(unknown)} ' + (f'is not one of {", ".join(measures)}' if measures else 'but it declares none'))
+    x = None
+    if block.x is not None:
+        name, _, part = block.x.partition(':')
+        field = source.__fields__.get(name)
+        if field is None or name not in visible or not field.stored or field.kind in ('tags', 'reference', 'longtext', 'richtext', 'multiselect'):
+            raise ValueError(f'{where}: Chart x groups by a stored, visible field of {source.__name__}, not {block.x!r}')
+        if part and (part not in ('day', 'month', 'year') or field.kind not in ('date', 'datetime')):
+            raise ValueError(f"{where}: Chart x takes :day, :month or :year after a Date or DateTime field, not {block.x!r}")
+        x = block.x
+    return {'kind': 'chart', 'type': block.type, 'model': registry.name_for(source), 'link': link, 'x': x, 'y': list(block.y),
+            'label': block.label, 'filters': filters}
+
+
+def record_layout(registry, model):
+    """The record layout of Meta.layout as the schema's record_layout, or None for a layout of sections only.
+
+    {"tabs": [{"name", "label", "blocks": [...]}]} with Tabs, else {"blocks": [...]}. Sections are named by title
+    (their fields stay in the schema's layout); Other, the fields no section lists, goes last on the first Tab."""
+    meta = getattr(model, 'Meta', None)
+    layout = getattr(meta, 'layout', None)
+    if layout is None:
+        return None
+    view = view_for(model)
+    visible = {name: field for name, field in model.__app_fields__.items() if not field.hidden}
+    entries, tabs = layout_blocks(model, layout, visible)
+    if not tabs and all(kind == 'section' for _, kind, _ in entries):
+        return None
+    where = f'{model.__name__}.Meta.layout'
+    placed = {block.title if isinstance(block, Section) else block[0] for _, kind, block in entries if kind == 'section'}
+    other = [{'kind': 'section', 'label': group['label']} for group in view['layout'] if group['label'] not in placed]
+    if not tabs:
+        return {'blocks': [layout_block(registry, model, kind, block, where) for _, kind, block in entries] + other}
+    result = []
+    for index, tab in enumerate(tabs):
+        inside = f'{where} Tab {tab.title!r}'
+        blocks = [layout_block(registry, model, kind, block, inside) for owner, kind, block in entries if owner is tab]
+        result.append({'name': tab.name, 'label': tab.title, 'blocks': blocks + (other if index == 0 else [])})
+    return {'tabs': result}
+
+
+def compile_layouts(registry):
+    """{model: record_layout} for every model whose Meta.layout has Tabs or blocks besides sections."""
+    result = {}
+    for model in registry.models.values():
+        layout = record_layout(registry, model)
+        if layout is not None:
+            result[model] = layout
+    return result
+
+
+def layout_for_role(business, user, model, layout, readable):
+    """The record layout this role sees: Related and Chart blocks only over records, Links, filter fields and
+    measures it may read (a block that needs more is left out), Related columns and order cut to readable fields."""
+    from types import SimpleNamespace
+    from ..measures import available, visible as measurable
+    policy, registry = business.policy, business.registry
+
+    def refs(block):
+        return {value['args'][0] for _, _, value in block['filters'] if isinstance(value, dict) and value.get('$expr') == 'ref'}
+
+    def keep(block):
+        if block['kind'] not in ('related', 'chart'):
+            return block
+        source = registry.models[block['model']]
+        if not policy.allows(user, source, 'read'):
+            return None
+        fields = {'id', *policy.fields(user, source)}
+        if block['link'] not in fields or any(path not in fields for path, _, _ in block['filters']) or not refs(block) <= {'id', *readable}:
+            return None
+        if block['kind'] == 'related':
+            order = business.relation_order(user, SimpleNamespace(source=source, order=tuple(block['order'])))
+            return {**block, 'fields': [name for name in block['fields'] if name in fields], 'order': order}
+        names = {item.name for item in available(business, user, source, False)}
+        y = [name for name in block['y'] if name in names]
+        if not y or block['x'] is not None and not measurable(policy, user, source, block['x'].split(':')[0], fields):
+            return None
+        return {**block, 'y': y}
+
+    def blocks(items):
+        return [block for block in map(keep, items) if block is not None]
+    if 'tabs' in layout:
+        return {'tabs': [{**tab, 'blocks': blocks(tab['blocks'])} for tab in layout['tabs']]}
+    return {'blocks': blocks(layout['blocks'])}
 
 
 def currency_schema(field):
@@ -320,7 +674,8 @@ def ui_schema(registry):
     # A model with Meta.api = None is left out; "read" is stated so screens offer no writes ("full" is the default).
     api = getattr(registry, 'api', {})
     return {'version': 1, 'ui_version': 1, 'models': [
-        {'name': name, **view_for(model), 'fields': [field_schema(field) for field in model.__app_fields__.values()],
+        {'name': name, **view_for(model), **({'record_layout': registry.layouts[model]} if model in getattr(registry, 'layouts', {}) else {}),
+         'fields': [field_schema(field) for field in model.__app_fields__.values()],
          **({'api': 'read'} if api.get(model) == 'read' else {}), **behavior(model, registry)}
         for name, model in registry.models.items() if api.get(model, 'full') is not None
     ]}

@@ -53,7 +53,7 @@ Eva, the connector) must reach them.
   identity). They always increase, are never reused, and are plain `int` in Python. They are not
   the time-based [record ids](model-engine.md#record-ids) and have no text form.
 - **No public surface.** `ledger = True` means `Meta.api = None`, and any other `api` value is
-  refused. The model is left out of every HTTP route, the schema, `/api/ui`, generated screens,
+  refused. The model is left out of every HTTP route, the schema, generated screens,
   Discovery, MCP, Eva, tools, the connector, search, exports, Controls and the sidebar. Trusted
   Python is the only writer. Measures and Python reports still read it as a table.
 - **Stored fields only.** A ledger model declares `Text`, `Integer`, `Decimal`, `Currency`,
@@ -99,6 +99,10 @@ with database.transaction() as tx:
   `run()` reads a ledger model through `self.context.aggregate` and `self.context.list`, which
   apply the person's `Rule(scope=...)` on the model, so declare `permissions` on a ledger model
   whose reports need row scopes ([reports.md](reports.md)).
+- A move's `run` method or an `@action` handler writes ledger rows through
+  `self.context.session`, its own transaction session, so the rows commit or roll back with the
+  move, its Sequence number and the record's changes
+  ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 
 ## Reserving ids (`tx.reserve_ids`)
 
@@ -221,7 +225,11 @@ def spend(database, member_id, points, reason, on_date):
 ```
 
 Rebuilding the cache from the movements is app code too: group the movements with
-`database.aggregate(..., group_by=('member',))` and write the totals.
+`database.aggregate(..., group_by=('member',))` and write the totals. With more than 500
+members, page through the groups with `tx.aggregate(..., limit=1000, after=page[-1])`, and
+select a batch of members with a long `member__in` list
+([paging](measures.md#paging-through-many-groups),
+[long `in` lists](model-engine.md#long-in-lists-in-trusted-code)).
 
 ## Transaction locks (`tx.lock`)
 

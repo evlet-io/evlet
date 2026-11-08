@@ -6,7 +6,7 @@ import { RecordStore } from '../model/record';
 import type { AppSchema } from '../model/schema';
 import { apply, capture, captureNew, conflicts, isEmpty } from '../model/unsaved';
 import { DEFAULT_LIMITS, LocalUnsaved } from '../app/unsaved';
-import { relativeTime } from '../app/unsaved-bar';
+import { relativeTime } from '../ui/time';
 import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
 import { copy, id, responses, server, type Recorded } from './server';
 
@@ -252,7 +252,7 @@ describe('the browser store', () => {
 
   it('says how long ago', () => {
     const now = 1_000_000;
-    expect([10, 300, 7200, 86400, 3 * 86400].map(ago => relativeTime(now - ago, now))).toEqual(['just now', '5 minutes ago', '2 hours ago', 'yesterday', '3 days ago']);
+    expect([10, 300, 7200, 86400, 3 * 86400].map(ago => relativeTime(new Date((now - ago) * 1000), now * 1000))).toEqual(['just now', '5 minutes ago', '2 hours ago', 'yesterday', '3 days ago']);
   });
 });
 
