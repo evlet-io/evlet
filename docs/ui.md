@@ -15,9 +15,9 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Docs, with its topics, from the sidebar and the search palette.
 - The shell: a top bar across the window with the Evlet brand and the Workspace switcher at its left,
   then at its right the search button, whose palette opens the Explorer ([below](#top-bar-search-and-explorer)),
-  a history button for recent records, notifications and shortcuts; under it the sidebar with the workspace's
-  sections and shortcuts ([below](#sidebar-and-workspaces)). Each page's breadcrumb is a small line above
-  its title ([Breadcrumb](#breadcrumb)). New records start from the New button
+  a history button for recent records, notifications and shortcuts; under it a white sidebar with the workspace's
+  sections and shortcuts ([below](#sidebar-and-workspaces)) beside a light grey main area whose cards are white.
+  Each page's breadcrumb is a small line above its title ([Breadcrumb](#breadcrumb)). New records start from the New button
   on a model's list page or from the search palette.
 - Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
@@ -525,6 +525,9 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
   ([Navigation icons](#navigation-icons)), small and muted, in place of a dot. The one the page
   opens exactly (a list with its view, tab and filters, or a report) is filled across the whole row with the primary
   button's blue, with white text at weight 600 and a white icon. Hover on the other rows is a light grey.
+- **The sidebar** is white (the surface colour) with a border on its right; the main area beside it is a
+  light grey (`--page-bg`), so its cards read as cards. Dark themes keep the same structure: the sidebar
+  and top bar on the dark surface, the main area a little darker.
 - **The section that holds that shortcut** gets a grey barely darker than the sidebar over its title and
   shortcuts, and a bolder title with an accent icon. It keeps both when closed, so the person still sees
   where they are.
@@ -627,8 +630,8 @@ is missing, the closest one stands in (a slip uses `sticky-note`, a dashboard `a
 
 ### Top bar: Search and Explorer
 
-The top bar runs across the whole window, over the sidebar and the main column, with a light divider
-under it. From left to right it holds the drawer button (phones only), the **Evlet
+The top bar runs across the whole window, over the sidebar and the main column, on the white surface
+with a light divider under it. From left to right it holds the drawer button (phones only), the **Evlet
 brand**, a pipe and the **Workspace switcher**; then, on the right, the **search** button, the **history**
 button, notifications and the shortcuts button. The breadcrumb is not in the top bar: it is a small line
 above each page's title ([Breadcrumb](#breadcrumb)).
@@ -932,15 +935,30 @@ handled in the form with the values the person has entered, saved or not:
 
 The server still checks every Link on preview and save; the form only avoids keeping a stale value.
 
-### Filters
+### List card
 
-The list's table has no card around it. It runs flush to the edges of the main area, as a child
-table does in focus view, and the first column keeps the page margin so it lines up with the
-toolbar. Beside a side panel and on a phone the table does the same.
+The page's title, its stat cards and the breadcrumb sit on the grey main area. Under them, the list's
+tabs, its search row and its table are one white card, with a 1 px border and 4 px corners. Scrolled
+up, the card sticks 12 px below the top of the main area and fills the visible height down to 16 px
+from the bottom: the title, summary and stat cards scroll away, and the card's tab row, search row
+and the table's header row stay in view. Only the table's body scrolls inside the card, down and
+sideways; the page never scrolls sideways. The pinned columns, column resizing, the pager (at the foot
+of the card) and the bulk bar work as before. The loading lines and the empty states show inside the
+card. The board sits in the same card, which keeps the board's own height and does not stick.
+On a phone the card scrolls with the page and the table is as tall as its rows.
+
+A record opened in the list's side panel is its own white card beside the list card, about 13 px
+apart, with its own border and 4 px corners; it is not a drawer against the window's edge. Both cards
+fill the visible height and each scrolls inside: the table's body in the list card, the record in its
+card, whose header (the type with Expand and Close, then the title and status) is at its top. The
+divider between the cards still resizes the panel. When the panel covers the list (a narrow window,
+a phone) it fills the main area as before. The docked filter panel is a card the same way.
 
 While rows load (the first load, a tab, a search), a list with no rows to show yet shows loading
 lines, and the board shows them until its first load. The empty state ("No projects in this tab",
 "No projects yet") shows only after a load found nothing.
+
+### Filters
 
 A list's Filter button (with a count of active filters) opens the filter side panel, docked
 beside the list inside the page, like the record side panel. There is no overlay and no

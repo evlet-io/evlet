@@ -15,9 +15,10 @@
    [data-theme="dark"], so a chosen theme wins in both directions. The two dark blocks must stay identical
    (theme.test.ts checks it, and the contrast of the token pairs). Components use tokens only: no colour
    literals below this block. --accent is for text, rings and marks; --accent-solid is a fill behind
-   --accent-fg. --on-tint is text on a solid --t-* fill. --inverse-* is the toast, tooltip and bulk bar. */
+   --accent-fg. --on-tint is text on a solid --t-* fill. --page-bg is the main area's ground under the cards; the
+   top bar and the sidebar are --surface. --inverse-* is the toast, tooltip and bulk bar. */
 :root{
-  --bg:#ffffff; --bg-subtle:#f8f9fb; --bg-muted:#f2f4f7; --side-bg:#f4f5f8; --surface:#ffffff; --overlay:rgba(16,20,30,.32);
+  --bg:#ffffff; --bg-subtle:#f8f9fb; --bg-muted:#f2f4f7; --side-bg:#f4f5f8; --page-bg:#f4f5f8; --surface:#ffffff; --overlay:rgba(16,20,30,.32);
   --border:#e8eaef; --border-strong:#d8dce3; --divider:#eef0f3;
   --fg:#151821; --fg-2:#4b5263; --fg-3:#676d7c; --fg-4:#868d9c;
   --accent:#2f5be8; --accent-hover:#244ed4; --accent-fg:#ffffff; --accent-soft:#eef2fe; --accent-ring:rgba(47,91,232,.22);
@@ -47,7 +48,7 @@
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
-  --bg:#0f1115; --bg-subtle:#13161b; --bg-muted:#1a1e25; --side-bg:#14171c; --surface:#16191f; --overlay:rgba(0,0,0,.55);
+  --bg:#0f1115; --bg-subtle:#13161b; --bg-muted:#1a1e25; --side-bg:#14171c; --page-bg:#0f1115; --surface:#16191f; --overlay:rgba(0,0,0,.55);
   --border:#252a33; --border-strong:#323844; --divider:#1e222a;
   --fg:#e8eaf0; --fg-2:#b2b8c5; --fg-3:#868d9d; --fg-4:#626978;
   --accent:#6488f6; --accent-hover:#7593f7; --accent-fg:#ffffff; --accent-soft:#1b2440; --accent-ring:rgba(91,128,245,.3);
@@ -62,7 +63,7 @@
   --nav-on-bg:#4167e6; --nav-on-fg:#ffffff; --nav-sec-on-bg:#1b1e23; --nav-sec-on-hover:#23262b;
   color-scheme:dark}}
 :root[data-theme="dark"]{
-  --bg:#0f1115; --bg-subtle:#13161b; --bg-muted:#1a1e25; --side-bg:#14171c; --surface:#16191f; --overlay:rgba(0,0,0,.55);
+  --bg:#0f1115; --bg-subtle:#13161b; --bg-muted:#1a1e25; --side-bg:#14171c; --page-bg:#0f1115; --surface:#16191f; --overlay:rgba(0,0,0,.55);
   --border:#252a33; --border-strong:#323844; --divider:#1e222a;
   --fg:#e8eaf0; --fg-2:#b2b8c5; --fg-3:#868d9d; --fg-4:#626978;
   --accent:#6488f6; --accent-hover:#7593f7; --accent-fg:#ffffff; --accent-soft:#1b2440; --accent-ring:rgba(91,128,245,.3);
@@ -137,8 +138,8 @@ kbd{font-family:var(--font);font-size:11px;font-weight:500;color:var(--fg-3);bac
 .app.collapsed .nav-item{justify-content:center;padding:0}
 .app.collapsed .side-search{justify-content:center;padding:0;margin:4px 10px 8px}
 
-.main{display:flex;flex-direction:column;min-width:0;min-height:0}
-.topbar{grid-column:1/-1;height:var(--topbar-h);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 16px;flex:none;background:var(--bg);min-width:0}
+.main{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--page-bg)}
+.topbar{grid-column:1/-1;height:var(--topbar-h);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 16px;flex:none;background:var(--surface);min-width:0}
 .top-actions{display:flex;align-items:center;gap:4px;margin-left:auto}
 /* The breadcrumb: a small muted line directly above the page's title, "Sales / Invoices", the page itself last. */
 .crumbs{display:flex;align-items:center;gap:6px;font-size:12.5px;line-height:18px;color:var(--fg-3);min-width:0;margin:0 0 6px}
@@ -218,7 +219,8 @@ textarea.input{height:auto;padding:8px 10px;resize:vertical;min-height:72px;line
 /* A record's tab bar stays at the top of its scrolling area (the view, or a side panel) while the content scrolls
    under it: solid page colour, the tabs' own hairline below, no shadow. keepTabPlace() sets --tab-fill on the
    panel shown after a switch, so a shorter tab still reaches the bottom of the area and the page stays still. */
-.tabs.tabs-sticky{position:sticky;top:0;z-index:4;background:var(--bg)}
+.tabs.tabs-sticky{position:sticky;top:0;z-index:4;background:var(--page-bg)}
+.ev-panel .tabs.tabs-sticky{background:var(--surface)}
 .tabs.tabs-sticky ~ [role="tabpanel"]{min-height:var(--tab-fill,auto)}
 .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .toolbar .grow{flex:1}
@@ -572,9 +574,10 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .lb-row .bar span{display:block;height:100%;background:var(--t-green);border-radius:3px}
 
 /* ---------- app bar + sidebar body ---------- */
-.sidebar{background:var(--bg)}
+/* A white sidebar beside the grey main area, whose cards are white too. */
+.sidebar{background:var(--surface)}
 .ab-more>span{color:var(--fg-3)}
-.side-body{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--side-bg)}
+.side-body{flex:1;display:flex;flex-direction:column;min-height:0;background:var(--surface)}
 /* Top bar left: the Evlet brand, a pipe, then the Workspace switcher. As wide as the expanded sidebar, so the
    history button and the breadcrumb start over the main column; just as wide as it needs when collapsed. */
 .sidebar{grid-row:2}
@@ -1291,7 +1294,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 /* ---------- SplitView: main area and a resizable side panel ---------- */
 .split{display:flex;height:100%;min-height:0;min-width:0}
 .split-main{flex:1 1 auto;min-width:0;min-height:0;overflow:auto}
-.split-side{flex:none;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+.split-side{flex:none;min-width:0;min-height:0;display:flex;flex-direction:column;background:var(--surface);overflow:hidden}
 .split-div{flex:none;width:9px;margin:0 -4px;position:relative;z-index:6;cursor:col-resize;touch-action:none;outline:none}
 .split-div::before{content:"";position:absolute;inset:0 4px;background:var(--border)}
 .split-div::after{content:"";position:absolute;top:50%;left:2px;width:5px;height:36px;margin-top:-18px;border-radius:3px;background:var(--accent);opacity:0;transition:opacity .15s}

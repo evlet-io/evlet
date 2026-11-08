@@ -46,7 +46,7 @@ export function contrast(a: string, b: string) {
   return (high + 0.05) / (low + 0.05);
 }
 
-const GROUNDS = ['--bg', '--bg-subtle', '--bg-muted', '--side-bg', '--surface'];
+const GROUNDS = ['--bg', '--bg-subtle', '--bg-muted', '--side-bg', '--page-bg', '--surface'];
 const TINTS = ['blue', 'green', 'amber', 'rose', 'violet', 'teal', 'slate'];
 // [text or mark, background, minimum ratio]: 4.5:1 for text, 3:1 for icons, focus rings and borders that carry meaning.
 const PAIRS: Array<[string, string, number]> = [
