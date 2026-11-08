@@ -20,6 +20,12 @@ MAX_BODY_BYTES = 64 * 1024
 UNSAVED_BODY = 1024 * 1024 + 4096
 
 
+def coded(payload, exc):
+    """Errors that carry a stable `code` (workflow routes and gates) add it to the body; others keep their shape."""
+    code = getattr(exc, 'code', None)
+    return {**payload, 'code': code} if isinstance(code, str) else payload
+
+
 def image_limit(business):
     from .images import limits
     return limits(business)[0]
@@ -166,15 +172,15 @@ class Application:
             if not internal:
                 status, payload, headers = await asyncio.to_thread(self._dispatch, scope, body)
         except AccessError as exc:
-            status, payload = exc.status, {"error": exc.message}
+            status, payload = exc.status, coded({"error": exc.message}, exc)
         except HTTPError as exc:
             status, payload, headers = exc.status, {"error": exc.message}, list(exc.headers)
         except ValidationError as exc:
-            status, payload = 422, {"error": "Validation failed", "fields": exc.errors}
-        except NotFoundError:
-            status, payload = 404, {"error": "Record not found"}
+            status, payload = 422, coded({"error": "Validation failed", "fields": exc.errors}, exc)
+        except NotFoundError as exc:
+            status, payload = 404, coded({"error": "Record not found"}, exc)
         except ConflictError as exc:
-            status, payload = 409, {"error": str(exc)}
+            status, payload = 409, coded({"error": str(exc)}, exc)
         except StorageError:
             logger.exception("Attachment storage failed")
             status, payload = 503, {"error": "Attachment temporarily unavailable"}

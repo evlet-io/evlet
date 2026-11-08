@@ -1,10 +1,11 @@
 # Approval workflows
 
 Status: in progress for 0.4.0. This page describes what is built so far: the declaration, the
-`review` permission, stored definitions and the engine that routes requests and counts decisions.
-Nothing yet stops a protected operation from running without approval, and there are no workflow
-screens or HTTP routes. Do not rely on a workflow to protect anything until the enforcement phase
-ships. The full plan is [docs/internal/workflow.md](internal/workflow.md) and the contract is
+`review` permission, stored definitions, the engine that routes requests and counts decisions, and
+enforcement: the gate on protected operations, stage edit rules, approval invalidation, required
+feedback, the journal entries and the HTTP routes that send, decide and withdraw. There is no
+configuration editor and there are no workflow screens yet. The full plan is
+[docs/internal/workflow.md](internal/workflow.md) and the contract is
 [docs/internal/workflow-contract.md](internal/workflow-contract.md).
 
 ## Opting a model in
@@ -150,16 +151,158 @@ step with them in the same transaction. The tables are created at startup when a
 | `evlet_workflow_versions` | Published definitions (append-only) |
 | `evlet_workflow_runs` | One record's pass through one version; one open run per record and operation |
 | `evlet_workflow_attempts` | Approval tries inside a run, linked to the one before |
-| `evlet_workflow_record_data` | The record's data generation, used to invalidate approval in a later phase |
+| `evlet_workflow_record_data` | The record's data generation, raised by every write that changes non-harmless data |
 | `evlet_workflow_executions` | Each time a stage starts, with its frozen routing |
 | `evlet_workflow_tasks` | One per review (or per single-reviewer stage) with its quorum |
 | `evlet_workflow_assignees` | The people each task resolved to |
 | `evlet_workflow_delegations` | Reserved for delegation, built in a later phase |
 | `evlet_workflow_decisions` | Every decision (append-only) |
 
+## The gate on protected operations
+
+An operation the app lists in `WorkflowOptions.protects` runs only with approval evidence: the latest
+run of the record for that operation reached an `approved` end, its evidence was not used, and the
+saved data still matches what was approved (the record's data generation and a SHA-256 fingerprint
+of its non-sensitive values, rows and attachment list). The operation's own checks stay exactly as
+they are and run first: confirm still needs `update` and `confirm`, a Move its roles and guards, an
+action its roles and `available_when`.
+
+The gate sits in the document pipeline, not in a route, so every caller meets it: HTTP,
+`context.confirm`, `context.move`, `context.action`, a custom action that calls `context`, jobs and
+scheduled work, the connector and Eva. Raw `Session` writes to a workflow model are refused; only
+`tx.maintenance()`, the audited administrative boundary, writes around the pipeline (and the
+fingerprint still notices such a change before the next protected operation).
+
+* **Evidence is used once.** The operation that succeeds uses it in its own transaction; if the
+  operation then fails (a validator, a posting), the use rolls back with it and the evidence stays.
+  Approval for confirm never serves cancel, reopen or a later confirm: each needs its own run when
+  it is protected. Rejected, ended and withdrawn runs grant nothing, and `record_approval` events are
+  never read: they stay audit only.
+* **The confirmation snapshot** records `{"workflow": {"run", "workflow", "version", "attempt",
+  "decisions"}}` as its `approval` member when a workflow protected the confirm.
+* **Refusals** are 409 with a `code`: `WORKFLOW_REQUIRED` ("Confirm needs approval. Send this
+  purchase order for review first."), `WORKFLOW_NONE` when `unmatched="block"` and no workflow applies,
+  and `WORKFLOW_BLOCKED` when it cannot be decided which workflow applies. With `unmatched="allow"` an
+  operation no workflow applies to runs as it did before; an open run for the operation still needs
+  its approval.
+
+## Stage edit rules
+
+While a run is open, every write to the record meets the edit rules of its current stage, in each
+open run (an approval run and an operational run intersect). Workflow rules narrow what the app's
+permissions, row scopes, locks and closed periods allow; they never widen them.
+
+* **Who can edit:** `nobody` (the default for review and operational stages), `requester` (the
+  default for work stages), `assigned` (people with an open task at the stage), `selected` (the
+  people listed) or `existing` (everyone who may already update the record). There is no admin
+  exemption.
+* **Fields:** `all` or `only` the listed names. A rule that names no fields lets nobody change one.
+  Computed and read-only fields and the State do not count as edits.
+* **Rows:** each Table at any depth (`lines`, `lines.serials`) has `edit`, `add`, `remove` and
+  `reorder`; a table the rule does not name allows none of them. Replacing a whole list is a removal
+  and an addition. Adding a row also adds its own rows.
+* **Attachments:** `add` and `remove`; a rule without them allows neither. A rich text image upload
+  only needs the person to be among who can edit.
+* **Custom actions are edits:** an action that changes fields meets the same rules.
+* **Deleting** a record is refused while a request awaits review; at a work stage the person must be
+  among who can edit, and the open run ends with the record.
+
+A refused write is 409 `WORKFLOW_LOCKED` with a reason such as "Locked during Manager Review.
+Nobody edits at this stage." Field names appear only when the person can read them. Engine state is
+not in the record, so a body cannot choose a stage: workflow routes refuse any key they do not take.
+
+## Approval validity
+
+Every committed write that changes anything other than the app's `harmless` fields raises the
+record's data generation: root fields, rows at any depth (edit, add, remove, reorder, replace),
+stored results, the State and attachments. In the same transaction:
+
+* an attempt awaiting review ends ("The purchase order changed after it was sent for review."), its
+  open tasks close, and the run returns to its start stage in a linked new attempt;
+* approval evidence not yet used is voided and its run ends, so the protected operation needs a new
+  Send.
+
+Earlier decisions stay, marked as belonging to a superseded attempt.
+
+## Decisions, feedback and history
+
+* **Feedback** follows each action's rules (`hidden`, `optional`, `required`, `max_length` up to
+  4,000). Reject and Request changes always require it. It is trimmed and normalized to NFC; text
+  with only whitespace is none; lone surrogates, NUL and other control characters except tab and line
+  breaks are refused; it is stored and returned as plain text, never HTML.
+* **Sending** a record for review needs `update` access to it; deciding needs `review`, read access
+  and an open task; withdrawing is for the requester, with `update`, while the request awaits review.
+  Each decision checks again that the account is active.
+* **Atomic history:** each decision, Send and withdrawal writes a journal entry (`submitted`,
+  `decided`, `withdrawn`, and `stage` when the run moves to another stage or ends) and then the
+  append-only decision row that names it, in one transaction. Any failure rolls both back, and the
+  `context.workflow` handle uses a savepoint so trusted code that catches the error still leaves
+  nothing behind. A model with `Meta.workflow` always journals; `Meta.journal = None` is refused.
+* Decision rows record the actor, role, feedback, attempt, data generation, source (User, API,
+  Integration...), client (HTTP, Python, or the AI assistant) and correlation id.
+
+## Python
+
+```python
+with app.business.context(user, source="Integration") as context:
+    wf = context.workflow(PurchaseOrder, record_id)          # needs read access
+    wf.status()                                             # same shape as GET .../workflow
+    wf.decide(kind="submit", key="import-7781")             # Send for review
+    wf.decide("act_mapprv", feedback="Within budget")       # by action id
+    wf.decide(kind="approve", review="rev_finan1")          # one of several reviews you may decide
+    wf.withdraw(feedback="Wrong supplier")
+```
+
+`protects=` picks the operation when a record has several. Python skips the ETag and token but
+none of the checks. `key` is optional in Python; with a key, a repeated call returns the first
+result and the same key with other input is refused (`IDEMPOTENCY_MISMATCH`).
+
+## HTTP
+
+| Route | Body | Does |
+|---|---|---|
+| `GET /api/{model}/{id}/workflow[?protects=confirm]` | | Status: stage, tasks, decisions with feedback, the actions you may take now, `withdraw`, `evidence` and the `token` |
+| `POST /api/{model}/{id}/workflow/actions/{action_id}` | `{key, token, review?, feedback?, protects?}` | Send for review or decide |
+| `POST /api/{model}/{id}/workflow/withdraw` | `{key, token, feedback?, protects?}` | The requester withdraws |
+
+Each POST needs `If-Match` (the record's ETag) and `token`, the run's concurrency token from the
+status (`"new"` before the first run). A decision can change the run without changing a field, so
+the token catches what the ETag cannot. The order of checks is: read access, the receipt for `key`
+(a retry of a request that succeeded returns its stored result even with an old ETag or token),
+`If-Match`, `token`, then the decision's own checks. Bodies are at most 16 KB.
+
+Every error from these routes carries a `code`; other routes keep their bodies, and gain a `code`
+only for the workflow refusals above:
+
+| Status | `code` | When |
+|---|---|---|
+| 428 | `PRECONDITION_REQUIRED` | No `If-Match`, or no `token` |
+| 409 | `RECORD_CHANGED` | `If-Match` is stale |
+| 409 | `WORKFLOW_CHANGED` | `token` is stale, or the task was decided or closed meanwhile |
+| 409 | `WORKFLOW_BLOCKED` | The run is blocked (nobody eligible, an undecided condition) |
+| 409 | `WORKFLOW_PAUSED`, `WORKFLOW_NONE` | New requests are paused; no workflow applies |
+| 409 | `IDEMPOTENCY_MISMATCH` | The key was used with other input |
+| 409 | `CONFLICT` | Another database conflict |
+| 403 | `FORBIDDEN` | No `review`, not assigned, your own request, not the requester |
+| 404 | `NOT_FOUND` | No read access, or an unknown action |
+| 413 | `TOO_LARGE` | The body is over 16 KB |
+| 422 | `VALIDATION_FAILED` | Missing `key`, unknown keys, feedback rules; `fields` names each problem |
+
+A person who can read but not update the record (a reviewer with `review`) decides through these
+routes. `Meta.api = "read"`, a read-only API key and an assistant that may only read are refused like
+any other write. The connector and Eva use these same routes with the person's own permissions.
+
+## Try it in the Playground
+
+The lifecycle Playground (`examples/playground/lifecycle/`) declares `Meta.workflow` on Order with
+`unmatched="allow"`, so confirming works as before until an administrator publishes
+`approval.json`: viewers review every order, and orders whose rates add up to more than 1,000.00 go on
+to an admin review. Once it is published, confirm needs approval, an edit after approval sends the
+order back for review, and `remarks` (harmless) can change without that.
+
 ## Not built yet
 
-The protection gate on confirm, moves and actions, stage edit rules on writes, approval
-invalidation, idempotency receipts and journal entries come in the enforcement phase. The
-configuration editor and the runtime screens come after it, then nested reviews, delegation,
-deadlines, hold and override.
+The configuration editor and the runtime screens (record header, workflow panel, inbox and
+dialogs) come next, then nested reviews, delegation, deadlines, hold, refresh, reassign, override and
+automatic execution of operations (`execute`). Until then a definition that uses `execute` or
+`completion.mode: "execute"` is refused at publication.

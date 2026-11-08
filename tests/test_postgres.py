@@ -960,3 +960,10 @@ def test_postgres_workflow(pg_dsn, check):
     # The tables, indexes and append-only triggers are created once and kept on a restart.
     app.initialize()
     getattr(workflow, check)(app)
+
+
+def test_postgres_workflow_enforcement(pg_dsn):
+    from tests import test_workflow_enforcement as enforcement
+    app = enforcement.build(PostgreSQLDatabase(pg_dsn, Registry(*enforcement.MODELS)))
+    app.initialize()
+    enforcement.check_gate_and_invalidation(app)

@@ -43,6 +43,11 @@ production ready, but the rules below hold from 0.3 on.
   and `Context.unlocked_periods(reason)` are public for trusted code
   ([model-engine.md](model-engine.md#closed-periods)).
 
+- **Approval workflows (provisional until 0.4.0 ships).** `Context.workflow(Model, id)` with
+  `status()`, `decide(...)` and `withdraw(...)`, the routes under `/api/{model}/{id}/workflow` and
+  their error `code` values ([workflows.md](workflows.md)). They join this contract with the 0.4.0
+  release; until then they may still change.
+
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
   public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).

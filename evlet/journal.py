@@ -38,7 +38,7 @@ APPEND_ONLY = 'The journal is append only'
 # effect rows, and `recomputed` by a Recompute migration that changed a record's stored results.
 ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'unposted', 'reposted', 'number', 'file', 'deleted',
                 'effects', 'recomputed', 'confirmed', 'reconfirmed', 'cancelled', 'reopened', 'approved', 'rejected',
-                'post_confirmation_edit')
+                'post_confirmation_edit', 'submitted', 'decided', 'withdrawn', 'stage')
 # Kinds about the State: shown as `changed` to a reader who cannot read it.
 STATE_KINDS = ('voided', 'revised', 'unposted', 'reposted', 'effects')
 # Kinds people write through HTTP (or journal.post), and the values each takes.
@@ -83,6 +83,11 @@ def compile_journals(models, child_models, effects=()):
             continue
         if getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False):
             value = value or Journal(tamper_evident=True)
+        elif meta is not None and vars(meta).get('workflow') is not None:
+            # Workflow decisions are written to the journal with their evidence, so a workflow model always journals.
+            if declared and value is None:
+                raise ValueError(f'{model.__name__}: Meta.workflow writes decisions to the journal; remove Meta.journal = None')
+            value = value or Journal()
         elif not declared:
             value = Journal() if model.__state__ is not None or model in effects else None
         if value is not None:

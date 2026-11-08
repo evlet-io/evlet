@@ -15,7 +15,7 @@ from evlet.workflow_definition import DefinitionError, evaluate, Undecided
 from evlet.workflow_engine import WorkflowError
 
 PEOPLE = Hierarchy('wfperson', parent='manager')
-ROLES = {'finance': 'editor', 'procurement': 'editor', 'it': 'editor', 'ops': 'editor', 'director': 'editor', 'clerk': 'viewer'}
+ROLES = {'finance': 'editor', 'procurement': 'editor', 'it': 'editor', 'ops': 'editor', 'director': 'editor', 'clerk': 'viewer', 'buyer': 'editor'}
 REVIEW = Rule(('read', 'review'))
 
 
@@ -51,7 +51,9 @@ class WfOrder(Model):
     lines = Table(WfLine)
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'confirm', 'cancel')),
                    'editor': Rule(('read', 'create', 'update', 'confirm')), 'viewer': REVIEW,
-                   'finance': REVIEW, 'procurement': REVIEW, 'it': REVIEW, 'ops': REVIEW, 'director': REVIEW, 'clerk': Rule(('read',))}
+                   'finance': REVIEW, 'procurement': REVIEW, 'it': REVIEW, 'ops': REVIEW, 'director': REVIEW, 'clerk': Rule(('read',)),
+                   # Buyers send orders and review each other's.
+                   'buyer': Rule(('read', 'create', 'update', 'review'))}
 
     def risk_rating(self):
         return self.risk_note or None
@@ -61,15 +63,16 @@ MODELS = (WfPerson, WfOrder)
 ADMIN = User(1, 'admin', 'admin')
 
 
-def build(db):
+def build(db, **options):
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False),
-                      policy=Policy(db.registry, roles=ROLES))
+                      policy=Policy(db.registry, roles=ROLES), **options)
     app.initialize()
     auth, people = app.business.auth, {}
     # Nobody signs in here, so accounts get a placeholder instead of a slow password hash.
     with db.transaction() as tx:
         for name, role in (('admin', 'admin'), ('rita', 'editor'), ('mona', 'viewer'), ('dora', 'director'), ('fay', 'finance'),
-                           ('fred', 'finance'), ('pia', 'procurement'), ('ivan', 'it'), ('otto', 'ops'), ('cleo', 'clerk'), ('sam', 'editor')):
+                           ('fred', 'finance'), ('pia', 'procurement'), ('ivan', 'it'), ('otto', 'ops'), ('cleo', 'clerk'), ('sam', 'editor'),
+                           ('bob', 'buyer'), ('bea', 'buyer')):
             user_id = tx.connection.execute('INSERT INTO evlet_users (username, password, role) VALUES (?, ?, ?)', (name, '!', role)).lastrowid
             people[name] = User(user_id, name, role)
     assert people.pop('admin').id == ADMIN.id
@@ -236,7 +239,7 @@ def test_catalogue_lists_declared_facts_people_and_reviewing_roles(app):
     assert found['people'] == [{'fact': 'requester.manager', 'label': "Requester's manager"}]
     reviewers = {item['role'] for item in found['roles'] if item['review']}
     # Admin reviews by default because it reads the model; the clerk reads but cannot review.
-    assert reviewers == {'admin', 'viewer', 'finance', 'procurement', 'it', 'ops', 'director'}
+    assert reviewers == {'admin', 'viewer', 'finance', 'procurement', 'it', 'ops', 'director', 'buyer'}
 
 
 def test_review_is_a_capability_that_needs_read_and_grants_no_update(app):
@@ -617,17 +620,23 @@ def test_all_people_of_a_review_must_approve(app):
 
 
 def test_self_approval_and_removed_access(app):
-    # Fay sends her own order to the Finance review: she is left out, and Fred decides it.
-    items = [review('rev_finan1', 'Finance', role('finance'))]
+    # Bob sends his own order to the buyers' review: he is left out, and Bea decides it.
+    items = [review('rev_buyer1', 'Buyers', role('buyer'))]
     publish(app, definition([draft('stg_deprt1'), group('stg_deprt1', 'Department Review', items), *ENDS]))
     record = order(app)
-    found = decide(app, 'fay', record, kind='submit')
-    assert found['tasks'][-1]['people'] == [app.people['fred'].id]
-    # Fred is deactivated after assignment; he can no longer decide, and nobody new is picked.
-    with app.database.transaction() as tx:
-        tx.connection.execute('UPDATE evlet_users SET active=0 WHERE id=?', (app.people['fred'].id,))
+    found = decide(app, 'bob', record, kind='submit')
+    assert found['tasks'][-1]['people'] == [app.people['bea'].id]
     with pytest.raises(AccessError):
-        decide(app, 'fay', record, kind='approve')
+        decide(app, 'bob', record, kind='approve')
+    # Bea is deactivated after assignment; she can no longer decide, and nobody new is picked.
+    with app.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_users SET active=0 WHERE id=?', (app.people['bea'].id,))
+    with pytest.raises(AccessError):
+        decide(app, 'bea', record, kind='approve')
+    # A reviewer who can only read cannot send a record for review: sending needs update access.
+    other = order(app)
+    with pytest.raises(AccessError):
+        decide(app, 'fay', other, kind='submit')
 
 
 def check_rework_starts_a_new_attempt(app):
@@ -699,12 +708,15 @@ def test_routing_is_deterministic(app):
 
 
 def test_tables_need_no_app_columns_and_existing_lifecycle_is_unchanged(app):
-    # Meta.workflow adds no columns to the model; confirm still works as before (enforcement is a later phase).
+    # Meta.workflow adds no columns to the model. With unmatched="block" and no published workflow, confirm
+    # fails closed; cancel and reopen are not protected by any workflow here.
     columns = {row[1] for row in sqlite3.connect(app.database.path).execute('PRAGMA table_info(wforder)')}
     assert not any('workflow' in name for name in columns)
     record = order(app, total='5')
-    with app.business.context(ADMIN) as context:
-        assert context.confirm(WfOrder, record)['_lifecycle']['state'] == 'confirmed'
+    with pytest.raises(WorkflowError) as caught:
+        with app.business.context(ADMIN) as context:
+            context.confirm(WfOrder, record)
+    assert caught.value.code == 'WORKFLOW_NONE'
     # A reviewer reads but cannot update.
     other = order(app)
     with pytest.raises(AccessError):
@@ -724,11 +736,19 @@ def test_the_playground_order_approval_example(tmp_path):
     with app.database.transaction() as tx:
         saved = engine.save_draft(tx, ada, Order, json.loads(APPROVAL.read_text()))
         engine.publish(tx, ada, saved['id'], revision=saved['revision'])
-    outcomes = []
+    outcomes, records = [], []
     for number, rate in (('PO-1', '400.00'), ('PO-2', '1200.00')):
         with app.business.context(eve) as context:
             record = context.create(Order, number=number, customer='Acme', children={'lines': [{'description': 'Chairs', 'rate': rate}]})['id']
-        with app.database.transaction() as tx:
-            engine.decide(tx, eve, Order, record, kind='submit')
-            outcomes.append(engine.decide(tx, vic, Order, record, kind='approve')['stage']['label'])
+            context.workflow(Order, record).decide(kind='submit', key=f'send-{number}')
+        with app.business.context(vic) as context:
+            outcomes.append(context.workflow(Order, record).decide(kind='approve')['stage']['label'])
+        records.append(record)
     assert outcomes == ['Approved', 'Second review']
+    # The published workflow protects confirm: the approved order confirms once, the other waits for its second review.
+    with app.business.context(eve) as context:
+        assert context.confirm(Order, records[0])['_lifecycle']['state'] == 'confirmed'
+    with pytest.raises(WorkflowError) as caught:
+        with app.business.context(eve) as context:
+            context.confirm(Order, records[1])
+    assert caught.value.code == 'WORKFLOW_REQUIRED'

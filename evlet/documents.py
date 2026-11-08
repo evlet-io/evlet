@@ -154,6 +154,7 @@ class Context:
         self._active = [] if active is None else active
         self._recalculate = None  # (model, record_id) explicitly allowed to recalculate under the active plan.
         self._person = None  # (model, record_id) of the write a person sent over HTTP; Controls rules apply to it.
+        self._workflow_evidence = None  # (model, record_id, operation, evidence) the workflow gate last used here.
 
     def read_context(self):
         result = Context(self._business, self._tx, self.user, readonly=True, active=self._active, source=self.source, correlation_id=self.correlation_id)
@@ -254,6 +255,12 @@ class Context:
         from .lifecycle import diff
         return diff(self, self._model(model), known_id(record_id), first, second)
 
+    def workflow(self, model, record_id, *, protects=None):
+        """The approval workflow of a record: status(), decide(...) and withdraw(...) with the same checks as
+        the HTTP routes (docs/workflows.md). Needs read access to the record."""
+        from .workflow_enforcement import WorkflowHandle
+        return WorkflowHandle(self, self._model(model), known_id(record_id), protects)
+
     def record_approval(self, model, record_id, *, approved, reason=None):
         from .lifecycle import record_approval
         return record_approval(self, self._model(model), known_id(record_id), approved, reason)
@@ -347,6 +354,8 @@ class Context:
         for definition, ids in subtree.items():
             if set(ids) - business.policy.visible(tx, user, definition, ids, 'delete'):
                 raise AccessError(404, 'Record not found')
+        from .workflow_enforcement import check_delete as workflow_delete
+        workflow_delete(self, model, record.id)
         for child in business.children.values():
             if child.parent is not model: continue
             rows = before._rows.get(child.name, [])
@@ -1462,6 +1471,12 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         lifecycle_engine.begin(context, model, draft, lifecycle, reason)
     else:
         lifecycle_engine.check_write(context, model, draft, before)
+    # A protected operation runs only with valid approval evidence, after its own checks (evlet/workflow_enforcement.py).
+    from . import workflow_enforcement
+    if lifecycle is not None:
+        workflow_enforcement.gate(context, model, record_id, lifecycle)
+    elif declared_move is not None:
+        workflow_enforcement.gate(context, model, record_id, 'move:' + move)
     # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
     lifecycle_locked = before is not None and getattr(model, 'confirmable', False) and lifecycle_engine.metadata(context, model, record_id)['state'] != 'draft'
     locked_write = action is None and move is None and before is not None and (states.locked_state(model, before._values) is not None or lifecycle_locked)
@@ -1497,6 +1512,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         if declaration is None or user.role not in declaration['roles']:
             raise AccessError(403, 'Action is unavailable')
         arguments = states.action_arguments(context, model, method, declaration, arguments, before)
+        workflow_enforcement.gate(context, model, record_id, 'action:' + action)
         with trusted():
             outcome = method(draft, **arguments)
     elif before is not None:
@@ -1536,6 +1552,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
         if outcome is not None: result['_outcome'] = outcome
         return result
+    # Stage edit rules of an open workflow run, checked on the settled draft before anything is written.
+    data_changed = workflow_enforcement.before_write(context, model, before, draft, lifecycle)
     # A closed period (Meta.period) refuses the write whether the saved or the new date is in it.
     from . import periods
     periods.check(tx, model, before=before._values if before is not None else None, after=draft._values)
@@ -1546,6 +1564,9 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     business.policy.record(tx, user, model, record.id, 'update' if before else 'create')
     keys = {}
     child_changes = persist_rows(context, model, draft, before, record.id, keys)
+    if data_changed:
+        # Approval evidence describes the data it approved: a change ends the attempt in this transaction.
+        workflow_enforcement.after_write(context, model, record.id)
     after = draft.stored_values()
     change = Change('create' if before is None else 'move' if move is not None else 'action' if action else 'update', user,
                     freeze(prior) if prior is not None else None, freeze(after),

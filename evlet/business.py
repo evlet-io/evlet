@@ -690,7 +690,9 @@ class Business:
                     return self.images(user, model, parts[4:], scope['method'], body)
                 return self.model_dispatch(scope, body, user, model, parts)
         except ValidationError as exc:
-            raise ValidationError(self.visible_errors(user, model, exc.errors)) from None
+            error = ValidationError(self.visible_errors(user, model, exc.errors))
+            error.code = getattr(exc, 'code', None)
+            raise error from None
 
     def visible_errors(self, user, model, errors, tx=None):
         """Hide error keys that name unreadable fields or rows the user cannot see."""
@@ -729,6 +731,9 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         path, method = scope['path'], scope['method']
+        if len(parts) >= 5 and parts[4] == 'workflow':
+            from .workflow_enforcement import route
+            return route(self, scope, body, user, model, parts)
         if len(parts) >= 5 and parts[4] in ('confirm', 'cancel', 'reopen', 'history', 'revisions', 'snapshot', 'diff'):
             from .lifecycle import route
             return route(self, scope, body, user, model, parts)
@@ -1404,7 +1409,10 @@ class Business:
             if method in ('POST', 'DELETE'):
                 from .documents import Context
                 from .states import check_attachments
+                from .workflow_enforcement import check_attachment
                 check_attachments(Context(self, tx, user, readonly=True), model, record)
+                image = method == 'POST' and file_id is None and body.get('purpose') == 'image'
+                check_attachment(self, tx, user, model, record_id, 'image' if image else 'add' if method == 'POST' else 'remove')
             args = (name, record_id)
             if method == 'POST' and file_id is None and body.get('purpose') == 'image':
                 # A rich text image: its own type check and limits, outside the record's files.
@@ -1432,7 +1440,9 @@ class Business:
                     raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
                 file_id = self.storage.add(tx, *args, filename, content)
                 from .journal import file
+                from .workflow_enforcement import attachment_changed
                 file(self, tx, user, model, record_id, 'added', {'id': file_id, 'name': filename, 'size': len(content)})
+                attachment_changed(self, tx, user, model, record_id)
                 self.changed(tx, model, record_id)
                 return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
             row = tx.connection.execute('SELECT * FROM evlet_attachments WHERE model=? AND record_id=? AND id=?', (*args, file_id)).fetchone()
@@ -1448,7 +1458,9 @@ class Business:
             if method == 'DELETE':
                 tx.connection.execute('DELETE FROM evlet_attachments WHERE id=?', (file_id,))
                 from .journal import file
+                from .workflow_enforcement import attachment_changed
                 file(self, tx, user, model, record_id, 'removed', {'id': file_id, 'name': row['name']})
+                attachment_changed(self, tx, user, model, record_id)
                 self.changed(tx, model, record_id)
                 return 204, None, []
         raise AccessError(405, 'Method not allowed')

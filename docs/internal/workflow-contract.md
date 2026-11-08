@@ -1,7 +1,7 @@
 # Document workflow: the contract
 
-Status: proposed for owner approval (phase 1 of [workflow.md](workflow.md)). Nothing here is
-built. Date: 07-11-2026.
+Status: approved by the owner on 08-11-2026 (phase 1 of [workflow.md](workflow.md)). Phases 2 and 3
+are built; sections 14 and 15 record their choices. Date: 07-11-2026.
 
 This document fixes the public shapes the later phases build: the neutral JSON of a workflow
 definition, the Python declaration an app writes, the permission extension, how workflow adopts
@@ -968,3 +968,70 @@ none is hard to change before phase 3.
     like the journal and lifecycle tables, not by a framework step.
 11. **Controls.** `review` joins the Controls operation list and the Permissions page's operation
     order. That order already lacks `confirm`, `cancel` and `reopen` (unrelated, existing gap).
+
+## 15. Phase 3 implementation notes and owner questions (08-11-2026)
+
+Phase 3 (enforcement and audit) is built: `evlet/workflow_enforcement.py` (the gate, stage edit rules,
+invalidation hooks, `context.workflow` and the HTTP routes), additions to `evlet/workflow_engine.py`
+(withdrawal, journal entries, evidence, fingerprint, generation), hooks in the document pipeline
+(`evlet/documents.py` `operate` and delete), attachments (`evlet/business.py`, `evlet/printing.py`) and
+`approval_information` (`evlet/lifecycle.py`). Tests: `tests/test_workflow_enforcement.py`, with a
+PostgreSQL check in `tests/test_postgres.py`. Public summary: [docs/workflows.md](../workflows.md).
+
+Where the contract left a choice open, phase 3 chose the safer option. Each is a question for the owner.
+
+1. **How evidence is used (the open phase 2 note).** Evidence is the latest run of the record for the
+   operation when that run reached an `approved` end, its attempt's `evidence_used_at` is empty, and
+   both the data generation and a SHA-256 fingerprint of the saved data match the values stored when
+   the request was sent. The protected operation that succeeds sets `evidence_used_at` in its own
+   savepoint, so a failed operation keeps the evidence. A later Send starts a new run, which hides the
+   old evidence. A change to non-harmless data voids unused evidence: the attempt and the run become
+   `ended` with the reason, and the next protected operation needs a new Send.
+2. **Fingerprint.** Root fields, rows at every depth with their positions, and the attachment ids.
+   Harmless fields are left out; masked and excluded fields contribute only whether they have a value.
+   It catches a `tx.maintenance()` edit that raised no generation.
+3. **Sending needs `update`.** The contract did not say who may Send. A reader (for example a reviewer)
+   could otherwise start a run on someone else's record. Withdrawal also needs `update`, and the requester.
+4. **Read access before the receipt.** Section 7.4 looks up the receipt before checking access. Phase 3
+   checks read access first, so someone who lost access cannot replay a stored result.
+5. **Codes beyond section 7.5.** `WORKFLOW_LOCKED` (409, a write refused by stage edit rules, on the
+   existing write routes too), `CONFLICT` (409, another database conflict), `TOO_LARGE` (413),
+   `METHOD_NOT_ALLOWED` (405) and `VALIDATION_FAILED` on 422 (section 7.5 showed no code for 422; the
+   task asked every workflow error to carry one). Other routes keep their bodies; they gain `code` only
+   for the workflow refusals.
+6. **Restrictive gaps in edit rules.** A rule that names no `fields` lets nobody change a field; a
+   missing `tables` entry denies all four row operations (as section 2.9 says); a missing
+   `attachments` denies both. Work stages keep their phase 2 default (the requester, everything).
+7. **Harmless fields obey edit rules.** `harmless` only means "does not invalidate approval". At a
+   review stage, where nobody edits by default, a harmless field is locked too, unless the stage lists it.
+8. **Moves and actions.** The State is not an edit (unlisted Moves are untouched and keep their own
+   roles), but a State change does raise the generation and ends an attempt in progress. A custom action
+   that changes fields is an edit and meets the stage rules.
+9. **Deleting.** Refused while a request awaits review. At a work stage, a person among who can edit
+   may delete, and the open run ends with reason "Record deleted".
+10. **Feedback text.** Trimmed, NFC-normalized, lone surrogates and control characters other than tab
+    and line breaks refused, at most `max_length` characters. Bidirectional formatting characters are
+    allowed, so Arabic text with explicit marks works; refusing them would stop "Trojan source"
+    spoofing in feedback. Which does the owner prefer?
+11. **Journal.** A model with `Meta.workflow` always journals (`Meta.journal = None` is refused at
+    registration). The journal entry is written first and the decision row names it in `journal_id`.
+    Kinds: `submitted`, `decided`, `withdrawn`, and `stage` whenever the run moves to another stage or
+    status (including invalidation, with its reason). Feedback has the audience of the record's history.
+12. **`execute` is refused at publication.** Phase 2 accepted `execute` and `completion.mode: "execute"`
+    but nothing runs them until phase 6. Publishing one now fails with "not available yet" rather than
+    being accepted and silently ignored.
+13. **Availability lists unchanged.** Section 5.2 asks `_lifecycle_actions`, `_moves` and `_actions` to
+    list a protected operation with `allowed: false` and the reason. `_lifecycle_actions` is a list of
+    names today, so changing its shape would change an existing route. Phase 3 leaves all three as
+    they are; phase 5 can add the reason with `_workflow`. Agree?
+14. **Void and revise.** Section 5.4 says voiding ends any open run. Not built in phase 3 (corrections
+    do not go through the workflow pipeline). Propose phase 6, with `override`.
+15. **Token before the first run** is `"new"`; after that `"<run id>.<counter>"` of the latest run for
+    the operation, so a Send after an approved or rejected run also checks it.
+16. **Which workflow applies at the gate.** With no open run, the gate evaluates `applies_when` with the
+    current person as the requester. For a system context (account 0) requester facts are undecided,
+    which blocks (`WORKFLOW_BLOCKED`) rather than allowing.
+17. **Eligibility at decision time.** Phase 2 did not check that the deciding account is still active;
+    phase 3 does, as section 2.4 requires.
+18. **Notification intents** (section 9) are not written yet. They belong with the runtime screens or
+    the notifications work. Which phase should own them?

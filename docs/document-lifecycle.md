@@ -142,7 +142,11 @@ call `context.record_approval(Model, id, approved=True, reason="Checked")`.
 Approval and rejection append actor, time and remarks to the same history without
 changing lifecycle state. Confirmation snapshots retain the latest approval event.
 This audit API is for trusted application policies; it does not grant approver
-roles or expose a generic HTTP approval endpoint.
+roles or expose a generic HTTP approval endpoint, and a configured approval
+workflow never reads its events. For a configured approval engine that protects
+confirm, cancel or reopen, see [Approval workflows](workflows.md): when a workflow
+protected a confirm, the snapshot's `approval` member names the workflow run,
+attempt and decisions instead of the latest approval event.
 
 Implement `check_lifecycle(self, operation)` to require an approval, reject
 cancellation with dependencies, or block reopening of a legal invoice. The policy

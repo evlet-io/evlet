@@ -243,6 +243,11 @@ def finish(context, model, record_id, before, draft, operation, reason):
 
 
 def approval_information(context, model, record_id):
+    from .workflow_enforcement import evidence_for
+    evidence = evidence_for(context, model, record_id)
+    if evidence is not None:
+        # A workflow protected this confirm: the snapshot names the run, attempt and decisions that approved it.
+        return {'workflow': evidence}
     row = context._tx.connection.execute("SELECT id, kind, actor, at, data FROM evlet_journal WHERE model=? AND record_id=? AND kind IN ('approved','rejected') ORDER BY id DESC LIMIT 1",
                                          (context._business.registry.name_for(model), record_id)).fetchone()
     return None if row is None else {'event_id': row['id'], 'approved': row['kind'] == 'approved', 'actor': row['actor'], 'at': row['at'],

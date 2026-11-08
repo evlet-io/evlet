@@ -59,7 +59,7 @@ For virtual environment setup and each step explained, read
 - [UI guide](docs/ui.md): the browser interface, its routes and the Python page API.
 - [Reports](docs/reports.md): filters, typed rows, totals, a chart, CSV export and print, in the browser and for Eva.
 - [Slips](docs/slips.md): forms presented from code that save nothing until handed in.
-- [Approval workflows](docs/workflows.md): `Meta.workflow`, facts, the `review` permission and the engine (in progress for 0.4.0).
+- [Approval workflows](docs/workflows.md): `Meta.workflow`, facts, the `review` permission, the engine, the gate on protected operations, stage edit rules and the decision routes (in progress for 0.4.0).
 - [Routing](docs/routing.md): frontends, reserved paths, `routes.py` and `evlet routes`.
 - [API stability](docs/api-stability.md): the names apps can rely on, deprecations and what is internal.
 - [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.

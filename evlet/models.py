@@ -132,7 +132,7 @@ class ModelType(type):
         if hasattr(meta, 'journal'):
             from .journal import Journal
             journaled = isinstance(meta.journal, Journal)
-        if getattr(cls, "confirmable", False) or getattr(cls, "track_changes", False) or journaled or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        if getattr(cls, "confirmable", False) or getattr(cls, "track_changes", False) or journaled or getattr(meta, 'workflow', None) is not None or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}

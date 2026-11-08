@@ -497,6 +497,8 @@ class Prints:
         from .documents import Context
         from .states import check_attachments
         check_attachments(Context(business, tx, user, readonly=True), model, tx.get(model, record_id))
+        from .workflow_enforcement import attachment_changed, check_attachment
+        check_attachment(business, tx, user, model, record_id, 'add')
         limits = business.attachment_limits[model]
         if len(content) > limits.max_size:
             raise ValidationError({'attachment': f'The PDF is larger than {size_text(limits.max_size)}'})
@@ -506,6 +508,7 @@ class Prints:
         file_id = business.storage.add(tx, name, record_id, filename, content)
         from .journal import file
         file(business, tx, user, model, record_id, 'added', {'id': file_id, 'name': filename, 'size': len(content)})
+        attachment_changed(business, tx, user, model, record_id)
         business.changed(tx, model, record_id)
         return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
 

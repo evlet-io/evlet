@@ -18,7 +18,9 @@ write paths, receipts and the journal add are a later phase (docs/internal/workf
 
 import hashlib
 import json
+import re
 import secrets
+import unicodedata
 
 from .auth import AccessError, User
 from .database import ConflictError
@@ -168,6 +170,9 @@ class Workflows:
     def initialize(self):
         with self.business.database.transaction() as tx:
             ensure_tables(tx.connection, postgres=self.postgres)
+            # Idempotency receipts of workflow decisions, shared with dialogs and slips.
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_operations (key TEXT PRIMARY KEY, actor INTEGER NOT NULL, '
+                                  'request TEXT NOT NULL, result TEXT NOT NULL)')
 
     def _model(self, model):
         model = self.registry.resolve(model)
@@ -229,6 +234,15 @@ class Workflows:
         version = (row['published_version'] or 0) + 1
         draft = {**draft, 'id': workflow_id, 'version': version, **({} if notes is None else {'notes': notes})}
         definition = self.check(tx, model, draft)
+        # Running an operation from a workflow (execute) comes in a later phase; until then publishing one is
+        # refused rather than accepted and silently ignored.
+        unbuilt = [{'id': action['id'], 'message': 'Running an operation from a workflow action is not available yet'}
+                   for stage in definition['stages'] for action in stage['actions'] if action['execute'] is not None]
+        if definition['settings']['completion']['mode'] == 'execute':
+            unbuilt.append({'id': 'settings', 'message': 'Completion that runs the operation is not available yet; use enable'})
+        if unbuilt:
+            from .workflow_definition import DefinitionError
+            raise DefinitionError(unbuilt)
         protects = protect_key(definition['protects'])
         self._check_overlap(tx, model, workflow_id, protects, definition)
         text = canonical(definition)
@@ -308,6 +322,25 @@ class Workflows:
         if row['status'] == 'paused' or definition['settings']['paused']:
             raise WorkflowError('WORKFLOW_PAUSED', 'New requests are paused for this workflow.')
         return row['id'], row['published_version'], definition
+
+    def applies(self, tx, model, record_id, protects, requester):
+        """Whether a published or paused workflow for the operation matches the record. An undecided
+        condition or two matches raise WORKFLOW_BLOCKED: they never count as no match."""
+        rows = tx.connection.execute("SELECT v.definition FROM evlet_workflows w JOIN evlet_workflow_versions v "
+                                     "ON v.workflow_id=w.id AND v.version=w.published_version "
+                                     "WHERE w.model=? AND w.protects=? AND w.status IN ('published','paused')",
+                                     (self.registry.name_for(model), protects)).fetchall()
+        matched = 0
+        for row in rows:
+            definition = json.loads(row['definition'])
+            facts, unknown = self.facts(tx, model, record_id, requester, condition_facts(definition['applies_when']))
+            found = evaluate(definition['applies_when'], facts, self.types(model))
+            if isinstance(found, Undecided):
+                raise blocked_error(self.undecided_message(model, found, unknown, 'Which workflow applies'), found.causes)
+            matched += bool(found)
+        if matched > 1:
+            raise blocked_error('More than one workflow applies to this record. An administrator must repair the workflows.')
+        return matched == 1
 
     # ---------- facts ----------
 
@@ -428,9 +461,10 @@ class Workflows:
             raise ValidationError({'protects': 'Choose the operation this decision is for'})
         return runs[0] if runs else None
 
-    def decide(self, tx, user, model, record_id, action_id=None, *, kind=None, review=None, protects=None, feedback=None):
+    def decide(self, tx, user, model, record_id, action_id=None, *, kind=None, review=None, protects=None, feedback=None, meta=None):
         """Record one decision (or the first Send, which starts a run) and settle what it completes.
-        Returns the run's status as status() does."""
+        Returns the run's status as status() does. `meta` holds source, client and correlation_id for the
+        decision row."""
         model = self._model(model)
         compiled = self.registry.workflows[model]
         record_id = RecordId(record_id)
@@ -453,8 +487,132 @@ class Workflows:
                 protects = compiled.protects[0]
             run = self.start(tx, user, model, record_id, protects)
         state = Run(self, tx, model, run)
-        state.decide(user, action_id, kind, review, feedback)
+        state.decide(user, action_id, kind, review, feedback, meta)
         return self.status(tx, user, model, record_id, protects=state.run['protects'])
+
+    def withdraw(self, tx, user, model, record_id, *, protects=None, feedback=None, meta=None):
+        """The requester withdraws the open request; returns the status as status() does."""
+        model = self._model(model)
+        record_id = RecordId(record_id)
+        self.business.policy.record(tx, user, model, record_id)
+        run = self.run_for(tx, model, record_id, protects)
+        if run is None:
+            raise WorkflowError('WORKFLOW_CHANGED', 'There is no open request to withdraw.')
+        state = Run(self, tx, model, run)
+        state.withdraw(user, feedback, meta)
+        return self.status(tx, user, model, record_id, protects=state.run['protects'])
+
+    # ---------- approval validity ----------
+
+    def fingerprint(self, tx, model, record_id):
+        """SHA-256 of the record's canonical saved data: root fields, rows at every depth with their positions
+        and the attachment list. Harmless fields are left out; masked and excluded fields contribute only
+        whether they have a value, never the value (their changes raise the data generation instead)."""
+        business = self.business
+        compiled = self.registry.workflows[model]
+
+        def values(definition, row, skip=()):
+            result = {}
+            internal = set(getattr(definition, '__internal_fields__', ())) - {'evlet_position'}
+            for name, field in definition.__fields__.items():
+                if name in skip or name in internal:
+                    continue
+                value = row._values.get(name)
+                if field.tracking in ('mask', 'exclude'):
+                    result[name] = value is not None
+                else:
+                    try:
+                        result[name] = field.serialize(value)
+                    except Exception:  # noqa: BLE001 - a value that cannot be serialized still counts by its text
+                        result[name] = str(value)
+            return result
+
+        def tree(definition, row, skip=()):
+            result = {'id': int(row.id), 'values': values(definition, row, skip), 'rows': {}}
+            for child in business.children.values():
+                if child.parent is not definition:
+                    continue
+                table, link = identifier(self.registry.name_for(child.model)), identifier(child.link)
+                rows = [child.model._from_row(item) for item in tx.connection.execute(f'SELECT * FROM {table} WHERE {link}=? ORDER BY id',
+                                                                                     (row.id,)).fetchall()]
+                result['rows'][child.name] = [tree(child.model, item, (child.link,)) for item in rows]
+            return result
+
+        data = tree(model, tx.get(model, record_id), compiled.harmless)
+        if tx.connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_attachments'" if not self.postgres else
+                                 "SELECT 1 FROM information_schema.tables WHERE table_name='evlet_attachments'").fetchone():
+            data['attachments'] = [row[0] for row in tx.connection.execute(
+                "SELECT id FROM evlet_attachments WHERE model=? AND record_id=? AND (purpose IS NULL OR purpose <> 'image') ORDER BY id",
+                (self.registry.name_for(model), record_id)).fetchall()]
+        return hashlib.sha256(canonical(data).encode()).hexdigest()
+
+    def latest(self, tx, model, record_id, protects):
+        return tx.connection.execute('SELECT * FROM evlet_workflow_runs WHERE model=? AND record_id=? AND protects=? ORDER BY id DESC LIMIT 1',
+                                     (self.registry.name_for(model), RecordId(record_id), protects)).fetchone()
+
+    def token(self, tx, model, record_id, protects):
+        """The concurrency token of a record's workflow for one operation: "<run id>.<counter>" of its latest
+        run, or "new" when it never had one."""
+        run = self.latest(tx, model, record_id, protects)
+        return 'new' if run is None else f'{run["id"]}.{run["counter"]}'
+
+    def evidence(self, tx, model, record_id, protects):
+        """(run, attempt) when the latest run for the operation reached an approved end whose evidence is unused
+        and still matches the saved data (generation and fingerprint), else None."""
+        run = self.latest(tx, model, record_id, protects)
+        if run is None or run['status'] != 'approved':
+            return None
+        attempt = tx.connection.execute('SELECT * FROM evlet_workflow_attempts WHERE id=?', (run['attempt_id'],)).fetchone()
+        if attempt['status'] != 'approved' or attempt['evidence_used_at'] is not None:
+            return None
+        if attempt['generation'] != self.generation(tx, model, record_id) or attempt['fingerprint'] != self.fingerprint(tx, model, record_id):
+            return None
+        return run, attempt
+
+    def consume(self, tx, run, attempt):
+        """Use approval evidence once; the run's token changes. Returns what the confirmation snapshot records."""
+        tx.connection.execute('UPDATE evlet_workflow_attempts SET evidence_used_at=? WHERE id=?', (now(), attempt['id']))
+        tx.connection.execute('UPDATE evlet_workflow_runs SET counter=counter+1 WHERE id=?', (run['id'],))
+        decisions = [row[0] for row in tx.connection.execute(
+            "SELECT id FROM evlet_workflow_decisions WHERE attempt_id=? ORDER BY id", (attempt['id'],)).fetchall()]
+        return {'run': run['id'], 'workflow': run['workflow_id'], 'version': run['version'], 'attempt': attempt['n'], 'decisions': decisions}
+
+    def record_changed(self, tx, user, model, record_id, reason):
+        """A committed write changed non-harmless data: raise the record's data generation, end every approval
+        attempt in progress (its open tasks close and the run returns to its start stage in a new attempt) and
+        void approval evidence not yet used. Runs in the writer's transaction, so it commits or rolls back with it."""
+        name, record_id = self.registry.name_for(model), RecordId(record_id)
+        tx.connection.execute('INSERT INTO evlet_workflow_record_data (model, record_id, generation) VALUES (?, ?, 1) '
+                              'ON CONFLICT (model, record_id) DO UPDATE SET generation=evlet_workflow_record_data.generation+1',
+                              (name, record_id))
+        for run in self.open_runs(tx, model, record_id):
+            state = Run(self, tx, model, run)
+            if state.attempt()['status'] != 'active':
+                continue
+            before = (run['stage_id'], run['status'])
+            state.restart('ended', reason)
+            state.bump()
+            state.note_stage(user, before, reason)
+        for protects in self.registry.workflows[model].protects:
+            run = self.latest(tx, model, record_id, protects)
+            if run is None or run['status'] != 'approved':
+                continue
+            attempt = tx.connection.execute('SELECT * FROM evlet_workflow_attempts WHERE id=?', (run['attempt_id'],)).fetchone()
+            if attempt['evidence_used_at'] is not None:
+                continue
+            at = now()
+            tx.connection.execute("UPDATE evlet_workflow_attempts SET status='ended', ended_at=?, end_reason=? WHERE id=?",
+                                  (at, reason, attempt['id']))
+            tx.connection.execute("UPDATE evlet_workflow_runs SET status='ended', counter=counter+1 WHERE id=?", (run['id'],))
+            state = Run(self, tx, model, tx.connection.execute('SELECT * FROM evlet_workflow_runs WHERE id=?', (run['id'],)).fetchone())
+            state.journal(user, 'stage', {'attempt': attempt['n'], 'from': {'id': run['stage_id'], 'label': state.stages[run['stage_id']]['label']},
+                                          'to': {'id': run['stage_id'], 'label': state.stages[run['stage_id']]['label']},
+                                          'status': 'ended', 'reason': reason})
+
+    def record_deleted(self, tx, model, record_id):
+        """End the record's open runs when it is deleted (the caller checked that the stage allowed it)."""
+        for run in self.open_runs(tx, model, record_id):
+            Run(self, tx, model, run).end('Record deleted')
 
     def start(self, tx, user, model, record_id, protects):
         selected = self.select(tx, model, record_id, protects, user.id)
@@ -776,15 +934,11 @@ class Run:
 
     # Decisions
 
-    def decide(self, user, action_id, kind, review, feedback):
+    def decide(self, user, action_id, kind, review, feedback, meta=None):
+        """Record one decision and settle what it completes; returns the decision id. The journal entry is
+        written first, in the same transaction, so the decision row can name it (both or neither persist)."""
         run = self.run
-        if run['status'] == 'blocked':
-            reason = json.loads(run['blocked'])
-            raise blocked_error(reason['message'], reason.get('causes', ()))
-        if run['status'] == 'held':
-            raise WorkflowError('WORKFLOW_CHANGED', 'This request is on hold.')
-        if run['status'] not in ('draft', 'active'):
-            raise WorkflowError('WORKFLOW_CHANGED', CHANGED)
+        self.check_open()
         execution = self.execution()
         stage = self.stages[run['stage_id']]
         routing = self.routing(execution)
@@ -801,12 +955,25 @@ class Run:
                 raise ValidationError({'action': 'Choose the action'})
             action = matches[0]
         text = clean_feedback(feedback, action['feedback'])
+        if action['kind'] == 'submit':
+            # Sending a record for review changes what may happen to it, so it needs update access to it.
+            self.engine.business.policy.record(self.tx, user, self.model, run['record_id'], 'update')
         task = self.task_for(user, execution, stage, action, review)
         decision = action['kind']
-        self.connection.execute('INSERT INTO evlet_workflow_decisions (run_id, attempt_id, execution_id, task_id, action_id, kind, actor, '
-                                'principal, role, feedback, at, version, generation) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                                (run['id'], run['attempt_id'], execution['id'], task['id'], action['id'], decision, user.id, user.id,
-                                 user.role, text, now(), run['version'], self.attempt()['generation']))
+        before = (run['stage_id'], run['status'])
+        attempt = self.attempt()
+        labels = {item['id']: item['label'] for item in (stage['reviews'] or {}).get('items', ())}
+        journal_id = self.journal(user, 'submitted' if decision == 'submit' else 'decided', {
+            'attempt': attempt['n'], 'action': action['id'], 'label': action['label'], 'kind': decision,
+            'stage': {'id': stage['id'], 'label': stage['label']},
+            'review': None if task['review_id'] is None else {'id': task['review_id'], 'label': labels.get(task['review_id'])},
+            'feedback': text})
+        meta = meta or {}
+        decision_id = self.connection.execute(
+            'INSERT INTO evlet_workflow_decisions (run_id, attempt_id, execution_id, task_id, action_id, kind, actor, principal, role, '
+            'feedback, at, version, generation, correlation_id, source, client, journal_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+            (run['id'], run['attempt_id'], execution['id'], task['id'], action['id'], decision, user.id, user.id, user.role, text, now(),
+             run['version'], attempt['generation'], meta.get('correlation_id'), meta.get('source'), meta.get('client'), journal_id)).lastrowid
         if decision in VOTES:
             # A person counts once per stage: they leave every other review of it.
             self.connection.execute('UPDATE evlet_workflow_assignees SET active=0 WHERE user_id=? AND task_id IN '
@@ -815,12 +982,89 @@ class Run:
             self.settle(execution, stage, routing, task, action)
         except Blocked as exc:
             self.block(execution['id'], stage, exc.message, exc.causes)
-        self.connection.execute('UPDATE evlet_workflow_runs SET counter=counter+1 WHERE id=?', (run['id'],))
+        self.bump()
+        self.note_stage(user, before)
+        return decision_id
+
+    def check_open(self):
+        run = self.run
+        if run['status'] == 'blocked':
+            reason = json.loads(run['blocked'])
+            raise blocked_error(reason['message'], reason.get('causes', ()))
+        if run['status'] == 'held':
+            raise WorkflowError('WORKFLOW_CHANGED', 'This request is on hold.')
+        if run['status'] not in ('draft', 'active'):
+            raise WorkflowError('WORKFLOW_CHANGED', CHANGED)
+
+    def bump(self):
+        """Raise the run's counter: its concurrency token changes."""
+        self.connection.execute('UPDATE evlet_workflow_runs SET counter=counter+1 WHERE id=?', (self.run['id'],))
         self.reload()
+
+    def journal(self, user, kind, data):
+        """Append a journal entry about this run in the current transaction; returns its id."""
+        from . import journal
+        return journal.append(self.engine.business, self.tx, user, self.model, self.run['record_id'], kind,
+                              {'workflow': {'run': self.run['id'], 'version': self.run['version'], **data}})
+
+    def note_stage(self, user, before, reason=None):
+        """A `stage` journal entry when the run moved to another stage or status since `before`."""
+        stage_id, status = before
+        if (self.run['stage_id'], self.run['status']) == (stage_id, status):
+            return
+        source, target = self.stages[stage_id], self.stages[self.run['stage_id']]
+        blocked = loads(self.run['blocked'])
+        self.journal(user, 'stage', {'attempt': self.attempt()['n'], 'from': {'id': source['id'], 'label': source['label']},
+                                     'to': {'id': target['id'], 'label': target['label']}, 'status': self.run['status'],
+                                     **({'reason': reason} if reason else {}),
+                                     **({'blocked': blocked['message']} if blocked else {})})
+
+    def withdraw(self, user, feedback, meta=None):
+        """The requester takes the request back: open tasks close, the attempt ends as withdrawn and the run
+        returns to its start stage. The next Send starts a linked new attempt."""
+        run = self.run
+        if run['status'] not in ('active', 'blocked') or self.attempt()['status'] != 'active':
+            raise WorkflowError('WORKFLOW_CHANGED', 'Only a request awaiting review can be withdrawn.' if run['status'] == 'draft' else CHANGED)
+        if not self.definition['settings']['withdraw']['allowed']:
+            raise AccessError(403, 'This workflow does not allow withdrawing a request')
+        self.engine.business.policy.record(self.tx, user, self.model, run['record_id'], 'update')
+        if user.id != run['requester']:
+            raise AccessError(403, 'Only the requester can withdraw this request')
+        text = clean_feedback(feedback, {'mode': 'optional', 'max_length': 2000})
+        execution = self.execution()
+        before = (run['stage_id'], run['status'])
+        attempt = self.attempt()
+        stage = self.stages[run['stage_id']]
+        journal_id = self.journal(user, 'withdrawn', {'attempt': attempt['n'], 'stage': {'id': stage['id'], 'label': stage['label']},
+                                                      'feedback': text})
+        meta = meta or {}
+        decision_id = self.connection.execute(
+            'INSERT INTO evlet_workflow_decisions (run_id, attempt_id, execution_id, task_id, action_id, kind, actor, principal, role, '
+            "feedback, at, version, generation, correlation_id, source, client, journal_id) VALUES (?, ?, ?, NULL, NULL, 'withdraw', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (run['id'], run['attempt_id'], None if execution is None else execution['id'], user.id, user.id, user.role, text, now(),
+             run['version'], attempt['generation'], meta.get('correlation_id'), meta.get('source'), meta.get('client'), journal_id)).lastrowid
+        self.restart('withdrawn', 'Withdrawn by the requester')
+        self.bump()
+        self.note_stage(user, before, 'Withdrawn by the requester')
+        return decision_id
+
+    def restart(self, status, reason):
+        """End the current attempt with `status` and send the run back to its start stage in a new attempt."""
+        execution = self.execution()
+        if execution is not None:
+            self.close_tasks(execution['id'], reason)
+            self.leave(execution['id'], 'closed', status='closed')
+        self.new_attempt(status, reason)
+        self.steps = 0
+        self.enter(self.definition['start'])
 
     def task_for(self, user, execution, stage, action, review):
         """The open task this person decides with the action; 403 when they are not assigned, 409 when their
         task was already decided or closed (a late vote)."""
+        active = self.connection.execute('SELECT 1 FROM evlet_users WHERE id=? AND active=1', (user.id,)).fetchone()
+        if active is None:
+            # Eligibility is checked again at each decision: an account disabled after assignment decides nothing.
+            raise AccessError(403, 'You cannot decide on this request')
         if action['kind'] in VOTES:
             if not self.engine.business.policy.allows(user, self.model, 'review'):
                 raise AccessError(403, 'You cannot decide on this request')
@@ -855,8 +1099,9 @@ class Run:
             self.close_tasks(execution['id'], 'Done by someone else')
             self.leave(execution['id'], kind)
             if kind == 'submit':
-                connection.execute("UPDATE evlet_workflow_attempts SET status='active', started_at=?, generation=? WHERE id=?",
-                                   (now(), self.engine.generation(self.tx, self.model, self.run['record_id']), self.run['attempt_id']))
+                connection.execute("UPDATE evlet_workflow_attempts SET status='active', started_at=?, generation=?, fingerprint=? WHERE id=?",
+                                   (now(), self.engine.generation(self.tx, self.model, self.run['record_id']),
+                                    self.engine.fingerprint(self.tx, self.model, self.run['record_id']), self.run['attempt_id']))
             self.enter(routing['routes'][action['id']])
             return
         if kind == 'request_changes':
@@ -923,6 +1168,17 @@ class Run:
                 raise Blocked(f'Nobody else is eligible to decide {label}: everyone assigned has decided another review of '
                               f'{stage["label"]}. An administrator must repair the assignment.')
 
+    def end(self, reason):
+        execution = self.execution()
+        if execution is not None:
+            self.close_tasks(execution['id'], reason)
+            self.leave(execution['id'], 'closed', status='closed')
+        at = now()
+        self.connection.execute("UPDATE evlet_workflow_attempts SET status='ended', ended_at=?, end_reason=? WHERE id=?",
+                                (at, reason, self.run['attempt_id']))
+        self.set_run(status='ended', ended_at=at, blocked=None)
+        self.bump()
+
     def new_attempt(self, status, reason):
         at, current = now(), self.attempt()
         self.connection.execute('UPDATE evlet_workflow_attempts SET status=?, ended_at=?, end_reason=? WHERE id=?',
@@ -934,15 +1190,28 @@ class Run:
         self.set_run(attempt_id=attempt_id)
 
 
+# Control characters other than tab, line feed and carriage return (C0, DEL and C1).
+CONTROL = re.compile('[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]')
+
+
 def clean_feedback(value, rules):
-    """Trimmed feedback text, or None; required feedback must have text."""
+    """Trimmed feedback text, or None. Feedback is plain text: valid Unicode (no lone surrogates), normalized
+    to NFC, without NUL or other control characters except tab and line breaks, and at most max_length
+    characters after trimming. Required feedback must have text; whitespace alone is none."""
     if value is not None and not isinstance(value, str):
         raise ValidationError({'feedback': 'Feedback is text'})
-    text = (value or '').strip()
+    text = value or ''
+    try:
+        text.encode('utf-8')
+    except UnicodeEncodeError:
+        raise ValidationError({'feedback': 'Feedback must be valid text'}) from None
+    text = unicodedata.normalize('NFC', text).strip()
+    if CONTROL.search(text):
+        raise ValidationError({'feedback': 'Feedback cannot contain control characters'})
     if rules['mode'] == 'hidden' and text:
         raise ValidationError({'feedback': 'This action takes no feedback'})
     if rules['mode'] == 'required' and not text:
         raise ValidationError({'feedback': 'Enter feedback'})
-    if '\x00' in text or len(text) > rules['max_length']:
-        raise ValidationError({'feedback': f'Feedback is at most {rules["max_length"]} characters of text'})
+    if len(text) > rules['max_length']:
+        raise ValidationError({'feedback': f'Feedback is at most {rules["max_length"]} characters'})
     return text or None
