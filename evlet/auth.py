@@ -293,6 +293,9 @@ class LocalAuth:
             ):
                 tx.connection.execute(statement)
             tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_roles (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('framework','custom')), base TEXT, realm TEXT NOT NULL DEFAULT 'desk' CHECK(realm IN ('desk','portal')), opens_controls INTEGER NOT NULL DEFAULT 0, description TEXT NOT NULL DEFAULT '')")
+            # Customize workspaces (Controls, Roles): edit the site's workspace overrides. Admin always may.
+            if 'customize_workspaces' not in self.database.columns(tx.connection, 'evlet_roles'):
+                tx.connection.execute('ALTER TABLE evlet_roles ADD COLUMN customize_workspaces INTEGER NOT NULL DEFAULT 0')
             # A role's realm decides where its users sign in: desk roles on desk hosts, portal roles on portal hosts.
             for role, realm, description in (('admin', 'desk', 'Full access to every app. Opens Controls.'), ('editor', 'desk', 'Reads and changes records.'),
                                              ('viewer', 'desk', 'Reads records only.'), (PORTAL, 'portal', 'Signs in on portal hosts. Sees only what an app grants.')):

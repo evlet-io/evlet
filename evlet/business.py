@@ -348,6 +348,10 @@ class Business:
             result['slips'] = self.slips.schema(user)
         if self.events or self.jobs:
             result['capabilities'] = {'events': self.events is not None, 'jobs': self.jobs is not None}
+        # How the currency codes an admin changed are shown (evlet.currencies); every other code keeps the default.
+        displays = self.controls.settings.get('display.currencies') if getattr(self, 'controls', None) is not None else None
+        if displays:
+            result['currency_display'] = displays
         if self.tenant:
             result['tenant'] = self.tenant
         available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}
@@ -417,6 +421,9 @@ class Business:
                 del entry['list_tabs']
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
+            # Meta.focus is display only; like key_fields it is left out for a role that cannot read the field.
+            if 'focus' in entry and entry['focus'] not in readable:
+                del entry['focus']
             # The field naming fills: the record page shows it as the document number, and until it has one,
             # when it will ("Assigned on save", "Assigned on confirm").
             naming = self.registry.naming.get(model)
@@ -499,6 +506,9 @@ class Business:
             slips = self.slips.schema(user, model) if getattr(self, 'slips', None) and self.slips.slips else []
             if slips:
                 entry['slips'] = slips
+        # Named sidebars, after the models and reports above are filtered for this role (evlet.workspaces).
+        if getattr(self, 'workspaces', None) is not None:
+            result['workspaces'] = self.workspaces.schema(user, result)
         return result
 
     def docs_path(self, scope, user):

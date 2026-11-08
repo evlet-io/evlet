@@ -19,7 +19,6 @@ import { isRecordId } from '../ids';
 import { batch, cell, derive, effect, onCleanup, untrack } from '../reactive';
 import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedControl, SummaryStrip, type StatProps } from '../ui/base';
 import { currencyIn, displayValue, localField, stateTint, statusTint } from '../ui/fields';
-import { formatMoney } from '../model/format';
 import { humanize } from '../ui/kinds';
 import { closeDialogs, DialogFooter, MenuButton, openModal, toast } from '../ui/layers';
 import { SplitView } from '../ui/split';
@@ -30,7 +29,7 @@ import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
-import { fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureText, MEASURE_TONES, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
+import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
 import { recordId } from '../ids';
 
@@ -53,11 +52,7 @@ export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema,
     return displayValue(field, { links: ctx.links, empty: '' });
   }
   // A Currency field whose code comes from the record (or a record it links to) shows that code.
-  if (meta.type === 'currency' && meta.currency_source) return () => {
-    const value = row()[meta.name];
-    return value === null || value === undefined || value === '' ? ''
-      : formatMoney(String(value), { currency: currencyIn(meta, name => row()[name], ctx.links), scale: typeof meta.scale === 'number' ? meta.scale : 2 });
-  };
+  if (meta.type === 'currency') return () => displayOf(meta, row()[meta.name], currencyIn(meta, name => row()[name], ctx.links));
   return () => formatOf(meta, row()[meta.name]);
 }
 
@@ -227,7 +222,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     return Object.fromEntries(state.states.map(value => {
       const item = items.find(entry => String(entry[state.field]) === value);
       const amount = amountOf(item);
-      return [value, { count: Number(item?.[countName] ?? 0), amount: valueField && amount !== null ? formatOf(valueField, amount) : undefined,
+      return [value, { count: Number(item?.[countName] ?? 0), amount: valueField && amount !== null ? displayOf(valueField, amount) : undefined,
         share: all ? (Number(amount) || 0) / all * 100 : 0 }];
     }));
   });
@@ -298,7 +293,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // Each measure is a card with an icon for its function; the accents take turns (no measure declares one).
   const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map((measure, index) => ({
-    label: measureLabel(measure), value: () => measureText(ctx.schema, model, measure, measures.get()?.[measure.name]),
+    label: measureLabel(measure), value: () => measureView(ctx.schema, model, measure, measures.get()?.[measure.name]),
     note: measure.where ? 'Filtered by a rule' : undefined, icon: measureIcon(model, measure), tone: MEASURE_TONES[index],
   }) as StatProps))) : null;
 
@@ -393,7 +388,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     totals: () => boardTotals.get(), amounts: Boolean(valueField),
     card: row => BoardCard({ title: () => titleOf(model, row()), tint,
       company: linkField ? () => { const id = row()[linkField.name]; return id ? ctx.links.title(linkField.target!, String(id)).get() ?? '' : ''; } : undefined,
-      value: valueField ? () => formatOf(valueField, row()[valueField.name]) : undefined,
+      value: valueField ? () => displayOf(valueField, row()[valueField.name], currencyIn(valueField, name => row()[name], ctx.links)) : undefined,
       date: dateField ? () => formatOf(dateField, row()[dateField.name]) : undefined,
       onOpen: () => open(row()) }),
     canMove: moveBlocked,

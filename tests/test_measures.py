@@ -646,3 +646,128 @@ def test_measures_with_void_revise_moves_and_sequences(numbered):
     copy_url = f"{base}/{copy['id']}"
     assert c('POST', copy_url + '/moves/issued', {}, headers=tag(copy_url))[1]['number'] == 'NQ-003'
     assert c('GET', base + '/measures')[1]['measures']['numbered'] == 3
+
+
+# Trends and colours on declared measures
+
+class Visit(Model):
+    permissions = {'admin': ALL, 'editor': Rule(('read', 'create'), scope=lambda user: {'owner': user.username}),
+                   'viewer': Rule(('read',), read_fields=('kind', 'fee'))}
+    kind = Select(('call', 'visit'), default='call')
+    fee = Currency(default='0')
+    held_on = Date()
+    owner = Text(default='')
+
+    class Meta:
+        measures = {
+            'fees': Sum('fee', where=F('kind') == 'visit', trend=('held_on', 'month', 12), color='teal'),
+            'visits': Count(trend='held_on'),
+            'plain': Count(),
+        }
+
+
+@pytest.fixture(params=['sqlite', 'postgresql'])
+def visits(request, tmp_path):
+    registry = Registry(Visit)
+    if request.param == 'sqlite':
+        database = Database(tmp_path / 'visits.sqlite3', registry)
+    else:
+        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    application = start(database)
+    add_user(application, 'editor')
+    add_user(application, 'viewer')
+    insert(application, Visit, [
+        {'kind': 'visit', 'fee': '100.00', 'held_on': '2026-01-05', 'owner': 'editor'},
+        {'kind': 'visit', 'fee': '40.50', 'held_on': '2026-01-20', 'owner': 'other'},
+        {'kind': 'call', 'fee': '7.00', 'held_on': '2026-01-21', 'owner': 'editor'},
+        {'kind': 'visit', 'fee': '25.00', 'held_on': '2026-03-02', 'owner': 'editor'},
+        {'kind': 'call', 'fee': '3.00', 'held_on': '2026-03-09', 'owner': 'other'},
+        {'kind': 'visit', 'fee': '9.99', 'held_on': None, 'owner': 'other'},
+    ])
+    return application
+
+
+def test_trend_and_color_are_checked_at_registration():
+    from evlet import DateTime
+
+    def declare(measure, *extra):
+        class Bad(Model):
+            name = Text(default='')
+            amount = Currency(default='0')
+            on = Date()
+            at = DateTime()
+            Meta = type('Meta', (), {'measures': {'n': measure}})
+        return Registry(Bad, *extra)
+
+    assert declare(Sum('amount', trend='on', color='rose')).measures
+    assert declare(Count(trend=('on', 'year', 24))).measures
+    assert declare(Count(trend=('on', 'day', 2))).measures
+    cases = [
+        (Count(trend='name'), 'trend: name is a text field; use a Date field'),
+        (Count(trend='at'), 'trend: at is a datetime field; use a Date field'),
+        (Count(trend='missing'), "trend: Bad has no stored field 'missing'"),
+        (Count(trend=('on', 'week', 6)), "the grain is one of day, month, year, not 'week'"),
+        (Count(trend=('on', 'month', 1)), 'points is a whole number from 2 to 24, not 1'),
+        (Count(trend=('on', 'month', 25)), 'points is a whole number from 2 to 24, not 25'),
+        (Count(trend=('on', 'month', 6.0)), 'points is a whole number from 2 to 24'),
+        (Count(trend=('on', 'month', '6')), 'points is a whole number from 2 to 24'),
+        (Count(trend=('on', 'month', True)), 'points is a whole number from 2 to 24'),
+        (Count(trend=('on', 'month')), 'takes a Date field name or a'),
+        (Count(trend=['on', 'month', 6]), 'takes a Date field name or a'),
+        (Count(color='purple'), 'color= is one of blue, green, amber, rose, violet, teal, slate'),
+    ]
+    for measure, message in cases:
+        with pytest.raises(ValueError) as error:
+            declare(measure)
+        assert str(error.value).startswith("Bad.Meta.measures['n']: "), error.value
+        assert message in str(error.value), (measure, error.value)
+    # A trend belongs to model-level measures only; a colour is fine on a per-record one.
+    def related(measure):
+        class BadNote(Model):
+            bad = Link('bad')
+            noted_on = Date()
+        return declare(measure(BadNote), BadNote)
+    with pytest.raises(ValueError, match=r"Bad.Meta.measures\['n'\]: trend= is for model-level measures"):
+        related(lambda note: Count(note, link='bad', trend='noted_on'))
+    assert related(lambda note: Count(note, link='bad', color='slate')).measures
+
+
+def test_schema_shows_trend_and_color_only_when_declared_and_readable(visits):
+    entry = lambda role: next(model for model in client(visits, role)('GET', '/api/schema')[1]['models'] if model['name'] == 'visit')
+    measures = {item['name']: item for item in entry('admin')['measures']}
+    assert measures['fees']['trend'] == {'field': 'held_on', 'grain': 'month', 'points': 12}
+    assert measures['fees']['color'] == 'teal'
+    assert measures['visits']['trend'] == {'field': 'held_on', 'grain': 'month', 'points': 6} and 'color' not in measures['visits']
+    # Without trend= and color= the entry keeps its existing shape.
+    assert measures['plain'] == {'name': 'plain', 'function': 'count', 'field': None, 'where': None, 'per_record': False,
+                                 'model': None, 'link': None}
+    # The viewer may read the measures but not held_on, so the trends are left out and the colour stays.
+    shown = {item['name']: item for item in entry('viewer')['measures']}
+    assert set(shown) == {'fees', 'visits', 'plain'}
+    assert 'trend' not in shown['fees'] and shown['fees']['color'] == 'teal' and 'trend' not in shown['visits']
+
+
+def test_trend_series_comes_from_the_aggregate_route(visits):
+    admin, editor, viewer = client(visits), client(visits, 'editor'), client(visits, 'viewer')
+
+    def url(measures, filters=None):
+        query = '/api/visit/aggregate?measures=' + measures + '&group_by=held_on:month'
+        return query if filters is None else query + '&filters=' + quote(json.dumps(filters))
+    # The declared measure's where= applies: calls do not add to fees.
+    status, body, _ = admin('GET', url('fees,visits', {'held_on__gte': '2026-01-01'}))
+    assert status == 200, body
+    assert body == {'group_by': ['held_on__month'], 'measures': ['fees', 'visits'], 'items': [
+        {'held_on__month': '2026-01', 'fees': '140.50', 'visits': 3},
+        {'held_on__month': '2026-03', 'fees': '25.00', 'visits': 2}]}
+    assert admin('GET', url('fees'))[1]['items'][0] == {'held_on__month': None, 'fees': '9.99'}
+    # The row scope applies: the editor's series counts only the editor's visits.
+    assert editor('GET', url('fees,visits', {'held_on__gte': '2026-01-01'}))[1]['items'] == [
+        {'held_on__month': '2026-01', 'fees': '100.00', 'visits': 2},
+        {'held_on__month': '2026-03', 'fees': '25.00', 'visits': 1}]
+    # A role that cannot read the trend field cannot group by it.
+    assert viewer('GET', url('fees'))[:2] == (403, {'error': 'Measure field is unavailable'})
+    assert viewer('GET', '/api/visit/aggregate?measures=fees')[1]['items'] == [{'fees': '175.49'}]
+    # Python reads the same series.
+    with visits.business.context(User(2, 'editor', 'editor'), readonly=True) as context:
+        assert context.aggregate(Visit, measures={'fees': 'fees'}, group_by=Month('held_on')) == [
+            {'held_on__month': '2026-01', 'fees': D_('100.00')}, {'held_on__month': '2026-03', 'fees': D_('25.00')}]

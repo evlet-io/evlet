@@ -243,7 +243,7 @@ export type StatTone = Tint | 'neutral';
 export interface StatProps {
   label: Prop<string>;
   /** Text, or a node shown as is (such as a currency symbol image and the amount). */
-  value: Prop<string | Node>;
+  value: Prop<Child>;
   /** A caption beside the label, such as "Filtered by a rule". */
   note?: Prop<string>;
   /** Shown muted when the value is empty. */
@@ -274,9 +274,13 @@ export function StatCard(props: StatProps): HTMLElement {
 }
 
 /** The text a value reads as: a string as is, a node's text with each image's alt text in its place. */
-export function spokenText(value: string | Node | null | undefined): string {
-  if (value === null || value === undefined) return '';
+export function spokenText(value: Child): string {
+  if (value === null || value === undefined || typeof value === 'boolean') return '';
   if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
+  if (typeof value === 'function') return spokenText(value());
+  if (Array.isArray(value)) return value.map(spokenText).join('').replace(/\s+/g, ' ').trim();
+  if (!(value instanceof Node)) return spokenText(value.get());
   if (value.nodeType === Node.TEXT_NODE) return value.textContent ?? '';
   if (value instanceof HTMLImageElement) return value.alt ? ` ${value.alt} ` : '';
   if (value instanceof Element && value.getAttribute('aria-hidden') === 'true') return '';

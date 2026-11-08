@@ -310,6 +310,7 @@ describe('two-step sign-in', () => {
         ? (sent.body.code === '654321' ? (signedIn = true, recorded.login) : { status: 401, etag: null, body: { error: 'That code is not right. Try again.' } })
         : { status: 200, etag: null, body: { two_step: 'code', ticket: 'fixture-ticket' } }],
       ['GET', /\/api\/schema$/, screen.schema],
+      ['GET', /\/api\/customer\?/, screen.customers_page1],
     ], '/login');
     await until(() => expect(text(host.querySelector('h1'))).toBe('Welcome back'));
     typeInto(host.querySelector<HTMLInputElement>('#ev-username')!, 'admin');
@@ -321,7 +322,7 @@ describe('two-step sign-in', () => {
     await until(() => expect(text(host.querySelector('[role="alert"]'))).toBe('That code is not right. Try again.'));
     typeInto(host.querySelector<HTMLInputElement>('#tfa-code')!, '654321');
     host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
-    await until(() => expect(location.pathname).toBe('/docs'));
+    await until(() => expect(location.pathname).toBe('/app/customer'));
     expect(requests(sent, 'POST', /login$/).map(item => item.body)).toEqual([{ username: 'admin', password: 'a sufficiently long password' },
       { ticket: 'fixture-ticket', code: '111111' }, { ticket: 'fixture-ticket', code: '654321' }]);
   });

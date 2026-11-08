@@ -40,6 +40,8 @@ export interface SlipSurface {
   source: (SlipSource & { title: string | null; revision: string }) | null;
   outcome: { kind: 'handler' } | { kind: 'document'; model: string; review: boolean };
   layout: Array<{ label: string; fields: string[] }>;
+  /** Slip.focus: the field the form puts the cursor in. Absent: the first editable field. */
+  focus?: string;
   definition: SlipDefinition;
   values: Record<string, any>;
   rules: Record<string, Rule>;

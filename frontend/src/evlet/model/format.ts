@@ -69,10 +69,44 @@ export function formatNumber(value: string | number | null | undefined, scale = 
   return (negative && !zero ? '-' : '') + group(whole) + (fraction ? separators()[1] + fraction : '');
 }
 
-/** Money with its currency: formatMoney('25200') is 'AED 25,200.00'. */
-export function formatMoney(value: string | number | null | undefined, options: { currency?: string; scale?: number } = {}): string {
+// ---------- currency display ----------
+// How each currency code is shown on this site (Controls, Currencies; /api/schema currency_display): a text
+// symbol or a small image, before or after the amount, with or without a space. Codes the site has not
+// changed show as they always have: 'AED 25,200.00'. The number itself is formatted as above either way.
+
+export interface CurrencyDisplay { symbol: string; image: string | null; position: 'prefix' | 'suffix'; space: boolean; tint?: boolean }
+let displays: Record<string, CurrencyDisplay> = {};
+const RTL = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufefc]/;
+
+/** Use the site's currency display from now on. Entries that are not well formed are ignored. */
+export function setCurrencyDisplays(next: Record<string, Partial<CurrencyDisplay>> | null | undefined) {
+  displays = {};
+  for (const [code, item] of Object.entries(next ?? {})) {
+    if (!/^[A-Z]{3}$/.test(code) || !item || typeof item !== 'object') continue;
+    const image = typeof item.image === 'string' && /^data:image\/(png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(item.image) ? item.image : null;
+    displays[code] = { symbol: typeof item.symbol === 'string' && item.symbol.trim() ? item.symbol : code, image,
+      position: item.position === 'suffix' ? 'suffix' : 'prefix', space: item.space !== false, tint: Boolean(item.tint && image) };
+  }
+}
+
+/** How a code shows: the site's setting, or the code, a space and the amount. */
+export const currencyDisplay = (code: string): CurrencyDisplay => displays[code] ?? { symbol: code, image: null, position: 'prefix', space: true, tint: false };
+
+/**
+ * A symbol as text: a right-to-left symbol (د.إ) is isolated with FSI and PDI so it keeps its place beside
+ * the digits. An image reads as its ISO code, wherever only text fits.
+ */
+export function symbolText(code: string, display = currencyDisplay(code)) {
+  if (display.image) return code;
+  return RTL.test(display.symbol) ? `\u2068${display.symbol}\u2069` : display.symbol;
+}
+
+/** Money with its currency: formatMoney('25200') is 'AED 25,200.00', or as the site shows that code. */
+export function formatMoney(value: string | number | null | undefined, options: { currency?: string; scale?: number; display?: CurrencyDisplay } = {}): string {
   const number = formatNumber(value, options.scale ?? 2);
-  return number && number !== INVALID_AMOUNT ? `${options.currency ?? 'AED'} ${number}` : number;
+  if (!number || number === INVALID_AMOUNT) return number;
+  const code = options.currency ?? 'AED', display = options.display ?? currencyDisplay(code), gap = display.space ? ' ' : '';
+  return display.position === 'prefix' ? `${symbolText(code, display)}${gap}${number}` : `${number}${gap}${symbolText(code, display)}`;
 }
 
 const pad = (number: number) => String(number).padStart(2, '0');

@@ -66,7 +66,7 @@ that is not `autorun`.
 | `type` | `text`, `integer`, `decimal`, `currency`, `date`, `boolean` or `link`. Every cell is cleaned through it |
 | `link` | For a `link` column, the model its values open (`'invoice'`). The cell shows the record's title |
 | `total` | Total this number column. Needs `unit`, the one currency or unit all its values share |
-| `unit` | A currency code (`'AED'`) prints as money; any other text follows the number |
+| `unit` | A currency code (`'AED'`) prints as money, with the site's symbol ([controls.md](controls.md#currencies)); any other text follows the number. CSV keeps the plain number and names the code in the header, `Total (AED)` |
 | `source` | `'model.field'`: the column, its values and its total are left out for anyone who cannot read that field |
 
 `Chart(type, x, y, label=None)`: `type` is `bar` or `line`, `x` a column for the labels and `y`
@@ -108,11 +108,18 @@ shows ids as plain text, and a column `source` on it is not hidden by field rule
 with that in mind. A model with `Meta.api = "read"` reads like any other; the Playground's
 `LedgerBalances` report totals its read-only ledger.
 
+### Reports over a ledger model
+
+A report whose `model` is a [ledger model](ledger.md) has `"source_kind": "ledger"` in the
+catalog, so the browser can list ledger reports together. Its `model` is still null, since the
+catalog never names a ledger model. Any other `model` gives `"model"`, and no `model` gives null.
+Ledger models stay without routes, schema entries or screens.
+
 ## Routes
 
 | Route | Does |
 | --- | --- |
-| `GET /api/_reports` | The reports this person can run: filters, columns, `group`, `model`, `sortable`, `chart`, `export` (also in `/api/schema` as `reports`) |
+| `GET /api/_reports` | The reports this person can run: filters, columns, `group`, `model`, `source_kind`, `sortable`, `chart`, `export` (also in `/api/schema` as `reports`) |
 | `POST /api/_reports/<name>/evaluate` | `{filters, revision}`: settles the filters without running. Returns `values`, `errors`, `states` and `rules` |
 | `POST /api/_reports/<name>` | `{filters, limit (1 to 100), offset, sort}`: one page. Returns `rows`, `total`, `totals`, `groups` (with `group_by`), `filters`, `sort` |
 | `POST /api/_reports/<name>/export.csv` | `{filters, sort}`: every row as CSV, up to 5,000 |

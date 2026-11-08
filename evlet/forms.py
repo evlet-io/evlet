@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 import hashlib
 import json
+import re
 
 from .auth import AccessError
 from .identity import jsonable, path_id
@@ -258,6 +259,13 @@ class Forms:
         model = registry.resolve(model)
         return registry.name_for(model) if registry.api.get(model, 'full') is not None else None
 
+    def source_kind(self, report):
+        """What the report's `model` is: "ledger" for a ledger model (which the catalog never names), "model"
+        for any other model, None without one. The browser groups ledger reports by it."""
+        if report.model is None:
+            return None
+        return 'ledger' if getattr(self.business.registry.resolve(report.model), '__ledger__', False) else 'model'
+
     def catalog(self, user):
         result = []
         for name, report in self.reports.items():
@@ -271,6 +279,7 @@ class Forms:
             result.append({**descriptor, 'autorun': report.autorun,
                            'columns': [self.column(column) for column in report.columns if column.name not in hidden],
                            'group': report.group, 'model': None if report.model is None else self.surfaced(report.model),
+                           'source_kind': self.source_kind(report),
                            'sortable': [column for column in report.sortable if column not in hidden], 'export': report.export,
                            'group_by': None if report.group_by in hidden else report.group_by,
                            'chart': None if chart is None else {**chart.public(), 'y': [column for column in chart.y if column not in hidden]}})
@@ -491,7 +500,10 @@ class Forms:
         columns = [column for column in report.columns if column.name not in hidden]
         out = io.StringIO()
         writer = csv.writer(out, lineterminator='\r\n')
-        writer.writerow([column.label or column.name.replace('_', ' ').capitalize() for column in columns])
+        # Money stays a plain number; a currency column names its ISO code in the header, never a symbol or image.
+        writer.writerow([(column.label or column.name.replace('_', ' ').capitalize())
+                         + (f' ({column.unit})' if column.type == 'currency' and column.unit and re.fullmatch('[A-Z]{3}', column.unit) else '')
+                         for column in columns])
         for row in rows:
             writer.writerow([csv_cell(row.get(column.name), column.type) for column in columns])
         if (total or 0) > len(rows):

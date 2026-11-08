@@ -13,7 +13,8 @@ import type { Field, Row, Table } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Button, Checkbox, Icon, IconTile, Key } from './base';
 import { read, textOf, uid, type Prop, type Tint } from './core';
-import { BaseField, displayValue, FieldControl, fieldFor, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
+import { BaseField, currencyFor, displayValue, FieldControl, fieldFor, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
+import { moneyChild } from './money';
 import { kindOf } from './kinds';
 import { openPopover, toast } from './layers';
 import { arrange, byKey, ColumnsMenu, emptyPrefs, pinnedKeys, pinTracker, resizeHandle, virtualWindow, type TablePrefs } from './table';
@@ -26,10 +27,10 @@ const NARROW = '(max-width: 480px)';
 const narrowNow = () => { try { return Boolean(window.matchMedia?.(NARROW)?.matches); } catch { return false; } };
 const WIDTHS: Record<string, number> = { text: 200, longtext: 260, link: 200, currency: 140, decimal: 110, integer: 90, percent: 100, date: 120, datetime: 160,
   time: 90, duration: 110, select: 140, boolean: 90, email: 200, url: 200, phone: 150, tags: 200, state: 120, sequence: 150, reference: 180 };
-const RICH = new Set(['link', 'state', 'tags', 'sequence', 'boolean']);
+const RICH = new Set(['link', 'state', 'tags', 'sequence', 'boolean', 'currency']);
 
 export interface ChildColumn { key: string; label: string; width: number; meta: FieldSchema; calculated: boolean; align: 'left' | 'right' }
-export interface TotalItem { label: string; value: Prop<string>; grand?: boolean }
+export interface TotalItem { label: string; value: Prop<Child>; grand?: boolean }
 
 /** The record a child table belongs to, for the compact header of its focus view. */
 export interface FocusHeading {
@@ -57,7 +58,7 @@ export interface ChildTableProps {
   /** Why the lines are locked; read when the lock shows, so it follows the record's state. */
   lockedText?: Prop<string>;
   /** Footer values by column; defaults to the parent's sums over this table. */
-  totals?: Record<string, FieldLike | Prop<string>>;
+  totals?: Record<string, FieldLike | Prop<Child>>;
   /** Totals under the table (net, VAT, grand total); defaults to the footer sums. */
   summary?: TotalItem[];
   prefs?: Cell<TablePrefs>;
@@ -102,9 +103,14 @@ function parentGrandTotals(table: Table, sums: Record<string, Field>): Field[] {
   });
 }
 
-const valueText = (value: FieldLike | Prop<string>): string => {
-  if (value && typeof value === 'object' && 'meta' in value) return kindOf(value.meta.type).format(value.value.get(), value.meta);
-  return read(value as Prop<string>) ?? '';
+// A total's value: money with the site's currency symbol, anything else as text.
+const valueText = (value: FieldLike | Prop<Child>): Child => {
+  if (value && typeof value === 'object' && 'meta' in value) {
+    const meta = value.meta;
+    if (meta.type === 'currency') return moneyChild(value.value.get(), currencyFor(value)(), typeof meta.scale === 'number' ? meta.scale : 2);
+    return kindOf(meta.type).format(value.value.get(), meta);
+  }
+  return read(value as Prop<Child>) ?? '';
 };
 
 /** Lines of a record: an editable grid with live totals that locks with the record. */
@@ -570,7 +576,7 @@ export interface ChildRowsProps {
   lockedText?: Prop<string>;
   links?: LinkSource | null;
   /** Totals under the rows: the parent's sums over this table. */
-  totals?: Array<{ label: string; value: Prop<string> }>;
+  totals?: Array<{ label: string; value: Prop<Child> }>;
   /** Show the full grid (the record page at this table's tab). */
   onOpenFull?: () => void;
 }

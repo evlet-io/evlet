@@ -36,7 +36,7 @@ class Application:
     # build_instance sets this: an instance's framework steps run only inside evlet migrate.
     managed_framework = False
 
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None, prints=()):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None, prints=(), workspaces=()):
         from .routing import RouteTable, resolve_routes
         from .naming import check_declarations
         check_declarations(database.registry, {child.model for child in database.registry.children})
@@ -65,6 +65,11 @@ class Application:
             self.business.forms = Forms(self.business, reports)
             from .slips import Slips
             self.business.slips = Slips(self.business, slips)
+            # Named sidebars, checked against the models, reports and slips above (evlet.workspaces).
+            from .workspaces import Workspaces
+            if isinstance(workspaces, (str, bytes)) or not isinstance(workspaces, (list, tuple)):
+                raise ValueError('Pass workspaces as a list or tuple of Workspace definitions')
+            self.business.workspaces = Workspaces(self.business, workspaces, name='Playground' if playground else name or 'Evlet')
             from .printing import Prints
             self.business.prints = Prints(self.business, prints)
             self.business.apis = tuple(apis)
@@ -84,8 +89,8 @@ class Application:
                     raise ValueError('Pass ai=AI(...)')
                 if ai.enabled:
                     self.business.eva = Eva(self.business, ai)
-        elif reports or apis or connectors or slips or prints or ai is not None:
-            raise ValueError('Reports, slips, print designs, APIs, connectors and AI require authentication')
+        elif reports or apis or connectors or slips or prints or workspaces or ai is not None:
+            raise ValueError('Reports, slips, print designs, workspaces, APIs, connectors and AI require authentication')
 
     async def __call__(self, scope, receive, send):
         # A request is a caller: Meta.api limits what it reaches (evlet/permissions.py); app code it runs is trusted.

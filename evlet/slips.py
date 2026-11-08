@@ -38,6 +38,7 @@ class Slip(Model):
     review = True
     menu = False
     layout = ()
+    focus = None
     __transient__ = True
 
     def __init_subclass__(cls, **kwargs):
@@ -194,6 +195,9 @@ class Slips:
             for group in slip.layout:
                 if not isinstance(group, tuple) or len(group) != 2 or not isinstance(group[0], str) or set(group[1]) - names:
                     raise ValueError(f'{label}: layout groups are (label, field names) of declared fields')
+            if slip.focus is not None:
+                from .ui.metadata import check_focus
+                check_focus(f'{label}.focus', slip, slip.focus)
             from .models import resolve_sources
             from .reactivity import graph
             resolve_sources(registry, slip)
@@ -367,5 +371,5 @@ class Slips:
                                                        'revision': self.business.record_revision(draft.context._tx, user, record).decode()},
                 'outcome': {'kind': 'handler'} if slip.becomes is None else
                            {'kind': 'document', 'model': storage_name(slip.becomes), 'review': slip.review},
-                'layout': layout, 'definition': descriptor, 'values': draft_values(draft),
+                'layout': layout, **({'focus': slip.focus} if slip.focus is not None else {}), 'definition': descriptor, 'values': draft_values(draft),
                 'rules': rules(draft), 'errors': errors, 'states': states, 'revision': revision}

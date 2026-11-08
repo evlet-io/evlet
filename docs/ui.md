@@ -2,7 +2,8 @@
 
 The browser interface is built on Evlet's own UI framework, described in
 [ui-framework.md](ui-framework.md). Its code lives in `frontend/src/evlet/`. It has no
-runtime dependencies. A session opens Docs after sign-in. Every model the role can read
+runtime dependencies. Sign-in lands on the person's start page or the first list the role
+can open, and Docs stay reachable from the sidebar and the search palette. Every model the role can read
 gets a list and a record view, built from `/api/schema`, record details and the list
 routes, so a model-only application needs no frontend code.
 
@@ -11,7 +12,7 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 ## What this interface renders
 
 - Sign-in and first-run setup (the first administrator account).
-- Docs after sign-in, with its topics.
+- Docs, with its topics, from the sidebar and the search palette.
 - The shell: sidebar with the Workspace switcher, the workspace's sections and shortcuts, and
   Explorer ([below](#sidebar-and-workspaces)); a top bar with a history button for recent records (left of
   search), the search palette, notifications and shortcuts. New records start from the New button
@@ -35,7 +36,27 @@ save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`,
-`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks` and `panel`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks`, `panel` and `focus`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+
+### Where the cursor starts
+
+`Meta.focus` names the field a new record's form puts the cursor in:
+
+```python
+class Invoice(Model):
+    class Meta:
+        focus = 'customer'
+```
+
+It must be a visible field that people fill in: stored, not hidden, not read only, not calculated
+(`compute=`, `query=` or `fetch=`), not a `Table` and not a `Sequence`. Anything else fails when the
+registry is built with a `ValueError` that names the model and the field, such as
+`Invoice.Meta.focus: total is calculated; name a field people fill in`.
+
+`/api/schema` carries it as `"focus": "customer"` on the model entry, only when it is set. Like
+`key_fields`, it is left out for a role that cannot read the field. It is display only and never a
+permission. Without it, or when this role cannot edit the field, the browser puts the cursor in the
+first editable field. Slips take the same option as `focus = "field"` ([slips.md](slips.md)).
 
 ### Each fact once on the record page
 
@@ -257,6 +278,109 @@ next, each a server page (`limit` and `offset`). **View all** in the section's h
 related model's list filtered to this record (`?f=[["customer","eq","<id>"]]`), shown as a
 filter that can be removed. It is left out when the role cannot filter that list on the link.
 
+## Workspaces
+
+A workspace is a named sidebar: groups of items, three levels deep (workspace, group, item). An app
+can declare none, one or several. The browser does not draw them yet; `/api/schema` gives each role
+its own view of them under `workspaces`.
+
+```python
+# apps/projects/workspaces.py
+from evlet import NavGroup, Shortcut, Workspace
+from .reports import SalesByCustomer
+from .slips import QuickInvoice
+
+PROJECTS = Workspace('Projects', icon='kanban', groups=(
+    NavGroup('Projects', icon='kanban', items=(
+        'project',                                                   # a model's list
+        Shortcut('project', view='board', label='Board'),            # its board (Meta.board)
+        Shortcut('task', filters={'done': False}, label='Open tasks'),
+    )),
+    NavGroup('More', items=(
+        Shortcut(report=SalesByCustomer),                            # a report
+        Shortcut(slip=QuickInvoice),                                 # a slip without a source
+        Shortcut(url='/reports', label='All reports'),               # an app path or http(s) address
+    )),
+))
+```
+
+An app package declares them in `workspaces.py` (or a `workspaces/` package). Discovery collects
+every module-level `Workspace` there, in the order they are defined, as it finds models and
+reports. An application built by hand passes `Application(workspaces=(...))`, and a legacy app
+`AppDefinition(workspaces=(...))`. The Playground declares Sales, Projects and Company
+(`examples/playground/workspaces.py`).
+
+- `Workspace(label, *, key=None, icon=None, groups=(...))`. `key` defaults to the label in lowercase
+  with underscores (`'Sales desk'` is `sales_desk`); give one when the label has no Latin letters.
+- `NavGroup(label, *, icon=None, items=(...))`.
+- An item is a model name (`'project'`, the storage name or `app.ClassName`), or a `Shortcut` that
+  names exactly one target:
+  - `Shortcut(model, view=None, filters=None, label=None)`: a model given by name or class. `view`
+    is `'list'` (the default) or `'board'`, for a model whose `Meta.board` names its State.
+    `filters` is a filter object (`{'status__in': ['planned', 'active']}`) or a list of conditions,
+    the forms a list request takes; it needs a `label`.
+  - `Shortcut(report=SalesByCustomer)` or `Shortcut(report='SalesByCustomer')`: a registered report.
+  - `Shortcut(slip=QuickInvoice)` or `Shortcut(slip='quick_invoice')`: a registered slip without a
+    `source` (a slip with one opens from its record).
+  - `Shortcut(url='/reports', label='All reports')`: an app path starting with `/`, or an `http` or
+    `https` address. `javascript:`, `data:` and every other scheme are refused. It needs a label.
+  - `label` replaces the model's plural name, the report's or the slip's title.
+- `icon` is an icon name from the browser's set, such as `receipt` or `users`.
+
+**Checked when the application is built.** Each problem fails with a message that names the
+workspace, the group and the item: an unknown model, report or slip; a child table, a ledger model
+or a model with `Meta.api = None`; a board for a model without `Meta.board`; a view other than list
+or board; filters on unknown fields, with operators the field does not take, with values the field
+refuses or on fields of linked records (the same checks a list request makes); a URL that is not an
+app path or an http(s) address; an empty or over-long label; two workspaces with one key; and two
+items with one key in a workspace.
+
+**Keys.** Keys are stable, so the browser can remember choices and Controls can refer to items:
+
+| What | Key |
+| --- | --- |
+| Workspace | `key`, or the label as above. An automatic workspace has its app's name (`app` for an application built by hand) |
+| Group | The label in lowercase with underscores, unique in its workspace |
+| Model item | `model:<name>`; a shortcut with a label, view or filters adds `:<label>` (or `:<view>` without a label): `model:task:open_tasks`, `model:project:board` |
+| Report, slip, URL | `report:<name>`, `slip:<name>`, `url:<label>` |
+
+**Each role sees only what it can open.** An item is left out when the role can't read the model,
+can't read the State a board follows, can't filter on a field the shortcut's filters name, can't run
+the report or can't present the slip. A group left with no items is hidden, and so is a workspace
+left with no groups. URL items always show; the page they open checks access itself.
+
+**An app that declares no workspace** gets one automatic workspace, keyed by the app's name and
+labelled with its title. It groups the app's models as the sidebar does today: **Documents** (a
+model with a State or child rows), **Records** (the rest), then **Reports** (the app's reports,
+those without a group first).
+
+```json
+"workspaces": [
+  {"key": "projects", "label": "Projects", "icon": "kanban", "app": "projects", "source": "declared",
+   "groups": [
+     {"key": "projects", "label": "Projects", "icon": "kanban", "items": [
+       {"key": "model:project", "kind": "model", "label": "Projects", "model": "project", "view": "list", "filters": null},
+       {"key": "model:task:open_tasks", "kind": "model", "label": "Open tasks", "model": "task", "view": "list",
+        "filters": [["done", "eq", false]]}]},
+     {"key": "more", "label": "More", "icon": null, "items": [
+       {"key": "report:SalesByCustomer", "kind": "report", "label": "Sales by customer", "report": "SalesByCustomer"},
+       {"key": "slip:quick_invoice", "kind": "slip", "label": "Quick invoice", "slip": "quick_invoice"},
+       {"key": "url:all_reports", "kind": "url", "label": "All reports", "url": "/reports"}]}]}
+]
+```
+
+`source` is `declared`, `automatic` or `custom` (added on this site, with `app` null). `filters` is
+always in the list form a list address carries (`?f=`), or null. Hiding an item is never a
+permission: every route checks access as before.
+
+**Customizing a workspace on one site.** Admins, and roles with "Customize workspaces" on in Controls,
+can reorder, hide and rename groups and items, rename a workspace, add shortcuts and add whole
+workspaces for the site, and reset any of it. These are site overrides, stored and audited like the
+other Controls overrides ([controls.md](controls.md#workspaces)). `/api/schema` gives the effective
+workspaces: the declared ones, then the site's overrides, then permission filtering. An override can
+never show a role something it can't open: a shortcut to a model a role can't read stays hidden for
+that role.
+
 ## Not rendered by this interface
 
 These keep their Python APIs, HTTP routes, permission checks and tests. The browser
@@ -304,11 +428,17 @@ instance route table in [routing.md](routing.md)). Any other path outside `/api/
 `/assets/` returns the app with status 404, so the browser shows its own page.
 `/docs` is on in development and off once an instance sets a domain, unless its
 `routes.py` turns it on. The session's `application.docs` tells the browser; with
-Docs off it starts on the first list the role can open and hides the Docs links.
+Docs off it hides the Docs links.
+
+The start page is the same with Docs on or off. After sign-in, at `/`, at the model base
+(`/app`) and at any address that matches no route, the browser opens the start page saved in
+Settings, else the first list the role can open. It opens Docs only when that is the saved
+start page, or when the app has no list at all. With no list and Docs off it says there is
+nothing to open yet.
 
 | Path | Screen |
 | --- | --- |
-| `/`, `/login` | Sign-in, or Docs when signed in |
+| `/`, `/login` | Sign-in, or the start page when signed in |
 | `/docs`, `/docs/<topic>` | Docs |
 | `/app/<model>` | List (and board, when `Meta.board` names the State). Search, sort, page, view and filters are in the query |
 | `/app/<model>/new` | New record. Query values fill writable fields: `?customer=4` |
@@ -413,7 +543,9 @@ the draft. Clients without If-Match keep their behavior. Revision comparison hap
 inside the same transaction as the mutation and includes permitted child rows.
 Currency and decimal values stay exact strings. A Currency field shows its code from
 `currency=` on the field: a fixed code, a field of the record, a field of a linked record or an
-app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)).
+app setting ([model-engine.md](model-engine.md#where-a-currency-fields-code-comes-from)). How each
+code looks (a text or image symbol, before or after the amount) is the site's choice in Controls,
+Currencies ([controls.md](controls.md#currencies)).
 Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-framework.md](ui-framework.md#pickers)).
 A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-framework.md#rich-text)):
 at rest the record shows the formatted text (read only when the record is locked), and list cells

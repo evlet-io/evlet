@@ -16,7 +16,7 @@ import { DataTable, type Column } from '../ui/table';
 import type { AppContext } from './context';
 import { decode, filterFields } from './filters';
 import { cellView } from './list-page';
-import { fieldOf, formatOf, listFields, measureLabel, measureText, titleOf, type ScreenModel } from './meta';
+import { fieldOf, formatOf, listFields, measureLabel, measureText, measureView, titleOf, type ScreenModel } from './meta';
 import { rangeText, whenVisible } from './related-data';
 
 export type RelatedBlock = Extract<LayoutBlock, { kind: 'related' }>;
@@ -226,7 +226,7 @@ export function MeasureChart(ctx: AppContext, block: ChartBlock, record: BlockRe
     if (rows === null) return html`<p class="muted ev-block-note" role="status">Loading…</p>`;
     if (block.type === 'stat') {
       const row = rows[0] ?? {};
-      return html`<div class="sum">${measures.map(item => StatCard({ label: measureLabel(item), value: value(row, item.name) }))}</div>`;
+      return html`<div class="sum">${measures.map(item => StatCard({ label: measureLabel(item), value: measureView(ctx.schema, model, item, row[item.name]) }))}</div>`;
     }
     if (!rows.length) return html`<p class="ev-related-empty">Nothing to chart yet.</p>`;
     const host = html`<div class="ev-report-chart-plot"></div>` as HTMLElement;

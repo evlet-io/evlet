@@ -33,6 +33,40 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   tools, MCP and the connector reach. Before, this needed a legacy `Action` and `tx.maintenance()`.
   The Playground's Recognise action on an employee writes its Recognition ledger this way
   ([docs/states-actions.md](docs/states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+- **Trends and colours on declared measures.** A model-level measure in `Meta.measures` takes
+  `trend="starts_on"` (that Date field by month, 6 points) or `trend=("starts_on", "month", 12)`,
+  and any declared measure takes `color=` with one of the Select badge colours. Both are checked
+  when the `Registry` is built, with a `ValueError` naming the model and measure, and appear in the
+  measure's `/api/schema` entry only when set (`"trend": {"field", "grain", "points"}`, `"color"`).
+  A role that cannot read the trend field gets the measure without `trend`. The browser reads the
+  series from the existing `GET /api/{model}/aggregate` route with `group_by=<field>:<grain>`, under
+  the same filters and permissions ([docs/measures.md](docs/measures.md#trends-and-colours)).
+- **Where the cursor starts.** `Meta.focus = "customer"` on a model, and `focus = "name"` on a
+  `Slip`, names the field a new form puts the cursor in. It must be a visible, writable, stored
+  field (not calculated, hidden, read only, a table or a Sequence), checked when the registry is
+  built or the application starts. `/api/schema` and the slip surface carry it as `focus` only
+  when set, and a role that cannot read the field does not get it. It is display only; without it
+  the browser uses the first editable field ([docs/ui.md](docs/ui.md#where-the-cursor-starts)).
+- **Workspaces.** New public names `Workspace`, `NavGroup` and `Shortcut` declare named sidebars:
+  `Workspace('Projects', icon='kanban', groups=(NavGroup('Projects', items=('project',
+  Shortcut('project', view='board', label='Board'))),))`. Items are model names and shortcuts to a
+  filtered list or board, a report, a slip or an app path or http(s) address. An app package
+  declares them in `workspaces.py`; `Application(workspaces=...)` and `AppDefinition(workspaces=...)`
+  take them too. Every item is checked when the application is built, with a message naming the
+  workspace and item. `/api/schema` has `workspaces`, with only the items each role can open; an
+  app that declares none gets one automatic workspace grouped as the sidebar is. The browser does
+  not draw them yet ([docs/ui.md](docs/ui.md#workspaces)).
+- **Workspace overrides per site.** Admins, and roles with the new Controls access "Customize
+  workspaces" (Roles page, `customize_workspaces`), can reorder, hide and rename groups and items,
+  rename workspaces, add shortcuts and add custom workspaces, then reset them, through
+  `GET /api/_controls/workspaces` and `PUT`/`DELETE /api/_controls/workspaces/<key>`. Overrides are
+  stored in `evlet_overrides` (kind `workspace`, added to the table's kind check on start) and
+  audited under Workspaces. `/api/schema` applies them before permission filtering, so they never
+  widen access ([docs/controls.md](docs/controls.md#workspaces)).
+- **`source_kind` on reports.** The report catalog (`/api/_reports`, `/api/schema`) says
+  `"ledger"` for a report whose `model` is a ledger model, `"model"` for any other model and null
+  without one ([docs/reports.md](docs/reports.md#reports-over-a-ledger-model)).
+
 - **`evlet setup` in one go.** `evlet setup myproject --app notes,crm --instance acme --dev` creates
   the project, apps and instance, installs the apps in dependency order and starts `evlet dev` on
   loopback. `--get URL,URL` fetches apps from Git with the `app --get` checks and trust question;
@@ -67,6 +101,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   each other or to themselves; `insert_many` and `tx.create` take a reserved `id`. On SQLite a
   rollback hands the ids back; on PostgreSQL they come from the identity sequence and a rollback
   leaves a gap ([docs/ledger.md](docs/ledger.md#reserving-ids-txreserve_ids)).
+- **Currency display per site.** Controls, Currencies sets how each currency code is shown: a text
+  symbol (`$`, `€`, `د.إ`) or a small PNG or WebP image, before or after the amount, with or
+  without a space. Images are at most 32 KB and 128 x 128 pixels, checked by their bytes; SVG is
+  refused. It applies to forms (at rest and in the input's side box), lists, boards, totals,
+  measures, reports and print designs, where the image is embedded in the PDF. Number formatting
+  is unchanged, and codes nobody set show as before (`AED 25,200.00`). Only admins change it; every
+  change is audited. `/api/schema` sends it as `currency_display`, and trusted code can use
+  `set_currency_display(app, {...})`. Report CSV now names a currency column's code in its header,
+  `Total (AED)`, and keeps plain numbers. The Playground shows AED with a placeholder image symbol
+  ([docs/controls.md](docs/controls.md#currencies)).
 - `Naming(..., label="Project number")` labels the standard `name` field for the model's domain on
   the form, in list columns, filters, search and the schema
   ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".
@@ -143,6 +187,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   fields=())`: `link` stays required in `Meta.relations`, which refuses `filters` and `fields`.
   `Chart(type, x=None, ..., model=None, link=None, filters=None)`: a report chart still needs `x`
   and takes none of the new ones. Existing calls are unchanged.
+- **Sign-in lands on the first list, not Docs.** After sign-in, at `/`, at `/app` and at any
+  address that matches no route, the app opens the start page saved in Settings, else the first
+  list the role can open, with Docs on or off. Docs open only when chosen as the start page or
+  when the app has no list; they stay in the sidebar and the search palette.
 - **The list filter panel is a side panel.** It docks beside the table inside the page, with
   no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
   sit on top and saved filters below; each half scrolls on its own. Escape closes it.

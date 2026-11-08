@@ -486,7 +486,7 @@ checks it again.
 
 ### Side boxes
 
-A Currency field shows its code in a box before the input, a Percent field `%` after it, and an
+A Currency field shows its currency symbol in a box beside the input (before it unless the site puts the symbol after the amount), a Percent field `%` after it, and an
 Integer or Decimal its `suffix` after it (and after the value at rest: `5.00%`, `8 hours`). The
 currency code comes from the schema: `currency` when it is fixed (on the field, or an app
 setting the server read), or `currency_source` when it lives on the record (`{"field"}`) or on a
@@ -494,6 +494,15 @@ linked record (`{"link", "field", "model"}`). `currencyFor(field)` follows the s
 changes, so picking another customer changes the box from AED to USD. Linked records are read
 through `LinkSource.record()`, batched with Link titles (one list request per model). Lists use
 `currencyIn(meta, value)` with the row's values. An empty or unreadable source shows AED.
+
+The site decides how each code looks ([controls.md](controls.md#currencies)). The app calls
+`setCurrencyDisplays(schema.currency_display)` once the schema loads; `currencyDisplay(code)` gives
+`{symbol, image, position, space, tint}`, with the code before the amount for codes the site did not
+change. `formatMoney` writes the text symbol on its side (an image reads as its code, a right-to-left
+symbol is isolated with FSI and PDI); `moneyChild(value, code, scale)` and `Money(value, code)` in
+`ui/money.ts` give the same text, or a `<span class="money">` with an `<img class="money-img">` at
+text height when the symbol is an image. `CurrencySymbol(code)` is the symbol alone: the side box
+uses it, before the input for a prefix and after it for a suffix. Number formatting is unchanged.
 
 The Link field's record mark is the 20 px `org-mark`; it never stretches.
 

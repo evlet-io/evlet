@@ -24,6 +24,7 @@ import { ModelsPage } from './models';
 import { NamingPage } from './naming';
 import { PeriodsPage } from './periods';
 import { PrintsPage } from './prints';
+import { CurrenciesPage } from './currencies';
 import { AppsPage, AuditPage, AuditRows, JobsPage, OverridesPage, RoutingPage } from './system';
 import { ConnectorsPage, EmailPage } from './connections';
 import { ApiKeysPage } from './keys';
@@ -34,7 +35,7 @@ import { ToolLogPage } from './log';
 export const ROUTES = {
   overview: '/controls', users: '/controls/users', roles: '/controls/roles',
   permissions: '/controls/permissions', security: '/controls/security',
-  models: '/controls/models', naming: '/controls/naming', periods: '/controls/periods', prints: '/controls/prints', apps: '/controls/apps', routing: '/controls/routing',
+  models: '/controls/models', naming: '/controls/naming', periods: '/controls/periods', prints: '/controls/prints', currencies: '/controls/currencies', apps: '/controls/apps', routing: '/controls/routing',
   jobs: '/controls/jobs', overrides: '/controls/overrides', audit: '/controls/audit',
   connectors: '/controls/connectors', email: '/controls/email', mcp: '/controls/mcp', keys: '/controls/keys',
   eva: '/controls/eva', usage: '/controls/usage', log: '/controls/log',
@@ -58,7 +59,7 @@ const NAV: Array<[string, Array<[keyof typeof ROUTES, string, string]>]> = [
   ['Access', [['permissions', 'Permissions', 'list-checks'], ['security', 'Security', 'lock']]],
   ['Connections', [['connectors', 'Connectors', 'link'], ['email', 'Email', 'mail'], ['keys', 'API keys', 'hash']]],
   ['AI', [['eva', 'Eva', 'sparkles'], ['mcp', 'MCP', 'link'], ['usage', 'Usage', 'chart-column'], ['log', 'Tool log', 'activity']]],
-  ['Build', [['apps', 'Apps', 'package'], ['models', 'Models', 'layers'], ['naming', 'Naming', 'hash'], ['periods', 'Periods', 'lock'], ['prints', 'Print designs', 'printer'], ['routing', 'Routing', 'globe']]],
+  ['Build', [['apps', 'Apps', 'package'], ['models', 'Models', 'layers'], ['naming', 'Naming', 'hash'], ['periods', 'Periods', 'lock'], ['prints', 'Print designs', 'printer'], ['currencies', 'Currencies', 'wallet'], ['routing', 'Routing', 'globe']]],
   ['System', [['jobs', 'Jobs', 'clock'], ['overrides', 'Overrides', 'file-text'], ['audit', 'Audit log', 'activity']]],
 ];
 const TITLES = Object.fromEntries(NAV.flatMap(([group, items]) => items.map(([id, label]) => [id, [group, label]])));
@@ -239,6 +240,7 @@ function Shell(ctx: ControlsContext): HTMLElement {
       case 'naming': return NamingPage(ctx);
       case 'periods': return PeriodsPage(ctx);
       case 'prints': return PrintsPage(ctx);
+      case 'currencies': return CurrenciesPage(ctx);
       case 'apps': return AppsPage(ctx);
       case 'routing': return RoutingPage(ctx);
       case 'jobs': return JobsPage(ctx);

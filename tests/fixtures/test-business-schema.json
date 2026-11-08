@@ -366,6 +366,7 @@
       "tabs": [],
       "default_tab": null,
       "autosave": true,
+      "focus": "customer",
       "panel": {
         "fields": [
           "tax_rate"
@@ -1828,6 +1829,32 @@
         }
       ],
       "attachments": true,
+      "measures": [
+        {
+          "name": "budget",
+          "function": "sum",
+          "field": "budget",
+          "where": null,
+          "per_record": false,
+          "model": null,
+          "link": null,
+          "trend": {
+            "field": "starts_on",
+            "grain": "month",
+            "points": 6
+          },
+          "color": "teal"
+        },
+        {
+          "name": "projects",
+          "function": "count",
+          "field": null,
+          "where": null,
+          "per_record": false,
+          "model": null,
+          "link": null
+        }
+      ],
       "attachment_limits": {
         "max_files": 10,
         "max_size": 1048576
@@ -9251,10 +9278,11 @@
       "name": "employee",
       "layout": [
         {
-          "label": "Details",
+          "label": "Employee",
           "fields": [
             "full_name",
             "email",
+            "department",
             "reports_to"
           ],
           "collapsible": false,
@@ -9270,6 +9298,7 @@
         "id",
         "full_name",
         "email",
+        "department",
         "reports_to"
       ],
       "search_fields": [
@@ -9280,8 +9309,102 @@
       ],
       "open_in": "page",
       "tabs": [],
-      "default_tab": null,
+      "default_tab": "profile",
       "autosave": true,
+      "record_layout": {
+        "tabs": [
+          {
+            "name": "profile",
+            "label": "Profile",
+            "blocks": [
+              {
+                "kind": "section",
+                "label": "Employee"
+              },
+              {
+                "kind": "html",
+                "html": "<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is on the Team tab.</p>"
+              },
+              {
+                "kind": "table",
+                "name": "skills"
+              }
+            ]
+          },
+          {
+            "name": "team",
+            "label": "Team",
+            "blocks": [
+              {
+                "kind": "chart",
+                "type": "stat",
+                "model": "employee",
+                "link": "reports_to",
+                "x": null,
+                "y": [
+                  "people"
+                ],
+                "label": "Direct reports",
+                "filters": []
+              },
+              {
+                "kind": "chart",
+                "type": "bar",
+                "model": "employee",
+                "link": "reports_to",
+                "x": "department",
+                "y": [
+                  "people"
+                ],
+                "label": "Direct reports by department",
+                "filters": []
+              },
+              {
+                "kind": "related",
+                "model": "employee",
+                "link": "reports_to",
+                "label": "Direct reports",
+                "filters": [],
+                "fields": [
+                  "full_name",
+                  "email",
+                  "department"
+                ],
+                "limit": 5,
+                "order": [
+                  "full_name"
+                ]
+              },
+              {
+                "kind": "related",
+                "model": "employee",
+                "link": "reports_to",
+                "label": "Reports in the same department",
+                "filters": [
+                  [
+                    "department",
+                    "eq",
+                    {
+                      "$expr": "ref",
+                      "args": [
+                        "department"
+                      ]
+                    }
+                  ]
+                ],
+                "fields": [
+                  "full_name",
+                  "email"
+                ],
+                "limit": 5,
+                "order": [
+                  "-id"
+                ]
+              }
+            ]
+          }
+        ]
+      },
       "fields": [
         {
           "name": "full_name",
@@ -9337,6 +9460,39 @@
             "icontains",
             "nicontains",
             "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "department",
+          "type": "select",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "sales",
+            "finance",
+            "operations",
+            "people"
+          ],
+          "label": "Department",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
             "isnull"
           ],
           "compute": null,
@@ -9442,6 +9598,7 @@
       "behavior": {
         "full_name": {},
         "email": {},
+        "department": {},
         "reports_to": {},
         "name": {},
         "title": {}
@@ -9449,9 +9606,12 @@
       "order": [
         "full_name",
         "email",
+        "department",
         "reports_to",
         "name",
-        "title"
+        "title",
+        "skills.skill",
+        "skills.level"
       ],
       "sources": {},
       "permissions": {
@@ -9460,7 +9620,18 @@
         "delete": true
       },
       "child_only": false,
-      "children": [],
+      "children": [
+        {
+          "name": "skills",
+          "model": "employee_skills",
+          "link": "evlet_owner",
+          "label": "Skills",
+          "row_changes": true,
+          "filterable": true,
+          "min_rows": 0,
+          "max_rows": 100
+        }
+      ],
       "actions": [
         {
           "name": "recognise",
@@ -9517,6 +9688,17 @@
         }
       ],
       "attachments": false,
+      "measures": [
+        {
+          "name": "people",
+          "function": "count",
+          "field": null,
+          "where": null,
+          "per_record": false,
+          "model": null,
+          "link": null
+        }
+      ],
       "journal": {
         "tamper_evident": true,
         "kinds": [
@@ -9894,6 +10076,113 @@
       "children": [],
       "actions": [],
       "attachments": false
+    },
+    {
+      "name": "employee_skills",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "skill",
+            "level"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
+        }
+      ],
+      "label": "Skill",
+      "plural": "Skills",
+      "description": "",
+      "title_field": "skill",
+      "list_fields": [
+        "id",
+        "skill",
+        "level"
+      ],
+      "search_fields": [
+        "skill",
+        "level"
+      ],
+      "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
+      "autosave": true,
+      "fields": [
+        {
+          "name": "skill",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 80,
+          "label": "Skill",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "level",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "learning",
+            "practised",
+            "expert"
+          ],
+          "label": "Level",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "practised",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": true,
+      "children": [],
+      "actions": [],
+      "attachments": false
     }
   ],
   "reports": [
@@ -10028,6 +10317,7 @@
       ],
       "group": "Sales",
       "model": "invoice",
+      "source_kind": "model",
       "sortable": [
         "posting_date",
         "total"
@@ -10159,6 +10449,7 @@
       ],
       "group": "Sales",
       "model": "invoice",
+      "source_kind": "model",
       "sortable": [
         "posting_date",
         "total"
@@ -10254,6 +10545,7 @@
       ],
       "group": "Sales",
       "model": "customer",
+      "source_kind": "model",
       "sortable": [
         "invoices",
         "total"
@@ -10322,6 +10614,7 @@
       ],
       "group": "Sales",
       "model": "ledgerentry",
+      "source_kind": "model",
       "sortable": [
         "entries",
         "amount"
@@ -10397,6 +10690,7 @@
       ],
       "group": "",
       "model": null,
+      "source_kind": null,
       "sortable": [],
       "export": true,
       "group_by": null,
@@ -10428,5 +10722,218 @@
   "capabilities": {
     "events": true,
     "jobs": true
-  }
+  },
+  "workspaces": [
+    {
+      "key": "sales",
+      "label": "Sales",
+      "icon": "receipt",
+      "app": "app",
+      "source": "declared",
+      "groups": [
+        {
+          "key": "customers",
+          "label": "Customers",
+          "icon": "users",
+          "items": [
+            {
+              "key": "model:customer",
+              "kind": "model",
+              "label": "Customers",
+              "model": "customer",
+              "view": "list",
+              "filters": null
+            }
+          ]
+        },
+        {
+          "key": "invoicing",
+          "label": "Invoicing",
+          "icon": "file-text",
+          "items": [
+            {
+              "key": "model:invoice",
+              "kind": "model",
+              "label": "Invoices",
+              "model": "invoice",
+              "view": "list",
+              "filters": null
+            },
+            {
+              "key": "model:invoice:unpaid_invoices",
+              "kind": "model",
+              "label": "Unpaid invoices",
+              "model": "invoice",
+              "view": "list",
+              "filters": [
+                [
+                  "payment_status",
+                  "in",
+                  [
+                    "unpaid",
+                    "partly_paid"
+                  ]
+                ]
+              ]
+            },
+            {
+              "key": "model:payment",
+              "kind": "model",
+              "label": "Payments",
+              "model": "payment",
+              "view": "list",
+              "filters": null
+            },
+            {
+              "key": "model:ledgerentry",
+              "kind": "model",
+              "label": "Ledger entries",
+              "model": "ledgerentry",
+              "view": "list",
+              "filters": null
+            },
+            {
+              "key": "slip:quick_invoice",
+              "kind": "slip",
+              "label": "Quick invoice",
+              "slip": "quick_invoice"
+            }
+          ]
+        },
+        {
+          "key": "reports",
+          "label": "Reports",
+          "icon": "chart-column",
+          "items": [
+            {
+              "key": "report:InvoiceRegister",
+              "kind": "report",
+              "label": "Invoice register",
+              "report": "InvoiceRegister"
+            },
+            {
+              "key": "report:InvoicesByCustomer",
+              "kind": "report",
+              "label": "Invoices by customer",
+              "report": "InvoicesByCustomer"
+            },
+            {
+              "key": "report:SalesByCustomer",
+              "kind": "report",
+              "label": "Sales by customer",
+              "report": "SalesByCustomer"
+            },
+            {
+              "key": "report:LedgerBalances",
+              "kind": "report",
+              "label": "Ledger balances",
+              "report": "LedgerBalances"
+            },
+            {
+              "key": "url:all_reports",
+              "kind": "url",
+              "label": "All reports",
+              "url": "/reports"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "projects",
+      "label": "Projects",
+      "icon": "kanban",
+      "app": "app",
+      "source": "declared",
+      "groups": [
+        {
+          "key": "projects",
+          "label": "Projects",
+          "icon": "kanban",
+          "items": [
+            {
+              "key": "model:project",
+              "kind": "model",
+              "label": "Projects",
+              "model": "project",
+              "view": "list",
+              "filters": null
+            },
+            {
+              "key": "model:project:active_projects",
+              "kind": "model",
+              "label": "Active projects",
+              "model": "project",
+              "view": "list",
+              "filters": [
+                [
+                  "status",
+                  "eq",
+                  "active"
+                ]
+              ]
+            },
+            {
+              "key": "model:project:planned_with_a_budget",
+              "kind": "model",
+              "label": "Planned with a budget",
+              "model": "project",
+              "view": "list",
+              "filters": [
+                [
+                  "status",
+                  "eq",
+                  "planned"
+                ],
+                [
+                  "budget",
+                  "gt",
+                  "0"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "company",
+      "label": "Company",
+      "icon": "building-2",
+      "app": "app",
+      "source": "declared",
+      "groups": [
+        {
+          "key": "people",
+          "label": "People",
+          "icon": "users",
+          "items": [
+            {
+              "key": "model:employee",
+              "kind": "model",
+              "label": "Employees",
+              "model": "employee",
+              "view": "list",
+              "filters": null
+            }
+          ]
+        },
+        {
+          "key": "catalogue",
+          "label": "Catalogue",
+          "icon": "package",
+          "items": [
+            {
+              "key": "model:item",
+              "kind": "model",
+              "label": "Items",
+              "model": "item",
+              "view": "list",
+              "filters": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }

@@ -7,14 +7,23 @@
 
 import type { RecordData } from '../api';
 import type { FieldSchema, ModelSchema, SchemaIndex } from '../model/schema';
-import { kindOf } from '../ui/kinds';
+import { currencyOf, kindOf } from '../ui/kinds';
+import { moneyChild } from '../ui/money';
+import type { Child } from '../dom';
 import { tintFor, type Tint } from '../ui/core';
 
 export interface MoveSchema { from: string[] | string; to: string; label: string; roles?: string[]; guarded?: boolean; when?: unknown; asks?: string[] }
 /** show: how the record page draws the State, a header badge (the default), the stage bar, or neither. */
 export interface StateMeta { field: string; states: string[]; default?: string; moves: MoveSchema[]; locked?: string[]; final?: string[]; voidable?: string[]; show?: StateShow }
 export type StateShow = 'badge' | 'bar' | 'none';
-export interface MeasureSchema { name: string; function: string; field: string | null; per_record: boolean; model: string | null; link: string | null; where?: unknown }
+/** A declared measure's trend (docs/measures.md#trends): read the series from GET /api/{model}/aggregate with
+ * measures=<name>, group_by=<field>:<grain> and the list filters plus <field>__gte the start of the first of the
+ * last `points` periods. Periods without records are not returned. */
+export interface MeasureTrend { field: string; grain: 'day' | 'month' | 'year'; points: number }
+export interface MeasureSchema {
+  name: string; function: string; field: string | null; per_record: boolean; model: string | null; link: string | null; where?: unknown;
+  trend?: MeasureTrend; color?: 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'teal' | 'slate';
+}
 export interface RelationSchema { name: string; label: string; model: string; link: string; limit: number; order?: string[] }
 export interface EffectSchema { target: string; on: string | null; balanced: string[] | null; reverse: unknown }
 export interface ActionMeta {
@@ -161,6 +170,15 @@ export function summaryFields(model: ScreenModel, shown: ReadonlySet<string> = n
 
 export const formatOf = (meta: FieldSchema, value: unknown) => value === null || value === undefined || value === '' ? '' : kindOf(meta.type).format(value, meta);
 
+/**
+ * A value to show on screen: money with the site's currency symbol (an image when the site set one), anything
+ * else as formatOf's text. `code` is the currency when it comes from the record; the field's fixed code otherwise.
+ */
+export function displayOf(meta: FieldSchema, value: unknown, code?: string): Child {
+  if (meta.type === 'currency') return moneyChild(value, code ?? currencyOf(meta), typeof meta.scale === 'number' ? meta.scale : 2);
+  return formatOf(meta, value);
+}
+
 /** The title of a record from list or detail data. */
 export function titleOf(model: ScreenModel, data: Record<string, unknown>): string {
   const value = data[model.title_field];
@@ -173,13 +191,28 @@ export function titleOf(model: ScreenModel, data: Record<string, unknown>): stri
   return field && field.type !== 'text' && field.type !== 'sequence' ? formatOf(field, value) : String(value);
 }
 
-/** A measure's value as text, by the measured field's type. */
+/** A measure's value as text, by the measured field's type (an image currency symbol reads as its code). */
 export function measureText(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): string {
+  const field = measureField(index, model, measure, value);
+  return field ? formatOf(field, value) : plainMeasure(measure, value);
+}
+
+/** A measure's value on screen: money shows the site's currency symbol, an image when the site set one. */
+export function measureView(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): Child {
+  const field = measureField(index, model, measure, value);
+  return field ? displayOf(field, value) : plainMeasure(measure, value);
+}
+
+function measureField(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): FieldSchema | undefined {
+  if (value === null || value === undefined || measure.function === 'count' || measure.function === 'count_distinct') return undefined;
+  const target = measure.model ? (index.schema.models.find(item => item.name === measure.model) as unknown as ScreenModel | undefined) : model;
+  return target && measure.field ? fieldOf(target, measure.field) : undefined;
+}
+
+function plainMeasure(measure: MeasureSchema, value: unknown): string {
   if (value === null || value === undefined) return 'None';
   if (measure.function === 'count' || measure.function === 'count_distinct') return Number(value).toLocaleString('en-US');
-  const target = measure.model ? (index.schema.models.find(item => item.name === measure.model) as unknown as ScreenModel | undefined) : model;
-  const field = target && measure.field ? fieldOf(target, measure.field) : undefined;
-  return field ? formatOf(field, value) : String(value);
+  return String(value);
 }
 
 /** The accents a list's measure cards take in turn: no measure declares its own colour. */

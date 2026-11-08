@@ -5,7 +5,8 @@ before changing the public API.
 The browser interface is Evlet's own UI framework (`frontend/src/evlet/`); SolidJS,
 the Vue harness, the Projects demo and the Python page renderer were removed from it,
 and 0.4 removed the Python page API (`/api/ui`) and native panels. Preserve the completed
-backend milestones. Keep login, Docs after sign-in and generated model screens working. Read `docs/ui.md`, `docs/ui-framework.md` and `docs/routing.md` for
+backend milestones. Keep login, generated model screens and Docs
+working: sign-in lands on the first list, and Docs stays reachable after sign-in. Read `docs/ui.md`, `docs/ui-framework.md` and `docs/routing.md` for
 the routes, the public UI API and its boundaries. Read
 `docs/business-capabilities.md`, `docs/finite-calculations.md`, `docs/tenancy-deployment.md`,
 `docs/jobs-realtime.md`, `docs/connector.md`, `docs/tools.md`, `docs/eva.md`, and `docs/printing.md` for public APIs and permission

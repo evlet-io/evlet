@@ -89,6 +89,7 @@ export const SETTING_LABELS: Record<string, string> = {
   'unsaved.server_days': 'Unsaved changes kept on the server for', 'unsaved.server_entries': 'Unsaved changes per person',
   'unsaved.browser_days': 'Unsaved new records kept in the browser for', 'unsaved.browser_entries': 'Unsaved new records per person in one browser',
   'unsaved.entry_kb': 'Largest unsaved changes entry',
+  'display.currencies': 'Currency display',
 };
 
 export function permSummary(value: PermValue | null | undefined, scopes: Record<string, string>) {
@@ -99,6 +100,10 @@ export function permSummary(value: PermValue | null | undefined, scopes: Record<
 }
 
 export function settingText(key: string, value: unknown) {
+  if (key === 'display.currencies') {
+    const entries = Object.entries((value ?? {}) as Record<string, { symbol: string; image: string | null; position: string }>);
+    return entries.length ? entries.map(([code, item]) => `${code}: ${item.image ? 'image' : item.symbol} ${item.position === 'suffix' ? 'after' : 'before'}`).join(', ') : 'Codes before amounts';
+  }
   if (typeof value === 'boolean') return value ? 'On' : 'Off';
   if (key === 'mcp.rate') return `${value} a minute`;
   if (Array.isArray(value)) return value.length ? value.join(', ') : key === 'security.controls_ips' ? 'any address' : 'none';

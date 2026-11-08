@@ -368,6 +368,7 @@
       "tabs": [],
       "default_tab": null,
       "autosave": true,
+      "focus": "customer",
       "panel": {
         "fields": [
           "tax_rate"
@@ -1830,6 +1831,32 @@
         }
       ],
       "attachments": true,
+      "measures": [
+        {
+          "name": "budget",
+          "function": "sum",
+          "field": "budget",
+          "where": null,
+          "per_record": false,
+          "model": null,
+          "link": null,
+          "trend": {
+            "field": "starts_on",
+            "grain": "month",
+            "points": 6
+          },
+          "color": "teal"
+        },
+        {
+          "name": "projects",
+          "function": "count",
+          "field": null,
+          "where": null,
+          "per_record": false,
+          "model": null,
+          "link": null
+        }
+      ],
       "attachment_limits": {
         "max_files": 10,
         "max_size": 1048576

@@ -109,3 +109,11 @@ from .ledger import LockTimeout
 from .migrations import SetAppendOnly
 
 __all__ += ["LockTimeout", "SetAppendOnly"]
+
+from .currencies import set_currency_display
+
+__all__ += ["set_currency_display"]
+
+from .workspaces import NavGroup, Shortcut, Workspace
+
+__all__ += ["NavGroup", "Shortcut", "Workspace"]

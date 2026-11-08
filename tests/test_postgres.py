@@ -28,6 +28,11 @@ from tests.test_unsaved import (  # noqa: F401  (unsaved changes, run here on Po
     test_expiry_and_caps_purge_in_batches,
     test_controls_shows_counts_never_contents_and_clears_old_entries,
 )
+from tests.test_currencies import (  # noqa: F401  (currency display, run here on PostgreSQL)
+    test_settings_round_trip_reach_the_schema_and_the_audit_log,
+    test_a_fake_png_is_refused_and_nothing_is_saved,
+    test_only_admins_change_currency_display,
+)
 from tests.test_filters import (  # noqa: F401  (the items fixture and filter tests, run here on PostgreSQL)
     items,
     test_every_operator_by_field_type,

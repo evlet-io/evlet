@@ -31,6 +31,7 @@ class StartJob(Slip):
     source = Client                    # a button on each client record
     roles = ("admin", "editor")        # the default
     layout = (("Job", ("name", "client", "starts_on", "billing", "rate")), ("Tasks", ("tasks",)))
+    focus = "name"                     # the cursor starts in the job name
 
     name = Text(required=True, max_length=60)
     client = Link(Client, read_only=True)
@@ -68,8 +69,13 @@ Class options:
 | `layout` | none | `(label, field names)` groups. Fields left out follow at the end |
 | `becomes` | none | The model it turns into, instead of `hand_in()` |
 | `review` | `True` | With `becomes`: open the new record to review rather than create it |
+| `focus` | none | The field the form puts the cursor in. Without it, the first editable field |
 
 These names, plus `load`, `validate`, `hand_in` and `document`, cannot be field names on a slip.
+`focus` names a visible field people fill in, as `Meta.focus` does on a model
+([ui.md](ui.md#where-the-cursor-starts)): not hidden, read only, calculated, a table or a `Sequence`.
+A wrong one fails when the application starts, for example `StartJob.focus: client is read only; name a
+field people fill in`. The surface carries it as `"focus"` only when it is set.
 `source` is the source record inside the slip (`self.source`), not a field. Every slip defines
 `hand_in()` or sets `becomes`, not both. Definitions are checked when the application starts.
 
@@ -170,6 +176,7 @@ The surface:
   "source": {"model": "client", "id": "01hc1sd9vc1ye", "title": "Acme", "revision": "\"...\""},
   "outcome": {"kind": "handler"},
   "layout": [{"label": "Job", "fields": ["name", "client", "starts_on", "billing", "rate"]}],
+  "focus": "name",
   "definition": {"fields": [], "children": [{"name": "tasks", "label": "Tasks", "allow_add": true, "definition": {}}]},
   "values": {"client": 4, "billing": "fixed", "children": {"tasks": []}},
   "rules": {"rate": {"visible": false, "required": false}},

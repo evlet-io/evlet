@@ -50,7 +50,7 @@ export function BulkBar(props: { count: Prop<number>; actions: BulkAction[]; onC
 
 export interface BoardColumn { value: string; label: string; tint: Tint }
 /** A column's totals from the server: the record count, a formatted amount and its share (0 to 100). */
-export interface BoardTotal { count: number; amount?: string; share?: number }
+export interface BoardTotal { count: number; amount?: Child; share?: number }
 
 export interface BoardProps<T> {
   columns: BoardColumn[];
@@ -143,7 +143,7 @@ export function Board<T>(props: BoardProps<T>): HTMLElement {
 }
 
 /** Draggable record card: tags, title, linked record, value, date and owner. */
-export function BoardCard(props: { title: Prop<string>; tags?: Prop<string[]>; company?: Prop<string>; value?: Prop<string>; date?: Prop<string>; overdue?: Prop<boolean>;
+export function BoardCard(props: { title: Prop<string>; tags?: Prop<string[]>; company?: Prop<string>; value?: Prop<Child>; date?: Prop<string>; overdue?: Prop<boolean>;
   owner?: Prop<string>; onOpen?: () => void; tint?: Tint }): HTMLElement {
   const card = html`<article class="card" on:click=${() => props.onOpen?.()} on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') props.onOpen?.(); }}>
     ${props.tags ? html`<div class="tags">${() => (read(props.tags!) ?? []).map(tag => Chip({ label: tag }))}</div>` : null}

@@ -77,14 +77,40 @@ production ready, but the rules below hold from 0.3 on.
   refused (`AccessError`, 403) on every other context
   ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 
+- **Measure trends and colours.** `trend=` and `color=` on `Count`, `CountDistinct`, `Sum`, `Min` and
+  `Max` in `Meta.measures`: a trend is a Date field name or `(field, grain, points)` with grain `day`,
+  `month` or `year` and 2 to 24 points, on model-level measures only, and a colour is one of the Select
+  `COLORS`. The defaults (`month`, 6 points), the `ValueError` at registry build, and the `trend`
+  (`field`, `grain`, `points`) and `color` keys in a schema measure entry, present only when declared
+  ([measures.md](measures.md#trends-and-colours)).
+
+- **Form focus.** `Meta.focus` on a model and the `focus` option on a `Slip`: one visible, writable,
+  stored field (not calculated, hidden, read only, a `Table` or a `Sequence`), checked with a
+  `ValueError` at registration or application start. The `focus` key on a model's `/api/schema` entry
+  (left out when unset or unreadable for the role) and on a slip surface (left out when unset). It is
+  display only ([ui.md](ui.md#where-the-cursor-starts), [slips.md](slips.md)).
+
 - **Job progress.** `JobContext.progress(done, total=None, message='')`, `JobContext.checkpoint`,
   `Task(..., resumable=True)` with its return-value contract (a JSON checkpoint, or `None` when
   done), `progress` in `GET /api/_jobs/<id>`, and `evlet jobs list`
   ([jobs-realtime.md](jobs-realtime.md#progress-and-long-jobs)).
 
+- **Workspaces.** `Workspace`, `NavGroup` and `Shortcut` with their arguments, discovery of an app
+  package's `workspaces.py`, `Application(workspaces=...)` and `AppDefinition(workspaces=...)`, the
+  key scheme, and the `workspaces` entry of `/api/schema` with its item kinds (`model`, `report`,
+  `slip`, `url`) and `source` values. The report catalog's `source_kind` (`"ledger"`, `"model"` or
+  null) is public too ([ui.md](ui.md#workspaces), [reports.md](reports.md)). So are the workspace
+  override routes (`/api/_controls/workspaces`), their value format, the `custom` source and the
+  role flag `customize_workspaces`, with their answers to people without access: 404, or 403 for
+  someone who opens Controls without the flag ([controls.md](controls.md#workspaces)).
+
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
   public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
+
+- **Currency display.** `set_currency_display(application, value, *, actor='cli')`, the setting
+  `display.currencies` with its entry form (`symbol`, `image`, `position`, `space`, `tint`) and its
+  limits, and `currency_display` in `/api/schema` ([controls.md](controls.md#currencies)).
 
 For each of these, the contract covers the name and the arguments it takes: their names,
 order, whether they are keyword-only, and their defaults. Model `Meta` options and the

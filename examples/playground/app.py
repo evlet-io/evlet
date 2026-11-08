@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 from evlet import (AI, Action, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
-                   Policy, RecordId, Rule, Security, Sum, Task, ValidationError, own_customer)
+                   Policy, RecordId, Rule, Security, Sum, Task, ValidationError, own_customer, set_currency_display)
 from evlet import api
 from evlet.routing import resolve_routes
 from evlet.services import Endpoint
@@ -21,6 +21,7 @@ from .settings import ProjectPreferences, ProjectSettings
 from .prints import PRINTS, REPORTS as PRINTED_REPORTS
 from .reports import REPORTS
 from .slips import SLIPS
+from .workspaces import WORKSPACES
 
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
 PORTAL_RULES = {
@@ -152,6 +153,16 @@ def project_overview(context, project: RecordId):
 SERVICES = (Endpoint('playground.project_overview', project_overview, 'GET', (Project, 'read'), tool=True),)
 
 
+# A placeholder image symbol for the demo: a plain coin drawn for Evlet, not any currency's real symbol.
+# Upload the official UAE dirham symbol from the Central Bank of the UAE in Controls, Currencies.
+DEMO_SYMBOL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAABIElEQVR42s2Xyw2DMAyGO0CVEcgsGYER2IIzrJBT7izAFKirZAIkpNYHV0LIBqehsg//JSTxF79IHk3TPDRVuqAFRdACyqANlXEs4pxbARxoRCNvoTKucbUAXaFhCqT7FSBWGD4qlgJMFxu+QAk0oBKOna2ZpADcyVc05k+85nHOKvUEFXNq4XxhmAKZmb06DsAxCZcq6jwxiekogJE5eW2zoTwxUgCZiLm/AcATOZGPAC1BOVxsHEA9KlzMHYj92z0Alfnc6Z+MW2f8xnmBrIjvhIWo85KYSnLm2CeWPUAWZn4QdL0grIi8B9iE8e8FAL0wDzZTAOohUE9C9TJUb0TqrdjEz0j9d6x+ITFxJTNxKTVxLTfxMDHxNDPxOP2rPhI9DX76cVPMAAAAAElFTkSuQmCC'
+
+
+def show_currencies(app):
+    """The demo shows AED with an image symbol before the amount, in the text colour (Controls, Currencies)."""
+    return set_currency_display(app, {'AED': {'image': DEMO_SYMBOL, 'position': 'prefix', 'space': True, 'tint': True}}, actor='playground')
+
+
 def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=None):
     events = EventStore(database)
     policy = Policy(registry, rules=PORTAL_RULES)
@@ -170,7 +181,8 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=N
                                Action(Invoice, 'post', 'Post to ledger', post_invoice),
                                Action(Customer, 'award_points', 'Award 10 points', award_points),
                                Action(Customer, 'rebuild_points', 'Rebuild all points balances', queue_rebuild, roles=('admin',))),
-                      attachments=(Project,), slips=SLIPS, reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS)
+                      attachments=(Project,), slips=SLIPS, reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS,
+                      workspaces=WORKSPACES)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))
     return app

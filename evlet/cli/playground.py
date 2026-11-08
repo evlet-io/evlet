@@ -35,6 +35,7 @@ def playground_app(directory, port=8000):
     customer = database.create(models.Customer, customer_name='Example customer', email='hello@example.test')
     project = database.create(models.Project, title='Explore Evlet', customer=customer.id)
     database.create(models.ProjectTask, project=project.id, title='Try models, actions and private files')
+    app_module.show_currencies(app)
     return app
 
 

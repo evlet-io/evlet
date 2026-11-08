@@ -347,3 +347,12 @@
 }
 .ctl-partrow{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg-subtle)}
 .ctl-partrow .grow{flex:1;font-size:13px}
+
+/* Currencies (currencies.ts) */
+.ctl-cur{padding:14px 18px;border-bottom:1px solid var(--divider)}
+.ctl-cur-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.ctl-cur-preview{display:inline-flex;align-items:baseline;gap:10px;font-size:16px;font-variant-numeric:tabular-nums;padding:4px 10px;border-radius:var(--r);background:var(--bg-subtle)}
+.ctl-cur-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 20px}
+.ctl-cur-code{width:90px;text-transform:uppercase}
+.ctl-cur .seg button{white-space:nowrap}
+.ctl-cur-note{margin-top:12px}

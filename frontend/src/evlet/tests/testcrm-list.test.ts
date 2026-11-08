@@ -23,7 +23,8 @@ describe('testCRM: sign in and the deals list', () => {
     await until(() => expect(text(host.querySelector('[role="alert"]'))).toBe('Invalid username or password'));
     typeInto(host.querySelector<HTMLInputElement>('#ev-password')!, 'a long local test password');
     submit(host);
-    await until(() => expect(location.pathname).toBe('/docs'));
+    // Sign-in lands on the first list the role can open, not on Docs.
+    await until(() => expect(location.pathname).toBe('/app/booking'));
     // Documents (with a State or lines) and records, from the schema alone.
     const nav = [...host.querySelectorAll('a.nav-item')].map(text);
     expect(nav).toEqual(expect.arrayContaining(['Deals', 'Leads', 'Organizations', 'Contacts', 'Products', 'Tasks', 'Bookings']));
@@ -34,7 +35,8 @@ describe('testCRM: sign in and the deals list', () => {
     expect([...host.querySelectorAll('thead th')].map(text).slice(1)).toEqual(['Number', 'Title', 'Organization', 'Owner', 'Stage', 'Total', 'Expected close']);
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')))).toEqual(['Pipeline', 'Won', 'Won this month', 'Deals']));
     await until(() => expect(text(byText(host, '.ev-list [role="tab"]', /^All deals/))).toBe('All deals8'));
-    expect(run.misses).toEqual([]);
+    // The landing list (Bookings) is not part of this recording.
+    expect(run.misses.filter(miss => !/\/api\/booking[?/]/.test(miss))).toEqual([]);
   });
 
   it('searches, filters by a saved view per stage and sorts on the server', async () => {
