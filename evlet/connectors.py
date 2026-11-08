@@ -21,7 +21,7 @@ import time
 from urllib.parse import quote, quote_plus
 
 from .auth import ROLE_ID, AccessError
-from .models import ValidationError
+from .models import ValidationError, checked_body
 from . import secrets as vault
 from .secrets import SecretKeyError
 
@@ -434,8 +434,7 @@ class Connectors:
         Saved secrets are usable only while every identifying setting (host, URL, port, username...)
         is unchanged, so a saved password is never sent to a different server.
         """
-        if not isinstance(body, dict) or set(body) - {'settings', 'secrets'}:
-            raise ValidationError({'_form': 'Send settings and secrets.'})
+        checked_body(body, {'settings', 'secrets'}, 'Send settings and secrets.')
         given, replaced = body.get('settings', {}), body.get('secrets', {})
         if not isinstance(given, dict) or not isinstance(replaced, dict):
             raise ValidationError({'_form': 'Send settings and secrets as objects.'})

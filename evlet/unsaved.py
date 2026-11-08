@@ -11,7 +11,7 @@ import time
 
 from .auth import AccessError
 from .identity import path_id
-from .models import ValidationError
+from .models import ValidationError, checked_body
 
 TABLE = ('CREATE TABLE IF NOT EXISTS evlet_unsaved (user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
          'model TEXT NOT NULL, record_id INTEGER NOT NULL, changes TEXT NOT NULL, base_revision TEXT NOT NULL, '
@@ -197,8 +197,7 @@ class Unsaved:
     def put(self, user, model, name, record_id, body):
         if not self.enabled(user):
             raise AccessError(403, 'You turned off keeping unsaved changes in Settings.')
-        if not isinstance(body, dict) or set(body) != {'changes', 'base_revision'}:
-            raise ValidationError({'_form': 'Send changes and base_revision'})
+        checked_body(body, {'changes', 'base_revision'}, 'Send changes and base_revision', exact=True)
         revision = body['base_revision']
         if not isinstance(revision, str) or not REVISION.fullmatch(revision):
             raise ValidationError({'base_revision': 'Send the revision the record was opened with'})

@@ -12,7 +12,7 @@ from .auth import AccessError
 from .documents import Draft, settle, walk
 from .forms import draft_values, form_draft, metadata
 from .identity import RecordId, jsonable
-from .models import Model, ValidationError, storage_name
+from .models import Model, ValidationError, checked_body, storage_name
 from .reactivity import evaluate, plans
 
 RESULT_LIMIT = 65536
@@ -257,8 +257,7 @@ class Slips:
         slip = self.slips.get(parts[0])
         if slip is None or user is None:
             raise AccessError(404, 'Slip is unavailable')
-        if not isinstance(body, dict) or set(body) - {'source', 'values', 'key', 'revision'}:
-            raise ValidationError({'_form': 'Unknown slip argument'})
+        checked_body(body, {'source', 'values', 'key', 'revision'}, 'Unknown slip argument')
         operation = parts[1]
         hand_in = operation == 'hand-in'
         business = self.business

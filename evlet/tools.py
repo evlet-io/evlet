@@ -24,7 +24,7 @@ from .auth import AccessError
 from .connector import ConnectorError
 from .database import ConflictError, NotFoundError
 from .identity import SCHEMA as ID_SCHEMA, RecordId, jsonable
-from .models import ValidationError
+from .models import ValidationError, checked_body
 
 SAFE_INTEGER = 2**53 - 1
 MODEL = {'type': 'string', 'pattern': '^[a-z][a-z0-9_]{0,127}$'}
@@ -676,8 +676,7 @@ class Tools:
             return 200, {'items': self.approvals(user)}, []
         match = re.fullmatch(r'/api/_tools/approvals/([1-9][0-9]{0,18})', path)
         if match and method == 'POST':
-            if not isinstance(body, dict) or set(body) != {'approve'}:
-                raise ValidationError({'approve': 'Send approve: true or false'})
+            checked_body(body, {'approve'}, 'Send approve: true or false', exact=True, field='approve')
             decided = self.decide(user, int(match[1]), body['approve'])
             eva = getattr(self.business, 'eva', None)
             if eva is not None and decided['run_id'] and decided['origin'] == 'eva':
