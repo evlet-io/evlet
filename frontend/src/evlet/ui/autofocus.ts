@@ -1,5 +1,5 @@
 // Autofocus for forms that start empty: a new record (full page or side panel) and a slip. The first
-// field that can take a value gets the focus, so typing can start at once. initialFocusField() is the
+// field that can take a value (or the field Meta.focus names) gets the focus, so typing can start at once. initialFocusField() is the
 // one place that chooses it; autofocusForm() focuses it once the form shows, and only on a device with
 // a mouse or trackpad (on a phone the focus would open the on-screen keyboard), and only when the person
 // has not moved the focus somewhere else while the form loaded. An existing record never calls it.
@@ -12,15 +12,18 @@ import type { FieldLike } from './fields';
 export interface FocusSection { fields: FieldLike[]; open?: boolean }
 
 /**
- * The name of the field a new form focuses first, or null for none: the first field, in screen order,
- * that shows and can be edited. Read-only, calculated, hidden and locked fields are skipped, and so are
- * the fields of a closed section. `model` is where a model's own choice will plug in; nothing is read
- * from it yet.
+ * The name of the field a new form focuses first, or null for none. The model's own choice (Meta.focus, or a
+ * slip's focus) wins when that field shows and can be edited in an open section of `layout`; otherwise the
+ * first field, in screen order, that shows and can be edited. Read-only, calculated, hidden and locked fields
+ * are skipped, and so are the fields of a closed section.
  */
-export function initialFocusField(model: { name: string }, layout: FocusSection[]): string | null {
-  void model;
-  for (const section of layout) {
-    if (section.open === false) continue;
+export function initialFocusField(model: { name: string; focus?: string | null }, layout: FocusSection[]): string | null {
+  const open = layout.filter(section => section.open !== false);
+  if (model.focus) {
+    const chosen = open.flatMap(section => section.fields).find(field => field.meta.name === model.focus);
+    if (chosen && takesFocus(chosen)) return chosen.meta.name;
+  }
+  for (const section of open) {
     const found = section.fields.find(takesFocus);
     if (found) return found.meta.name;
   }

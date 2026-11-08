@@ -265,7 +265,7 @@ export function SlipSheet(ctx: AppContext, surface: SlipSurface, source: SlipSou
         cancel: () => { if (confirmClose()) close(); }, submit: { label: surface.hand_in_label, onClick: () => void handIn(close) } }) });
     // The first field that can be filled in takes the focus (on a device with a mouse), not whatever input comes first.
     const sheet = [...document.querySelectorAll<HTMLElement>('.modal.slip')].pop();
-    if (sheet) autofocusForm(sheet, () => initialFocusField({ name: surface.slip },
+    if (sheet) autofocusForm(sheet, () => initialFocusField({ name: surface.slip, focus: surface.focus },
       groups.map(group => ({ fields: group.names.flatMap(name => fields.get(name) ?? []) }))));
   });
 }

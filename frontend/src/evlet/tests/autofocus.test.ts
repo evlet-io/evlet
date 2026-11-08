@@ -45,6 +45,15 @@ describe('initialFocusField', () => {
     expect(initialFocusField(model, [{ fields: [text_('a')], open: false }, { fields: [text_('b')] }])).toBe('b');
   });
 
+  it('puts the model\'s own choice (Meta.focus) first when it shows and can be edited', () => {
+    const layout = [{ fields: [text_('a'), text_('b')] }, { fields: [text_('c')] }];
+    expect(initialFocusField({ name: 'thing', focus: 'c' }, layout)).toBe('c');
+    // Not on this tab, read-only, or in a closed section: the first editable field as before.
+    expect(initialFocusField({ name: 'thing', focus: 'zzz' }, layout)).toBe('a');
+    expect(initialFocusField({ name: 'thing', focus: 'b' }, [{ fields: [text_('a'), text_('b', { read_only: true })] }])).toBe('a');
+    expect(initialFocusField({ name: 'thing', focus: 'c' }, [{ fields: [text_('a')] }, { fields: [text_('c')], open: false }])).toBe('a');
+  });
+
   it('returns null when nothing qualifies', () => {
     expect(initialFocusField(model, [{ fields: [text_('a', { read_only: true })] }, { fields: [text_('b')], open: false }])).toBeNull();
   });
@@ -97,6 +106,14 @@ describe('new record forms', () => {
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New quote'));
     await until(() => expect(focusedField()).toBe('customer'));
     expect(document.activeElement?.matches('button.in-link')).toBe(true);
+  });
+
+  it('focuses the field Meta.focus names, not the first one', async () => {
+    const schema = copy(screen.schema);
+    schema.body.models.find((item: { name: string }) => item.name === 'order').focus = 'customer';
+    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema]], '/app/order/new');
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New order'));
+    await until(() => expect(focusedField()).toBe('customer'));
   });
 
   it('skips the fields of a collapsed section', async () => {
@@ -172,5 +189,21 @@ describe('slips', () => {
     const first = [...sheet.querySelectorAll<HTMLElement>('[data-field]')].find(block => !block.hidden
       && block.querySelector('input:not(:disabled), button.in-select:not(:disabled), button.in-link:not(:disabled), textarea:not(:disabled)'));
     expect(focusedField()).toBe(first?.getAttribute('data-field'));
+  });
+
+  it('focuses the field a slip names in focus', async () => {
+    const present = copy(screen.slip_present);
+    present.body.focus = 'kind';
+    const routes: Route[] = [
+      ['GET', /\/api\/auth\/session$/, screen.slip_session],
+      ['GET', /\/api\/schema$/, screen.slip_schema],
+      ['GET', /\/api\/customer\/0000000000001$/, screen.slip_customer],
+      ['POST', /\/api\/_slips\/plan_visit\/present$/, present],
+      ['POST', /\/api\/_slips\/plan_visit\/check$/, screen.slip_check],
+    ];
+    const { host } = start(routes, '/app/customer/0000000000001');
+    await until(() => expect(byText(host, '.doc-head button', 'Plan a visit')).not.toBeNull());
+    click(byText(host, '.doc-head button', 'Plan a visit'));
+    await until(() => expect(focusedField()).toBe('kind'));
   });
 });
