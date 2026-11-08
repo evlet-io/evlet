@@ -427,6 +427,32 @@
           "actions": [],
           "attachments": false
         }
+      ],
+      "workspaces": [
+        {
+          "key": "app",
+          "label": "Document Lifecycle Playground",
+          "icon": "layers",
+          "app": "app",
+          "source": "automatic",
+          "groups": [
+            {
+              "key": "documents",
+              "label": "Documents",
+              "icon": null,
+              "items": [
+                {
+                  "key": "model:order",
+                  "kind": "model",
+                  "label": "Orders",
+                  "model": "order",
+                  "view": "list",
+                  "filters": null
+                }
+              ]
+            }
+          ]
+        }
       ]
     },
     "etag": null

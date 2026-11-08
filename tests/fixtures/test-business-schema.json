@@ -10317,6 +10317,7 @@
       ],
       "group": "Sales",
       "model": "invoice",
+      "source_kind": "model",
       "sortable": [
         "posting_date",
         "total"
@@ -10448,6 +10449,7 @@
       ],
       "group": "Sales",
       "model": "invoice",
+      "source_kind": "model",
       "sortable": [
         "posting_date",
         "total"
@@ -10543,6 +10545,7 @@
       ],
       "group": "Sales",
       "model": "customer",
+      "source_kind": "model",
       "sortable": [
         "invoices",
         "total"
@@ -10611,6 +10614,7 @@
       ],
       "group": "Sales",
       "model": "ledgerentry",
+      "source_kind": "model",
       "sortable": [
         "entries",
         "amount"
@@ -10686,6 +10690,7 @@
       ],
       "group": "",
       "model": null,
+      "source_kind": null,
       "sortable": [],
       "export": true,
       "group_by": null,
@@ -10717,5 +10722,218 @@
   "capabilities": {
     "events": true,
     "jobs": true
-  }
+  },
+  "workspaces": [
+    {
+      "key": "sales",
+      "label": "Sales",
+      "icon": "receipt",
+      "app": "app",
+      "source": "declared",
+      "groups": [
+        {
+          "key": "customers",
+          "label": "Customers",
+          "icon": "users",
+          "items": [
+            {
+              "key": "model:customer",
+              "kind": "model",
+              "label": "Customers",
+              "model": "customer",
+              "view": "list",
+              "filters": null
+            }
+          ]
+        },
+        {
+          "key": "invoicing",
+          "label": "Invoicing",
+          "icon": "file-text",
+          "items": [
+            {
+              "key": "model:invoice",
+              "kind": "model",
+              "label": "Invoices",
+              "model": "invoice",
+              "view": "list",
+              "filters": null
+            },
+            {
+              "key": "model:invoice:unpaid_invoices",
+              "kind": "model",
+              "label": "Unpaid invoices",
+              "model": "invoice",
+              "view": "list",
+              "filters": [
+                [
+                  "payment_status",
+                  "in",
+                  [
+                    "unpaid",
+                    "partly_paid"
+                  ]
+                ]
+              ]
+            },
+            {
+              "key": "model:payment",
+              "kind": "model",
+              "label": "Payments",
+              "model": "payment",
+              "view": "list",
+              "filters": null
+            },
+            {
+              "key": "model:ledgerentry",
+              "kind": "model",
+              "label": "Ledger entries",
+              "model": "ledgerentry",
+              "view": "list",
+              "filters": null
+            },
+            {
+              "key": "slip:quick_invoice",
+              "kind": "slip",
+              "label": "Quick invoice",
+              "slip": "quick_invoice"
+            }
+          ]
+        },
+        {
+          "key": "reports",
+          "label": "Reports",
+          "icon": "chart-column",
+          "items": [
+            {
+              "key": "report:InvoiceRegister",
+              "kind": "report",
+              "label": "Invoice register",
+              "report": "InvoiceRegister"
+            },
+            {
+              "key": "report:InvoicesByCustomer",
+              "kind": "report",
+              "label": "Invoices by customer",
+              "report": "InvoicesByCustomer"
+            },
+            {
+              "key": "report:SalesByCustomer",
+              "kind": "report",
+              "label": "Sales by customer",
+              "report": "SalesByCustomer"
+            },
+            {
+              "key": "report:LedgerBalances",
+              "kind": "report",
+              "label": "Ledger balances",
+              "report": "LedgerBalances"
+            },
+            {
+              "key": "url:all_reports",
+              "kind": "url",
+              "label": "All reports",
+              "url": "/reports"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "projects",
+      "label": "Projects",
+      "icon": "kanban",
+      "app": "app",
+      "source": "declared",
+      "groups": [
+        {
+          "key": "projects",
+          "label": "Projects",
+          "icon": "kanban",
+          "items": [
+            {
+              "key": "model:project",
+              "kind": "model",
+              "label": "Projects",
+              "model": "project",
+              "view": "list",
+              "filters": null
+            },
+            {
+              "key": "model:project:active_projects",
+              "kind": "model",
+              "label": "Active projects",
+              "model": "project",
+              "view": "list",
+              "filters": [
+                [
+                  "status",
+                  "eq",
+                  "active"
+                ]
+              ]
+            },
+            {
+              "key": "model:project:planned_with_a_budget",
+              "kind": "model",
+              "label": "Planned with a budget",
+              "model": "project",
+              "view": "list",
+              "filters": [
+                [
+                  "status",
+                  "eq",
+                  "planned"
+                ],
+                [
+                  "budget",
+                  "gt",
+                  "0"
+                ]
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "key": "company",
+      "label": "Company",
+      "icon": "building-2",
+      "app": "app",
+      "source": "declared",
+      "groups": [
+        {
+          "key": "people",
+          "label": "People",
+          "icon": "users",
+          "items": [
+            {
+              "key": "model:employee",
+              "kind": "model",
+              "label": "Employees",
+              "model": "employee",
+              "view": "list",
+              "filters": null
+            }
+          ]
+        },
+        {
+          "key": "catalogue",
+          "label": "Catalogue",
+          "icon": "package",
+          "items": [
+            {
+              "key": "model:item",
+              "kind": "model",
+              "label": "Items",
+              "model": "item",
+              "view": "list",
+              "filters": null
+            }
+          ]
+        }
+      ]
+    }
+  ]
 }
