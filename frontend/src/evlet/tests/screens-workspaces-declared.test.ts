@@ -137,7 +137,7 @@ describe('the sidebar with declared workspaces', () => {
     expect(byText(host, '.nav-sc', 'Quick customer')!.tagName).toBe('BUTTON');
 
     click(host.querySelector('.app-switch'));
-    const tiles = [...document.querySelectorAll<HTMLButtonElement>('.ws-pop .ws-tile')];
+    const tiles = [...document.querySelectorAll<HTMLButtonElement>('.ws-pop .ws-item')];
     expect(tiles.map(text)).toEqual(['Billing', 'Reports', 'My desk']);
     // Without the Customize workspaces access (the route answers 404) there is no Customize button.
     await until(() => expect(document.querySelector('.ws-pop .ws-edit')).toBeNull());
@@ -171,7 +171,7 @@ describe('the sidebar with declared workspaces', () => {
     const started = start([...routes(), ['GET', /\/api\/_settings\/me$/, settings], ['GET', /\/api\/_controls\/workspaces$/, listing]], '/app/invoice');
     await until(() => expect(started.host.querySelector('.app-switch')).not.toBeNull());
     click(started.host.querySelector('.app-switch'));
-    await until(() => expect(document.querySelectorAll('.ws-pop .ws-tile').length).toBe(3));
+    await until(() => expect(document.querySelectorAll('.ws-pop .ws-item').length).toBe(3));
     return started;
   };
 

@@ -37,10 +37,6 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const models = rootModels(ctx.schema);
   const application = ctx.session.application ?? {};
   const appName = application.playground ? 'Playground' : application.name || 'Evlet';
-  const tenant = (ctx.session.tenant as { label?: string; name?: string } | undefined);
-  // The site beside the workspace name: the tenant's label, else the application's own name ("Lab",
-  // "Playground"); nothing for an unbranded single site.
-  const site = tenant?.label ?? tenant?.name ?? (appName === 'Evlet' ? '' : appName);
   // The theme button flips what the page shows now; from "system" it becomes an explicit choice.
   const device = systemScheme();
   const dark = () => resolveTheme(ctx.me.get()?.prefs.theme ?? 'system', device.get()) === 'dark';
@@ -133,8 +129,8 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <div style="min-width:0"><div class="n">${() => displayName(settings.get(), ctx.user.username)}</div><div class="e">${() => settings.get()?.profile.title || ctx.user.role}</div></div>
     ${Icon('chevrons-up-down', { size: 'xs', className: 'me-chev' })}</button>` as HTMLElement;
 
-  // The Workspace switcher, in the top bar after the brand: the current workspace; it opens a card below it,
-  // left-aligned, with every workspace as a tile.
+  // The Workspace switcher, in the top bar after the brand: the current workspace; it opens a menu below it,
+  // left-aligned, with one row per workspace (the current one checked), then Customize for people with access.
   const pickWorkspace = (workspace: Workspace) => {
     // The workspace is chosen once its first page is open: until then the old page would pick its own workspace back.
     const first = workspace.sections.flatMap(entry => entry.items).find(item => item.href && !item.slip && !item.external);
@@ -143,31 +139,31 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   };
   const workspaceMenu = (anchor: HTMLElement) => openPopover(anchor, close => {
     const access = customizeAccess(ctx);
-    const tiles = nav.peek().workspaces.map(workspace => html`<button type="button" class="ws-tile" class:on=${() => current.get() === workspace}
-      aria-current=${() => current.get() === workspace ? 'true' : null} on:click=${() => { close(); pickWorkspace(workspace); }}>
-      ${IconTile(workspace.icon, { tint: workspace.tint, size: 32 })}<span>${workspace.label}</span></button>` as HTMLButtonElement);
-    const row = html`<div class="ws-row" role="group" aria-label="Workspaces">${tiles}</div>` as HTMLElement;
-    row.addEventListener('keydown', event => {
-      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
-      const at = tiles.indexOf(document.activeElement as HTMLButtonElement);
-      let next = step === undefined ? (event.key === 'Home' ? 0 : event.key === 'End' ? tiles.length - 1 : -1) : (at + step + tiles.length) % tiles.length;
-      if (next < 0) return;
-      event.preventDefault();
-      tiles[next].focus();
-    });
-    queueMicrotask(() => (tiles.find(tile => tile.classList.contains('on')) ?? tiles[0])?.focus());
+    const rows = nav.peek().workspaces.map(workspace => html`<button type="button" class="mi ws-item" class:on=${() => current.get() === workspace}
+      role="menuitemradio" tabindex="-1" aria-checked=${() => current.get() === workspace ? 'true' : 'false'} on:click=${() => { close(); pickWorkspace(workspace); }}>
+      ${Icon(workspace.icon, { size: 'sm', tint: workspace.tint })}<span class="ws-name">${workspace.label}</span>
+      ${() => current.get() === workspace ? Icon('check', { size: 'sm', className: 'ws-check' }) : null}</button>` as HTMLButtonElement);
     // Admins and roles with "Customize workspaces" edit the site's workspaces from here.
-    const customize = () => access.get() ? html`<button type="button" class="ws-edit" on:click=${() => { close(); openWorkspaceEditor(ctx, current.peek()?.key ?? null); }}>
-      ${Icon(SHELL_ICONS.customize, { size: 'xs' })}<span>Customize</span></button>` : null;
-    return html`<div class="ws-head"><span>Workspace</span>${customize}</div>${row}`;
-  }, { label: 'Workspace', role: 'dialog', className: 'ws-pop', align: 'left' });
+    const customize = () => access.get() ? [html`<hr role="separator">`, html`<button type="button" class="mi ws-edit" role="menuitem" tabindex="-1"
+      on:click=${() => { close(); openWorkspaceEditor(ctx, current.peek()?.key ?? null); }}>${Icon(SHELL_ICONS.customize, { size: 'sm' })}<span>Customize</span></button>`] : null;
+    const list = html`<div class="menu" role="none">${rows}${customize}</div>` as HTMLElement;
+    // Arrow keys move through the rows and Customize, wrapping at either end; Home and End jump; Enter picks.
+    list.addEventListener('keydown', event => {
+      const items = [...list.querySelectorAll<HTMLButtonElement>('.mi')];
+      const at = items.indexOf(document.activeElement as HTMLButtonElement);
+      const next = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[event.key];
+      if (next === undefined || !items.length) return;
+      event.preventDefault();
+      items[(next + items.length) % items.length].focus();
+    });
+    queueMicrotask(() => (rows.find(row => row.classList.contains('on')) ?? rows[0])?.focus());
+    return list;
+  }, { label: 'Workspace', role: 'menu', className: 'ws-pop', align: 'left' });
   const wsLabel = () => current.get()?.label ?? appName;
-  // The site shows after the workspace name, unless it says the same thing.
-  const wsSite = () => site && site !== wsLabel() ? site : '';
-  const wsTip = () => wsSite() ? `Workspace: ${wsLabel()} · ${wsSite()}` : `Workspace: ${wsLabel()}`;
-  const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="dialog" aria-expanded="false" aria-label=${() => `${wsTip()}. Switch workspace`}
+  const wsTip = () => `Workspace: ${wsLabel()}`;
+  const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="menu" aria-expanded="false" aria-label=${wsTip}
     on:click=${(event: MouseEvent) => workspaceMenu(event.currentTarget as HTMLElement)}
-    ref=${(el: HTMLElement) => tooltip(el, wsTip)}><span class="as-text"><b>${wsLabel}</b>${() => wsSite() ? html`<small>${wsSite()}</small>` : null}</span>${Icon('chevron-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
+    ref=${(el: HTMLElement) => tooltip(el, wsTip)}><span class="as-text"><b>${wsLabel}</b></span>${Icon('chevron-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
   // The brand at the top bar's left, as on the sign-in page: the evlet.io lockup (its white-wordmark file in
   // dark themes); the collapsed sidebar and phones show the mark alone.
   const brand = html`<div class="brand">${Lockup()}${Logo('Evlet')}</div>`;

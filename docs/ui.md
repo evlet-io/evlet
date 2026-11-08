@@ -492,15 +492,15 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
 ([Top bar](#top-bar-search-and-explorer)).
 
 - **Workspace switcher.** A compact button in the top bar, after the Evlet brand and a pipe: the
-  current workspace's name, muted until hover, and a small chevron. When the site has a name of its
-  own (the tenant's label, else the application's name, such as "Lab" or "Playground"), it follows the
-  workspace name in lighter grey, unless the workspace already has that name; it is left out under
-  1100 px, collapsed and on phones, and the tooltip and the button's name always carry it
-  ("Workspace: Sales · Lab"). A click opens a small card below the button, aligned to its left edge
-  (moved left to stay on screen), with every workspace as a tile in a row (it wraps when there are
-  many). Arrow keys, Home and End move between tiles, Enter opens one, and Esc closes the card and gives
-  focus back to the button. Opening a workspace shows its sections and opens its first shortcut.
-  Opening a page of another workspace (a link, Back, the search palette) switches the sidebar to it.
+  current workspace's name, muted until hover, and a small chevron. Its tooltip and accessible name
+  are "Workspace: Sales". A click opens a menu below the button, aligned to its left edge (moved left
+  to stay on screen), as wide as the other menus, flat, with 4 px corners. It lists one row per
+  workspace, with the workspace's icon and name; the current one is in the accent colour with a check.
+  For people with access, a divider and **Customize** follow. Arrow Up and Arrow Down move through the
+  rows (wrapping at either end), Home and End jump to the first and last, Enter opens one, and Esc
+  closes the menu and gives focus back to the button. The menu is a `menu` of `menuitemradio` rows.
+  Opening a workspace shows its sections and opens its first shortcut. Opening a page of another
+  workspace (a link, Back, the search palette) switches the sidebar to it.
 - **Sections** are collapsible titles with an icon, an optional count and a chevron. Each one is open
   until the person closes it. The closed ones are kept per person in browser storage
   (`evlet.<username>.nav.closed`), and the chosen workspace in `evlet.<username>.nav.workspace`.
@@ -546,8 +546,8 @@ workspace named after the application), with **Documents** (models with a State 
 
 ### Customizing workspaces
 
-Admins and roles with **Customize workspaces** see **Customize** in the switcher card. Nothing in the
-session says who has it, so the first time the card opens the browser asks
+Admins and roles with **Customize workspaces** see **Customize** at the bottom of the switcher menu. Nothing in the
+session says who has it, so the first time the menu opens the browser asks
 `GET /api/_controls/workspaces` once; the route answers everyone else 404 and nothing shows. Customize
 opens a dialog on the current workspace (a picker switches to another):
 
@@ -595,7 +595,7 @@ is missing, the closest one stands in (a slip uses `sticky-note`, a dashboard `a
 | Help (shortcuts) | `circle-help` |
 | Settings, Controls | `settings`, `sliders-horizontal` |
 | Account | `user` |
-| Workspace (its tile in the switcher card) | `layers` (when the workspace declares none) |
+| Workspace (its row in the switcher menu) | `layers` (when the workspace declares none) |
 | Customize | `pencil` |
 | Explorer views: Reports, Data, Dashboards, Ledger reports | `chart-column`, `table-2`, `activity`, `receipt` |
 
@@ -608,8 +608,7 @@ Explorer**, notifications and the shortcuts button.
 
 - **Brand.** The Evlet logo, the same artwork and size as on the sign-in page and before: the
   horizontal evlet.io lockup, 26 px tall (`evlet-logo-primary.svg`, and `evlet-logo-white.svg` in dark
-  themes). The brand is shown once, here; the sidebar has none. It always shows the Evlet logo: the
-  site's own name is the switcher's secondary text ([Sidebar and workspaces](#sidebar-and-workspaces)).
+  themes). The brand is shown once, here; the sidebar has none.
 - **Pipe.** A 1 px line, 16 px tall, in the strong border colour, with space on both sides.
 - **Switcher.** The compact Workspace button ([Sidebar and workspaces](#sidebar-and-workspaces)).
 - **Width.** With the sidebar expanded, the brand, pipe and switcher take the sidebar's width (a long

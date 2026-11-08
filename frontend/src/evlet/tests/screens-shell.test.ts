@@ -145,22 +145,21 @@ describe('app shell', () => {
     expect(sidebar.querySelector('.brand, .ev-lockup, .ev-logo, img, .app-switch')).toBeNull();
     expect(host.querySelectorAll('.ev-logo')).toHaveLength(1);
     expect(sidebar.querySelector('.side-body')!.firstElementChild!.classList.contains('nav')).toBe(true);
-    // The switcher: the workspace name and a small chevron. The recorded application is plain Evlet with no
-    // tenant, so no site follows the name.
+    // The switcher: the workspace name and a small chevron, and no site name after it.
     const appSwitch = left.querySelector<HTMLElement>('.app-switch')!;
     const appName = text(appSwitch.querySelector('.as-text b'));
     expect(appName).not.toBe('');
     expect(appSwitch.querySelector('.as-text small')).toBeNull();
     expect(appSwitch.querySelector('.as-chev')).not.toBeNull();
-    expect(appSwitch.getAttribute('aria-label')).toBe(`Workspace: ${appName}. Switch workspace`);
+    expect(appSwitch.getAttribute('aria-label')).toBe(`Workspace: ${appName}`);
     // The old app bar and repeated app title are gone.
     expect(host.querySelector('.appbar, .side-app, .sidebar .ws')).toBeNull();
     click(appSwitch);
     const pop = document.querySelector('.pop.ws-pop')!;
-    expect(pop.getAttribute('role')).toBe('dialog');
+    expect(pop.getAttribute('role')).toBe('menu');
     expect(pop.getAttribute('aria-label')).toBe('Workspace');
-    expect([...pop.querySelectorAll('.ws-tile')].map(text)).toEqual([appName]);
-    expect(pop.querySelector('.ws-tile.on')!.getAttribute('aria-current')).toBe('true');
+    expect([...pop.querySelectorAll('.ws-item')].map(text)).toEqual([appName]);
+    expect(pop.querySelector('.ws-item.on')!.getAttribute('aria-checked')).toBe('true');
     closeDialogs();
     // The edge button collapses and expands; the top bar's toggle is only for the phone drawer. Collapsed,
     // the brand and the switcher stay in the top bar.
@@ -174,25 +173,6 @@ describe('app shell', () => {
     click(edge);
     expect(app.classList.contains('collapsed')).toBe(false);
     expect(host.querySelector('.topbar > .mobile-only .icon-btn, .topbar > .mobile-only button')).not.toBeNull();
-  });
-
-  it('shows the site after the workspace name: the tenant label, else a branded application name', async () => {
-    const tenant = { ...recorded.session, body: { ...recorded.session.body, tenant: { label: 'Dxbitz Demo LLC', name: 'dxbitz' } } };
-    const first = start([['GET', /\/api\/auth\/session$/, tenant], ...adminRoutes()]);
-    await until(() => expect(first.host.querySelector('.app-switch .as-text b')).not.toBeNull());
-    const button = first.host.querySelector<HTMLElement>('.app-switch')!;
-    const name = text(button.querySelector('.as-text b'));
-    expect(text(button.querySelector('.as-text small'))).toBe('Dxbitz Demo LLC');
-    expect(button.getAttribute('aria-label')).toBe(`Workspace: ${name} · Dxbitz Demo LLC. Switch workspace`);
-    // The brand stays the Evlet logo; the site is never shown in its place.
-    expect(first.host.querySelector('.brand .ev-lockup-light')!.getAttribute('src')).toBe('/assets/evlet-logo-primary.svg');
-    stopAll();
-    // A branded application without a tenant: its name is the site, unless the workspace already says it.
-    const branded = { ...recorded.session, body: { ...recorded.session.body, application: { ...recorded.session.body.application, name: 'Lab' } } };
-    const second = start([['GET', /\/api\/auth\/session$/, branded], ...adminRoutes()]);
-    await until(() => expect(second.host.querySelector('.app-switch .as-text b')).not.toBeNull());
-    const label = text(second.host.querySelector('.app-switch .as-text b'));
-    expect(text(second.host.querySelector('.app-switch .as-text small'))).toBe(label === 'Lab' ? '' : 'Lab');
   });
 
   it('styles the top bar left: brand, pipe and a compact switcher, collapsed and on phones', () => {
@@ -210,13 +190,17 @@ describe('app shell', () => {
     expect(rule(styles, '.app-switch')).toContain('color:var(--fg-3)');
     expect(rule(styles, '.app-switch')).not.toContain('border:1px');
     expect(rule(styles, '.app-switch:focus-visible')).toContain('outline:2px solid var(--accent)');
+    // The Workspace menu: as wide as the other menus, flat (the light shadow), and no tile styles left.
+    expect(rule(styles, '.ws-pop')).toContain('min-width:200px');
+    expect(rule(styles, '.ws-pop')).toContain('box-shadow:var(--shadow-md)');
+    expect(styles).not.toContain('.ws-tile');
     // Collapsed: the mark alone, the switcher compact.
-    expect(rule(styles, '.app.collapsed .brand .ev-lockup,.app.collapsed .as-text small')).toContain('display:none');
+    expect(rule(styles, '.app.collapsed .brand .ev-lockup')).toContain('display:none');
     expect(rule(styles, '.app.collapsed .brand .ev-logo')).toContain('display:block');
     // Phones: the mark alone and a truncated switcher, in one column that never scrolls sideways.
     const phone = styles.slice(styles.indexOf('@media (max-width:760px){\n  .app,.app.collapsed'));
     expect(phone).toContain('.app,.app.collapsed{grid-template-columns:minmax(0,1fr)}');
-    expect(phone).toContain('.brand .ev-lockup,.as-text small{display:none}');
+    expect(phone).toContain('.brand .ev-lockup{display:none}');
     expect(phone).toContain('.brand .ev-logo{display:block}');
     expect(phone).toMatch(/\.app-switch\{max-width:34vw/);
   });

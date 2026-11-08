@@ -583,24 +583,16 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .app-switch:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .as-text{min-width:0;display:flex;align-items:baseline;gap:6px;white-space:nowrap;overflow:hidden}
 .as-text b{font-weight:500;font-size:13.5px;overflow:hidden;text-overflow:ellipsis}
-.as-text small{font-size:12px;color:var(--fg-4);overflow:hidden;text-overflow:ellipsis;flex:0 1000 auto}
 .as-chev{flex:none;opacity:.8}
 .app.collapsed .top-left{width:auto}
-.app.collapsed .brand .ev-lockup,.app.collapsed .as-text small{display:none}
+.app.collapsed .brand .ev-lockup{display:none}
 .app.collapsed .brand .ev-logo{display:block}
-@media (max-width:1100px){.as-text small{display:none}}
-/* The Workspace card: below the switcher, left-aligned, workspaces as tiles in a row that wraps. */
-.ws-pop{padding:10px;width:max-content;max-width:min(436px,calc(100vw - 24px))}
-.ws-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:var(--fg-3);padding:0 4px 8px}
-.ws-edit{display:inline-flex;align-items:center;gap:4px;height:22px;padding:0 6px;border-radius:6px;color:var(--fg-3);font-size:12px}
-.ws-edit:hover{background:var(--bg-muted);color:var(--accent)}
-.ws-edit:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.ws-row{display:flex;flex-wrap:wrap;gap:4px}
-.ws-tile{display:flex;flex-direction:column;align-items:center;gap:6px;width:96px;padding:10px 4px;border-radius:var(--r);font-size:12px;color:var(--fg-2);text-align:center}
-.ws-tile span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.ws-tile:hover{background:var(--bg-muted)}
-.ws-tile.on{background:var(--accent-soft);color:var(--accent);font-weight:550}
-.ws-tile:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+/* The Workspace menu: below the switcher, left-aligned, one row per workspace, flat and as wide as the other menus. */
+.ws-pop{min-width:200px;max-width:min(280px,calc(100vw - 24px));box-shadow:var(--shadow-md)}
+.ws-item .ws-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ws-item.on{color:var(--accent);font-weight:550}
+.ws-check{flex:none;margin-left:8px;color:var(--accent)}
+.ws-pop .mi:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 /* Sections of the current workspace: a collapsible title, then its shortcuts on a thin guide line. */
 .nav-secs{display:flex;flex-direction:column;gap:2px;margin-top:8px}
 .nav-sec-h{display:flex;align-items:center;gap:8px;width:100%;height:30px;padding:0 8px;border-radius:var(--r);color:var(--fg-2);font-weight:550;font-size:12.5px;text-align:left}
@@ -1055,7 +1047,7 @@ th:hover>.rz::after{background:var(--border-strong)}
   .desktop-only{display:none!important}
   .topbar{padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));gap:6px}
   .top-left,.app.collapsed .top-left{width:auto;flex:0 1 auto;gap:8px;padding-right:0}
-  .brand .ev-lockup,.as-text small{display:none}
+  .brand .ev-lockup{display:none}
   .brand .ev-logo{display:block}
   .app-switch{max-width:34vw;margin-left:-4px;padding:0 4px}
   .page,.rec-main{padding:18px max(16px,env(safe-area-inset-left,0px)) 64px max(16px,env(safe-area-inset-right,0px))}
