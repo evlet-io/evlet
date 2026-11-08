@@ -44,6 +44,13 @@ production ready, but the rules below hold from 0.3 on.
   and `Context.unlocked_periods(reason)` are public for trusted code
   ([model-engine.md](model-engine.md#closed-periods)).
 
+- **Ledger models and transaction locks.** The `Meta` options `ledger`, `append_only`, `timestamps`
+  (`None`, `"created"`, `"modified"` or `"both"`) and `indexes`, the `created_at` and `modified_at`
+  fields that timestamps add, integer ledger row ids, `Session.insert_many(model, rows)`,
+  `Session.lock(*keys, timeout=None)` with `LockTimeout`, the `SetAppendOnly` migration, `AddIndex`
+  with a tuple of fields, and `evlet ledger list`. A key's lock number (BLAKE2b of its canonical
+  JSON) never changes between releases ([ledger.md](ledger.md)).
+
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
   public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).

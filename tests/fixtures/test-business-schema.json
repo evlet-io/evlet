@@ -263,7 +263,12 @@
       },
       "child_only": false,
       "children": [],
-      "actions": [],
+      "actions": [
+        {
+          "name": "award_points",
+          "label": "Award 10 points"
+        }
+      ],
       "attachments": false,
       "relations": [
         {
@@ -10320,7 +10325,7 @@
     }
   ],
   "printing": {
-    "available": true
+    "available": false
   },
   "slips": [
     {

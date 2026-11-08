@@ -93,6 +93,8 @@ export interface ModelSchema {
   /** The list's tabs (Meta.list_tabs, Meta.list_tab or a Controls list view): the field whose values are the tabs and
    * the tab the list opens on ("all", a value, or for a Link the linked record's title). Absent: no tabs. */
   list_tabs?: ListTabsSchema;
+  /** The State field a list board groups by (Meta.board); without it the list has no board. */
+  board?: string;
   /** Meta.autosave: false keeps the "Discard your changes?" prompt instead of keeping unsaved changes. */
   autosave?: boolean;
   children?: ChildSchema[];

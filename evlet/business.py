@@ -146,8 +146,14 @@ class Business:
                 if declaration is not None:
                     declared_actions.append(Action(model, name, declaration['label'], method, declaration['roles']))
         actions = (*actions, *declared_actions)
+        from .ledger import is_ledger
         for model in self.attachments:
             self.registry.name_for(model)
+            if is_ledger(model):
+                raise ValueError(f'{model.__name__} is a ledger model: it has no attachments (docs/ledger.md)')
+        for action in actions:
+            if is_ledger(getattr(action, 'model', None)):
+                raise ValueError(f'{action.model.__name__} is a ledger model: it has no actions; trusted code writes its rows (docs/ledger.md)')
         # Application(attachments=...) enables the default limits; Meta.attachments enables its own and wins.
         from .meaning import Attachments
         self.attachment_limits = {model: Attachments() for model in self.attachments}

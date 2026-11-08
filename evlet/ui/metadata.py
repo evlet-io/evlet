@@ -27,7 +27,7 @@ OPEN_IN = ('page', 'panel')
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
-                          'status', 'list_tabs', 'list_tab'))
+                          'status', 'board', 'list_tabs', 'list_tab', 'ledger', 'append_only', 'timestamps', 'indexes'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -121,6 +121,11 @@ def view_for(model):
     if default_tab is not None and tabs and default_tab not in tabs:
         raise ValueError(f'{model.__name__}.Meta.default_tab: {default_tab} is not in Meta.tabs')
     list_tabs = list_tabs_for(model, meta)
+    # A list offers a board only when Meta.board names the field its columns follow: the model's State.
+    board = getattr(meta, 'board', None)
+    if board is not None and (type(board) is not str or board != getattr(model, '__state__', None)):
+        raise ValueError(f'{model.__name__}.Meta.board: name the model\'s State field'
+                         + (f', {model.__state__!r}' if getattr(model, '__state__', None) else '; this model has no State'))
     # Leaving a record keeps its unsaved edits apart from it (evlet.unsaved); False keeps the leave prompt.
     from ..unsaved import autosave as keeps_unsaved
     autosave = keeps_unsaved(model)
@@ -155,7 +160,8 @@ def view_for(model):
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
             'tabs': list(tabs), 'default_tab': default_tab,
-            'autosave': autosave, **({'list_tabs': list_tabs} if list_tabs else {})}
+            'autosave': autosave, **({'list_tabs': list_tabs} if list_tabs else {}),
+            **({'board': board} if board else {})}
 
 
 # The field kinds whose values can be list tabs (Meta.list_tabs).
@@ -218,6 +224,10 @@ def field_schema(field):
     if result['default_kind'] == 'static':
         value = None if field.default is None else field.validate(field.default)
         result['default'] = field.serialize(value)
+    if getattr(field, 'ledger_target', False):
+        # A Link to a ledger row shows its plain integer id and is never written by a caller (evlet/ledger.py).
+        result.pop('target', None)
+        result.update(type='integer', read_only=True)
     return result
 
 

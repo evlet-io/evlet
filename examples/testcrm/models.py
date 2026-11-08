@@ -192,6 +192,7 @@ class Deal(Model):
         revisable = True
         title_field = 'title'
         list_fields = ('number', 'title', 'organization', 'owner', 'stage', 'total', 'expected_close')
+        board = 'stage'
         search_fields = ('title', 'number')
         key_fields = ('organization', 'contact', 'total', 'expected_close', 'owner')
         layout = (('Deal', ('number', 'title', 'organization', 'contact', 'owner', 'lead_source', 'tags')),
@@ -281,6 +282,7 @@ class Lead(Model):
     class Meta:
         title_field = 'full_name'
         list_fields = ('full_name', 'company', 'lead_source', 'score', 'owner', 'status')
+        board = 'status'
         search_fields = ('full_name', 'company', 'email')
         key_fields = ('company', 'score', 'owner', 'lead_source')
         mail = Mail(match=('email',), kind='lead')
