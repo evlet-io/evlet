@@ -10,7 +10,7 @@ import { cell, derive, effect } from '../reactive';
 import { Icon, IconButton, IconTile, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
 import { mountToasts, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
-import { Logo } from './login';
+import { Lockup, Logo } from './login';
 import { resolveTheme, systemScheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { canChangePassword, displayName, openPasswordDialog, PersonMark } from './settings';
@@ -168,9 +168,9 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="dialog" aria-expanded="false" aria-label=${() => `${wsTip()}. Switch workspace`}
     on:click=${(event: MouseEvent) => workspaceMenu(event.currentTarget as HTMLElement)}
     ref=${(el: HTMLElement) => tooltip(el, wsTip)}><span class="as-text"><b>${wsLabel}</b>${() => wsSite() ? html`<small>${wsSite()}</small>` : null}</span>${Icon('chevron-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
-  // The brand at the top bar's left: the Evlet mark (white on a blue square) and the word; the collapsed
-  // sidebar and phones show the mark alone.
-  const brand = html`<span class="top-brand"><span class="tb-mark">${Logo('Evlet')}</span><b class="tb-name" aria-hidden="true">Evlet</b></span>`;
+  // The brand at the top bar's left, as on the sign-in page: the evlet.io lockup (its white-wordmark file in
+  // dark themes); the collapsed sidebar and phones show the mark alone.
+  const brand = html`<div class="brand">${Lockup()}${Logo('Evlet')}</div>`;
 
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
     <div class="side-body">

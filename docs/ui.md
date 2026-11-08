@@ -606,16 +606,17 @@ under it. From left to right it holds the drawer button (phones only), the **Evl
 **Workspace switcher**, the **history** button, the breadcrumb, then one box for **search and the
 Explorer**, notifications and the shortcuts button.
 
-- **Brand.** The Evlet mark (white on a 22 px blue square, 4 px radius) and the word "Evlet" in bold.
-  The brand is shown once, here; the sidebar has none. It always says Evlet: the site's own name is
-  the switcher's secondary text ([Sidebar and workspaces](#sidebar-and-workspaces)).
+- **Brand.** The Evlet logo, the same artwork and size as on the sign-in page and before: the
+  horizontal evlet.io lockup, 26 px tall (`evlet-logo-primary.svg`, and `evlet-logo-white.svg` in dark
+  themes). The brand is shown once, here; the sidebar has none. It always shows the Evlet logo: the
+  site's own name is the switcher's secondary text ([Sidebar and workspaces](#sidebar-and-workspaces)).
 - **Pipe.** A 1 px line, 16 px tall, in the strong border colour, with space on both sides.
 - **Switcher.** The compact Workspace button ([Sidebar and workspaces](#sidebar-and-workspaces)).
 - **Width.** With the sidebar expanded, the brand, pipe and switcher take the sidebar's width (a long
   workspace name is cut with an ellipsis), so the history button and the breadcrumb start over the
-  main column. With the sidebar collapsed they take only the room they need: the mark alone, the pipe
-  and the switcher, then the history button.
-- **Phones** (under 760 px): the menu button, the mark alone, the pipe and the switcher with its name
+  main column. With the sidebar collapsed they take only the room they need: the Evlet mark alone
+  (`evlet-icon-blue.svg`, 26 px), the pipe and the switcher, then the history button.
+- **Phones** (under 760 px): the menu button, the Evlet mark alone, the pipe and the switcher with its name
   cut to about a third of the width, then history, the current page's name, the search and Explorer
   icons and notifications. The page never scrolls sideways.
 

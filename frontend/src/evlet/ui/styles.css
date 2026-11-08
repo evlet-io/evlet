@@ -573,10 +573,10 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .sidebar{grid-row:2}
 .app>.main{grid-row:2}
 .top-left{display:flex;align-items:center;gap:12px;min-width:0;flex:none;width:calc(var(--sidebar-w) - 16px);padding-right:8px}
-.top-brand{display:flex;align-items:center;gap:8px;flex:none}
-.tb-mark{display:grid;place-items:center;width:22px;height:22px;border-radius:var(--r);background:var(--accent-solid);flex:none}
-.tb-mark .ev-logo{width:14px;height:14px;filter:brightness(0) invert(1)}
-.tb-name{font-weight:700;font-size:15px;letter-spacing:-.01em;color:var(--fg)}
+/* The Evlet brand at main's size: the 26 px lockup, or the 26 px mark when collapsed. */
+.brand{display:flex;align-items:center;gap:9px;flex:none}
+.brand .ev-lockup{height:26px}
+.brand .ev-logo{display:none;width:26px;height:26px}
 .top-pipe{width:1px;height:16px;background:var(--border-strong);flex:none}
 .app-switch{display:flex;align-items:center;gap:4px;min-width:0;height:28px;margin-left:-6px;padding:0 6px;border-radius:var(--r);color:var(--fg-3);text-align:left}
 .app-switch:hover,.app-switch[aria-expanded="true"]{background:var(--bg-muted);color:var(--fg)}
@@ -586,7 +586,8 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .as-text small{font-size:12px;color:var(--fg-4);overflow:hidden;text-overflow:ellipsis;flex:0 1000 auto}
 .as-chev{flex:none;opacity:.8}
 .app.collapsed .top-left{width:auto}
-.app.collapsed .tb-name,.app.collapsed .as-text small{display:none}
+.app.collapsed .brand .ev-lockup,.app.collapsed .as-text small{display:none}
+.app.collapsed .brand .ev-logo{display:block}
 @media (max-width:1100px){.as-text small{display:none}}
 /* The Workspace card: below the switcher, left-aligned, workspaces as tiles in a row that wraps. */
 .ws-pop{padding:10px;width:max-content;max-width:min(436px,calc(100vw - 24px))}
@@ -1054,7 +1055,8 @@ th:hover>.rz::after{background:var(--border-strong)}
   .desktop-only{display:none!important}
   .topbar{padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));gap:6px}
   .top-left,.app.collapsed .top-left{width:auto;flex:0 1 auto;gap:8px;padding-right:0}
-  .tb-name,.as-text small{display:none}
+  .brand .ev-lockup,.as-text small{display:none}
+  .brand .ev-logo{display:block}
   .app-switch{max-width:34vw;margin-left:-4px;padding:0 4px}
   .page,.rec-main{padding:18px max(16px,env(safe-area-inset-left,0px)) 64px max(16px,env(safe-area-inset-right,0px))}
   .rec-side{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}

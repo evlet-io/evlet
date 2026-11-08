@@ -134,12 +134,11 @@ describe('app shell', () => {
     const left = host.querySelector<HTMLElement>('.topbar > .top-left')!;
     expect(left.previousElementSibling!.classList.contains('mobile-only')).toBe(true);
     expect(left.nextElementSibling!.classList.contains('rec-btn')).toBe(true);
-    expect([...left.children].map(child => child.className)).toEqual(['top-brand', 'top-pipe', 'app-switch']);
-    // The evlet.io mark, white on a blue square, and the word in bold; the mark names it for screen readers.
-    const mark = left.querySelector<HTMLImageElement>('.top-brand .tb-mark img')!;
-    expect([mark.className, mark.getAttribute('src'), mark.alt]).toEqual(['ev-logo', '/assets/evlet-icon-blue.svg', 'Evlet']);
-    expect(left.querySelector('.top-brand b.tb-name')!.textContent).toBe('Evlet');
-    expect(left.querySelector('.top-brand b.tb-name')!.getAttribute('aria-hidden')).toBe('true');
+    expect([...left.children].map(child => child.className)).toEqual(['brand', 'top-pipe', 'app-switch']);
+    // The evlet.io lockup for light and dark themes, and the mark for the collapsed sidebar, as on main.
+    const brand = [...left.querySelectorAll<HTMLImageElement>('.brand img')].map(img => [img.className, img.getAttribute('src'), img.alt]);
+    expect(brand).toEqual([['ev-lockup-light', '/assets/evlet-logo-primary.svg', 'Evlet'],
+      ['ev-lockup-dark', '/assets/evlet-logo-white.svg', 'Evlet'], ['ev-logo', '/assets/evlet-icon-blue.svg', 'Evlet']]);
     expect(left.querySelector('.top-pipe')!.getAttribute('aria-hidden')).toBe('true');
     // The brand shows once: nothing of it is left in the sidebar, which starts with its navigation.
     const sidebar = host.querySelector('.sidebar')!;
@@ -170,7 +169,7 @@ describe('app shell', () => {
     click(edge);
     expect(app.classList.contains('collapsed')).toBe(true);
     expect(edge.getAttribute('aria-label')).toBe('Expand sidebar');
-    expect(host.querySelector('.topbar > .top-left .tb-mark')).not.toBeNull();
+    expect(host.querySelector('.topbar > .top-left .brand .ev-logo')).not.toBeNull();
     expect(host.querySelector('.topbar > .top-left .app-switch')).toBe(appSwitch);
     click(edge);
     expect(app.classList.contains('collapsed')).toBe(false);
@@ -185,8 +184,8 @@ describe('app shell', () => {
     const name = text(button.querySelector('.as-text b'));
     expect(text(button.querySelector('.as-text small'))).toBe('Dxbitz Demo LLC');
     expect(button.getAttribute('aria-label')).toBe(`Workspace: ${name} · Dxbitz Demo LLC. Switch workspace`);
-    // The brand stays Evlet; the site is never shown in its place.
-    expect(text(first.host.querySelector('.tb-name'))).toBe('Evlet');
+    // The brand stays the Evlet logo; the site is never shown in its place.
+    expect(first.host.querySelector('.brand .ev-lockup-light')!.getAttribute('src')).toBe('/assets/evlet-logo-primary.svg');
     stopAll();
     // A branded application without a tenant: its name is the site, unless the workspace already says it.
     const branded = { ...recorded.session, body: { ...recorded.session.body, application: { ...recorded.session.body.application, name: 'Lab' } } };
@@ -201,9 +200,10 @@ describe('app shell', () => {
     // As wide as the expanded sidebar, so the breadcrumb starts over the main column; only as wide as it needs collapsed.
     expect(rule(styles, '.top-left')).toContain('width:calc(var(--sidebar-w) - 16px)');
     expect(rule(styles, '.app.collapsed .top-left')).toContain('width:auto');
-    expect(rule(styles, '.tb-mark')).toContain('border-radius:var(--r)');
-    expect(rule(styles, '.tb-mark')).toContain('width:22px');
-    expect(rule(styles, '.tb-name')).toContain('font-weight:700');
+    // The brand at main's size: the 26 px lockup, the 26 px mark hidden until collapsed; no filter or tile.
+    expect(rule(styles, '.brand .ev-lockup')).toContain('height:26px');
+    expect(rule(styles, '.brand .ev-logo')).toMatch(/display:none;width:26px;height:26px/);
+    expect(styles).not.toMatch(/ev-logo[^{]*\{[^}]*filter/);
     // The pipe: one pixel wide, 16 px tall, in the border colour.
     expect(rule(styles, '.top-pipe')).toMatch(/width:1px;height:16px;background:var\(--border-strong\)/);
     // The switcher is muted until hover, flat, with the solid focus outline.
@@ -211,11 +211,13 @@ describe('app shell', () => {
     expect(rule(styles, '.app-switch')).not.toContain('border:1px');
     expect(rule(styles, '.app-switch:focus-visible')).toContain('outline:2px solid var(--accent)');
     // Collapsed: the mark alone, the switcher compact.
-    expect(rule(styles, '.app.collapsed .tb-name,.app.collapsed .as-text small')).toContain('display:none');
+    expect(rule(styles, '.app.collapsed .brand .ev-lockup,.app.collapsed .as-text small')).toContain('display:none');
+    expect(rule(styles, '.app.collapsed .brand .ev-logo')).toContain('display:block');
     // Phones: the mark alone and a truncated switcher, in one column that never scrolls sideways.
     const phone = styles.slice(styles.indexOf('@media (max-width:760px){\n  .app,.app.collapsed'));
     expect(phone).toContain('.app,.app.collapsed{grid-template-columns:minmax(0,1fr)}');
-    expect(phone).toContain('.tb-name,.as-text small{display:none}');
+    expect(phone).toContain('.brand .ev-lockup,.as-text small{display:none}');
+    expect(phone).toContain('.brand .ev-logo{display:block}');
     expect(phone).toMatch(/\.app-switch\{max-width:34vw/);
   });
 
