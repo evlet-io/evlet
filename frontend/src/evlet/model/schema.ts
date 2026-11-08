@@ -73,6 +73,8 @@ export interface CalculationSchema {
 /** Hidden names by kind in a list's side panel. Display only: permissions never read it. */
 export interface PanelSchema { sections?: string[]; fields?: string[]; tabs?: string[]; blocks?: string[]; order?: string[] }
 
+export interface ListTabsSchema { field: string; kind: 'state' | 'select' | 'link'; default: string }
+
 export interface ModelSchema {
   name: string;
   label: string;
@@ -91,6 +93,11 @@ export interface ModelSchema {
   order_by?: string;
   /** How the list opens a record: the full page (default) or a side panel beside the list. */
   open_in?: 'page' | 'panel';
+  /** The list's tabs (Meta.list_tabs, Meta.list_tab or a Controls list view): the field whose values are the tabs and
+   * the tab the list opens on ("all", a value, or for a Link the linked record's title). Absent: no tabs. */
+  list_tabs?: ListTabsSchema;
+  /** The State field a list board groups by (Meta.board); without it the list has no board. */
+  board?: string;
   /** Meta.autosave: false keeps the "Discard your changes?" prompt instead of keeping unsaved changes. */
   autosave?: boolean;
   /** Meta.summary: false leaves the record page's summary strip out. Absent means shown when it has values. */

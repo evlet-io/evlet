@@ -517,6 +517,13 @@ function ListTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
     [next[at], next[at + step]] = [next[at + step], next[at]];
     set({ columns: next });
   };
+  // The list's tabs: a State, Select or Link field's values, and the tab the list opens on.
+  const tabFields = model.fields_detail.filter(info => info.stored && (info.type === 'select' || info.type === 'link')).map(info => info.name);
+  const tabInfo = () => model.fields_detail.find(info => info.name === value().list_tabs);
+  const tabChoices = (): Array<[string, string]> => {
+    const info = tabInfo();
+    return info && info.type === 'select' ? options(effective(ctx, model.name, info.name)).filter(item => !item.hidden).map(item => [item.value, item.value]) : [];
+  };
   const sorts = () => [...columns.flatMap(name => [[name, `${label(name)} ↑`], [`-${name}`, `${label(name)} ↓`]] as Array<[string, string]>), ['-id', 'Newest first'] as [string, string]];
   return html`<div class="ctl-grid g2">
     <section class="ctl-card"><div class="ctl-card-head"><div><h2>Columns</h2><p>Shown in the list, in this order</p></div>
@@ -535,6 +542,13 @@ function ListTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
         ${field('Default sort', 'ctl-l-sort', Select({ id: 'ctl-l-sort', value: () => value().sort, options: sorts, onChange: next => set({ sort: next }) }))}
         ${field('Open records in', 'ctl-l-open', Select({ id: 'ctl-l-open', value: () => value().open_in ?? 'page', options: () => [['page', 'Full page'], ['panel', 'Side panel beside the list']],
           onChange: next => set({ open_in: next as 'page' | 'panel' }) }))}
+        ${field('Tabs by', 'ctl-l-tabs', Select({ id: 'ctl-l-tabs', value: () => value().list_tabs ?? '', options: () => [['', 'No tabs'], ...tabFields.map(name => [name, label(name)] as [string, string])],
+          onChange: next => set({ list_tabs: next || null, list_tab: 'all' }) }))}
+        ${when(() => Boolean(value().list_tabs), () => tabInfo()?.type === 'link'
+          ? field('Opens on', 'ctl-l-home', html`<input class="input" id="ctl-l-home" placeholder="All, or the title of a linked record" prop:value=${() => value().list_tab === 'all' ? '' : value().list_tab ?? ''}
+              on:change=${(event: Event) => set({ list_tab: (event.target as HTMLInputElement).value.trim() || 'all' })}>`)
+          : field('Opens on', 'ctl-l-home', Select({ id: 'ctl-l-home', value: () => value().list_tab ?? 'all', options: () => [['all', 'All'], ...tabChoices()],
+              onChange: next => set({ list_tab: next }) })))}
         ${when(() => ctx.drafts.errors.get().has(id), () => html`<span class="ctl-err">${() => ctx.drafts.errors.get().get(id)}</span>`)}</div></section>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Preview</h2><p>${() => ctx.drafts.overridden(id) ? 'Changed on this instance' : 'Same as the app'}</p></div></div>
         <div class="table-wrap"><table class="dt ctl-table"><thead><tr>${() => value().columns.map(name => html`<th>${label(name)}</th>`)}</tr></thead>

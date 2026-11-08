@@ -77,6 +77,9 @@ class ModelType(type):
         if revisable:
             # Each revisable class gets its own field, so a subclass's revisions link to its own table.
             namespace = {**namespace, 'revises': revises_field()}
+        # Meta.ledger = True: a lean table trusted code writes (evlet/ledger.py).
+        from . import ledger as ledgers
+        ledger = ledgers.declared(name, namespace, bases)
         for key, value in namespace.items():
             if isinstance(value, Field):
                 identifier(key)
@@ -100,9 +103,20 @@ class ModelType(type):
                 tables[key] = value
             elif key in fields:
                 raise ValueError(f"Inherited field {key!r} must remain a field")
-        # Every record model has the standard name and title columns (evlet/naming.py); row tables do not.
         from .naming import add_standard, is_row_table
-        if any(isinstance(base, ModelType) for base in bases) and not is_row_table(namespace, bases, fields):
+        ledger_options = None
+        if ledger:
+            # No standard name and title; Meta.timestamps adds created_at and modified_at.
+            if is_row_table(namespace, bases, fields):
+                raise ValueError(f'{name}: a Table row or form cannot be a ledger model')
+            ledger_options = ledgers.check_class(name, namespace, bases, fields, tables, sources)
+            for key in [key for key, field in fields.items() if getattr(field, 'engine_timestamp', None)]:
+                del fields[key]
+            added = ledgers.timestamp_fields(ledger_options[1])
+            fields.update(added)
+            namespace = {**namespace, **added}
+        # Every record model has the standard name and title columns (evlet/naming.py); row tables do not.
+        if not ledger and any(isinstance(base, ModelType) for base in bases) and not is_row_table(namespace, bases, fields):
             namespace = {**namespace, **add_standard(fields)}
         if len({key.lower() for key in fields}) != len(fields):
             raise ValueError("Field names must be distinct ignoring case")
@@ -122,6 +136,9 @@ class ModelType(type):
         if revisable and (not states or not fields[states[0]].voidable):
             raise ValueError(f'{name}: Meta.revisable needs a State with voidable states, because a revise voids the original')
         cls.__revisable__ = revisable
+        cls.__ledger__ = ledger
+        if ledger:
+            cls.__append_only__, cls.__timestamps__, cls.__indexes__ = ledger_options
         if revisable:
             fields['revises'].target = cls
             unique_and_required(name, fields, tables)
@@ -132,7 +149,9 @@ class ModelType(type):
         if hasattr(meta, 'journal'):
             from .journal import Journal
             journaled = isinstance(meta.journal, Journal)
-        if getattr(cls, "confirmable", False) or getattr(cls, "track_changes", False) or journaled or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        if ledger:
+            pass  # Trusted code writes ledger rows through the session; nothing is declarative.
+        elif getattr(cls, "confirmable", False) or getattr(cls, "track_changes", False) or journaled or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}
@@ -225,7 +244,8 @@ class Model(metaclass=ModelType):
             # of a table framework step 0003 has not reached yet.
             if not (getattr(field, 'instance', None) or standard(field)) or name in row.keys()
         })
-        instance._id = RecordId(row["id"])
+        # A ledger row's id is the plain integer the database assigned (evlet/ledger.py).
+        instance._id = row["id"] if getattr(cls, '__ledger__', False) else RecordId(row["id"])
         # When and by whom the record was created and last changed (evlet/audit.py), when the row has them.
         instance._audit = tuple(row[name] for name in AUDIT) if AUDIT[0] in row.keys() else None
         return instance
@@ -432,9 +452,12 @@ class Registry:
 
     def schema(self):
         """The stored schema app migrations work from. Instance fields (x_) belong to Controls, not to it."""
+        from .ledger import schema as ledger_schema
         return {"version": 1, "models": [
             {"name": name, "label": model.__name__,
-             "fields": [field.metadata() for field in model.__app_stored__.values() if not standard(field)]}
+             "fields": [field.metadata() for field in model.__app_stored__.values() if not standard(field)],
+             # Ledger models record their options; normal models keep the entry they always had.
+             **({"ledger": ledger_schema(model)} if ledger_schema(model) is not None else {})}
             for name, model in self.models.items()
         ]}
 

@@ -64,7 +64,8 @@ def compile_api(registry):
     result = {}
     for model in registry.models.values():
         root = registry.root_of(model)
-        value = getattr(root.Meta, 'api', 'full')
+        # A ledger model has no public surface (evlet/ledger.py); its class refuses any other value.
+        value = None if getattr(root, '__ledger__', False) else getattr(root.Meta, 'api', 'full')
         if value not in API:
             raise ValueError(f'{root.__name__}: Meta.api is "full", "read" or None')
         result[model] = value
@@ -72,7 +73,8 @@ def compile_api(registry):
         if value is None:
             continue
         for name, field in model.__declared_fields__.items():
-            if isinstance(field, Link) and result.get(field.target) is None and not field.hidden:
+            # A Link to a ledger row shows only its integer id, read only, so it need not be hidden.
+            if isinstance(field, Link) and result.get(field.target) is None and not field.hidden and not field.ledger_target:
                 raise ValueError(f'{model.__name__}.{name} links to {field.target.__name__}, which has Meta.api = None. '
                                  'Declare the Link hidden=True so its ids and titles stay private')
     for source, bounds in getattr(registry, 'effects', {}).items():
@@ -420,7 +422,8 @@ class Policy:
         rule = self.rule(user, model)
         readable = set(model.__declared_fields__ if rule.read_fields is None else rule.read_fields)
         # Links to models that cannot be read must not expose their identifiers.
-        readable = {name for name in readable if not isinstance(model.__declared_fields__[name], Link) or self.allows(user, model.__declared_fields__[name].target, 'read')}
+        readable = {name for name in readable if not isinstance(model.__declared_fields__[name], Link)
+                    or model.__declared_fields__[name].ledger_target or self.allows(user, model.__declared_fields__[name].target, 'read')}
         if model in self.governed:
             readable = {name for name in readable if not model.__declared_fields__[name].hidden}
         return readable
@@ -437,7 +440,8 @@ class Policy:
             return readable
         writable = readable & set(model.__declared_fields__ if rule.write_fields is None else rule.write_fields)
         locked = self.read_only.get(model, ())
-        return {name for name in writable if not model.__declared_fields__[name].read_only and not name.startswith('evlet_') and name not in locked}
+        return {name for name in writable if not model.__declared_fields__[name].read_only and not name.startswith('evlet_') and name not in locked
+                and not getattr(model.__declared_fields__[name], 'ledger_target', False)}
 
     def derivation_allowed(self, user, model, name, visiting=frozenset()):
         from .reactivity import plans, references
@@ -585,6 +589,8 @@ class Policy:
         readable = self.fields(user, model)
         results = [{key: value for key, value in record.to_dict().items() if key == 'id' or key in readable} for record in records]
         for name, field in model.__fields__.items():
+            if isinstance(field, Link) and field.ledger_target:
+                continue  # A ledger row id is shown as it is: there is no record to read behind it.
             if isinstance(field, Link):
                 wanted = [result[name] for result in results if result.get(name) is not None]
                 if not wanted:

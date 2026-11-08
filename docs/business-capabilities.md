@@ -314,7 +314,9 @@ ordinary writes. See [states-actions.md](states-actions.md). The record page sho
 State as a header badge by default; declare `show="bar"` on a pipeline (draft, submitted,
 approved) for the stage bar, or `show="none"`. `Meta.status = "<field>"` shows a Select the
 system sets, such as a calculated payment status, as a badge that is never edited from the
-header ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
+header ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)). The list offers a
+board, one column per state, only when `Meta.board` names the State field, such as
+`board = "stage"`; any other field fails registration.
 
 The Playground's invoice shows this: `payment_status` is calculated from `amount_paid` against
 `total` (Unpaid, Partly paid, Paid), named by `Meta.status` and coloured by `colors`. Nobody

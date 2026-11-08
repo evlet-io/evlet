@@ -11,6 +11,8 @@ const DETAIL = /^\/api\/([A-Za-z][A-Za-z0-9_]*)\/(\d+)(?:\/(?:moves\/[^/]+|actio
 const NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
 
 export interface Attachment { id: number; name: string; size: number }
+/** GET /api/{model}/list_tabs: counts per tab value (records without one count in total only); more: a Link has other values. */
+export interface ListTabCounts { field: string; total: number; items: Array<{ value: string; count: number }>; more: boolean }
 
 export class AppClient extends ApiClient {
   private readonly details = new Map<string, Cell<RecordData | null>>();
@@ -80,6 +82,13 @@ export class AppClient extends ApiClient {
   async aggregate(model: string, measures: string[], groupBy: string[] = [], filters?: Record<string, unknown> | unknown[], q?: string) {
     return (await this.request<{ group_by: string[]; measures: string[]; items: Array<Record<string, unknown>> }>('GET', `/api/${model}/aggregate`, { query: {
       measures: measures.join(','), group_by: groupBy.length ? groupBy.join(',') : undefined,
+      filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined, q: q || undefined,
+    } })).data;
+  }
+
+  /** Record counts for the list tabs (Meta.list_tabs), following the list's filters and search text. A Link gives its most used values. */
+  async listTabs(model: string, filters?: Record<string, unknown> | unknown[], q?: string) {
+    return (await this.request<ListTabCounts>('GET', `/api/${model}/list_tabs`, { query: {
       filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined, q: q || undefined,
     } })).data;
   }

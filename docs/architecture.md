@@ -303,6 +303,17 @@ immutable snapshots and unified history. See [document lifecycle](document-lifec
 for the APIs, permission and transaction contract, approval boundaries and adoption
 from existing State/Move applications.
 
+## Ledger models
+
+`Meta.ledger = True` is a storage mode of `Model`, not a second persistence API. A ledger model is
+declared, registered and migrated like any model and read through the same session, measures and
+reports, but its table holds an integer id the database assigns and the declared columns only, and
+`Meta.api` is forced to `None`, so every caller surface already leaves it out. Append-only tables use
+database triggers, as `evlet_audit` and `evlet_journal` do. Named locks (`tx.lock`) are PostgreSQL
+transaction advisory locks on hashed business keys and a no-op on SQLite, whose writers are already
+serialised. The framework adds no finance or stock concepts; balancing, reversals and cache rebuilds
+are app code. See [ledger models](ledger.md).
+
 ## The Tool Engine
 
 One Tool Engine (`evlet.tools`) serves MCP clients and the API, and will serve Eva. Each tool is
