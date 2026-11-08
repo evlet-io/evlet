@@ -286,7 +286,8 @@ class Employee(Model):
   route answers 403.
 - **The address.** With no `tab` in the address the list opens on the default tab. Choosing
   another, All included, puts it in the address (`?tab=all`), so a link or a reload keeps it.
-  Clear filters goes back to the default tab. A tab with no records and no search or filters
+  A tab the address names when the list opens stays there, the default one too, until another is
+  chosen. Clear filters goes back to the default tab. A tab with no records and no search or filters
   offers Show all instead.
 - **Controls.** The list view sets both for an instance ("Tabs by" and "Opens on",
   [controls.md](controls.md)).
@@ -524,14 +525,23 @@ filters in the list address: an equality on the field of the list tabs (`Meta.li
 tab, and the rest go in `?f=` in the form the list's filter rows write back (a Boolean equality is
 "is yes" or "is no", a Select equality is "in"). A report item opens its page, a slip item presents the
 slip over the page (`presentSlip`), and a URL item opens its address (an http(s) address in a new tab).
+A shortcut opens exactly what it names. A model item without a tab of its own, on a list whose default
+tab (`Meta.list_tab`) is not All, says `?tab=all`, so clicking "Projects" opens the plain list on All,
+not on the default tab. Only a shortcut that declares `view` or `filters` applies them. The list keeps
+no saved per-person view or filter to restore, so nothing else applies. Reached any other way (search,
+a link, the start page, the breadcrumb), the list has no `?tab=` and opens on its default tab. Clicking
+a shortcut to the list already on screen opens what the shortcut names there too.
 Workspaces added in Controls (`source` custom) show like the others. The remembered open sections and
 the chosen workspace use the workspace and group keys.
 
-**The active shortcut** follows the address. Its path must equal the shortcut's (or be a record under
-a list), and every view, tab and filter the shortcut names must be in the address; the shortcut that
-names the most wins. So `/app/task?f=[["done","no",null]]` marks "Open tasks" rather than "Tasks", and
-another filter marks "Tasks". The list's home tab counts as named even though the list leaves it out
-of the address. On a tie, the shortcut of the workspace on screen wins, so a list two workspaces share
+**The active shortcut** follows the address, by exact match. On a list, the path and the view, tab and
+filters must be exactly the shortcut's, none more and none fewer; search, sort, page, the record panel
+and the order of the parts don't count. So `/app/task?f=[["done","no",null]]` marks "Open tasks" and
+`/app/task` marks "Tasks", while another filter or tab marks neither. A tab the address names on
+arrival stays in it, the default one too, until another tab is chosen, so a shortcut to the default
+tab stays marked after its click. The list reached without `?tab=` (search, a link) shows its default
+tab and marks no shortcut, nor its section. A record under a list marks the plainest shortcut of that
+list. On a tie, the shortcut of the workspace on screen wins, so a list two workspaces share
 keeps the sidebar as it is. A URL shortcut is marked only on its own address, every query part
 included: "All reports" at `/?explorer=reports` is not marked on another Explorer view or on the root.
 

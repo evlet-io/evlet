@@ -24,9 +24,6 @@ export interface NavShortcut {
   slip?: string;
   /** An http(s) address: it opens in a new tab. */
   external?: boolean;
-  /** What the page shows when its address leaves a part out, such as the list's home tab: the address the list
-   * settles on drops ?tab= for it, and the shortcut still matches. */
-  defaults?: Record<string, string>;
 }
 export interface NavSection { key: string; label: string; icon: string; count?: number; items: NavShortcut[] }
 export interface Workspace { key: string; label: string; icon: string; tint?: Tint; sections: NavSection[];
@@ -80,9 +77,7 @@ export function shortcutOf(schema: AppSchema, item: WorkspaceItem, links: NavLin
     case 'model': {
       const model = schema.models.find(entry => entry.name === item.model) as unknown as ScreenModel | undefined;
       const query = listQuery(model, item.view, item.filters);
-      const home = model?.list_tabs?.default;
-      return { ...base, href: links.list(item.model, query),
-        model: Object.keys(query).length ? undefined : item.model, ...(home && home !== 'all' ? { defaults: { tab: home } } : {}) };
+      return { ...base, href: links.list(item.model, query), model: plain(query) ? item.model : undefined };
     }
     case 'report': return { ...base, href: links.report(item.report) };
     case 'slip': return { ...base, href: '', slip: item.slip };
@@ -94,7 +89,8 @@ export function shortcutOf(schema: AppSchema, item: WorkspaceItem, links: NavLin
  * The list address of a model shortcut: view=board, and its filters as the list keeps them. An equality on the
  * field of the list tabs (Meta.list_tabs) opens that tab; the rest go in ?f= in the form the list's filter rows
  * write back (a Boolean equality is "is yes" or "is no", a Select equality is "in"), so the address the list
- * settles on still matches the shortcut.
+ * settles on still matches the shortcut. A shortcut opens exactly what it names: without a tab of its own, on a
+ * list whose default tab (Meta.list_tab) is not All, it says ?tab=all, so the default tab never applies.
  */
 export function listQuery(model: ScreenModel | undefined, view: 'list' | 'board', filters: unknown[] | null): Record<string, string> {
   const query: Record<string, string> = {};
@@ -110,8 +106,13 @@ export function listQuery(model: ScreenModel | undefined, view: 'list' | 'board'
     else rest.push(entry);
   }
   if (rest.length) query.f = JSON.stringify(rest);
+  const home = model?.list_tabs?.default;
+  if (!query.tab && home && home !== 'all') query.tab = 'all';
   return query;
 }
+
+/** A list query with no view, filter or tab but All: the model's plain list. */
+const plain = (query: Record<string, string>) => Object.entries(query).every(([key, value]) => key === 'tab' && value === 'all');
 
 function fallbackNav(schema: AppSchema, links: NavLinks, fallback: string): WorkspaceNav {
   const models = schema.models.filter(model => !model.child_only) as unknown as ScreenModel[];
@@ -121,7 +122,8 @@ function fallbackNav(schema: AppSchema, links: NavLinks, fallback: string): Work
     const sections: NavSection[] = ['Documents', 'Records'].map(group => ({
       key: group.toLowerCase(), label: group, icon: SECTION_ICONS[group],
       items: mine.filter(model => groupOf(model) === group).map(model => {
-        return { key: `model:${model.name}`, label: model.plural, href: links.list(model.name), kind: 'list' as const, icon: KIND_ICONS.list, model: model.name };
+        const query = listQuery(model, 'list', null);
+        return { key: `model:${model.name}`, label: model.plural, href: links.list(model.name, Object.keys(query).length ? query : undefined), kind: 'list' as const, icon: KIND_ICONS.list, model: model.name };
       }),
     })).filter(section => section.items.length);
     const own = reports.filter(report => reportApp(schema, report) === key);
@@ -151,10 +153,11 @@ function sameQuery(a: URLSearchParams, b: URLSearchParams): boolean {
 
 /**
  * The shortcut an address belongs to, if any. Its path must equal the shortcut's, or be a page under it (a
- * record of the list). On the page itself, every view, tab and filter the shortcut names must be in the address,
- * and the shortcut naming the most of them wins: on /m/task?f=[...] the "Open tasks" shortcut beats "Tasks",
- * which still matches any other filter. Under it (a record), the plainest shortcut wins. Slips never match. On a
- * tie, a shortcut of `prefer` (the workspace shown) wins, so a page two workspaces share keeps the sidebar as it is.
+ * record of the list). On the page itself the view, tab and filters must be exactly the shortcut's, none more
+ * and none fewer (search, sort, page and the record panel don't count): "Tasks" at /m/task and "Open tasks" at
+ * /m/task?f=[...] each mark only their own address, and another filter, or the list's default tab reached
+ * without ?tab=, marks neither. Under it (a record), the plainest shortcut wins. Slips never match. On a tie, a
+ * shortcut of `prefer` (the workspace shown) wins, so a page two workspaces share keeps the sidebar as it is.
  * A link (a URL item) matches only its own address, every query part included: "All reports" at /?explorer=reports
  * is not marked on /?explorer=data or on any other page of the root path.
  */
@@ -164,13 +167,14 @@ export function activeShortcut(nav: WorkspaceNav, path: string, prefer?: string)
   for (const workspace of nav.workspaces) for (const section of workspace.sections) for (const item of section.items) {
     if (item.slip || item.external || !item.href) continue;
     const target = pathOf(item.href), own = queryOf(item.href);
-    const named = MATCHED.filter(key => own.has(key));
+    // ?tab=all on a plain shortcut is not a choice: under the list, it is still the plainest.
+    const named = MATCHED.filter(key => own.has(key) && !(key === 'tab' && own.get(key) === 'all'));
     let mine: number;
     if (item.kind === 'link') {
       if (bare !== target || !sameQuery(own, query)) continue;
       mine = target.length * 100 + [...own.keys()].length;
     } else if (bare === target) {
-      if (!named.every(key => same(key, own.get(key), query.get(key) ?? item.defaults?.[key] ?? null))) continue;
+      if (!MATCHED.every(key => same(key, own.get(key), query.get(key)))) continue;
       mine = target.length * 100 + named.length;
     } else if (bare.startsWith(target + '/')) mine = target.length * 100 - named.length - 50;
     else continue;

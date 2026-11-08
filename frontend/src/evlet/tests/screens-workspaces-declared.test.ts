@@ -90,27 +90,42 @@ describe('workspaceNav from declared workspaces', () => {
     expect(listQuery(model, 'board', null)).toEqual({ view: 'board' });
   });
 
-  it('matches the address with its view, tab and filters, the most specific shortcut winning', () => {
+  it('matches only the shortcut whose view, tab and filters are exactly the address\'s', () => {
     const nav = workspaceNav(declared().body as AppSchema, links);
     const label = (path: string) => activeShortcut(nav, path)?.item.label ?? null;
     expect(label('/app/invoice')).toBe('Invoices');
-    expect(label('/app/invoice?view=board&sort=-number')).toBe('Board');
-    expect(label('/app/invoice?tab=issued')).toBe('Issued');
-    expect(label('/app/invoice?tab=paid')).toBe('Invoices');
+    // Search, sort, page and the record panel don't count; the order of the parts doesn't either.
+    expect(label('/app/invoice?sort=-number&view=board&q=a&page=2')).toBe('Board');
+    expect(label('/app/invoice?tab=issued&open=000000000001a')).toBe('Issued');
+    // A tab or filter no shortcut names marks none, not the plain list.
+    expect(label('/app/invoice?tab=paid')).toBeNull();
+    expect(label('/app/invoice?tab=issued&view=board')).toBeNull();
     expect(label(`/app/customer?f=${encodeURIComponent('[["vip", "yes", null]]')}`)).toBe('VIP customers');
-    expect(label(`/app/customer?f=${encodeURIComponent('[["vip","no",null]]')}`)).toBe('Customers');
+    expect(label(`/app/customer?f=${encodeURIComponent('[["vip","no",null]]')}`)).toBeNull();
     // A record belongs to the plain list's shortcut.
     expect(label('/app/invoice/000000000001a?rtab=details')).toBe('Invoices');
     expect(label('/docs')).toBe('Docs');
     expect(label('/settings')).toBeNull();
   });
 
-  it('matches a list tab shortcut on the list\'s home tab, which the address leaves out', () => {
+  it('opens a plain shortcut on All when the list has a default tab, and never marks a shortcut for that default', () => {
     const schema = declared().body;
     schema.models.find((model: any) => model.name === 'invoice').list_tabs.default = 'issued';
     const nav = workspaceNav(schema as AppSchema, links);
-    expect(activeShortcut(nav, '/app/invoice')?.item.label).toBe('Issued');
-    expect(activeShortcut(nav, '/app/invoice?tab=all')?.item.label).toBe('Invoices');
+    // A shortcut opens exactly what it names: the plain list and the board say All, the tab shortcut its tab.
+    expect(nav.workspaces[0].sections[0].items.map(item => [item.label, item.href, item.model ?? null])).toEqual([
+      ['Invoices', '/app/invoice?tab=all', 'invoice'], ['Board', '/app/invoice?view=board&tab=all', null], ['Issued', '/app/invoice?tab=issued', null]]);
+    const label = (path: string) => activeShortcut(nav, path)?.item.label ?? null;
+    expect(label('/app/invoice?tab=all')).toBe('Invoices');
+    expect(label('/app/invoice?tab=issued')).toBe('Issued');
+    // Reached without ?tab= (search, a link), the list opens on its default tab and no shortcut is marked.
+    expect(label('/app/invoice')).toBeNull();
+    // A record still belongs to the plain list's shortcut.
+    expect(label('/app/invoice/000000000001a')).toBe('Invoices');
+    // The fallback's shortcuts say All too.
+    delete schema.workspaces;
+    expect(workspaceNav(schema as AppSchema, links).workspaces.flatMap(workspace => workspace.sections.flatMap(section => section.items))
+      .find(item => item.model === 'invoice')?.href).toBe('/app/invoice?tab=all');
   });
 
   it('keeps the fallback only for a server without workspaces', () => {
@@ -144,6 +159,35 @@ describe('the sidebar with declared workspaces', () => {
     click(tiles[2]);
     await until(() => expect(location.pathname).toBe('/app/customer'));
     expect(text(host.querySelector('.app-switch .as-text b'))).toBe('My desk');
+  });
+
+  it('marks only the clicked shortcut on a list with a default tab, and none when the list is reached without a tab', async () => {
+    const schema = declared();
+    schema.body.models.find((model: any) => model.name === 'invoice').list_tabs.default = 'issued';
+    const { host } = start(routes(schema), '/app/invoice');
+    const tabOf = () => text(host.querySelector('.ev-list [role="tab"][aria-selected="true"]'));
+    const marked = () => [...host.querySelectorAll('.sidebar [aria-current="page"]')].map(item => text(item.querySelector('.lbl')));
+    // Reached without ?tab=: the default tab, and nothing marked, its section included.
+    await until(() => expect(tabOf()).toMatch(/^Issued/));
+    expect(location.search).toBe('');
+    expect(marked()).toEqual([]);
+    expect(host.querySelector('.nav-sec.on')).toBeNull();
+    // The plain shortcut opens All, and only it is marked.
+    click(byText(host, '.nav-sc', 'Invoices'));
+    await until(() => expect(tabOf()).toMatch(/^All invoices/));
+    expect(location.search).toBe('?tab=all');
+    await until(() => expect(marked()).toEqual(['Invoices']));
+    // The tab shortcut opens its tab, the default one, and keeps it in the address, so only it is marked.
+    click(byText(host, '.nav-sc', 'Issued'));
+    await until(() => expect(tabOf()).toMatch(/^Issued/));
+    expect(location.search).toBe('?tab=issued');
+    await until(() => expect(marked()).toEqual(['Issued']));
+    // Choosing another tab in the list leaves the shortcut behind.
+    click(byText(host, '.ev-list [role="tab"]', /^All invoices/));
+    await until(() => expect(marked()).toEqual(['Invoices']));
+    click(byText(host, '.ev-list [role="tab"]', /^Issued/));
+    await until(() => expect(location.search).toBe(''));
+    expect(marked()).toEqual([]);
   });
 
   it('presents a menu slip from its shortcut', async () => {

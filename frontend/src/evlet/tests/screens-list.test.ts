@@ -237,6 +237,17 @@ describe('list tabs by a chosen field, opening on the model default (Meta.list_t
     await until(() => expect(location.search).toBe(''));
   });
 
+  it('keeps a tab the address names on arrival, the default one too, until another is chosen', async () => {
+    const { host } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'issued' })), '/app/invoice?tab=issued');
+    await until(() => expect(selected(host)).toBe('Issued1'));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(location.search).toBe('?tab=issued');
+    click(byText(host, '.ev-list [role="tab"]', /^All invoices/));
+    await until(() => expect(location.search).toBe('?tab=all'));
+    click(byText(host, '.ev-list [role="tab"]', /^Issued/));
+    await until(() => expect(location.search).toBe(''));
+  });
+
   it('keeps the tab from the address over the default, and Clear filters goes back to the default', async () => {
     const { host, sent } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'issued' })), '/app/invoice?tab=all&q=zzz');
     await until(() => expect(byText(host, 'button', 'Clear filters')).toBeTruthy());

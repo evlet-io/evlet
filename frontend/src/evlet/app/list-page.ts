@@ -4,7 +4,8 @@
 //
 // Search, sort, page, view, tab and filters live in the address, so a link opens the same list.
 // With no tab there, the list opens on the model's default tab (Meta.list_tab); choosing another,
-// All included, puts it in the address. Everything runs on the server: the browser never filters or sorts a partial list.
+// All included, puts it in the address. A tab the address names on arrival stays there, the default
+// one too, until another is chosen: a sidebar shortcut to that tab keeps matching its own address. Everything runs on the server: the browser never filters or sorts a partial list.
 // The filter builder (rows of field, condition and value, child tables included) is filters.ts.
 //
 // A record opens on its own page or in a side panel beside the narrowed list (Meta.open_in, or the
@@ -112,6 +113,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const home = cell(tabSpec && tabSpec.kind !== 'link' && fits(tabSpec.default) ? tabSpec.default : 'all', { name: `${name}.home tab` });
   const finding = cell(Boolean(linkTabs && tabSpec!.default !== 'all' && !fits(start.tab)), { name: `${name}.finding home tab` });
   const tab = cell(fits(start.tab) ? start.tab : home.peek(), { name: `${name}.tab` });
+  /** The tab the address named on arrival, kept in it until the tab changes. */
+  let named: string | null = fits(start.tab) ? start.tab : null;
   if (finding.peek()) void findRecord(ctx, linkTabs!, tabSpec!.default).then(id => batch(() => {
     if (id) { home.set(id); tab.set(id); }
     finding.set(false);
@@ -127,14 +130,20 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   // The saved view's State is one more condition. Only equalities on distinct fields go as the shorter object form.
   const serverFilters = derive(() => compact([...filters.server.get(), ...(tabSpec && tab.get() !== 'all' ? [[tabSpec.field, 'eq', tab.get()]] : [])]));
   changes(() => filters.server.get(), () => page.set(1));
+  /** The list's own part of the address it last wrote (search, sort, page, view, tab, filters), to tell its own
+   * changes from a navigation to the same list with others, such as a sidebar shortcut. */
+  let written = '';
+  const ownPart = (query: Record<string, string>) => JSON.stringify(Object.entries(query).filter(([key]) => LIST_KEYS.includes(key) && key !== 'open' && key !== 'rtab').sort());
+  const rewrite = cell(0, { name: `${name}.rewrite address` });
   effect(() => {
+    rewrite.get();
     const params: Record<string, string> = {};
     if (query.get()) params.q = query.get();
     const order = sort.get();
     if (order) params.sort = `${order.dir === 'desc' ? '-' : ''}${order.key}`;
     if (page.get() > 1) params.page = String(page.get());
     if (view.get() === 'board') params.view = 'board';
-    if (tabSpec && tab.get() !== home.get()) params.tab = tab.get();
+    if (tabSpec && (tab.get() !== home.get() || tab.get() === named)) params.tab = tab.get();
     if (filters.address.get()) params.f = filters.address.get();
     // The panel's record stays open while the list changes around it.
     const now = untrack(() => router.route.peek()?.query ?? {});
@@ -143,6 +152,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     // A create link (?open=new&customer=4) keeps its values while the new record is open.
     if (now.open === 'new') for (const [key, value] of Object.entries(now)) if (!LIST_KEYS.includes(key)) params[key] = value;
     const href = router.href('list', { model: name }, params);
+    written = ownPart(params);
     untrack(() => { if (router.route.peek()?.name === 'list' && router.route.peek()?.params.model === name && href.endsWith(router.route.peek()!.url)) return; void router.navigate(href, { replace: true }); });
   });
 
@@ -313,7 +323,29 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       ...values.map(value => ({ id: value, label: tabLabel(value), count: tabCount(value) })),
     ] }));
   } : null;
-  changes(() => tab.get(), () => batch(() => { page.set(1); selection.set(new Set()); }));
+  let arriving = false;
+  changes(() => tab.get(), () => batch(() => { if (!arriving) named = null; page.set(1); selection.set(new Set()); }));
+  // A navigation to this list with another search, sort, page, view, tab or filters (a sidebar shortcut, a link)
+  // opens what it names, as a fresh visit would: the page is not built again for a change of query only.
+  changes(() => router.route.get(), () => {
+    const route = router.route.peek();
+    if (route?.name !== 'list' || route.params.model !== name || ownPart(route.query) === written) return;
+    const next = route.query;
+    arriving = true;
+    try {
+      batch(() => {
+        q.set(next.q ?? ''); query.set(next.q ?? '');
+        const order = sortFromUrl(next.sort ?? model.order_by);
+        if (JSON.stringify(order) !== JSON.stringify(sort.peek())) sort.set(order);
+        view.set(boarded && next.view === 'board' ? 'board' : 'list');
+        named = fits(next.tab) ? next.tab : null;
+        tab.set(named ?? home.peek());
+        if ((next.f ?? '') !== filters.address.peek()) { if (next.f) filters.load(next.f); else filters.clear(); }
+        page.set(Math.max(1, Number(next.page) || 1));
+        rewrite.set(rewrite.peek() + 1);
+      });
+    } finally { arriving = false; }
+  });
 
   const search = (model.search_fields ?? []).length ? SearchInput({ value: q, placeholder: `Search ${model.plural.toLowerCase()}`, label: `Search ${model.plural.toLowerCase()}` }) : null;
   if (search) {
@@ -321,7 +353,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     onCleanup(() => { if (ctx.pageSearch.peek()?.isConnected === false || ctx.pageSearch.peek() === search.querySelector('input')) ctx.pageSearch.set(null); });
   }
   // Clearing goes back to the tab the list opens on.
-  const clearAll = () => batch(() => { filters.clear(); q.set(''); tab.set(home.peek()); page.set(1); });
+  const clearAll = () => batch(() => { named = null; filters.clear(); q.set(''); tab.set(home.peek()); page.set(1); });
   const toolbar = Toolbar({ label: `${model.plural} tools`, left: [search, FilterChips(filters, ctx.links)],
     right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
