@@ -258,3 +258,34 @@ describe('Controls safety', () => {
     expect(sent.find(item => item.url.endsWith('/api/_controls/roles'))!.body).toEqual({ id: 'partner', base: 'portal', realm: 'portal', description: '' });
   });
 });
+
+// The sidebar keeps its head (brand, workspace) and foot (account) in place; only the nav list
+// scrolls, like the app sidebar. jsdom has no layout, so the markup and the CSS source are checked.
+describe('Controls sidebar', () => {
+  const node = (globalThis as any).process;
+  const css = node.getBuiltinModule('node:fs').readFileSync(`${node.cwd()}/src/evlet/controls/controls.css`, 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '') as string;
+  const rule = (selector: string) => [...css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)]
+    .filter(m => m[1].split(',').map(s => s.trim()).includes(selector)).map(m => m[2]).join(';');
+
+  it('scrolls only the nav list between a fixed head and foot', async () => {
+    const { host } = open('/controls/users', () => ({ status: 200, body: {} }));
+    await until(() => expect(host.querySelector('.ctl-side .ctl-nav-item')).toBeTruthy());
+    const side = host.querySelector('.ctl-side')!;
+    expect([...side.children].map(child => child.className)).toEqual(['ctl-side-head', 'ctl-nav', 'ctl-side-foot']);
+    const nav = side.querySelector('.ctl-nav')!;
+    expect(nav.querySelector('.ctl-brand, .ctl-ws, .ctl-side-foot')).toBeNull();
+    expect(side.querySelector('.ctl-side-head .ctl-brand')).toBeTruthy();
+    expect(side.querySelector('.ctl-side-head .ctl-ws')).toBeTruthy();
+    expect(nav.querySelector('.ctl-nav-item.on')?.getAttribute('aria-current')).toBe('page');
+
+    expect(rule('.ctl-side')).toMatch(/overflow:hidden/);
+    expect(rule('.ctl-side')).not.toMatch(/overflow-y:auto/);
+    expect(rule('.ctl-nav')).toMatch(/flex:1/);
+    expect(rule('.ctl-nav')).toMatch(/min-height:0/);
+    expect(rule('.ctl-nav')).toMatch(/overflow-y:auto/);
+    expect(rule('.ctl-side-head')).toMatch(/flex:none/);
+    expect(rule('.ctl-side-foot')).toMatch(/flex:none/);
+    expect(css).toMatch(/\.ctl-side-foot\{padding-bottom:max\(16px,env\(safe-area-inset-bottom/);
+  });
+});

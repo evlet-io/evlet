@@ -238,7 +238,7 @@ def test_a_layout_sets_section_flow_and_the_record_tab_order(app):
     for bad, message in (({**value, 'tabs': ['lines']}, 'List record tabs of Lead once each'),
                          ({**value, 'tabs': ['details', 'details']}, 'List record tabs of Lead once each'),
                          ({**value, 'default_tab': 'postings'}, 'Open records on one of the record tabs.'),
-                         ({**value, 'extra': 1}, 'Send the layout as a list of sections, or as sections, tabs and default_tab.'),
+                         ({**value, 'extra': 1}, 'Send the layout as a list of sections, or as sections with tabs, default_tab and panel.'),
                          ([{**sections[0], 'flow': 'down'}], 'Section Lead: fill fields in rows ("rows") or down each column ("columns").')):
         assert message in save(admin, ('layout', 'Lead', bad))[1]['fields']['changes.0']
 

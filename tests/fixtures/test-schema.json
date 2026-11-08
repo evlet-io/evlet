@@ -194,6 +194,11 @@
       "tabs": [],
       "default_tab": null,
       "autosave": true,
+      "panel": {
+        "fields": [
+          "tax_rate"
+        ]
+      },
       "fields": [
         {
           "name": "customer",
@@ -365,7 +370,7 @@
           "unique": true,
           "index": false,
           "max_length": 140,
-          "label": "Name",
+          "label": "Invoice number",
           "help_text": "",
           "placeholder": "",
           "hidden": false,
@@ -842,6 +847,32 @@
         "field": "status",
         "kind": "select",
         "default": "active"
+      },
+      "side_blocks": [
+        "related",
+        "info",
+        "key_fields"
+      ],
+      "panel": {
+        "sections": [
+          "Notes",
+          "Schedule"
+        ],
+        "tabs": [
+          "activity",
+          "postings",
+          "revisions"
+        ],
+        "blocks": [
+          "files",
+          "key_fields",
+          "summary"
+        ],
+        "order": [
+          "details",
+          "related",
+          "info"
+        ]
       },
       "fields": [
         {

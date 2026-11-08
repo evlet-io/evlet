@@ -456,9 +456,12 @@ class Naming:
 
     The older form Naming("field", Series(...)) names a unique, optional Text field of the model instead,
     on create, and that field stays read only.
+
+    `label` names the standard `name` field for the model's domain, such as "Project number", on the
+    form, in list columns, filters, search and the schema. Without it the field is "Name".
     """
 
-    def __init__(self, *series, date_field=None, assign_on='create', manual=False):
+    def __init__(self, *series, date_field=None, assign_on='create', manual=False, label=None):
         field = 'name'
         if series and isinstance(series[0], str):
             field, series = series[0], series[1:]
@@ -479,7 +482,14 @@ class Naming:
             if not isinstance(date_field, str):
                 raise ValueError('Naming date_field names a Date field')
             identifier(date_field)
+        if label is not None:
+            if not isinstance(label, str) or not label.strip() or len(label.strip()) > 80 or '\n' in label:
+                raise ValueError('Naming label is a short line of text, such as "Project number"')
+            if field != 'name':
+                raise ValueError(f'Naming label names the standard name field; label {field} with label= on the field itself')
+            label = label.strip()
         self.field, self.date_field, self.assign_on, self.manual = field, date_field, assign_on, manual
+        self.label = label
         last = len(series) - 1
         self.series = tuple({'id': item.id or ('default' if index == last else f'series_{index + 1}'),
                              'label': item.label or item.format, 'format': item.format, 'when': item.when}

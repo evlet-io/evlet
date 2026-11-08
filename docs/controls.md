@@ -235,6 +235,15 @@ announced to screen readers. The arrow buttons still work.
 saved as `{"sections": [...], "tabs": ["details", ...], "default_tab": "details" | null}`; without them it stays the
 plain list of sections. Tab names are the record's own tabs and the model's child tables (`tabs` in each model of
 `GET /api/_controls/state`). The export writes them as `Meta.tabs` and `Meta.default_tab` notes.
+**Side panel**: what a record shows when a list opens it in a side panel. Each section, field and tab (Details aside) has
+a panel button, pressed while it shows there; the Side panel card has the summary strip, Files and Record info. A layout
+that sets this is saved as `{"sections": [...], "panel": {"sections": [...], "fields": [...], "tabs": [...], "blocks": [...]}}`,
+each list naming what the panel hides (`blocks` from `summary`, `key_fields`, `files` and `info`). `panel` replaces the
+app's `panel=False` flags and `Meta.panel` for this instance, keeping the order `Meta.panel` gives; `{}` shows
+everything; a layout without `panel` leaves it to the app, whose choice the toggles start from. Unknown names or a name
+given twice are refused. It is stored with the layout and needs no migration. Renaming a section keeps its choice;
+removing an instance field drops it. `/api/schema` names only fields the role can read. Hiding is display only: the
+same field, row and action checks apply, and the full page shows everything.
 
 **List view** (kind `list`, key `Model`): `{"columns": [...], "page_size": 25 | 50 | 100, "sort": "field" | "-field", "open_in": "page" | "panel"}`,
 1 to 8 columns. `/api/schema` drops the columns a role can't read and gives `page_size`, `order_by` and `open_in`.
@@ -336,7 +345,17 @@ Change routes in the instance's `routes.py`.
 
 ## Jobs
 
-Schedules from the apps, and the last 50 jobs. Pausing a schedule saves at once as the setting
+The page has two panes. On the left is a list of the jobs: every task a schedule runs or a
+recent run used, with All on top. Each shows how many of the recent runs are its own and the
+state and time of its latest run. The right pane shows the selected job's schedules and its runs,
+newest first; All shows every schedule and every run, with the job as a column. A run shows its
+state (Queued, Running, Done or Failed), when it was due (the exact time on hover), its attempts
+and, when it failed, the error. The selection is kept in the address as `?job=<name>`, so a
+reload or a link opens the same job. The list is a set of tabs: the arrow keys, Home and End
+move through it. On a phone it becomes a row of chips above the runs.
+
+The server sends the schedules from the apps and the last 50 jobs across all jobs, so the
+runs of one job are picked from those, and the page says so once 50 are listed. Pausing a schedule saves at once as the setting
 override `schedule.<name>.active = false` and is applied with `set_schedule_active`; resuming
 resets it. A pause for a schedule no app declares any more is listed under Needs attention.
 Run now enqueues one job like the schedule would; a paused schedule must be resumed first.

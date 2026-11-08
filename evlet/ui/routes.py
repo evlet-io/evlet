@@ -6,6 +6,7 @@ from http.cookies import CookieError, SimpleCookie
 from urllib.parse import parse_qs, parse_qsl, quote
 
 from ..business import Download
+from ..identity import path_id
 
 
 def dispatch(application, scope):
@@ -74,8 +75,15 @@ def dispatch(application, scope):
     return None
 
 
-GENERATED = re.compile(r'/app/([a-z][a-z0-9_]*)(?:/(new|[1-9][0-9]{0,15})(/view)?)?')
-MODEL_PATH = re.compile(r'(?:/([a-z][a-z0-9_]*)(?:/(new|[1-9][0-9]{0,15})(/view)?)?)?/?')
+# A record segment: new, a 13-character text id (any case), or a decimal id from an older link.
+RECORD = r'new|[0-9A-Za-z]{13}|[1-9][0-9]{0,11}'
+GENERATED = re.compile(rf'/app/([a-z][a-z0-9_]*)(?:/({RECORD})(/view)?)?')
+MODEL_PATH = re.compile(rf'(?:/([a-z][a-z0-9_]*)(?:/({RECORD})(/view)?)?)?/?')
+
+
+def _record_segment(segment):
+    """Whether a matched record segment names a record: new, a decimal id, or a text id that decodes."""
+    return segment is None or segment == 'new' or len(segment) < 13 or path_id(segment) is not None
 
 
 def _serves(application, frontend, base, rest):
@@ -88,7 +96,7 @@ def _serves(application, frontend, base, rest):
             return re.fullmatch(r'/eva(/tasks|/[1-9][0-9]{0,15})?', path) is not None
         if base == '/app':
             match = GENERATED.fullmatch(path)
-            return bool(match) and match[1] in application.registry.exposed
+            return bool(match) and match[1] in application.registry.exposed and _record_segment(match[2])
         return path == '/' or any(view.route and route_pattern(view.route).fullmatch(path) for view in application.ui.views.values())
     if frontend == 'evlet.login':
         return path == '/login'
@@ -170,7 +178,7 @@ def _frontend(application, scope, host, identity, base, rest):
     config = _config(application, scope, host, identity, base)
     if definition.kind == 'evlet':
         match = MODEL_PATH.fullmatch(rest)
-        if match is None or match[1] and match[1] not in application.registry.exposed:
+        if match is None or match[1] and match[1] not in application.registry.exposed or not _record_segment(match[2]):
             raise HTTPError(404, 'Route not found')
         response = static_response('/', config)
     elif definition.kind == 'static':

@@ -9,6 +9,7 @@
 import { html, match, when, type Child } from '../dom';
 import { ApiError } from '../api';
 import { Lockup } from '../app/login';
+import { backToApp } from '../app/last-page';
 import { cell, derive, onCleanup, type Cell } from '../reactive';
 import { createRouter, type Router } from '../router';
 import { Avatar, Button, EmptyState, Icon, StatusPill } from '../ui/base';
@@ -201,16 +202,24 @@ function Shell(ctx: ControlsContext): HTMLElement {
     return count && (count[0] || id === 'users') ? count as [number, boolean] : null;
   };
   const s = state.peek();
+  // Back to app: a real link to the person's last app page (or the start page), so a plain click
+  // leaves Controls in place and Cmd or Ctrl click opens a new tab. It is rel="external" because
+  // the app is a separate page, not a Controls route. The href is read again on focus and hover.
+  const target = () => backToApp(s.me.username);
+  const appName = () => target().app ?? s.apps.find(app => app.frontends?.some(frontend => frontend.realm === 'desk'))?.title ?? 'app';
+  const back = html`<a class="ctl-back" href=${target().href} rel="external" title=${`Back to ${appName()}`}
+    on:pointerenter=${(event: Event) => { (event.currentTarget as HTMLAnchorElement).href = target().href; }}
+    on:focus=${(event: Event) => { (event.currentTarget as HTMLAnchorElement).href = target().href; }}>
+    ${Icon('arrow-left', { size: 'sm' })}<span>Back to <strong>${appName()}</strong></span></a>` as HTMLAnchorElement;
   const side = html`<aside class="ctl-side" class:open=${open} aria-label="Controls navigation">
-    <div class="ctl-brand">${Lockup()}<small>Controls</small></div>
-    <div class="ctl-ws"><span class="ctl-ws-letter">${(s.instance.name || 'E').slice(0, 1).toUpperCase()}</span>
-      <span><strong>${s.instance.name}</strong><small>${s.instance.host}</small></span></div>
+    <div class="ctl-side-head">${back}<div class="ctl-brand">${Lockup()}<small>Controls</small></div>
+      <div class="ctl-ws"><span class="ctl-ws-letter">${(s.instance.name || 'E').slice(0, 1).toUpperCase()}</span>
+        <span><strong>${s.instance.name}</strong><small>${s.instance.host}</small></span></div></div>
     <nav class="ctl-nav">${NAV.map(([group, items]) => [group ? html`<div class="ctl-nav-label">${group}</div>` : null,
       items.map(([id, label, icon]) => html`<a class="ctl-nav-item" class:on=${() => route.get() === id} aria-current=${() => route.get() === id ? 'page' : null}
         href=${router.href(id, {})} on:click=${() => open.set(false)}>${Icon(icon, { size: 'sm' })}<span>${label}</span>
         ${() => { const count = navCount(id); return count === null ? null : html`<span class="ctl-count" class:warn=${count[1]}>${count[0]}</span>`; }}</a>`)])}</nav>
-    <div class="ctl-side-foot">${Avatar({ name: s.me.username, size: 'sm' })}<span><strong>${s.me.username}</strong><small>${s.me.role}</small></span>
-      <a class="icon-btn" href="/" rel="external" aria-label="Back to the workspace" title="Back to the workspace">${Icon('log-out', { size: 'sm' })}</a></div>
+    <div class="ctl-side-foot">${Avatar({ name: s.me.username, size: 'sm' })}<span><strong>${s.me.username}</strong><small>${s.me.role}</small></span></div>
   </aside>` as HTMLElement;
   const top = html`<header class="ctl-top">
     <button type="button" class="icon-btn ctl-menu" aria-label="Open menu" on:click=${() => open.set(!open.peek())}>${Icon('panel-left', { size: 'sm' })}</button>

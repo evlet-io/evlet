@@ -17,6 +17,29 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   prints the `sudo` steps; `--apply` runs them, showing each first. `--dev` and `--host` cannot be
   combined. A failed step is named, and running the same command again skips finished steps.
   Without the new options `evlet setup` is unchanged ([docs/cli.md](docs/cli.md#setup-in-one-go)).
+- `Naming(..., label="Project number")` labels the standard `name` field for the model's domain on
+  the form, in list columns, filters, search and the schema
+  ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".
+
+### Fixed
+
+- Records with text ids show their move and action buttons again. The browser client now reads
+  record details from paths with a text id, so allowed moves are no longer refused.
+- Record pages with a text id, such as `/app/<model>/01hff1w8vgqwf`, are served with 200 instead
+  of 404. A decimal id from an older link is still served ([docs/routing.md](docs/routing.md)).
+- More > Reset layout puts collapsible sections back to their starting state at once, including
+  `collapsed="empty"`, instead of waiting for an animation that a background page never plays.
+- **Back to the app from Controls.** The top of the Controls sidebar links back to the last app
+  page, or the start page; the search palette offers Go to Controls to roles that open it.
+- **Change password from the account menu.** It opens the Sign-in & security password form
+  in a small dialog; both use one shared form.
+- **Saved filters on lists.** The filter panel keeps the current filters under a name, per
+  person on the device. Choosing one applies it; each can be deleted.
+- **Files can be removed from a record.** Each file in the Files block has a remove button,
+  shown to roles that can upload. It asks first, and a locked record shows none.
+- **A read-only child table stays read only when opened in the row editor.** On a locked or
+  cancelled record, or without write access, a row opened from the table or its focus view showed
+  editable inputs. They are now read only, like the cells, and the rows still open to read.
 - **List tabs by a chosen field, with a default tab.** `Meta.list_tabs` names the State, Select
   or Link field whose values are the list's tabs, and `Meta.list_tab` the tab the list opens on
   (`"all"` by default). Without them a model's State drives the tabs as before; `list_tabs = None`
@@ -35,14 +58,67 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Transaction locks.** `tx.lock(*keys, timeout=None)` holds named locks on business keys until the
   transaction ends, PostgreSQL advisory locks taken in a fixed order, a key check on SQLite. A wait
   past `timeout` raises the new `LockTimeout`. Nothing changes for existing apps.
-
-### Changed
-
 - **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
   names its State field, such as `board = "stage"`, and the board groups by that field. Without
   it the list is a table with the saved views per state, and an old `?view=board` link opens the
   table. Apps that relied on the automatic board for every model with a State must now set
   `Meta.board`. `Meta.board` on any other field fails registration naming the model.
+
+### Changed
+
+- **The list filter panel is a side panel.** It docks beside the table inside the page, with
+  no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
+  sit on top and saved filters below; each half scrolls on its own. Escape closes it.
+- **Related records load when shown, five at a time.** Opening a record no longer asks for
+  every relation: the Related block and each Related tab section load when they scroll into
+  view, and one page serves both. Each section shows five rows with a small pager, and View all
+  opens the related list filtered to this record.
+- **Lists run flush to the main area.** A model list's table no longer sits in a rounded,
+  bordered card. Its rows run edge to edge, like a child table in focus view, and the list page
+  uses the full width of the main area. Related lists and reports keep their own look.
+- **`Meta.summary` and `Meta.side_blocks`.** `summary = False` leaves the record page's summary
+  strip out. `side_blocks = ('related', 'files')` picks and orders the side blocks, from
+  `key_fields`, `related`, `files` and `info`. Both are checked when the registry is built and go
+  into the UI schema only when a model sets them.
+- **More > Copy record ID** on the record page.
+- **Choose what a list's side panel shows.** `panel=False` on a field, `Section` or `Table` keeps
+  it on the full page only. `Meta.panel = ('Contact', 'notes', 'activity')` names the only parts
+  the panel keeps, in order: sections, fields, tabs, `summary` and side blocks. Names are checked
+  when the registry is built. Controls, Form layout has a panel button per section, field and tab,
+  and a Side panel card for the rest, stored with the layout. Hiding is display only. A required
+  field that is empty on a new record always shows, and the panel offers Open full page when it
+  hides anything. The UI schema carries `panel` only when something is hidden.
+- **The record page shows each fact once.** Key fields show in the header facts and no longer in
+  the summary strip, which now holds calculated values and per-record measures the header doesn't
+  show (no strip when nothing is left). The Key fields side block shows only while a tab other
+  than Details is open. A saved record's Details form leaves out the title, name and State that the
+  header shows; the title is edited in the header. A new record's form keeps them.
+- **The Related side block lists only relations with records** and is left out when none has any.
+  The Related tab still lists every relation.
+- **Record info no longer shows the record id.** Use More > Copy record ID. The block is left out
+  while it has nothing to show, such as an older record without times.
+
+- **Related counts use the model's words.** In the side block, a relation named after its model
+  is announced as "Payments, 1 payment" by screen readers; other relations still say "records".
+  An empty relation in the Related tab is one short line instead of a table of headers, and its
+  heading shows no 0.
+- **Record tabs show their keyboard focus ring inside the tab**, so the scrolling tab strip no
+  longer clips it.
+- **The note composer shows one focus ring.** The editor inside it no longer draws its own
+  border and ring, and the ring matches rich text form fields.
+- **Controls Jobs lists the jobs on the left.** All sits on top, and each job shows its latest
+  run and how many recent runs it has. A click (or the arrow keys) shows that job's schedules and
+  runs on the right, and the choice stays in the address as `?job=<name>`. On a phone the jobs
+  are a row of chips above the runs.
+- **The bell opens a notification centre.** It is a panel along the right edge under the top
+  bar, grouped by day, that closes on a click anywhere else or Esc. A click on an item marks it
+  read; Go to opens its record when the person can open it. New items slide in as popups at the
+  top right while the panel is closed.
+- **Only the Controls nav list scrolls.** The brand and workspace at the top of the Controls
+  sidebar and the account card at the bottom stay in place, like the app sidebar, also in the
+  phone drawer.
+- **Recent records moved from the sidebar to a history button left of search.** It lists them
+  newest first with the model and when each was opened, and has a Clear action.
 
 ## 0.3.0 (05-11-2026)
 

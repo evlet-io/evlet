@@ -335,6 +335,15 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     return td;
   };
 
+  // A row opened in the row editor follows the table: a locked or loading table shows its values
+  // read only, as the cells do. A view over the field, so writes and recordOf() still reach it.
+  const rowField = (field: Field): FieldLike => Object.create(field, {
+    editable: { value: derive(() => !readOnly.get() && field.editable.get()) },
+    rules: { value: derive(() => { const rules = field.rules.get(); return locked.get() && !rules.locked ? { ...rules, locked: true } : rules; }) },
+    set: { value: (value: unknown) => field.set(value) },
+    touched: { get: () => field.touched, set: (value: boolean) => { field.touched = value; } },
+  }) as FieldLike;
+
   const expandPanel = (row: Row) => {
     const index = () => rows.get().indexOf(row);
     const title = () => { const first = columns.get()[0]; return first ? kindOf(first.meta.type).format(row.field(first.key).value.get(), first.meta) || 'New row' : 'New row'; };
@@ -348,7 +357,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
           ${Button({ icon: 'copy', label: 'Duplicate', variant: 'ghost', size: 'small', onClick: () => duplicate([row]) })}
           ${Button({ icon: 'trash-2', label: 'Delete', variant: 'soft-danger', size: 'small', onClick: () => remove([row]) })}`)}
         ${Button({ label: 'Done', size: 'small', onClick: () => { expanded.set(null); queueMicrotask(() => byKey(scroller, 'tr', row.key)?.querySelector<HTMLElement>('.g-exp')?.focus()); } })}</div>
-      <div class="g-x-f">${allColumns.map(column => html`<div class=${column.meta.type === 'longtext' ? 'wide' : ''}>${BaseField({ field: row.field(column.key), links: props.links })}${() => prefs.get().hidden.includes(column.key)
+      <div class="g-x-f">${allColumns.map(column => html`<div class=${column.meta.type === 'longtext' ? 'wide' : ''}>${BaseField({ field: rowField(row.field(column.key)), links: props.links })}${() => prefs.get().hidden.includes(column.key)
         ? html`<span class="muted g-x-hid">Hidden column</span>` : null}</div>`)}</div>
       ${[...row.tables.values()].map(nested => html`<div class="g-x-nested">${ChildTable({ table: nested, locked: props.locked, links: props.links, height: 228,
         lockedText: props.lockedText, icon: 'rows-3', tint: props.tint })}</div>`)}</div></td></tr>` as HTMLElement;
