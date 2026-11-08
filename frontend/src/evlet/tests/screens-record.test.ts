@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
+import { fingerprint } from '../model/finite';
 import { copy, id } from './server';
 
 afterEach(() => { vi.useRealTimers(); stopAll(); });
@@ -521,5 +522,55 @@ describe('each fact shows once on the record page', () => {
     const none = start(customer(2, 0, { side_blocks: [] }), '/app/customer/0000000000001');
     await until(() => expect(text(none.host.querySelector('.doc-head h1'))).not.toBe(''));
     expect(blocks(none.host)).toEqual([]);
+  });
+});
+
+describe('a saved record with Tags, MultiSelect and Reference values', () => {
+  // These values are lists and objects. Opening the record once read them as empty, so the record looked
+  // edited and the next save of any field sent nulls for them and cleared them.
+  const values = { tags: ['vip', 'gulf'], kinds: ['site_visit'], about: { model: 'customer', id: 1 } };
+  const routes = (): Route[] => {
+    const schema = copy(screen.schema);
+    const order = schema.body.models.find((model: any) => model.name === 'order');
+    const remark = order.fields.find((item: any) => item.name === 'remark');
+    const types = { tags: 'tags', kinds: 'multiselect', about: 'reference' } as const;
+    for (const [name, type] of Object.entries(types)) {
+      order.fields.push({ ...remark, name, label: name, type, locked_when: null, max_length: null, ...(type === 'multiselect' ? { choices: ['site_visit', 'remote'] } : {}) });
+      order.layout[0].fields.push(name);
+      order.calculation.plan.tables.$root.fields[name] = { computed: false, default: null, kind: type, maximum: null, minimum: null, required: false, scale: null, stored: true, type };
+    }
+    order.calculation.plan.model_schema_hash = fingerprint(order.calculation.plan);
+    const detail = copy(recorded.detail);
+    Object.assign(detail.body, values);
+    return [
+      ['GET', /\/api\/auth\/session$/, recorded.session],
+      ['GET', /\/api\/schema$/, schema],
+      ['GET', /\/api\/order\/0000000000001$/, detail],
+      ['GET', /\/api\/order\/0000000000001\/lines\/lines\?/, recorded.lines_page],
+      ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
+      ['GET', /\/api\/product\/0000000000001$/, { ...recorded.product, status: 200 }],
+      ['PATCH', /\/api\/order\/0000000000001$/, recorded.update],
+    ];
+  };
+
+  it('opens unchanged, shows the values, and a save of another field leaves them alone', async () => {
+    const { host, sent } = start(routes(), '/app/order/0000000000001');
+    await until(() => expect(heading(host)?.querySelector('button.fval')).toBeTruthy());
+    await until(() => expect(text(field(host, 'tags'))).toContain('vip'));
+    expect(text(field(host, 'tags'))).toContain('gulf');
+    expect(text(field(host, 'kinds'))).toContain('Site visit');
+    expect(text(field(host, 'about'))).toContain('Customer #1');
+    expect(host.querySelector('.ev-savebar')).toBeNull();
+    expect(text(host)).not.toContain('Unsaved changes');
+
+    click(heading(host)!.querySelector('button.fval'));
+    const input = heading(host)!.querySelector('input')!;
+    input.value = 'Bigger order';
+    press(input, 'Enter');
+    await until(() => expect(requests(sent, 'PATCH', /order\/0000000000001$/)).toHaveLength(1));
+    const body = requests(sent, 'PATCH', /order\/0000000000001$/)[0].body;
+    expect(body.title).toBe('Bigger order');
+    for (const name of Object.keys(values)) expect(body, name).not.toHaveProperty(name);
+    expect(Object.keys(body).filter(key => !key.startsWith('_'))).toEqual(['title']);
   });
 });
