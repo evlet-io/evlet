@@ -13,13 +13,14 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Sign-in and first-run setup (the first administrator account).
 - Docs after sign-in, with its topics.
 - The shell: sidebar with the models; a top bar with a history button for recent records (left of
-  search), the search palette and the New menu.
+  search), the search palette, notifications and shortcuts. New records start from the New button
+  on a model's list page or from the search palette.
 - Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
   `/reports/<name>`, listed in the sidebar.
-- Slips ([slips.md](slips.md)): forms presented from a record, the New menu, an action or browser
+- Slips ([slips.md](slips.md)): forms presented from a record, an action, another slip or browser
   code, checked on the server and handed in to a handler or turned into a record.
 - Printing ([printing.md](printing.md)): a Print button on record views for roles that may print the
   model, when the server has the print extra (in a side panel, Print is in the More menu). It opens a drawer with the server's PDF in the browser's

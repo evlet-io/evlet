@@ -1,18 +1,17 @@
 // The app shell (docs/ui-design/README.md section 4): sidebar with the Evlet brand, the app switcher,
 // the models grouped, and an edge button that collapses it; the top bar with breadcrumbs, recent
-// records, search, shortcuts and New; one scrolling view. Under 760 px the sidebar is a drawer
+// records, search, notifications and shortcuts; one scrolling view. Under 760 px the sidebar is a drawer
 // opened from the top bar.
 
 import { html, listen, when, type Child } from '../dom';
 import { cell, derive, effect } from '../reactive';
 import { Icon, IconButton, IconTile, Key } from '../ui/base';
 import { tooltip } from '../ui/tooltip';
-import { MenuButton, mountToasts, openModal, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
+import { mountToasts, openModal, openPopover, Menu, closePopover, type MenuItem } from '../ui/layers';
 import { Lockup, Logo } from './login';
 import { resolveTheme, systemScheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { canChangePassword, displayName, openPasswordDialog, PersonMark } from './settings';
-import { presentSlip } from './slips';
 import { InboxButton } from './inbox';
 import { RecentsButton } from './recents';
 import { rememberAppPage } from './last-page';
@@ -122,9 +121,6 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
         ref=${(el: HTMLElement) => tooltip(el, () => dark() ? 'Light theme' : 'Dark theme')}>${() => Icon(dark() ? 'sun' : 'moon')}</button>`)}</div>
     </div></aside>` as HTMLElement;
 
-  const creatable = models.filter(model => model.api !== 'read' && model.permissions?.create !== false);
-  // Slips declared with menu = True open from New too; they save nothing until handed in.
-  const menuSlips = ctx.schema.schema.slips ?? [];
   const crumbs = () => ctx.crumbs.get().map((crumb, index, all) => index === all.length - 1
     ? html`<span class="cur" aria-current="page">${crumb.label}</span>`
     : [html`<a class="hide-sm" href=${crumb.href ?? '#'}>${crumb.label}</a>`, Icon('chevron-right', { size: 'xs', className: 'hide-sm' })]);
@@ -137,10 +133,6 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
       <span class="mobile-only">${IconButton({ icon: 'search', tip: 'Search', onClick: () => ctx.openPalette() })}</span>
       ${when(() => Boolean(ctx.me.get() && !ctx.me.get()!.portal), () => InboxButton(ctx))}
       <span class="desktop-only">${IconButton({ icon: 'circle-help', tip: 'Shortcuts  ?', onClick: () => openShortcuts(docsOn(ctx.session)) })}</span>
-      ${creatable.length || menuSlips.length ? [html`<span class="sep desktop-only"></span>`, MenuButton({ label: 'New', icon: 'plus', variant: 'primary', size: 'small', hideLabelOnPhone: true, menuLabel: 'New',
-        items: (): MenuItem[] => [...creatable.map(model => ({ label: `New ${model.label.toLowerCase()}`, icon: identity(model).icon, tint: identity(model).tint,
-          onSelect: () => void router.go('create', { model: model.name }) })), ...(creatable.length && menuSlips.length ? ['separator' as const] : []),
-          ...menuSlips.map(slip => ({ label: slip.label, icon: 'file-text', onSelect: () => void presentSlip(slip.name) }))] })] : null}
     </div></header>` as HTMLElement;
 
   // Collapse and expand from a small button on the sidebar's edge, just above the account card.

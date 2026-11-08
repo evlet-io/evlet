@@ -1,5 +1,5 @@
 // Slips: controlled forms an application declares in Python (evlet.Slip) and presents from a record,
-// the New menu, an action's outcome or browser code (presentSlip). Every change is checked by the
+// an action's outcome, another slip or browser code (presentSlip). Every change is checked by the
 // server; nothing is saved until the slip is handed in, and then only by its outcome: the slip's
 // handler, or a document of another model. See docs/slips.md.
 

@@ -176,7 +176,7 @@ class Slips:
             if type(slip.review) is not bool or type(slip.menu) is not bool:
                 raise ValueError(f'{label}: review and menu are True or False')
             if slip.menu and source is not None:
-                raise ValueError(f'{label}: a slip with a source is presented from its record, not the New menu')
+                raise ValueError(f'{label}: a slip with a source is presented from its record, not as a menu slip')
             handles = slip.hand_in is not Slip.hand_in
             if slip.becomes is not None:
                 slip.becomes = registry.resolve(slip.becomes)
@@ -219,7 +219,7 @@ class Slips:
         return {'name': name, 'label': slip.title or slip.__name__, 'hand_in_label': slip.hand_in_label or slip.title or 'Hand in'}
 
     def schema(self, user, model=None):
-        """Slips the role may present: from records of `model`, or (model None) from the New menu."""
+        """Slips the role may present: from records of `model`, or (model None) the menu slips listed at the top level."""
         return [self.entry(name, slip) for name, slip in self.slips.items()
                 if (slip.__source__ is model if model is not None else slip.menu) and self.allowed(user, slip)]
 

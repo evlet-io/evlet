@@ -64,7 +64,7 @@ Class options:
 | `source` | none | The model the slip is presented from. Its records get a button |
 | `roles` | `("admin", "editor")` | Roles that may present it |
 | `permission` | `(source, "update")` | `(Model, operation)` the caller needs, with a source |
-| `menu` | `False` | List the slip under New. Only without a source |
+| `menu` | `False` | List the slip at the top level of the schema. Only without a source |
 | `layout` | none | `(label, field names)` groups. Fields left out follow at the end |
 | `becomes` | none | The model it turns into, instead of `hand_in()` |
 | `review` | `True` | With `becomes`: open the new record to review rather than create it |
@@ -121,7 +121,8 @@ the role cannot write are refused with 403, never dropped.
 
 * **From a record.** A slip with `source = Model` is a button on that model's records.
   `/app/client/01hc1sd9vc1ye?slip=start_job` opens it from a link.
-* **From the New menu.** `menu = True`.
+* **A menu slip.** `menu = True` lists it at the top level of the schema. The browser shell has
+  no entry point for it, so present it from browser code.
 * **From an action.** A model action may return `present(...)`. The record view opens the slip
   after the action:
 
@@ -206,8 +207,9 @@ change. Hand-in errors appear on their fields and rows. The outcome is followed:
 record to open, the next slip, or the new record screen filled for review.
 
 The Playground has three slips (`examples/playground/slips.py`): Plan a project on each customer
-(becomes a project with its tasks), Estimate a project in New (a handler that calculates and
-then presents Plan a project), and Quick invoice in New (becomes an invoice for review).
+(becomes a project with its tasks), and two menu slips: Estimate a project (a handler that
+calculates and then presents Plan a project) and Quick invoice (becomes an invoice for review).
+The shell has no entry point for menu slips, so these two open only from browser code.
 
 The older record-bound form class in `evlet.forms` keeps its routes for existing applications.
 New code uses Slip.

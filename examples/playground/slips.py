@@ -46,7 +46,7 @@ class PlanProject(Slip):
 
 
 class EstimateProject(Slip):
-    """In the New menu. Its handler only calculates; it saves nothing and offers the next slip."""
+    """A menu slip, presented from browser code. Its handler only calculates; it saves nothing and offers the next slip."""
     title = 'Estimate a project'
     hand_in_label = 'Estimate'
     menu = True
@@ -65,7 +65,7 @@ class EstimateProject(Slip):
 
 
 class QuickInvoice(Slip):
-    """In the New menu. Handing it in opens a new invoice filled from it, to review and create."""
+    """A menu slip, presented from browser code. Handing it in opens a new invoice filled from it, to review and create."""
     title = 'Quick invoice'
     hand_in_label = 'Review invoice'
     menu = True

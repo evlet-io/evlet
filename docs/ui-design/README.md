@@ -488,7 +488,7 @@ A button that opens a menu of related actions.
 
 - Props: `label` (text); `items` (list of MenuItem)
 - Built from: Button, Popover
-- Appears in: New, More actions
+- Appears in: More actions
 
 **MoveButton** · Element  
 Runs a state move. When its guard fails it stays visible, dims and explains why on hover or click.
@@ -831,10 +831,10 @@ Grouped NavItems with small uppercase group labels. Scrolls on its own.
 - Appears in: Sidebar
 
 **TopBar** · Composite  
-Sidebar toggle, breadcrumbs, search, notifications and the New menu.
+Sidebar toggle, breadcrumbs, recent records, search, notifications and shortcuts.
 
 - Props: `crumbs` (list)
-- Built from: IconButton, Breadcrumbs, SearchInput, MenuButton
+- Built from: IconButton, Breadcrumbs, SearchInput
 - Appears in: App shell
 
 **Breadcrumbs** · Element  
@@ -1018,7 +1018,7 @@ Dialog with the fields a new record needs, validated before it closes.
 
 - Props: `model` (model); `fields` (required fields)
 - Built from: Modal, BaseField, Button
-- Appears in: New menu
+- Appears in: List pages
 
 **ActionDialog** · Section  
 Small dialog that collects an action's inputs before it runs.

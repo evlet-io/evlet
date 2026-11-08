@@ -133,7 +133,7 @@ export interface PrintSchema { name: string; title: string; default: boolean }
 /** A slip (evlet.Slip) the role may present; its fields come from the slip's own routes. */
 export interface SlipSchema { name: string; label: string; hand_in_label: string }
 
-export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Slips for the New menu. */ slips?: SlipSchema[];
+export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Menu slips (menu = True), presented from browser code. */ slips?: SlipSchema[];
   /** Reports the role may run (evlet.Report), with their filters, columns and view settings. */ reports?: ReportSchema[];
   /** Present when the app has print designs; available is false without the server's print extra. */ printing?: { available: boolean } }
 

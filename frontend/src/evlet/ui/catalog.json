@@ -952,7 +952,6 @@
     "popover"
    ],
    "used": [
-    "New",
     "More actions"
    ],
    "variants": []
@@ -2355,7 +2354,7 @@
    "id": "top-bar",
    "name": "TopBar",
    "level": "Composite",
-   "desc": "Sidebar toggle, breadcrumbs, search, notifications and the New menu.",
+   "desc": "Sidebar toggle, breadcrumbs, recent records, search, notifications and shortcuts.",
    "props": [
     [
      "crumbs",
@@ -2366,8 +2365,7 @@
    "from": [
     "icon-button",
     "breadcrumbs",
-    "search-input",
-    "menu-button"
+    "search-input"
    ],
    "used": [
     "App shell"
@@ -3196,7 +3194,7 @@
     "button"
    ],
    "used": [
-    "New menu"
+    "List pages"
    ],
    "variants": []
   },

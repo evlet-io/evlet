@@ -93,7 +93,7 @@ describe('addresses the Python server serves', () => {
 });
 
 describe('app shell', () => {
-  it('groups models in the sidebar, marks the current one and offers New for creatable models', async () => {
+  it('groups models in the sidebar, marks the current one and has no New menu in the top bar', async () => {
     const { host } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, screen.customers_page1]], '/app/customer');
     await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
     const groups = [...host.querySelectorAll('.nav-group')].map(group => [text(group.querySelector('.nav-label')), [...group.querySelectorAll('.nav-item .lbl')].map(text)]);
@@ -102,8 +102,9 @@ describe('app shell', () => {
     expect(host.querySelector('.nav-item.active')!.getAttribute('aria-current')).toBe('page');
     // Library is a development link outside the router.
     expect(byText(host, '.side-bottom a', 'Library')!.getAttribute('rel')).toBe('external');
-    click(byText(host, '.topbar button', 'New'));
-    expect([...document.querySelectorAll('.pop [role="menuitem"]')].map(text)).toEqual(['New customer', 'New product', 'New order', 'New contact', 'New quote']);
+    // New records start from the list's own New button; the top bar has none.
+    expect(byText(host, '.topbar button', 'New')).toBeNull();
+    expect(host.querySelector('.topbar .btn.primary')).toBeNull();
   });
 
   it('shows the Evlet brand, an app switcher with its workspace, and collapses from the edge button', async () => {
