@@ -71,7 +71,8 @@ Nested child storage defaults to `parent_table_collection`. Two parents may
 therefore each define a nested `Item` class.
 
 Discovery recursively imports owning modules in `models/`, `reports/`,
-`services/` and `migrations/`. Re-exporting a service does not register it again.
+`services/`, `migrations/` and `workspaces/` (or `workspaces.py`, which collects every module-level
+`Workspace` in the order it is defined, [ui.md](ui.md#workspaces)). Re-exporting a service does not register it again.
 Service decorators require synchronous module-level functions. Unresolved
 targets, resource collisions, invalid fields/expressions, dependency cycles,
 invalid service signatures and cron expressions fail before activation.

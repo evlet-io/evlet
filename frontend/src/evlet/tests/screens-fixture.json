@@ -2348,6 +2348,7 @@
       "rate"
      ],
      "source_fields": [],
+     "source_kind": "model",
      "sources": {}
     },
     {
@@ -2427,11 +2428,57 @@
       "rate"
      ],
      "source_fields": [],
+     "source_kind": "model",
      "sources": {}
     }
    ],
    "ui_version": 1,
-   "version": 1
+   "version": 1,
+   "workspaces": [
+    {
+     "app": "app",
+     "groups": [
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:customer",
+         "kind": "model",
+         "label": "Customers",
+         "model": "customer",
+         "view": "list"
+        }
+       ],
+       "key": "records",
+       "label": "Records"
+      },
+      {
+       "icon": null,
+       "items": [
+        {
+         "key": "report:CustomerRates",
+         "kind": "report",
+         "label": "Customer rates",
+         "report": "CustomerRates"
+        },
+        {
+         "key": "report:RatesByTerms",
+         "kind": "report",
+         "label": "Rates by terms",
+         "report": "RatesByTerms"
+        }
+       ],
+       "key": "reports",
+       "label": "Reports"
+      }
+     ],
+     "icon": "layers",
+     "key": "app",
+     "label": "Evlet",
+     "source": "automatic"
+    }
+   ]
   },
   "etag": null,
   "status": 200
@@ -4649,7 +4696,72 @@
     }
    ],
    "ui_version": 1,
-   "version": 1
+   "version": 1,
+   "workspaces": [
+    {
+     "app": "app",
+     "groups": [
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:order",
+         "kind": "model",
+         "label": "Orders",
+         "model": "order",
+         "view": "list"
+        }
+       ],
+       "key": "documents",
+       "label": "Documents"
+      },
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:customer",
+         "kind": "model",
+         "label": "Customers",
+         "model": "customer",
+         "view": "list"
+        },
+        {
+         "filters": null,
+         "key": "model:product",
+         "kind": "model",
+         "label": "Products",
+         "model": "product",
+         "view": "list"
+        },
+        {
+         "filters": null,
+         "key": "model:contact",
+         "kind": "model",
+         "label": "Contacts",
+         "model": "contact",
+         "view": "list"
+        },
+        {
+         "filters": null,
+         "key": "model:quote",
+         "kind": "model",
+         "label": "Quotes",
+         "model": "quote",
+         "view": "list"
+        }
+       ],
+       "key": "records",
+       "label": "Records"
+      }
+     ],
+     "icon": "layers",
+     "key": "app",
+     "label": "Evlet",
+     "source": "automatic"
+    }
+   ]
   },
   "etag": null,
   "status": 200
@@ -6406,7 +6518,41 @@
     }
    ],
    "ui_version": 1,
-   "version": 1
+   "version": 1,
+   "workspaces": [
+    {
+     "app": "app",
+     "groups": [
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:customer",
+         "kind": "model",
+         "label": "Customers",
+         "model": "customer",
+         "view": "list"
+        },
+        {
+         "filters": null,
+         "key": "model:product",
+         "kind": "model",
+         "label": "Products",
+         "model": "product",
+         "view": "list"
+        }
+       ],
+       "key": "records",
+       "label": "Records"
+      }
+     ],
+     "icon": "layers",
+     "key": "app",
+     "label": "Evlet",
+     "source": "automatic"
+    }
+   ]
   },
   "etag": null,
   "status": 200
@@ -8517,7 +8663,72 @@
     }
    ],
    "ui_version": 1,
-   "version": 1
+   "version": 1,
+   "workspaces": [
+    {
+     "app": "app",
+     "groups": [
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:order",
+         "kind": "model",
+         "label": "Orders",
+         "model": "order",
+         "view": "list"
+        }
+       ],
+       "key": "documents",
+       "label": "Documents"
+      },
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:customer",
+         "kind": "model",
+         "label": "Customers",
+         "model": "customer",
+         "view": "list"
+        },
+        {
+         "filters": null,
+         "key": "model:product",
+         "kind": "model",
+         "label": "Products",
+         "model": "product",
+         "view": "list"
+        },
+        {
+         "filters": null,
+         "key": "model:contact",
+         "kind": "model",
+         "label": "Contacts",
+         "model": "contact",
+         "view": "list"
+        },
+        {
+         "filters": null,
+         "key": "model:quote",
+         "kind": "model",
+         "label": "Quotes",
+         "model": "quote",
+         "view": "list"
+        }
+       ],
+       "key": "records",
+       "label": "Records"
+      }
+     ],
+     "icon": "layers",
+     "key": "app",
+     "label": "Evlet",
+     "source": "automatic"
+    }
+   ]
   },
   "etag": null,
   "status": 200

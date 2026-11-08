@@ -47,6 +47,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   built or the application starts. `/api/schema` and the slip surface carry it as `focus` only
   when set, and a role that cannot read the field does not get it. It is display only; without it
   the browser uses the first editable field ([docs/ui.md](docs/ui.md#where-the-cursor-starts)).
+- **Workspaces.** New public names `Workspace`, `NavGroup` and `Shortcut` declare named sidebars:
+  `Workspace('Projects', icon='kanban', groups=(NavGroup('Projects', items=('project',
+  Shortcut('project', view='board', label='Board'))),))`. Items are model names and shortcuts to a
+  filtered list or board, a report, a slip or an app path or http(s) address. An app package
+  declares them in `workspaces.py`; `Application(workspaces=...)` and `AppDefinition(workspaces=...)`
+  take them too. Every item is checked when the application is built, with a message naming the
+  workspace and item. `/api/schema` has `workspaces`, with only the items each role can open; an
+  app that declares none gets one automatic workspace grouped as the sidebar is. The browser does
+  not draw them yet ([docs/ui.md](docs/ui.md#workspaces)).
+- **`source_kind` on reports.** The report catalog (`/api/_reports`, `/api/schema`) says
+  `"ledger"` for a report whose `model` is a ledger model, `"model"` for any other model and null
+  without one ([docs/reports.md](docs/reports.md#reports-over-a-ledger-model)).
+
 - **`evlet setup` in one go.** `evlet setup myproject --app notes,crm --instance acme --dev` creates
   the project, apps and instance, installs the apps in dependency order and starts `evlet dev` on
   loopback. `--get URL,URL` fetches apps from Git with the `app --get` checks and trust question;

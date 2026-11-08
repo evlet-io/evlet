@@ -21,6 +21,7 @@ from .settings import ProjectPreferences, ProjectSettings
 from .prints import PRINTS, REPORTS as PRINTED_REPORTS
 from .reports import REPORTS
 from .slips import SLIPS
+from .workspaces import WORKSPACES
 
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
 PORTAL_RULES = {
@@ -180,7 +181,8 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=N
                                Action(Invoice, 'post', 'Post to ledger', post_invoice),
                                Action(Customer, 'award_points', 'Award 10 points', award_points),
                                Action(Customer, 'rebuild_points', 'Rebuild all points balances', queue_rebuild, roles=('admin',))),
-                      attachments=(Project,), slips=SLIPS, reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS)
+                      attachments=(Project,), slips=SLIPS, reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS,
+                      workspaces=WORKSPACES)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))
     return app

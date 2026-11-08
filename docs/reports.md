@@ -108,11 +108,18 @@ shows ids as plain text, and a column `source` on it is not hidden by field rule
 with that in mind. A model with `Meta.api = "read"` reads like any other; the Playground's
 `LedgerBalances` report totals its read-only ledger.
 
+### Reports over a ledger model
+
+A report whose `model` is a [ledger model](ledger.md) has `"source_kind": "ledger"` in the
+catalog, so the browser can list ledger reports together. Its `model` is still null, since the
+catalog never names a ledger model. Any other `model` gives `"model"`, and no `model` gives null.
+Ledger models stay without routes, schema entries or screens.
+
 ## Routes
 
 | Route | Does |
 | --- | --- |
-| `GET /api/_reports` | The reports this person can run: filters, columns, `group`, `model`, `sortable`, `chart`, `export` (also in `/api/schema` as `reports`) |
+| `GET /api/_reports` | The reports this person can run: filters, columns, `group`, `model`, `source_kind`, `sortable`, `chart`, `export` (also in `/api/schema` as `reports`) |
 | `POST /api/_reports/<name>/evaluate` | `{filters, revision}`: settles the filters without running. Returns `values`, `errors`, `states` and `rules` |
 | `POST /api/_reports/<name>` | `{filters, limit (1 to 100), offset, sort}`: one page. Returns `rows`, `total`, `totals`, `groups` (with `group_by`), `filters`, `sort` |
 | `POST /api/_reports/<name>/export.csv` | `{filters, sort}`: every row as CSV, up to 5,000 |

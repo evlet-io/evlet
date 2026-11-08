@@ -262,6 +262,100 @@ next, each a server page (`limit` and `offset`). **View all** in the section's h
 related model's list filtered to this record (`?f=[["customer","eq","<id>"]]`), shown as a
 filter that can be removed. It is left out when the role cannot filter that list on the link.
 
+## Workspaces
+
+A workspace is a named sidebar: groups of items, three levels deep (workspace, group, item). An app
+can declare none, one or several. The browser does not draw them yet; `/api/schema` gives each role
+its own view of them under `workspaces`.
+
+```python
+# apps/projects/workspaces.py
+from evlet import NavGroup, Shortcut, Workspace
+from .reports import SalesByCustomer
+from .slips import QuickInvoice
+
+PROJECTS = Workspace('Projects', icon='kanban', groups=(
+    NavGroup('Projects', icon='kanban', items=(
+        'project',                                                   # a model's list
+        Shortcut('project', view='board', label='Board'),            # its board (Meta.board)
+        Shortcut('task', filters={'done': False}, label='Open tasks'),
+    )),
+    NavGroup('More', items=(
+        Shortcut(report=SalesByCustomer),                            # a report
+        Shortcut(slip=QuickInvoice),                                 # a slip without a source
+        Shortcut(url='/reports', label='All reports'),               # an app path or http(s) address
+    )),
+))
+```
+
+An app package declares them in `workspaces.py` (or a `workspaces/` package). Discovery collects
+every module-level `Workspace` there, in the order they are defined, as it finds models and
+reports. An application built by hand passes `Application(workspaces=(...))`, and a legacy app
+`AppDefinition(workspaces=(...))`. The Playground declares Sales, Projects and Company
+(`examples/playground/workspaces.py`).
+
+- `Workspace(label, *, key=None, icon=None, groups=(...))`. `key` defaults to the label in lowercase
+  with underscores (`'Sales desk'` is `sales_desk`); give one when the label has no Latin letters.
+- `NavGroup(label, *, icon=None, items=(...))`.
+- An item is a model name (`'project'`, the storage name or `app.ClassName`), or a `Shortcut` that
+  names exactly one target:
+  - `Shortcut(model, view=None, filters=None, label=None)`: a model given by name or class. `view`
+    is `'list'` (the default) or `'board'`, for a model whose `Meta.board` names its State.
+    `filters` is a filter object (`{'status__in': ['planned', 'active']}`) or a list of conditions,
+    the forms a list request takes; it needs a `label`.
+  - `Shortcut(report=SalesByCustomer)` or `Shortcut(report='SalesByCustomer')`: a registered report.
+  - `Shortcut(slip=QuickInvoice)` or `Shortcut(slip='quick_invoice')`: a registered slip without a
+    `source` (a slip with one opens from its record).
+  - `Shortcut(url='/reports', label='All reports')`: an app path starting with `/`, or an `http` or
+    `https` address. `javascript:`, `data:` and every other scheme are refused. It needs a label.
+  - `label` replaces the model's plural name, the report's or the slip's title.
+- `icon` is an icon name from the browser's set, such as `receipt` or `users`.
+
+**Checked when the application is built.** Each problem fails with a message that names the
+workspace, the group and the item: an unknown model, report or slip; a child table, a ledger model
+or a model with `Meta.api = None`; a board for a model without `Meta.board`; a view other than list
+or board; filters on unknown fields, with operators the field does not take, with values the field
+refuses or on fields of linked records (the same checks a list request makes); a URL that is not an
+app path or an http(s) address; an empty or over-long label; two workspaces with one key; and two
+items with one key in a workspace.
+
+**Keys.** Keys are stable, so the browser can remember choices and Controls can refer to items:
+
+| What | Key |
+| --- | --- |
+| Workspace | `key`, or the label as above. An automatic workspace has its app's name (`app` for an application built by hand) |
+| Group | The label in lowercase with underscores, unique in its workspace |
+| Model item | `model:<name>`; a shortcut with a label, view or filters adds `:<label>` (or `:<view>` without a label): `model:task:open_tasks`, `model:project:board` |
+| Report, slip, URL | `report:<name>`, `slip:<name>`, `url:<label>` |
+
+**Each role sees only what it can open.** An item is left out when the role can't read the model,
+can't read the State a board follows, can't filter on a field the shortcut's filters name, can't run
+the report or can't present the slip. A group left with no items is hidden, and so is a workspace
+left with no groups. URL items always show; the page they open checks access itself.
+
+**An app that declares no workspace** gets one automatic workspace, keyed by the app's name and
+labelled with its title. It groups the app's models as the sidebar does today: **Documents** (a
+model with a State or child rows), **Records** (the rest), then **Reports** (the app's reports,
+those without a group first).
+
+```json
+"workspaces": [
+  {"key": "projects", "label": "Projects", "icon": "kanban", "app": "projects", "source": "declared",
+   "groups": [
+     {"key": "projects", "label": "Projects", "icon": "kanban", "items": [
+       {"key": "model:project", "kind": "model", "label": "Projects", "model": "project", "view": "list", "filters": null},
+       {"key": "model:task:open_tasks", "kind": "model", "label": "Open tasks", "model": "task", "view": "list",
+        "filters": [["done", "eq", false]]}]},
+     {"key": "more", "label": "More", "icon": null, "items": [
+       {"key": "report:SalesByCustomer", "kind": "report", "label": "Sales by customer", "report": "SalesByCustomer"},
+       {"key": "slip:quick_invoice", "kind": "slip", "label": "Quick invoice", "slip": "quick_invoice"},
+       {"key": "url:all_reports", "kind": "url", "label": "All reports", "url": "/reports"}]}]}
+]
+```
+
+`source` is `declared` or `automatic`. `filters` is always in the list form a list address carries
+(`?f=`), or null. Hiding an item is never a permission: every route checks access as before.
+
 ## Not rendered by this interface
 
 These keep their Python APIs, HTTP routes, permission checks and tests. The browser

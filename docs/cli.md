@@ -237,10 +237,11 @@ apps/notes/
   models/item.py
 ```
 
-Models, reports and nested services are discovered automatically. Permissions are
+Models, reports, nested services and workspaces are discovered automatically. Permissions are
 declared on resources, with default denial. See the
 [declarative guide](amendment-v2.md) for the complete contract and optional
-`reports/`, `services/` and `migrations/` directories.
+`reports/`, `services/` and `migrations/` directories. An optional `workspaces.py`
+declares the app's sidebars ([ui.md](ui.md#workspaces)).
 
 The following nested layout remains available with `evlet app notes --legacy`:
 

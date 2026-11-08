@@ -15,7 +15,7 @@ from .models import Model, Registry
 from .permissions import Policy, Rule
 
 VERSION = 1
-AREAS = ('models', 'reports', 'services', 'migrations')
+AREAS = ('models', 'reports', 'services', 'migrations', 'workspaces')
 
 
 def compiler_fingerprint():
@@ -50,9 +50,14 @@ def discover(package, modules=None):
     from .instances import AppDefinition
     from .migrations import Migration
     from .forms import Report
-    models, migrations, seen, reports, endpoints, tasks, schedules = [], [], set(), [], [], [], []
+    from .workspaces import Workspace
+    models, migrations, seen, reports, endpoints, tasks, schedules, workspaces = [], [], set(), [], [], [], [], []
     for name in modules if modules is not None else module_names(package):
         module = import_module(name)
+        if name == package.name + '.workspaces' or name.startswith(package.name + '.workspaces.'):
+            # Workspaces keep the order they are defined in, which is the order the switcher lists them.
+            workspaces.extend(value for value in vars(module).values() if isinstance(value, Workspace)
+                              and all(value is not other for other in workspaces))
         if name == package.name + '.services' or name.startswith(package.name + '.services.'):
             from .services import collect_service
             collected = collect_service(package, module)
@@ -81,7 +86,7 @@ def discover(package, modules=None):
         if set(declarations) - {'admin', 'editor', 'viewer'}:
             raise ValueError(f'Unknown permission role in {model.__resource_id__}')
     return AppDefinition(models=models, reports=reports, apis=endpoints, tasks=tasks, schedules=schedules,
-                         permissions=rules, migrations=sorted(migrations, key=lambda migration: migration.name))
+                         permissions=rules, migrations=sorted(migrations, key=lambda migration: migration.name), workspaces=workspaces)
 
 
 def resource_identity(package, definition):

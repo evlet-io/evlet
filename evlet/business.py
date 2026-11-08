@@ -506,6 +506,9 @@ class Business:
             slips = self.slips.schema(user, model) if getattr(self, 'slips', None) and self.slips.slips else []
             if slips:
                 entry['slips'] = slips
+        # Named sidebars, after the models and reports above are filtered for this role (evlet.workspaces).
+        if getattr(self, 'workspaces', None) is not None:
+            result['workspaces'] = self.workspaces.schema(user, result)
         return result
 
     def docs_path(self, scope, user):
