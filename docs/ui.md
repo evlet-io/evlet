@@ -281,8 +281,8 @@ filter that can be removed. It is left out when the role cannot filter that list
 ## Workspaces
 
 A workspace is a named sidebar: groups of items, three levels deep (workspace, group, item). An app
-can declare none, one or several. The browser does not draw them yet; `/api/schema` gives each role
-its own view of them under `workspaces`.
+can declare none, one or several. `/api/schema` gives each role its own view of them under
+`workspaces`, and the sidebar draws them ([below](#sidebar-and-workspaces)).
 
 ```python
 # apps/projects/workspaces.py
@@ -471,34 +471,74 @@ The sidebar has three levels: workspace, section, shortcut.
   to a thin rule. On phones the sidebar is the drawer, and the Workspace card opens below the box
   when there is no room beside it.
 
-Apps cannot declare workspaces yet. Until they can, there is one workspace per installed app: the app
-is the first part of each model's `resource` in `/api/schema` (`showcase.Project` belongs to
-`showcase`), and models without one form a workspace named after the application. Its sections are
-**Documents** (models with a State or a Table), **Records** (the others) and **Reports** (the app's
-reports: the app in an installed app's report name, such as `showcase.ClientCredit`, else the app of the report's `model`). `workspaceNav()` in `app/workspaces.ts` builds this
-shape, and a declared workspace list will feed the same shape:
+**Where the sidebar comes from.** `workspaceNav()` in `app/workspaces.ts` maps the schema's
+`workspaces` ([Workspaces](#workspaces)): each group is a section (with its icon, `layers` without
+one) and each item a shortcut. A model item opens its list, with `view=board` for a board and its
+filters in the list address: an equality on the field of the list tabs (`Meta.list_tabs`) opens that
+tab, and the rest go in `?f=` in the form the list's filter rows write back (a Boolean equality is
+"is yes" or "is no", a Select equality is "in"). A report item opens its page, a slip item presents the
+slip over the page (`presentSlip`), and a URL item opens its address (an http(s) address in a new tab).
+Workspaces added in Controls (`source` custom) show like the others. The remembered open sections and
+the chosen workspace use the workspace and group keys.
+
+**The active shortcut** follows the address. Its path must equal the shortcut's (or be a record under
+a list), and every view, tab and filter the shortcut names must be in the address; the shortcut that
+names the most wins. So `/app/task?f=[["done","no",null]]` marks "Open tasks" rather than "Tasks", and
+another filter marks "Tasks". The list's home tab counts as named even though the list leaves it out
+of the address. On a tie, the shortcut of the workspace on screen wins, so a list two workspaces share
+keeps the sidebar as it is.
+
+An older server without `workspaces` gets the fallback: one workspace per installed app (the first
+part of each model's `resource`, such as `showcase` in `showcase.Project`; models without one form a
+workspace named after the application), with **Documents** (models with a State or a Table),
+**Records** (the others) and **Reports** (the app's reports) sections. Both feed one shape:
 
 ```ts
-{ workspaces: [{ key, label, icon, sections: [{ key, label, icon, count?, items: [{ key, label, href, icon? }] }] }] }
+{ workspaces: [{ key, label, icon, source?, sections: [{ key, label, icon, count?, items: [{ key, label, href, icon?, model?, slip?, external? }] }] }] }
 ```
+
+### Customizing workspaces
+
+Admins and roles with **Customize workspaces** see **Customize** in the switcher card. Nothing in the
+session says who has it, so the first time the card opens the browser asks
+`GET /api/_controls/workspaces` once; the route answers everyone else 404 and nothing shows. Customize
+opens a dialog on the current workspace (a picker switches to another):
+
+- Drag a grip, or focus it and press Space then the arrow keys, to reorder groups, and to reorder
+  items or move them to another group.
+- The eye hides or shows a group or an item; a hidden one stays in the list, struck through.
+- Each name is an input: renaming a workspace, group or item sends only names that differ from the
+  declared ones.
+- **Add shortcut** in a group adds a list (with List or Board and optional filters as JSON), a
+  report, a slip or an address, with an optional label (needed for an address). **Add group** adds a
+  group, and **New workspace** starts a custom workspace whose key comes from its name.
+- **Save** sends the whole override with `PUT /api/_controls/workspaces/<key>`, or resets when
+  nothing differs from the declared workspace. The server checks everything again; a 422 shows each
+  problem beside the row its path names (`groups.0.items.2.shortcut`). After a save the browser reads
+  `/api/schema` again and the sidebar follows at once.
+- **Reset to declared** (or **Remove workspace** for a custom one) asks first, then sends `DELETE`.
+
+Hiding is never a permission: every page still checks access, and the schema filters items for
+each role after the override. Changes need a recent two-step code where Controls asks for one.
 
 ### Explorer
 
-**Explorer**, just above the account area, opens a page with three views:
+**Explorer**, just above the account area, opens a page with three views (four with ledger reports):
 
 - **Reports**: a card for every report the person may run, from every app, with its name, app and
   description (when the server sends one).
+- **Ledger reports**: the reports over a ledger model (`source_kind` "ledger"), in the same cards.
+  The view shows only when the person may run at least one; an old link to it opens Reports.
 - **Data**: a card for every model the person can read, with its label, app and description. Child
   tables are left out. Ledger models have no public surface, so the schema never lists them. A card
   shows a record count only when the person turned sidebar counts on in Settings; the Explorer never
   asks for counts of its own.
 - **Dashboards**: "No dashboards yet". The framework has no dashboards.
 
-Reports and Data have a search box (name, description and app) and an app filter. A card opens the
+Reports, Ledger reports and Data have a search box (name, description and app) and an app filter. A card opens the
 report or the list. The address is `/?explorer=<view>`: the root path is the one desk path the server
 always serves, so the Explorer needs no server route, and a link or a refresh opens the same view.
-The search palette lists it under Pages. Reports over ledger models will be a view of their own once
-the server can list them.
+The search palette lists it under Pages.
 
 ### Between the app and Controls
 
@@ -606,8 +646,9 @@ that Tab shows (or of the layout's blocks when it has no Tabs). The rules:
 - Restoring an unsaved draft, or starting fresh, focuses the first field again; the values do not
   change.
 
-The choice goes through `initialFocusField(model, layout)` in `ui/autofocus.ts`, so a model's own
-choice can plug in there later.
+The choice goes through `initialFocusField(model, layout)` in `ui/autofocus.ts`. A model's
+`Meta.focus` (or a slip's `focus`) wins when that field shows and can be edited in an open section of
+the tab a new record opens on; otherwise the first such field gets the focus, as above.
 
 A focused field shows a solid 1 px accent border, with no glow; a field with an error keeps its rose
 border when focused. Buttons and other controls show a solid 2 px accent outline.

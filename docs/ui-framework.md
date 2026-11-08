@@ -555,9 +555,14 @@ Sparkline({ values: [3, 5, 4, 9], tone: 'blue', label: 'Deals' }); // an SVG ele
   (`trendSummary(values)` builds it). A reactive `trend` redraws when it changes.
 - **Measures on a list.** Each declared measure is a card with an icon for its function (`hash`
   for a count, `wallet` for a sum of money, `chart-column` for another sum, `arrow-down` and
-  `arrow-up` for a lowest and a highest value). No measure declares a colour, so the cards take
+  `arrow-up` for a lowest and a highest value). A measure's `color=` is its accent; the others take
   blue, teal, violet and amber in turn. A measure with a `where` has the caption "Filtered by a
-  rule". There is no trend line yet: measures declare no trend.
+  rule". A measure with `trend=` gets a trend line: the list asks
+  `GET /api/{model}/aggregate?measures=<name>&group_by=<field>:<grain>` with the list's filters and
+  search, a moment after they settle (with the strip's refresh), and `trendValues()` in `app/meta.ts`
+  takes the last `points` periods up to the latest one with records, in date order, counting a period
+  without records as 0 for a count or sum (a gap for a lowest, highest or average). A failed request
+  hides the line.
 - **The record's summary strip** uses neutral cards with no icon, so the record header stays the
   coloured part of the page.
 
@@ -663,9 +668,10 @@ mount(document.querySelector('#app')!, () => DocFrame({
   live region. Listeners sit on `root`, so the lists may be redrawn after each `move`.
 - **enterMovesToNextField(root, on)** makes Enter and Shift+Enter move between the `[data-field]` blocks
   under `root` while `on()` is true.
-- **initialFocusField(model, layout)** names the field a new form focuses first: the first field of an
-  open section that shows and can be edited (not read only, calculated, hidden or locked). `model` is
-  where a model's own choice will plug in; nothing is read from it yet. **autofocusForm(root, choose,
+- **initialFocusField(model, layout)** names the field a new form focuses first: `model.focus`
+  (`Meta.focus`, or a slip's `focus`) when that field is in an open section of `layout` and can be
+  edited, else the first field of an open section that shows and can be edited (not read only,
+  calculated, hidden or locked). **autofocusForm(root, choose,
   before)** focuses that field's control once `root` is on the page, except on a touch device
   (`keyboardFirst()` in `core.ts`) or when the focus moved away from `before` while the form loaded.
   **layoutFocusOrder(sections, shown)** puts a form's sections in the order a declared record layout
@@ -779,8 +785,9 @@ not part of the build.
 |---|---|
 | `app.ts` | Session, sign in and first-run setup, the shell and the route table |
 | `shell.ts` | Sidebar (the Workspace switcher, the workspace's sections and shortcuts, Explorer, Library in development, the account and the theme button), top bar, keyboard |
-| `workspaces.ts` | `workspaceNav(schema, links, fallback)`: the sidebar's workspaces, sections and shortcuts, `activeShortcut`, and the app each model and report belongs to |
-| `explorer.ts` | The Explorer ([ui.md](ui.md#explorer)): Reports, Data and Dashboards at `/?explorer=<view>` |
+| `workspaces.ts` | `workspaceNav(schema, links, fallback)`: the sidebar's workspaces, sections and shortcuts from the schema's `workspaces` (the per-app fallback for an older server), `listQuery`, `activeShortcut(nav, path, prefer)`, `replaceWorkspaces` after a save, and the app each model and report belongs to |
+| `workspace-editor.ts` | The workspace editor ([ui.md](ui.md#customizing-workspaces)) over the Controls workspace routes, and `customizeAccess` for the switcher's Customize button |
+| `explorer.ts` | The Explorer ([ui.md](ui.md#explorer)): Reports, Ledger reports (when there are any), Data and Dashboards at `/?explorer=<view>` |
 | `recents.ts` | The history button left of search in the top bar: this session's recent records, newest first, with the model and when each was opened |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
