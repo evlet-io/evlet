@@ -16,7 +16,7 @@ from .fields import CurrentUser, MISSING, Link
 from .identity import RecordId
 from .naming import drop_echoes
 from .permissions import trusted
-from .models import ValidationError, identifier
+from .models import ASSIGNED_ID, ValidationError, identifier, refuse_id
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
 from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal, wire
@@ -74,6 +74,8 @@ class Draft:
     def __setattr__(self, name, value):
         if self._readonly:
             raise AttributeError('Evaluation drafts are read only')
+        if name == 'id':
+            raise ValidationError({'id': ASSIGNED_ID})
         if name in self._definition.__declared_fields__:
             if is_finite(self._definition.__declared_fields__[name]):
                 raise ValidationError({name: 'COMPUTED_FIELD_WRITE: this value is calculated'})
@@ -390,6 +392,7 @@ class Context:
         model = self._model(model)
         if not getattr(model, '__declaration_mode__', False):
             raise ValueError('Contextual writes require declarative models')
+        refuse_id(values)
         record_id = None if record_id is None else known_id(record_id)
         key = (model, record_id)
         if key in self._active or len(self._active) >= 16:

@@ -27,7 +27,9 @@ production ready, but the rules below hold from 0.3 on.
 
 - **Record identity.** Every record has `id`, `name` and `title`. `id` is a 13-character text id in
   JSON and URLs and a `RecordId` in Python; `name` and `title` are reserved field names on record
-  models ([model-engine.md](model-engine.md#record-ids)).
+  models ([model-engine.md](model-engine.md#record-ids)). Evlet makes every id; a caller-supplied `id`
+  on any create or update path is refused with a `ValidationError` on `id` (HTTP 422), and the
+  database refuses a raw id `UPDATE` ([model-engine.md](model-engine.md#only-evlet-makes-ids)).
 
 - **Rich text storage.** `RichText` values are the HTML subset in
   [internal/rich-text.md](internal/rich-text.md): the allowed tags and attributes, and the canonical

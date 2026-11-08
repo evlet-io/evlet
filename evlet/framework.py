@@ -87,6 +87,16 @@ def _unsaved_changes(connection, postgres):
         ensure(connection, postgres)
 
 
+def _fixed_ids(connection, postgres, registry):
+    """Make the database refuse an UPDATE that changes a model table's id (evlet/identity.py). New tables
+    have the trigger from the start, and every app migration batch adds it again; this step covers an
+    instance with nothing to migrate."""
+    from .identity import add_id_guard
+    for table in registry.models:
+        if _exists(connection, postgres, table):
+            add_id_guard(connection, postgres, table)
+
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -95,6 +105,7 @@ STEPS = (
     FrameworkStep('0004_record_times', 'Add the created and modified time and user columns to record tables and fill them.',
                   _record_times, registry=True),
     FrameworkStep('0005_unsaved_changes', 'Add evlet_unsaved, the unsaved changes people leave on saved records.', _unsaved_changes),
+    FrameworkStep('0006_fixed_ids', 'Make the database refuse a change to the id of any model row.', _fixed_ids, registry=True),
 )
 
 LEDGER = ('CREATE TABLE IF NOT EXISTS evlet_framework_migrations (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, '

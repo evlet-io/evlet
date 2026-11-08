@@ -227,6 +227,30 @@ URLs all point to it.
 - **Older rows** keep their small ids: 42 reads and writes as `000000000001a`. Nothing is
   rewritten when an instance upgrades.
 
+### Only Evlet makes ids
+
+Evlet draws the id of every new record itself, on every create path: HTTP, `context.create`,
+`tx.create`, `database.create`, table rows, copies and revisions, effect rows, data migrations,
+seeds and fixtures, Eva, tools, MCP and the Connector (which all write through the HTTP routes),
+and `self.context.session` in handlers. An `id` given by the caller is **refused**, never silently
+dropped, with `ValidationError({'id': 'The id is assigned by Evlet when the record is created and
+never changes; leave it out'})`, HTTP 422 over the API. Ignoring it would hide a bug: the caller
+would go on using an id that no row has. The same error refuses an id change on every update path:
+PATCH, `context.update`, `tx.update` (inside `tx.maintenance()` too), `context.move` values, and
+`self.id = ...` in an action or run method.
+
+Table rows name their saved rows by `id` to update, keep or reorder them, as before. A row id that is
+not one of the parent's saved rows is refused, and a new row never takes the id it is given.
+
+The database refuses an id change too. Every model table has a trigger (`evlet_<table>_fixed_id` on
+SQLite, `evlet_fixed_id` on PostgreSQL) that aborts an `UPDATE` changing `id`, so raw SQL cannot
+break the links that point at a row; Evlet raises `ConflictError('<table>: record ids never change')`.
+New tables get it when they are created, every migration batch adds it again (a rebuilt table loses its
+triggers), and framework step `0006_fixed_ids` adds it to existing instances on `evlet migrate`.
+`id` stays the `NOT NULL` primary key. `evlet ids check INSTANCE` reports rows whose id is empty, zero
+or negative (only raw SQL can write one) and tables missing the trigger. Nothing rewrites ids,
+because links depend on them. [Ledger models](ledger.md#ids) keep database-assigned ids.
+
 Writes also take a JSON integer for a Link or a row id, so older clients keep working;
 responses only ever send text ids. Framework rows that are not records (accounts, journal
 entries, jobs, attachments) keep their own number ids.

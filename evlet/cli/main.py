@@ -133,6 +133,11 @@ def parser():
     effects_check = effects_commands.add_parser('check', help='Recompute effect rows and report differences without writing')
     effects_check.add_argument('instance')
     effects_check.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
+    ids = commands.add_parser('ids', help='Check record ids')
+    ids_commands = ids.add_subparsers(dest='ids_command', required=True)
+    ids_check = ids_commands.add_parser('check', help='Report rows with an impossible id and tables that allow id changes')
+    ids_check.add_argument('instance')
+    ids_check.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     journal = commands.add_parser('journal', help='Check record journals')
     journal_commands = journal.add_subparsers(dest='journal_command', required=True)
     verify = journal_commands.add_parser('verify', help='Report breaks in the hash chains of tamper-evident journals')
@@ -374,6 +379,15 @@ def main(argv=None):
                 print(f"Could not read {', '.join(failed)}. They were left as they are and the old key was kept. Enter connector secrets again in Controls, "
                       'reset two-step sign-in with evlet users reset-two-step, then rotate again.')
             print('Running instances use the new key straight away.')
+        elif args.command == 'ids':
+            from .ids import check_instance
+            problems = check_instance(root, args.instance)
+            for line in problems:
+                print(line)
+            if problems:
+                print(f'{len(problems)} problem' + ('' if len(problems) == 1 else 's'), file=sys.stderr)
+                raise SystemExit(1)
+            print('Every model row has a record id, and the database refuses id changes')
         elif args.command == 'effects':
             from .effects import check_instance
             from ..effects import describe
