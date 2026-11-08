@@ -13,7 +13,7 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Sign-in and first-run setup (the first administrator account).
 - Docs after sign-in, with its topics.
 - The shell: sidebar with the models, recent records, search palette and New menu.
-- Generated model screens: lists, boards for models with a State, record views (on their own
+- Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
@@ -31,8 +31,8 @@ pinning keep the first column pinned. A child table's Focus view keeps the recor
 save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations`, `measures`, `open_in`, `autosave`, `status`, `summary` and
-`side_blocks`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+`layout`, `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`, `list_tab`, `autosave`, `status`, `board`,
+`summary` and `side_blocks`. See "What the model decides" in [ui-framework.md](ui-framework.md).
 
 ### Each fact once on the record page
 
@@ -56,6 +56,48 @@ class Project(Model):
 
 `side_blocks` takes `key_fields`, `related`, `files` and `info`, each once. Anything else, or a
 `summary` that is not True or False, fails when the registry is built.
+
+### List tabs
+
+A list shows a row of tabs above the toolbar: All, then one tab per value of one field, each with
+its count. `Meta.list_tabs` names that field and `Meta.list_tab` names the tab the list opens on.
+
+```python
+class Employee(Model):
+    status = Select(["active", "left", "on_leave"], default="active")
+    department = Link(Department)
+
+    class Meta:
+        list_tabs = "status"     # a State, Select or Link field
+        list_tab = "active"      # the tab the list opens on; "all" is the default
+```
+
+- **Which field.** A State, Select or Link field. Any other field, or a name the model does not
+  have, raises `ValueError` when the registry is built. Without `Meta.list_tabs` the model's State
+  drives the tabs, as before; a model without a State has none. `list_tabs = None` turns them off.
+- **The default tab.** For a State or Select, `list_tab` is `"all"` or one of the field's values,
+  checked at definition. For a Link it is the linked record's title (or name), found when the page
+  loads; if this person can't read such a record, the list opens on All. `list_tab` without tabs
+  raises `ValueError`.
+- **Link tabs** show the most used values, at most 8, most used first, each labelled with the
+  linked record's title. The filter finds the others. A record a link opened with `?tab=` keeps
+  its own tab even when it is not among them.
+- **Counts** come from `GET /api/{model}/list_tabs?filters=...&q=...`, which answers
+  `{"field", "total", "items": [{"value", "count"}], "more"}`. They follow the list's filters
+  and search box, but not the tab itself, and only count records the person may read (row scope).
+  Records without a value count in All only. Filters on fields the role can't read are refused.
+- **Who sees them.** `/api/schema` gives `list_tabs: {"field", "kind", "default"}` only to roles
+  that can read the field, and for a Link only when they can read the linked model without a row
+  scope (counting by it would reveal records they can't see). Others get no tabs, and the counts
+  route answers 403.
+- **The address.** With no `tab` in the address the list opens on the default tab. Choosing
+  another, All included, puts it in the address (`?tab=all`), so a link or a reload keeps it.
+  Clear filters goes back to the default tab. A tab with no records and no search or filters
+  offers Show all instead.
+- **Controls.** The list view sets both for an instance ("Tabs by" and "Opens on",
+  [controls.md](controls.md)).
+
+The Playground's Projects list opens on Active, with tabs for Planned, Active and Done.
 
 A record's State shows as a coloured badge in the header by default, with its moves as header
 buttons; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
@@ -121,7 +163,7 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | --- | --- |
 | `/`, `/login` | Sign-in, or Docs when signed in |
 | `/docs`, `/docs/<topic>` | Docs |
-| `/app/<model>` | List (and board). Search, sort, page, view and filters are in the query |
+| `/app/<model>` | List (and board, when `Meta.board` names the State). Search, sort, page, view and filters are in the query |
 | `/app/<model>/new` | New record. Query values fill writable fields: `?customer=4` |
 | `/app/<model>/<id>` | Record view. `?tab=` keeps the tab |
 | `/app/<model>/<id>/view` | Older record link; opens the record view |
@@ -315,8 +357,8 @@ refuses fields the role cannot read. The Playground's Items list (about 200 fiel
 prices and barcodes tables) shows the builder at scale.
 
 There is no OR group between rows, because the server combines filters only with AND; and there
-are no saved filters yet, because Evlet has no place to keep them. The saved views of a model's
-State stay as tabs.
+are no saved filters yet, because Evlet has no place to keep them. The list tabs
+([List tabs](#list-tabs)) stay above the toolbar.
 
 ## Python page API
 

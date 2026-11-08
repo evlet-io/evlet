@@ -52,6 +52,7 @@ evlet migrate acme --trust --allow-destructive
 evlet makemigration people --instance acme --name dependents --trust
 evlet effects check acme
 evlet journal verify acme
+evlet ledger list --instance acme
 evlet routes acme
 evlet proxy acme --caddy --check
 evlet link-user acme buyer customer 42
@@ -153,6 +154,9 @@ project it serves the project's instance (`--instance` picks one, `--port` match
 `journal verify` checks the hash chains of tamper-evident record journals in an
 instance's database, read only and in one snapshot. It prints one line per break and
 exits with 1 when there is any; see the [journal guide](journal.md).
+
+`ledger list` prints each [ledger model](ledger.md) with its table, row count and its
+`append_only`, `journal`, `timestamps` and `period` settings, read from one snapshot without writing.
 
 `playground` works outside a project, uses temporary demo data, and removes that
 data on exit. It runs the existing framework examples with their generated screens.

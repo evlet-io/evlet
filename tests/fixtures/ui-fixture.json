@@ -11576,7 +11576,12 @@
       },
       "child_only": false,
       "children": [],
-      "actions": [],
+      "actions": [
+        {
+          "name": "award_points",
+          "label": "Award 10 points"
+        }
+      ],
       "attachments": false,
       "relations": [
         {
@@ -12783,6 +12788,11 @@
       ],
       "default_tab": "details",
       "autosave": true,
+      "list_tabs": {
+        "field": "status",
+        "kind": "select",
+        "default": "active"
+      },
       "side_blocks": [
         "related",
         "info",

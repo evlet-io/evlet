@@ -98,6 +98,8 @@ def meaning_for(registry):
     roots = [model for model in registry.models.values() if model not in children]
     discovered = {}
     for source in roots:
+        if getattr(source, '__ledger__', False):
+            continue  # Ledger rows have no surface, so no record lists them as related (evlet/ledger.py).
         for name, field in source.__declared_fields__.items():
             if isinstance(field, Link) and field.target not in children:
                 discovered.setdefault(field.target, []).append((source, name))

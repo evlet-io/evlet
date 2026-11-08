@@ -114,6 +114,9 @@ class Project(Model):
         # (shown away from Details).
         side_blocks = ('related', 'info', 'key_fields')
         open_in = 'panel'
+        # The list's tabs: All, Planned, Active and Done, with counts. It opens on Active.
+        list_tabs = 'status'
+        list_tab = 'active'
 
     # A declared title is the record title itself.
     title = Text(required=True, max_length=120, label='Project')
@@ -160,8 +163,34 @@ class Employee(Model):
     reports_to = Link('employee', index=True, label='Reports to')
 
 
+class PointMove(Model):
+    """Customer points, one row per award or spend. A ledger model: lean rows, no screens or routes, and the
+    database refuses to change a row once written. Only the Award points action (app.py) writes them."""
+    class Meta:
+        ledger = True
+        append_only = True
+        timestamps = 'created'
+        indexes = [('customer', 'on_date')]
+
+    customer = Link(Customer, required=True)
+    on_date = Date(required=True)
+    reason = Text(default='', max_length=120)
+    points = Integer(required=True)
+
+
+class PointBalance(Model):
+    """Each customer's points total: a cache the Award points action updates with each movement."""
+    class Meta:
+        ledger = True
+        timestamps = 'modified'
+        indexes = [(('customer',), {'unique': True})]
+
+    customer = Link(Customer, required=True)
+    points = Integer(required=True, default=0)
+
+
 # Items have about 200 fields and two child tables: the list filters at scale. Imported here so the
 # registry lists every Playground model; items.py links to customers by name, not by import.
 from .items import Item  # noqa: E402
 
-registry = Registry(Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item, Employee)
+registry = Registry(Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item, Employee, PointMove, PointBalance)
