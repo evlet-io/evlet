@@ -32,10 +32,49 @@ there and verifies it. It does not create a database or start a service. Use
 are never overwritten. Commands discover the project from the current directory
 or its parents. `--project /path/to/myproject` works before or after a command.
 
+### Setup in one go
+
+`setup` can also run the commands above for you:
+
+```sh
+evlet setup myproject --app notes,crm --instance acme --dev
+evlet setup myproject --get https://github.com/co/notes.git,ssh://git@github.com/co/crm.git --instance acme --dev
+evlet setup myproject --app notes --instance acme --host erp.example.com
+```
+
+The steps run in this order, each through the code of its own command:
+
+1. Create the project, as `evlet setup` does.
+2. `--app` creates new apps, as `evlet app NAME` does.
+3. `--get` fetches apps from Git, as `evlet app --get URL` does: static validation
+   first, then a trust question before any app code runs or is built.
+4. `--instance` creates the instance, as `evlet instance NAME` does.
+5. One `evlet install` installs every app with its dependencies in order. It asks
+   once whether you trust them and writes one backup.
+6. `--dev` starts `evlet dev` on 127.0.0.1, which creates the first admin and prints
+   a one-time sign-in link. `--host` prepares a public site
+   ([below](#serve-a-site-on-a-domain-in-one-go)). With neither, it stops after
+   installing and prints the command that starts the site.
+
+`--app` and `--get` take comma lists, can be repeated and can be combined. Git URLs
+follow the [fetch rules](#dependencies-and-git): HTTPS or `ssh://`, no passwords;
+write `ssh://git@github.com/co/crm.git`, not `git@github.com:co/crm.git`. `--trust`
+answers the trust questions with yes for the whole run; review the apps first.
+Without it each question is asked in the terminal, and with no terminal the run
+stops. `--port` picks the port for `--dev` or the service (default 8000).
+
+If a step fails, the message names it. Fix the cause and run the same command
+again. Steps already done are skipped: an existing project, app or instance is
+reused, apps already in `apps.lock` are not installed again, and an app fetched from
+the same URL is not fetched again. Without any of these options, `evlet setup` works
+exactly as before and refuses an existing folder.
+
 ## Commands
 
 ```sh
 evlet setup myproject
+evlet setup myproject --app notes,crm --instance acme --dev
+evlet setup myproject --app notes --instance acme --host erp.example.com
 evlet app notes
 evlet app --get https://github.com/company/notes.git
 evlet app --list
@@ -361,6 +400,39 @@ cookies and disables browser administrator setup. Terminate TLS with a reverse
 proxy and manage the process through normal infrastructure. A non-loopback bind
 requires a configured domain. The CLI does not configure DNS, TLS, system services,
 proxy trust or public deployment. This is not a production-readiness claim.
+
+### Serve a site on a domain in one go
+
+```sh
+evlet setup myproject --app notes --instance acme --host erp.example.com
+```
+
+Run it on the Linux server as the user that will run the service, not as root.
+After installing the apps it:
+
+1. Asks in the terminal for the first administrator's username and password
+   (twice, not shown). A site on a domain cannot create its administrator in the
+   browser, so this happens here, with the instance's password rules. It is audited
+   as `cli` and skipped when the instance already has accounts.
+2. Sets `domain="erp.example.com"` and `trusted_proxies=("127.0.0.1", "::1")` in
+   `instances/acme/config.py`. If you edited that file, it stops and asks you to set
+   the domain yourself.
+3. Writes `deploy/evlet-acme.caddy` (the `evlet proxy acme --caddy` output) and
+   `deploy/evlet-acme.service`, a systemd unit like the one below that runs
+   `evlet serve acme --jobs` on 127.0.0.1. Caddy is the only public listener.
+4. Checks DNS like `evlet proxy acme --check`. If the host does not point at this
+   server yet, it stops; pass `--ip` when the public address cannot be detected.
+5. Prints the privileged steps: copy the two files into `/etc/systemd/system/`
+   and `/etc/caddy/`, add an `import` line to `/etc/caddy/Caddyfile`, then
+   `systemctl daemon-reload`, `systemctl enable --now evlet-acme` and
+   `systemctl reload caddy`, each with `sudo`.
+
+Review the two files, then run those steps yourself, or run the same command again
+with `--apply`. `--apply` shows each step before running it, and `sudo` asks for
+your password; nothing runs with `sudo` without it. Caddy must already be installed;
+Evlet does not install it. `--dev` and `--host` cannot be combined: development
+servers and sign-in links stay on loopback. This prepares a single-server site; it
+does not make Evlet production ready.
 
 ### Serve an instance behind Caddy
 

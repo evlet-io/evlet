@@ -38,7 +38,7 @@ def recover(path):
     sync_directory(path)
 
 
-def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_posted=False, allow_destructive=False,
+def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=None, recompute_posted=False, allow_destructive=False,
             allow_maintenance=False):
     path = child(root, 'instances', name)
     if not path.is_dir():
@@ -48,7 +48,7 @@ def install(root, name, *, app_name=None, trust=False, confirm=None, recompute_p
         config = read_instance(path)
         recover(path)
         before = require_consistent(path)
-        names = sorted(set(before['apps']) | ({app_name} if app_name else set()))
+        names = sorted(set(before['apps']) | ({app_name} if app_name else set()) | set(app_names))
         if not names:
             raise ValueError('No installed apps to migrate')
         packages = resolve_packages(root, names, check_installed=False)

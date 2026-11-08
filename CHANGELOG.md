@@ -8,6 +8,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **`evlet setup` in one go.** `evlet setup myproject --app notes,crm --instance acme --dev` creates
+  the project, apps and instance, installs the apps in dependency order and starts `evlet dev` on
+  loopback. `--get URL,URL` fetches apps from Git with the `app --get` checks and trust question;
+  `--app` and `--get` take comma lists and combine. `--trust` answers the trust questions for the
+  whole run. `--host erp.example.com` instead asks for the first administrator in the terminal,
+  sets the instance domain, writes a Caddy site and a systemd unit under `deploy/`, checks DNS and
+  prints the `sudo` steps; `--apply` runs them, showing each first. `--dev` and `--host` cannot be
+  combined. A failed step is named, and running the same command again skips finished steps.
+  Without the new options `evlet setup` is unchanged ([docs/cli.md](docs/cli.md#setup-in-one-go)).
 - `Naming(..., label="Project number")` labels the standard `name` field for the model's domain on
   the form, in list columns, filters, search and the schema
   ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".

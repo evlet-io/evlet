@@ -10,6 +10,18 @@ Use Python 3.12 or newer in a virtual environment:
 
 ```sh
 python -m pip install --upgrade evlet
+evlet setup myproject --app notes --instance acme --dev
+```
+
+That one command creates the project, a Notes app and a site called acme,
+installs the app and starts `evlet dev` on 127.0.0.1. Read the trust prompt
+first. The server prints a one-time sign-in link for a new administrator. Your
+site keeps its data when you stop and restart it; run the same command again to
+pick up where it stopped.
+
+The same steps one at a time:
+
+```sh
 evlet setup myproject
 cd myproject
 evlet app notes
@@ -18,9 +30,9 @@ evlet install notes --instance acme
 evlet serve acme
 ```
 
-Read the trust prompt, then open **http://127.0.0.1:8000** and create your first
-administrator. There is no default password. Your site keeps its data when you
-stop and restart it.
+Then open **http://127.0.0.1:8000** and create your first administrator. There is
+no default password. To serve a site on your own domain behind Caddy, see
+[Serve a site on a domain in one go](docs/cli.md#serve-a-site-on-a-domain-in-one-go).
 
 An **app** contains reusable Python code. An **instance** is a site with its own
 database, accounts and files. You can install the same app on several instances.

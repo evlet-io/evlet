@@ -128,3 +128,27 @@ def write(path, text):
     os.chmod(handle.name, 0o644)
     os.replace(handle.name, target)
     return target
+
+
+def systemd_unit(root, instance, port=8000, user='evlet'):
+    """A systemd unit that runs evlet serve on loopback, so the proxy is the only public listener. Review before installing it."""
+    import re
+    from .setup import python_in
+    root = Path(root)
+    # systemd expands % and $ and splits on spaces; keep the paths literal.
+    if not re.fullmatch(r'[A-Za-z0-9._/@+-]+', str(root)) or not re.fullmatch(r'[a-z_][a-z0-9_-]*', user):
+        raise ValueError('The project path and user may only use letters, digits and . _ / @ + -; move the project or choose another user')
+    return f'''[Unit]
+Description=Evlet instance {instance}
+After=network.target
+
+[Service]
+User={user}
+WorkingDirectory={root}
+ExecStart={python_in(root)} -P -m evlet serve {instance} --jobs --project {root} --host 127.0.0.1 --port {port}
+Restart=on-failure
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
+'''

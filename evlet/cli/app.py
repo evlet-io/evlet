@@ -52,6 +52,18 @@ def fetch_app(root, url, *, return_package=False):
     return f'Fetched {package.name} {package.version} at {revision}\nDeclared dependencies: {dependencies}\nStatic validation passed; no app code was run. Install only code you trust.'
 
 
+def get_app(root, url, *, trust=False, confirm=None):
+    """evlet app --get: fetch statically, then prepare and build only after explicit trust."""
+    from ..builds import prepare
+    package = fetch_app(root, url, return_package=True)
+    print(f'Fetched {package.name} {package.version} at {package.locked()["commit"]}; no app code has run')
+    if not trust and not (confirm and confirm('Trust and prepare ' + package.name + ' from ' + url + ' and its declared dependencies?')):
+        raise ValueError('Fetched but not built: review source, then run evlet build --trust')
+    _, manifest = prepare(root, prepare_dependencies(root, [package.name]))
+    print('Built generation: ' + manifest['fingerprint'])
+    return package
+
+
 def prepare_dependencies(root, names):
     """Run reviewed package hooks only in this project's environment."""
     import sys
