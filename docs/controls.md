@@ -361,6 +361,8 @@ resets it. A pause for a schedule no app declares any more is listed under Needs
 Run now enqueues one job like the schedule would; a paused schedule must be resumed first.
 The failed count in the menu and Needs attention covers every failed job. Retry works on failed jobs only, and the job
 keeps its idempotency key.
+A run that reports progress shows it under its status: done of total with a bar, and the job's
+short message. While a run is running the page reads the list again every three seconds.
 
 ### Unsaved changes
 

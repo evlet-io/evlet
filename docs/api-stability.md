@@ -51,6 +51,11 @@ production ready, but the rules below hold from 0.3 on.
   with a tuple of fields, and `evlet ledger list`. A key's lock number (BLAKE2b of its canonical
   JSON) never changes between releases ([ledger.md](ledger.md)).
 
+- **Job progress.** `JobContext.progress(done, total=None, message='')`, `JobContext.checkpoint`,
+  `Task(..., resumable=True)` with its return-value contract (a JSON checkpoint, or `None` when
+  done), `progress` in `GET /api/_jobs/<id>`, and `evlet jobs list`
+  ([jobs-realtime.md](jobs-realtime.md#progress-and-long-jobs)).
+
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
   public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).

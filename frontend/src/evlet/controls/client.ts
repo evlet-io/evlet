@@ -102,7 +102,9 @@ export interface Schedule {
   name: string; task: string; every: number | null; expression: string | null; timezone: string | null; next_run: number;
   active: boolean; paused: boolean; app: string | null;
 }
-export interface JobRow { id: number; task: string; actor: number | null; model: string | null; record_id: number | null; state: string; attempts: number; run_at: number; error: string | null }
+export interface JobRow { id: number; task: string; actor: number | null; model: string | null; record_id: number | null; state: string; attempts: number; run_at: number; error: string | null;
+  /** The progress the job last committed; null until it reports any. */
+  done: number | null; total: number | null; message: string | null }
 export interface Jobs { available: boolean; schedules: Schedule[]; jobs: JobRow[] }
 export interface CodeFile { file: string; code: string }
 export interface ControlsState {

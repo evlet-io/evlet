@@ -1,6 +1,6 @@
-"""A small durable queue for short single-node SQLite tasks."""
+"""A small durable queue for short single-node SQLite tasks, and long tasks run in committed steps."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import json
 import hashlib
 import logging
@@ -17,6 +17,8 @@ from .models import ValidationError
 from .permissions import Policy, trusted
 
 logger = logging.getLogger(__name__)
+# Seconds a claim lasts by default, and how far each committed step of a resumable task extends it.
+LEASE = 300
 
 
 def timestamp(value):
@@ -38,6 +40,8 @@ class Task:
     max_attempts: int = 3
     retry_delay: int = 30
     external: bool = False
+    # Called once per step, each in its own transaction, until it returns None (see docs/jobs-realtime.md).
+    resumable: bool = False
 
 
 @dataclass(frozen=True)
@@ -56,6 +60,46 @@ class JobContext:
     attempt: int
     user: User | None
     idempotency_key: str
+    # The value the last committed step of a resumable task returned; None before the first step.
+    checkpoint: object = None
+    _report: object = field(default=None, repr=False, compare=False)
+
+    def progress(self, done, total=None, message=''):
+        """Record how far the job is. It is saved with the handler's writes, so a rolled-back step leaves the last
+        committed progress; an external task's progress is saved at once."""
+        if type(done) is not int or not 0 <= done <= 2**63 - 1:
+            raise ValueError('Use a nonnegative integer for done')
+        if total is not None and (type(total) is not int or not done <= total <= 2**63 - 1):
+            raise ValueError('Use an integer total no smaller than done, or None')
+        if not isinstance(message, str) or len(message) > 200 or '\x00' in message:
+            raise ValueError('Use a progress message of at most 200 characters')
+        self._report(done, total, message)
+
+
+def progress_text(done, total, message=''):
+    """How the CLI shows a job's progress: "40 of 100 (40%) Customers 1 to 40"."""
+    if done is None:
+        return ''
+    text = f'{done} of {total} ({100 * done // total if total else 100}%)' if total is not None else str(done)
+    return f'{text} {message}' if message else text
+
+
+def table(rows):
+    """The text `evlet jobs list` prints for JobQueue.recent() rows."""
+    if not rows:
+        return 'No jobs'
+    header = ('Job', 'Task', 'State', 'Attempts', 'Progress')
+    lines = [header] + [(f"#{row['id']}", row['task'], row['state'] + (f" ({row['error']})" if row['error'] else ''), str(row['attempts']),
+                         progress_text(row['done'], row['total'], row['message'] or '')) for row in rows]
+    widths = [max(len(line[index]) for line in lines) for index in range(len(header))]
+    return '\n'.join('  '.join(cell.ljust(width) for cell, width in zip(line, widths)).rstrip() for line in lines)
+
+
+def encode_checkpoint(value):
+    encoded = json.dumps(value, allow_nan=False, separators=(',', ':'))
+    if len(encoded.encode()) > 16384:
+        raise ValueError('A job checkpoint must be JSON of at most 16 KiB')
+    return encoded
 
 
 class JobQueue:
@@ -70,6 +114,8 @@ class JobQueue:
         for task in tasks:
             name(task.name)
             if type(task.external) is not bool: raise ValueError('Task external mode must be a boolean')
+            if type(task.resumable) is not bool or task.resumable and task.external:
+                raise ValueError('A resumable task is a boolean flag and runs in transactions, so it cannot be external')
             if task.name in self.tasks or not callable(task.handler) or type(task.max_attempts) is not int or not 1 <= task.max_attempts <= 10 or type(task.retry_delay) is not int or not 1 <= task.retry_delay <= 86400:
                 raise ValueError('Invalid or duplicate task')
             self.tasks[task.name] = task
@@ -86,6 +132,9 @@ class JobQueue:
                 run_at INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER,
                 lease TEXT, lease_until INTEGER, dedupe TEXT UNIQUE, error TEXT)''')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_jobs_due ON evlet_jobs(state,run_at)')
+            # The last committed progress and, for resumable tasks, the checkpoint the next step starts from.
+            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_progress (job_id INTEGER PRIMARY KEY, done INTEGER NOT NULL, total INTEGER, '
+                                  "message TEXT NOT NULL DEFAULT '', checkpoint TEXT, updated_at INTEGER NOT NULL)")
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_identities (job_id INTEGER PRIMARY KEY, role TEXT NOT NULL)')
             # Jobs queued with an API key run with that key's scope, and not at all once it is revoked.
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_keys (job_id INTEGER PRIMARY KEY, key_id INTEGER NOT NULL)')
@@ -221,69 +270,56 @@ class JobQueue:
     def _execute(self, claim, *, active=lambda: True, now=None):
         job_id, token = claim
         now = int(time.time()) if now is None else timestamp(now)
+        began = time.monotonic()
         task = None
-        started = False
+        steps = 0
         try:
-            with self.database.transaction() as tx:
-                self._bound(tx)
-                row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE id=? AND state='running' AND lease=? AND lease_until>?", (job_id, token, now)).fetchone()
-                if row is None:
-                    return False
-                if not active():
-                    self._release_claim(tx, job_id, token, now)
-                    return False
-                task = self.tasks.get(row['task'])
-                if task is None:
-                    raise ValidationError({'task': 'Task is no longer registered'})
-                user = None
-                if row['actor'] is not None:
-                    account = tx.connection.execute('SELECT id,username,role FROM evlet_users WHERE id=? AND active=1', (row['actor'],)).fetchone()
-                    if account is None:
-                        raise AccessError(403, 'The requesting account is inactive')
-                    user = User(*account)
-                    queued_by = tx.connection.execute('SELECT k.id, k.scope, k.revoked_at FROM evlet_job_keys j LEFT JOIN evlet_api_keys k ON k.id=j.key_id WHERE j.job_id=?', (job_id,)).fetchone()
-                    if queued_by is not None:
-                        if queued_by['id'] is None or queued_by['revoked_at'] is not None:
-                            raise AccessError(403, 'The API key that queued this job was revoked.')
-                        user = User(*account, access=self.business.auth.key_access(queued_by['id'], queued_by['scope']))
-                    queued_by = tx.connection.execute('SELECT client_id FROM evlet_job_assistants WHERE job_id=?', (job_id,)).fetchone()
-                    if queued_by is not None:
-                        connection = None
-                        if queued_by[0]:
-                            connection = tx.connection.execute('SELECT * FROM evlet_mcp_clients WHERE id=? AND user_id=? AND revoked_at IS NULL', (queued_by[0], account['id'])).fetchone()
-                            if connection is None:
-                                raise AccessError(403, 'The AI assistant that queued this job was disconnected.')
-                        user = self.business.assistants.narrow(user, connection)
-                else:
-                    identity = tx.connection.execute('SELECT role FROM evlet_job_identities WHERE job_id=?', (job_id,)).fetchone()
-                    if identity: user = User(0, 'schedule', identity[0])
-                if user is not None and row['model']:
-                    model = self.database.registry.models.get(row['model'])
-                    if model is None: raise NotFoundError()
-                    self.policy.record(tx, user, model, row['record_id'], 'update')
-                namespace = tx.connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
-                stable_key = hashlib.sha256((namespace + ':' + (row['dedupe'] or f'job:{job_id}')).encode()).hexdigest()
-                context = JobContext(job_id, self.tenant, row['attempts'], user, stable_key)
-                payload = json.loads(row['payload'])
-                started = True
-                tx._business = getattr(self, 'business', None)
-                if not task.external:
+            while True:
+                running = False
+                # A resumable task runs one step per transaction; every step reloads the job, the lease and the account.
+                clock = now + int(time.monotonic() - began)
+                with self.database.transaction() as tx:
+                    self._bound(tx)
+                    row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE id=? AND state='running' AND lease=? AND lease_until>?", (job_id, token, clock)).fetchone()
+                    if row is None:
+                        return steps > 0
+                    if not active():
+                        # Stopped between steps: the job goes back to the queue and resumes from its checkpoint.
+                        self._release_claim(tx, job_id, token, clock)
+                        return steps > 0
+                    task, context, payload = self._prepare(tx, row, job_id, token)
+                    running = True
+                    tx._business = getattr(self, 'business', None)
+                    if task.external:
+                        break
                     # Job handlers are trusted app code, even when a request runs the job at once.
                     with trusted():
-                        task.handler(tx, context, payload)
+                        result = task.handler(tx, context, payload)
+                    if task.resumable and result is not None:
+                        checkpoint = encode_checkpoint(result)
+                        tx.connection.execute("INSERT INTO evlet_job_progress(job_id,done,checkpoint,updated_at) VALUES (?,0,?,?) "
+                                              'ON CONFLICT(job_id) DO UPDATE SET checkpoint=excluded.checkpoint, updated_at=excluded.updated_at',
+                                              (job_id, checkpoint, int(time.time())))
+                        # Each committed step renews the lease, so a long job is not reclaimed while it makes progress.
+                        tx.connection.execute('UPDATE evlet_jobs SET lease_until=CASE WHEN lease_until<? THEN ? ELSE lease_until END WHERE id=? AND lease=?',
+                                              (clock + LEASE, clock + LEASE, job_id, token))
+                        steps += 1
+                        continue
+                    if task.resumable:
+                        tx.connection.execute('UPDATE evlet_job_progress SET checkpoint=NULL WHERE job_id=?', (job_id,))
                     tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND lease=?", (int(time.time()), job_id, token))
                     if self.events and row['model']:
                         self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
-            if task.external:
-                # No open database transaction or supplied Session during external I/O.
-                with trusted():
-                    task.handler(context, payload)
-                with self.database.transaction() as tx:
-                    self._bound(tx)
-                    completed = tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND state='running' AND lease=? AND lease_until>?", (int(time.time()), job_id, token, int(time.time()))).rowcount
-                    if not completed: return False
-                    if self.events and row['model']:
-                        self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
+                    return True
+            # No open database transaction or supplied Session during external I/O.
+            with trusted():
+                task.handler(context, payload)
+            with self.database.transaction() as tx:
+                self._bound(tx)
+                completed = tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND state='running' AND lease=? AND lease_until>?", (int(time.time()), job_id, token, int(time.time()))).rowcount
+                if not completed: return False
+                if self.events and row['model']:
+                    self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
             return True
         except Exception as exc:
             logger.exception('Background task %s failed', job_id)
@@ -291,13 +327,62 @@ class JobQueue:
                 row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE id=? AND state='running' AND lease=?", (job_id, token)).fetchone()
                 if row is None:
                     return False
-                if not started and isinstance(exc, sqlite3.OperationalError):
+                if not running and isinstance(exc, sqlite3.OperationalError):
                     self._release_claim(tx, job_id, token, now + 1)
                     return False
                 retry = task is not None and row['attempts'] < row['max_attempts'] and not isinstance(exc, (AccessError, NotFoundError, ValidationError))
                 due = now + min(86400, task.retry_delay * 2 ** (row['attempts'] - 1)) if retry else now
+                # A resumable task keeps its checkpoint, so the retry resumes after the last committed step.
                 tx.connection.execute('UPDATE evlet_jobs SET state=?,run_at=?,completed_at=?,lease=NULL,lease_until=NULL,error=? WHERE id=? AND lease=?', ('queued' if retry else 'failed', due, None if retry else now, exc.message if isinstance(exc, AccessError) else type(exc).__name__, job_id, token))
             return True
+
+    def _prepare(self, tx, row, job_id, token):
+        """The task, a fresh JobContext and the payload for one claimed job, after the account and target checks."""
+        task = self.tasks.get(row['task'])
+        if task is None:
+            raise ValidationError({'task': 'Task is no longer registered'})
+        user = None
+        if row['actor'] is not None:
+            account = tx.connection.execute('SELECT id,username,role FROM evlet_users WHERE id=? AND active=1', (row['actor'],)).fetchone()
+            if account is None:
+                raise AccessError(403, 'The requesting account is inactive')
+            user = User(*account)
+            queued_by = tx.connection.execute('SELECT k.id, k.scope, k.revoked_at FROM evlet_job_keys j LEFT JOIN evlet_api_keys k ON k.id=j.key_id WHERE j.job_id=?', (job_id,)).fetchone()
+            if queued_by is not None:
+                if queued_by['id'] is None or queued_by['revoked_at'] is not None:
+                    raise AccessError(403, 'The API key that queued this job was revoked.')
+                user = User(*account, access=self.business.auth.key_access(queued_by['id'], queued_by['scope']))
+            queued_by = tx.connection.execute('SELECT client_id FROM evlet_job_assistants WHERE job_id=?', (job_id,)).fetchone()
+            if queued_by is not None:
+                connection = None
+                if queued_by[0]:
+                    connection = tx.connection.execute('SELECT * FROM evlet_mcp_clients WHERE id=? AND user_id=? AND revoked_at IS NULL', (queued_by[0], account['id'])).fetchone()
+                    if connection is None:
+                        raise AccessError(403, 'The AI assistant that queued this job was disconnected.')
+                user = self.business.assistants.narrow(user, connection)
+        else:
+            identity = tx.connection.execute('SELECT role FROM evlet_job_identities WHERE job_id=?', (job_id,)).fetchone()
+            if identity: user = User(0, 'schedule', identity[0])
+        if user is not None and row['model']:
+            model = self.database.registry.models.get(row['model'])
+            if model is None: raise NotFoundError()
+            self.policy.record(tx, user, model, row['record_id'], 'update')
+        namespace = tx.connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
+        stable_key = hashlib.sha256((namespace + ':' + (row['dedupe'] or f'job:{job_id}')).encode()).hexdigest()
+        saved = tx.connection.execute('SELECT checkpoint FROM evlet_job_progress WHERE job_id=?', (job_id,)).fetchone()
+        checkpoint = json.loads(saved[0]) if task.resumable and saved and saved[0] is not None else None
+        sql = ('INSERT INTO evlet_job_progress(job_id,done,total,message,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET '
+               'done=excluded.done, total=excluded.total, message=excluded.message, updated_at=excluded.updated_at')
+        if task.external:
+            def report(done, total, message):
+                with self.database.transaction() as own:
+                    if own.connection.execute("SELECT 1 FROM evlet_jobs WHERE id=? AND state='running' AND lease=?", (job_id, token)).fetchone():
+                        own.connection.execute(sql, (job_id, done, total, message, int(time.time())))
+        else:
+            def report(done, total, message):
+                tx.connection.execute(sql, (job_id, done, total, message, int(time.time())))
+        context = JobContext(job_id, self.tenant, row['attempts'], user, stable_key, checkpoint, report)
+        return task, context, json.loads(row['payload'])
 
     @staticmethod
     def _release_claim(tx, job_id, token, due):
@@ -320,13 +405,18 @@ class JobQueue:
                 raise AccessError(404, 'Job not found')
             if row['model']:
                 self.policy.record(tx, user, self.database.registry.models[row['model']], row['record_id'])
-            return {key: row[key] for key in ('id', 'state', 'attempts', 'run_at', 'created_at', 'completed_at', 'error')}
+            result = {key: row[key] for key in ('id', 'state', 'attempts', 'run_at', 'created_at', 'completed_at', 'error')}
+            # Progress the handler reported; the checkpoint and payload stay private.
+            progress = tx.connection.execute('SELECT done,total,message FROM evlet_job_progress WHERE job_id=?', (job_id,)).fetchone()
+            result['progress'] = None if progress is None else {'done': progress['done'], 'total': progress['total'], 'message': progress['message']}
+            return result
 
     def recent(self):
         """Trusted operator summary; never includes payloads or exception messages."""
         with self.database._connection() as db:
             return [{**dict(row), 'record_id': text_id(row['record_id'])}
-                    for row in db.execute('SELECT id,task,actor,model,record_id,state,attempts,run_at,error FROM evlet_jobs ORDER BY id DESC LIMIT 100')]
+                    for row in db.execute('SELECT j.id,j.task,j.actor,j.model,j.record_id,j.state,j.attempts,j.run_at,j.error,p.done,p.total,p.message '
+                                          'FROM evlet_jobs j LEFT JOIN evlet_job_progress p ON p.job_id=j.id ORDER BY j.id DESC LIMIT 100')]
 
     def retry(self, job_id):
         with self.database.transaction() as tx:
