@@ -86,12 +86,13 @@ class AppDefinition:
     settings: type | None = None
     preferences: type | None = None
     connectors: tuple = ()
+    workspaces: tuple = ()
 
     def __post_init__(self):
         # Python pages were removed in 0.4. Older app scaffolds still pass views=() and that keeps working.
         if tuple(self.views) or self.ui is not None:
             raise ValueError('Python pages (views and ui) were removed in Evlet 0.4: delete them from AppDefinition')
-        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes', 'connectors'):
+        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes', 'connectors', 'workspaces'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         if not callable(self.actions):
             object.__setattr__(self, 'actions', tuple(self.actions))
@@ -120,6 +121,9 @@ class AppDefinition:
         from .connectors import Connector
         if any(not isinstance(connector, Connector) for connector in self.connectors):
             raise ValueError('Register Connector definitions')
+        from .workspaces import Workspace
+        if any(not isinstance(workspace, Workspace) for workspace in self.workspaces):
+            raise ValueError('Register Workspace definitions')
 
 
 def read_instance(path):
@@ -385,6 +389,8 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
             app.business.connectors.register(name, connector)
     services.connectors = app.business.connectors
     app.business.controls.load(definitions, pinned, path)
+    # Each app's declared workspaces, or one automatic workspace for an app that declares none.
+    app.business.workspaces.load(definitions, pinned)
     for name, definition in definitions:
         if definition.settings or definition.preferences:
             app.business.settings.register(name, definition.settings, definition.preferences, definition.models)

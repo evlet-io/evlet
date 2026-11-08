@@ -163,7 +163,30 @@ export interface AppSchema { version: number; ui_version: number; models: ModelS
   /** Reports the role may run (evlet.Report), with their filters, columns and view settings. */ reports?: ReportSchema[];
   /** Present when the app has print designs; available is false without the server's print extra. */ printing?: { available: boolean };
   /** How the currency codes the site changed are shown (Controls, Currencies); other codes show as 'AED 25,200.00'. */
-  currency_display?: Record<string, CurrencyDisplay> }
+  currency_display?: Record<string, CurrencyDisplay>;
+  /** Named sidebars (evlet.Workspace), with only what this role can open; docs/ui.md#workspaces. */ workspaces?: WorkspaceSchema[] }
+
+/** A workspace: declared by an app, or the automatic one of an app that declares none. */
+export interface WorkspaceSchema {
+  key: string;
+  label: string;
+  icon: string | null;
+  /** The app that declares it ("app" for an application built by hand). */
+  app: string;
+  source: 'declared' | 'automatic';
+  groups: WorkspaceGroup[];
+}
+
+/** A titled group of a workspace's sidebar; never empty. */
+export interface WorkspaceGroup { key: string; label: string; icon: string | null; items: WorkspaceItem[] }
+
+/** One sidebar entry. The key is stable: model:<name>[:<label or view>], report:<name>, slip:<name> or url:<label>. */
+export type WorkspaceItem =
+  | { key: string; kind: 'model'; label: string; model: string; view: 'list' | 'board';
+      /** Conditions in the list address form (?f=), or null for the whole list. */ filters: unknown[] | null }
+  | { key: string; kind: 'report'; label: string; report: string }
+  | { key: string; kind: 'slip'; label: string; slip: string }
+  | { key: string; kind: 'url'; label: string; url: string };
 
 /** A report column: its type, and for a link column the model its values open. */
 export interface ReportColumn { name: string; type: 'text' | 'integer' | 'decimal' | 'currency' | 'date' | 'boolean' | 'link'; label: string | null;
@@ -180,6 +203,8 @@ export interface ReportSchema {
   group: string;
   /** The model whose list offers it. */
   model: string | null;
+  /** What its `model` is: "ledger" for a ledger model (never named in `model`), "model" otherwise, null without one. */
+  source_kind?: 'ledger' | 'model' | null;
   sortable: string[];
   export: boolean;
   chart: { type: 'bar' | 'line'; x: string; y: string[]; label: string | null } | null;

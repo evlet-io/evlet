@@ -95,6 +95,12 @@ production ready, but the rules below hold from 0.3 on.
   done), `progress` in `GET /api/_jobs/<id>`, and `evlet jobs list`
   ([jobs-realtime.md](jobs-realtime.md#progress-and-long-jobs)).
 
+- **Workspaces.** `Workspace`, `NavGroup` and `Shortcut` with their arguments, discovery of an app
+  package's `workspaces.py`, `Application(workspaces=...)` and `AppDefinition(workspaces=...)`, the
+  key scheme, and the `workspaces` entry of `/api/schema` with its item kinds (`model`, `report`,
+  `slip`, `url`) and `source` values. The report catalog's `source_kind` (`"ledger"`, `"model"` or
+  null) is public too ([ui.md](ui.md#workspaces), [reports.md](reports.md)).
+
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
   public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
