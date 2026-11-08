@@ -21,6 +21,9 @@ export interface NavShortcut {
   slip?: string;
   /** An http(s) address: it opens in a new tab. */
   external?: boolean;
+  /** What the page shows when its address leaves a part out, such as the list's home tab: the address the list
+   * settles on drops ?tab= for it, and the shortcut still matches. */
+  defaults?: Record<string, string>;
 }
 export interface NavSection { key: string; label: string; icon: string; count?: number; items: NavShortcut[] }
 export interface Workspace { key: string; label: string; icon: string; tint?: Tint; sections: NavSection[];
@@ -75,8 +78,9 @@ export function shortcutOf(schema: AppSchema, item: WorkspaceItem, links: NavLin
       const model = schema.models.find(entry => entry.name === item.model) as unknown as ScreenModel | undefined;
       const { icon, tint } = model ? identity(model) : { icon: 'list', tint: undefined };
       const query = listQuery(model, item.view, item.filters);
+      const home = model?.list_tabs?.default;
       return { key: item.key, label: item.label, href: links.list(item.model, query), icon: item.view === 'board' ? 'square-kanban' : icon, tint,
-        model: Object.keys(query).length ? undefined : item.model };
+        model: Object.keys(query).length ? undefined : item.model, ...(home && home !== 'all' ? { defaults: { tab: home } } : {}) };
     }
     case 'report': return { key: item.key, label: item.label, href: links.report(item.report), icon: REPORT_ICON, tint: 'rose' };
     case 'slip': return { key: item.key, label: item.label, href: '', slip: item.slip, icon: 'file-text', tint: 'blue' };
@@ -157,7 +161,7 @@ export function activeShortcut(nav: WorkspaceNav, path: string, prefer?: string)
     const named = MATCHED.filter(key => own.has(key));
     let mine: number;
     if (bare === target) {
-      if (!named.every(key => same(key, own.get(key), query.get(key)))) continue;
+      if (!named.every(key => same(key, own.get(key), query.get(key) ?? item.defaults?.[key] ?? null))) continue;
       mine = target.length * 100 + named.length;
     } else if (bare.startsWith(target + '/')) mine = target.length * 100 - named.length - 50;
     else continue;

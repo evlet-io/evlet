@@ -332,7 +332,7 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 
 /* The workspace editor (app/workspace-editor.ts): flat rows of groups and their items, each with a grip, a name and an eye. */
 .modal.wse-modal { width: min(620px, 100%); }
-.wse { display: grid; gap: 10px; }
+.wse { display: grid; gap: 10px; grid-column: 1 / -1; }
 .wse-top { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .wse-field { display: grid; gap: 4px; font-size: 12px; color: var(--fg-3); }
 .wse-groups { display: grid; gap: 8px; }

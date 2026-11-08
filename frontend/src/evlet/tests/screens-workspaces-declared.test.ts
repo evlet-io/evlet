@@ -98,6 +98,14 @@ describe('workspaceNav from declared workspaces', () => {
     expect(label('/settings')).toBeNull();
   });
 
+  it('matches a list tab shortcut on the list\'s home tab, which the address leaves out', () => {
+    const schema = declared().body;
+    schema.models.find((model: any) => model.name === 'invoice').list_tabs.default = 'issued';
+    const nav = workspaceNav(schema as AppSchema, links);
+    expect(activeShortcut(nav, '/app/invoice')?.item.label).toBe('Issued');
+    expect(activeShortcut(nav, '/app/invoice?tab=all')?.item.label).toBe('Invoices');
+  });
+
   it('keeps the fallback only for a server without workspaces', () => {
     const schema = declared().body;
     schema.workspaces = [];
