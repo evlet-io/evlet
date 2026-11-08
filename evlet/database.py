@@ -11,7 +11,7 @@ from .models import ValidationError, identifier
 from .query import SqlQuery
 from .naming import has_title, title_of
 from . import images, ledger, periods
-from .ledger import LockTimeout, is_ledger
+from .ledger import is_ledger
 from .permissions import CALLER
 from .sequences import name_new, raw_write
 

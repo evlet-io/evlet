@@ -210,7 +210,9 @@ def test_admin_keeps_corrections_and_other_permissions_are_unchanged():
     # table hashed to 19b87059....
     # Re-recorded when the Playground invoice gained amount_paid (readable, writable) and the calculated
     # payment_status (readable, never writable) in 0012_invoice_payment_status; without them it hashes to 1611bff0....
-    data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes', 'employee', 'ledgerentry')), 'states': table(Registry(*test_states.MODELS))}
+    # The ledger models of 0013_points have no surface and no permissions to record, so they are left out too.
+    data = {'playground': table(playground, ('item', 'item_prices', 'item_barcodes', 'employee', 'ledgerentry', 'pointmove', 'pointbalance')),
+            'states': table(Registry(*test_states.MODELS))}
     assert hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest() == \
         'c0cf23d63bd9af9aedda728fbc72a1611de3c80d0de694ff775fce2464403be8'
     policy = Policy(Registry(*MODELS))

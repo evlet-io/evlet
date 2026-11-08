@@ -2,6 +2,8 @@
 
 from datetime import date, datetime, timezone
 from decimal import Decimal as D
+import json
+import re
 import sqlite3
 import threading
 
@@ -440,7 +442,9 @@ def test_a_ledger_model_has_no_public_surface(points):
     schema = admin('GET', '/api/schema')[1]
     names = {entry['name'] for entry in schema['models']}
     assert names.isdisjoint({'pointmove', 'pointbalance', 'reading'}) and 'member' in names
-    assert names.isdisjoint(entry['name'] for entry in admin('GET', '/api/_discovery')[1]['models']) is False
+    # Not as a model, a related list, a link target or anything else.
+    assert not {'pointmove', 'pointbalance', 'reading', 'PointMove'} & set(re.findall(r'[A-Za-z_.]+', json.dumps(schema)))
+    assert all(not item['model'].startswith('point') for entry in schema['models'] for item in entry.get('related', ()))
     assert {'pointmove', 'pointbalance', 'reading'}.isdisjoint(entry['name'] for entry in admin('GET', '/api/_discovery')[1]['models'])
     assert {'PointMove', 'PointBalance', 'Reading'}.isdisjoint(model['name'] for model in admin('GET', '/api/_controls/state')[1]['models'])
     assert {'pointmove', 'pointbalance', 'reading'}.isdisjoint(entry['name'] for entry in app.business.registry.ui_schema()['models'])
