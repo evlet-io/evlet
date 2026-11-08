@@ -96,7 +96,9 @@ svg.i.lg{width:18px;height:18px}
 .b-slate{background:var(--t-slate-bg);color:var(--t-slate)}
 
 /* ---------- shell ---------- */
-.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;height:100%;transition:grid-template-columns .2s ease}
+/* The shell fills the window and never scrolls, not even from a focus or scrollIntoView call:
+   one row as tall as the window, clipped. Only the view (and the sidebar's nav, and side panels) scroll. */
+.app{display:grid;grid-template-columns:var(--sidebar-w) 1fr;grid-template-rows:minmax(0,1fr);height:100%;overflow:hidden;overflow:clip;transition:grid-template-columns .2s ease}
 .app.collapsed{grid-template-columns:60px 1fr}
 .sidebar{background:var(--bg-subtle);border-right:1px solid var(--border);display:flex;flex-direction:column;min-height:0;overflow:hidden}
 .icon-btn{width:30px;height:30px;border-radius:var(--r-sm);display:grid;place-items:center;color:var(--fg-3);flex:none}

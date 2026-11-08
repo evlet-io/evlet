@@ -326,6 +326,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       : (row: () => RecordData) => cellView(ctx, model, meta, row),
   }));
   const onlyTab = derive(() => tab.get() !== 'all' && !query.get() && !filters.active.get().length);
+  /** What a list shows while its rows load: placeholder lines, read out as "Loading projects". */
+  const loadingRows = () => html`<div class="ev-list-loading" role="status" aria-label=${`Loading ${model.plural.toLowerCase()}`}>
+    ${[0, 1, 2, 3, 4].map(() => html`<span class="ev-sk"></span>`)}</div>`;
   const tablePrefs = ctx.prefs.cell<TablePrefs>(`list.${name}`, emptyPrefs());
   const selectable = canDelete || Boolean(state?.moves.length);
   // Beside a panel the list keeps the title (with the number under it), the State and the first amount.
@@ -336,8 +339,10 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const table = (narrow = false) => DataTable<RecordData>({ columns: narrow ? panelColumns : columns, rows, key: row => row.id, label: model.plural, pinned: 1,
     selectable: selectable && !narrow, selection, sort, serverSort: true, onOpen: row => open(row), prefs: tablePrefs, height: 640,
     current: narrow ? current : undefined, onMove: narrow ? row => open(row, false) : undefined,
+    // While rows load the table says so; it shows an empty state only once a load found nothing.
     // Empty only because of the tab: Clear filters would change nothing, so it offers All instead.
-    empty: () => () => onlyTab.get()
+    empty: () => () => loading.get() && !failure.get() ? loadingRows()
+      : onlyTab.get()
       ? EmptyState({ icon: 'search', tint: 'slate', title: `No ${model.plural.toLowerCase()} in this tab`, text: 'Choose another tab, or show them all.',
         action: Button({ label: `Show all ${model.plural.toLowerCase()}`, onClick: () => tab.set('all') }) })
       : EmptyState({ icon: 'search', tint: 'slate', title: `No ${model.plural.toLowerCase()} match`, text: 'Try a different search or clear the filters.',
@@ -509,7 +514,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       on:click=${() => open(row())} on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); open(row()); } }}>
       <span class="l1"><b>${() => titleOf(model, row())}</b>${amountField ? html`<span class="num">${cellView(ctx, model, amountField, row)}</span>` : null}</span>
       <span class="l2">${showNumber ? html`<span class="mono">${() => String(row()[showNumber.name] ?? '')}</span>` : html`<span></span>`}${stateMeta ? cellView(ctx, model, stateMeta, row) : null}</span></div>`,
-      { fallback: () => html`<p class="muted ev-note">No ${model.plural.toLowerCase()} match.</p>` })}</div>` as HTMLElement;
+      { fallback: () => () => loading.get() && !failure.get() ? loadingRows() : html`<p class="muted ev-note">No ${model.plural.toLowerCase()} match.</p>` })}</div>` as HTMLElement;
     element.addEventListener('keydown', event => {
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
       const items = [...element.querySelectorAll<HTMLElement>('[role="option"]')], at = items.indexOf(event.target as HTMLElement);
@@ -525,11 +530,13 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   };
 
   // The table and board are built once per view; loads only change their rows.
+  // The board shows its empty columns only after a load: before the first one it shows the loading lines.
   const mode = derive(() => failure.get() ? 'error'
+    : loading.get() && total.get() === null && view.get() === 'board' ? 'loading'
     : !loading.get() && total.get() === 0 && !query.get() && !filters.active.get().length && tab.get() === 'all' ? 'empty'
     : view.get() === 'list' && panelOpen.get() ? (listWidth.get() && listWidth.get() < COMPACT_WIDTH ? 'compact' : 'narrow') : view.get());
   const content = html`<div role=${tabs ? 'tabpanel' : null} id=${() => tabs ? `ev-${name}-views-${tab.get()}-panel` : null} aria-labelledby=${() => tabs ? `ev-${name}-views-${tab.get()}` : null}>
-    ${match(mode, { error: () => body(), empty: () => body(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager],
+    ${match(mode, { error: () => body(), empty: () => body(), loading: () => loadingRows(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager],
       board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => boardOnly.get() === 'all'}>${() => `Showing ${humanize(boardOnly.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
         match(boardOnly, Object.fromEntries(['all', ...state!.states].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 

@@ -48,6 +48,11 @@ is open (Activity, Related or a table), as a way back to the fields. Its Related
 relations that have records; the Related tab lists every one. Record info has Created and Last
 modified; More > Copy record ID copies the id.
 
+Only the main area scrolls, on every page: the sidebar and the top bar stay in place. On a record
+page the side column stays in place too while the main column scrolls, and scrolls on its own when
+it is taller than the window. In narrow windows and on a phone it sits under the main column and
+scrolls with it.
+
 Two options change this per model:
 
 ```python
@@ -476,6 +481,10 @@ The server still checks every Link on preview and save; the form only avoids kee
 The list's table has no card around it. It runs flush to the edges of the main area, as a child
 table does in focus view, and the first column keeps the page margin so it lines up with the
 toolbar. Beside a side panel and on a phone the table does the same.
+
+While rows load (the first load, a tab, a search), a list with no rows to show yet shows loading
+lines, and the board shows them until its first load. The empty state ("No projects in this tab",
+"No projects yet") shows only after a load found nothing.
 
 A list's Filter button (with a count of active filters) opens the filter side panel, docked
 beside the list inside the page, like the record side panel. There is no overlay and no
