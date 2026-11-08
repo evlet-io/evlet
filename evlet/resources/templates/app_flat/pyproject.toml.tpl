@@ -15,6 +15,3 @@ title = "{{title}}"
 [tool.setuptools]
 package-dir = {"{{name}}" = "."}
 include-package-data = true
-
-[tool.setuptools.package-data]
-"{{name}}" = ["views/**/*.ts", "views/**/*.tsx", "views/**/*.js", "views/**/*.css"]

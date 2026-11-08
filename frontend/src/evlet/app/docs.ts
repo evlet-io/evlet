@@ -64,18 +64,6 @@ class PlanProject(Slip):
 
 app = Application(database, auth=auth, slips=[PlanProject])`;
 
-const pageCode = `from evlet.ui import PageView, Column, Card, Text, Button, Navigate
-
-welcome = PageView(
-    name="welcome", route="/welcome", title="Welcome",
-    layout=Column(children=[
-        Card(title="Your workspace", children=[
-            Text("A page defined in Python."),
-            Button("Open notes", on_click=Navigate.to_list(Note)),
-        ]),
-    ]),
-)`;
-
 interface Topic { id: string; title: string; render: (ctx: AppContext) => Child }
 
 const code = (text: string) => html`<div class="ev-code"><div><span>Python</span><button type="button" class="link" on:click=${() => void copyText(text, 'the example')}>Copy</button></div><pre><code>${text}</code></pre></div>`;
@@ -121,7 +109,7 @@ const TOPICS: Topic[] = [
       p('Save this in app.py. It defines a model and a protected local application:'), code(startCode))}
     ${section('2. Open the app', terminal('uvicorn app:app --host 127.0.0.1 --port 8000 --reload'),
       p('Open http://127.0.0.1:8000. Create the first administrator account, then sign in. Docs opens first. Choose Notes in the sidebar to create and edit a record.'),
-      p('App uses a local SQLite database in .data and loopback-only authentication. Supply an explicit database and authentication configuration when deploying. For a scaffold with separate model and application files, run evlet new my_app and follow its README.'))}
+      p('App uses a local SQLite database in .data and loopback-only authentication. Supply an explicit database and authentication configuration when deploying. For a project with separate apps and sites, run evlet setup myproject --app notes --instance acme --dev.'))}
     ${section('3. Shape the screens from the model', p('Every model gets a list, a board when it has a State, and a record view. Meta options choose the columns, sections, key fields and related records. See How screens are built.'))}
     ${section('4. Keep control of the details', p('Use Application with your existing database, registry, policy, actions and storage when you need explicit configuration. The screens use the same query and mutation endpoints.'))}
   </article>` },
@@ -131,7 +119,7 @@ const TOPICS: Topic[] = [
         ['View', 'The page: a list, a board, a record or these docs.'], ['Layers', 'Menus, dialogs, drawers, toasts and the search palette.']]))}
     ${section('From a model to its screens', p('Lists show Meta.list_fields (up to eight), with the title pinned. A model with a State also gets a board and saved views per state. A record shows the title, the State as steps with its moves, a summary strip, a Details tab built from Meta.layout, one tab per Table and the side panel.'), code(screensCode))}
     ${section('Routes', p('Every model has /app/model, /app/model/new and /app/model/123. Lists keep their search, sort, page and view in the address, so a link opens the same list. A record keeps its tab: /app/invoice/42?tab=lines.'),
-      p('Reports run at /reports/name, with the filters they ran with, the sort and the page in the address. Python pages (PageView) and native panels keep their Python API but are not rendered here.'), code(pageCode))}
+      p('Reports run at /reports/name, with the filters they ran with, the sort and the page in the address.'))}
   </article>` },
   { id: 'state', title: 'Rules and actions', render: () => html`<article class="ev-doc-article">
     ${section('The model decides; the screen explains', p('Calculated values show their rule. Rules hide and clear fields, make them required, or lock them, and say why in place. The browser evaluates the same finite rules as the server, and the server checks every write again.'), code(rulesCode))}
@@ -161,8 +149,6 @@ const TOPICS: Topic[] = [
     ${section('Working from the repository', terminal('bash scripts/playground.sh --setup'), p('This starts the backend, browser development server and worker locally. Python-only installed applications use the bundled production UI and do not need Node.'))}
   </article>` },
 ];
-
-export const docTopics = TOPICS.map(topic => ({ id: topic.id, title: topic.title }));
 
 export function DocsPage(ctx: AppContext, topicId = 'overview'): HTMLElement {
   const topic = TOPICS.find(item => item.id === topicId) ?? TOPICS[0];

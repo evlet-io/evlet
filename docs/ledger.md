@@ -53,7 +53,7 @@ Eva, the connector) must reach them.
   identity). They always increase, are never reused, and are plain `int` in Python. They are not
   the time-based [record ids](model-engine.md#record-ids) and have no text form.
 - **No public surface.** `ledger = True` means `Meta.api = None`, and any other `api` value is
-  refused. The model is left out of every HTTP route, the schema, `/api/ui`, generated screens,
+  refused. The model is left out of every HTTP route, the schema, generated screens,
   Discovery, MCP, Eva, tools, the connector, search, exports, Controls and the sidebar. Trusted
   Python is the only writer. Measures and Python reports still read it as a table.
 - **Stored fields only.** A ledger model declares `Text`, `Integer`, `Decimal`, `Currency`,

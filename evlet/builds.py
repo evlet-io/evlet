@@ -49,7 +49,7 @@ def module_names(package):
 def discover(package, modules=None):
     from .instances import AppDefinition
     from .migrations import Migration
-    from .forms import Report, Dialog
+    from .forms import Report
     models, migrations, seen, reports, endpoints, tasks, schedules = [], [], set(), [], [], [], []
     for name in modules if modules is not None else module_names(package):
         module = import_module(name)
@@ -179,11 +179,8 @@ def prepare(root, packages):
             if result.returncode:
                 raise ValueError('Application build failed:\n' + result.stderr.strip())
             manifest = json.loads((stage / 'manifest.json').read_text())
-            from .native import build_assets
-            manifest['native'] = build_assets(tuple(replace(package, path=stage / 'sources' / package.name) for package in packages), stage,
-                                               {model['resource'] for model in manifest['models']} | set(manifest['reports']) | {dialog['resource'] for dialog in manifest['dialogs']})
             manifest['outputs'] = {str(path.relative_to(stage)): hashlib.sha256(path.read_bytes()).hexdigest()
-                                   for folder in ('sources', 'assets') for path in sorted((stage / folder).rglob('*')) if path.is_file() and '__pycache__' not in path.parts}
+                                   for path in sorted((stage / 'sources').rglob('*')) if path.is_file() and '__pycache__' not in path.parts}
             manifest.update(fingerprint=fingerprint, inputs=inputs)
             atomic_json(stage / 'manifest.json', manifest)
             request.unlink()

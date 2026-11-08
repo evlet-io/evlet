@@ -2,7 +2,7 @@
 // records (through each model's list search), pages and actions, and preferences as you type.
 // Arrow keys move through rows and the grid, Enter opens. Quick access is chosen per user.
 
-import { html, when } from '../dom';
+import { html } from '../dom';
 import { cell, derive, effect, untrack } from '../reactive';
 import { Icon, SegmentedControl, Button } from '../ui/base';
 import { tint as safeTint, type Tint } from '../ui/core';

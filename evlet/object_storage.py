@@ -1,7 +1,6 @@
 """Private S3-compatible attachments through an explicitly supplied SDK client."""
 
 import hashlib
-from pathlib import Path
 import re
 import secrets
 

@@ -206,8 +206,6 @@ serves. Payloads, checkpoints and exception messages are not shown; see
 `playground` works outside a project, uses temporary demo data, and removes that
 data on exit. It runs the existing framework examples with their generated screens.
 It does not read `EVLET_DATABASE`, create an app or touch customer instances.
-Its Python pages (the Projects demo and the Layouts page) are registered in `/api/ui`
-but not rendered by the browser interface.
 `docs` serves this installed version's guides locally without a login or database.
 `effects check` recomputes the rows records post to other models and reports differences.
 It reads one snapshot without writing or taking the write lock, so it may run beside a server;
@@ -242,7 +240,7 @@ apps/notes/
 Models, reports and nested services are discovered automatically. Permissions are
 declared on resources, with default denial. See the
 [declarative guide](amendment-v2.md) for the complete contract and optional
-`reports/`, `services/`, `migrations/` and `views/` directories.
+`reports/`, `services/` and `migrations/` directories.
 
 The following nested layout remains available with `evlet app notes --legacy`:
 
@@ -256,7 +254,6 @@ apps/notes/
     hooks.py
     permissions.py
     models/__init__.py
-    views/__init__.py
     actions/__init__.py
     migrations/__init__.py
   tests/test_models.py
@@ -288,14 +285,12 @@ Keep customer data and secrets in instances, outside the app repository.
 ```python
 from evlet import AppDefinition
 from .models import models
-from .views import views
 from .actions import actions
 from .permissions import rules
 from .migrations import migrations
 
 app = AppDefinition(
     models=models,
-    views=views,
     actions=actions,
     permissions=rules,
     migrations=migrations,
@@ -303,12 +298,9 @@ app = AppDefinition(
 ```
 
 The contract composes the existing APIs. It also accepts `children`, `attachments`,
-`tasks`, `schedules`, and a `ui=ViewRegistry(...)` for view extensions and component
-contracts. `views` and UI registries supply the existing routes and navigation.
-Registering a Python component contract alone does not install JavaScript. The
-new `views/` native extension contract packages explicit TS/JS client modules
-under generation-specific authenticated URLs; arbitrary app directories and
-Python source remain private. Hooks, helpers and action handlers are trusted code.
+`tasks` and `schedules`. Apps scaffolded before 0.4 pass `views=views` with an empty
+`views`; that still works, but Python pages were removed in 0.4. App directories and
+Python source stay private. Hooks, helpers and action handlers are trusted code.
 
 Models, actions, routes, permission rules and task names must not conflict across
 apps. The generated starter preserves the complete app name, including underscores,

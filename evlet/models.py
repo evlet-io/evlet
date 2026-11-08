@@ -55,6 +55,14 @@ class ValidationError(ValueError):
         super().__init__("; ".join(f"{key}: {value}" for key, value in errors.items()))
 
 
+def checked_body(body, allowed, message, *, exact=False, nonempty=False, field='_form'):
+    """A JSON request body that is an object with only the allowed keys (exactly those when exact)."""
+    keys = set(body) if isinstance(body, dict) else None
+    if keys is None or (keys != set(allowed) if exact else keys - set(allowed)) or nonempty and not keys:
+        raise ValidationError({field: message})
+    return body
+
+
 class ModelType(type):
     def __new__(mcls, name, bases, namespace):
         fields = {}

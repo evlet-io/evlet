@@ -5,8 +5,7 @@ table. Dispatch, the allowed browser origins and `evlet routes` all read that ta
 It is never cached to disk.
 
 An instance with no `routes.py` serves the same URLs as before: the desk shell at
-`/`, `/login`, `/docs`, `/app/...`, `/reports/<name>`, `/assets/...` and the
-registered Python page routes. `/settings/accounts` redirects (301) to `/controls/users`.
+`/`, `/login`, `/docs`, `/app/...`, `/reports/<name>` and `/assets/...`. `/settings/accounts` redirects (301) to `/controls/users`.
 
 ## Frontends
 
@@ -224,9 +223,8 @@ under `/_/` and `/.well-known/` are 404. `evlet dev` and `evlet playground` also
 `/_dev/signin` for one-time sign-in links, to loopback clients only
 ([cli.md](cli.md#development-sign-in-links)); every other server answers 404 there.
 
-No app frontend, `PageView` route or `routes.py` entry may use one. Python page
-routes must also start with a fixed segment, not a parameter. Boot fails with a
-message that names the app and the path.
+No app frontend or `routes.py` entry may use one. Boot fails with a message that
+names the app and the path.
 
 ## Instance routes file
 
@@ -281,13 +279,12 @@ folders, where static frontends keep `dist`):
 4. The clash check across the table, per host and first segment, ignoring case.
    Two apps on one path fail with, for example,
    `crm.portal and sales.portal both want /portal on erp.acme.com. Move one in instances/acme/routes.py.`
-   Python pages from any app may share a segment with each other, but not with a frontend.
 5. Freeze.
 
 The `RouteTable` is immutable. It exposes `match(host, path)` returning
 `(frontend, base, rest)` or `None`, `redirect(host, path)`, `hosts()`, `origins()`,
 `realm(host)`, `realms()`, `scopes(host)` and `rows()`. Paths with no mounted base
-belong to the desk shell at `/`, which serves the host root and the Python page routes.
+belong to the desk shell at `/`, which serves the host root.
 `LocalAuth(origins=table.origins(), realms=table.realms())` takes its hosts and realms
 from the table.
 

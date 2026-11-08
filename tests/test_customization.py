@@ -15,8 +15,8 @@ from test_controls import add_user, password, save  # noqa: F401
 from test_postgres import pg_dsn  # noqa: F401
 
 
-def models():
-    """Fresh classes per test: instance fields are attached to the classes themselves."""
+def models(lead_meta=None):
+    """Fresh classes per test: instance fields are attached to the classes themselves. lead_meta is Lead's Meta."""
     class Customer(Model):
         customer_name = Text(required=True)
 
@@ -26,6 +26,8 @@ def models():
         value = Decimal(scale=2)
         customer = Link(Customer)
         notes = LongText()
+        if lead_meta is not None:
+            Meta = lead_meta
 
     class Invoice(Model):
         reference = Text(unique=True)
@@ -169,9 +171,6 @@ def test_an_unplaced_field_is_added_to_the_last_section(app):
                          ([{'title': 'A', 'fields': [{'name': 'title', 'width': 6}, {'name': 'title', 'width': 6}]}], 'Put each field in one place.'),
                          ([{'title': 'A', 'fields': [{'name': 'nothing', 'width': 6}]}], 'Place fields of Lead by name')):
         assert message in save(admin, ('layout', 'Lead', bad))[1]['fields']['changes.0']
-    ui = admin('GET', '/api/ui')[1]
-    form = next(view for view in ui['views'] if view['name'] == 'lead.form')
-    assert [group['id'] for group in form['layout']['slots']['children']] == ['main_details', 'section_2']
 
 
 def test_a_layout_section_can_collapse_and_choose_how_it_starts(app):
@@ -801,7 +800,7 @@ def test_layouts_keep_section_ids_and_hide_unreadable_sections(app):
                 ('field', 'Lead.notes', {'label': 'Secret label'}),
                 ('layout', 'Lead', [{'title': 'Secret section', 'fields': [{'name': 'notes', 'width': 12}]}, {'title': 'Main', 'fields': [{'name': 'title', 'width': 6}]}]),
                 ('list', 'Lead', {'columns': ['notes', 'title'], 'page_size': 25, 'sort': '-notes'}))[0] == 200
-    seen = json.dumps(schema_of(editor, 'lead')) + json.dumps(editor('GET', '/api/ui')[1])
+    seen = json.dumps(schema_of(editor, 'lead'))
     assert 'Secret' not in seen and '"notes"' not in seen
 
 

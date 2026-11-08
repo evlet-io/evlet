@@ -13,6 +13,7 @@ import { captureNew, capture, isEmpty, sizeOf, type NodeChanges } from '../model
 import type { UnsavedInfo, UnsavedLimits } from './client';
 import type { AppContext } from './context';
 import type { ScreenModel } from './meta';
+import { safeStorage } from './prefs';
 
 export const DEFAULT_LIMITS: UnsavedLimits = { server_days: 30, server_entries: 200, browser_days: 7, browser_entries: 20, entry_kb: 256 };
 export const KEPT = 'Unsaved changes kept, restore when you return';
@@ -22,10 +23,6 @@ const WAIT_MS = 5000;
 
 const tooLarge = (kb: number) => `These unsaved changes are larger than ${kb} KB, so they are not kept. They stay in this tab until you save or close it.`;
 const now = () => Math.floor(Date.now() / 1000);
-
-function safeStorage(): Storage | null {
-  try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
-}
 
 export interface LocalEntry { changes: NodeChanges; saved_at: number }
 

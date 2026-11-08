@@ -36,8 +36,7 @@ class Application:
     # build_instance sets this: an instance's framework steps run only inside evlet migrate.
     managed_framework = False
 
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, views=(), ui=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None, prints=()):
-        from .ui import ViewRegistry
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None, prints=()):
         from .routing import RouteTable, resolve_routes
         from .naming import check_declarations
         check_declarations(database.registry, {child.model for child in database.registry.children})
@@ -51,10 +50,6 @@ class Application:
             raise ValueError("Configure explicit Host header values")
         self._stopping = asyncio.Event()
         self.name = name
-        self.ui = ui or ViewRegistry(views)
-        if ui is not None and views:
-            raise ValueError("Pass either views or a UI registry")
-        self.ui.validate(database.registry.ui_schema())
         self.database = database
         self.registry = database.registry
         if auth is None and (policy is not None or actions or children or attachments or storage is not None or jobs is not None or events is not None):
@@ -73,7 +68,6 @@ class Application:
             from .printing import Prints
             self.business.prints = Prints(self.business, prints)
             self.business.apis = tuple(apis)
-            self.business.ui = self.ui
             self.business.controls.routes = self.routes
             for connector in connectors:
                 self.business.connectors.register('app', connector)

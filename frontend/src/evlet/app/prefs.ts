@@ -92,6 +92,7 @@ export class Prefs {
 /** One recently opened record. */
 export interface RecentRecord { model: string; id: string; title: string; at?: number }
 
-function safeStorage(): Storage | null {
+/** localStorage, or null where the browser blocks it. */
+export function safeStorage(): Storage | null {
   try { return typeof localStorage === 'undefined' ? null : localStorage; } catch { return null; }
 }

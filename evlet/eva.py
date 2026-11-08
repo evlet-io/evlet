@@ -32,7 +32,7 @@ from xml.etree import ElementTree
 from .auth import AccessError, KeyAccess, User
 from .identity import checked as record_id, text as text_id
 from .connector import ConnectorError
-from .models import ValidationError
+from .models import ValidationError, checked_body
 from .permissions import calling
 from .tools import ApprovalNeeded, NAMES, Tool, label, redacted
 
@@ -752,8 +752,7 @@ class Eva:
 
     def create_conversation(self, user, body, *, task_id=None, connection=None):
         body = body or {}
-        if not isinstance(body, dict) or set(body) - {'title', 'context'}:
-            raise ValidationError({'_form': 'Use title and context'})
+        checked_body(body, {'title', 'context'}, 'Use title and context')
         title = body.get('title', 'New chat')
         if not isinstance(title, str) or not 1 <= len(title.strip()) <= 120:
             raise ValidationError({'title': 'Use a title of 1 to 120 characters'})
@@ -813,8 +812,7 @@ class Eva:
                 'usage': {'tokens': usage['tokens'], 'cost': aed(usage['cost'])}}
 
     def change_conversation(self, user, conversation_id, body):
-        if not isinstance(body, dict) or not body or set(body) - {'title', 'archived'}:
-            raise ValidationError({'_form': 'Use title or archived'})
+        checked_body(body, {'title', 'archived'}, 'Use title or archived', nonempty=True)
         if 'title' in body and (not isinstance(body['title'], str) or not 1 <= len(body['title'].strip()) <= 120):
             raise ValidationError({'title': 'Use a title of 1 to 120 characters'})
         if 'archived' in body and type(body['archived']) is not bool:

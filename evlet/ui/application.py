@@ -12,7 +12,7 @@ class App(Application):
     """Local application defaults. Supply database/auth explicitly for a deployed site."""
 
     def __init__(
-        self, name, *, models=(), views=(), database=None, auth=None, **options
+        self, name, *, models=(), database=None, auth=None, **options
     ):
         if not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]*", name):
             raise ValueError(
@@ -31,4 +31,4 @@ class App(Application):
                 secure_cookies=False,
                 allow_setup=True,
             )
-        super().__init__(database, auth=auth, name=name, views=views, **options)
+        super().__init__(database, auth=auth, name=name, **options)

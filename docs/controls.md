@@ -213,8 +213,8 @@ only the label, help text, placeholder and hidden. A field declared with `defaul
 that default; Controls can't replace it with a fixed value. Required and hidden options apply to what people
 send through the API (create and update, legacy and document models alike); actions, services, jobs
 and other app code may still leave a field empty or set a hidden option. Read only applies to every
-role in the API. Added options and defaults apply on every write path. `/api/schema` and `/api/ui`
-show the merged values (`choices` lists the shown options and `retired_choices` the hidden ones);
+role in the API. Added options and defaults apply on every write path. `/api/schema`
+shows the merged values (`choices` lists the shown options and `retired_choices` the hidden ones);
 sections and labels of fields a role can't read are left out.
 
 **Form layout** (kind `layout`, key `Model`): `[{"title": ..., "fields": [{"name": ..., "width": 6 | 12}], "collapsible": true, "collapsed": false | true | "empty"}]`,
@@ -398,8 +398,7 @@ they are removed on the Models page.
 | Kind | File | Code |
 |---|---|---|
 | `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}`. The `own_customer` preset is written as the public `own_customer()`, or `own_customer(field='id')` on the customer model |
-| `field`, `custom`, `naming` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and `Meta.naming = Naming(...)`. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
-| `layout`, `list` | `apps/<app>/<package>/views/__init__.py` | `FormView(model=..., layout=Column(children=[FormLayout(...)]))`, `ListView(model=..., columns=..., page_size=..., order_by=..., open_in=...)` |
+| `field`, `custom`, `naming`, `layout`, `list` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and the `Meta` options: `naming = Naming(...)`, `layout = (Section(...), ...)` with `tabs` and `default_tab`, and `list_fields`, `open_in`, `list_tabs` and `list_tab`. Pasted into the model, they reproduce the layout and list overrides. Field widths (set by the field type) and a list's page size and sort have no `Meta` form, so they are comments. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
 | `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for session length, lockout and minimum password length, which config.py reads (the block keeps what config.py sets today with the overrides on top; restart, then reset the overrides); `two_step_roles = (...)` for `security.two_step_roles`, `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read those three yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.

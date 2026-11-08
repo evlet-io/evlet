@@ -19,12 +19,10 @@ def collect(app):
     status, result, _ = c('POST', '/api/_draft/order', {'values': values, 'revision': 4})
     assert status == 200
     result['values'].pop('_key')
-    ui = c('GET', '/api/ui')[1]
-    form = next(view for view in ui['views'] if view['name'] == 'order.form')
     status, created, _ = c('POST', '/api/order', values)
     assert status == 201
     _, saved, headers = c('GET', f"/api/order/{created['id']}")
-    return {'models': models, 'input': values, 'preview': result, 'form': form,
+    return {'models': models, 'input': values, 'preview': result,
             'saved': saved, 'etag': headers[b'etag'].decode()}
 
 

@@ -10,6 +10,7 @@ from evlet import Model, Child, Table, Decimal, Currency, Boolean, Integer, Text
 from evlet.calc import (D, F, parent, row, round, coalesce, safe_divide, Document, CalcError, Num, parse, text,
                         add, sub, mul, div, quantize, total, compare)
 from evlet.declarations import Ref
+from finite_fixtures import sources
 
 
 class FiniteMeta:
@@ -60,12 +61,10 @@ def test_inclusive_and_exclusive_invoice_with_one_toggle():
     snap = doc.snapshot()
     item = snap['children']['items'][0]
     assert (item['net'], item['vat'], item['total']) == ('100.00', '5.00', '105.00')
-    seen = []
-    doc.observe(doc.root.handle, 'grand_total', lambda result: seen.append(result.value))
     doc.set(doc.root.handle, 'inclusive', False)
     item = doc.snapshot()['children']['items'][0]
     assert (item['net'], item['vat'], item['total']) == ('105.00', '5.25', '110.25')
-    assert [text(value) for value in seen] == ['110.25'] and doc.revision == 2
+    assert doc.snapshot()['grand_total'] == '110.25' and doc.revision == 2
 
 
 def test_row_edit_only_recalculates_that_row_and_its_aggregates():
@@ -79,15 +78,12 @@ def test_row_edit_only_recalculates_that_row_and_its_aggregates():
     assert doc.snapshot()['grand_total'] == text(Num(47250 + 31500 + 31500, 2), 2)
 
 
-def test_parent_toggle_publishes_one_coherent_revision():
+def test_parent_toggle_settles_in_one_revision():
     doc = document(Invoice, {'inclusive': True, **lines(*[{'qty': '1', 'rate': '105'} for _ in range(3)])})
-    revisions = []
-    doc.observe(doc.root.handle, 'grand_total', lambda result: revisions.append((doc.revision, text(result.value))))
-    for index in range(3):
-        doc.observe(doc.find(f'items.r{index}'), 'net', lambda result: revisions.append((doc.revision, text(result.value))))
     doc.set(doc.root.handle, 'inclusive', False)
-    assert {revision for revision, _ in revisions} == {2}
-    assert sorted(value for _, value in revisions) == ['105', '105', '105', '330.75']
+    snap = doc.snapshot()
+    assert doc.revision == 2 and snap['grand_total'] == '330.75'
+    assert [item['net'] for item in snap['children']['items']] == ['105.00', '105.00', '105.00']
 
 
 def test_filtered_membership_changes_with_flag():
@@ -205,7 +201,7 @@ def test_nested_relays_and_independent_branches():
     assert doc.counts[b, 'amount'] == before
 
 
-def test_diamond_publishes_final_values_together():
+def test_diamond_settles_final_values_together():
     class Diamond(Model):
         Meta = FiniteMeta
         a = Decimal(default=0)
@@ -213,11 +209,9 @@ def test_diamond_publishes_final_values_together():
         c = Decimal(compute=a * 3)
         d = Decimal(compute=b + c)
     doc = document(Diamond, {'a': '1'})
-    seen = []
-    for name in 'bcd':
-        doc.observe(doc.root.handle, name, lambda result, name=name: seen.append((name, text(result.value), doc.snapshot()['d'])))
     doc.set(doc.root.handle, 'a', '4')
-    assert sorted(seen) == [('b', '14', '26.0000'), ('c', '12', '26.0000'), ('d', '26', '26.0000')]
+    snap = doc.snapshot()
+    assert (snap['b'], snap['c'], snap['d']) == ('14.0000', '12.0000', '26.0000') and doc.revision == 2
 
 
 # T16, A25, A44: cycles are rejected before execution
@@ -482,12 +476,9 @@ def test_empty_tables_and_excluded_invalid_rows():
 
 # Structure, batches and publication
 
-def test_structure_commands_batches_and_disposal():
+def test_structure_commands_and_batches():
     doc = document(Invoice, {'inclusive': False, **lines({'qty': '1', 'rate': '10'})})
     root = doc.root.handle
-    events = []
-    doc.observe(root, 'grand_total', lambda result: events.append(text(result.value)))
-    doc.observe_table(root, 'items', lambda handles: events.append(len(handles)))
 
     def edits(cmds):
         new = cmds.add_row(root, 'items', {'_key': 'n', 'qty': '2', 'rate': '5'})
@@ -495,7 +486,6 @@ def test_structure_commands_batches_and_disposal():
         cmds.batch(lambda inner: inner.set(doc.find('items.r0'), 'qty', '3'))
     doc.batch(edits)
     assert doc.snapshot()['grand_total'] == text(Num(4410, 2), 2) and doc.revision == 2
-    assert events == ['44.1', 2]
     with pytest.raises(CalcError, match='COMPUTED_FIELD_WRITE'):
         doc.set(root, 'grand_total', '1')
     with pytest.raises(CalcError, match='COMPUTED_FIELD_WRITE'):
@@ -513,15 +503,6 @@ def test_structure_commands_batches_and_disposal():
     with pytest.raises(CalcError, match='ASYNC_BATCH_UNSUPPORTED'):
         doc.batch(later)
 
-    def reenter(result):
-        doc.set(root, 'inclusive', True)
-    stop = doc.observe(root, 'net_total', reenter)
-    with pytest.raises(CalcError, match='REACTIVE_REENTRANCY'):
-        doc.set(doc.find('items.n'), 'qty', '4')
-    stop()
-    stop()
-    assert doc.snapshot()['inclusive'] is False and doc.revision == 3
-
     handles = [doc.find('items.n'), doc.find('items.r0')]
     totals = doc.snapshot()['grand_total']
     doc.reorder(root, 'items', handles)
@@ -530,17 +511,12 @@ def test_structure_commands_batches_and_disposal():
     assert doc.snapshot()['children']['items'][0]['_key'] == 'r0'
     with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
         doc.add_row(root, 'items', {'_key': 'r0'})
-    doc.dispose()
-    assert doc.subscriptions() == 0
-    with pytest.raises(CalcError):
-        doc.set(root, 'inclusive', True)
 
 
-def test_nested_moves_removal_and_leaks():
+def test_nested_moves_and_removal_leave_no_rows_behind():
     doc = document(Project, project_data())
     root = doc.root.handle
     task = doc.find('phases.A.tasks.a2')
-    doc.observe(task, 'amount', lambda result: None)
     doc.move_row(task, doc.find('phases.B'), 'tasks', 0)
     snap = doc.snapshot()
     assert [phase['total'] for phase in snap['children']['phases']] == ['200.00', '700.00'] and snap['total'] == '900.00'
@@ -548,12 +524,10 @@ def test_nested_moves_removal_and_leaks():
         doc.move_row(doc.find('phases.A'), doc.find('phases.B'), 'tasks', 0)
     for _ in range(20):
         phase = doc.add_row(root, 'phases', {'children': {'tasks': [{'hours': '1'}]}})
-        doc.observe(phase, 'total', lambda result: None)
         doc.remove_row(phase)
-    assert len(doc.rows) == 6 and len(doc.deps) == len(Document(doc.plan, doc.sources()).deps)
-    assert doc.subscriptions() == 1
+    assert len(doc.rows) == 6 and len(doc.deps) == len(Document(doc.plan, sources(doc)).deps)
     doc.remove_row(doc.find('phases.B'))
-    assert doc.subscriptions() == 0 and doc.snapshot()['total'] == '200.00'
+    assert doc.snapshot()['total'] == '200.00'
 
 
 def test_replace_rows_validates_ids_and_keeps_handles():
@@ -567,11 +541,9 @@ def test_replace_rows_validates_ids_and_keeps_handles():
     assert doc.snapshot()['grand_total'] == '22.05'
 
 
-def test_explain_and_duplicate_recompute():
+def test_duplicate_recompute():
     doc = document(Invoice, {'inclusive': True, **lines({'qty': '1', 'rate': '105'})})
-    info = doc.explain(doc.root.handle, 'net_total')
-    assert info['role'] == 'computed' and 'items.r0.net' in info['inputs'] and info['profile'] == 'finite40-hu18-v1'
-    copy = Document(doc.plan, doc.sources(identities=False))
+    copy = Document(doc.plan, sources(doc, identities=False))
     assert copy.snapshot()['grand_total'] == doc.snapshot()['grand_total']
 
 
@@ -622,7 +594,7 @@ def test_incremental_settlement_matches_full_recomputation():
             doc.set(generator.choice(handles), 'taxable', generator.random() < 0.5)
         else:
             doc.remove_row(generator.choice(handles))
-        fresh = Document(doc.plan, doc.sources())
+        fresh = Document(doc.plan, sources(doc))
         assert strip(fresh.snapshot()) == strip(doc.snapshot()), step
 
 
@@ -737,18 +709,11 @@ def test_review_regressions_for_engine_edges():
     root = doc.root.handle
 
     def failing(cmds):
-        new = cmds.add_row(root, 'items', {'qty': '1', 'rate': '7'})
-        cmds.observe(new, 'total', lambda result: None)
+        cmds.add_row(root, 'items', {'qty': '1', 'rate': '7'})
         raise RuntimeError('stop')
     with pytest.raises(RuntimeError):
         doc.batch(failing)
-    assert doc.subscriptions() == 0 and len(doc.rows) == 1
-    doc.observe(root, 'grand_total', lambda result: doc.dispose())
-    with pytest.raises(CalcError, match='REACTIVE_REENTRANCY'):
-        doc.add_row(root, 'items', {'qty': '1', 'rate': '1'})
-    assert doc.snapshot()['grand_total'] == '1.05'
-    with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
-        doc.observe(root, 'missing', lambda result: None)
+    assert len(doc.rows) == 1
 
 
 def test_allocation_residuals_are_explicit_not_silently_lost():
@@ -835,7 +800,7 @@ def test_rolled_back_commands_keep_earlier_batch_rows_and_bounds_accept_exponent
         with pytest.raises(RuntimeError):
             commands.batch(lambda inner: (inner.set(root, 'inclusive', True), (_ for _ in ()).throw(RuntimeError('stop'))))
     doc.batch(run)
-    assert doc.snapshot()['grand_total'] == Document(plan(Invoice), doc.sources()).snapshot()['grand_total'] == '21.00'
+    assert doc.snapshot()['grand_total'] == Document(plan(Invoice), sources(doc)).snapshot()['grand_total'] == '21.00'
     assert doc.snapshot()['inclusive'] is False
 
     class Capped(Model):
@@ -975,7 +940,7 @@ def test_link_paths_are_validated_at_registry_build():
     doc.set_lookups('area', 2, {'country': 1})
     doc.set_lookups('country', 1, {'offset': '5'})
     assert doc.snapshot()['result'] == '15.0000' and doc.lookup_requests() == []
-    assert '@country.offset' in doc.explain(doc.root.handle, 'result')['inputs']
+    assert ('@country', 'offset') in doc.deps[doc.root.handle, 'result']
     # A failed command inside a batch leaves the lookups as they were.
     doc.batch(lambda session: pytest.raises(CalcError, session.set_lookups, 'country', 1, {'nope': 1}))
     with pytest.raises(RuntimeError):

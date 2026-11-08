@@ -54,7 +54,6 @@ export function setProp(ctx: ControlsContext, model: string, name: string, prop:
 }
 
 const fieldsOf = (model: ModelInfo) => model.fields_detail;
-const infoOf = (model: ModelInfo, name: string) => model.fields_detail.find(item => item.name === name);
 
 // ---------- the page ----------
 

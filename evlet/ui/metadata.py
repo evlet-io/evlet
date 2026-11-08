@@ -94,7 +94,6 @@ def view_for(model):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
     # App fields only: instance fields (x_) differ per database and are added by Controls. The standard
     # name shows (first) on models whose naming fills it; the standard title follows its source and never shows.
-    from ..naming import standard
     named = getattr(getattr(meta, 'naming', None), 'field', None) == 'name' and standard(model.__app_fields__.get('name')) == 'name'
     visible = {name: field for name, field in model.__app_fields__.items()
                if (standard(field) == 'name' and named) or (not standard(field) and not field.hidden)}

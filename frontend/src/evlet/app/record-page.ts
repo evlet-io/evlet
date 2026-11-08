@@ -7,14 +7,14 @@
 import { html, match, when, type Child } from '../dom';
 import { ApiError, ValidationError, type RecordData } from '../api';
 import { legacyRecordId, recordId } from '../ids';
-import { batch, cell, derive, effect, onCleanup, runWithOwner, untrack, type Readable } from '../reactive';
+import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Readable } from '../reactive';
 import type { Route } from '../router';
 import { RecordStore, type Field, type Rules } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
-import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, stateTint, statusTint, type FieldLike } from '../ui/fields';
+import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
 import { flowGrid, FoldSection, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
 import { NoteComposer } from './composer';
 import { FormSection, KeyValueList } from '../ui/inline';
@@ -193,7 +193,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const has = (field: string) => store.root.fields.has(field);
   const sequence = sequenceField(model), numbered = numberField(model);
   const stateValue = state ? () => String(store.field(state.field).value.get() ?? '') : () => '';
-  const recordId = () => store.id;
 
   // ---------- title and crumbs ----------
 

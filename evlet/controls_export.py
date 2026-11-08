@@ -82,7 +82,7 @@ class Exporter:
         return app, any(item['id'] == app and item.get('layout') == 'flat' for item in self.controls.apps)
 
     def folder(self, model):
-        """The package folder for permissions.py and views: apps/<app>[/<package>], or the module's package."""
+        """The package folder for permissions.py: apps/<app>[/<package>], or the module's package."""
         package = model.__module__.split('.')[0]
         app, flat = self.app(model)
         return package if app is None else f'apps/{app}' if flat else f'apps/{app}/{package}'
@@ -121,8 +121,8 @@ class Exporter:
                 f"    ({role!r}, {model.__name__}): Rule(operations={literal(tuple(value['ops']))}, read_fields={fields(value['read'])}, "
                 f"write_fields={fields(value['write'])}, scope={self.scope(role, model, value['scope'])}),")
 
-    def model_class(self, name, fields, naming):
-        """class Model(Model): the changed field lines, the instance fields and Meta.naming."""
+    def model_class(self, name, fields, naming, meta=()):
+        """class Model(Model): the changed field lines, the instance fields and the Meta options."""
         model = self.models[name]
         lines = [f'class {name}(Model):']
         declared = model.__declared_fields__
@@ -132,42 +132,50 @@ class Exporter:
                 lines.append(instance_line(field, definition, props, self.registry))
             else:
                 lines.append(field_line(field, type(declared[field]).__name__, *getattr(declared[field], 'arguments', ((), {})), props))
+        if naming is not None or meta:
+            lines += [''] * (len(lines) > 1) + ['    class Meta:']
         if naming is not None:
             file = model.Meta.naming
-            lines += [''] * (len(lines) > 1) + ['    class Meta:', '        naming = Naming(', f'            {file.field!r},']
+            lines += ['        naming = Naming(', f'            {file.field!r},']
             for series in naming:
                 options = {'when': series['when']} if series['when'] else {}
                 lines.append(f"            {call('Series', (series['format'],), options | {'label': series['label'], 'id': series['id']})},")
             if file.date_field:
                 lines.append(f'            date_field={file.date_field!r},')
             lines.append('        )')
+        lines += ['        ' + line for line in meta]
         return '\n'.join(lines)
 
     def layout(self, name, value):
-        from .customization import sections_of, tabs_of
+        """Meta.layout as Section(...) lines, with the record tab order."""
+        from .customization import panel_of, sections_of, tabs_of, width
         model, sections, (tabs, default_tab) = self.models[name], sections_of(value), tabs_of(value)
-        children = []
-        for index, section in enumerate(sections):
-            fields = ', '.join(call('Field', (item['name'],), {'id': item['name'], **({'width': 12} if item['width'] == 12 else {})}) for item in section['fields'])
-            children.append(f"    FormLayout(id={'main_details' if index == 0 else f'section_{index + 1}'!r}, title={section['title']!r}, children=[{fields}]),")
-            if section.get('collapsible'):
-                # FormLayout has no collapse options; Meta.layout carries them as Section(...).
-                children.append(f"    # Meta.layout: Section({section['title']!r}, ..., collapsed={section.get('collapsed', False)!r})")
+        declared = model.__declared_fields__
+        lines = ['layout = (']
+        for section in sections:
+            options = {'collapsible': False} if not section.get('collapsible') else \
+                {'collapsed': section['collapsed']} if section.get('collapsed', False) is not False else {}
             if section.get('flow') == 'columns':
-                children.append(f"    # Meta.layout: Section({section['title']!r}, ..., flow='columns')")
-        notes = ''.join(f'# Meta.{key} = {value!r}\n' for key, value in (('tabs', tuple(tabs)), ('default_tab', default_tab)) if value)
-        # What the side panel hides has no FormView option: panel=False on the field, Section or Table, or Meta.panel.
-        from .customization import panel_of
+                options['flow'] = 'columns'
+            lines.append('    ' + call('Section', (section['title'], tuple(item['name'] for item in section['fields'])), options) + ',')
+        lines.append(')')
+        # Meta.layout has no field widths: a field's type sets them (LongText is full width).
+        wide = [entry['name'] for section in sections for entry in section['fields']
+                if entry['name'] in declared and entry['width'] != width(declared[entry['name']])]
+        if wide:
+            lines.append(f"# Widths have no Meta form; this instance changes them for: {', '.join(wide)}")
+        lines += [f'{key} = {literal(item)}' for key, item in (('tabs', tuple(tabs)), ('default_tab', default_tab)) if item]
+        # What the side panel hides is panel=False on the field, Section or Table, or Meta.panel.
         if panel_of(value):
-            notes += f'# Side panel hides (panel=False or Meta.panel): {panel_of(value)!r}\n'
-        return (f'{self.folder(model)}/views/__init__.py',
-                notes + f'{name.lower()}_form = FormView(model={name}, layout=Column(children=[\n' + '\n'.join(children) + '\n]))')
+            lines.append(f'# Side panel hides (panel=False or Meta.panel): {panel_of(value)!r}')
+        return lines
 
-    def list_view(self, name, value):
-        # ListView has no list tabs; Meta.list_tabs and Meta.list_tab carry them.
-        notes = ''.join(f'# Meta.{key} = {value[key]!r}\n' for key in ('list_tabs', 'list_tab') if key in value)
-        return (f'{self.folder(self.models[name])}/views/__init__.py',
-                notes + f"{name.lower()}_list = {call('ListView', (), {'model': self.models[name], 'columns': value['columns'], 'page_size': value['page_size'], 'order_by': value['sort'], **({'open_in': value['open_in']} if 'open_in' in value else {})})}")
+    def list_view(self, value):
+        """Meta.list_fields, open_in, list_tabs and list_tab; page size and sort stay as a note."""
+        lines = [f"list_fields = {literal(tuple(name for name in value['columns'] if name != 'id'))}"]
+        lines += [f'{key} = {value[key]!r}' for key in ('open_in', 'list_tabs', 'list_tab') if key in value]
+        lines.append(f"# Page size {value['page_size']} and sort {value['sort']!r} have no Meta option; they stay instance overrides.")
+        return lines
 
     def settings(self, values):
         """Security settings for config.py, allowed networks for routes.py and paused schedules beside the app's schedules."""
@@ -214,25 +222,23 @@ class Exporter:
                 perms.setdefault(file, []).append(line)
             elif kind == 'field':
                 name, field = key.split('.', 1)
-                classes.setdefault(name, [{}, None])[0][field] = value
+                classes.setdefault(name, [{}, None, []])[0][field] = value
             elif kind == 'custom':
-                fields = classes.setdefault(key, [{}, None])[0]
+                fields = classes.setdefault(key, [{}, None, []])[0]
                 for definition in value:
                     fields.setdefault(definition['name'], {})
             elif kind == 'naming':
-                classes.setdefault(key, [{}, None])[1] = value
+                classes.setdefault(key, [{}, None, []])[1] = value
             elif kind == 'layout':
-                file, code = self.layout(key, value)
-                files.setdefault(file, []).append(code)
+                classes.setdefault(key, [{}, None, []])[2][:0] = self.layout(key, value)
             elif kind == 'list':
-                file, code = self.list_view(key, value)
-                files.setdefault(file, []).append(code)
+                classes.setdefault(key, [{}, None, []])[2].extend(self.list_view(value))
             else:
                 settings[key] = value
         for file, lines in perms.items():
             files.setdefault(file, []).insert(0, 'rules = {\n' + '\n'.join(lines) + '\n}')
-        for name, (fields, naming) in classes.items():
-            files.setdefault(self.models_file(self.models[name]), []).append(self.model_class(name, fields, naming))
+        for name, (fields, naming, meta) in classes.items():
+            files.setdefault(self.models_file(self.models[name]), []).append(self.model_class(name, fields, naming, meta))
         for file, code in self.settings(settings):
             files.setdefault(file, []).append(code)
         return [{'file': file, 'code': '\n\n'.join(blocks) + '\n'} for file, blocks in sorted(files.items())]

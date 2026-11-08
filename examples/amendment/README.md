@@ -40,4 +40,4 @@ cron declaration. Installing registers the schedule but does not start a
 worker. Use the normal `serve --jobs` option when intentionally running tasks.
 
 See `docs/amendment-v2.md` in the framework for authoring, numeric, permission,
-packaging, migration and native extension contracts.
+packaging and migration contracts.

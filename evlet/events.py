@@ -1,6 +1,5 @@
 """Transactional record invalidations with permission-filtered replay."""
 
-from pathlib import Path
 import re
 import secrets
 

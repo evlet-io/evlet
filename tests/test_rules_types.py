@@ -151,7 +151,7 @@ def test_initial_and_rules_join_the_dependency_order_and_cycles_fail():
                                                   'flag': Boolean(compute=F('shift.starts') == None)}))  # noqa: E711
 
 
-def test_document_sessions_report_rule_states_and_observe_them():
+def test_document_sessions_report_rule_states():
     plan = Registry(Deal, Client, Product).plans[Deal]
     document = Document(plan, {'stage': 'open', 'reason': 'dropped'})
     root = document.root.handle
@@ -159,15 +159,10 @@ def test_document_sessions_report_rule_states_and_observe_them():
     assert document.rule_states(root)['reason'] == {'applies': False, 'required': False, 'locked': False}
     # Undecided rules fail closed: no client means credit_days is unknown, so the note is required.
     assert document.rule_states(root)['note']['required'] is True
-    seen = []
-    stop = document.observe_rules(root, seen.append)
     document.set(root, 'stage', 'lost')
-    assert seen[-1]['reason'] == {'applies': True, 'required': True, 'locked': False}
-    document.set(root, 'title', 'unrelated')
-    assert len(seen) == 1
-    stop()
+    assert document.rule_states(root)['reason'] == {'applies': True, 'required': True, 'locked': False}
     document.set(root, 'stage', 'won')
-    assert len(seen) == 1 and document.rule_states(root)['discount']['locked'] is True
+    assert document.rule_states(root)['discount']['locked'] is True
 
 
 # initial= over HTTP
