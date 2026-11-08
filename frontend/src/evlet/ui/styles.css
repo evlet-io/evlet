@@ -207,6 +207,11 @@ textarea.input{height:auto;padding:8px 10px;resize:vertical;min-height:72px;line
 .tabs button.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;background:var(--accent);border-radius:2px}
 .tabs .n{font-size:11.5px;color:var(--fg-3);background:var(--bg-muted);border-radius:5px;padding:0 5px;line-height:17px}
 .tabs .add{color:var(--fg-4)}
+/* A record's tab bar stays at the top of its scrolling area (the view, or a side panel) while the content scrolls
+   under it: solid page colour, the tabs' own hairline below, no shadow. keepTabPlace() sets --tab-fill on the
+   panel shown after a switch, so a shorter tab still reaches the bottom of the area and the page stays still. */
+.tabs.tabs-sticky{position:sticky;top:0;z-index:4;background:var(--bg)}
+.tabs.tabs-sticky ~ [role="tabpanel"]{min-height:var(--tab-fill,auto)}
 .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .toolbar .grow{flex:1}
 .summary{display:flex;gap:16px;font-size:12.5px;color:var(--fg-3);white-space:nowrap}

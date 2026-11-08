@@ -13,7 +13,7 @@ import { RecordStore, type Field, type Rules } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildRows, ChildTable } from '../ui/childtable';
-import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
+import { DocFrame, DocHeader, flowFromState, keepTabPlace, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
 import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
 import { autofocusForm, initialFocusField, layoutFocusOrder } from '../ui/autofocus';
 import { flowGrid, FoldSection, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
@@ -657,7 +657,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       void router.navigate(router.href(current.name as 'record', current.params as any, next), { replace: true });
     });
   });
-  const tabs = Tabs({ tabs: tabItems, active, label: `${model.label} sections`, doc: true, idPrefix: `ev-rec-${name}` });
+  const tabs = Tabs({ tabs: tabItems, active, label: `${model.label} sections`, doc: true, sticky: true, idPrefix: `ev-rec-${name}` });
 
   const details = () => {
     if (layout) return layoutContent(layout.blocks ?? [], true);
@@ -786,6 +786,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     relations.length && relatedTab ? TabPanel(tabs, 'related', active, () => Related(ctx, model, store.id!, relations, related)) : null,
     postings ? TabPanel(tabs, 'postings', active, () => Postings(ctx, postings)) : null,
   ];
+  // Switching tabs keeps the page still: under the stuck tab bar, or where it was above it.
+  keepTabPlace(tabs, active);
 
   // ---------- save bar ----------
 

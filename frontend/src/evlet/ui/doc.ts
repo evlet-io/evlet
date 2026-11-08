@@ -3,7 +3,7 @@
 // and ChildTable into the one layout every record uses.
 
 import { html, when, type Child } from '../dom';
-import { effect, type Cell } from '../reactive';
+import { effect, untrack, type Cell, type Readable } from '../reactive';
 import type { StateSchema } from '../model/schema';
 import { Button, Icon, StateBanner, type ButtonProps } from './base';
 import { read, tint, uid, type Prop, type Tint } from './core';
@@ -146,13 +146,13 @@ export function flowFromState(state: StateSchema): { steps: FlowStep[]; good: st
 export interface TabItem { id: string; label: Prop<string>; count?: Prop<number | null> }
 
 /** Row of tabs with an underline in the record accent. Arrow keys move between tabs. */
-export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: string; idPrefix?: string; doc?: boolean }): HTMLElement {
+export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: string; idPrefix?: string; doc?: boolean; /** Stick to the top of the scrolling area while the content scrolls under it. */ sticky?: boolean }): HTMLElement {
   const prefix = props.idPrefix ?? uid('tab');
   const buttons = props.tabs.map(tab => html`<button type="button" role="tab" id=${`${prefix}-${tab.id}`} aria-controls=${`${prefix}-${tab.id}-panel`}
     class:on=${() => props.active.get() === tab.id} aria-selected=${() => String(props.active.get() === tab.id)} tabindex=${() => props.active.get() === tab.id ? '0' : '-1'}
     on:click=${() => props.active.set(tab.id)}>${tab.label}${tab.count === undefined ? null : when(() => read(tab.count!) !== null && read(tab.count!) !== undefined,
       () => html`<span class="n num">${() => String(read(tab.count!))}</span>`)}</button>` as HTMLButtonElement);
-  const list = html`<div class=${props.doc ? 'tabs doc-tabs' : 'tabs'} role="tablist" aria-label=${props.label}>${buttons}</div>` as HTMLElement;
+  const list = html`<div class=${`tabs${props.doc ? ' doc-tabs' : ''}${props.sticky ? ' tabs-sticky' : ''}`} role="tablist" aria-label=${props.label}>${buttons}</div>` as HTMLElement;
   list.addEventListener('keydown', event => {
     const at = props.tabs.findIndex(tab => tab.id === props.active.peek());
     const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: props.tabs.length - 1 }[event.key];
@@ -163,6 +163,11 @@ export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: stri
     buttons[index].focus();
   });
   list.dataset.prefix = prefix;
+  // Where the scrolling area was when the tab changes, read before the new panel shows (keepTabPlace).
+  if (props.sticky) effect(() => {
+    props.active.get();
+    untrack(() => { const scroller = list.isConnected ? scrollParent(list) : null; if (scroller) scrollBefore.set(list, scroller.scrollTop); });
+  });
   return list;
 }
 
@@ -170,6 +175,59 @@ export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: stri
 export function TabPanel(tabs: HTMLElement, id: string, active: Cell<string>, render: () => Child): Node {
   const prefix = tabs.dataset.prefix!;
   return when(() => active.get() === id, () => html`<div role="tabpanel" id=${`${prefix}-${id}-panel`} aria-labelledby=${`${prefix}-${id}`} tabindex="0">${render()}</div>`);
+}
+
+// A sticky tab bar's scroll position just before its tab changed. Tabs reads it before the new panel shows:
+// reading scrollTop after the switch would give the position the browser already pulled up.
+const scrollBefore = new WeakMap<HTMLElement, number>();
+
+/** The nearest ancestor of `node` that scrolls vertically, else the document's scrolling element. */
+function scrollParent(node: Element): Element | null {
+  for (let at = node.parentElement; at; at = at.parentElement) {
+    if (/(auto|scroll|overlay)/.test(getComputedStyle(at).overflowY)) return at;
+  }
+  return document.scrollingElement;
+}
+
+/**
+ * Keeps the page still when the tab changes, for Tabs made with `sticky`. Call it after the TabPanels, so it
+ * runs once the new panel shows.
+ * With the tab bar stuck (Tabs sticky), the new panel starts right under it; above that, the scroll position
+ * stays. The new panel is given a minimum height (--tab-fill) that keeps that position, so a shorter tab never
+ * pulls the page up: it reaches the bottom of the scrolling area and no further.
+ */
+export function keepTabPlace(tabs: HTMLElement, active: Readable<string>): void {
+  let first = true;
+  effect(() => {
+    const id = active.get();
+    if (first) { first = false; return; }
+    untrack(() => placeTabPanel(tabs, id));
+  });
+}
+
+function placeTabPanel(tabs: HTMLElement, id: string) {
+  const panel = tabs.parentElement?.querySelector<HTMLElement>(`#${CSS.escape(`${tabs.dataset.prefix}-${id}-panel`)}`);
+  const scroller = tabs.isConnected && panel ? scrollParent(tabs) : null;
+  if (!panel || !scroller) return;
+  const before = scrollBefore.get(tabs) ?? scroller.scrollTop;
+  panel.style.removeProperty('--tab-fill');
+  const style = getComputedStyle(tabs), view = scroller.getBoundingClientRect(), box = panel.getBoundingClientRect();
+  const viewTop = scroller === document.scrollingElement ? 0 : view.top;
+  // Positions in the scrolling content, the same whatever the scroll position is now.
+  const panelTop = box.top - viewTop + scroller.scrollTop;
+  const sticky = style.position === 'sticky';
+  // Where the tab bar sticks: the panel's top, less the gap, the bar and its top offset.
+  const stuckAt = panelTop - (parseFloat(style.marginBottom) || 0) - tabs.offsetHeight - (parseFloat(style.top) || 0);
+  const target = sticky && before >= stuckAt - 1 ? Math.max(0, stuckAt) : before;
+  // What follows the panel in its column: its margin, the panels' padding, the save bar.
+  const parent = panel.parentElement!, after = (parseFloat(getComputedStyle(parent).paddingBottom) || 0) + (parseFloat(getComputedStyle(panel).marginBottom) || 0)
+    + [...parent.children].slice([...parent.children].indexOf(panel) + 1).reduce((sum, next) => {
+      const css = getComputedStyle(next);
+      return css.position === 'absolute' || css.position === 'fixed' ? sum : sum + (next as HTMLElement).offsetHeight + (parseFloat(css.marginTop) || 0) + (parseFloat(css.marginBottom) || 0);
+    }, 0);
+  const fill = Math.ceil(target + scroller.clientHeight - panelTop - after);
+  if (fill > box.height) panel.style.setProperty('--tab-fill', `${fill}px`);
+  if (scroller.scrollTop !== target) scroller.scrollTop = target;
 }
 
 /** Titled block inside the side panel, with an optional header action. */

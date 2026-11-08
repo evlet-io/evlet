@@ -286,7 +286,7 @@ mark only.
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
 | `split.ts` | SplitView: a main area and a resizable side panel |
-| `doc.ts` | DocFrame (page or panel variant), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
+| `doc.ts` | DocFrame (page or panel variant), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, keepTabPlace, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
 | `time.ts` | `RelativeTime`, `relativeTime`, `exactTime`, `zoneLabel`, `RELATIVE_STEPS`, `minuteClock` ([Relative times](#relative-times)) |
@@ -583,6 +583,12 @@ mount(document.querySelector('#app')!, () => DocFrame({
 }));
 ```
 
+- **Tabs** with `sticky: true` stick to the top of the scrolling area they are in (the view or a side
+  panel), with the page colour behind them. **keepTabPlace(tabs, active)**, called after the
+  TabPanels, keeps the page still on a switch: the new panel starts right under a stuck tab bar, or
+  the scroll position stays when the bar is not stuck, and the panel gets a `--tab-fill` minimum
+  height that keeps that position and reaches the bottom of the scrolling area. The record page uses
+  both.
 - **InlineValue** reads first and edits in place: click or Enter opens the field's input,
   Enter saves (one field, through `record.save()`, no Save button), Esc cancels, leaving the
   field saves. Focus returns to the value after Enter or Esc; after Tab or a click elsewhere

@@ -53,6 +53,15 @@ page the side column stays in place too while the main column scrolls, and scrol
 it is taller than the window. In narrow windows and on a phone it sits under the main column and
 scrolls with it.
 
+The record's tab bar (Activity, Details, a table, Related, or the tabs of a declared layout) sticks
+to the top of the main area once it reaches it, and the content scrolls under it. It has the page
+colour and its hairline below, with no shadow. A record in a side panel does the same inside the
+panel. Switching tabs keeps the page still: with the tab bar stuck, the new tab starts right under
+it; above that, the scroll position stays where it was. The new tab is given just enough height to
+reach the bottom of the main area, so a shorter tab never pulls the page up, and a short record does
+not get extra scrolling. A list's own tabs (All, Draft, Active...) do not stick, because the list's
+table scrolls inside its own box with a sticky header.
+
 Two options change this per model:
 
 ```python
