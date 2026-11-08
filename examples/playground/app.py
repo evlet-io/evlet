@@ -15,7 +15,7 @@ from evlet import (AI, Action, ApiScope, AppDefinition, Application, ChildTable,
 from evlet import api
 from evlet.routing import resolve_routes
 from evlet.services import Endpoint
-from .models import Customer, Invoice, LedgerEntry, Project, ProjectTask, registry
+from .models import Customer, Invoice, LedgerEntry, PointBalance, PointMove, Project, ProjectTask, registry
 from .migrate import configured_database
 from .settings import ProjectPreferences, ProjectSettings
 from .prints import PRINTS, REPORTS as PRINTED_REPORTS
@@ -64,6 +64,19 @@ def post_invoice(tx, user, invoice):
     tx.create(LedgerEntry, invoice=invoice.id, customer=invoice.customer, posting_date=invoice.posting_date,
               amount=invoice.total, memo=invoice.reference)
     tx.update(Invoice, invoice.id, status='sent')
+
+
+def award_points(tx, user, customer):
+    """Award points: one movement in the points ledger and the customer's total in the balance cache, in the
+    same transaction. The lock keeps two awards for one customer from reading the same total."""
+    from datetime import date
+    tx.lock(('points', customer.id))
+    tx.create(PointMove, customer=customer.id, on_date=date.today(), reason='Awarded from the customer page', points=10)
+    [balance] = tx.list(PointBalance, filters={'customer': customer.id}) or [None]
+    if balance is None:
+        tx.create(PointBalance, customer=customer.id, points=10)
+    else:
+        tx.update(PointBalance, balance.id, points=balance.points + 10)
 
 
 def create_app():
@@ -120,7 +133,8 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=N
                       actions=(Action(Project, 'start', 'Start project', start_project),
                                Action(Project, 'complete', 'Complete project', complete_project),
                                Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress),
-                               Action(Invoice, 'post', 'Post to ledger', post_invoice)),
+                               Action(Invoice, 'post', 'Post to ledger', post_invoice),
+                               Action(Customer, 'award_points', 'Award 10 points', award_points)),
                       attachments=(Project,), slips=SLIPS, reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))

@@ -146,8 +146,14 @@ class Business:
                 if declaration is not None:
                     declared_actions.append(Action(model, name, declaration['label'], method, declaration['roles']))
         actions = (*actions, *declared_actions)
+        from .ledger import is_ledger
         for model in self.attachments:
             self.registry.name_for(model)
+            if is_ledger(model):
+                raise ValueError(f'{model.__name__} is a ledger model: it has no attachments (docs/ledger.md)')
+        for action in actions:
+            if is_ledger(getattr(action, 'model', None)):
+                raise ValueError(f'{action.model.__name__} is a ledger model: it has no actions; trusted code writes its rows (docs/ledger.md)')
         # Application(attachments=...) enables the default limits; Meta.attachments enables its own and wins.
         from .meaning import Attachments
         self.attachment_limits = {model: Attachments() for model in self.attachments}
@@ -417,6 +423,10 @@ class Business:
             entry['layout'] = [{**group, 'fields': [name for name in group['fields'] if name in readable]} for group in entry.get('layout', [])]
             # Controls overrides: labels, rules, options, layout and list view on this instance.
             self.controls.custom.merge(entry, model, readable, writable)
+            # List tabs only for roles that can count by their field (evlet.measures.list_tabs).
+            from .measures import tabs_visible
+            if 'list_tabs' in entry and not tabs_visible(self, user, model, entry['list_tabs']['field']):
+                del entry['list_tabs']
             if entry['title_field'] not in readable:
                 entry['title_field'] = 'id'
             # The field naming fills: the record page shows it as the document number, and until it has one,
@@ -448,6 +458,14 @@ class Business:
                                   'filterable': self.policy.rule(user, child.model).scope is None,
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child)))}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
+            # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
+            # unknown when the model was defined) stays out of the side panel too.
+            panel = entry.get('panel')
+            if panel and 'order' in panel:
+                extra = [child['name'] for child in entry['children'] if child['name'] not in getattr(model, '__tables__', {})
+                         and child['name'] not in panel['order'] and child['name'] not in panel.get('tabs', ())]
+                if extra:
+                    entry['panel'] = {**panel, 'tabs': sorted({*panel.get('tabs', ()), *extra})}
             from .states import action_schema, state_schema
             entry['actions'] = [{'name': action.name, 'label': action.label,
                                  **(action_schema(self, user, model, action.name) if hasattr(getattr(model, action.name, None), '__action__') else {})}
@@ -805,7 +823,7 @@ class Business:
             with self.database.transaction() as tx:
                 record, result = self.create_plain(tx, user, model, body)
             return 201, result, [(b'location', f'/api/{parts[2]}/{record.id}'.encode())]
-        if len(parts) == 4 and parts[3] in ('aggregate', 'measures') or len(parts) == 5 and parts[4] == 'measures':
+        if len(parts) == 4 and parts[3] in ('aggregate', 'measures', 'list_tabs') or len(parts) == 5 and parts[4] == 'measures':
             from .measures import route
             return route(self, scope, user, model, parts)
         if len(parts) < 4 or path_id(parts[3]) is None:

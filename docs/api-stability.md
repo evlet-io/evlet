@@ -39,9 +39,17 @@ production ready, but the rules below hold from 0.3 on.
 
 - **Model `Meta` options.** `tests/test_public_api.py` pins the option names, among them `api`
   (`"full"`, `"read"` or `None`), `period`, `period_scope` and `status` (the Select or State shown
-  as the status badge, [states-actions.md](states-actions.md#meta-status)). `Session.unlocked_periods(reason)`
+  as the status badge, [states-actions.md](states-actions.md#meta-status)), `list_tabs` and `list_tab`
+  (the list's tabs and the one it opens on, [ui.md](ui.md#list-tabs)). `Session.unlocked_periods(reason)`
   and `Context.unlocked_periods(reason)` are public for trusted code
   ([model-engine.md](model-engine.md#closed-periods)).
+
+- **Ledger models and transaction locks.** The `Meta` options `ledger`, `append_only`, `timestamps`
+  (`None`, `"created"`, `"modified"` or `"both"`) and `indexes`, the `created_at` and `modified_at`
+  fields that timestamps add, integer ledger row ids, `Session.insert_many(model, rows)`,
+  `Session.lock(*keys, timeout=None)` with `LockTimeout`, the `SetAppendOnly` migration, `AddIndex`
+  with a tuple of fields, and `evlet ledger list`. A key's lock number (BLAKE2b of its canonical
+  JSON) never changes between releases ([ledger.md](ledger.md)).
 
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are

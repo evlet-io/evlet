@@ -211,6 +211,10 @@
 .ctl-lf.off{opacity:.6}
 .ctl-lf .grow{flex:1;display:flex;flex-direction:column;min-width:0}
 .ctl-lf strong{font-size:12.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* The field name and its side panel toggle share the second line, so the label keeps the chip's width. */
+.ctl-subrow{display:flex;align-items:center;gap:2px;min-width:0}
+.ctl-subrow .ctl-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.ctl-subrow .icon-btn.sm{width:20px;height:20px;flex:none}
 .ctl-grip{color:var(--fg-4)}
 .ctl-wbtn{font-size:11px;padding:2px 6px;border-radius:5px;background:var(--bg-muted);color:var(--fg-2)}
 .ctl-lempty{grid-column:1/-1;padding:12px;text-align:center;color:var(--fg-3);border:1px dashed var(--border-strong);border-radius:var(--r);font-size:12.5px}
@@ -339,3 +343,5 @@
   .ctl-jitem{flex:none;width:auto;max-width:200px;border:1px solid var(--border);border-radius:999px;padding:5px 12px}
   .ctl-jitem.on{border-color:transparent}
 }
+.ctl-partrow{display:flex;align-items:center;gap:6px;padding:4px 8px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg-subtle)}
+.ctl-partrow .grow{flex:1;font-size:13px}

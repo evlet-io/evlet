@@ -1,9 +1,10 @@
 // The generated list page of a model (docs/ui-design/README.md section 6, List pages): page header,
-// saved views by State, toolbar with search and filters, the model's measures, a DataTable with
-// the list fields (title pinned), sorting, paging and a bulk bar, or a board by State.
+// tabs by one field's values (Meta.list_tabs), toolbar with search and filters, the model's measures, a DataTable with
+// the list fields (title pinned), sorting, paging and a bulk bar, or a board by State when Meta.board names it.
 //
-// Search, sort, page, view, saved view and filters live in the address, so a link opens the
-// same list. Everything runs on the server: the browser never filters or sorts a partial list.
+// Search, sort, page, view, tab and filters live in the address, so a link opens the same list.
+// With no tab there, the list opens on the model's default tab (Meta.list_tab); choosing another,
+// All included, puts it in the address. Everything runs on the server: the browser never filters or sorts a partial list.
 // The filter builder (rows of field, condition and value, child tables included) is filters.ts.
 //
 // A record opens on its own page or in a side panel beside the narrowed list (Meta.open_in, the
@@ -12,6 +13,8 @@
 
 import { each, html, match, when, type Child } from '../dom';
 import { ApiError, type RecordData } from '../api';
+import type { ListTabCounts } from './client';
+import { isRecordId } from '../ids';
 import { batch, cell, derive, effect, onCleanup, untrack } from '../reactive';
 import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedControl, SummaryStrip, type StatProps } from '../ui/base';
 import { currencyIn, displayValue, localField, stateTint, statusTint } from '../ui/fields';
@@ -62,6 +65,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const model = screenModel(ctx.schema, name);
   const { icon, tint } = identity(model);
   const state = model.state && fieldOf(model, model.state.field) ? model.state : null;
+  // A board only when the model opts in (Meta.board) for its State field; otherwise the list is a table.
+  const boarded = state && model.board === state.field ? state : null;
   const canCreate = model.api !== 'read' && model.permissions?.create !== false;
   const canDelete = model.api !== 'read' && model.permissions?.delete === true;
   const fields = listFields(model);
@@ -96,8 +101,24 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   // Rows per page from a Controls list view, else the framework default.
   const size = model.page_size ?? PAGE_SIZE;
   const page = cell(Math.max(1, Number(start.page) || 1), { name: `${name}.page` });
-  const view = cell<'list' | 'board'>(state && start.view === 'board' ? 'board' : 'list', { name: `${name}.view` });
-  const tab = cell(state && start.tab && state.states.includes(start.tab) ? start.tab : 'all', { name: `${name}.tab` });
+  const view = cell<'list' | 'board'>(boarded && start.view === 'board' ? 'board' : 'list', { name: `${name}.view` });
+  // ---------- list tabs: a State, Select or Link field's values (Meta.list_tabs) ----------
+  const tabSpec = model.list_tabs && fieldOf(model, model.list_tabs.field) ? model.list_tabs : null;
+  const tabMeta = tabSpec ? fieldOf(model, tabSpec.field)! : null;
+  const linkTabs = tabSpec?.kind === 'link' ? tabMeta!.target ?? null : null;
+  /** State and Select tabs: every value but retired choices. Link tabs come from the counts. */
+  const fixedTabs = !tabSpec || tabSpec.kind === 'link' ? [] : state && tabSpec.field === state.field ? state.states
+    : (tabMeta!.choices ?? []).filter(value => !(tabMeta!.retired_choices ?? []).includes(value));
+  const fits = (value: string | undefined): value is string => Boolean(tabSpec && value
+    && (value === 'all' || (tabSpec.kind === 'link' ? Boolean(linkTabs) && isRecordId(value) : fixedTabs.includes(value))));
+  /** The tab the list opens on. A Link's default names a record by its title, found once the page loads. */
+  const home = cell(tabSpec && tabSpec.kind !== 'link' && fits(tabSpec.default) ? tabSpec.default : 'all', { name: `${name}.home tab` });
+  const finding = cell(Boolean(linkTabs && tabSpec!.default !== 'all' && !fits(start.tab)), { name: `${name}.finding home tab` });
+  const tab = cell(fits(start.tab) ? start.tab : home.peek(), { name: `${name}.tab` });
+  if (finding.peek()) void findRecord(ctx, linkTabs!, tabSpec!.default).then(id => batch(() => {
+    if (id) { home.set(id); tab.set(id); }
+    finding.set(false);
+  }));
   const filters = filterBuilder(ctx.schema, model, start.f);
   const filtering = cell(false, { name: `${name}.filter panel` });
   const selection = cell(new Set<string | number>(), { name: `${name}.selection` });
@@ -107,7 +128,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   onCleanup(() => clearTimeout(typing));
 
   // The saved view's State is one more condition. Only equalities on distinct fields go as the shorter object form.
-  const serverFilters = derive(() => compact([...filters.server.get(), ...(state && tab.get() !== 'all' ? [[state.field, 'eq', tab.get()]] : [])]));
+  const serverFilters = derive(() => compact([...filters.server.get(), ...(tabSpec && tab.get() !== 'all' ? [[tabSpec.field, 'eq', tab.get()]] : [])]));
   changes(() => filters.server.get(), () => page.set(1));
   effect(() => {
     const params: Record<string, string> = {};
@@ -116,7 +137,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     if (order) params.sort = `${order.dir === 'desc' ? '-' : ''}${order.key}`;
     if (page.get() > 1) params.page = String(page.get());
     if (view.get() === 'board') params.view = 'board';
-    if (tab.get() !== 'all') params.tab = tab.get();
+    if (tabSpec && tab.get() !== home.get()) params.tab = tab.get();
     if (filters.address.get()) params.f = filters.address.get();
     // The panel's record stays open while the list changes around it.
     const now = untrack(() => router.route.peek()?.query ?? {});
@@ -136,6 +157,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const reload = cell(0);
   let ticket = 0;
   effect(() => {
+    // A Link's default tab is looked up first, so the list loads once.
+    if (finding.get()) return;
     const board = view.get() === 'board';
     const request = { q: query.get() || undefined, filters: serverFilters.get(), limit: board ? BOARD_SIZE : size,
       offset: board ? 0 : (page.get() - 1) * size, orderBy: board ? undefined : sort.get() ? `${sort.get()!.dir === 'desc' ? '-' : ''}${sort.get()!.key}` : undefined };
@@ -158,13 +181,14 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const declared = (model.measures ?? []).filter(measure => !measure.per_record);
   const measures = cell<Record<string, unknown> | null>(null);
   if (declared.length) effect(() => {
+    if (finding.get()) return;
     const current = serverFilters.get(), text = query.get();
     reload.get();
     void api.measures(name, current, text).then(values => measures.set(values), () => measures.set(null));
   });
-  // Saved view counts and board column totals by state, from one aggregate (Phase 9): a count
-  // and the board's declared sum measure, with the measure's own where. The aggregate route
-  // works without declared measures and follows the search box too.
+  // Board column totals by state, from one aggregate (Phase 9): a count and the board's declared
+  // sum measure, with the measure's own where. The aggregate route works without declared
+  // measures and follows the search box too.
   const sumMeasure = declared.find(measure => measure.function === 'sum' && measure.field && !measure.where) ?? declared.find(measure => measure.function === 'sum' && measure.field);
   const valueField = sumMeasure?.field ? fieldOf(model, sumMeasure.field) : undefined;
   const countName = sumMeasure?.name === 'n' ? 'records' : 'n';
@@ -172,7 +196,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const totalsTick = cell(0);
   let aggregateTicket = 0;
   if (state) effect(() => {
-    // The counts per state follow every filter but the saved view.
+    if (view.get() !== 'board') return;
+    // The totals per state follow every filter but the tab.
     const others = compact(filters.server.get());
     const text = query.get();
     reload.get();
@@ -181,7 +206,19 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     void api.aggregate(name, [`${countName}:count`, ...(sumMeasure ? [sumMeasure.name] : [])], [state.field], others, text)
       .then(result => { if (mine === aggregateTicket) grouped.set(result.items); }, () => { if (mine === aggregateTicket) grouped.set(null); });
   });
-  const counts = derive(() => grouped.get() && state ? Object.fromEntries(grouped.get()!.map(item => [String(item[state.field]), Number(item[countName])])) : null);
+  // Tab counts follow every filter but the tab, and the search box.
+  const tabCounts = cell<ListTabCounts | null>(null, { name: `${name}.tab counts` });
+  let countsTicket = 0;
+  if (tabSpec) effect(() => {
+    if (finding.get()) return;
+    const others = compact(filters.server.get());
+    const text = query.get();
+    reload.get();
+    totalsTick.get();
+    const mine = ++countsTicket;
+    void api.listTabs(name, others, text).then(result => { if (mine === countsTicket) tabCounts.set(result); }, () => { if (mine === countsTicket) tabCounts.set(null); });
+  });
+  const counts = derive(() => { const result = tabCounts.get(); return result ? Object.fromEntries(result.items.map(item => [item.value, item.count])) : null; });
   const boardTotals = derive<Record<string, BoardTotal> | null>(() => {
     const items = grouped.get();
     if (!items || !state) return null;
@@ -208,7 +245,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   effect(() => { filterButton.classList.toggle('has-filters', filters.active.get().length > 0); });
 
   const header = PageHeader({ icon, tint, title: model.plural, count: () => total.get(), actions: [
-    state ? SegmentedControl({ options: [{ value: 'list', label: 'List', icon: 'list' }, { value: 'board', label: 'Board', icon: 'kanban' }], value: view, label: 'View',
+    boarded ? SegmentedControl({ options: [{ value: 'list', label: 'List', icon: 'list' }, { value: 'board', label: 'Board', icon: 'kanban' }], value: view, label: 'View',
       onChange: next => batch(() => { view.set(next); selection.set(new Set()); }) }) : null,
     filters.fields.length ? filterButton : null,
     // Reports declared for this model (Report.model) open from here.
@@ -220,10 +257,23 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     canCreate ? Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', hideLabelOnPhone: true, onClick: create }) : null,
   ].filter(Boolean) as Child[] });
 
-  const tabs = state ? Tabs({ label: 'Saved views', active: tab, idPrefix: `ev-${name}-views`, tabs: [
-    { id: 'all', label: `All ${model.plural.toLowerCase()}`, count: () => counts.get() ? Object.values(counts.get()!).reduce((sum, value) => sum + value, 0) : tab.get() === 'all' ? total.get() : null },
-    ...state.states.map(value => ({ id: value, label: humanize(value), count: () => counts.get() ? counts.get()![value] ?? 0 : tab.get() === value ? total.get() : null })),
-  ] }) : null;
+  // A Link's tabs are its most used values (and the open one), so they are drawn again when those change.
+  const tabValues = derive(() => {
+    if (!linkTabs) return fixedTabs.join('\n');
+    const values = (tabCounts.get()?.items ?? []).map(item => item.value);
+    for (const value of [home.get(), tab.get()]) if (value !== 'all' && !values.includes(value)) values.push(value);
+    return values.join('\n');
+  }, { name: `${name}.tab values` });
+  const tabCount = (value: string) => () => tabCounts.get() ? value === 'all' ? tabCounts.get()!.total : counts.get()![value] ?? 0 : tab.get() === value ? total.get() : null;
+  const tabLabel = (value: string) => linkTabs ? () => ctx.links.title(linkTabs, value).get() ?? '…' : humanize(value);
+  const tabs = tabSpec ? () => {
+    if (finding.get()) return null;
+    const values = tabValues.get() ? tabValues.get().split('\n') : [];
+    return untrack(() => Tabs({ label: `${model.plural} by ${tabMeta!.label.toLowerCase()}`, active: tab, idPrefix: `ev-${name}-views`, tabs: [
+      { id: 'all', label: `All ${model.plural.toLowerCase()}`, count: tabCount('all') },
+      ...values.map(value => ({ id: value, label: tabLabel(value), count: tabCount(value) })),
+    ] }));
+  } : null;
   changes(() => tab.get(), () => batch(() => { page.set(1); selection.set(new Set()); }));
 
   const search = (model.search_fields ?? []).length ? SearchInput({ value: q, placeholder: `Search ${model.plural.toLowerCase()}`, label: `Search ${model.plural.toLowerCase()}` }) : null;
@@ -231,7 +281,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     ctx.pageSearch.set(search.querySelector('input'));
     onCleanup(() => { if (ctx.pageSearch.peek()?.isConnected === false || ctx.pageSearch.peek() === search.querySelector('input')) ctx.pageSearch.set(null); });
   }
-  const clearAll = () => batch(() => { filters.clear(); q.set(''); tab.set('all'); page.set(1); });
+  // Clearing goes back to the tab the list opens on.
+  const clearAll = () => batch(() => { filters.clear(); q.set(''); tab.set(home.peek()); page.set(1); });
   const toolbar = Toolbar({ label: `${model.plural} tools`, left: [search, FilterChips(filters, ctx.links)],
     right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
@@ -263,6 +314,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
           ? when(panelOpen, () => html`<small class="ev-row-no mono">${() => String(row()[showNumber.name] ?? '')}</small>`) : null}`
       : (row: () => RecordData) => cellView(ctx, model, meta, row),
   }));
+  const onlyTab = derive(() => tab.get() !== 'all' && !query.get() && !filters.active.get().length);
   const tablePrefs = ctx.prefs.cell<TablePrefs>(`list.${name}`, emptyPrefs());
   const selectable = canDelete || Boolean(state?.moves.length);
   // Beside a panel the list keeps the title (with the number under it), the State and the first amount.
@@ -273,8 +325,12 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const table = (narrow = false) => DataTable<RecordData>({ columns: narrow ? panelColumns : columns, rows, key: row => row.id, label: model.plural, pinned: 1,
     selectable: selectable && !narrow, selection, sort, serverSort: true, onOpen: row => open(row), prefs: tablePrefs, height: 640,
     current: narrow ? current : undefined, onMove: narrow ? row => open(row, false) : undefined,
-    empty: () => EmptyState({ icon: 'search', tint: 'slate', title: `No ${model.plural.toLowerCase()} match`, text: 'Try a different search or clear the filters.',
-      action: Button({ label: 'Clear filters', onClick: clearAll }) }) });
+    // Empty only because of the tab: Clear filters would change nothing, so it offers All instead.
+    empty: () => () => onlyTab.get()
+      ? EmptyState({ icon: 'search', tint: 'slate', title: `No ${model.plural.toLowerCase()} in this tab`, text: 'Choose another tab, or show them all.',
+        action: Button({ label: `Show all ${model.plural.toLowerCase()}`, onClick: () => tab.set('all') }) })
+      : EmptyState({ icon: 'search', tint: 'slate', title: `No ${model.plural.toLowerCase()} match`, text: 'Try a different search or clear the filters.',
+        action: Button({ label: 'Clear filters', onClick: clearAll }) }) });
   changes(() => sort.get(), () => page.set(1));
 
   const pages = derive(() => Math.max(1, Math.ceil((total.get() ?? 0) / size)));
@@ -312,7 +368,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       return false;
     }
   };
-  // With a State tab chosen, the board shows that one column, by design.
+  // With a State tab chosen, the board shows that one column, by design. Tabs by another field
+  // narrow the cards and keep every column.
+  const boardOnly = derive(() => state && tabSpec?.field === state.field ? tab.get() : 'all');
   const boardView = (only: string) => state ? Board<RecordData>({
     label: `${model.plural} by ${state.field}`, columns: state.states.filter(value => only === 'all' || value === only).map(value => ({ value, label: humanize(value), tint: stateTint(value) }) as BoardColumn),
     cards: rows, key: row => row.id, group: row => String(row[state.field]),
@@ -461,8 +519,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     : view.get() === 'list' && panelOpen.get() ? (listWidth.get() && listWidth.get() < COMPACT_WIDTH ? 'compact' : 'narrow') : view.get());
   const content = html`<div role=${tabs ? 'tabpanel' : null} id=${() => tabs ? `ev-${name}-views-${tab.get()}-panel` : null} aria-labelledby=${() => tabs ? `ev-${name}-views-${tab.get()}` : null}>
     ${match(mode, { error: () => body(), empty: () => body(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager],
-      board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => tab.get() === 'all'}>${() => `Showing ${humanize(tab.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
-        match(tab, Object.fromEntries(['all', ...state!.states].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
+      board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => boardOnly.get() === 'all'}>${() => `Showing ${humanize(boardOnly.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
+        match(boardOnly, Object.fromEntries(['all', ...state!.states].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 
   const list = html`<div class="page ev-list" class:ev-list-narrow=${panelOpen} data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${header}${tabs}${toolbar}${when(() => !panelOpen.get(), () => strip)}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>${content}${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;
   // The filter panel docks beside the list, inside the page: the list narrows, nothing covers it.
@@ -536,6 +594,21 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     closePanel();
   });
   return split;
+}
+
+/** The id of the record of `target` whose title (or name) is `text`, or null when there is none this person can read. */
+async function findRecord(ctx: AppContext, target: string, text: string): Promise<string | null> {
+  let meta: ScreenModel;
+  try { meta = screenModel(ctx.schema, target); } catch { return null; }
+  const names = [...new Set([meta.title_field, 'name'])].filter(field => field !== 'id' && meta.fields.some(item => item.name === field));
+  for (const field of names) {
+    try {
+      const page = await ctx.api.list(target, { filters: { [field]: text }, limit: 1 });
+      const found = page.items[0];
+      if (found) { ctx.links.remember?.(target, String(found.id), titleOf(meta, found)); return String(found.id); }
+    } catch { /* not readable: try the next field */ }
+  }
+  return null;
 }
 
 /** Run `then` when `value` changes, not on the first read. */

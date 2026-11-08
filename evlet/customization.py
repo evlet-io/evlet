@@ -22,7 +22,7 @@ from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Deci
                      State, Text, active_layer)
 from .database import ConflictError
 from .models import ValidationError, identifier
-from .ui.metadata import FLOWS, OPEN_IN, label_for, starts_valid, view_for
+from .ui.metadata import FLOWS, OPEN_IN, PANEL_BLOCKS, PANEL_KINDS, label_for, list_tabs_for, starts_valid, view_for
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default', 'options_add', 'options_hidden')
 DISPLAY = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden')
@@ -147,6 +147,16 @@ def tabs_of(value):
     return (value.get('tabs', []), value.get('default_tab')) if isinstance(value, dict) else ([], None)
 
 
+def panel_of(value):
+    """What a layout value hides in a list's side panel ({} shows everything), or None when it leaves that to the app."""
+    return value.get('panel') if isinstance(value, dict) else None
+
+
+def hidden_of(panel):
+    """The hidden names of a schema "panel" entry, without its order."""
+    return {kind: list(panel[kind]) for kind in PANEL_KINDS if panel and panel.get(kind)}
+
+
 def width(field):
     return 12 if isinstance(field, LongText) else 6
 
@@ -158,7 +168,7 @@ class Customization:
         self.controls, self.business = controls, controls.business
         self.registry = controls.registry
         self.effective, self.defaults, self.choices = {}, {}, {}
-        self.layouts, self.lists, self.read_only, self.tabs = {}, {}, {}, {}
+        self.layouts, self.lists, self.read_only, self.tabs, self.panels = {}, {}, {}, {}, {}
         self.file_naming = dict(self.registry.naming)
         self.naming = MappingProxyType(self.file_naming)
         self.drop = None
@@ -192,10 +202,17 @@ class Customization:
             fields, view = model.__declared_fields__, view_for(model)
             sections = [{'title': group['label'], 'fields': [{'name': key, 'width': width(fields[key])} for key in group['fields']], **fold(group)}
                         for group in view['layout']]
-            return {'sections': sections, 'tabs': view['tabs'], 'default_tab': view['default_tab']} if view['tabs'] or view['default_tab'] else sections
+            # What the app hides in a list's side panel (panel=False flags or Meta.panel), for the Controls toggles.
+            panel = hidden_of(view.get('panel'))
+            if not (view['tabs'] or view['default_tab'] or panel):
+                return sections
+            return {'sections': sections, **({'tabs': view['tabs'], 'default_tab': view['default_tab']} if view['tabs'] or view['default_tab'] else {}),
+                    **({'panel': panel} if panel else {})}
         if kind == 'list':
             view = view_for(model)
-            return {'columns': [key for key in view['list_fields'] if key != 'id'], 'page_size': 50, 'sort': '-id', 'open_in': view['open_in']}
+            tabs = view.get('list_tabs')
+            return {'columns': [key for key in view['list_fields'] if key != 'id'], 'page_size': 50, 'sort': '-id', 'open_in': view['open_in'],
+                    'list_tabs': tabs['field'] if tabs else None, 'list_tab': tabs['default'] if tabs else 'all'}
         return [dict(item) for item in getattr(model.Meta, 'naming').series]
 
     def items(self):
@@ -323,11 +340,13 @@ class Customization:
         return ['activity', 'details', 'revisions', *tables, 'related', 'postings']
 
     def check_layout(self, model, _, value):
-        tabs = default_tab = None
+        tabs = default_tab = panel = None
         if isinstance(value, dict):
-            # The record tab order rides along with the sections; a plain list is a layout without one.
-            if not {'sections'} <= set(value) <= {'sections', 'tabs', 'default_tab'}:
-                raise ValueError('Send the layout as a list of sections, or as sections, tabs and default_tab.')
+            # The record tab order and what the side panel hides ride along with the sections; a plain list is a
+            # layout with neither.
+            if not {'sections'} <= set(value) <= {'sections', 'tabs', 'default_tab', 'panel'}:
+                raise ValueError('Send the layout as a list of sections, or as sections with tabs, default_tab and panel.')
+            panel = value.get('panel')
             tabs, default_tab = value.get('tabs', []), value.get('default_tab')
             known = self.tab_names(model)
             if not isinstance(tabs, list) or any(name not in known for name in tabs) or len(set(tabs)) != len(tabs):
@@ -336,7 +355,29 @@ class Customization:
                 raise ValueError('Open records on one of the record tabs.')
             value = value['sections']
         sections = self.check_sections(model, value)
-        return {'sections': sections, 'tabs': list(tabs), 'default_tab': default_tab} if tabs or default_tab else sections
+        if panel is not None:
+            panel = self.check_panel(model, sections, panel)
+        if not (tabs or default_tab or panel is not None):
+            return sections
+        return {'sections': sections, **({'tabs': list(tabs), 'default_tab': default_tab} if tabs or default_tab else {}),
+                **({'panel': panel} if panel is not None else {})}
+
+    def check_panel(self, model, sections, value):
+        """What a list's side panel hides: section titles, fields, tabs and blocks of this layout, by kind. An empty
+        object shows everything, overriding the app's panel=False flags and Meta.panel. Display only."""
+        if not isinstance(value, dict) or not set(value) <= set(PANEL_KINDS):
+            raise ValueError(f'Send what the side panel hides as {", ".join(PANEL_KINDS)}, each a list of names.')
+        known = {'sections': {section['title'] for section in sections},
+                 'fields': {item['name'] for section in sections for item in section['fields']} | {name for name, field in self.fields(model).items() if not field.hidden},
+                 'tabs': set(self.tab_names(model)) - {'details'},
+                 'blocks': set(PANEL_BLOCKS) - {'related'}}
+        out = {}
+        for kind, names in value.items():
+            if not isinstance(names, list) or len(set(map(str, names))) != len(names) or any(type(name) is not str or name not in known[kind] for name in names):
+                raise ValueError(f'Hide {kind} of {model.__name__} in the side panel once each, from {", ".join(sorted(known[kind]))}.')
+            if names:
+                out[kind] = sorted(names)
+        return out
 
     def check_sections(self, model, value):
         fields = self.fields(model)
@@ -376,9 +417,10 @@ class Customization:
 
     def check_list(self, model, _, value):
         stored = {name for name, field in self.fields(model).items() if field.stored and field.kind != 'reference'}
-        # open_in is optional: list views saved before it existed keep the app's choice.
-        if not isinstance(value, dict) or not {'columns', 'page_size', 'sort'} <= set(value) <= {'columns', 'page_size', 'sort', 'open_in'}:
-            raise ValueError('Send columns, page_size and sort, and optionally open_in.')
+        # open_in, list_tabs and list_tab are optional: list views saved before them keep the app's choice.
+        optional = {'open_in', 'list_tabs', 'list_tab'}
+        if not isinstance(value, dict) or not {'columns', 'page_size', 'sort'} <= set(value) <= {'columns', 'page_size', 'sort', *optional}:
+            raise ValueError('Send columns, page_size and sort, and optionally open_in, list_tabs and list_tab.')
         columns = value['columns']
         if not isinstance(columns, list) or not 1 <= len(columns) <= 8 or any(name not in stored for name in columns) or len(set(columns)) != len(columns):
             raise ValueError(f'Choose 1 to 8 columns of {model.__name__}, each once.')
@@ -389,7 +431,22 @@ class Customization:
             raise ValueError('Sort by a field of the model, or -id for newest first.')
         if 'open_in' in value and value['open_in'] not in OPEN_IN:
             raise ValueError('Open records in the full page or a side panel.')
-        return {'columns': list(columns), 'page_size': value['page_size'], 'sort': sort, **({'open_in': value['open_in']} if 'open_in' in value else {})}
+        if 'list_tab' in value and 'list_tabs' not in value:
+            raise ValueError('Send list_tabs with list_tab: the tab the list opens on is one of its values.')
+        if 'list_tabs' in value:
+            # The same rules as Meta.list_tabs and Meta.list_tab, over this instance's fields.
+            self.list_tabs(model, value)
+        return {'columns': list(columns), 'page_size': value['page_size'], 'sort': sort,
+                **{key: value[key] for key in ('open_in', 'list_tabs', 'list_tab') if key in value}}
+
+    def list_tabs(self, model, value):
+        """The list tabs a saved list view sets, as list_tabs_for gives them; ValueError when they can't work."""
+        class Options:
+            list_tabs, list_tab = value['list_tabs'], value.get('list_tab', 'all')
+        try:
+            return list_tabs_for(model, Options, self.fields(model))
+        except ValueError as exc:
+            raise ValueError(str(exc).replace(f'{model.__name__}.Meta.', 'The list view ')) from None
 
     def check_naming(self, model, _, value, saved=False):
         from .sequences import NamingRules, SERIES_ID, check_order
@@ -424,7 +481,7 @@ class Customization:
 
     def apply(self, stored, problems):
         """Build the effective field, layout, list and naming values from saved overrides."""
-        effective, defaults, choices, read_only, layouts, lists, tabs = {}, {}, {}, {}, {}, {}, {}
+        effective, defaults, choices, read_only, layouts, lists, tabs, panels = {}, {}, {}, {}, {}, {}, {}, {}
         naming = dict(self.file_naming)
         models = self.controls.models()
         for model in models.values():
@@ -462,6 +519,8 @@ class Customization:
             elif kind == 'layout':
                 layouts[model] = sections_of(checked)
                 tabs[model] = tabs_of(checked)
+                if panel_of(checked) is not None:
+                    panels[model] = panel_of(checked)
             elif kind == 'list':
                 lists[model] = checked
             else:
@@ -473,7 +532,7 @@ class Customization:
             for model, values in defaults.items():
                 defaults[model] = {name: model.__declared_fields__[name].validate(value) for name, value in values.items()}
         self.effective, self.defaults, self.choices, self.read_only = effective, defaults, MappingProxyType(choices), read_only
-        self.layouts, self.lists, self.naming, self.tabs = layouts, lists, MappingProxyType(naming), tabs
+        self.layouts, self.lists, self.naming, self.tabs, self.panels = layouts, lists, MappingProxyType(naming), tabs, panels
 
     def layout(self, model):
         """The effective layout. Fields placed nowhere (instance fields, fields an app adds later) go to the
@@ -527,12 +586,30 @@ class Customization:
                 field['wide'] = field['name'] in wide
         if model in self.tabs:
             entry['tabs'], entry['default_tab'] = self.tabs[model]
+        # What a list's side panel hides: the Controls choice when there is one, else the app's. The app's order stays.
+        panel = {**self.panels[model], **({'order': entry['panel']['order']} if 'order' in entry.get('panel', {}) else {})} \
+            if model in self.panels else entry.get('panel')
+        panel = {kind: [name for name in names if name in readable] if kind == 'fields' else names for kind, names in (panel or {}).items()}
+        panel = {kind: names for kind, names in panel.items() if names}
+        if panel:
+            entry['panel'] = panel
+        else:
+            entry.pop('panel', None)
         if model in self.lists:
             value = self.lists[model]
             entry['list_fields'] = ['id', *(name for name in value['columns'] if name in readable)]
             entry['page_size'] = value['page_size']
             if 'open_in' in value:
                 entry['open_in'] = value['open_in']
+            if 'list_tabs' in value:
+                # A saved choice that no longer fits (its field was removed since) keeps the app's tabs.
+                try:
+                    tabs = self.list_tabs(model, value)
+                except ValueError:
+                    tabs = entry.get('list_tabs')
+                entry.pop('list_tabs', None)
+                if tabs:
+                    entry['list_tabs'] = tabs
             if value['sort'].removeprefix('-') in readable or value['sort'] in ('id', '-id'):
                 entry['order_by'] = value['sort']
 
@@ -738,10 +815,18 @@ class Customization:
             value = json.loads(raw)
             if kind == 'field':
                 write(kind, key, None)
-            elif kind == 'layout' and any(item['name'] == name for section in sections_of(value) for item in section['fields']):
+            elif kind == 'layout' and (any(item['name'] == name for section in sections_of(value) for item in section['fields'])
+                                       or name in (panel_of(value) or {}).get('fields', ())):
                 # Sections left empty go, so the rest keep their places; with none left the layout goes back to the file.
                 kept = [{**section, 'fields': [item for item in section['fields'] if item['name'] != name]} for section in sections_of(value)]
                 kept = [section for section in kept if section['fields']]
+                panel = panel_of(value)
+                if panel is not None:
+                    # The side panel stops naming the field and any section that went with it.
+                    titles = {section['title'] for section in kept}
+                    panel = {kind_: names for kind_, names in {**panel, 'fields': [item for item in panel.get('fields', []) if item != name],
+                             'sections': [item for item in panel.get('sections', []) if item in titles]}.items() if names}
+                    value = {**value, 'panel': panel}
                 write(kind, key, ({**value, 'sections': kept} if isinstance(value, dict) else kept) if kept else None)
             elif kind == 'list' and (name in value['columns'] or value['sort'].removeprefix('-') == name):
                 columns = [item for item in value['columns'] if item != name]

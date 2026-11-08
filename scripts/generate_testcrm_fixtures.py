@@ -188,9 +188,9 @@ def record(app, out):
     sara.get('/api/organization?limit=50&offset=0')
     # The list: page, search, a saved view per state, sort, the board and the palette search.
     sara.list_page('deal')
-    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage')
+    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage', '/api/deal/list_tabs')
     sara.list_page('deal', '&q=planning')
-    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage&q=planning')
+    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage&q=planning', '/api/deal/list_tabs?q=planning')
     sara.list_page('deal', '&filters=' + quote(json.dumps({'stage': 'proposal'}, separators=(',', ':'))))
     sara.list_page('deal', '&order_by=total')
     sara.list_page('deal', '&order_by=-total')
@@ -203,7 +203,8 @@ def record(app, out):
     portal = ids(sara, 'deal', title='Distributor portal')
     sara.get(f'/api/deal/{portal}')
     assert sara.write('POST', f'/api/deal/{portal}/moves/proposal', {}, read=f'/api/deal/{portal}')['status'] == 200
-    sara.get(f'/api/deal/{portal}', '/api/deal?limit=100&offset=0', '/api/deal/measures', '/api/deal/aggregate?measures=n:count,pipeline&group_by=stage')
+    sara.get(f'/api/deal/{portal}', '/api/deal?limit=100&offset=0', '/api/deal/measures', '/api/deal/aggregate?measures=n:count,pipeline&group_by=stage',
+             '/api/deal/list_tabs')
     sara.list_page('deal')
     out['sara_list'] = sara.dump()
 

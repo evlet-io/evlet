@@ -143,7 +143,7 @@ export function flowFromState(state: StateSchema): { steps: FlowStep[]; good: st
   return { steps: state.states.map(value => ({ value, label: humanize(value) })), good, bad };
 }
 
-export interface TabItem { id: string; label: string; count?: Prop<number | null> }
+export interface TabItem { id: string; label: Prop<string>; count?: Prop<number | null> }
 
 /** Row of tabs with an underline in the record accent. Arrow keys move between tabs. */
 export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: string; idPrefix?: string; doc?: boolean }): HTMLElement {

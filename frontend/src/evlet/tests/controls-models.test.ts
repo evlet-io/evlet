@@ -132,6 +132,28 @@ describe('Models', () => {
   });
 });
 
+describe('list view tabs', () => {
+  it('sets the field the list tabs come from and the tab it opens on', async () => {
+    const { host, sent } = open('/controls/models?model=Lead&tab=list');
+    await until(() => expect(host.querySelector('#ctl-l-tabs')).toBeTruthy());
+    expect(text(host.querySelector('#ctl-l-tabs'))).toBe('No tabs');
+    expect(host.querySelector('#ctl-l-home')).toBeNull();
+    click(host.querySelector('#ctl-l-tabs'));
+    // Only Select (State included) and Link fields can be tabs.
+    expect([...document.querySelectorAll('[role="option"]')].map(text)).toEqual(['No tabs', 'Source']);
+    click(byText(document.body, '[role="option"]', 'Source'));
+    await until(() => expect(host.querySelector('#ctl-l-home')).toBeTruthy());
+    click(host.querySelector('#ctl-l-home'));
+    expect([...document.querySelectorAll('[role="option"]')].map(text)).toEqual(['All', 'web', 'walk_in']);
+    click(byText(document.body, '[role="option"]', 'web'));
+    await until(() => expect(text(host.querySelector('#ctl-l-home'))).toBe('web'));
+    click(byText(bar()!, 'button', 'Save changes'));
+    await until(() => expect(bar()).toBeNull());
+    const posted = sent.filter(entry => entry.method === 'POST')[0].body.changes[0];
+    expect(posted).toEqual({ kind: 'list', key: 'Lead', value: { columns: ['title', 'source'], page_size: 50, sort: '-id', list_tabs: 'source', list_tab: 'web' } });
+  });
+});
+
 describe('collapsible sections in the layout editor', () => {
   it('sets Can collapse and Starts per section, and turning collapse off drops both', async () => {
     const { host, sent } = open('/controls/models?model=Lead&tab=layout');
@@ -208,6 +230,41 @@ describe('order in the layout editor', () => {
     expect(posted.default_tab).toBe('lines');
     expect(posted.sections.map((section: { title: string }) => section.title)).toEqual(['Section 2', 'Details']);
     expect(posted.sections[1]).toMatchObject({ flow: 'columns', fields: [{ name: 'title', width: 6 }, { name: 'source', width: 6 }, { name: 'notes', width: 12 }, { name: 'value', width: 6 }] });
+  });
+});
+
+describe('the side panel toggles', () => {
+  const key = (target: Element, name: string) => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
+  const grip = (host: Element, selector: string) => host.querySelector<HTMLElement>(`${selector} [data-drag-handle]`)!;
+  it('hides a section, a field, a tab and a block in the side panel, keeps the choice when the section is renamed, and saves it', async () => {
+    const { host, sent } = open('/controls/models?model=Lead&tab=layout');
+    await until(() => expect(host.querySelector('.ctl-lsec-fold')).toBeTruthy());
+    const toggle = (label: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="Show ${label} in the side panel"]`)!;
+    expect(toggle('section Details').getAttribute('aria-pressed')).toBe('true');
+    click(toggle('Value'));
+    click(toggle('Activity tab'));
+    click(toggle('Summary strip'));
+    await until(() => expect(toggle('Value').getAttribute('aria-pressed')).toBe('false'));
+    // Details has no toggle: it shows while anything in it does.
+    expect(toggle('Details tab')).toBeNull();
+    click(byText(host, 'button', 'Add section'));
+    await until(() => expect(host.querySelectorAll('.ctl-lsec')).toHaveLength(2));
+    click(toggle('section Section 2'));
+    await until(() => expect(toggle('section Section 2').getAttribute('aria-pressed')).toBe('false'));
+    const title = host.querySelectorAll<HTMLInputElement>('.ctl-lsec-head input')[1];
+    title.value = 'Internal';
+    title.dispatchEvent(new Event('change'));
+    await until(() => expect(toggle('section Internal').getAttribute('aria-pressed')).toBe('false'));
+    // A section needs a field to save: move notes into it.
+    grip(host, '[data-drag-id="notes"]').focus();
+    key(grip(host, '[data-drag-id="notes"]'), ' ');
+    key(grip(host, '[data-drag-id="notes"]'), 'ArrowDown');
+    key(grip(host, '[data-drag-id="notes"]'), ' ');
+    await until(() => expect(host.querySelectorAll('.ctl-lsec')[1].querySelector('[data-field="notes"]')).not.toBeNull());
+    click(byText(bar()!, 'button', 'Save changes'));
+    await until(() => expect(bar()).toBeNull());
+    const posted = sent.filter(entry => entry.method === 'POST')[0].body.changes[0].value;
+    expect(posted.panel).toEqual({ fields: ['value'], tabs: ['activity'], blocks: ['summary'], sections: ['Internal'] });
   });
 });
 

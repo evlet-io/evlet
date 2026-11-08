@@ -394,18 +394,31 @@ scripts, model actions and moves, legacy `Action` handlers, `changed` reactions,
 ```python
 class LedgerEntry(Model):
     class Meta:
-        api = "read"           # only the posting code below writes entries
+        ledger = True          # lean rows, no public surface (Meta.api is None)
+        append_only = True     # the database refuses UPDATE and DELETE
 
     invoice = Link(Invoice, required=True)
     posting_date = Date(required=True)
     amount = Currency(required=True)
 
 
+class Receipt(Model):
+    class Meta:
+        api = "read"           # callers read receipts; only the posting code below writes them
+
+    invoice = Link(Invoice, required=True)
+    amount = Currency(required=True)
+
+
 def post_invoice(tx, user, invoice):           # Action(Invoice, "post", "Post to ledger", post_invoice)
     tx.create(LedgerEntry, invoice=invoice.id, posting_date=invoice.posting_date, amount=invoice.total)
+    tx.create(Receipt, invoice=invoice.id, amount=invoice.total)
 ```
 
-**`api = "read"`.** Every write route answers 403 "LedgerEntry records are read only here. The
+A table that only trusted code writes, at high volume, is usually a [ledger model](ledger.md):
+`Meta.ledger = True` gives it an integer id and its declared columns only, and no surface at all.
+
+**`api = "read"`.** Every write route answers 403 "Receipt records are read only here. The
 application changes them.": create, update, delete, drafts, actions, moves, void, revise,
 unpost, repost, confirm, cancel, reopen, journal entries, attachments and filing a print. So
 do the MCP and Eva write tools, which call the same routes. The schema carries `"api": "read"`
@@ -424,6 +437,14 @@ the model and field. A caller cannot write a Reference that names such a model.
 
 `Meta.api` is checked at registration: `"full"`, `"read"` or `None`. Owned rows follow their
 document.
+
+## Ledger models
+
+`Meta.ledger = True` makes a lean model for high-volume rows that trusted Python writes, such as
+movements and balances: an integer `id` the database assigns, the declared columns and nothing
+else, no public surface, and optional `append_only`, `journal`, `timestamps`, `indexes` and
+`period`. Transactions also take named locks on business keys with `tx.lock(...)`. See
+[ledger.md](ledger.md).
 
 ## Closed periods
 

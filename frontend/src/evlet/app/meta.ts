@@ -145,11 +145,16 @@ export function sections(model: ScreenModel): Array<{ label: string; fields: Fie
   return result.filter(section => section.fields.length);
 }
 
-/** Summary strip stats: key fields first, else calculated fields, at most four. */
-export function summaryFields(model: ScreenModel): FieldSchema[] {
-  const keyed = (model.key_fields ?? []).map(name => fieldOf(model, name)).filter((field): field is FieldSchema => Boolean(field));
-  if (keyed.length) return keyed.slice(0, 4);
-  return model.fields.filter(field => field.compute && !field.hidden).slice(0, 4);
+/** The record header's facts: the first three key fields that the title, name, State and status badge don't already show. */
+export function headerFacts(model: ScreenModel, has: (name: string) => boolean = () => true): FieldSchema[] {
+  return keyFields(model).filter(meta => meta.name !== model.title_field && meta.name !== 'name' && has(meta.name) && !isStateField(model, meta) && meta.name !== model.status).slice(0, 3);
+}
+
+/** Summary strip stats: calculated values the header doesn't show, at most four. Key fields belong to the
+ * header; per-record measures follow these on the page. Meta.summary = False leaves the strip out. */
+export function summaryFields(model: ScreenModel, shown: ReadonlySet<string> = new Set(headerFacts(model).map(meta => meta.name))): FieldSchema[] {
+  if (model.summary === false) return [];
+  return model.fields.filter(field => field.compute && !field.hidden && !shown.has(field.name) && field.type !== 'longtext' && field.type !== 'richtext').slice(0, 4);
 }
 
 // ---------- values ----------
@@ -181,6 +186,43 @@ export const measureLabel = (measure: MeasureSchema) => measure.name.replace(/_/
 
 /** The record page tab id of a Meta.tabs name: a record tab keeps its name, a Table field's tab is t-<name>. */
 const tabId = (name: string) => ['activity', 'details', 'revisions', 'related', 'postings'].includes(name) ? name : `t-${name}`;
+
+/**
+ * What a record opened in a list's side panel shows (model.panel: panel=False flags, Meta.panel or the Controls
+ * toggles). Tabs and blocks follow the order Meta.panel names them in. The full page ignores it.
+ */
+export interface PanelView {
+  /** True when the panel leaves anything out: it then offers the full page. */
+  hides: boolean;
+  section(label: string): boolean;
+  field(name: string): boolean;
+  /** A record page tab id: activity, details, revisions, related, postings or t-<table>. */
+  tab(id: string): boolean;
+  /** summary, key_fields, related, files or info. */
+  block(name: string): boolean;
+  /** Items in the order Meta.panel names them (by tab id or block name), the rest after them as they were. */
+  order<T>(items: T[], id: (item: T) => string): T[];
+}
+
+export function panelView(model: ScreenModel): PanelView {
+  const panel = model.panel ?? {};
+  const hidden = (names?: string[]) => new Set(names ?? []);
+  const sections = hidden(panel.sections), fields = hidden(panel.fields), blocks = hidden(panel.blocks);
+  const tabs = new Set((panel.tabs ?? []).map(tabId));
+  const ranks = (panel.order ?? []).map(name => SIDE_BLOCK_NAMES.includes(name) || name === 'summary' ? name : tabId(name));
+  const rank = (key: string) => { const at = ranks.indexOf(key); return at < 0 ? ranks.length : at; };
+  return {
+    hides: Boolean(sections.size || fields.size || tabs.size || blocks.size),
+    section: label => !sections.has(label),
+    field: name => !fields.has(name),
+    tab: id => !tabs.has(id),
+    block: name => !blocks.has(name),
+    order: (items, id) => items.map((item, index) => ({ item, index })).sort((a, b) => rank(id(a.item)) - rank(id(b.item)) || a.index - b.index).map(entry => entry.item),
+  };
+}
+
+/** The record page's side blocks (Meta.side_blocks in evlet/ui/metadata.py). */
+const SIDE_BLOCK_NAMES = ['key_fields', 'related', 'files', 'info'];
 
 /**
  * Record page tabs in the model's order (Meta.tabs or the Controls tab order): the tabs it names first,
