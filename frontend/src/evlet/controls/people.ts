@@ -203,6 +203,10 @@ export function RolesPage(ctx: ControlsContext): HTMLElement {
     if (!next) return void apply();
     ask('Let this role open Controls?', html`People with <strong>${row.id}</strong> will be able to change users, roles, permissions and security on this instance.`, 'Allow', apply);
   };
+  const setWorkspaces = async (row: RoleRow, next: boolean) => {
+    try { await ctx.api.changeRole(row.id, { customize_workspaces: next }); await refresh(); toast(next ? `${row.id} can customize workspaces` : `${row.id} can no longer customize workspaces`); }
+    catch (failure) { toast(message(failure), { icon: 'info' }); }
+  };
   const remove = (row: RoleRow) => {
     if (row.users) return ask('Role still in use', html`${row.users === 1 ? '1 user has' : `${row.users} users have`} the <strong>${row.id}</strong> role. Move them to another role first.`, 'OK', null);
     ask(`Delete ${row.id}?`, "Its permission overrides are removed too. This can't be undone.", 'Delete role', async () => {
@@ -213,12 +217,14 @@ export function RolesPage(ctx: ControlsContext): HTMLElement {
   return html`<div>
     ${Head('Roles', 'Roles decide what people can do. Framework roles come from Evlet. Custom roles start from a framework role and inherit its defaults.',
       isAdmin(ctx) ? Button({ label: 'New role', icon: 'plus', variant: 'primary', onClick: () => newRole(ctx) }) : null)}
-    <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Role</th><th>Type</th><th>Based on</th><th>Signs in on</th><th class="r">Users</th><th>Opens Controls</th><th></th></tr></thead>
+    <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Role</th><th>Type</th><th>Based on</th><th>Signs in on</th><th class="r">Users</th><th>Opens Controls</th><th>Customize workspaces</th><th></th></tr></thead>
       <tbody>${() => roles().map(row => html`<tr><td><div>${RoleChip(row.id)}</div><span class="ctl-sub">${row.description}</span></td>
         <td>${row.kind === 'framework' ? html`<span class="ctl-line muted">${Icon('lock', { size: 'xs' })}Framework</span>` : row.app ? html`<span>From ${row.app}</span>` : html`<span>Custom</span>`}</td>
         <td>${row.base ? RoleChip(row.base) : html`<span class="muted">—</span>`}</td><td>${row.realm === 'portal' ? 'Portal' : 'Desk'}</td><td class="r num">${row.users}</td>
         <td><span class="ctl-line">${Switch({ on: row.opens_controls, ariaLabel: `Opens Controls for ${row.id}`, disabled: row.id === 'admin' || row.realm !== 'desk' || !isAdmin(ctx),
           onChange: next => void setControls(row, next) })}${row.id === 'admin' ? html`<span class="muted ctl-small">Always</span>` : null}</span></td>
+        <td><span class="ctl-line">${Switch({ on: Boolean(row.customize_workspaces), ariaLabel: `Customize workspaces for ${row.id}`, disabled: row.id === 'admin' || row.realm !== 'desk' || !isAdmin(ctx),
+          onChange: next => void setWorkspaces(row, next) })}${row.id === 'admin' ? html`<span class="muted ctl-small">Always</span>` : null}</span></td>
         <td class="r ctl-nowrap"><a class="ctl-link" href=${ctx.router.href('permissions', {}, { role: row.id })}>Permissions ${Icon('arrow-right', { size: 'xs' })}</a>
           ${row.kind === 'custom' && !row.declared && isAdmin(ctx) ? Button({ icon: 'trash-2', tip: `Delete ${row.id}`, size: 'small', variant: 'ghost', onClick: () => remove(row) }) : null}</td></tr>`)}</tbody></table></div>
     ${Callout('info', 'info', html`Opening Controls is a separate right from any model permission. It never applies to portal roles, and admin always has it so the instance can't be locked out. Only admins change who opens Controls, manage roles and change admin accounts. From the server shell, <code>evlet controls grant &lt;instance&gt; &lt;user&gt;</code> restores access.`)}

@@ -22,6 +22,9 @@ from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, 
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
+# Workspace overrides share the table but have their own routes (/api/_controls/workspaces), not POST /overrides.
+OVERRIDE_KINDS = "CHECK(kind IN ('perm','field','custom','layout','list','naming','setting','workspace'))"
+WORKSPACE_ACCESS = 'Customizing workspaces needs an admin, or a role with "Customize workspaces" on.'
 PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'periods', 'prints', 'currencies', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
     'security.password_min': 15, 'security.session_hours': 12, 'security.lockout': 5,
@@ -71,14 +74,33 @@ SCOPES = MappingProxyType({name: _field_scope(name) for name in ('created_by', '
 
 def ensure_schema(connection):
     """Create the Controls tables on a framework or raw SQLite connection. The audit log is append-only."""
+    overrides = ('CREATE TABLE IF NOT EXISTS {} (kind TEXT NOT NULL ' + OVERRIDE_KINDS +
+                 ', key TEXT NOT NULL, value TEXT NOT NULL, changed_by INTEGER, changed_at INTEGER, PRIMARY KEY (kind, key))')
     for statement in (
-        "CREATE TABLE IF NOT EXISTS evlet_overrides (kind TEXT NOT NULL CHECK(kind IN ('perm','field','custom','layout','list','naming','setting')), key TEXT NOT NULL, value TEXT NOT NULL, changed_by INTEGER, changed_at INTEGER, PRIMARY KEY (kind, key))",
+        overrides.format('evlet_overrides'),
         'CREATE TABLE IF NOT EXISTS evlet_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL, area TEXT NOT NULL, target TEXT NOT NULL, detail TEXT NOT NULL, before TEXT, after TEXT)',
         'CREATE TABLE IF NOT EXISTS evlet_config (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)',
         'INSERT OR IGNORE INTO evlet_config(id,version) VALUES (1,1)',
         PERIOD_LOCKS,
     ):
         connection.execute(statement)
+    # Workspace overrides (kind "workspace") came later: widen the kind check of a table made before them.
+    if isinstance(connection, sqlite3.Connection):
+        sql = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='evlet_overrides'").fetchone()[0]
+        if "'workspace'" not in sql:
+            connection.execute(overrides.format('evlet_overrides_widened'))
+            connection.execute('INSERT INTO evlet_overrides_widened(kind,key,value,changed_by,changed_at) '
+                               'SELECT kind,key,value,changed_by,changed_at FROM evlet_overrides')
+            connection.execute('DROP TABLE evlet_overrides')
+            connection.execute('ALTER TABLE evlet_overrides_widened RENAME TO evlet_overrides')
+    else:
+        checks = connection.execute("SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
+                                    "WHERE conrelid = to_regclass('evlet_overrides') AND contype = 'c'").fetchall()
+        old = [row[0] for row in checks if 'kind' in row[1] and 'workspace' not in row[1]]
+        for name in old:
+            connection.execute(f'ALTER TABLE evlet_overrides DROP CONSTRAINT {identifier(name)}')
+        if old:
+            connection.execute(f'ALTER TABLE evlet_overrides ADD CONSTRAINT evlet_overrides_kind_check {OVERRIDE_KINDS}')
     if isinstance(connection, sqlite3.Connection):
         refuse = "BEGIN SELECT RAISE(ABORT, 'The audit log is append-only'); END"
         connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_audit_no_update BEFORE UPDATE ON evlet_audit {refuse}')
@@ -335,6 +357,11 @@ class Controls:
         self.business.policy = policy
         if self.business.jobs is not None:
             self.business.jobs.policy = policy
+        # Site workspace overrides (evlet.workspaces); /api/schema filters them by permission after applying them.
+        workspaces = getattr(self.business, 'workspaces', None)
+        if workspaces is not None:
+            with activated(self.database, layer):
+                workspaces.load_overrides([row for row in stored if row['kind'] == 'workspace'], problems)
         auth = self.business.auth
         auth.password_min, auth.session_hours, auth.lockout = settings['security.password_min'], settings['security.session_hours'], settings['security.lockout']
         self.settings, self.problems, self.version = settings, problems, version
@@ -353,7 +380,7 @@ class Controls:
                     perms[role, model] = self.rule(role, model, self.check_perm(row['key'], value))
                 elif row['kind'] == 'setting':
                     settings[row['key']] = self.check_setting(row['key'], value)
-                elif row['kind'] not in ('field', 'layout', 'list', 'naming'):
+                elif row['kind'] not in ('field', 'layout', 'list', 'naming', 'workspace'):
                     raise ValueError('This kind of change is not available yet.')
             except (ValueError, KeyError, TypeError) as exc:
                 problems.append({'kind': row['kind'], 'key': row['key'], 'error': str(exc)})
@@ -643,7 +670,7 @@ class Controls:
     def overrides(self):
         with self.database._connection() as connection:
             stored = {(row['kind'], row['key']): row for row in connection.execute(
-                'SELECT o.*, u.username FROM evlet_overrides o LEFT JOIN evlet_users u ON u.id=o.changed_by')}
+                "SELECT o.*, u.username FROM evlet_overrides o LEFT JOIN evlet_users u ON u.id=o.changed_by WHERE o.kind <> 'workspace'")}
         items = []
         meta = lambda kind, key: {'changed_by': stored[kind, key]['username'], 'changed_at': stored[kind, key]['changed_at']} if (kind, key) in stored else {'changed_by': None, 'changed_at': None}
         value = lambda kind, key: json.loads(stored[kind, key]['value']) if (kind, key) in stored else None
@@ -911,7 +938,8 @@ class Controls:
         with self.database._connection() as connection:
             counts = {row[0]: row[1] for row in connection.execute('SELECT role, count(*) FROM evlet_users GROUP BY role')}
             rows = [dict(row) for row in connection.execute("SELECT * FROM evlet_roles ORDER BY kind DESC, CASE id WHEN 'admin' THEN 0 WHEN 'editor' THEN 1 WHEN 'viewer' THEN 2 ELSE 3 END, id")]
-        return [{**row, 'opens_controls': bool(row['opens_controls'] or row['id'] == 'admin'), 'users': counts.get(row['id'], 0),
+        return [{**row, 'opens_controls': bool(row['opens_controls'] or row['id'] == 'admin'),
+                 'customize_workspaces': bool(row['customize_workspaces'] or row['id'] == 'admin'), 'users': counts.get(row['id'], 0),
                  'app': self.app_roles.get(row['id'], (None,))[0], 'declared': row['id'] in self.file.roles} for row in rows]
 
     def create_role(self, actor, body):
@@ -939,25 +967,29 @@ class Controls:
         self.refresh()
 
     def change_role(self, actor, role, body):
-        checked_body(body, {'opens_controls', 'description'}, 'Use opens_controls or description', nonempty=True)
-        if 'opens_controls' in body and type(body['opens_controls']) is not bool:
-            raise ValidationError({'opens_controls': 'Use true or false'})
+        flags = (('opens_controls', 'Opens Controls'), ('customize_workspaces', 'Customize workspaces'))
+        checked_body(body, {'opens_controls', 'customize_workspaces', 'description'},
+                     'Use opens_controls, customize_workspaces or description', nonempty=True)
+        for flag, _ in flags:
+            if flag in body and type(body[flag]) is not bool:
+                raise ValidationError({flag: 'Use true or false'})
         if 'description' in body and (not isinstance(body['description'], str) or len(body['description']) > 200):
             raise ValidationError({'description': 'Use at most 200 characters.'})
         with self.database.transaction() as tx:
             row = tx.connection.execute('SELECT * FROM evlet_roles WHERE id=?', (role,)).fetchone()
             if row is None:
                 raise AccessError(404, 'Role not found')
-            if actor.role != 'admin' and ('opens_controls' in body or row['kind'] == 'framework'):
+            if actor.role != 'admin' and (any(flag in body for flag, _ in flags) or row['kind'] == 'framework'):
                 raise AccessError(403, ADMIN_ONLY)
             details = []
-            if 'opens_controls' in body and body['opens_controls'] != bool(row['opens_controls']):
-                if role == 'admin':
-                    raise ValidationError({'opens_controls': 'Admin always opens Controls, so the instance cannot be locked out.'})
-                if row['realm'] != 'desk':
-                    raise ValidationError({'opens_controls': 'Portal roles can never open Controls.'})
-                tx.connection.execute('UPDATE evlet_roles SET opens_controls=? WHERE id=?', (int(body['opens_controls']), role))
-                details.append('Opens Controls: ' + ('no → yes' if body['opens_controls'] else 'yes → no'))
+            for flag, label in flags:
+                if flag in body and body[flag] != (bool(row[flag]) or role == 'admin'):
+                    if role == 'admin':
+                        raise ValidationError({flag: f'Admin always has {label}, so the instance cannot be locked out.'})
+                    if row['realm'] != 'desk':
+                        raise ValidationError({flag: f'Portal roles can never have {label}.'})
+                    tx.connection.execute(f'UPDATE evlet_roles SET {flag}=? WHERE id=?', (int(body[flag]), role))
+                    details.append(f'{label}: ' + ('no → yes' if body[flag] else 'yes → no'))
             if 'description' in body and body['description'] != row['description']:
                 tx.connection.execute('UPDATE evlet_roles SET description=? WHERE id=?', (body['description'].strip(), role))
                 details.append('Description changed')
@@ -1146,9 +1178,98 @@ class Controls:
                           'line': line})
         return items
 
+    # ---------- workspaces ----------
+
+    def customizes(self, scope, user):
+        """Admins, and desk roles with "Customize workspaces" on, on the hosts and networks that open Controls."""
+        role = self.roles.get(user.role)
+        if user.access is not None or not self.host_allowed(scope) or role is None or role['realm'] != 'desk':
+            return False
+        if user.role != 'admin' and not role.get('customize_workspaces'):
+            return False
+        address = client_ip(scope, self.business.auth)
+        return not any(allowed and (address is None or not any(address in network for network in _networks(allowed)))
+                       for allowed in (self.routes.controls.allow_ips, self.settings['security.controls_ips']))
+
+    def workspace_route(self, scope, body, user):
+        """GET /api/_controls/workspaces, PUT and DELETE /api/_controls/workspaces/<key>: the site's workspace overrides."""
+        if self.routes is None or getattr(self.business, 'workspaces', None) is None or not self.customizes(scope, user):
+            raise AccessError(403, WORKSPACE_ACCESS)
+        required = self.routes.controls.require_two_step or user.role in self.settings['security.two_step_roles'] and self.business.settings.possible()
+        if required and not user.two_step:
+            raise AccessError(403, TWO_STEP)
+        path, method = scope['path'].removeprefix('/api/_controls/workspaces'), scope['method']
+        if method not in ('GET', 'HEAD'):
+            self.business.settings.recently_verified(user)
+        if path == '' and method == 'GET':
+            return 200, self.workspace_listing(user), []
+        match = re.fullmatch(r'/([a-z][a-z0-9_]{0,63})', path)
+        if match and method == 'PUT':
+            self.save_workspace(user, match[1], body)
+            return 200, self.workspace_listing(user), []
+        if match and method == 'DELETE':
+            self.reset_workspace(user, match[1])
+            return 200, self.workspace_listing(user), []
+        raise AccessError(404, NOT_FOUND)
+
+    def workspace_listing(self, user):
+        """Each workspace with its saved override and who changed it, and how it looks to this person without and with it."""
+        workspaces = self.business.workspaces
+        with self.database._connection() as connection:
+            stored = {row['key']: row for row in connection.execute(
+                "SELECT o.key, o.value, o.changed_at, u.username FROM evlet_overrides o LEFT JOIN evlet_users u ON u.id=o.changed_by WHERE o.kind='workspace'")}
+        schema = self.business.schema(user)
+        declared = {entry['key']: entry for entry in workspaces.view(user, schema, overrides=False)}
+        effective = {entry['key']: entry for entry in schema.get('workspaces', ())}
+        items = []
+        for plan in workspaces.effective():
+            row = stored.get(plan['key'])
+            items.append({'key': plan['key'], 'label': plan['label'], 'source': plan['source'], 'app': plan['app'],
+                          'override': None if row is None else json.loads(row['value']),
+                          'changed_by': None if row is None else row['username'], 'changed_at': None if row is None else row['changed_at'],
+                          'declared': declared.get(plan['key']), 'effective': effective.get(plan['key'])})
+        listed = {item['key'] for item in items}
+        # A saved override that no longer applies stays listed, so it can be reset.
+        items += [{'key': key, 'label': key, 'source': 'unknown', 'app': None, 'override': json.loads(row['value']), 'changed_by': row['username'],
+                   'changed_at': row['changed_at'], 'declared': None, 'effective': None} for key, row in stored.items() if key not in listed]
+        return {'items': items, 'problems': [problem for problem in self.problems if problem['kind'] == 'workspace']}
+
+    def save_workspace(self, user, key, body):
+        stored, compiled = self.business.workspaces.check_override(key, body)
+        custom = compiled['custom']
+        if not custom and compiled['label'] is None and compiled['icon'] is None and not compiled['groups']:
+            return self.reset_workspace(user, key, missing_ok=True)
+        with self.database.transaction() as tx:
+            row = tx.connection.execute("SELECT value FROM evlet_overrides WHERE kind='workspace' AND key=?", (key,)).fetchone()
+            before = None if row is None else json.loads(row['value'])
+            if before == stored:
+                return
+            tx.connection.execute('INSERT INTO evlet_overrides(kind,key,value,changed_by,changed_at) VALUES (?,?,?,?,?) ON CONFLICT(kind,key) DO UPDATE SET '
+                                  'value=excluded.value, changed_by=excluded.changed_by, changed_at=excluded.changed_at',
+                                  ('workspace', key, json.dumps(stored, sort_keys=True), user.id, int(time.time())))
+            audit(tx.connection, user.username, 'Workspaces', key, 'Added' if custom and before is None else 'Changed', before, stored)
+            self.publish(tx)
+        self.refresh()
+
+    def reset_workspace(self, user, key, *, missing_ok=False):
+        workspaces = self.business.workspaces
+        with self.database.transaction() as tx:
+            row = tx.connection.execute("SELECT value FROM evlet_overrides WHERE kind='workspace' AND key=?", (key,)).fetchone()
+            if row is None:
+                if missing_ok or any(plan['key'] == key for plan in workspaces.plans):
+                    return
+                raise AccessError(404, 'No workspace has this key')
+            before = json.loads(row['value'])
+            tx.connection.execute("DELETE FROM evlet_overrides WHERE kind='workspace' AND key=?", (key,))
+            audit(tx.connection, user.username, 'Workspaces', key, 'Removed' if before.get('custom') else 'Reset to the declared workspace', before, None)
+            self.publish(tx)
+        self.refresh()
+
     # ---------- HTTP ----------
 
     def dispatch(self, scope, body, user):
+        if scope['path'] == '/api/_controls/workspaces' or scope['path'].startswith('/api/_controls/workspaces/'):
+            return self.workspace_route(scope, body, user)
         self.check(scope, user)
         path, method = scope['path'].removeprefix('/api/_controls'), scope['method']
         # Every change asks for a recent two-step code; reading, trying a naming series and previewing a print design do not.

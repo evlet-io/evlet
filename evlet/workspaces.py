@@ -169,6 +169,8 @@ class Workspaces:
         # One app for an Application built by hand; build_instance replaces it with the installed apps (load).
         self.apps = [{'id': 'app', 'title': name, 'workspaces': tuple(declared), 'models': None, 'reports': None}]
         self.plans = self.compile()
+        # Site overrides by workspace key, checked and compiled (load_overrides, from Controls).
+        self.overridden = {}
 
     def load(self, definitions, packages=()):
         """The installed apps, from build_instance: each app's declared workspaces, or its automatic one."""
@@ -275,22 +277,199 @@ class Workspaces:
     # ---------- each role ----------
 
     def schema(self, user, result):
-        """The workspaces this role sees: items it can't open are left out, then empty groups and workspaces."""
+        """The workspaces this role sees: declared, then the site's overrides, then what the role can open. Items it
+        can't open are left out, then empty groups and workspaces, so an override never widens access."""
+        return self.view(user, result, overrides=True)
+
+    def view(self, user, result, *, overrides):
         context = Context(self.business, user, result)
         workspaces = []
-        for plan in self.effective():
-            groups = context.automatic(plan) if plan['source'] == 'automatic' else [
-                {'key': group['key'], 'label': group['label'], 'icon': group['icon'],
-                 'items': [shown for shown in (context.item(item) for item in group['items']) if shown is not None]}
-                for group in plan['groups']]
+        for plan in self.effective() if overrides else self.plans:
+            override = self.overridden.get(plan['key']) if overrides else None
+            groups = context.automatic(plan) if plan['source'] == 'automatic' else plan['groups']
+            if override is not None:
+                groups = apply_override(groups, override)
+            groups = [{'key': group['key'], 'label': group['label'], 'icon': group['icon'],
+                       'items': [shown for shown in (context.item(item) for item in group['items']) if shown is not None]}
+                      for group in groups]
             groups = [group for group in groups if group['items']]
             if groups:
-                workspaces.append({'key': plan['key'], 'label': plan['label'], 'icon': plan['icon'], 'app': plan['app'],
+                workspaces.append({'key': plan['key'], 'label': (override or {}).get('label') or plan['label'],
+                                   'icon': (override or {}).get('icon') or plan['icon'], 'app': plan['app'],
                                    'source': plan['source'], 'groups': groups})
         return workspaces
 
     def effective(self):
-        return self.plans
+        """The declared and automatic workspaces, then the site's custom ones by key."""
+        return [*self.plans, *({'key': key, 'label': value['label'], 'icon': value['icon'], 'app': None, 'source': 'custom', 'groups': []}
+                               for key, value in sorted(self.overridden.items()) if value['custom'])]
+
+    # ---------- site overrides (Controls) ----------
+
+    def load_overrides(self, rows, problems):
+        """Stored overrides (evlet_overrides kind "workspace"), from Controls on every config change. One that no
+        longer validates is left out and listed under Needs attention, so the declared workspace shows instead."""
+        overridden = {}
+        for row in rows:
+            try:
+                overridden[row['key']] = self.check_override(row['key'], json.loads(row['value']))[1]
+            except (ValueError, TypeError) as exc:
+                text = '; '.join(f'{key}: {value}' for key, value in exc.errors.items()) if isinstance(exc, ValidationError) else str(exc)
+                problems.append({'kind': 'workspace', 'key': row['key'],
+                                 'error': f'{text}. The workspace shows as declared until this is fixed or reset.'})
+        self.overridden = overridden
+
+    def known(self, plan):
+        """{group key: label} and {item key: True} an override of this workspace may refer to."""
+        if plan['source'] == 'declared':
+            return ({group['key']: group['label'] for group in plan['groups']},
+                    {item['key'] for group in plan['groups'] for item in group['items']})
+        registry, business = self.business.registry, self.business
+        models = {name for name, model in registry.exposed.items() if model not in business.child_models
+                  and (plan['models'] is None or name in plan['models'])}
+        reports = {name for name in getattr(getattr(business, 'forms', None), 'reports', {}) if plan['reports'] is None or name in plan['reports']}
+        return ({'documents': 'Documents', 'records': 'Records', 'reports': 'Reports'},
+                {f'model:{name}' for name in models} | {f'report:{name}' for name in reports})
+
+    def check_override(self, key, value):
+        """(value to store, compiled value) of one workspace override; ValidationError names each problem by its path."""
+        if not isinstance(value, dict):
+            raise ValidationError({'_form': 'Send an object with label, icon and groups'})
+        custom = value.get('custom', False)
+        if type(custom) is not bool or set(value) - {'custom', 'label', 'icon', 'groups'}:
+            raise ValidationError({'_form': 'Use custom, label, icon and groups'})
+        plan = next((plan for plan in self.plans if plan['key'] == key), None)
+        if custom:
+            if not isinstance(key, str) or not KEY.fullmatch(key):
+                raise ValidationError({'key': 'Use 1 to 64 lowercase letters, digits or underscores, starting with a letter'})
+            if plan is not None:
+                raise ValidationError({'key': f'The workspace {plan["label"]} has this key. Choose another key for a new workspace'})
+            if 'label' not in value or not value.get('groups'):
+                raise ValidationError({'_form': 'A new workspace needs a label and at least one group'})
+            groups_known, items_known = {}, set()
+        elif plan is None:
+            raise ValidationError({'key': 'No workspace has this key. Send "custom": true to add one'})
+        else:
+            groups_known, items_known = self.known(plan)
+        errors, compiled = {}, {'custom': custom, 'label': None, 'icon': None, 'groups': []}
+        for name in ('label', 'icon'):
+            if name in value:
+                try:
+                    (_label if name == 'label' else _icon)(value[name], 'This workspace')
+                    compiled[name] = value[name].strip() if name == 'label' else value[name]
+                except ValueError as exc:
+                    errors[name] = str(exc).removeprefix('This workspace: ')
+        groups = value.get('groups', [])
+        if not isinstance(groups, list) or len(groups) > 50:
+            raise ValidationError({**errors, 'groups': 'Send a list of at most 50 groups'})
+        seen_groups, seen_items = set(), set()
+        where = f'Workspace {key!r}'
+        for index, group in enumerate(groups):
+            path = f'groups.{index}'
+            if not isinstance(group, dict) or set(group) - {'key', 'label', 'icon', 'hidden', 'items'} or not isinstance(group.get('key'), str):
+                errors[path] = 'Send key, with label, icon, hidden or items'
+                continue
+            gkey = group['key']
+            if gkey in seen_groups:
+                errors[path + '.key'] = 'Name each group once'
+            seen_groups.add(gkey)
+            if gkey not in groups_known:
+                if not re.fullmatch(r'\w{1,64}', gkey):
+                    errors[path + '.key'] = 'A new group key is 1 to 64 letters, digits or underscores'
+                if 'label' not in group:
+                    errors[path + '.label'] = 'A new group needs a label'
+            entry = {'key': gkey, 'label': None, 'icon': None, 'hidden': False, 'items': []}
+            for name in ('label', 'icon'):
+                if name in group:
+                    try:
+                        (_label if name == 'label' else _icon)(group[name], 'This group')
+                        entry[name] = group[name].strip() if name == 'label' else group[name]
+                    except ValueError as exc:
+                        errors[f'{path}.{name}'] = str(exc).removeprefix('This group: ')
+            if 'hidden' in group:
+                if type(group['hidden']) is not bool:
+                    errors[path + '.hidden'] = 'Use true or false'
+                entry['hidden'] = group['hidden'] is True
+            items = group.get('items', [])
+            if not isinstance(items, list) or len(items) > 200:
+                errors[path + '.items'] = 'Send a list of at most 200 items'
+                items = []
+            for position, spec in enumerate(items):
+                ipath = f'{path}.items.{position}'
+                if not isinstance(spec, dict) or set(spec) - {'key', 'shortcut', 'label', 'hidden'} or ('key' in spec) == ('shortcut' in spec):
+                    errors[ipath] = 'Send key or shortcut, with label or hidden'
+                    continue
+                item = None
+                if 'key' in spec:
+                    if not isinstance(spec['key'], str) or spec['key'] not in items_known:
+                        errors[ipath + '.key'] = 'No item of this workspace has this key' if not custom else 'A new workspace holds shortcuts only'
+                        continue
+                    ikey = spec['key']
+                else:
+                    shortcut = spec['shortcut']
+                    allowed = {'model', 'view', 'filters', 'label', 'report', 'slip', 'url'}
+                    if not isinstance(shortcut, dict) or set(shortcut) - allowed or any(
+                            name in shortcut and not isinstance(shortcut[name], str) for name in allowed - {'filters'}):
+                        errors[ipath + '.shortcut'] = 'Send model, view, filters, label, report, slip or url, as text (filters as JSON)'
+                        continue
+                    try:
+                        made = Shortcut(**shortcut)
+                        label = f'{where}, group {gkey!r}, item {made!r}'
+                        check_item(made, label)
+                        item = self.item(made, label)
+                    except ValueError as exc:
+                        errors[ipath + '.shortcut'] = str(exc)
+                        continue
+                    ikey = item['key']
+                    if ikey in items_known:
+                        errors[ipath + '.shortcut'] = f'An item of this workspace has the key {ikey}; give the shortcut a different label'
+                        continue
+                if ikey in seen_items:
+                    errors[ipath] = f'Use each item once ({ikey})'
+                seen_items.add(ikey)
+                shown = {'key': ikey, 'item': item, 'label': None, 'hidden': False}
+                if 'label' in spec:
+                    try:
+                        _label(spec['label'], 'This item')
+                        shown['label'] = spec['label'].strip()
+                    except ValueError as exc:
+                        errors[ipath + '.label'] = str(exc).removeprefix('This item: ')
+                if 'hidden' in spec:
+                    if type(spec['hidden']) is not bool:
+                        errors[ipath + '.hidden'] = 'Use true or false'
+                    shown['hidden'] = spec['hidden'] is True
+                entry['items'].append(shown)
+            compiled['groups'].append(entry)
+        if errors:
+            raise ValidationError(errors)
+        return value, compiled
+
+
+def apply_override(groups, override):
+    """Groups after a site override: its groups first, in its order, each with its items in its order and then its
+    other declared items; declared groups it doesn't list follow. An item it places anywhere leaves its own group.
+    Hidden groups and items, and keys this role's groups don't hold, are left out."""
+    declared = {item['key']: item for group in groups for item in group['items']}
+    placed = {entry['key'] for group in override['groups'] for entry in group['items']}
+    by_key = {group['key']: group for group in groups}
+    result = []
+    for entry in override['groups']:
+        base = by_key.get(entry['key'])
+        if entry['hidden']:
+            continue
+        items = []
+        for spec in entry['items']:
+            item = spec['item'] if spec['item'] is not None else declared.get(spec['key'])
+            if item is None or spec['hidden']:
+                continue
+            items.append({**item, 'label': spec['label']} if spec['label'] else item)
+        if base is not None:
+            items += [item for item in base['items'] if item['key'] not in placed]
+        result.append({'key': entry['key'], 'label': entry['label'] or (base['label'] if base else entry['key']),
+                       'icon': entry['icon'] or (base['icon'] if base else None), 'items': items})
+    listed = {entry['key'] for entry in override['groups']}
+    result += [{**group, 'items': [item for item in group['items'] if item['key'] not in placed]} for group in groups if group['key'] not in listed]
+    return result
 
 
 class Context:

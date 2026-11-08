@@ -242,6 +242,19 @@ describe('Controls safety', () => {
     expect(sent.filter(item => item.method === 'PATCH')[1].body).toEqual({ sessions: 'end', revoke_keys: true });
   });
 
+  it('turns Customize workspaces on for a desk role', async () => {
+    const { host, sent } = open('/controls/roles', () => ({ status: 200, body: {} }));
+    const toggle = (role: string) => host.querySelector<HTMLButtonElement>(`[role="switch"][aria-label="Customize workspaces for ${role}"]`);
+    await until(() => expect(toggle('editor')).toBeTruthy());
+    expect(toggle('admin')!.disabled).toBe(true);
+    expect(toggle('portal')!.disabled).toBe(true);
+    click(toggle('editor')!);
+    await until(() => expect(sent.find(item => item.method === 'PATCH')).toBeTruthy());
+    const change = sent.find(item => item.method === 'PATCH')!;
+    expect(change.url).toContain('/api/_controls/roles/editor');
+    expect(change.body).toEqual({ customize_workspaces: true });
+  });
+
   it('creates a portal role that starts from portal and never opens Controls', async () => {
     const { host, sent } = open('/controls/roles', () => ({ status: 200, body: {} }));
     await until(() => expect(host.querySelector('[role="switch"][aria-label="Opens Controls for portal"]')).toBeTruthy());

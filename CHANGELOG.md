@@ -56,6 +56,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   workspace and item. `/api/schema` has `workspaces`, with only the items each role can open; an
   app that declares none gets one automatic workspace grouped as the sidebar is. The browser does
   not draw them yet ([docs/ui.md](docs/ui.md#workspaces)).
+- **Workspace overrides per site.** Admins, and roles with the new Controls access "Customize
+  workspaces" (Roles page, `customize_workspaces`), can reorder, hide and rename groups and items,
+  rename workspaces, add shortcuts and add custom workspaces, then reset them, through
+  `GET /api/_controls/workspaces` and `PUT`/`DELETE /api/_controls/workspaces/<key>`. Overrides are
+  stored in `evlet_overrides` (kind `workspace`, added to the table's kind check on start) and
+  audited under Workspaces. `/api/schema` applies them before permission filtering, so they never
+  widen access ([docs/controls.md](docs/controls.md#workspaces)).
 - **`source_kind` on reports.** The report catalog (`/api/_reports`, `/api/schema`) says
   `"ledger"` for a report whose `model` is a ledger model, `"model"` for any other model and null
   without one ([docs/reports.md](docs/reports.md#reports-over-a-ledger-model)).
