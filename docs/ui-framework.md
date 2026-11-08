@@ -847,8 +847,7 @@ record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
 ## Limits of this phase
 
 - Home, accounts, form dialogs, the layout control and Doc
-  layout page are not built. Python pages (`evlet.ui` PageView), native panels and custom
-  components are not rendered (owner decision); their Python APIs remain.
+  layout page are not built. Python pages and native panels were removed in 0.4.
 - Bulk moves and deletes read each record first, one request per record.
 - The board loads the first 100 records of the filter. Column counts and totals come from the
   server; the aggregate route has no search, so while searching columns count the loaded cards

@@ -68,7 +68,7 @@ For virtual environment setup and each step explained, read
   backups and moving a project.
 - [Model engine](docs/model-engine.md) and [business capabilities](docs/business-capabilities.md):
   database queries, accounts, child rows, actions and private attachments.
-- [UI guide](docs/ui.md): the browser interface, its routes and the Python page API.
+- [UI guide](docs/ui.md): the browser interface and its routes.
 - [Reports](docs/reports.md): filters, typed rows, totals, a chart, CSV export and print, in the browser and for Eva.
 - [Slips](docs/slips.md): forms presented from code that save nothing until handed in.
 - [Routing](docs/routing.md): frontends, reserved paths, `routes.py` and `evlet routes`.

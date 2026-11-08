@@ -1,6 +1,6 @@
 # What you can customize
 
-An app is ordinary Python. The Notes starter already connects its model, views,
+An app is ordinary Python. The Notes starter already connects its model,
 actions, permissions and migrations through `notes/hooks.py`. Edit those modules;
 you do not need to copy or modify the framework.
 
@@ -62,22 +62,12 @@ items and gives them `done=False`. Do not edit migrations already applied to a
 site. A changed label, page or permission rule needs no schema migration, but
 normal `serve` still requires `migrate` to record the reviewed source change.
 
-## Pages
+## Screens
 
-Replace `notes/views/__init__.py` with:
-
-```python
-from evlet.ui import Column, PageView, Text
-
-views = (
-    PageView('notes_home', route='/notes', title='Notes',
-             layout=Column(children=[Text('Your notes workspace')])),
-)
-```
-
-The starter's hooks already register `views`. Use `evlet dev --instance acme`
-to see changes. Pages, layout, state and component options are described in
-[the UI guide](ui.md). Model permissions still apply to every record request.
+The list, board and record screens come from the model. Set `Meta.layout` with
+`Section(...)`, `Meta.list_fields`, `Meta.tabs` and `Meta.open_in` to shape them, and
+use `evlet dev --instance acme` to see changes. [The UI guide](ui.md) lists every option.
+Model permissions still apply to every record request.
 
 ## Actions
 

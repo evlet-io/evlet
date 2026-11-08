@@ -10,16 +10,15 @@ production ready, but the rules below hold from 0.3 on.
   migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), lifecycle
   (`State`, `Move`, `action`, `validate`), form sections (`Section`), slips, measures, settings, connectors, storage,
   jobs, routing and the application classes. Import them from `evlet`, not from the
-  module that defines them.
+  module that defines them. `AppDefinition(views=())` stays accepted for apps scaffolded
+  before 0.4; a non-empty `views` or a `ui` registry is refused.
 - **Field keywords.** The keywords every field takes (`required`, `default`, `label`,
   `help_text`, `visible_if` and the rest), which are defined once on the field base class.
 - **Lifecycle decorators.** `validate.confirm`, `validate.cancel`, `action.confirm` and
   `action.cancel`, plus `Model.to_dict` and `Model.validate`.
-- **`evlet.ui` names used in the app docs.** `Bind`, `Button`, `Card`, `Column`,
-  `ComponentDefinition`, `CustomComponent`, `Field`, `FormLayout`, `FormView`, `Grid`,
-  `ListView`, `Navigate`, `PageView`, `Select`, `Text`, `TextInput`, `ViewRegistry` and
-  `When`. The browser does not render Python pages today ([ui.md](ui.md)), but their API
-  stays.
+- **No `evlet.ui` page names.** The Python page API was removed in 0.4 without a
+  deprecation release, by owner decision, since the browser never rendered it
+  ([CHANGELOG.md](../CHANGELOG.md)). `evlet.ui.metadata` stays internal.
 
 - **Record times.** Record details carry `_audit` (`created_at`, `created_by`, `modified_at`,
   `modified_by`), and the column names `evlet_created_at`, `evlet_created_by`, `evlet_modified_at`
@@ -118,7 +117,7 @@ Apps must not depend on these. They can change in any release without a deprecat
 
 - Modules and names that are not listed above, even when they can be imported, such as
   `evlet.lifecycle`, `evlet.database` helpers, `evlet.cli`, `evlet.controls_*`,
-  `evlet.postgres_schema` and `evlet.native`.
+  `evlet.postgres_schema` and `evlet.ui.metadata`.
 - Names that start with an underscore, and dunder attributes such as `__fields__`.
 - Methods of exported classes that the app guides do not document, such as `Policy.scope_sql`
   or `Registry.plan_for`.

@@ -104,6 +104,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Controls, Export as code writes `Meta` options.** A form layout override exports as
+  `Meta.layout = (Section(...), ...)` with `Meta.tabs` and `Meta.default_tab`, and a list
+  override as `Meta.list_fields` and `Meta.open_in`, on the model's class in its models file.
+  Before, it wrote `FormView` and `ListView` code that the browser never read.
 - **The list filter panel is a side panel.** It docks beside the table inside the page, with
   no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
   sit on top and saved filters below; each half scrolls on its own. Escape closes it.
@@ -157,6 +161,39 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   phone drawer.
 - **Recent records moved from the sidebar to a history button left of search.** It lists them
   newest first with the model and when each was opened, and has a Clear action.
+
+### Upgrade notes
+
+- **Python pages are gone.** If an app imports `evlet.ui` page names (`PageView`, `ListView`,
+  `FormView`, `Column`, `ViewRegistry` and the rest), delete those definitions and shape the
+  generated screens with `Model.Meta` (`layout`, `list_fields`, `tabs`, `open_in`, `panel`). An
+  `AppDefinition` may still pass `views=()`, as older app scaffolds do; a non-empty `views` or a
+  `ui` registry is refused at start-up with a message that says so. `Application` and `App` no
+  longer take `views` or `ui`. Clients that called `/api/ui` read `/api/schema` instead
+  ([docs/app-upgrades.md](docs/app-upgrades.md#from-03-to-04)).
+- **Native panels are gone.** Remove `.ts` and `.js` modules from an app's `views/` folder and
+  the matching `package-data` line from its `pyproject.toml`. A build no longer runs Node for them.
+- **`evlet new` is gone.** Use `evlet setup myproject --app notes --instance acme --dev`.
+- **`evlet.metadata` is gone.** `field_schema`, `label_for`, `ui_schema` and `view_for` live in
+  `evlet.ui.metadata`, which is internal ([docs/api-stability.md](docs/api-stability.md#internal)).
+
+### Removed
+
+These were never rendered or called at run time. Nothing an app or a person uses in the browser
+changes.
+
+- The Python page API in `evlet.ui` (definitions, compiler, component contracts, view registry
+  and page expressions), and the `GET /api/ui` and `GET /api/ui/resolve` routes. Python page
+  routes no longer claim paths in the route table. The Playground's Projects demo and Layouts
+  pages, which were Python pages, are removed with it.
+- Native TS/JS panels: `evlet/native.py`, `native_panels` in `/api/schema`, and
+  `/assets/apps/...`.
+- The `evlet new` standalone starter (`evlet/cli/legacy.py`). The nested app layout and
+  `evlet app <name> --legacy` stay; apps such as Finance use that layout.
+- The `evlet.metadata` compatibility module.
+- `evlet.calc.Document.observe`, `observe_table`, `observe_rules`, `subscriptions`, `explain`
+  and `dispose`. The server settles a document once and reads its snapshot; the browser engine
+  keeps all of them.
 
 ## 0.3.0 (05-11-2026)
 
