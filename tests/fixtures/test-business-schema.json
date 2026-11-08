@@ -9251,10 +9251,11 @@
       "name": "employee",
       "layout": [
         {
-          "label": "Details",
+          "label": "Employee",
           "fields": [
             "full_name",
             "email",
+            "department",
             "reports_to"
           ],
           "collapsible": false,
@@ -9270,6 +9271,7 @@
         "id",
         "full_name",
         "email",
+        "department",
         "reports_to"
       ],
       "search_fields": [
@@ -9280,8 +9282,102 @@
       ],
       "open_in": "page",
       "tabs": [],
-      "default_tab": null,
+      "default_tab": "profile",
       "autosave": true,
+      "record_layout": {
+        "tabs": [
+          {
+            "name": "profile",
+            "label": "Profile",
+            "blocks": [
+              {
+                "kind": "section",
+                "label": "Employee"
+              },
+              {
+                "kind": "html",
+                "html": "<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is on the Team tab.</p>"
+              },
+              {
+                "kind": "table",
+                "name": "skills"
+              }
+            ]
+          },
+          {
+            "name": "team",
+            "label": "Team",
+            "blocks": [
+              {
+                "kind": "chart",
+                "type": "stat",
+                "model": "employee",
+                "link": "reports_to",
+                "x": null,
+                "y": [
+                  "people"
+                ],
+                "label": "Direct reports",
+                "filters": []
+              },
+              {
+                "kind": "chart",
+                "type": "bar",
+                "model": "employee",
+                "link": "reports_to",
+                "x": "department",
+                "y": [
+                  "people"
+                ],
+                "label": "Direct reports by department",
+                "filters": []
+              },
+              {
+                "kind": "related",
+                "model": "employee",
+                "link": "reports_to",
+                "label": "Direct reports",
+                "filters": [],
+                "fields": [
+                  "full_name",
+                  "email",
+                  "department"
+                ],
+                "limit": 5,
+                "order": [
+                  "full_name"
+                ]
+              },
+              {
+                "kind": "related",
+                "model": "employee",
+                "link": "reports_to",
+                "label": "Reports in the same department",
+                "filters": [
+                  [
+                    "department",
+                    "eq",
+                    {
+                      "$expr": "ref",
+                      "args": [
+                        "department"
+                      ]
+                    }
+                  ]
+                ],
+                "fields": [
+                  "full_name",
+                  "email"
+                ],
+                "limit": 5,
+                "order": [
+                  "-id"
+                ]
+              }
+            ]
+          }
+        ]
+      },
       "fields": [
         {
           "name": "full_name",
@@ -9337,6 +9433,39 @@
             "icontains",
             "nicontains",
             "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "department",
+          "type": "select",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "sales",
+            "finance",
+            "operations",
+            "people"
+          ],
+          "label": "Department",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
             "isnull"
           ],
           "compute": null,
@@ -9442,6 +9571,7 @@
       "behavior": {
         "full_name": {},
         "email": {},
+        "department": {},
         "reports_to": {},
         "name": {},
         "title": {}
@@ -9449,9 +9579,12 @@
       "order": [
         "full_name",
         "email",
+        "department",
         "reports_to",
         "name",
-        "title"
+        "title",
+        "skills.skill",
+        "skills.level"
       ],
       "sources": {},
       "permissions": {
@@ -9460,7 +9593,18 @@
         "delete": true
       },
       "child_only": false,
-      "children": [],
+      "children": [
+        {
+          "name": "skills",
+          "model": "employee_skills",
+          "link": "evlet_owner",
+          "label": "Skills",
+          "row_changes": true,
+          "filterable": true,
+          "min_rows": 0,
+          "max_rows": 100
+        }
+      ],
       "actions": [
         {
           "name": "recognise",
@@ -9517,6 +9661,17 @@
         }
       ],
       "attachments": false,
+      "measures": [
+        {
+          "name": "people",
+          "function": "count",
+          "field": null,
+          "where": null,
+          "per_record": false,
+          "model": null,
+          "link": null
+        }
+      ],
       "journal": {
         "tamper_evident": true,
         "kinds": [
@@ -9870,6 +10025,113 @@
           "read_only": false,
           "default_kind": "static",
           "default": "EAN",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": true,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    },
+    {
+      "name": "employee_skills",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "skill",
+            "level"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
+        }
+      ],
+      "label": "Skill",
+      "plural": "Skills",
+      "description": "",
+      "title_field": "skill",
+      "list_fields": [
+        "id",
+        "skill",
+        "level"
+      ],
+      "search_fields": [
+        "skill",
+        "level"
+      ],
+      "open_in": "page",
+      "tabs": [],
+      "default_tab": null,
+      "autosave": true,
+      "fields": [
+        {
+          "name": "skill",
+          "type": "text",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 80,
+          "label": "Skill",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "contains",
+            "icontains",
+            "nicontains",
+            "startswith",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "level",
+          "type": "select",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "learning",
+            "practised",
+            "expert"
+          ],
+          "label": "Level",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": "practised",
           "stored": true,
           "operators": [
             "eq",
