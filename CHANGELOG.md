@@ -73,6 +73,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Sign-in lands on the first list, not Docs.** After sign-in, at `/`, at `/app` and at any
+  address that matches no route, the app opens the start page saved in Settings, else the first
+  list the role can open, with Docs on or off. Docs open only when chosen as the start page or
+  when the app has no list; they stay in the sidebar and the search palette.
 - **The list filter panel is a side panel.** It docks beside the table inside the page, with
   no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
   sit on top and saved filters below; each half scrolls on its own. Escape closes it.

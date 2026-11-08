@@ -257,8 +257,9 @@ controls = ControlsAccess(allow_ips=("10.0.0.0/8",), require_two_step=True)
   Docs are never served on sub-hosts.
   `GET /api/auth/session` reports Docs as `application.docs`: the path, or `null` when
   Docs are off, on a sub-host, or the user's role is outside `Docs(roles=...)`. With
-  Docs off, the browser starts on the first list the role can open and shows no Docs
-  links or shortcut.
+  Docs off, the browser shows no Docs links or shortcut. Docs on or off, sign-in lands on
+  the person's saved start page or the first list the role can open; Docs are the start
+  only when chosen in Settings or when the app has no list ([ui.md](ui.md#routes)).
 - `controls` can only tighten access to Controls. It is stored with the route table
   for the Controls page.
 - `hosts` lists sub-hosts, each with a root frontend (see above).
