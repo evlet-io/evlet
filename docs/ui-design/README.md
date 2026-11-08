@@ -123,7 +123,7 @@ so an explicit choice wins in both directions.
 | `--shadow-sm` | `0 1px 2px rgba(16,24,40,.05)` | `0 1px 2px rgba(0,0,0,.3)` |
 | `--shadow-md` | `0 1px 2px rgba(16,24,40,.04),0 4px 12px rgba(16,24,40,.06)` | `0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.25)` |
 | `--shadow-lg` | `0 2px 6px rgba(16,24,40,.06),0 18px 48px rgba(16,24,40,.16)` | `0 2px 6px rgba(0,0,0,.3),0 18px 48px rgba(0,0,0,.5)` |
-| `--font` | `"Inter Variable",Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif` | `same` |
+| `--font` | `"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif` | `same` |
 | `--mono` | `"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace` | `same` |
 | `--r-sm` | `4px` | `same` |
 | `--r` | `4px` | `same` |
@@ -156,8 +156,8 @@ green, unqualified slate, converted violet.
 
 ### Typography
 
-- Body face **Inter** (400, 450, 500, 550, 600, 650) with features `cv11`,
-  `ss01`, `ss03`. Mono face **JetBrains Mono** (400, 500) for document numbers,
+- Body face **IBM Plex Sans** (400, 500, 600, 700 and italic 400, bundled; the mockup used Inter,
+  and its in-between weights 450, 550 and 650 take the nearest face). Mono face **JetBrains Mono** (400, 500) for document numbers,
   IDs, code and placeholder tokens. Always declare fallbacks.
 - Base size 13.5px, line height 1.45. Use `font-variant-numeric: tabular-nums`
   (`.num`) wherever digits align: money, dates, counts, tables.

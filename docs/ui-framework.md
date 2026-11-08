@@ -255,15 +255,18 @@ plain value is set once, a reactive one updates only the node bound to it. Impor
 class names.
 
 The fonts are bundled, so pages load nothing from another host and the CSP stays
-`default-src 'self'`. `frontend/fonts` holds Inter 4.1 (`InterVariable.woff2` and
-`InterVariable-Italic.woff2`, weights 100 to 900) and JetBrains Mono 2.304
-(`JetBrainsMono-Regular.woff2` and `-Medium.woff2`), taken from the official GitHub releases
-(`rsms/inter`, `JetBrains/JetBrainsMono`), with their SIL Open Font License 1.1 files beside them.
-The Inter files are byte for byte the ones evlet.io serves, and the family name
-(`"Inter Variable"`) and fallback stack match the site's brand tokens. The build copies them to
-`/assets` with a content hash (926,204 bytes of woff2 in all); the server sends them as
-`font/woff2`. `font-display: swap` shows the system fonts (`system-ui`, `ui-monospace` and the
-rest of the stack) until they load. The italic file downloads only when italic text shows.
+`default-src 'self'`. The UI font is IBM Plex Sans: `frontend/fonts` holds its regular 400, 500, 600
+and 700 and italic 400, in the Latin and Latin Extended subsets (`ibm-plex-sans-<subset>-<weight>-<style>.woff2`,
+200,292 bytes in all), copied from the `@fontsource/ibm-plex-sans` 5.2.8 package (IBM's
+[IBM/plex](https://github.com/IBM/plex) release; the package is not a dependency), and JetBrains Mono
+2.304 (`JetBrainsMono-Regular.woff2` and `-Medium.woff2`) from the official `JetBrains/JetBrainsMono`
+release, with their SIL Open Font License 1.1 files beside them (`IBMPlexSans-OFL.txt`,
+`JetBrainsMono-OFL.txt`). Each subset's `@font-face` names its `unicode-range`, so the Latin Extended
+file and the italic download only when the page shows those characters or italic text. The styles'
+in-between weights (450, 550, 650) take the nearest face the browser picks (500, 600, 700). The build
+copies the files to `/assets` with a content hash and the licences beside them; the server sends them
+as `font/woff2`. `font-display: swap` shows the system fonts (`system-ui`, `ui-monospace` and the rest
+of the stack) until they load.
 
 The Evlet logo is the evlet.io artwork as the site serves it, in `frontend/public/assets`:
 `evlet-logo-primary.svg` (the horizontal logo), `evlet-icon-blue.svg` (the folded leaf mark, also
@@ -450,7 +453,7 @@ Buttons and other controls keep the page-wide `:focus-visible` outline, a solid 
 `aria-describedby`; an error replaces it while there is one. A field with `tooltip` gets a ? icon
 at the right end of the input (before a Select's or Link's chevron, between the input and a unit
 box) that shows the text on hover and focus. Compact places keep their sizes: the record side
-panel (`.fields`), child table cells, list filters and quick add. Inter is the font, as before.
+panel (`.fields`), child table cells, list filters and quick add. IBM Plex Sans is the font everywhere.
 
 ### Pickers
 

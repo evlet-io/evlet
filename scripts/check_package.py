@@ -21,7 +21,7 @@ def main():
     assert response and b'<div id="evlet-app">' in response[1].content
     assets = Path(evlet.__file__).parent / "ui/static/assets"
     assert list(assets.glob("*.js"))
-    for font, licence in (("InterVariable-", "Inter-OFL.txt"), ("JetBrainsMono-", "JetBrainsMono-OFL.txt")):
+    for font, licence in (("ibm-plex-sans-", "IBMPlexSans-OFL.txt"), ("JetBrainsMono-", "JetBrainsMono-OFL.txt")):
         if not list(assets.glob(font + "*.woff2")) or "SIL OPEN FONT LICENSE" not in (assets / licence).read_text().upper():
             raise RuntimeError(f"Installed wheel lacks {font} fonts or {licence}")
     for logo in ("evlet-logo-primary.svg", "evlet-logo-white.svg", "evlet-icon-blue.svg"):
