@@ -570,6 +570,11 @@ def test_postgres_related_records_follow_row_scope(pg_dsn):
     meaning.check_related(meaning.serve(PostgreSQLDatabase(pg_dsn, Registry(*meaning.MODELS))))
 
 
+def test_postgres_record_layout_blocks_follow_row_scope(pg_dsn):
+    from tests import test_record_layout as layout
+    layout.check_layout_data(layout.serve(PostgreSQLDatabase(pg_dsn, Registry(*layout.MODELS))))
+
+
 def test_postgres_attachment_limits_from_meta(pg_dsn):
     from tests import test_meaning as meaning
     meaning.check_attachment_limits(meaning.serve(PostgreSQLDatabase(pg_dsn, Registry(*meaning.MODELS))))

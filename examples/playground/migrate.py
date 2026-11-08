@@ -190,6 +190,22 @@ class Recognition(Model):
 migrations.append(Migration('0015_recognition', CreateModel(Recognition)))
 
 
+class EmployeeSkill(Model):
+    """Frozen creation schema of an employee's Skills table."""
+    storage_name = 'employee_skills'
+    evlet_owner = Link(Employee, required=True, index=True)
+    evlet_position = Integer(required=True, default=0)
+    skill = Text(required=True, max_length=80)
+    level = Select(['learning', 'practised', 'expert'], required=True, default='practised')
+
+
+# An employee's department and skills, shown by the declared record layout (Employee.Meta.layout).
+migrations.append(Migration('0016_employee_profile',
+    AddField('employee', 'department', Select(['sales', 'finance', 'operations', 'people'])),
+    CreateModel(EmployeeSkill),
+))
+
+
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""
     class Customer(Model):

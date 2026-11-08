@@ -9,6 +9,7 @@ import inspect
 from pathlib import Path
 
 from .controls import SCHEDULE, SCOPES, SETTINGS
+from .models import storage_name
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default')
 UNKNOWN = '...'
@@ -30,11 +31,77 @@ def literal(value):
         return '[' + ', '.join(map(literal, value)) + ']'
     if isinstance(value, dict) and all(isinstance(key, str) for key in value):
         return '{' + ', '.join(f'{key!r}: {literal(item)}' for key, item in value.items()) + '}'
+    from .declarations import Ref
+    if isinstance(value, Ref):
+        return f'Ref({value.path!r})'
     return UNKNOWN
 
 
 def call(name, args=(), kwargs=None):
     return f"{name}({', '.join([*map(literal, args), *(f'{key}={literal(value)}' for key, value in (kwargs or {}).items())])})"
+
+
+def block_code(block, sections):
+    """Python source for one Meta.layout block; a section as `sections` (a Controls layout, by title) has it."""
+    from .forms import Chart
+    from .meaning import Related
+    from .ui.metadata import Html, Section
+    if isinstance(block, (Section, tuple, list)):
+        section = sections.get(block.title if isinstance(block, Section) else block[0])
+        if section is None:
+            return None
+        options = {**({'collapsed': section.get('collapsed', False)} if section.get('collapsible') and section.get('collapsed') else {}),
+                   **({} if section.get('collapsible') else {'collapsible': False}), **({'flow': 'columns'} if section.get('flow') == 'columns' else {})}
+        return call('Section', (section['title'], tuple(item['name'] for item in section['fields'])), options)
+    if isinstance(block, str):
+        return repr(block)
+    if isinstance(block, Html):
+        return call('Html', (block.content,))
+    model = block.model if isinstance(block.model, str) else storage_name(block.model)
+    if isinstance(block, Related):
+        options = {'label': block.label, 'filters': block.filters, 'fields': block.fields or None, 'limit': block.limit,
+                   'order': None if block.order == ('-id',) else block.order[0] if len(block.order) == 1 else block.order}
+        return call('Related', (model, *((block.link,) if block.link else ())), {key: value for key, value in options.items() if value is not None})
+    if isinstance(block, Chart):
+        options = {'x': block.x, 'y': block.y, 'label': block.label, 'model': model, 'link': block.link, 'filters': block.filters}
+        return call('Chart', (block.type,), {key: value for key, value in options.items() if value is not None})
+    return UNKNOWN
+
+
+def layout_code(model, sections):
+    """Meta.layout with the app's Tabs and blocks and the sections of a Controls layout, as Python source.
+
+    A section the app places keeps its place; one the app does not place (added or renamed in Controls) goes last
+    on the first Tab, or last without Tabs. A section Controls removed is left out."""
+    from .ui.metadata import Section, Tab
+    layout = model.Meta.layout
+    by_title = {section['title']: section for section in sections}
+    placed = set()
+
+    def blocks(items, indent):
+        lines = []
+        for block in items:
+            if isinstance(block, (Section, tuple, list)):
+                placed.add(block.title if isinstance(block, Section) else block[0])
+            text = block_code(block, by_title)
+            if text is not None:
+                lines.append(f'{indent}{text},')
+        return lines
+    tabs = [entry for entry in layout if isinstance(entry, Tab)]
+    if not tabs:
+        lines = blocks(layout, '    ')
+        lines += [f'    {block_code(Section(section["title"], ()), by_title)},' for section in sections if section['title'] not in placed]
+        return 'layout = (\n' + '\n'.join(lines) + '\n)'
+    parts = []
+    for tab in tabs:
+        parts.append((tab, blocks(tab.blocks, '        ')))
+    rest = [f'        {block_code(Section(section["title"], ()), by_title)},' for section in sections if section['title'] not in placed]
+    lines = []
+    for index, (tab, inner) in enumerate(parts):
+        options = {**({'name': tab.name} if tab.name != Tab(tab.title, ()).name else {}), **({'panel': False} if tab.panel is False else {})}
+        tail = ''.join(f', {key}={literal(value)}' for key, value in options.items())
+        lines += [f'    Tab({tab.title!r}, (', *inner, *(rest if index == 0 else []), f'    ){tail}),']
+    return 'layout = (\n' + '\n'.join(lines) + '\n)'
 
 
 def field_line(name, kind, args, kwargs, props):
@@ -168,6 +235,9 @@ class Exporter:
         # What the side panel hides is panel=False on the field, Section or Table, or Meta.panel.
         if panel_of(value):
             lines.append(f'# Side panel hides (panel=False or Meta.panel): {panel_of(value)!r}')
+        if model in getattr(self.registry, 'layouts', {}):
+            # A record layout keeps its Tabs and blocks, with this instance's sections in their places.
+            lines[:len(sections) + 2] = layout_code(model, sections).splitlines()
         return lines
 
     def list_view(self, value):

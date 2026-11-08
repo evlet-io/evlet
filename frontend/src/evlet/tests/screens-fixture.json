@@ -898,6 +898,897 @@
   "etag": null,
   "status": 200
  },
+ "layout_by_status": {
+  "body": {
+   "group_by": [
+    "status"
+   ],
+   "items": [
+    {
+     "hours": "12.0000",
+     "status": "done"
+    },
+    {
+     "hours": "13.0000",
+     "status": "open"
+    }
+   ],
+   "measures": [
+    "hours"
+   ]
+  },
+  "etag": null,
+  "status": 200
+ },
+ "layout_open_jobs": {
+  "body": {
+   "items": [
+    {
+     "hours": "8.0000",
+     "id": "0000000000002",
+     "name": null,
+     "region": "south",
+     "site": "0000000000001",
+     "status": "open",
+     "title": "Design"
+    },
+    {
+     "hours": "3.5000",
+     "id": "0000000000001",
+     "name": null,
+     "region": "north",
+     "site": "0000000000001",
+     "status": "open",
+     "title": "Survey"
+    }
+   ],
+   "limit": 2,
+   "offset": 0,
+   "total": 3
+  },
+  "etag": null,
+  "status": 200
+ },
+ "layout_same_region": {
+  "body": {
+   "items": [
+    {
+     "hours": "1.5000",
+     "id": "0000000000004",
+     "name": null,
+     "region": "north",
+     "site": "0000000000001",
+     "status": "open",
+     "title": "Review"
+    },
+    {
+     "hours": "12.0000",
+     "id": "0000000000003",
+     "name": null,
+     "region": "north",
+     "site": "0000000000001",
+     "status": "done",
+     "title": "Build"
+    },
+    {
+     "hours": "3.5000",
+     "id": "0000000000001",
+     "name": null,
+     "region": "north",
+     "site": "0000000000001",
+     "status": "open",
+     "title": "Survey"
+    }
+   ],
+   "limit": 5,
+   "offset": 0,
+   "total": 3
+  },
+  "etag": null,
+  "status": 200
+ },
+ "layout_schema": {
+  "body": {
+   "models": [
+    {
+     "actions": [],
+     "attachments": false,
+     "autosave": true,
+     "behavior": {
+      "name": {},
+      "notes": {},
+      "region": {},
+      "title": {}
+     },
+     "child_only": false,
+     "children": [
+      {
+       "filterable": true,
+       "label": "Visits",
+       "link": "evlet_owner",
+       "max_rows": 100,
+       "min_rows": 0,
+       "model": "site_visits",
+       "name": "visits",
+       "row_changes": true
+      }
+     ],
+     "default_tab": null,
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Site name",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "choices": [
+        "north",
+        "south"
+       ],
+       "compute": null,
+       "default": "north",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Region",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "region",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "select",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Notes",
+       "locked_when": null,
+       "max_length": 65535,
+       "name": "notes",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "longtext",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      }
+     ],
+     "label": "Site",
+     "layout": [
+      {
+       "collapsed": false,
+       "collapsible": true,
+       "fields": [
+        "title",
+        "region"
+       ],
+       "flow": "rows",
+       "label": "Site"
+      },
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "notes"
+       ],
+       "flow": "rows",
+       "label": "Other"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "title",
+      "region"
+     ],
+     "name": "site",
+     "open_in": "page",
+     "order": [
+      "title",
+      "region",
+      "notes",
+      "name",
+      "visits.note",
+      "visits.hours"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Sites",
+     "record_layout": {
+      "tabs": [
+       {
+        "blocks": [
+         {
+          "kind": "section",
+          "label": "Site"
+         },
+         {
+          "html": "<p>Work at <strong>{title}</strong> in {region}. Write {{braces}} as they are.</p>",
+          "kind": "html"
+         },
+         {
+          "filters": [],
+          "kind": "chart",
+          "label": "Totals",
+          "link": "site",
+          "model": "job",
+          "type": "stat",
+          "x": null,
+          "y": [
+           "hours",
+           "jobs"
+          ]
+         },
+         {
+          "filters": [],
+          "kind": "chart",
+          "label": "Hours by status",
+          "link": "site",
+          "model": "job",
+          "type": "bar",
+          "x": "status",
+          "y": [
+           "hours"
+          ]
+         },
+         {
+          "kind": "section",
+          "label": "Other"
+         }
+        ],
+        "label": "Overview",
+        "name": "overview"
+       },
+       {
+        "blocks": [
+         {
+          "fields": [
+           "title",
+           "status",
+           "hours"
+          ],
+          "filters": [
+           [
+            "status",
+            "ne",
+            "done"
+           ]
+          ],
+          "kind": "related",
+          "label": "Open jobs",
+          "limit": 2,
+          "link": "site",
+          "model": "job",
+          "order": [
+           "-hours"
+          ]
+         },
+         {
+          "fields": [],
+          "filters": [
+           [
+            "region",
+            "eq",
+            {
+             "$expr": "ref",
+             "args": [
+              "region"
+             ]
+            }
+           ]
+          ],
+          "kind": "related",
+          "label": "Same region",
+          "limit": 5,
+          "link": "site",
+          "model": "job",
+          "order": [
+           "-id"
+          ]
+         },
+         {
+          "kind": "table",
+          "name": "visits"
+         }
+        ],
+        "label": "Work",
+        "name": "work"
+       }
+      ]
+     },
+     "relations": [
+      {
+       "label": "Jobs",
+       "limit": 10,
+       "link": "site",
+       "model": "job",
+       "name": "job.site",
+       "order": [
+        "-id"
+       ]
+      }
+     ],
+     "resource": "site",
+     "search_fields": [
+      "title",
+      "region",
+      "name"
+     ],
+     "sources": {},
+     "tabs": [],
+     "title_field": "title"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "autosave": true,
+     "behavior": {
+      "hours": {},
+      "name": {},
+      "region": {},
+      "site": {},
+      "status": {},
+      "title": {}
+     },
+     "child_only": false,
+     "children": [],
+     "default_tab": null,
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Site",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "site",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "target": "site",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "choices": [
+        "open",
+        "done"
+       ],
+       "compute": null,
+       "default": "open",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Status",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "status",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "select",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "choices": [
+        "north",
+        "south"
+       ],
+       "compute": null,
+       "default": "north",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Region",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "region",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "select",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.0000",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Hours",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": "0",
+       "name": "hours",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      }
+     ],
+     "label": "Job",
+     "layout": [
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "site",
+        "title",
+        "status",
+        "region",
+        "hours"
+       ],
+       "flow": "rows",
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "site",
+      "title",
+      "status",
+      "region"
+     ],
+     "measures": [
+      {
+       "field": "hours",
+       "function": "sum",
+       "link": null,
+       "model": null,
+       "name": "hours",
+       "per_record": false,
+       "where": null
+      },
+      {
+       "field": null,
+       "function": "count",
+       "link": null,
+       "model": null,
+       "name": "jobs",
+       "per_record": false,
+       "where": null
+      }
+     ],
+     "name": "job",
+     "open_in": "page",
+     "order": [
+      "site",
+      "title",
+      "status",
+      "region",
+      "hours",
+      "name"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Jobs",
+     "resource": "job",
+     "search_fields": [
+      "title",
+      "status",
+      "region",
+      "name"
+     ],
+     "sources": {},
+     "tabs": [],
+     "title_field": "title"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "autosave": true,
+     "child_only": true,
+     "children": [],
+     "default_tab": null,
+     "description": "",
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Note",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "note",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.0000",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Hours",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": "0",
+       "name": "hours",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal",
+       "unique": false
+      }
+     ],
+     "label": "Visit",
+     "layout": [
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "note",
+        "hours"
+       ],
+       "flow": "rows",
+       "label": "Details"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "note",
+      "hours"
+     ],
+     "name": "site_visits",
+     "open_in": "page",
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Visits",
+     "search_fields": [
+      "note"
+     ],
+     "tabs": [],
+     "title_field": "note"
+    }
+   ],
+   "ui_version": 1,
+   "version": 1
+  },
+  "etag": null,
+  "status": 200
+ },
+ "layout_site": {
+  "body": {
+   "_audit": {
+    "created_at": "2026-11-04T10:06:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T10:06:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "owner"
+    }
+   },
+   "_row_ids": {
+    "visit-1": "0000000000001"
+   },
+   "children": {
+    "visits": [
+     {
+      "hours": "2.0000",
+      "id": "0000000000001",
+      "note": "Survey"
+     }
+    ]
+   },
+   "id": "0000000000001",
+   "name": null,
+   "notes": null,
+   "region": "north",
+   "title": "Dock <script>alert(1)</script> & Co"
+  },
+  "etag": "\"e8542d0a561ef877ea780fa63b0ccd01f23126985957bf23013093909caee60a\"",
+  "status": 201
+ },
+ "layout_site_detail": {
+  "body": {
+   "_audit": {
+    "created_at": "2026-11-04T10:06:00.000Z",
+    "created_by": {
+     "id": 1,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T10:06:00.000Z",
+    "modified_by": {
+     "id": 1,
+     "name": "owner"
+    }
+   },
+   "children": {
+    "visits": [
+     {
+      "hours": "2.0000",
+      "id": "0000000000001",
+      "note": "Survey"
+     }
+    ]
+   },
+   "id": "0000000000001",
+   "name": null,
+   "notes": null,
+   "region": "north",
+   "title": "Dock <script>alert(1)</script> & Co"
+  },
+  "etag": "\"e8542d0a561ef877ea780fa63b0ccd01f23126985957bf23013093909caee60a\"",
+  "status": 200
+ },
+ "layout_totals": {
+  "body": {
+   "group_by": [],
+   "items": [
+    {
+     "hours": "25.0000",
+     "jobs": 4
+    }
+   ],
+   "measures": [
+    "hours",
+    "jobs"
+   ]
+  },
+  "etag": null,
+  "status": 200
+ },
  "orders_open": {
   "body": {
    "items": [

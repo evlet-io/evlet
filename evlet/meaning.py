@@ -45,20 +45,25 @@ class Attachments:
 
 @dataclass(frozen=True)
 class Related:
-    """Names, orders, limits or hides the records of `model` whose Link `link` points to this model."""
+    """Records of `model` whose Link `link` points to this model.
+
+    In Meta.relations it names, orders, limits or hides one discovered relation. In Meta.layout it is a block
+    that lists those records on the record page, optionally narrowed by `filters` and shown with `fields`."""
     model: object
-    link: str
+    link: str = None
     label: str = None
-    limit: int = RELATION_ROWS
+    limit: int = None
     order: object = '-id'
     hidden: bool = False
+    filters: object = None
+    fields: tuple = ()
 
     def __post_init__(self):
-        if not isinstance(self.model, (type, str)) or not isinstance(self.link, str) or not self.link:
+        if not isinstance(self.model, (type, str)) or self.link is not None and (not isinstance(self.link, str) or not self.link):
             raise ValueError('Related needs a model and the name of its Link field')
         if self.label is not None and (not isinstance(self.label, str) or not self.label):
             raise ValueError('Related label must be nonempty text')
-        if type(self.limit) is not int or not 1 <= self.limit <= ROW_LIMIT:
+        if self.limit is not None and (type(self.limit) is not int or not 1 <= self.limit <= ROW_LIMIT):
             raise ValueError(f'Related limit must be an integer from 1 to {ROW_LIMIT}')
         order = (self.order,) if isinstance(self.order, str) else self.order
         if not isinstance(order, (tuple, list)) or not 1 <= len(order) <= 3 or any(
@@ -66,7 +71,13 @@ class Related:
             raise ValueError('Related order is one to three field names, each optionally prefixed with -')
         if type(self.hidden) is not bool:
             raise ValueError('Related hidden is True or False')
+        fields = (self.fields,) if isinstance(self.fields, str) else self.fields
+        if not isinstance(fields, (tuple, list)) or any(not isinstance(name, str) or not name for name in fields) or len(set(fields)) != len(fields):
+            raise ValueError('Related fields are distinct field names of the related model')
+        if self.filters is not None and not isinstance(self.filters, (dict, list, tuple)):
+            raise ValueError('Related filters use the list filter syntax: a dict such as {"status__ne": "done"} or a list of conditions')
         object.__setattr__(self, 'order', tuple(order))
+        object.__setattr__(self, 'fields', tuple(fields))
 
 
 @dataclass(frozen=True)
@@ -149,6 +160,9 @@ def relations(registry, model, declared, discovered, *, inherited=False):
         counts[source] = counts.get(source, 0) + 1
     settings = {}
     for item in declared:
+        if item.link is None or item.filters is not None or item.fields:
+            raise ValueError(f'{model.__name__}: Meta.relations entries name their Link field and take no filters or fields; '
+                             'put a Related block with filters in Meta.layout instead')
         source = registry.resolve(item.model)
         field = source.__declared_fields__.get(item.link)
         if (source, item.link) not in discovered:
@@ -181,7 +195,7 @@ def relations(registry, model, declared, discovered, *, inherited=False):
             if counts[source] > 1:
                 label += f' ({field.label or label_for(link)})'
         found.append(Relation(f'{storage_name(source)}.{link}', source, link, label,
-                              RELATION_ROWS if item is None else item.limit, ('-id',) if item is None else item.order))
+                              RELATION_ROWS if item is None or item.limit is None else item.limit, ('-id',) if item is None else item.order))
     # Declared relations first, in declared order; the rest by model and field name.
     position = {key: index for index, key in enumerate(settings)}
     found.sort(key=lambda relation: (position.get((relation.source, relation.link), len(position)), relation.name))

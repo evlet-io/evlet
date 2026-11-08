@@ -613,7 +613,8 @@ class Policy:
         return results
 
     def _readable_ids(self, database, user, target, operator, value):
-        """Whether an eq or in filter on a row-scoped Link names only records this user can read."""
+        """Whether an eq or in filter on a row-scoped Link names only records this user can read. `database` is a
+        Database, or an open connection to read with (a route already inside its transaction)."""
         if database is None or operator not in ('eq', 'in'):
             return False
         ids = value if operator == 'in' else [value]
@@ -623,6 +624,8 @@ class Policy:
             ids = [RecordId(item) for item in ids]
         except ValueError:
             return False
+        if not hasattr(database, '_connection'):
+            return set(ids) <= self.visible(SimpleNamespace(connection=database), user, target, ids)
         with database._connection() as connection:
             return set(ids) <= self.visible(SimpleNamespace(connection=connection), user, target, ids)
 
@@ -630,7 +633,8 @@ class Policy:
         """Refuse query fields that could disclose rows or fields: the same 403 for unknown and unreadable
         fields and child tables, so a filter never answers about what the role cannot read. With database,
         eq and in filters on a row-scoped Link are allowed when every id is a record the user can read,
-        such as a portal user's customer. children: ChildTables beyond the registry's Table declarations."""
+        such as a portal user's customer (database may also be an open connection). children: ChildTables beyond the
+        registry's Table declarations."""
         items = conditions(filters)
         readable = {'id', *self.fields(user, model)}
         for key in order_by or ():

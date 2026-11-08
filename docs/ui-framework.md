@@ -772,12 +772,12 @@ a title opens the full page in a new browser tab.
 | `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields |
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |
 | `Meta.search_fields` | The list search box and record search in the palette |
-| `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
+| `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other. With `Tab`s or blocks (`record_layout` in the schema), the record page's tabs and their sections, tables, Related lists, Html and charts, in order ([ui.md](ui.md#record-layouts)) |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
 | `Meta.list_tabs`, `Meta.list_tab` | The list's tabs: All and one per value of a State, Select or Link field (the State without `list_tabs`, none with `list_tabs = None`), with counts from `GET /api/{model}/list_tabs`, and the tab the list opens on (`"all"` by default). A Link shows its 8 most used values, labelled by title ([ui.md](ui.md#list-tabs)) |
 | `Meta.board` | Names the model's State field, such as `"stage"`, to offer a List and Board switch on its list; the board has one column per state. Without it the list has no board, and `?view=board` opens the table. Any other field fails registration |
 | `Meta.autosave` | `True` (default): leaving a record with unsaved edits keeps them for later instead of asking to discard them; `False` keeps the leave prompt ([ui.md](ui.md#unsaved-changes)) |
-| `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
+| `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details, unless `Meta.layout` places it as a block |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
 | `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records, or an entry in New; `?slip=name` on a record opens it. A slip that becomes a record for review opens New filled in, with a note |

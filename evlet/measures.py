@@ -651,7 +651,8 @@ def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=N
     if any(not allowed(policy, user, item) for item in compiled):
         raise AccessError(403, UNAVAILABLE)
     children = getattr(business, 'children', {}).values()
-    policy.query_fields(user, model, filters, (), children=children)
+    # As for lists, eq and in filters on a Link to a row-scoped model are allowed for records this role can read.
+    policy.query_fields(user, model, filters, (), database=tx.connection, children=children)
     text, fields = searched(business, user, model, search)
     where, values = SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields)
     where, values = combine(where, values, *policy.scope_sql(user, model))
