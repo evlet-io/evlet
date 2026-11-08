@@ -48,3 +48,29 @@ def test_team_changes_are_on_record(secured):
     with secured.database._connection() as connection:
         assert tuple(connection.execute("SELECT actor, detail FROM evlet_audit ORDER BY id DESC LIMIT 1").fetchone()) == \
             ('hr-admin', f"Unlinked from employee {accounts['outsider']}")
+
+
+def test_recognise_writes_the_ledger_in_the_actions_own_transaction(secured):
+    """The Playground's Recognise action writes Recognition rows through self.context.session."""
+    from examples.playground.models import RECOGNITION_LIMIT, Recognition
+    accounts = seed_team(secured, PASSWORD)
+    editor = client(secured, 'editor')
+    url = f"/api/employee/{accounts['member']}"
+
+    def recognise(points):
+        return editor('POST', url + '/actions/recognise', {'points': points, 'reason': 'Helped a customer'},
+                      headers={b'if-match': editor('GET', url)[2][b'etag']})
+
+    status, body, _ = recognise(40)
+    assert status == 200 and body['_outcome'] == {'points_this_month': 40}, body
+    assert recognise(50)[1]['_outcome'] == {'points_this_month': 90}
+    status, body, _ = recognise(20)
+    assert status == 422 and body['fields'] == {'points': f'Only {RECOGNITION_LIMIT - 90} points are left this month'}
+    with secured.database.transaction() as tx:
+        rows = tx.list(Recognition, filters={'employee': accounts['member']}, order_by=('id',))
+    assert [row.points for row in rows] == [40, 50]
+    # A ledger model has no routes, and viewers may not run the action.
+    assert editor('GET', '/api/recognition')[0] == 404
+    member = client(secured, 'member')
+    assert member('POST', url + '/actions/recognise', {'points': 1, 'reason': 'x'},
+                  headers={b'if-match': member('GET', url)[2][b'etag']})[0] == 403

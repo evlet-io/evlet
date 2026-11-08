@@ -171,6 +171,25 @@ migrations.append(Migration('0013_points', CreateModel(PointMove), CreateModel(P
 migrations.append(Migration('0014_project_task_index', AddIndex('projecttask', ('project', 'done'))))
 
 
+
+class Recognition(Model):
+    """Frozen creation schema of the employee recognition ledger."""
+    employee = Link(Employee, required=True)
+    on_date = Date(required=True)
+    reason = Text(default='', max_length=120)
+    points = Integer(required=True)
+
+    class Meta:
+        ledger = True
+        append_only = True
+        timestamps = 'created'
+        indexes = [('employee', 'on_date')]
+
+
+# Employee recognition points, written by the Recognise action through self.context.session.
+migrations.append(Migration('0015_recognition', CreateModel(Recognition)))
+
+
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""
     class Customer(Model):

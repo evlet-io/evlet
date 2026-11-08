@@ -63,6 +63,11 @@ production ready, but the rules below hold from 0.3 on.
   (`tx.aggregate`), with the arguments, limits and result of `Database.aggregate`
   ([measures.md](measures.md#ad-hoc-aggregates-in-python)). `evlet.measures` itself stays internal.
 
+- **The transaction session in handlers.** `self.context.session` in a Move's `run` method or an
+  `@action` handler: the move or action's own `evlet.Session`, open only while the method runs and
+  refused (`AccessError`, 403) on every other context
+  ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+
 - **Job progress.** `JobContext.progress(done, total=None, message='')`, `JobContext.checkpoint`,
   `Task(..., resumable=True)` with its return-value contract (a JSON checkpoint, or `None` when
   done), `progress` in `GET /api/_jobs/<id>`, and `evlet jobs list`
