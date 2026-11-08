@@ -728,11 +728,13 @@ tab closes. Signing in keeps the address the user opened.
 ### Side panel
 
 A list opens a record on its own page or in a side panel beside it. `Meta.open_in = "panel"`
-sets the app's default, the Controls list view ("Open records in") changes it for an instance,
-and each person can choose in the list's layout menu (the panel icon next to Filter). The
-person's choice wins, then the instance's, then the app's. It is a layout preference, not a
-permission. A link with `?open=` opens the panel whatever the setting, and Ctrl or Cmd click on
-a title opens the full page in a new browser tab.
+sets the app's default and the Controls list view ("Open records in") changes it for an
+instance; the instance's setting wins. There is no per-person choice in the list. It is a layout
+setting, not a permission. The record panel and the docked filter panel are never open together:
+opening a record closes the filters (they stay applied), Filter closes the record (asking about
+unsaved changes), and closing a record that closed the filters opens them again. A link with
+`?open=` opens the panel whatever the setting, and Ctrl or Cmd click on a title opens the full
+page in a new browser tab.
 
 - The list narrows: it keeps the title (with the document number under it when the title is
   something else), the State and the first amount, and hides the measures and the bulk bar. When

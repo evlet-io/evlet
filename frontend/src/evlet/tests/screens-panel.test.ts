@@ -1,5 +1,4 @@
-// A list that opens its records in a side panel (Meta.open_in = "panel", the Controls list view or the
-// person's choice), over the invoice responses recorded from the engine: the draft (3) with two lines,
+// A list that opens its records in a side panel (Meta.open_in = "panel" or the Controls list view), over the invoice responses recorded from the engine: the draft (3) with two lines,
 // the issued invoice (2) and the void one (1).
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, invoice, press, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
@@ -140,24 +139,79 @@ describe('records in a side panel beside the list', () => {
     await until(() => expect(document.activeElement).toBe(row(host, three)));
   });
 
-  it('opens on the full page when the model says so, unless the person chose the side panel', async () => {
-    const page = start(routes('page'), '/app/invoice');
-    await until(() => expect(row(page.host, three)).not.toBeNull());
-    click(row(page.host, three));
-    await until(() => expect(location.pathname).toBe(`/app/invoice/${three}`));
-    stopAll();
-
+  it('opens on the full page when the model says so; an old per-person choice is ignored and there is no menu to change it', async () => {
     const user = invoice.session.body.user.username;
-    const chosen = start(routes('page'), '/app/invoice', { storage: storage({ [`evlet.${user}.openIn.invoice`]: 'panel' }) });
-    await until(() => expect(row(chosen.host, three)).not.toBeNull());
-    click(row(chosen.host, three));
-    await until(() => expect(location.search).toBe(`?open=${three}`));
-    // The layout menu switches back to the full page for this person.
-    click(chosen.host.querySelector('.ev-list button[aria-label="Open records in"]'));
-    await until(() => expect(byText(document, '[role="menuitem"]', 'Full page')).not.toBeNull());
-    click(byText(document, '[role="menuitem"]', 'Full page'));
-    click(row(chosen.host, two));
-    await until(() => expect(location.pathname).toBe(`/app/invoice/${two}`));
+    const { host } = start(routes('page'), '/app/invoice', { storage: storage({ [`evlet.${user}.openIn.invoice`]: 'panel' }) });
+    await until(() => expect(row(host, three)).not.toBeNull());
+    expect(host.querySelector('.ev-list button[aria-label="Open records in"]')).toBeNull();
+    click(row(host, three));
+    await until(() => expect(location.pathname).toBe(`/app/invoice/${three}`));
+  });
+
+  it('never shows the filter panel and the record panel together, and brings the filters back when the record closes', async () => {
+    const { host } = start(routes(), `/app/invoice?f=${encodeURIComponent(JSON.stringify([["total", "gt", "0"]]))}`);
+    await until(() => expect(row(host, three)).not.toBeNull());
+    const filterButton = byText<HTMLButtonElement>(host, '.ph-actions button', /^Filter/)!;
+    const dock = () => host.querySelector('.ev-filter-dock .fb-dock');
+    expect(filterButton.classList.contains('has-filters')).toBe(true);
+    click(filterButton);
+    await until(() => expect(dock()).not.toBeNull());
+    expect(filterButton.getAttribute('aria-expanded')).toBe('true');
+    // A row opens the record and closes the filters; they stay applied and counted.
+    click(row(host, three));
+    await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
+    expect(dock()).toBeNull();
+    expect(filterButton.getAttribute('aria-expanded')).toBe('false');
+    expect(filterButton.classList.contains('has-filters')).toBe(true);
+    expect(new URLSearchParams(location.search).get('open')).toBe(three);
+    expect(new URLSearchParams(location.search).get('f')).not.toBeNull();
+    // Back closes the record and the filter panel comes back, without taking focus.
+    history.back();
+    await until(() => expect(panel(host)).toBeNull());
+    await until(() => expect(dock()).not.toBeNull());
+    await Promise.resolve();
+    expect(dock()!.contains(document.activeElement)).toBe(false);
+    expect(new URLSearchParams(location.search).get('open')).toBeNull();
+    expect(new URLSearchParams(location.search).get('f')).not.toBeNull();
+    // Forward opens the record again and closes the filters.
+    history.forward();
+    await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
+    expect(dock()).toBeNull();
+    // Filter closes the record and opens the filters; closing the filters leaves both closed.
+    click(filterButton);
+    await until(() => expect(dock()).not.toBeNull());
+    expect(panel(host)).toBeNull();
+    expect(new URLSearchParams(location.search).get('open')).toBeNull();
+    click(filterButton);
+    await until(() => expect(dock()).toBeNull());
+    // A record opened without the filters open closes to the list alone.
+    click(row(host, two));
+    await until(() => expect(panelTitle(host)).toBe('INV-2026-00002'));
+    press(panel(host)!, 'Escape');
+    await until(() => expect(panel(host)).toBeNull());
+    expect(dock()).toBeNull();
+  });
+
+  it('Filter asks before closing a record with unsaved changes; Cancel keeps the record, Discard opens the filters', async () => {
+    const { host } = start(routes(), `/app/invoice?open=${three}`);
+    await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
+    await editFirstLine(host);
+    const filterButton = byText<HTMLButtonElement>(host, '.ph-actions button', /^Filter/)!;
+    const dock = () => host.querySelector('.ev-filter-dock .fb-dock');
+    click(filterButton);
+    await until(() => expect(dialogTitle()).toBe('Discard unsaved changes?'));
+    click(byText(document, '[role="dialog"] button', 'Cancel'));
+    await until(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
+    expect(panelTitle(host)).toBe('Draft invoice');
+    expect(panel(host)!.querySelector('.ev-savebar')).not.toBeNull();
+    expect(dock()).toBeNull();
+    expect(location.search).toContain(`open=${three}`);
+    click(filterButton);
+    await until(() => expect(dialogTitle()).toBe('Discard unsaved changes?'));
+    click(byText(document, '[role="dialog"] button', 'Discard changes'));
+    await until(() => expect(dock()).not.toBeNull());
+    expect(panel(host)).toBeNull();
+    expect(new URLSearchParams(location.search).get('open')).toBeNull();
   });
 
   it('expands to the full page at the same tab with the unsaved change, without asking', async () => {

@@ -7,9 +7,10 @@
 // All included, puts it in the address. Everything runs on the server: the browser never filters or sorts a partial list.
 // The filter builder (rows of field, condition and value, child tables included) is filters.ts.
 //
-// A record opens on its own page or in a side panel beside the narrowed list (Meta.open_in, the
-// Controls list view, or the person's choice in the layout menu). The panel's record is `?open=`
-// in the list's address and its tab `?rtab=`, so a link or a reload opens the same list and record.
+// A record opens on its own page or in a side panel beside the narrowed list (Meta.open_in, or the
+// Controls list view). The panel's record is `?open=` in the list's address and its tab `?rtab=`,
+// so a link or a reload opens the same list and record. The record panel and the filter panel are
+// never open together: opening one closes the other.
 
 import { each, html, match, when, type Child } from '../dom';
 import { ApiError, type RecordData } from '../api';
@@ -75,8 +76,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // ---------- how records open ----------
 
-  const openChoice = ctx.prefs.cell<'page' | 'panel' | null>(`openIn.${name}`, null);
-  const openIn = derive(() => openChoice.get() ?? model.open_in ?? 'page', { name: `${name}.open in` });
+  const openIn = model.open_in ?? 'page';
   /** The record open in the side panel (its id, or 'new'), from the address. */
   const opened = derive(() => {
     const route = router.route.get();
@@ -234,11 +234,24 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // ---------- header, views and toolbar ----------
 
-  const create = () => openIn.peek() === 'panel' ? void router.navigate(listHref('new'), { replace: panelOpen.peek() }) : void router.go('create', { model: name });
+  const create = () => openIn === 'panel' ? void router.navigate(listHref('new'), { replace: panelOpen.peek() }) : void router.go('create', { model: name });
   if (canCreate) ctx.createHere.set(create);
   onCleanup(() => { if (ctx.createHere.peek() === create) ctx.createHere.set(null); });
 
-  const filterButton = Button({ label: 'Filter', icon: 'sliders-horizontal', hideLabelOnPhone: true, onClick: () => filtering.set(!filtering.peek()) });
+  /** Set when opening a record closed the filter panel, so closing the record opens it again. */
+  let filtersBeforePanel = false;
+  /** True while the filter panel comes back on its own: focus stays where the record panel left it. */
+  let restoring = false;
+  // Opening the filters closes the record panel first; a record with unsaved edits asks, and staying keeps it.
+  const toggleFilters = () => {
+    restoring = false;
+    if (filtering.peek()) return filtering.set(false);
+    if (!panelOpen.peek()) return filtering.set(true);
+    const was = filtersBeforePanel;
+    filtersBeforePanel = false;
+    void router.navigate(listHref(null)).then(done => { if (done) filtering.set(true); else filtersBeforePanel = was; });
+  };
+  const filterButton = Button({ label: 'Filter', icon: 'sliders-horizontal', hideLabelOnPhone: true, onClick: toggleFilters });
   filterButton.setAttribute('aria-controls', `ev-${name}-filters`);
   effect(() => filterButton.setAttribute('aria-expanded', String(filtering.get())));
   filterButton.append(CountBadge({ count: () => filters.active.get().length, tone: 'filled', label: 'Active filters' }));
@@ -251,9 +264,6 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     // Reports declared for this model (Report.model) open from here.
     reportsFor(ctx, name).length ? MenuButton({ label: 'Reports', icon: REPORT_ICON, hideLabelOnPhone: true, menuLabel: `${model.label} reports`,
       items: reportsFor(ctx, name).map(report => ({ label: report.label, icon: REPORT_ICON, tint: 'rose' as const, onSelect: () => void router.go('report', { report: report.name }) })) }) : null,
-    MenuButton({ icon: 'panel-right', tip: 'Open records in', ariaLabel: 'Open records in', menuLabel: 'Open records in', items: () => [{ heading: 'Open records in' },
-      { label: 'Side panel', icon: openIn.peek() === 'panel' ? 'check' : 'panel-right', onSelect: () => openChoice.set('panel') },
-      { label: 'Full page', icon: openIn.peek() === 'page' ? 'check' : 'maximize-2', onSelect: () => openChoice.set('page') }] }),
     canCreate ? Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', hideLabelOnPhone: true, onClick: create }) : null,
   ].filter(Boolean) as Child[] });
 
@@ -296,7 +306,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   let focusPanel = false;
   /** Open a record: in the panel (switching rows replaces the history entry, so Back closes it) or on its page. */
   const open = (row: RecordData, focus = true) => {
-    if (openIn.peek() !== 'panel') return void router.go('record', { model: name, id: String(row.id) });
+    if (openIn !== 'panel') return void router.go('record', { model: name, id: String(row.id) });
     if (opened.peek() === String(row.id)) return;
     focusPanel = focus;
     void router.navigate(listHref(String(row.id), router.route.peek()?.query.rtab ?? null), { replace: panelOpen.peek() });
@@ -310,7 +320,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     sortable: meta.stored !== false && meta.type !== 'tags' && meta.type !== 'longtext' && meta.type !== 'richtext',
     render: index === 0 && meta.name === model.title_field
       ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => router.href('record', { model: name, id: String(row().id) })}
-          on:click=${(event: MouseEvent) => { if (openIn.peek() === 'panel' && plainClick(event)) { event.preventDefault(); open(row()); } }}>${() => titleOf(model, row())}</a>${showNumber
+          on:click=${(event: MouseEvent) => { if (openIn === 'panel' && plainClick(event)) { event.preventDefault(); open(row()); } }}>${() => titleOf(model, row())}</a>${showNumber
           ? when(panelOpen, () => html`<small class="ev-row-no mono">${() => String(row()[showNumber.name] ?? '')}</small>`) : null}`
       : (row: () => RecordData) => cellView(ctx, model, meta, row),
   }));
@@ -526,8 +536,15 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   // The filter panel docks beside the list, inside the page: the list narrows, nothing covers it.
   const closeFilters = () => { filtering.set(false); queueMicrotask(() => filterButton.focus()); };
   const savedFilters = ctx.prefs.cell<SavedFilter[]>(`list.${name}.filters`, []);
+  // A record opening in the panel (a click, a link, Forward) closes the filter panel; the filters
+  // stay applied. Closing the record (Close, Escape, Back) opens the filter panel again if it was open.
+  changes(() => panelOpen.get(), () => {
+    if (panelOpen.peek()) {
+      if (filtering.peek()) { filtersBeforePanel = true; filtering.set(false); }
+    } else if (filtersBeforePanel) { filtersBeforePanel = false; restoring = true; filtering.set(true); }
+  });
   const main = html`<div class="ev-list-row" class:ev-filtering=${filtering}>${list}<div class="ev-filter-dock" id=${`ev-${name}-filters`}>${when(filtering,
-    () => FilterPanel(filters, ctx.links, { onClose: closeFilters, saved: savedFilters }))}</div></div>` as HTMLElement;
+    () => { const quiet = restoring; restoring = false; return FilterPanel(filters, ctx.links, { onClose: closeFilters, saved: savedFilters, focus: !quiet }); })}</div></div>` as HTMLElement;
   if (typeof ResizeObserver !== 'undefined') {
     const observer = new ResizeObserver(entries => listWidth.set(Math.round(entries[0]?.contentRect.width ?? 0)));
     observer.observe(list);

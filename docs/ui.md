@@ -60,8 +60,8 @@ class Project(Model):
 
 ### What a side panel shows
 
-A list that opens records in a side panel (`Meta.open_in = 'panel'`, or "Open records in: Side
-panel") can show less of each record than the full page. Each app decides which parts:
+A list that opens records in a side panel (`Meta.open_in = 'panel'`, or the Controls list view)
+can show less of each record than the full page. Each app decides which parts:
 
 ```python
 class Ticket(Model):
@@ -408,7 +408,12 @@ toolbar. Beside a side panel and on a phone the table does the same.
 A list's Filter button (with a count of active filters) opens the filter side panel, docked
 beside the list inside the page, like the record side panel. There is no overlay and no
 backdrop: the list narrows and stays usable, and the panel fills the height to the bottom of the
-screen. On a phone it is a full-width sheet in the same place. The panel has two halves of about
+screen. On a phone it is a full-width sheet in the same place. The filter panel and a record's side
+panel are never open together. Opening a record in the side panel closes the filter panel; the
+filters stay applied and the Filter button keeps their count. Closing that record (Close, Escape or
+Back) opens the filter panel again, without moving focus. Filter, while a record is open in the
+side panel, closes the record first, so unsaved changes ask as when leaving it (see Unsaved
+changes); staying on the record keeps the filter panel closed. The panel has two halves of about
 equal height, each scrolling on its own. The top half holds the filter rows, as in Frappe: each
 row is a field, a condition and a value on one line, with a remove button; Add filter adds rows
 with no limit, and every row must match (AND). The bottom half holds **Saved filters**: name the
