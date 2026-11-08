@@ -198,6 +198,9 @@ class Business:
         self.mailboxes = Mailboxes(self)
         from .unsaved import Unsaved
         self.unsaved = Unsaved(self)
+        # The workflow engine (evlet/workflow_engine.py), for models that declare Meta.workflow.
+        from .workflow_engine import Workflows
+        self.workflows = Workflows(self) if self.registry.workflows else None
 
     def initialize(self):
         self.auth.initialize()
@@ -241,6 +244,8 @@ class Business:
             with self.database.transaction() as tx:
                 ensure_table(tx.connection, postgres=getattr(self.database, 'driver', None) is not None,
                              hashed=[self.registry.name_for(model) for model, journal in self.journals.items() if journal.tamper_evident])
+        if self.workflows is not None:
+            self.workflows.initialize()
         if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
             self.forms.initialize()
         if getattr(self, 'slips', None) and self.slips.slips:

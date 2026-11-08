@@ -104,3 +104,7 @@ __all__ += ["DevSignIn"]
 from .printing import PrintDesign
 
 __all__ += ["PrintDesign"]
+
+from .workflow import Fact, WorkflowOptions
+
+__all__ += ["Fact", "WorkflowOptions"]

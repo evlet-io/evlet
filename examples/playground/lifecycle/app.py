@@ -4,13 +4,23 @@ This uses a separate demonstration database. It does not post accounting or issu
 """
 from pathlib import Path
 
-from evlet import (Application, Child, Currency, Database, Integer, LocalAuth, Model, Registry,
-                   Rule, Table, Text, ValidationError, action, validate)
+from evlet import (Application, Child, Currency, Database, Fact, Integer, LocalAuth, Model, Registry,
+                   Rule, Table, Text, ValidationError, WorkflowOptions, action, validate)
+
+# An approval workflow for Order, as an administrator would publish it: viewers review every order,
+# and orders whose rates add up to more than 1,000.00 go on to an admin review (docs/workflows.md).
+APPROVAL = Path(__file__).parent / 'approval.json'
 
 
 class Order(Model):
     confirmable = True
     track_changes = True
+
+    class Meta:
+        # unmatched="allow": with no published workflow, confirming works as it does today.
+        workflow = WorkflowOptions(protects=('confirm',), unmatched='allow', harmless=('remarks',),
+                                   facts={'lines.count': Fact.count('lines', label='Number of lines'),
+                                          'lines.rates': Fact.sum('lines', 'rate', label='Total of rates')})
     number = Text(required=True, unique=True)
     customer = Text(required=True)
     remarks = Text(editable_when_locked=True)
@@ -22,7 +32,8 @@ class Order(Model):
     lines = Table(Line, required=True)
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'confirm', 'cancel', 'reopen')),
                    'editor': Rule(('read', 'create', 'update', 'confirm', 'cancel', 'reopen', 'journal')),
-                   'viewer': Rule(('read',))}
+                   # Viewers decide the reviews they are assigned to; review needs read, not update.
+                   'viewer': Rule(('read', 'review'))}
 
     @validate.confirm
     def positive_rates(self):

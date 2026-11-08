@@ -950,3 +950,13 @@ def test_framework_steps_move_mcp_calls_and_serialize_concurrent_starts(pg_dsn, 
             [(now, user, 'mcp', 'Desktop client', 3, 'list_records', 'read', 'ok')]
         assert tx.connection.execute("SELECT to_regclass('evlet_mcp_calls')").fetchone()[0] is None
     app.initialize()
+
+
+@pytest.mark.parametrize('check', ['check_versions_are_immutable', 'check_decisions_are_append_only', 'check_rework_starts_a_new_attempt',
+                                   'check_routing_is_deterministic'])
+def test_postgres_workflow(pg_dsn, check):
+    from tests import test_workflow as workflow
+    app = workflow.build(PostgreSQLDatabase(pg_dsn, Registry(*workflow.MODELS)))
+    # The tables, indexes and append-only triggers are created once and kept on a restart.
+    app.initialize()
+    getattr(workflow, check)(app)

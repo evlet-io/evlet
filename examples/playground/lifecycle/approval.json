@@ -1,0 +1,28 @@
+{
+  "schema": "evlet.workflow/1",
+  "name": "Order approval",
+  "model": "order",
+  "protects": {"kind": "lifecycle", "operation": "confirm"},
+  "applies_when": null,
+  "start": "stg_draft1",
+  "settings": {"self_approval": "block"},
+  "notes": "Larger orders need a second review.",
+  "stages": [
+    {"id": "stg_draft1", "label": "Draft", "kind": "work", "assign": {"kind": "requester"},
+     "actions": [{"id": "act_send01", "label": "Send for review", "kind": "submit", "go_to": {"kind": "stage", "stage": "stg_review"}}]},
+    {"id": "stg_review", "label": "Review", "kind": "review", "assign": {"kind": "role", "role": "viewer"},
+     "actions": [
+       {"id": "act_rapprv", "label": "Approve", "kind": "approve",
+        "go_to": {"kind": "first_match", "otherwise": "stg_apprv1",
+                  "rows": [{"id": "rte_large1", "stage": "stg_second",
+                            "when": {"id": "cnd_large1", "field": "lines.rates", "op": "gt", "value": "1000.00"}}]}},
+       {"id": "act_rchang", "label": "Request changes", "kind": "request_changes", "go_to": {"kind": "stage", "stage": "stg_draft1"}},
+       {"id": "act_reject", "label": "Reject", "kind": "reject", "go_to": {"kind": "stage", "stage": "stg_rejct1"}}]},
+    {"id": "stg_second", "label": "Second review", "kind": "review", "assign": {"kind": "role", "role": "admin"},
+     "actions": [
+       {"id": "act_sapprv", "label": "Approve", "kind": "approve", "go_to": {"kind": "stage", "stage": "stg_apprv1"}},
+       {"id": "act_sreject", "label": "Reject", "kind": "reject", "go_to": {"kind": "stage", "stage": "stg_rejct1"}}]},
+    {"id": "stg_apprv1", "label": "Approved", "kind": "end", "outcome": "approved"},
+    {"id": "stg_rejct1", "label": "Rejected", "kind": "end", "outcome": "rejected"}
+  ]
+}

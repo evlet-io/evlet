@@ -70,7 +70,7 @@ class Connection:
             converted.append(token)
         sql = ''.join(converted)
         match = re.match(r'INSERT INTO ("?[A-Za-z_][A-Za-z_0-9]*"?)', sql)
-        generated = set(self.database.registry.models) | {'evlet_users', 'evlet_attachments', 'evlet_events', 'evlet_jobs', 'evlet_mcp_clients', 'evlet_tool_calls', 'evlet_tool_approvals', 'evlet_eva_conversations', 'evlet_eva_messages', 'evlet_eva_runs', 'evlet_eva_events', 'evlet_eva_files', 'evlet_eva_usage', 'evlet_eva_reservations', 'evlet_eva_tasks', 'evlet_eva_task_runs'}
+        generated = set(self.database.registry.models) | {'evlet_users', 'evlet_attachments', 'evlet_events', 'evlet_jobs', 'evlet_mcp_clients', 'evlet_tool_calls', 'evlet_tool_approvals', 'evlet_eva_conversations', 'evlet_eva_messages', 'evlet_eva_runs', 'evlet_eva_events', 'evlet_eva_files', 'evlet_eva_usage', 'evlet_eva_reservations', 'evlet_eva_tasks', 'evlet_eva_task_runs', 'evlet_workflow_runs', 'evlet_workflow_attempts', 'evlet_workflow_executions', 'evlet_workflow_tasks', 'evlet_workflow_delegations', 'evlet_workflow_decisions'}
         returning = match and match[1].strip('"') in generated and ' RETURNING ' not in sql.upper()
         if returning:
             sql += ' RETURNING id'

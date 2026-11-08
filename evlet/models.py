@@ -376,6 +376,9 @@ class Registry:
         self.api = compile_api(self)
         from .periods import compile_periods
         self.periods = compile_periods(self)
+        # Models that opt in to approval workflows ({model: compiled Meta.workflow}, evlet/workflow.py).
+        from .workflow import compile_workflows
+        self.workflows = compile_workflows(self, models, child_models)
         # {name: model} of the models callers reach at all: every model but those with Meta.api = None.
         self.exposed = MappingProxyType({name: model for name, model in self.models.items() if self.api[model] is not None})
 

@@ -11,7 +11,7 @@ import { OPS, type ModelInfo, type PermValue } from './client';
 import { idOf, SETTING_LABELS } from './drafts';
 import { RoleChip } from './people';
 
-const ORDER = ['read', 'create', 'update', 'delete', 'journal', 'print', 'void', 'revise', 'unpost', 'repost'];
+const ORDER = ['read', 'create', 'update', 'delete', 'journal', 'print', 'review', 'void', 'revise', 'unpost', 'repost'];
 const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** Keep a rule consistent the way the server expects it: write needs read, no access clears fields and rows. */

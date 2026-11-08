@@ -25,7 +25,7 @@ UI_NAMES = ("Bind", "Button", "Card", "Column", "ComponentDefinition", "CustomCo
 
 # Methods and decorators apps call on exported names, beyond their constructors.
 MEMBERS = {"Model": ("to_dict", "validate"), "Child": ("to_dict", "validate"), "validate": ("confirm", "cancel"),
-           "action": ("confirm", "cancel")}
+           "action": ("confirm", "cancel"), "Fact": ("count", "sum", "min", "max", "any")}
 
 
 def signature(value):

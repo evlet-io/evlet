@@ -18,7 +18,8 @@ CHUNK = 500
 # Engine corrections: admin has them by default and a Rule may grant them to other roles too.
 CORRECTIONS = ('void', 'revise', 'unpost', 'repost', 'confirm', 'cancel', 'reopen')
 # Operations that change a record or what is kept with it; Meta.api = "read" refuses them to callers.
-WRITES = frozenset(('create', 'update', 'delete', 'journal', *CORRECTIONS))
+# A workflow decision is a write too: API keys need write access to review.
+WRITES = frozenset(('create', 'update', 'delete', 'journal', 'review', *CORRECTIONS))
 # Meta.api values: what callers (HTTP routes, MCP, Eva, connectors) reach of a model.
 API = ('full', 'read', None)
 # True while a request is served. The app code it runs (actions, moves, reactions, services) is trusted again.
@@ -325,11 +326,14 @@ class Policy:
         self.rules = MappingProxyType(self.rules)
         for (role, model), rule in self.rules.items():
             registry.name_for(model)
-            if role not in (*self.roles, PUBLIC) or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS}:
+            if role not in (*self.roles, PUBLIC) or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', 'journal', 'print', 'review', *CORRECTIONS}:
                 raise ValueError('Invalid permission rule')
             if 'journal' in rule.operations and model not in registry.journals:
                 raise ValueError(f'{model.__name__}: Rule names \'journal\', but the model has no journal '
                                  '(declare Meta.journal = Journal() or a State)')
+            if 'review' in rule.operations and model not in getattr(registry, 'workflows', {}):
+                raise ValueError(f'{model.__name__}: Rule names \'review\', but the model has no workflow '
+                                 '(declare Meta.workflow = WorkflowOptions(...))')
             if 'revise' in rule.operations and 'create' not in rule.operations:
                 raise ValueError(f'{model.__name__}: Rule names \'revise\' without \'create\'; a revise creates a draft copy')
             if 'repost' in rule.operations and 'update' not in rule.operations:
@@ -382,6 +386,15 @@ class Policy:
                 named.add('admin')
             printers[model] = frozenset(named)
         self.printers = MappingProxyType(printers)
+        # Workflow decisions (docs/workflows.md): admin when its Rule reads a model with Meta.workflow, and every
+        # role whose Rule (after Controls overrides) names 'review'. Reviewing never needs or implies update.
+        reviewers = {}
+        for model in getattr(registry, 'workflows', {}):
+            named = {role for role in self.roles if 'review' in self.rules.get((role, model), Rule(())).operations}
+            if 'read' in self.rules.get(('admin', model), default_rule('admin')).operations:
+                named.add('admin')
+            reviewers[model] = frozenset(named)
+        self.reviewers = MappingProxyType(reviewers)
 
     def rule(self, user, model):
         found = self.rules.get((user.role, model))
@@ -407,6 +420,11 @@ class Policy:
             return user.role in self.corrections.get((model, operation), ())
         if operation == 'journal':
             return user.role in self.journalers.get(model, ())
+        if operation == 'review':
+            access = getattr(user, 'access', None)
+            if access is not None and (not access.write or access.models is not None and model not in access.models):
+                return False
+            return user.role in self.reviewers.get(model, ()) and 'read' in self.rule(user, model).operations
         if operation == 'print':
             return user.role in self.printers.get(model, ()) and 'read' in self.rule(user, model).operations
         return operation in self.rule(user, model).operations

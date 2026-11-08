@@ -20,7 +20,7 @@ from .models import ValidationError, identifier
 from .periods import TABLE as PERIOD_LOCKS
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
-OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
+OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', 'review', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
 PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'periods', 'prints', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({

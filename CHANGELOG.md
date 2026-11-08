@@ -4,6 +4,24 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Added
+
+- **Approval workflows, storage and evaluator.** Models opt in with `Meta.workflow =
+  WorkflowOptions(...)` and declare extra condition facts with `Fact`. A new Rule operation,
+  `review`, lets a role decide the workflow tasks it is assigned to; it needs `read`, not
+  `update`. The engine stores immutable published definitions, runs, attempts, stage executions,
+  tasks and append-only decisions, and routes requests and counts quorums deterministically
+  ([docs/workflows.md](docs/workflows.md)). Nothing enforces a workflow yet: protected operations
+  still run without approval until the enforcement phase ships, and there are no workflow screens.
+
+### Upgrade notes
+
+- **`review` and `workflow` are now reserved.** A Rule that names `review` on a model without
+  `Meta.workflow` fails at startup. The workflow tables are created at startup only for apps
+  that declare `Meta.workflow`.
+
 ## 0.3.0 (05-11-2026)
 
 This release adds rich text with images and mentions, unsaved changes that survive leaving a

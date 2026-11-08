@@ -929,3 +929,42 @@ The owner can approve these in one pass. Each recommendation is what the contrac
 
 The prototype imitates the backend in the browser so the journeys can be clicked. In the real
 system the browser never evaluates conditions or decides access; it shows what the server returns.
+
+## 14. Phase 2 implementation notes (08-11-2026)
+
+Phase 2 (storage and evaluator) is built: `evlet/workflow.py` (declarations and catalogue),
+`evlet/workflow_definition.py` (validation and conditions), `evlet/workflow_engine.py` (tables and
+runtime), tests in `tests/test_workflow.py` and the public summary in [docs/workflows.md](../workflows.md).
+Where the contract left a choice open, phase 2 chose the following. Each is a question for the owner;
+none is hard to change before phase 3.
+
+1. **Conditions compile per row.** Each row compiles to finite-v1 expression nodes, checked with the
+   plan node checker (`check_node`) and evaluated by `calc.evaluate`, so comparisons are exact. They
+   are not wrapped in a full plan for `check_plan`, which needs a model schema fingerprint.
+2. **Empty values and groups.** A row over a fact with no value is undecided, except `isnull`.
+   Groups follow finite-v1 and are strict: any undecided item makes the group undecided, even when
+   another item would decide it (Kleene logic would let `Any` be true there). Strict is the safer
+   default; relaxing it later never routes a blocked request differently.
+3. **Rejection inside a review.** One eligible person's Reject rejects that review. The group's
+   `rejection` (veto or branch) then applies as written.
+4. **A person counts once per stage.** A unique index on `(execution_id, principal)` adds to the
+   contract's `(task_id, principal)`. After deciding one review a person leaves the others of that
+   stage; if a review can then no longer reach its quorum, the run blocks for repair.
+5. **Open runs.** The one-open-run index covers `draft`, `active`, `blocked` and `held`. A run that
+   reached `approved`, `rejected` or `closed` is finished, so the next Send starts a new run.
+   Phase 3 decides how unused approval evidence of an `approved` run is consumed.
+6. **Account ids.** `{"kind": "user", "user": ...}` and `completion.executor` take the integer
+   account id, because accounts have no public text id.
+7. **Columns beyond section 8.** `evlet_workflow_runs.blocked` (the reason as JSON),
+   `evlet_workflow_executions.outcome`, task status `done` for work and operational tasks, and
+   assignee `via` value `requester`.
+8. **Frozen routing.** Requirement, action conditions, every route and which reviews apply are
+   decided when the stage starts, from saved data, and stored on the execution. Anything undecided
+   blocks the run then, not when a reviewer acts.
+9. **Extra publication checks.** Request changes must return to a work stage; a review stage needs
+   an Approve action; Reject and Request changes always require feedback; a role assignment
+   resolving to more than 500 people blocks.
+10. **Tables at startup.** The tables are created at startup when a model declares `Meta.workflow`,
+    like the journal and lifecycle tables, not by a framework step.
+11. **Controls.** `review` joins the Controls operation list and the Permissions page's operation
+    order. That order already lacks `confirm`, `cancel` and `reopen` (unrelated, existing gap).
