@@ -1,6 +1,6 @@
 // The app shell (docs/ui-design/README.md section 4): one top bar across the window with the Evlet brand,
 // a pipe and the Workspace switcher at its left (as wide as the sidebar), then recent records, breadcrumbs,
-// one box with search and the Explorer (docs/ui.md#top-bar-search-and-explorer), notifications and
+// the search button (its palette holds the Explorer button, docs/ui.md#top-bar-search-and-explorer), notifications and
 // shortcuts; under it the sidebar with the workspace's collapsible sections of shortcuts (app/workspaces.ts),
 // the account area and an edge button that collapses it, beside one scrolling view. Under 760 px the
 // sidebar is a drawer opened from the top bar.
@@ -21,7 +21,7 @@ import { rootModels } from './meta';
 import { activeShortcut, chosenWorkspace, homeWorkspace, modelCounts, workspaceNav, workspacesVersion, type NavSection, type NavShortcut, type Workspace } from './workspaces';
 import { presentSlip } from './slips';
 import { customizeAccess, openWorkspaceEditor } from './workspace-editor';
-import { isExplorer, openExplorer } from './explorer';
+import { openExplorer } from './explorer';
 import { SHELL_ICONS } from './nav-icons';
 import { openShortcutSheet } from './shortcuts';
 import { formatKeys, withShortcut } from '../ui/shortcuts';
@@ -197,15 +197,11 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
       ? html`<span class="cur" aria-current="page">${crumb.label}</span>`
       : [html`<a class="hide-sm" href=${crumb.href ?? '#'}>${crumb.label}</a>`, Icon('chevron-right', { size: 'xs', className: 'hide-sm' })])];
   };
-  // Search and the Explorer: two buttons in one box (docs/ui.md#top-bar-search-and-explorer). The search part
-  // opens the palette; the Explorer part opens the Explorer on its last view and is pressed while it is open.
-  const onExplorer = () => isExplorer(route.get());
+  // Search: one button that opens the palette (docs/ui.md#top-bar-search-and-explorer); the Explorer button is
+  // inside the palette's search field.
   const searchPart = html`<button type="button" class="ts-search" aria-label="Search" aria-keyshortcuts="Meta+K Control+K" on:click=${() => ctx.openPalette()}
     ref=${(el: HTMLElement) => tooltip(el, withShortcut('Search', 'Mod+K'))}>${Icon(SHELL_ICONS.search, { size: 'sm' })}<span class="ts-text">Search</span>${Key(formatKeys('Mod+K'))}</button>` as HTMLElement;
-  const explorerPart = html`<button type="button" class="ts-explorer" class:on=${onExplorer} aria-label="Explorer" aria-pressed=${() => String(onExplorer())}
-    on:click=${() => openExplorer(ctx)} ref=${(el: HTMLElement) => tooltip(el, 'Explorer  G E')}>
-    ${Icon(SHELL_ICONS.explorer, { size: 'sm' })}<span class="ts-text">Explorer</span></button>` as HTMLElement;
-  const searchBox = html`<div class="top-search" role="group" aria-label="Search and Explorer">${searchPart}<span class="ts-div" aria-hidden="true"></span>${explorerPart}</div>`;
+  const searchBox = html`<div class="top-search">${searchPart}</div>`;
   const topbar = html`<header class="topbar">
     <span class="mobile-only">${IconButton({ icon: SHELL_ICONS.menu, tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
     <div class="top-left">${brand}<span class="top-pipe" aria-hidden="true"></span>${appSwitch}</div>

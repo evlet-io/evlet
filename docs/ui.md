@@ -14,7 +14,7 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Sign-in and first-run setup (the first administrator account).
 - Docs, with its topics, from the sidebar and the search palette.
 - The shell: a top bar across the window with the Evlet brand and the Workspace switcher at its left,
-  then a history button for recent records (before the breadcrumb), one box for the search palette and the Explorer ([below](#top-bar-search-and-explorer)),
+  then a history button for recent records (before the breadcrumb), the search button, whose palette opens the Explorer ([below](#top-bar-search-and-explorer)),
   notifications and shortcuts; under it the sidebar with the workspace's sections and shortcuts
   ([below](#sidebar-and-workspaces)). New records start from the New button
   on a model's list page or from the search palette.
@@ -624,8 +624,8 @@ is missing, the closest one stands in (a slip uses `sticky-note`, a dashboard `a
 
 The top bar runs across the whole window, over the sidebar and the main column, with a light divider
 under it. From left to right it holds the drawer button (phones only), the **Evlet brand**, a pipe, the
-**Workspace switcher**, the **history** button, the breadcrumb, then one box for **search and the
-Explorer**, notifications and the shortcuts button.
+**Workspace switcher**, the **history** button, the breadcrumb, then the **search** button,
+notifications and the shortcuts button.
 
 - **Brand.** The Evlet logo, the same artwork and size as on the sign-in page and before: the
   horizontal evlet.io lockup, 26 px tall (`evlet-logo-primary.svg`, and `evlet-logo-white.svg` in dark
@@ -637,33 +637,33 @@ Explorer**, notifications and the shortcuts button.
   main column. With the sidebar collapsed they take only the room they need: the Evlet mark alone
   (`evlet-icon-blue.svg`, 26 px), the pipe and the switcher, then the history button.
 - **Phones** (under 760 px): the menu button, the Evlet mark alone, the pipe and the switcher with its name
-  cut to about a third of the width, then history, the current page's name, the search and Explorer
-  icons and notifications. The page never scrolls sideways.
+  cut to about a third of the width, then history, the current page's name, the search icon and
+  notifications. The page never scrolls sideways.
 
 - **History** (`history` icon, tooltip "Recent records") sits at the left end, directly before the
   breadcrumb. A click or Arrow Down opens this session's recent records, as before. On phones it
   stays visible, after the drawer button and before the breadcrumb; the breadcrumb shrinks first.
-- **One box, two buttons.** The search field is on the left; the Explorer is attached at its right
-  end, inside the same border, behind a hairline, with the app grid icon and the label "Explorer".
-  The box is a `role="group"` named "Search and Explorer". Each part is its own button with its own
-  name, focus ring and tooltip ("Search ⌘K" on a Mac, "Search Ctrl+K" elsewhere, "Explorer G E");
-  Tab reaches search first, then the Explorer. The key in the search box is written the same way.
-- **Search** opens the search palette, as do ⌘K and Ctrl K.
-- **Explorer** opens the Explorer (`/?explorer=<view>`) on the view this person used last on this
-  device (`evlet.<username>.explorer.view`; Reports the first time), as does G then E. While the
-  Explorer is open its part is pressed: a flat accent fill and `aria-pressed="true"`.
+- **Search** is one button in a box, with the search icon, the word "Search" and its key ("⌘K" on a
+  Mac, "Ctrl+K" elsewhere; the tooltip reads "Search ⌘K" or "Search Ctrl+K"). It opens the search
+  palette, as do ⌘K and Ctrl K. The top bar has no Explorer button.
+- **Explorer, from the palette.** At the end of the palette's search field is an icon-only button with
+  the app grid icon (`layout-grid`), named "Explorer", with the tooltip "Explorer G E" on hover and
+  focus. Tab reaches it from the field. It is flat, with 4 px corners. A click closes the palette and
+  opens the Explorer (`/?explorer=<view>`) on the view this person used last on this device
+  (`evlet.<username>.explorer.view`; Reports the first time), as does G then E anywhere. When the field
+  has text, the Explorer's search is filled with it (`?q=`), as with the entries below.
 - **The palette reaches the Explorer too.** Typing "explorer" lists **Explorer** and **Explorer:
   Reports / Data / Dashboards** (and **Ledger reports** when there are any) under Pages. Any typed
   text also offers, last, **Search all reports for "…"** and **Search all data for "…"**, which open
   that view with its search box filled (`?q=`). They stay offered when nothing else matches.
-- **Narrow screens** (under 1100 px) drop the "Explorer" label and keep its icon. **Phones** (under
-  760 px) show a search icon button and an Explorer icon button side by side.
+- **Phones** (under 760 px) show only the search icon button; the Explorer button stays in the
+  palette's field.
 - **One mark at a time.** The sidebar has no Explorer button, and a URL shortcut is marked only on its
   own address, so the Explorer page never shows two active items.
 
 ### Explorer
 
-**Explorer**, the right part of the top bar's search box, opens a page with three views (four with ledger reports):
+**Explorer**, from the button in the search palette's field, opens a page with three views (four with ledger reports):
 
 - **Reports**: a card for every report the person may run, from every app, with its name, app and
   description (when the server sends one).

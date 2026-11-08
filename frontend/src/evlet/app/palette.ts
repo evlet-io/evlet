@@ -2,13 +2,15 @@
 // records (through each model's list search), pages and actions, and preferences as you type.
 // Arrow keys move through rows and the grid, Enter opens. Quick access is chosen per user.
 // The Explorer and each of its views are pages here, and typing offers "Search all reports for ..." and
-// "Search all data for ...", which open the Explorer with its search box filled.
+// "Search all data for ...", which open the Explorer with its search box filled. The Explorer button at the
+// end of the search field opens the Explorer on its last view, carrying what was typed.
 
 import { html } from '../dom';
 import { cell, derive, effect, untrack } from '../reactive';
 import { Icon, SegmentedControl, Button } from '../ui/base';
 import { tint as safeTint, type Tint } from '../ui/core';
 import { openModal } from '../ui/layers';
+import { tooltip } from '../ui/tooltip';
 import { resolveTheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { identity, rootModels, titleOf, type ScreenModel } from './meta';
@@ -194,7 +196,12 @@ function paletteBody(ctx: AppContext, close: () => void) {
     role="combobox" aria-expanded="true" aria-controls="ev-pal-list" aria-activedescendant=${() => items.get().length ? `pal-${selected.get()}` : null}
     prop:value=${query} on:input=${(event: Event) => { query.set((event.target as HTMLInputElement).value); selected.set(0); editing.set(false); }} on:keydown=${toggle}>` as HTMLInputElement;
 
-  return html`<div class="pal-in">${Icon('search', { size: 'lg' })}${input}<kbd>Esc</kbd></div>
+  // The Explorer, from the end of the field: on its last view, with its search filled with what was typed.
+  const explorer = html`<button type="button" class="pal-ex" aria-label="Explorer" aria-keyshortcuts="G E"
+    on:click=${() => { const typed = query.peek().trim(); close(); void openExplorer(ctx, undefined, typed); }}
+    ref=${(el: HTMLElement) => tooltip(el, 'Explorer  G E')}>${Icon(SHELL_ICONS.explorer, { size: 'sm' })}</button>`;
+
+  return html`<div class="pal-in">${Icon('search', { size: 'lg' })}${input}${explorer}<kbd>Esc</kbd></div>
     <div class="pal-list" id="ev-pal-list" role="listbox" aria-label="Results">${() => query.get().trim() ? results() : home()}</div>
     <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> Move</span><span><kbd>↵</kbd> Open</span><span class="hide-sm"><kbd>⌘</kbd><kbd>K</kbd> Toggle</span></div>`;
 }

@@ -193,18 +193,19 @@ describe('the workspace sidebar', () => {
 });
 
 describe('the Explorer', () => {
-  it('opens from the top bar and lists every report with search and an app filter', async () => {
+  it('opens from the button in the search palette and lists every report with search and an app filter', async () => {
     const { host } = start(routes(), '/app/customer');
     await until(() => expect(host.querySelector('.top-search')).not.toBeNull());
-    // The sidebar has no Explorer button any more.
+    // Neither the sidebar nor the top bar has an Explorer button.
     expect(byText(host, '.sidebar .nav-item', 'Explorer')).toBeNull();
-    const button = host.querySelector<HTMLButtonElement>('.top-search .ts-explorer')!;
-    expect(button.getAttribute('aria-pressed')).toBe('false');
-    click(button);
+    expect(host.querySelector('.topbar .ts-explorer, .topbar [aria-label="Explorer"]')).toBeNull();
+    click(host.querySelector('.top-search .ts-search'));
+    await until(() => expect(document.querySelector('.palette .pal-ex')).not.toBeNull());
+    click(document.querySelector('.palette .pal-ex'));
     await until(() => expect(text(host.querySelector('.ev-explorer .ph h1'))).toBe('Explorer'));
     expect(location.search).toBe('?explorer=reports');
-    expect(button.classList.contains('on')).toBe(true);
-    expect(button.getAttribute('aria-pressed')).toBe('true');
+    // Clicking it closed the palette.
+    expect(document.querySelector('.palette')).toBeNull();
     // Nothing in the sidebar is marked on the Explorer.
     expect(host.querySelectorAll('.sidebar .nav-item.active').length).toBe(0);
     const cards = () => [...host.querySelectorAll<HTMLAnchorElement>('.ex-card')].map(card => [text(card.querySelector('b')), text(card.querySelector('.ex-app')), card.getAttribute('href')]);
@@ -293,15 +294,27 @@ describe('the Explorer', () => {
     expect(host.querySelector<HTMLInputElement>('.ev-explorer input[type="search"]')!.value).toBe('quote');
   });
 
-  it('keeps the last view for the Explorer part of the box, and opens with G then E', async () => {
+  it('keeps the last view for the palette\'s Explorer button, carries what was typed, and opens with G then E', async () => {
     const { host } = start(routes(), '/?explorer=data');
     await until(() => expect(host.querySelector('.ex-card')).not.toBeNull());
     click(host.querySelector('a[href="/app/quote"]'));
     await until(() => expect(location.pathname).toBe('/app/quote'));
-    const button = host.querySelector<HTMLButtonElement>('.top-search .ts-explorer')!;
-    expect(button.classList.contains('on')).toBe(false);
-    click(button);
+    const explorerButton = async () => {
+      click(host.querySelector('.top-search .ts-search'));
+      await until(() => expect(document.querySelector('.palette .pal-ex')).not.toBeNull());
+      return document.querySelector<HTMLButtonElement>('.palette .pal-ex')!;
+    };
+    click(await explorerButton());
     await until(() => expect(location.search).toBe('?explorer=data'));
+    // With text in the field, the Explorer opens on its last view with its search filled.
+    click(host.querySelector('a[href="/app/quote"]'));
+    await until(() => expect(location.pathname).toBe('/app/quote'));
+    const button = await explorerButton();
+    typeInto(document.querySelector<HTMLInputElement>('.palette .pal-in input')!, 'quote');
+    click(button);
+    await until(() => expect(location.search).toBe('?explorer=data&q=quote'));
+    expect(host.querySelector<HTMLInputElement>('.ev-explorer input[type="search"]')!.value).toBe('quote');
+    typeInto(host.querySelector<HTMLInputElement>('.ev-explorer input[type="search"]')!, '');
     click(byText(host, '.ev-explorer .seg button', 'Dashboards'));
     await until(() => expect(location.search).toBe('?explorer=dashboards'));
     click(host.querySelector('a[href="/app/quote"]'));

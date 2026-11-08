@@ -456,6 +456,11 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .pal-in svg{width:20px;height:20px}
 .pal-in input{flex:1;border:0;outline:none;background:transparent;font-size:16.5px;height:100%;color:var(--fg);min-width:0}
 .pal-in input::placeholder{color:var(--fg-3)}
+/* The Explorer button at the end of the palette's field: icon only, flat, 4 px corners. */
+.pal-ex{display:grid;place-items:center;width:30px;height:30px;flex:none;margin-right:-4px;border-radius:var(--r-sm);color:var(--fg-3)}
+.pal-in .pal-ex svg{width:16px;height:16px}
+.pal-ex:hover{background:var(--bg-muted);color:var(--fg)}
+.pal-ex:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .pal-list{overflow-y:auto;padding:8px 12px 12px;flex:1;min-height:0}
 .pal-sec{padding:6px 0 4px}
 .pal-sec+.pal-sec{border-top:1px solid var(--divider);margin-top:6px;padding-top:12px}
@@ -631,25 +636,20 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .app.collapsed .side-edge{left:48px}
 .side-bottom{padding:6px 8px;border-top:1px solid var(--border)}
 .app.collapsed .side-bottom{padding:6px 8px}
-/* Search and the Explorer: one box, two buttons. Search on the left, the Explorer attached at its right end
-   behind a hairline; the Explorer part is flat accent while the Explorer is open. Narrow: the Explorer shows its
-   icon only. Phone: two icon buttons side by side. */
+/* Search: one button in a box, with its key hint. Phone: an icon button. */
 .top-search{display:flex;align-items:stretch;height:32px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg-subtle);color:var(--fg-3);font-size:13px;margin-right:6px;transition:border-color .12s}
 .top-search:hover{border-color:var(--border-strong)}
 .top-search>button{display:flex;align-items:center;gap:8px;color:inherit;transition:background .12s,color .12s}
 .top-search>button:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.ts-search{width:236px;padding:0 5px 0 10px;border-radius:calc(var(--r) - 1px) 0 0 calc(var(--r) - 1px)}
+.ts-search{width:236px;padding:0 5px 0 10px;border-radius:calc(var(--r) - 1px)}
 .ts-search .ts-text{flex:1;text-align:left}
-.ts-explorer{padding:0 10px;border-radius:0 calc(var(--r) - 1px) calc(var(--r) - 1px) 0}
 .top-search>button:hover{background:var(--surface);color:var(--fg-2)}
-.ts-explorer.on,.ts-explorer.on:hover{background:var(--accent-soft);color:var(--accent);font-weight:550}
-.ts-div{width:1px;background:var(--border);flex:none}
-@media (max-width:1100px){.ts-search{width:200px}.ts-explorer .ts-text{display:none}.ts-explorer{padding:0 8px}}
+@media (max-width:1100px){.ts-search{width:200px}}
 @media (max-width:760px){
-  .top-search{border:0;background:none;margin-right:0;gap:4px}
+  .top-search{border:0;background:none;margin-right:0}
   .top-search>button{width:30px;height:30px;padding:0;justify-content:center;border-radius:var(--r-sm);align-self:center}
   .top-search>button:hover{background:var(--bg-muted);color:var(--fg)}
-  .ts-search .ts-text,.ts-search kbd,.ts-div{display:none}
+  .ts-search .ts-text,.ts-search kbd{display:none}
 }
 
 /* ---------- doc view ---------- */

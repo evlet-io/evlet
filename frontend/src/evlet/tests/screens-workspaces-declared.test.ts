@@ -410,24 +410,34 @@ describe('the top bar', () => {
     await until(() => expect(document.querySelector('.rec-pop')).not.toBeNull());
   });
 
-  it('joins search and the Explorer in one labelled group of two buttons, search first', async () => {
+  it('shows one search button in the top bar and puts the Explorer button at the end of the palette\'s field', async () => {
     const { host } = start(routes(), '/app/invoice');
     await until(() => expect(host.querySelector('.top-search')).not.toBeNull());
-    const group = host.querySelector<HTMLElement>('.top-search')!;
-    expect(group.getAttribute('role')).toBe('group');
-    expect(group.getAttribute('aria-label')).toBe('Search and Explorer');
-    const buttons = [...group.querySelectorAll<HTMLButtonElement>('button')];
-    expect(buttons.map(button => [button.className.split(' ')[0], button.getAttribute('aria-label')])).toEqual([['ts-search', 'Search'], ['ts-explorer', 'Explorer']]);
-    // A hairline between them, and the Explorer part shows the app grid icon.
-    expect(group.querySelector('.ts-div')).not.toBeNull();
-    expect(buttons[1].querySelector('svg')!.innerHTML).toBe(Icon(SHELL_ICONS.explorer).innerHTML);
+    const box = host.querySelector<HTMLElement>('.top-search')!;
+    const buttons = [...box.querySelectorAll<HTMLButtonElement>('button')];
+    expect(buttons.map(button => [button.className, button.getAttribute('aria-label')])).toEqual([['ts-search', 'Search']]);
+    // No Explorer part, no divider, and no Explorer button anywhere in the top bar.
+    expect(box.querySelector('.ts-explorer, .ts-div')).toBeNull();
+    expect(host.querySelector('.topbar [aria-label="Explorer"]')).toBeNull();
     buttons[0].dispatchEvent(new MouseEvent('mouseenter'));
     // jsdom is not a Mac: the key reads Ctrl+K (duplicate.test.ts covers both).
     await until(() => expect(text(document.querySelector('.tip'))).toBe('Search Ctrl+K'));
-    buttons[1].dispatchEvent(new MouseEvent('mouseenter'));
-    await until(() => expect(text(document.querySelector('.tip'))).toBe('Explorer G E'));
     click(buttons[0]);
     await until(() => expect(document.querySelector('.palette')).not.toBeNull());
+    // In the palette: an icon-only Explorer button right after the field, so Tab reaches it from there.
+    const field = document.querySelector<HTMLInputElement>('.palette .pal-in input')!;
+    const explorer = document.querySelector<HTMLButtonElement>('.palette .pal-in .pal-ex')!;
+    expect(field.nextElementSibling).toBe(explorer);
+    expect(explorer.tagName).toBe('BUTTON');
+    expect(explorer.getAttribute('tabindex')).toBeNull();
+    expect(explorer.getAttribute('aria-label')).toBe('Explorer');
+    expect(text(explorer)).toBe('');
+    expect(explorer.querySelector('svg')!.innerHTML).toBe(Icon(SHELL_ICONS.explorer).innerHTML);
+    explorer.dispatchEvent(new MouseEvent('mouseenter'));
+    await until(() => expect(text(document.querySelector('.tip'))).toBe('Explorer G E'));
+    explorer.dispatchEvent(new MouseEvent('mouseleave'));
+    explorer.dispatchEvent(new Event('focus'));
+    await until(() => expect(text(document.querySelector('.tip'))).toBe('Explorer G E'));
   });
 
   it('marks a URL shortcut only on its own address, so the Explorer is never marked twice', async () => {
@@ -442,7 +452,8 @@ describe('the top bar', () => {
 
     const { host } = start(routes(schema), '/?explorer=data');
     await until(() => expect(host.querySelector('.ex-card')).not.toBeNull());
-    expect(host.querySelector('.top-search .ts-explorer')!.classList.contains('on')).toBe(true);
+    // The top bar has no Explorer button to mark.
+    expect(host.querySelector('.top-search .ts-explorer')).toBeNull();
     expect(host.querySelectorAll('.sidebar .active, .sidebar [aria-current="page"]').length).toBe(0);
   });
 });
