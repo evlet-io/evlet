@@ -112,6 +112,9 @@ describe('personal pages', () => {
     ]), '/settings/profile');
     await until(() => expect(text(host.querySelector('.set-head h1'))).toBe('Profile'));
     expect(text(host.querySelector('.crumbs .cur'))).toBe('Profile');
+    // The history button sits on the right of the top bar, directly left of the notification bell.
+    await until(() => expect(host.querySelector('.top-actions .inbox-btn')).not.toBeNull());
+    expect(host.querySelector('.top-actions .inbox-btn')!.previousElementSibling!.classList.contains('rec-btn')).toBe(true);
     typeInto(host.querySelector<HTMLInputElement>('#pf-title')!, 'Director');
     await until(() => expect(requests(sent, 'PATCH', /profile$/)[0]?.body).toEqual({ title: 'Director' }));
     await until(() => expect(text(host.querySelector('.me .e'))).toBe('Director'));

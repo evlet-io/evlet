@@ -139,12 +139,14 @@ kbd{font-family:var(--font);font-size:11px;font-weight:500;color:var(--fg-3);bac
 
 .main{display:flex;flex-direction:column;min-width:0;min-height:0}
 .topbar{grid-column:1/-1;height:var(--topbar-h);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;padding:0 16px;flex:none;background:var(--bg);min-width:0}
-.crumbs{display:flex;align-items:center;gap:4px;font-size:13px;color:var(--fg-3);min-width:0;flex:1}
-.crumbs a{padding:3px 6px;border-radius:var(--r-sm);white-space:nowrap}
-.crumbs a:hover{background:var(--bg-muted);color:var(--fg)}
-.crumbs .cur{color:var(--fg);font-weight:550;padding:3px 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.crumbs svg{color:var(--fg-4)}
-.top-actions{display:flex;align-items:center;gap:4px}
+.top-actions{display:flex;align-items:center;gap:4px;margin-left:auto}
+/* The breadcrumb: a small muted line directly above the page's title, "Sales / Invoices", the page itself last. */
+.crumbs{display:flex;align-items:center;gap:6px;font-size:12.5px;line-height:18px;color:var(--fg-3);min-width:0;margin:0 0 6px}
+.crumbs a{white-space:nowrap;border-radius:var(--r-sm)}
+.crumbs a:hover{color:var(--fg);text-decoration:underline}
+.crumbs .cur{color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
+.crumbs .sep{color:var(--fg-4)}
+.page>.page-crumbs{margin-top:-6px}
 .mobile-only{display:none}
 .view{flex:1;overflow:auto;min-height:0;position:relative}
 .page{padding:24px 28px 48px;max-width:1440px;margin:0 auto}

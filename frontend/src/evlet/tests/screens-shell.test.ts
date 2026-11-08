@@ -130,10 +130,10 @@ describe('app shell', () => {
     const { host } = start([...adminRoutes()]);
     await until(() => expect(host.querySelector('.app')).not.toBeNull());
     const app = host.querySelector('.app')!;
-    // Left to right: the phone's menu button, then the brand, a pipe and the switcher, then the history button.
+    // Left to right: the phone's menu button, then the brand, a pipe and the switcher, then the actions on the right.
     const left = host.querySelector<HTMLElement>('.topbar > .top-left')!;
     expect(left.previousElementSibling!.classList.contains('mobile-only')).toBe(true);
-    expect(left.nextElementSibling!.classList.contains('rec-btn')).toBe(true);
+    expect(left.nextElementSibling!.classList.contains('top-actions')).toBe(true);
     expect([...left.children].map(child => child.className)).toEqual(['brand', 'top-pipe', 'app-switch']);
     // The evlet.io lockup for light and dark themes, and the mark for the collapsed sidebar, as on main.
     const brand = [...left.querySelectorAll<HTMLImageElement>('.brand img')].map(img => [img.className, img.getAttribute('src'), img.alt]);

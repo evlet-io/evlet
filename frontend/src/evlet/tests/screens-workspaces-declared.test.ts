@@ -1,7 +1,7 @@
 // Declared workspaces (docs/ui.md, Workspaces): the sidebar maps /api/schema's `workspaces` to its sections and
 // shortcuts, with board views and filters in the list address, slips presented over the page, custom workspaces
 // from the site's overrides, and the active shortcut chosen by the address. Also the Explorer's Ledger reports,
-// the navigation icons (app/nav-icons.ts) and the top bar: history before the breadcrumb, search and the Explorer in one box.
+// the navigation icons (app/nav-icons.ts) and the top bar: history beside the bell, the breadcrumb above the page title, search and the Explorer in one box.
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, invoice, press, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import { copy, type Recorded } from './server';
@@ -417,15 +417,19 @@ describe('the navigation icons', () => {
 });
 
 describe('the top bar', () => {
-  it('puts the history button at the left end, just before the breadcrumb', async () => {
+  it('puts the history button on the right, between search and notifications, and the breadcrumb above the page title', async () => {
     const { host } = start(routes(), '/app/invoice');
-    await until(() => expect(host.querySelector('.topbar .crumbs')).not.toBeNull());
+    await until(() => expect(host.querySelector('.page-crumbs .cur')).not.toBeNull());
     const history = host.querySelector<HTMLElement>('.topbar .rec-btn')!;
-    expect(history.parentElement!.classList.contains('topbar')).toBe(true);
-    expect(history.nextElementSibling!.classList.contains('crumbs')).toBe(true);
-    // After the brand and the Workspace switcher, which follow the phone's menu button, the first thing in the bar.
-    expect(history.previousElementSibling!.classList.contains('top-left')).toBe(true);
-    expect(history.previousElementSibling!.previousElementSibling!.classList.contains('mobile-only')).toBe(true);
+    expect(history.parentElement!.classList.contains('top-actions')).toBe(true);
+    expect(history.previousElementSibling!.classList.contains('top-search')).toBe(true);
+    // The breadcrumb is not in the top bar: it is a small line in the main area, directly above the list's title,
+    // "Billing / Invoices" with a slash between, the workspace crumb first.
+    expect(host.querySelector('.topbar .crumbs, .topbar nav[aria-label="Breadcrumbs"]')).toBeNull();
+    const crumbs = host.querySelector<HTMLElement>('.view .ev-list > nav.page-crumbs')!;
+    expect(crumbs.nextElementSibling!.classList.contains('ph')).toBe(true);
+    expect([...crumbs.children].map(child => text(child))).toEqual(['Billing', '/', 'Invoices']);
+    expect(crumbs.querySelector('a.ws-crumb')).not.toBeNull();
     expect(history.querySelector('svg')!.innerHTML).toBe(Icon(SHELL_ICONS.history).innerHTML);
     expect(history.getAttribute('aria-label')).toBe('Recent records');
     history.dispatchEvent(new MouseEvent('mouseenter'));

@@ -1,4 +1,4 @@
-// Recent records in the top bar: a small history button at the left end, just before the breadcrumb, that opens this session's
+// Recent records in the top bar: a small history button on the right, left of the notification bell, that opens this session's
 // recently opened records, newest first, each with its model and when it was last opened.
 // The list lives in memory only (Prefs.recentRecords) and is dropped on sign-out.
 

@@ -14,9 +14,10 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Sign-in and first-run setup (the first administrator account).
 - Docs, with its topics, from the sidebar and the search palette.
 - The shell: a top bar across the window with the Evlet brand and the Workspace switcher at its left,
-  then a history button for recent records (before the breadcrumb), the search button, whose palette opens the Explorer ([below](#top-bar-search-and-explorer)),
-  notifications and shortcuts; under it the sidebar with the workspace's sections and shortcuts
-  ([below](#sidebar-and-workspaces)). New records start from the New button
+  then at its right the search button, whose palette opens the Explorer ([below](#top-bar-search-and-explorer)),
+  a history button for recent records, notifications and shortcuts; under it the sidebar with the workspace's
+  sections and shortcuts ([below](#sidebar-and-workspaces)). Each page's breadcrumb is a small line above
+  its title ([Breadcrumb](#breadcrumb)). New records start from the New button
   on a model's list page or from the search palette.
 - Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
@@ -627,9 +628,10 @@ is missing, the closest one stands in (a slip uses `sticky-note`, a dashboard `a
 ### Top bar: Search and Explorer
 
 The top bar runs across the whole window, over the sidebar and the main column, with a light divider
-under it. From left to right it holds the drawer button (phones only), the **Evlet brand**, a pipe, the
-**Workspace switcher**, the **history** button, the breadcrumb, then the **search** button,
-notifications and the shortcuts button.
+under it. From left to right it holds the drawer button (phones only), the **Evlet
+brand**, a pipe and the **Workspace switcher**; then, on the right, the **search** button, the **history**
+button, notifications and the shortcuts button. The breadcrumb is not in the top bar: it is a small line
+above each page's title ([Breadcrumb](#breadcrumb)).
 
 - **Brand.** The Evlet logo, the same artwork and size as on the sign-in page and before: the
   horizontal evlet.io lockup, 26 px tall (`evlet-logo-primary.svg`, and `evlet-logo-white.svg` in dark
@@ -637,16 +639,15 @@ notifications and the shortcuts button.
 - **Pipe.** A 1 px line, 16 px tall, in the strong border colour, with space on both sides.
 - **Switcher.** The compact Workspace button ([Sidebar and workspaces](#sidebar-and-workspaces)).
 - **Width.** With the sidebar expanded, the brand, pipe and switcher take the sidebar's width (a long
-  workspace name is cut with an ellipsis), so the history button and the breadcrumb start over the
-  main column. With the sidebar collapsed they take only the room they need: the Evlet mark alone
-  (`evlet-icon-blue.svg`, 26 px), the pipe and the switcher, then the history button.
+  workspace name is cut with an ellipsis). With the sidebar collapsed they take only the room they need:
+  the Evlet mark alone (`evlet-icon-blue.svg`, 26 px), the pipe and the switcher.
 - **Phones** (under 760 px): the menu button, the Evlet mark alone, the pipe and the switcher with its name
-  cut to about a third of the width, then history, the current page's name, the search icon and
-  notifications. The page never scrolls sideways.
+  cut to about a third of the width, then on the right the search icon, history and notifications. The
+  page never scrolls sideways.
 
-- **History** (`history` icon, tooltip "Recent records") sits at the left end, directly before the
-  breadcrumb. A click or Arrow Down opens this session's recent records, as before. On phones it
-  stays visible, after the drawer button and before the breadcrumb; the breadcrumb shrinks first.
+- **History** (`history` icon, tooltip "Recent records") sits on the right, after the search button and
+  directly left of the notification bell. A click or Arrow Down opens this session's recent records, as
+  before. On phones it stays visible.
 - **Search** is one button in a box, with the search icon, the word "Search" and its key ("⌘K" on a
   Mac, "Ctrl+K" elsewhere; the tooltip reads "Search ⌘K" or "Search Ctrl+K"). It opens the search
   palette, as do ⌘K and Ctrl K. The top bar has no Explorer button.
@@ -664,6 +665,19 @@ notifications and the shortcuts button.
   palette's field.
 - **One mark at a time.** The sidebar has no Explorer button, and a URL shortcut is marked only on its
   own address, so the Explorer page never shows two active items.
+
+### Breadcrumb
+
+The breadcrumb is a small muted line (12.5 px) in the main area, directly above the page's title and
+aligned with it: "Sales / Invoices", the crumbs joined by slashes, the page itself last. List pages,
+record pages, reports and the Reports page, Docs, the Explorer, Settings and Eva's scheduled tasks
+place it there (`ctx.crumbBar()`); a record in a list's side panel has none, the list above it has
+the one. It scrolls away with the title.
+
+- The first crumb names the workspace the page belongs to (the first declared one holding it).
+  Clicking it shows that workspace in the sidebar, the page staying open. When the page's next crumb
+  has the workspace's name, the two are one crumb.
+- Phones keep the last two crumbs; a long last crumb is cut with an ellipsis.
 
 ### Explorer
 

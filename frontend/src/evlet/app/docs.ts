@@ -115,7 +115,7 @@ const TOPICS: Topic[] = [
   </article>` },
   { id: 'screens', title: 'Screens and routes', render: () => html`<article class="ev-doc-article">
     ${section('The application shell', p('The sidebar lists your models, grouped into documents and records. The top bar shows where you are, your recent records (the clock button left of search), search (Ctrl K or Cmd K), notifications and shortcuts. New records start from the New button on a list or from search. Only the view scrolls.'),
-      table([['Sidebar', 'Workspace, app bar, models, and your account at the bottom.'], ['Top bar', 'Sidebar toggle, breadcrumbs, recent records, search, shortcuts, New.'],
+      table([['Sidebar', 'Workspace, app bar, models, and your account at the bottom.'], ['Top bar', 'Workspace switcher, search, recent records, notifications and shortcuts. The breadcrumb sits above each page title.'],
         ['View', 'The page: a list, a board, a record or these docs.'], ['Layers', 'Menus, dialogs, drawers, toasts and the search palette.']]))}
     ${section('From a model to its screens', p('Lists show Meta.list_fields (up to eight), with the title pinned. A model with a State also gets a board and saved views per state. A record shows the title, the State as steps with its moves, a summary strip, a Details tab built from Meta.layout, one tab per Table and the side panel.'), code(screensCode))}
     ${section('Routes', p('Every model has /app/model, /app/model/new and /app/model/123. Lists keep their search, sort, page and view in the address, so a link opens the same list. A record keeps its tab: /app/invoice/42?tab=lines.'),
@@ -154,7 +154,7 @@ export function DocsPage(ctx: AppContext, topicId = 'overview'): HTMLElement {
   const topic = TOPICS.find(item => item.id === topicId) ?? TOPICS[0];
   ctx.crumbs.set(topic.id === 'overview' ? [{ label: 'Docs' }] : [{ label: 'Docs', href: ctx.router.href('docs', {}) }, { label: topic.title }]);
   return html`<div class="page ev-docs">
-    ${PageHeader({ icon: 'file-text', tint: 'slate', title: topic.title })}
+    ${ctx.crumbBar?.()}${PageHeader({ icon: 'file-text', tint: 'slate', title: topic.title })}
     <p class="ev-docs-sub">${topic.id === 'overview' ? 'The practical guide to building your application.' : 'Developer documentation'}</p>
     <nav class="tabs" aria-label="Docs topics">${TOPICS.map(item => html`<a class:on=${item.id === topic.id} aria-current=${item.id === topic.id ? 'page' : null}
       href=${item.id === 'overview' ? ctx.router.href('docs', {}) : ctx.router.href('topic', { topic: item.id })}>${item.title}</a>`)}</nav>

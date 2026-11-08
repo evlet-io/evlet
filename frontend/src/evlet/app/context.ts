@@ -2,6 +2,7 @@
 // per-user preferences and the shell's shared state.
 
 import type { Session, User } from '../api';
+import type { Child } from '../dom';
 import { cell, type Cell } from '../reactive';
 import { createRouter, type Router } from '../router';
 import type { SchemaIndex } from '../model/schema';
@@ -79,8 +80,10 @@ export interface AppContext {
   dev: boolean;
   /** Where the Library page is served in development. */
   libraryHref: string;
-  /** Breadcrumbs the current page sets for the top bar. */
+  /** Breadcrumbs the current page sets; crumbBar draws them as the small line above the page's title. */
   crumbs: Cell<Crumb[]>;
+  /** The breadcrumb line for the page to place above its title (the shell sets it; absent without the shell). */
+  crumbBar?: () => Child;
   /** The page's own create action for the C key, when it has one. */
   createHere: Cell<(() => void) | null>;
   /** The page's search input for the / key. */

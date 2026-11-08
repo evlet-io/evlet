@@ -787,12 +787,12 @@ not part of the build.
 | Module | What it does |
 |---|---|
 | `app.ts` | Session, sign in and first-run setup, the shell and the route table |
-| `shell.ts` | Top bar across the window (the Evlet brand, a pipe, the Workspace switcher, history, breadcrumb, the search button), sidebar under it (the workspace's sections and shortcuts, Library in development, the account and the theme button), keyboard |
+| `shell.ts` | Top bar across the window (the Evlet brand, a pipe, the Workspace switcher; on the right search, history, notifications), the breadcrumb line pages place above their title (`ctx.crumbBar()`), sidebar under it (the workspace's sections and shortcuts, Library in development, the account and the theme button), keyboard |
 | `nav-icons.ts` | The navigation icons ([ui.md](ui.md#navigation-icons)): one icon per shortcut kind, per shell element and per Explorer view |
 | `workspaces.ts` | `workspaceNav(schema, links, fallback)`: the sidebar's workspaces, sections and shortcuts from the schema's `workspaces` (the per-app fallback for an older server), `listQuery`, `activeShortcut(nav, path, prefer)`, `replaceWorkspaces` after a save, and the app each model and report belongs to |
 | `workspace-editor.ts` | The workspace editor ([ui.md](ui.md#customizing-workspaces)) over the Controls workspace routes, and `customizeAccess` for the switcher's Customize button |
 | `explorer.ts` | The Explorer ([ui.md](ui.md#explorer)): Reports, Ledger reports (when there are any), Data and Dashboards at `/?explorer=<view>`, and `openExplorer` on the last view used |
-| `recents.ts` | The history button at the left end of the top bar, before the breadcrumb: this session's recent records, newest first, with the model and when each was opened |
+| `recents.ts` | The history button on the right of the top bar, left of notifications: this session's recent records, newest first, with the model and when each was opened |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
@@ -917,8 +917,8 @@ Appearance, region, start page and sidebar counts are the person's Settings, kep
 widths, child table columns, quick access, how each list opens records, the side panel's width,
 which form sections a person opened or closed, the chosen workspace and its closed sidebar sections) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
-session and go on sign-out. Each recent record keeps when it was last opened; the history button before
-the breadcrumb lists them with the relative time and the exact time on hover. The account area is at the
+session and go on sign-out. Each recent record keeps when it was last opened; the history button beside
+the notification bell lists them with the relative time and the exact time on hover. The account area is at the
 bottom of the sidebar; the top bar keeps recent records, search and notifications.
 
 Signing out ends the local session only after the server confirms it (or answers that the

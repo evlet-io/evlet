@@ -245,7 +245,7 @@ function page(ctx: AppContext): Child {
       if (!me || !(me.pages.includes(target) || me.apps.some(app => `app/${app.id}` === target))) return unavailable(ctx);
       ctx.crumbs.set([{ label: 'Settings', href: settingsHref(ctx.router, me.last_page || 'profile') }, { label: route.name === 'settings' ? SETTINGS_PAGES[target][0] : `${me.apps.find(app => `app/${app.id}` === target)!.title} settings` }]);
       const models = rootModels(ctx.schema);
-      return html`<div class="page wide">${SettingsView({ api: ctx.api, me: ctx.me as any, photo: ctx.photo, href: page => settingsHref(ctx.router, page), go: page => void goSettings(ctx.router, page),
+      return html`<div class="page wide">${ctx.crumbBar?.()}${SettingsView({ api: ctx.api, me: ctx.me as any, photo: ctx.photo, href: page => settingsHref(ctx.router, page), go: page => void goSettings(ctx.router, page),
         starts: [...(docsOn(ctx.session) ? [['docs', 'Docs'] as [string, string]] : []), ...models.map(model => [model.name, model.plural] as [string, string])],
         changed: () => { const next = ctx.me.peek(); if (next) ctx.prefs.density.set(next.prefs.density); } }, target)}</div>`;
     }
@@ -263,7 +263,7 @@ function page(ctx: AppContext): Child {
 
 function unavailable(ctx: AppContext): HTMLElement {
   ctx.crumbs.set([{ label: 'Not available' }]);
-  return html`<div class="page">${EmptyState({ icon: 'search', tint: 'slate', title: 'This page is not available',
+  return html`<div class="page">${ctx.crumbBar?.()}${EmptyState({ icon: 'search', tint: 'slate', title: 'This page is not available',
     text: 'The address may be wrong, or your role cannot open it.', action: startButton(ctx) })}</div>` as HTMLElement;
 }
 

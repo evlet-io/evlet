@@ -184,7 +184,7 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
 
 function missing(ctx: AppContext, model: ScreenModel, panel?: PanelHost): HTMLElement {
   if (!panel) ctx.crumbs.set([{ label: model.plural, href: ctx.router.href('list', { model: model.name }) }, { label: 'Not found' }]);
-  return html`<div class="page">${EmptyState({ icon: identity(model).icon, tint: identity(model).tint, title: `${model.label} not found`,
+  return html`<div class="page">${panel ? null : ctx.crumbBar?.()}${EmptyState({ icon: identity(model).icon, tint: identity(model).tint, title: `${model.label} not found`,
     text: 'It may have been deleted, or your role cannot open it.', action: panel ? Button({ label: 'Close', onClick: () => panel.close() })
       : Button({ label: `Open ${model.plural.toLowerCase()}`, onClick: () => void ctx.router.go('list', { model: model.name }) }) })}</div>` as HTMLElement;
 }
@@ -841,7 +841,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return { fields, open: !fold.collapsible || untrack(() => folds.open(section.label, folds.start(fold.collapsed, index, fields)).get()) };
   })), before));
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
-    main: [panelBar, header, UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
+    main: [panelBar, panel ? null : ctx.crumbBar?.() ?? null, header, UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
       options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });

@@ -121,7 +121,7 @@ export function ExplorerPage(ctx: AppContext): HTMLElement {
       case 'dashboards': return EmptyState({ icon: KIND_ICONS.dashboard, tint: 'slate', title: 'No dashboards yet', text: 'Dashboards will be listed here when an app adds them.' });
     }
   };
-  return html`<div class="page ev-explorer">${PageHeader({ icon: SHELL_ICONS.explorer, tint: 'slate', title: 'Explorer' })}
+  return html`<div class="page ev-explorer">${ctx.crumbBar?.()}${PageHeader({ icon: SHELL_ICONS.explorer, tint: 'slate', title: 'Explorer' })}
     <div class="ex-views">${SegmentedControl({ options: views, value: view, label: 'Explorer view',
       onChange: next => void router.go('home', {}, { explorer: next }) })}</div>
     <div class="ex-tools" hidden=${() => !searchable()}>${tools}</div>${body}</div>` as HTMLElement;

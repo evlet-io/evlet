@@ -1,7 +1,7 @@
 // The app shell (docs/ui-design/README.md section 4): one top bar across the window with the Evlet brand,
-// a pipe and the Workspace switcher at its left (as wide as the sidebar), then recent records, breadcrumbs,
-// the search button (its palette holds the Explorer button, docs/ui.md#top-bar-search-and-explorer), notifications and
-// shortcuts; under it the sidebar with the workspace's collapsible sections of shortcuts (app/workspaces.ts),
+// a pipe and the Workspace switcher at its left (as wide as the sidebar), then at its right the search button (its
+// palette holds the Explorer button, docs/ui.md#top-bar-search-and-explorer), recent records, notifications and
+// shortcuts; the breadcrumb is a small line above each page's title (ctx.crumbBar); under it the sidebar with the workspace's collapsible sections of shortcuts (app/workspaces.ts),
 // the account area and an edge button that collapses it, beside one scrolling view. Under 760 px the
 // sidebar is a drawer opened from the top bar.
 
@@ -190,22 +190,29 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   // Its address is the page's own: opened in a new tab, the page shows in its workspace there too. When the page's
   // next crumb has the workspace's name (a report's "Reports", a record's list), the two are one crumb: it opens
   // that crumb's page and shows the workspace once the page is open.
-  const workspaceCrumb = (workspace: Workspace, to?: string) => [html`<a class="hide-sm ws-crumb" href=${() => to ?? route.get()?.url ?? '#'}
+  const workspaceCrumb = (workspace: Workspace, to?: string) => html`<a class="ws-crumb" href=${() => to ?? route.get()?.url ?? '#'}
     on:click=${(event: MouseEvent) => {
       if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
       event.preventDefault();
       if (to) void router.navigate(to).then(opened => { if (opened) chosen.set(workspace.key); });
       else chosen.set(workspace.key);
-    }}>${workspace.label}</a>`,
-    Icon('chevron-right', { size: 'xs', className: 'hide-sm' })];
+    }}>${workspace.label}</a>` as HTMLElement;
+  // "Sales / Invoices / INV-0102": links, slashes, and the page itself last. Phones keep the last two crumbs.
   const crumbs = () => {
     const workspace = pageWorkspace.get(), all = ctx.crumbs.get();
     const merged = workspace && all.length > 1 && all[0].label === workspace.label ? all[0] : null;
     const list = merged ? all.slice(1) : all;
-    return [workspace && list.length ? workspaceCrumb(workspace, merged?.href) : null, ...list.map((crumb, index, all) => index === all.length - 1
-      ? html`<span class="cur" aria-current="page">${crumb.label}</span>`
-      : [html`<a class="hide-sm" href=${crumb.href ?? '#'}>${crumb.label}</a>`, Icon('chevron-right', { size: 'xs', className: 'hide-sm' })])];
+    const items: HTMLElement[] = [...(workspace && list.length ? [workspaceCrumb(workspace, merged?.href)] : []), ...list.map((crumb, index, all) => (index === all.length - 1
+      ? html`<span class="cur" aria-current="page">${crumb.label}</span>` : html`<a href=${crumb.href ?? '#'}>${crumb.label}</a>`) as HTMLElement)];
+    return items.flatMap((item, index) => {
+      const far = index < items.length - 2;
+      if (far) item.classList.add('hide-sm');
+      return index === items.length - 1 ? [item] : [item, html`<span class=${far ? 'sep hide-sm' : 'sep'} aria-hidden="true">/</span>`];
+    });
   };
+  // The breadcrumb is a small line in the main area, directly above the page's title (docs/ui.md#breadcrumb):
+  // each page with a title places it there; a record in a side panel has none.
+  ctx.crumbBar = () => html`<nav class="crumbs page-crumbs" aria-label="Breadcrumbs" hidden=${() => !ctx.crumbs.get().length}>${crumbs}</nav>`;
   // Search: one button that opens the palette (docs/ui.md#top-bar-search-and-explorer); the Explorer button is
   // inside the palette's search field.
   const searchPart = html`<button type="button" class="ts-search" aria-label="Search" aria-keyshortcuts="Meta+K Control+K" on:click=${() => ctx.openPalette()}
@@ -214,10 +221,9 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const topbar = html`<header class="topbar">
     <span class="mobile-only">${IconButton({ icon: SHELL_ICONS.menu, tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
     <div class="top-left">${brand}<span class="top-pipe" aria-hidden="true"></span>${appSwitch}</div>
-    ${RecentsButton(ctx, models)}
-    <nav class="crumbs" aria-label="Breadcrumbs">${crumbs}</nav>
     <div class="top-actions">
       ${searchBox}
+      ${RecentsButton(ctx, models)}
       ${when(() => Boolean(ctx.me.get() && !ctx.me.get()!.portal), () => InboxButton(ctx))}
       <span class="desktop-only">${IconButton({ icon: SHELL_ICONS.help, tip: 'Shortcuts  ?', onClick: () => openShortcuts(docsOn(ctx.session)) })}</span>
     </div></header>` as HTMLElement;
