@@ -1700,7 +1700,48 @@
     }
    ],
    "ui_version": 1,
-   "version": 1
+   "version": 1,
+   "workspaces": [
+    {
+     "app": "app",
+     "groups": [
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:site",
+         "kind": "model",
+         "label": "Sites",
+         "model": "site",
+         "view": "list"
+        }
+       ],
+       "key": "documents",
+       "label": "Documents"
+      },
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:job",
+         "kind": "model",
+         "label": "Jobs",
+         "model": "job",
+         "view": "list"
+        }
+       ],
+       "key": "records",
+       "label": "Records"
+      }
+     ],
+     "icon": "layers",
+     "key": "app",
+     "label": "Evlet",
+     "source": "automatic"
+    }
+   ]
   },
   "etag": null,
   "status": 200
