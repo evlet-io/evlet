@@ -28,7 +28,7 @@ import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
-import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
+import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureView, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
 import { recordId } from '../ids';
 
@@ -282,7 +282,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
   const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map(measure => ({
-    label: measureLabel(measure), value: () => measureText(ctx.schema, model, measure, measures.get()?.[measure.name]),
+    label: measureLabel(measure), value: () => measureView(ctx.schema, model, measure, measures.get()?.[measure.name]),
     note: measure.where ? 'Filtered by a rule' : undefined,
   }) as StatProps))) : null;
 

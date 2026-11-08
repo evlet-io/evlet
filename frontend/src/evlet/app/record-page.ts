@@ -25,7 +25,7 @@ import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage } from './client';
-import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, keyFields, listFields, measureLabel, measureText, numberField, orderTabs, screenModel, sections, sequenceField,
+import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, keyFields, listFields, measureLabel, measureView, numberField, orderTabs, screenModel, sections, sequenceField,
   summaryFields, titleOf, LIST_KEYS, panelView, type PanelView, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
@@ -602,7 +602,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     empty: 'Not set',
     note: view(meta.name).calculated ? 'Calculated' : undefined,
   }));
-  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureText(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' });
+  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' });
   const summary = stats.length && !isNew && (!shows || shows.block('summary')) ? SummaryStrip(stats) : null;
 
   // ---------- tabs ----------

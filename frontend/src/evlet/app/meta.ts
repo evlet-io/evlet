@@ -184,13 +184,28 @@ export function titleOf(model: ScreenModel, data: Record<string, unknown>): stri
   return field && field.type !== 'text' && field.type !== 'sequence' ? formatOf(field, value) : String(value);
 }
 
-/** A measure's value, by the measured field's type: money shows the site's currency symbol. */
-export function measureText(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): Child {
+/** A measure's value as text, by the measured field's type (an image currency symbol reads as its code). */
+export function measureText(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): string {
+  const field = measureField(index, model, measure, value);
+  return field ? formatOf(field, value) : plainMeasure(measure, value);
+}
+
+/** A measure's value on screen: money shows the site's currency symbol, an image when the site set one. */
+export function measureView(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): Child {
+  const field = measureField(index, model, measure, value);
+  return field ? displayOf(field, value) : plainMeasure(measure, value);
+}
+
+function measureField(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): FieldSchema | undefined {
+  if (value === null || value === undefined || measure.function === 'count' || measure.function === 'count_distinct') return undefined;
+  const target = measure.model ? (index.schema.models.find(item => item.name === measure.model) as unknown as ScreenModel | undefined) : model;
+  return target && measure.field ? fieldOf(target, measure.field) : undefined;
+}
+
+function plainMeasure(measure: MeasureSchema, value: unknown): string {
   if (value === null || value === undefined) return 'None';
   if (measure.function === 'count' || measure.function === 'count_distinct') return Number(value).toLocaleString('en-US');
-  const target = measure.model ? (index.schema.models.find(item => item.name === measure.model) as unknown as ScreenModel | undefined) : model;
-  const field = target && measure.field ? fieldOf(target, measure.field) : undefined;
-  return field ? displayOf(field, value) : String(value);
+  return String(value);
 }
 
 export const measureLabel = (measure: MeasureSchema) => measure.name.replace(/_/g, ' ').replace(/^./, char => char.toUpperCase());
