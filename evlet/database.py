@@ -10,7 +10,8 @@ from .identity import RecordId, new_id, sequential
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .naming import has_title, title_of
-from . import images, periods
+from . import images, ledger, periods
+from .ledger import is_ledger
 from .permissions import CALLER
 from .sequences import name_new, raw_write
 
@@ -64,6 +65,8 @@ class Database:
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("PRAGMA foreign_keys = ON")
+            # REPLACE then fires DELETE triggers, so append-only tables refuse it too (evlet/ledger.py).
+            connection.execute("PRAGMA recursive_triggers = ON")
             with using(self):
                 yield connection
         finally:
@@ -170,6 +173,19 @@ class Database:
     def check(self):
         with self._connection() as connection:
             connection.execute("SELECT 1").fetchone()
+
+
+def ledger_id(value):
+    """A ledger row id: a positive integer."""
+    if type(value) is not int and not isinstance(value, RecordId) or not 1 <= value <= 2**63 - 1:
+        raise ValueError('Use the integer id of a row')
+    return int(value)
+
+
+def refuse_timestamps(model, values):
+    for name in ('created_at', 'modified_at'):
+        if name in values and name in model.__fields__:
+            raise ValidationError({name: f'{name} is filled by the framework'})
 
 
 def today(zone):
@@ -282,6 +298,8 @@ class Session:
                              'or session.maintenance() for an audited repair')
 
     def create(self, model, /, **values):
+        if is_ledger(model):
+            return self.get(model, self.insert_many(model, [values])[0])
         self._guard(model)
         self._state(model, values.get(getattr(model, '__state__', None) or '', MISSING), None)
         table = identifier(self.registry.name_for(model))
@@ -302,9 +320,9 @@ class Session:
 
     def get(self, model, record_id):
         try:
-            record_id = RecordId(record_id)
-        except ValueError:
-            raise ValidationError({"id": "Use a record id"}) from None
+            record_id = ledger_id(record_id) if is_ledger(model) else RecordId(record_id)
+        except ValueError as exc:
+            raise ValidationError({"id": str(exc) if is_ledger(model) else "Use a record id"}) from None
         table = identifier(self.registry.name_for(model))
         row = self.connection.execute(
             f'SELECT * FROM {table} WHERE "id" = ?', (record_id,)
@@ -329,6 +347,8 @@ class Session:
         return [model._from_row(row) for row in rows]
 
     def update(self, model, record_id, /, **changes):
+        if is_ledger(model):
+            return self._ledger_update(model, record_id, changes)
         self._guard(model)
         current = self.get(model, record_id)
         self._state(model, changes.get(getattr(model, '__state__', None) or '', MISSING), current)
@@ -368,12 +388,121 @@ class Session:
         audit.add_columns(self.connection, postgres, self.registry.name_for(model))
 
     def delete(self, model, record_id):
+        if is_ledger(model):
+            return self._ledger_delete(model, record_id)
         self._guard(model)
         current = self.get(model, record_id)
         periods.check(self, model, before=current._values)
         record_id = current.id
         table = identifier(self.registry.name_for(model))
         self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))
+
+    # Ledger models (evlet/ledger.py)
+
+    def insert_many(self, model, rows):
+        """Insert rows of a ledger model with one prepared statement and return their ids, in order.
+
+        Each row is a dict of field values, validated like a create. Timestamps are filled, closed periods
+        are checked, and a journaled model gets one `created` entry per row."""
+        model = self._ledger(model, 'insert_many')
+        if isinstance(rows, (str, bytes, dict)):
+            raise ValidationError({'rows': 'Use a list of rows, each a dict of field values'})
+        rows = list(rows)
+        if not rows:
+            return []
+        table = identifier(self.registry.name_for(model))
+        stamps = {key: ledger.now() for key in ('created_at', 'modified_at') if key in model.__fields__}
+        names = list(model.__fields__)
+        records, stored = [], []
+        for index, values in enumerate(rows):
+            if not isinstance(values, dict):
+                raise ValidationError({'rows': f'Row {index + 1} is not a dict of field values'})
+            refuse_timestamps(model, values)
+            record = model(**values, **stamps)
+            periods.check(self, model, after=record._values)
+            records.append(record)
+            stored.append(storage_columns(model, record._values, names)[1])
+        columns = storage_columns(model, records[0]._values, names)[0]
+        sql = f'INSERT INTO {table} ({", ".join(identifier(name) for name in columns)}) VALUES ({", ".join("?" for _ in columns)})' \
+            if columns else f'INSERT INTO {table} DEFAULT VALUES'
+        if isinstance(self.connection, sqlite3.Connection):
+            # One writer at a time (BEGIN IMMEDIATE) and AUTOINCREMENT ids: the rows take the next ids in order.
+            self.connection.executemany(sql, stored)
+            last = self.connection.execute('SELECT last_insert_rowid()').fetchone()[0]
+            ids = list(range(last - len(stored) + 1, last + 1))
+        else:
+            ids = [self.connection.execute(sql, values).lastrowid for values in stored]
+        if model in getattr(self.registry, 'journals', {}):
+            for record_id, record in zip(ids, records):
+                self._ledger_journal(model, record_id, 'created', None, record)
+        return ids
+
+    def _ledger(self, model, operation):
+        model = self.registry.resolve(model)
+        if not is_ledger(model):
+            raise ValueError(f'{operation} writes ledger models (Meta.ledger = True); {model.__name__} is a record model')
+        return model
+
+    def _ledger_update(self, model, record_id, changes):
+        if model.__append_only__:
+            raise ValueError(f'{model.__name__} is append only: its rows are never changed. Insert a new row instead')
+        refuse_timestamps(model, changes)
+        current = self.get(model, record_id)
+        if 'modified_at' in model.__fields__:
+            changes = {**changes, 'modified_at': ledger.now()} if changes else changes
+        record = model(**{**current._values, **changes})
+        if not changes:
+            return current
+        periods.check(self, model, before=current._values, after=record._values)
+        table = identifier(self.registry.name_for(model))
+        names, stored = storage_columns(model, record._values, list(changes))
+        assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
+        self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', [*stored, current.id])
+        if model in getattr(self.registry, 'journals', {}):
+            self._ledger_journal(model, current.id, 'changed', current, record)
+        return self.get(model, current.id)
+
+    def _ledger_delete(self, model, record_id):
+        if model.__append_only__:
+            raise ValueError(f'{model.__name__} is append only: its rows are never deleted. Insert a row that reverses it instead')
+        current = self.get(model, record_id)
+        periods.check(self, model, before=current._values)
+        self.connection.execute(f'DELETE FROM {identifier(self.registry.name_for(model))} WHERE "id" = ?', (current.id,))
+        if model in getattr(self.registry, 'journals', {}):
+            self._ledger_journal(model, current.id, 'deleted', current, None)
+
+    def _ledger_journal(self, model, record_id, kind, before, after):
+        """A Journal entry for a ledger row, as the engine or `session.actor`, in this transaction."""
+        from . import journal
+        if not getattr(self, '_journal_ready', False):
+            journal.ensure_table(self.connection, postgres=not isinstance(self.connection, sqlite3.Connection),
+                                 hashed=[self.registry.name_for(item) for item, value in self.registry.journals.items() if value.tamper_evident])
+            self._journal_ready = True
+        old = {} if before is None else before._values
+        new = {} if after is None else after._values
+        fields = {name: {'old': field.serialize(old.get(name)), 'new': field.serialize(new.get(name))}
+                  for name, field in model.__fields__.items() if old.get(name) != new.get(name)}
+        data = {'fields': fields} if fields else {}
+        actor = journal.ENGINE if self.actor is None else str(self.actor)
+        journal.insert(self.connection, self.registry, model, record_id, kind, actor, data)
+
+    def lock(self, *keys, timeout=None):
+        """Hold named locks until this transaction commits or rolls back, such as
+        `tx.lock(("stock", item_id, warehouse_id))`. Each key is a nonempty tuple of text and integer parts.
+
+        Take every lock the transaction needs in one call, at its start. On PostgreSQL each key is a
+        transaction advisory lock, taken in a fixed order so callers cannot deadlock each other; with a
+        `timeout` in seconds, a longer wait raises LockTimeout and the transaction rolls back. On SQLite a
+        write transaction already holds the database's only write lock, so the call only checks the keys."""
+        if not keys:
+            raise ValueError('tx.lock needs at least one key, such as ("stock", item_id, warehouse_id)')
+        numbers = sorted({ledger.lock_hash(key) for key in keys})
+        milliseconds = ledger.lock_timeout(timeout)
+        if isinstance(self.connection, sqlite3.Connection):
+            if not self.connection.in_transaction:
+                raise ValueError('tx.lock works inside database.transaction()')
+            return
+        self.connection.lock(numbers, milliseconds)
 
     def related(self, record, field_name):
         self.registry.name_for(type(record))

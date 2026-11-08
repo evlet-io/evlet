@@ -27,7 +27,7 @@ OPEN_IN = ('page', 'panel')
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
-                          'status', 'board'))
+                          'status', 'board', 'ledger', 'append_only', 'timestamps', 'indexes'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -193,6 +193,10 @@ def field_schema(field):
     if result['default_kind'] == 'static':
         value = None if field.default is None else field.validate(field.default)
         result['default'] = field.serialize(value)
+    if getattr(field, 'ledger_target', False):
+        # A Link to a ledger row shows its plain integer id and is never written by a caller (evlet/ledger.py).
+        result.pop('target', None)
+        result.update(type='integer', read_only=True)
     return result
 
 

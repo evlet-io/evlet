@@ -74,8 +74,9 @@ def _record_times(connection, postgres, registry):
     record's Journal where it has one, otherwise from the time in its id. New tables have them from the
     start, and every app migration batch adds them too; this step covers an instance with nothing to migrate."""
     from .audit import add_columns
-    for table in registry.models:
-        add_columns(connection, postgres, table)
+    for table, model in registry.models.items():
+        if not getattr(model, '__ledger__', False):  # Ledger tables have no record times (evlet/ledger.py).
+            add_columns(connection, postgres, table)
 
 
 def _unsaved_changes(connection, postgres):

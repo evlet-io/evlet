@@ -104,3 +104,8 @@ __all__ += ["DevSignIn"]
 from .printing import PrintDesign
 
 __all__ += ["PrintDesign"]
+
+from .ledger import LockTimeout
+from .migrations import SetAppendOnly
+
+__all__ += ["LockTimeout", "SetAppendOnly"]

@@ -637,18 +637,32 @@ class Link(Integer):
         super().__init__(minimum=1, **kwargs)
         self.target = target
 
+    @property
+    def ledger_target(self):
+        """Whether the target is a ledger model, whose rows have plain integer ids (evlet/ledger.py)."""
+        return getattr(self.target, '__ledger__', False) is True
+
     def validate(self, value):
+        if self.ledger_target:
+            if type(value) is not int or not 1 <= value <= MAX_INTEGER:
+                raise ValueError("Use the integer id of a row")
+            return value
         try:
             return RecordId(value)
         except ValueError:
             raise ValueError("Use a record id") from None
 
     def from_storage(self, value):
-        return None if value is None else RecordId(super().from_storage(value))
+        if value is None:
+            return None
+        value = super().from_storage(value)
+        return value if self.ledger_target else RecordId(value)
 
     def serialize(self, value):
-        # A RecordId: JSON responses write its text form (identity.jsonable).
-        return None if value is None else RecordId(value)
+        # A RecordId: JSON responses write its text form (identity.jsonable). A ledger row id stays an int.
+        if value is None:
+            return None
+        return int(value) if self.ledger_target else RecordId(value)
 
     def metadata(self):
         target = self.target if isinstance(self.target, str) else storage_name(self.target)

@@ -14,6 +14,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   table. Apps that relied on the automatic board for every model with a State must now set
   `Meta.board`. `Meta.board` on any other field fails registration naming the model.
 
+### Added
+
+- **Ledger models.** `Meta.ledger = True` stores a model lean: an integer id the database assigns in
+  insert order and the declared columns only, with no public surface (`Meta.api` is `None`). Options:
+  `append_only` (database triggers refuse UPDATE and DELETE), `journal`, `timestamps` (`created_at`,
+  `modified_at`), `indexes` (composite and unique) and `period`. `tx.insert_many(model, rows)` inserts
+  rows with one prepared statement and returns their ids. New migration `SetAppendOnly`; `AddIndex`
+  takes a tuple of fields for a ledger index. `evlet ledger list --instance NAME` prints each ledger
+  model with its row count and options ([docs/ledger.md](docs/ledger.md)).
+- **Transaction locks.** `tx.lock(*keys, timeout=None)` holds named locks on business keys until the
+  transaction ends, PostgreSQL advisory locks taken in a fixed order, a key check on SQLite. A wait
+  past `timeout` raises the new `LockTimeout`. Nothing changes for existing apps.
+
 ## 0.3.0 (05-11-2026)
 
 This release adds rich text with images and mentions, unsaved changes that survive leaving a
