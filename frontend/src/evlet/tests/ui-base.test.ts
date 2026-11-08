@@ -227,21 +227,22 @@ describe('Modal, Drawer and Toast', () => {
 });
 
 describe('StatCard, Sparkline and SummaryStrip', () => {
-  it('shows a muted label, the value, a caption, and an icon chip in its tone', () => {
+  it('shows a muted label, the value, a caption beside the label, and an icon chip in its tone', () => {
     const value = cell('AED 508,000.00');
     const card = render(() => StatCard({ label: 'Budget', value, note: 'Filtered by a rule', icon: 'wallet', tone: 'teal' })).firstElementChild!;
-    expect(card.className).toBe('sum-t stat-card tone-teal');
+    expect(card.className).toBe('sum-t stat-card tone-teal has-ic');
     expect(card.querySelector(':scope > span')!.textContent).toBe('Budget');
     expect(card.querySelector('b')!.textContent).toBe('AED 508,000.00');
     expect(card.querySelector('em')!.textContent).toBe('Filtered by a rule');
     expect(card.querySelector('.stat-ic svg')!.getAttribute('aria-hidden')).toBe('true');
-    expect(card.querySelector('.stat-dot')).toBeNull();
+    // The dot stands in for the chip on a phone, where the chip hides; the label text stays the label.
+    expect(card.querySelector('span > .stat-dot')).not.toBeNull();
     value.set('AED 1.00');
     expect(card.querySelector('b')!.textContent).toBe('AED 1.00');
     expect(card.querySelector('b')!.getAttribute('title')).toBe('AED 1.00');
   });
 
-  it('is neutral by default, keeps class names safe, and marks a tone without an icon with a dot', () => {
+  it('is neutral by default, keeps class names safe, and marks a tone with a dot', () => {
     const plain = StatCard({ label: 'Projects', value: '7' });
     expect(plain.className).toBe('sum-t stat-card');
     expect(plain.querySelector('.stat-ic, .stat-dot, em, .stat-tr')).toBeNull();
@@ -255,13 +256,15 @@ describe('StatCard, Sparkline and SummaryStrip', () => {
     const trend = cell<number[] | null>([3, 5, 4, 9]);
     const card = render(() => StatCard({ label: 'Budget', value: '9', tone: 'blue', trend, trendLabel: 'last 4 months' })).firstElementChild!;
     const svg = card.querySelector('.stat-tr svg.ev-spark')!;
+    // Small and inline at the right of the thin card.
+    expect([svg.getAttribute('width'), svg.getAttribute('height')]).toEqual(['64', '24']);
     expect(svg.namespaceURI).toBe('http://www.w3.org/2000/svg');
     expect(svg.getAttribute('role')).toBe('img');
     expect(svg.getAttribute('aria-label')).toBe('Budget trend, last 4 months: 4 points, from 3 to 9, low 3, high 9');
     expect(svg.querySelectorAll('path')).toHaveLength(2);
-    expect(svg.querySelector('path.l')!.getAttribute('d')).toBe('M2 26 L32.67 18 L63.33 22 L94 2');
-    expect(svg.querySelector('path.a')!.getAttribute('d')).toMatch(/ L94 28 L2 28 Z$/);
-    expect(svg.querySelector('circle.p')!.getAttribute('cx')).toBe('94');
+    expect(svg.querySelector('path.l')!.getAttribute('d')).toBe('M2 22 L22 15.33 L42 18.67 L62 2');
+    expect(svg.querySelector('path.a')!.getAttribute('d')).toMatch(/ L62 24 L2 24 Z$/);
+    expect(svg.querySelector('circle.p')!.getAttribute('cx')).toBe('62');
     trend.set([7]);
     expect(card.querySelector('svg.ev-spark')).toBeNull();
     trend.set(null);

@@ -137,7 +137,7 @@ describe('board and saved views (recorded State fixtures)', () => {
     await until(() => expect([...host.querySelectorAll('.ev-list [role="tab"]')].map(text)).toEqual(['All invoices3', 'Draft1', 'Issued1', 'Paid0', 'Void1']));
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')) + '=' + text(item.querySelector('b')))).toEqual(['Outstanding=AED 2,680.00', 'Count=3']));
     // Each measure is its own card: an icon by function, the accents in turn, no trend line (none is declared).
-    expect([...host.querySelectorAll('.sum > .stat-card')].map(card => card.className)).toEqual(['sum-t stat-card tone-blue', 'sum-t stat-card tone-teal']);
+    expect([...host.querySelectorAll('.sum > .stat-card')].map(card => card.className)).toEqual(['sum-t stat-card tone-blue has-ic', 'sum-t stat-card tone-teal has-ic']);
     expect([...host.querySelectorAll('.stat-card .stat-ic')]).toHaveLength(2);
     expect(host.querySelector('.stat-card .ev-spark')).toBeNull();
     // The counts come from the list tabs route; the board's aggregate is not needed for the list.

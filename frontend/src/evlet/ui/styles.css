@@ -609,20 +609,25 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .doc .step.won.cur{background:var(--t-green)}
 .doc .step.lost.cur{background:var(--t-rose)}
 .doc-tabs button.on::after{background:var(--acc)}
-/* Stat cards (StatCard, SummaryStrip): at most four to a row, wrapping below 180 px a card.
+/* Stat cards (StatCard, SummaryStrip): thin cards, at most four to a row, wrapping below 180 px a card.
+   One band: the icon chip on the left, the label (and its caption) over the value, the trend on the right.
    --stat-c and --stat-bg are the accent; a tone-* class sets them from the tints. */
-.sum{display:grid;grid-template-columns:repeat(auto-fill,minmax(max(180px,calc((100% - 36px) / 4)),1fr));gap:12px;margin-bottom:18px}
-.stat-card{--stat-c:var(--fg-3);--stat-bg:var(--bg-muted);display:grid;grid-template-columns:minmax(0,1fr) auto;grid-template-areas:"l ic" "v v" "n n";
-  align-items:center;align-content:start;column-gap:12px;row-gap:2px;padding:12px 14px;min-width:0;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);container-type:inline-size}
-.stat-card>span{grid-area:l;font-size:12px;font-weight:500;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sum{display:grid;grid-template-columns:repeat(auto-fill,minmax(max(180px,calc((100% - 24px) / 4)),1fr));gap:8px;margin-bottom:12px}
+.stat-card{--stat-c:var(--fg-3);--stat-bg:var(--bg-muted);display:grid;grid-template-columns:auto minmax(0,max-content) minmax(0,1fr) auto;grid-template-areas:"ic l n tr" "ic v v tr";
+  align-items:center;align-content:center;padding:8px 12px;min-width:0;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);container-type:inline-size}
+.stat-card>span{grid-area:l;font-size:12px;line-height:16px;font-weight:500;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* The value shrinks with a narrow card (four across beside a side column, two on a phone) before it is cut short. */
-.stat-card>b{grid-area:v;font-size:clamp(15px,11cqi,20px);font-weight:650;line-height:1.3;letter-spacing:-.015em;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stat-card>em{grid-area:n;font-style:normal;font-size:11.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.stat-ic{grid-area:ic;width:26px;height:26px;border-radius:var(--r);display:grid;place-items:center;background:var(--stat-bg);color:var(--stat-c);font-style:normal}
+.stat-card>b{grid-area:v;font-size:clamp(14px,9cqi,18px);font-weight:600;line-height:24px;letter-spacing:-.01em;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.stat-card>em{grid-area:n;font-style:normal;font-size:11.5px;line-height:16px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-left:6px}
+.stat-card>em::before{content:"\00b7";margin-right:6px}
+.stat-ic{grid-area:ic;width:24px;height:24px;margin-right:10px;border-radius:var(--r);display:grid;place-items:center;background:var(--stat-bg);color:var(--stat-c);font-style:normal}
 .stat-dot{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--stat-c);margin-right:6px;vertical-align:1px}
-.stat-tr{grid-area:tr;align-self:end;display:flex}
+.stat-card.has-ic .stat-dot{display:none}
+.stat-tr{grid-area:tr;display:flex;margin-left:10px}
 .stat-tr:empty{display:none}
-.stat-card:has(> .stat-tr > svg){grid-template-areas:"l ic" "v v" "n tr"}
+/* With a trend line the chip gives way to the dot, so the value keeps its room. */
+.stat-card:has(> .stat-tr > svg) .stat-ic{display:none}
+.stat-card:has(> .stat-tr > svg) .stat-dot{display:inline-block}
 .stat-card.tone-blue{--stat-c:var(--t-blue);--stat-bg:var(--t-blue-bg)} .stat-card.tone-green{--stat-c:var(--t-green);--stat-bg:var(--t-green-bg)}
 .stat-card.tone-amber{--stat-c:var(--t-amber);--stat-bg:var(--t-amber-bg)} .stat-card.tone-rose{--stat-c:var(--t-rose);--stat-bg:var(--t-rose-bg)}
 .stat-card.tone-violet{--stat-c:var(--t-violet);--stat-bg:var(--t-violet-bg)} .stat-card.tone-teal{--stat-c:var(--t-teal);--stat-bg:var(--t-teal-bg)}
@@ -676,8 +681,7 @@ dd.editing .input,.ff-v .input{width:100%}
 .doc.compact .doc-head{margin-bottom:12px}
 .doc.compact .stepper{margin-bottom:14px}
 .doc.compact .step{height:30px}
-.doc.compact .sum{margin-bottom:12px}
-.doc.compact .stat-card{padding:9px 12px}
+.doc.compact .sum{margin-bottom:10px}
 .doc.compact .tl-item{padding-bottom:10px}
 .doc.compact .fs{padding:12px 14px}
 .doc.compact .ff .fval{min-height:28px}
@@ -845,7 +849,8 @@ th:hover>.rz::after{background:var(--border-strong)}
   .doc-main{padding:18px max(16px,env(safe-area-inset-left,0px)) 32px max(16px,env(safe-area-inset-right,0px))}
   .doc-side{padding:18px max(16px,env(safe-area-inset-left,0px)) 96px max(16px,env(safe-area-inset-right,0px))}
   .sum{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-  .stat-card{padding:10px 12px}
+  .stat-card.has-ic .stat-ic{display:none}
+  .stat-card.has-ic .stat-dot{display:inline-block}
   .fs-g{grid-template-columns:1fr}
   .g-sum{width:100%;justify-content:flex-end}
   .g-x-f .fld.wide{grid-column:1/-1}

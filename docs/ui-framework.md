@@ -495,10 +495,12 @@ The Link field's record mark is the 20 px `org-mark`; it never stretches.
 
 ### Stat cards
 
-`StatCard` shows one number: a small muted label, a large value, and optionally a caption, an
-icon, an accent and a trend line. `SummaryStrip(stats)` puts up to four of them in a row that
-wraps: four across when there is room, never narrower than 180 px a card, two across on a phone.
-The list's measures and the record's summary strip both use it.
+`StatCard` shows one number in a thin card, about 60 px high: a small muted label over the value
+(18 px), and optionally a caption beside the label, an icon chip on the left, an accent and a trend
+line on the right. Nothing adds a row, so every card in a strip has the same height.
+`SummaryStrip(stats)` puts up to four of them in a row that wraps: four across when there is room,
+never narrower than 180 px a card, two across on a phone. The list's measures and the record's
+summary strip both use it.
 
 ```ts
 import { Sparkline, StatCard, SummaryStrip } from './evlet/ui';
@@ -506,11 +508,11 @@ import { Sparkline, StatCard, SummaryStrip } from './evlet/ui';
 StatCard({
   label: 'Budget',                   // small and muted
   value: () => formatMoney(total.get()), // large; a string, accessor or cell
-  note: 'Filtered by a rule',         // optional caption under the value
+  note: 'Filtered by a rule',         // optional caption beside the label, after a dot
   empty: 'None',                      // optional muted text for an empty value
-  icon: 'wallet',                     // optional, on a tinted chip in the corner
+  icon: 'wallet',                     // optional, on a 24 px tinted chip at the left
   tone: 'teal',                       // 'neutral' (the default) or a tint
-  trend: () => monthly.get(),         // optional numbers for a sparkline
+  trend: () => monthly.get(),         // optional numbers for a 64 x 24 sparkline at the right
   trendLabel: 'last 6 months',        // optional, for the sparkline's spoken summary
 });
 SummaryStrip([{ label: 'Total', value: 'AED 25,200.00' }, { label: 'Lines', value: '4' }]);
@@ -519,7 +521,11 @@ Sparkline({ values: [3, 5, 4, 9], tone: 'blue', label: 'Deals' }); // an SVG ele
 
 - **Look.** The card uses the theme's surface, border and card radius (`--r-lg`), so it follows
   light and dark themes. Colour stays small: the tone tints the icon chip and the trend line, or
-  draws a small dot before the label when there is no icon. The background never fills with colour.
+  draws a small dot before the label when there is no icon. On a phone, or when the card has a
+  trend line, the chip hides and the dot shows instead, so the value keeps its room. The background never fills with colour. The caption is visible text, cut short
+  with an ellipsis when the card is narrow (its full text stays in the page for screen readers and
+  in a tooltip), never only a tooltip. The value shrinks a little in a
+  narrow card before it is cut short.
 - **Tones.** `neutral`, `blue`, `green`, `amber`, `rose`, `violet`, `teal` and `slate`, the
   names Select colours use. A tone sets `--stat-c` (the accent) and `--stat-bg` (the chip) on the
   card; a stylesheet can set those two on `.stat-card` for its own accent. An unknown tone becomes

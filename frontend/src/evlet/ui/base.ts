@@ -249,23 +249,23 @@ export interface StatProps {
   empty?: string;
   /** A small icon on a tinted chip in the corner. */
   icon?: string;
-  /** The accent: colours the icon chip and the trend line. Without an icon, a tinted dot before the label. */
+  /** The accent: colours the icon chip and the trend line. Without an icon (or on a phone, where the chip hides), a tinted dot before the label. */
   tone?: StatTone;
-  /** Numbers for a small trend line in the lower corner. Nothing shows with fewer than two. */
+  /** Numbers for a small trend line at the right of the card. Nothing shows with fewer than two. */
   trend?: Prop<readonly number[] | null | undefined>;
   /** What the trend covers, for its accessible summary, such as "Last 6 months". */
   trendLabel?: string;
 }
 
-/** A number card: a muted label, a large value, an optional caption, icon, accent and trend line. */
+/** A thin number card: a muted label (with an optional caption beside it) over the value, an optional icon chip, accent and trend line. */
 export function StatCard(props: StatProps): HTMLElement {
   const tone = props.tone && props.tone !== 'neutral' ? tint(props.tone) : null;
   const value = props.empty === undefined ? props.value
     : () => { const current = read(props.value); return current === '' || current === null || current === undefined ? html`<span class="muted ev-unset">${props.empty}</span>` : current; };
-  const dot = tone && !props.icon ? html`<i class="stat-dot" aria-hidden="true"></i>` : null;
+  const dot = tone ? html`<i class="stat-dot" aria-hidden="true"></i>` : null;
   const trend = props.trend === undefined ? null : html`<div class="stat-tr">${() => Sparkline({
-    values: read(props.trend) ?? [], label: `${read(props.label)} trend${props.trendLabel ? `, ${props.trendLabel}` : ''}` })}</div>`;
-  return html`<div class=${`sum-t stat-card${tone ? ` tone-${tone}` : ''}`}><span>${dot}${props.label}</span><b class="num" title=${() => String(read(props.value) ?? '')}>${value}</b>${props.note === undefined ? null : html`<em>${props.note}</em>`}${
+    values: read(props.trend) ?? [], width: 64, height: 24, label: `${read(props.label)} trend${props.trendLabel ? `, ${props.trendLabel}` : ''}` })}</div>`;
+  return html`<div class=${`sum-t stat-card${tone ? ` tone-${tone}` : ''}${props.icon ? ' has-ic' : ''}`}><span>${dot}${props.label}</span><b class="num" title=${() => String(read(props.value) ?? '')}>${value}</b>${props.note === undefined ? null : html`<em title=${props.note}>${props.note}</em>`}${
     props.icon ? html`<i class="stat-ic" aria-hidden="true">${Icon(props.icon, { size: 'sm' })}</i>` : null}${trend}</div>` as HTMLElement;
 }
 
