@@ -90,6 +90,7 @@ evlet migrate acme --plan --trust
 evlet migrate acme --trust --allow-destructive
 evlet makemigration people --instance acme --name dependents --trust
 evlet effects check acme
+evlet ids check acme
 evlet journal verify acme
 evlet ledger list --instance acme
 evlet jobs list --instance acme
@@ -190,6 +191,11 @@ project it serves the project's instance (`--instance` picks one, `--port` match
 
 `scripts/playground.sh` prints the same kind of link for the contributor Playground;
 `bash scripts/playground.sh --link` prints a fresh one.
+
+`ids check` reports model rows whose id is empty, zero or negative, which only raw SQL can write, and
+model tables whose database does not yet refuse id changes (run `evlet migrate`). It reads without
+writing, works before `evlet migrate`, and exits with 1 when there is any problem. It never rewrites an
+id; see [model-engine.md](model-engine.md#only-evlet-makes-ids).
 
 `journal verify` checks the hash chains of tamper-evident record journals in an
 instance's database, read only and in one snapshot. It prints one line per break and

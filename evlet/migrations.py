@@ -8,6 +8,7 @@ import logging
 import re
 import sqlite3
 
+from .identity import add_id_guard
 from .audit import COLUMNS as AUDIT_COLUMNS, add_columns as add_audit_columns, column_sql as audit_column_sql
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
 from .identity import RecordId
@@ -94,6 +95,7 @@ def _create(connection, table, model):
         _index(connection, table, '_'.join(covered), unique=unique, columns=covered)
     if ledgers.is_ledger(model) and model.__append_only__:
         ledgers.add_triggers(connection, False, table)
+    add_id_guard(connection, False, table)
 
 
 def _metadata(connection):
@@ -1205,6 +1207,8 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             for table, model in database.registry.models.items():
                 add_columns(connection, False, table, model)
                 fill_titles(connection, table, model)
+                # A rebuilt table loses its triggers; every table refuses id changes again (evlet/identity.py).
+                add_id_guard(connection, False, table)
             _check(connection, database.registry, rows=True)
             _save_definition(connection, database.registry)
             connection.commit()

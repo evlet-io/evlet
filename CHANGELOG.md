@@ -8,6 +8,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Only Evlet makes record ids, and ids never change.** A caller-supplied `id` is refused on every
+  create and update path with one message, `ValidationError({'id': 'The id is assigned by Evlet when
+  the record is created and never changes; leave it out'})`: `database`/`tx.create` and `update`
+  (in `tx.maintenance()` too), `context.create`, `update` and `move` values, `self.id = ...` in
+  handlers, and HTTP POST and PATCH, which now answer 422 on `id` instead of 403 "One or more fields
+  cannot be written". Before, Python callers got "id: Unknown field". Every model table also gets a
+  database trigger that refuses an `UPDATE` changing `id` on SQLite and PostgreSQL
+  (`ConflictError: <table>: record ids never change`). Ledger rows keep database-assigned ids and
+  `tx.reserve_ids`. **Upgrade:** framework step `0006_fixed_ids` adds the triggers, so run
+  `evlet migrate` after upgrading. `evlet ids check INSTANCE` reports rows with an empty, zero or
+  negative id and tables without the trigger; it never rewrites ids
+  ([docs/model-engine.md](docs/model-engine.md#only-evlet-makes-ids)).
+
 - **Record layouts.** `Meta.layout` can declare the whole record page: `Tab(title, blocks)`s, or
   plain blocks without tabs, holding `Section`s, `Table` field names (the table shows inside the tab
   or the form instead of on its own tab), `Related(model, link=None, filters=..., fields=..., limit=...,

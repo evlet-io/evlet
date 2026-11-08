@@ -13,6 +13,7 @@ from .migrations import (Applied, SchemaError, AddField, AddIndex, AddTable, Alt
                          standard_fields, leftover_standard, audit_columns, SetAppendOnly, ledger_switch,
                          ledger_tables)
 from . import indexes as model_indexes, ledger as ledgers
+from .identity import add_id_guard
 from .naming import declared_name, standard
 from .audit import add_columns as add_audit_columns, column_sql as audit_column_sql
 
@@ -96,6 +97,7 @@ def create(db, table, model):
         index(db, table, ':'.join(covered), unique, covered)
     if ledgers.is_ledger(model) and model.__append_only__:
         ledgers.add_triggers(db, True, table)
+    add_id_guard(db, True, table)
 
 
 def tables(db):
@@ -312,6 +314,7 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             for table, model in database.registry.models.items():
                 add_columns(db, True, table, model)
                 fill_titles(db, table, model)
+                add_id_guard(db, True, table)
             check(db, database.registry, rows=True)
             save(db, database.registry)
             return applied
