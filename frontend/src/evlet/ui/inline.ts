@@ -157,6 +157,9 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
     }}
     on:focusout=${(event: FocusEvent) => {
       const next = event.relatedTarget as Node | null;
+      // Only focus leaving the input counts. The value at rest held the focus from the click and
+      // Chrome reports it leaving (with no next element) as the input replaces it.
+      if (!(event.target as Element).closest?.('.fval-edit')) return;
       if (!editing.peek() || busy.peek() || (next && (wrapper.contains(next) || (next as Element).closest?.('.pop')))) return;
       if (textual) { if (control?.commit()) void finish(false); }
       else if (!next || !(next as Element).closest?.('.pop')) void finish(false);
