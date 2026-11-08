@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 from evlet import (AI, Action, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
-                   Policy, RecordId, Rule, Security, Task, ValidationError, own_customer)
+                   Policy, RecordId, Rule, Security, Sum, Task, ValidationError, own_customer)
 from evlet import api
 from evlet.routing import resolve_routes
 from evlet.services import Endpoint
@@ -117,14 +117,21 @@ def rebuild_points(tx, job, payload):
     recomputes the balances of the next REBUILD_BATCH customers from their movements and returns the last
     customer done. That checkpoint commits with the step, so a stopped worker resumes after it."""
     customers = tx.list(Customer, filters={'id__gt': job.checkpoint} if job.checkpoint else None, order_by='id', limit=REBUILD_BATCH)
-    for customer in customers:
-        tx.lock(('points', customer.id))
-        points, page = 0, {'customer': customer.id}
-        while moves := tx.list(PointMove, filters=page, order_by='id', limit=100):
-            points, page = points + sum(move.points for move in moves), {'customer': customer.id, 'id__gt': moves[-1].id}
-        [balance] = tx.list(PointBalance, filters={'customer': customer.id}) or [None]
+    ids = [customer.id for customer in customers]
+    if ids:
+        tx.lock(*(('points', customer_id) for customer_id in ids))
+    # One set-based pass: the movement totals of these customers, a page of groups at a time. A trusted
+    # session's `in` takes long lists and its paged aggregate walks any number of groups (docs/measures.md).
+    totals, after = {}, None
+    while ids and (page := tx.aggregate(PointMove, measures={'points': Sum('points')}, group_by='customer',
+                                        filters={'customer__in': ids}, limit=500, after=after)):
+        totals.update((row['customer'], row['points']) for row in page)
+        after = page[-1]
+    balances = {balance.customer: balance for balance in tx.list(PointBalance, filters={'customer__in': ids}, limit=REBUILD_BATCH)} if ids else {}
+    for customer_id in ids:
+        points, balance = totals.get(customer_id, 0), balances.get(customer_id)
         if balance is None and points:
-            tx.create(PointBalance, customer=customer.id, points=points)
+            tx.create(PointBalance, customer=customer_id, points=points)
         elif balance is not None and balance.points != points:
             tx.update(PointBalance, balance.id, points=points)
     done = tx.count(Customer, filters={'id__lte': customers[-1].id}) if customers else tx.count(Customer)

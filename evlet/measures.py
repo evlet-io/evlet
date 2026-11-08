@@ -23,6 +23,8 @@ from .query import SqlQuery
 
 FUNCTIONS = ('count', 'count_distinct', 'sum', 'min', 'max')
 MAX_GROUP_FIELDS, MAX_MEASURES, MAX_GROUPS = 4, 8, 500
+# Most groups one page of a trusted paged aggregate returns (tx.aggregate(..., limit=, after=)).
+PAGE_GROUPS = 10_000
 MAX_STORED, MIN_STORED = 2**63 - 1, -2**63
 # Sums add high and low halves of each value separately, so no running total can overflow
 # and the result depends only on the final total, never on row order.
@@ -439,19 +441,25 @@ def combine(where, values, extra, extra_values):
     return where + (' AND ' if where else ' WHERE ') + extra.removeprefix(' WHERE '), [*values, *extra_values]
 
 
-def execute(connection, registry, model, compiled, groups, where, values, zone='UTC'):
+def execute(connection, registry, model, compiled, groups, where, values, zone='UTC', page=None):
     """Run one aggregate statement and convert the results. Groups are sorted with empty keys first.
-    today() in a where= is the date in `zone` when the statement runs."""
+    today() in a where= is the date in `zone` when the statement runs. With `page`, the database orders
+    the groups and returns at most `page` of them (a trusted paged aggregate) instead of refusing more
+    than MAX_GROUPS."""
     columns = [group.sql for group in groups] + [column for item in compiled for column in item.sql]
     parameters = [value.value(zone) if isinstance(value, Today) else value for item in compiled for value in item.values]
     sql = (f'SELECT {", ".join(f"{column} AS {identifier(f"c{index}")}" for index, column in enumerate(columns))} '
            f'FROM {identifier(registry.name_for(model))} AS "record"{where}')
     parameters += values
     if groups:
-        sql += ' GROUP BY ' + ', '.join(str(index + 1) for index in range(len(groups))) + ' LIMIT ?'
-        parameters.append(MAX_GROUPS + 1)
+        positions = [str(index + 1) for index in range(len(groups))]
+        sql += ' GROUP BY ' + ', '.join(positions)
+        if page is not None:
+            sql += ' ORDER BY ' + ', '.join(f'{position} ASC NULLS FIRST' for position in positions)
+        sql += ' LIMIT ?'
+        parameters.append(MAX_GROUPS + 1 if page is None else page)
     rows = connection.execute(sql, parameters).fetchall()
-    if len(rows) > MAX_GROUPS:
+    if page is None and len(rows) > MAX_GROUPS:
         raise ValidationError({'group_by': f'The result has more than {MAX_GROUPS} groups; add filters or group by fewer fields'})
     result = []
     for row in rows:
@@ -465,8 +473,47 @@ def execute(connection, registry, model, compiled, groups, where, values, zone='
             item[measure.name] = value(measure, [row[index + offset] for offset in range(len(measure.sql))])
             index += len(measure.sql)
         result.append(item)
-    result.sort(key=lambda item: tuple((item[group.key] is not None, item[group.key]) for group in groups))
+    if page is None:
+        result.sort(key=lambda item: tuple((item[group.key] is not None, item[group.key]) for group in groups))
     return result
+
+
+def keyset(model, groups, after):
+    """SQL and values that keep the groups after `after` in the paged order: each group key ascending,
+    empty values first. `after` is a dict holding every group key, normally the previous page's last row."""
+    if not isinstance(after, dict) or any(group.key not in after for group in groups):
+        raise ValidationError({'after': 'Use the last group of the previous page, a dict with every group key'})
+    keys = []
+    for group in groups:
+        raw = after[group.key]
+        try:
+            if raw is None:
+                keys.append(None)
+            elif group.part == 'year':
+                if type(raw) is not int or not 1 <= raw <= 9999:
+                    raise ValueError('Use a year from 1 to 9999')
+                keys.append(f'{raw:04d}')
+            elif group.part == 'month':
+                if not isinstance(raw, str) or not re.fullmatch(r'\d{4}-\d{2}', raw):
+                    raise ValueError('Use YYYY-MM')
+                keys.append(raw)
+            else:
+                keys.append(SqlQuery.value(model.__fields__[group.field], raw))
+        except (ValueError, TypeError) as exc:
+            raise ValidationError({'after': f'{group.key}: {exc}'}) from None
+    # (k1, k2, ...) > (a1, a2, ...) spelled out, because empty values sort first and SQL row comparison
+    # treats them as unknown.
+    branches, values = [], []
+    for index, group in enumerate(groups):
+        terms = []
+        for previous, key in zip(groups[:index], keys):
+            terms.append(f'{previous.sql} IS NULL' if key is None else f'{previous.sql} = ?')
+            values.extend([] if key is None else [key])
+        key = keys[index]
+        terms.append(f'{group.sql} IS NOT NULL' if key is None else f'{group.sql} > ?')
+        values.extend([] if key is None else [key])
+        branches.append('(' + ' AND '.join(terms) + ')')
+    return '(' + ' OR '.join(branches) + ')', values
 
 
 def value(measure, raw):
@@ -484,12 +531,25 @@ def value(measure, raw):
     return None if raw[0] is None else field.from_storage(raw[0])
 
 
-def aggregate(tx, model, measures, group_by=(), filters=None):
-    """Trusted aggregate in a session: [{group keys..., measure names...}, ...]."""
+def aggregate(tx, model, measures, group_by=(), filters=None, limit=None, after=None):
+    """Trusted aggregate in a session: [{group keys..., measure names...}, ...].
+
+    With `limit`, one page of at most `limit` groups in the database's order of the group keys, starting
+    after the group `after` (None for the first page). Trusted filters take long `in` lists (evlet/query.py)."""
     model = tx.registry.resolve(model)
     compiled, groups = prepare(tx.registry, model, measures, group_by)
-    where, values = SqlQuery(tx.registry, model).where(filters)
-    return execute(tx.connection, tx.registry, model, compiled, groups, where, values)
+    where, values = SqlQuery(tx.registry, model, trusted=True).where(filters)
+    if limit is None:
+        if after is not None:
+            raise ValidationError({'after': 'Use after together with limit'})
+        return execute(tx.connection, tx.registry, model, compiled, groups, where, values)
+    if not groups:
+        raise ValidationError({'limit': 'Paging needs group_by'})
+    if type(limit) is not int or not 1 <= limit <= PAGE_GROUPS:
+        raise ValidationError({'limit': f'Use an integer between 1 and {PAGE_GROUPS}'})
+    if after is not None:
+        where, values = combine(where, values, *keyset(model, groups, after))
+    return execute(tx.connection, tx.registry, model, compiled, groups, where, values, page=limit)
 
 
 def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, zone='UTC', search=('', None), children=()):

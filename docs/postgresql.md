@@ -46,6 +46,9 @@ scaled numeric storage use BIGINT; generated IDs use PostgreSQL identity columns
 Nullable sort order matches SQLite explicitly. Text matching follows the database's
 collation and case rules; test non-ASCII search against the chosen database locale.
 PostgreSQL does not store NUL characters in text. IDs may have gaps after rollback.
+Trusted queries bind each value of a long `in` list as a parameter, at most 30,000 in all,
+below the 65,535 parameters PostgreSQL takes per statement. A paged `tx.aggregate` orders
+text group keys by the database collation, on both the page order and the `after` check.
 
 Text fields with `index=True` or `unique=True` must declare `max_length <= 500`,
 for example `Text(max_length=500, unique=True)` or

@@ -34,6 +34,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   value unique per record. The entries are part of the saved schema and the startup check, and
   `AddIndex(table, ("a", "b"), unique=True)` adds one. Models without `Meta.indexes` are unchanged
   ([docs/model-engine.md](docs/model-engine.md#composite-and-unique-indexes)).
+- **Paged aggregates and long `in` lists for trusted batch code.** `tx.aggregate(...)` and
+  `database.aggregate(...)` take `limit` (1 to 10,000) and `after` (the previous page's last
+  group) to walk any number of groups in a stable order, each exactly once, a page at a time.
+  Trusted session queries (`tx.list`, `tx.count`, `tx.aggregate` and the `database` forms)
+  take `in` and `nin` lists of up to 30,000 values in all, each bound as a parameter. Jobs that
+  chunked lists to 100 values and groupings to 500 groups can drop the chunking. HTTP,
+  `Context`, Eva, tools, MCP and Connector keep their limits of 100 values and 500 groups
+  ([docs/measures.md](docs/measures.md#paging-through-many-groups),
+  [docs/model-engine.md](docs/model-engine.md#long-in-lists-in-trusted-code)).
 - **`tx.aggregate(...)`.** The transaction session runs the same exact aggregates as
   `database.aggregate`, with the same arguments, limits and result, and sees the transaction's own
   writes. Use it instead of the internal `evlet.measures.aggregate(tx, ...)`
