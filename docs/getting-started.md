@@ -17,6 +17,19 @@ On Windows, use `py -3.12 -m venv .venv` and activate it with
 `.venv\Scripts\Activate.ps1` in PowerShell. Use `python --version` to check the
 active interpreter. Keep this environment active when running Evlet commands.
 
+## In a hurry: one command
+
+```sh
+evlet setup myproject --app notes --instance acme --dev
+```
+
+This runs steps 2 to 5 below in one go: it creates the project, the Notes app and
+the acme site, asks whether you trust the app, installs it and starts `evlet dev`
+on 127.0.0.1 with a one-time sign-in link. If a step fails, the message names it.
+Fix the cause and run the same command again; finished steps are skipped. Without
+`--dev` it stops after installing and prints the command that starts the site.
+Read on to see what each step does.
+
 ## 2. Create a project and app
 
 ```sh

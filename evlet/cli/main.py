@@ -35,6 +35,16 @@ def parser():
     setup = commands.add_parser('setup', help='Create apps/, instances/ and an isolated .venv')
     setup.add_argument('directory')
     setup.add_argument('--framework', help='Reviewed local framework wheel or source for offline/development setup')
+    setup.add_argument('--app', action='append', metavar='NAMES', help='Create these new apps; a comma list such as notes,crm')
+    setup.add_argument('--get', action='append', metavar='GIT_URLS', help='Fetch these apps from Git like evlet app --get; a comma list')
+    setup.add_argument('--instance', metavar='NAME', help='Create this instance and install the apps in it')
+    setup.add_argument('--trust', action='store_true', help='Trust the fetched and local app code for this whole run instead of asking')
+    mode = setup.add_mutually_exclusive_group()
+    mode.add_argument('--dev', action='store_true', help='Then run evlet dev on loopback and print a sign-in link')
+    mode.add_argument('--host', metavar='HOSTNAME', help='Then prepare a Caddy site and a systemd unit for this public hostname')
+    setup.add_argument('--port', type=int, default=8000, help='Port evlet dev or the service listens on (default: 8000)')
+    setup.add_argument('--ip', action='append', help="With --host: this server's public address, when it cannot be detected")
+    setup.add_argument('--apply', action='store_true', help='With --host: run the printed sudo steps; each is shown first')
     app = commands.add_parser('app', help='Create, fetch or list reusable apps')
     app.add_argument('name', nargs='?')
     app.add_argument('--legacy', action='store_true', help='Create the supported nested AppDefinition scaffold')
@@ -166,8 +176,19 @@ def main(argv=None):
             raise ValueError('Use a port between 1 and 65535')
         if args.command == 'setup':
             from .setup import setup
+            from . import site
             directory = Path(args.project) / args.directory if args.project else args.directory
-            print(f'Project created: {setup(directory, framework=args.framework)}')
+            if not site.wanted(args):
+                print(f'Project created: {setup(directory, framework=args.framework)}')
+                return
+            site.check(args)
+            root = site.project(directory, framework=args.framework)
+            if argv is None:
+                # Continue inside the project's own .venv; the re-run skips the project step.
+                from .setup import delegate
+                sys.stdout.flush()  # exec discards unwritten output
+                delegate(root, values)
+            site.run(root, args, confirm=confirm)
             return
         if args.command in ('docs', 'playground'):
             if args.command == 'docs':
@@ -186,7 +207,7 @@ def main(argv=None):
             from .setup import delegate
             delegate(root, values)
         if args.command == 'app':
-            from .app import create_app, fetch_app
+            from .app import create_app, get_app
             if args.name and (args.get or args.list):
                 raise ValueError('Choose an app name, --get, or --list')
             if args.list:
@@ -196,15 +217,7 @@ def main(argv=None):
                         package = read_package(path)
                         print(f'{package.name}\t{package.version}\t{package.title}')
             elif args.get:
-                package = fetch_app(root, args.get, return_package=True)
-                print(f'Fetched {package.name} {package.version} at {package.locked()["commit"]}; no app code has run')
-                from .app import prepare_dependencies
-                from ..builds import prepare
-                names = [package.name]
-                if not args.trust and not confirm('Trust and prepare ' + package.name + ' from ' + args.get + ' and its declared dependencies?'):
-                    raise ValueError('Fetched but not built: review source, then run evlet build --trust')
-                _, manifest = prepare(root, prepare_dependencies(root, names))
-                print('Built generation: ' + manifest['fingerprint'])
+                get_app(root, args.get, trust=args.trust, confirm=confirm)
             elif args.name:
                 print(f'App created: {create_app(root, args.name, legacy=args.legacy)}')
             else:
