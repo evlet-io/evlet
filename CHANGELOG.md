@@ -8,6 +8,18 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- `Naming(..., label="Project number")` labels the standard `name` field for the model's domain on
+  the form, in list columns, filters, search and the schema
+  ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".
+
+### Fixed
+
+- Records with text ids show their move and action buttons again. The browser client now reads
+  record details from paths with a text id, so allowed moves are no longer refused.
+- Record pages with a text id, such as `/app/<model>/01hff1w8vgqwf`, are served with 200 instead
+  of 404. A decimal id from an older link is still served ([docs/routing.md](docs/routing.md)).
+- More > Reset layout puts collapsible sections back to their starting state at once, including
+  `collapsed="empty"`, instead of waiting for an animation that a background page never plays.
 - **Back to the app from Controls.** The top of the Controls sidebar links back to the last app
   page, or the start page; the search palette offers Go to Controls to roles that open it.
 - **Change password from the account menu.** It opens the Sign-in & security password form
@@ -16,6 +28,32 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   person on the device. Choosing one applies it; each can be deleted.
 - **Files can be removed from a record.** Each file in the Files block has a remove button,
   shown to roles that can upload. It asks first, and a locked record shows none.
+- **A read-only child table stays read only when opened in the row editor.** On a locked or
+  cancelled record, or without write access, a row opened from the table or its focus view showed
+  editable inputs. They are now read only, like the cells, and the rows still open to read.
+- **List tabs by a chosen field, with a default tab.** `Meta.list_tabs` names the State, Select
+  or Link field whose values are the list's tabs, and `Meta.list_tab` the tab the list opens on
+  (`"all"` by default). Without them a model's State drives the tabs as before; `list_tabs = None`
+  turns them off. Counts come from the new `GET /api/{model}/list_tabs`, which follows the list's
+  filters, search and row scope; a Link shows its 8 most used values. `/api/schema` adds
+  `list_tabs` for roles that can read the field (additive). Choosing a tab, All included, keeps it
+  in the address. The Controls list view sets both per instance
+  ([docs/ui.md](docs/ui.md#list-tabs)).
+- **Ledger models.** `Meta.ledger = True` stores a model lean: an integer id the database assigns in
+  insert order and the declared columns only, with no public surface (`Meta.api` is `None`). Options:
+  `append_only` (database triggers refuse UPDATE and DELETE), `journal`, `timestamps` (`created_at`,
+  `modified_at`), `indexes` (composite and unique) and `period`. `tx.insert_many(model, rows)` inserts
+  rows with one prepared statement and returns their ids. New migration `SetAppendOnly`; `AddIndex`
+  takes a tuple of fields for a ledger index. `evlet ledger list --instance NAME` prints each ledger
+  model with its row count and options ([docs/ledger.md](docs/ledger.md)).
+- **Transaction locks.** `tx.lock(*keys, timeout=None)` holds named locks on business keys until the
+  transaction ends, PostgreSQL advisory locks taken in a fixed order, a key check on SQLite. A wait
+  past `timeout` raises the new `LockTimeout`. Nothing changes for existing apps.
+- **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
+  names its State field, such as `board = "stage"`, and the board groups by that field. Without
+  it the list is a table with the saved views per state, and an old `?view=board` link opens the
+  table. Apps that relied on the automatic board for every model with a State must now set
+  `Meta.board`. `Meta.board` on any other field fails registration naming the model.
 
 ### Changed
 
@@ -72,35 +110,6 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   phone drawer.
 - **Recent records moved from the sidebar to a history button left of search.** It lists them
   newest first with the model and when each was opened, and has a Clear action.
-
-### Fixed
-
-- **A read-only child table stays read only when opened in the row editor.** On a locked or
-  cancelled record, or without write access, a row opened from the table or its focus view showed
-  editable inputs. They are now read only, like the cells, and the rows still open to read.
-- **List tabs by a chosen field, with a default tab.** `Meta.list_tabs` names the State, Select
-  or Link field whose values are the list's tabs, and `Meta.list_tab` the tab the list opens on
-  (`"all"` by default). Without them a model's State drives the tabs as before; `list_tabs = None`
-  turns them off. Counts come from the new `GET /api/{model}/list_tabs`, which follows the list's
-  filters, search and row scope; a Link shows its 8 most used values. `/api/schema` adds
-  `list_tabs` for roles that can read the field (additive). Choosing a tab, All included, keeps it
-  in the address. The Controls list view sets both per instance
-  ([docs/ui.md](docs/ui.md#list-tabs)).
-- **Ledger models.** `Meta.ledger = True` stores a model lean: an integer id the database assigns in
-  insert order and the declared columns only, with no public surface (`Meta.api` is `None`). Options:
-  `append_only` (database triggers refuse UPDATE and DELETE), `journal`, `timestamps` (`created_at`,
-  `modified_at`), `indexes` (composite and unique) and `period`. `tx.insert_many(model, rows)` inserts
-  rows with one prepared statement and returns their ids. New migration `SetAppendOnly`; `AddIndex`
-  takes a tuple of fields for a ledger index. `evlet ledger list --instance NAME` prints each ledger
-  model with its row count and options ([docs/ledger.md](docs/ledger.md)).
-- **Transaction locks.** `tx.lock(*keys, timeout=None)` holds named locks on business keys until the
-  transaction ends, PostgreSQL advisory locks taken in a fixed order, a key check on SQLite. A wait
-  past `timeout` raises the new `LockTimeout`. Nothing changes for existing apps.
-- **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
-  names its State field, such as `board = "stage"`, and the board groups by that field. Without
-  it the list is a table with the saved views per state, and an old `?view=board` link opens the
-  table. Apps that relied on the automatic board for every model with a State must now set
-  `Meta.board`. `Meta.board` on any other field fails registration naming the model.
 
 ## 0.3.0 (05-11-2026)
 

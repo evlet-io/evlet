@@ -42,6 +42,18 @@ class Ticket(Model):
         return 'T-' + self.subject.upper().replace(' ', '-')
 
 
+class Job(Model):
+    """A numbered record whose name is labelled for its domain."""
+    permissions = {'admin': FULL}
+    summary = Text()
+
+    class Meta:
+        naming = Naming(Series('JOB-{#####}'), label='Job number')
+        layout = (('Job', ('name', 'summary')),)
+        list_fields = ('name', 'summary')
+        search_fields = ('name', 'summary')
+
+
 class Code(Model):
     permissions = {'admin': FULL, 'editor': Rule(('read', 'create', 'update'), write_fields=('label',))}
     label = Text()
@@ -67,7 +79,7 @@ class Bill(Model):
 
 @pytest.fixture
 def app(tmp_path):
-    database = Database(tmp_path / 'names.sqlite3', Registry(Contact, Note, Ticket, Code, Bill))
+    database = Database(tmp_path / 'names.sqlite3', Registry(Contact, Note, Ticket, Job, Code, Bill))
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
@@ -89,6 +101,32 @@ def test_an_application_refuses_a_model_that_declares_its_own_name(tmp_path):
         name = Text(required=True)
     with pytest.raises(ValueError, match=r'Supplier.name: "name" is the standard record name.*RenameField'):
         Application(Database(tmp_path / 'x.sqlite3', Registry(Supplier)))
+
+
+def test_naming_label_names_the_standard_name_field_everywhere_the_schema_reaches(app):
+    c = client(app)
+    models = {model['name']: model for model in c('GET', '/api/schema')[1]['models']}
+    job = models['job']
+    label = {field['name']: field['label'] for field in job['fields']}
+    # The form, list columns, filters and search all read the field's label from the schema.
+    assert label['name'] == 'Job number'
+    assert 'name' in job['list_fields'] and 'name' in job['search_fields']
+    assert {field['name']: field['label'] for field in models['ticket']['fields']}['name'] == 'Name'
+    assert {field['name']: field['label'] for field in models['note']['fields'] if field['name'] == 'name'} in ({}, {'name': 'Name'})
+    status, body = c('POST', '/api/job', {'summary': 'Paint'})[:2]
+    assert status == 201 and body['name'] == 'JOB-00001'
+
+
+@pytest.mark.parametrize('label', ['', '   ', 7, 'x' * 81, 'Two\nlines'])
+def test_naming_label_is_a_short_line_of_text(label):
+    with pytest.raises(ValueError, match='Naming label is a short line of text'):
+        Naming(Series('JOB-{#####}'), label=label)
+
+
+def test_naming_label_belongs_to_the_standard_name():
+    with pytest.raises(ValueError, match='Naming label names the standard name field'):
+        Naming('code', Series('C-{###}'), label='Code')
+    assert Naming(Series('JOB-{#####}'), label='  Job number ').label == 'Job number'
 
 
 def test_title_follows_its_template_on_every_write_and_falls_back_to_name_then_id(app):

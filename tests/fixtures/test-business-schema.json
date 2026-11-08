@@ -682,7 +682,7 @@
           "unique": true,
           "index": false,
           "max_length": 140,
-          "label": "Name",
+          "label": "Invoice number",
           "help_text": "",
           "placeholder": "Assigned on save",
           "hidden": false,
@@ -10357,7 +10357,7 @@
     }
   ],
   "printing": {
-    "available": false
+    "available": true
   },
   "slips": [
     {
