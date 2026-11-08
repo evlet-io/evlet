@@ -84,8 +84,6 @@
 @media (max-width:760px){.ev-list{--ev-gut:max(16px,env(safe-area-inset-left,0px))}}
 
 /* ---------- reports ---------- */
-.nav-sub{padding:6px 8px 2px;font-size:11.5px;color:var(--fg-4)}
-.app.collapsed .nav-sub{display:none}
 .ev-report-group{margin-bottom:20px}
 .ev-report-group h2{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--fg-3)}
 .ev-report-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
@@ -302,3 +300,15 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 @keyframes ntf-in{from{transform:translateX(calc(100% + 24px))}to{transform:none}}
 @keyframes ntf-out{to{opacity:0;transform:translateX(30%)}}
 @media (prefers-reduced-motion:reduce){.ntf-panel,.ntf-scrim{transition:none}.ntf-pop,.ntf-pop.out{animation:none}}
+
+/* ---------- explorer ---------- */
+.ex-views{margin:0 0 14px}
+.ex-app-filter{width:auto;min-width:140px}
+.ex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:12px}
+.ex-card{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);color:var(--fg);min-width:0}
+.ex-card:hover{border-color:var(--border-strong);background:var(--bg-subtle)}
+.ex-card-h{display:flex;align-items:center;gap:10px;min-width:0}
+.ex-card-h b{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ex-card-h .count{font-size:12px;color:var(--fg-3)}
+.ex-desc{font-size:12.5px;color:var(--fg-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ex-app{font-size:11.5px;color:var(--fg-3)}

@@ -79,6 +79,10 @@ export interface ModelSchema {
   name: string;
   label: string;
   plural: string;
+  /** The model's docstring, '' when it has none. */
+  description?: string;
+  /** "<app>.<Class>" for a model an installed app declares; the Explorer and the workspaces read the app from it. */
+  resource?: string;
   title_field: string;
   fields: FieldSchema[];
   list_fields: string[];
@@ -145,6 +149,8 @@ export interface ReportColumn { name: string; type: 'text' | 'integer' | 'decima
 export interface ReportSchema {
   name: string;
   label: string;
+  /** Shown on the report's Explorer card when the server sends one (none does yet). */
+  description?: string;
   fields: Array<FieldSchema & { calculated?: boolean }>;
   autorun: boolean;
   columns: ReportColumn[];

@@ -16,6 +16,7 @@ import { closeDialogs, closePopover, DialogFooter, openModal } from '../ui/layer
 import { AppClient } from './client';
 import { docsOn, goSettings, newPageState, settingsHref, type AppContext, type AppRouter } from './context';
 import { DocsPage } from './docs';
+import { ExplorerPage, isExplorer } from './explorer';
 import { ListPage } from './list-page';
 import { Connecting, LoginScreen, TwoStepScreen, type Challenge } from './login';
 import { rootModels } from './meta';
@@ -88,7 +89,7 @@ export function App(options: AppOptions): Node {
     const next = now?.name === 'login' ? now.query.next ?? '' : '';
     if (/^\/controls(\/[a-z]+)?$/.test(next) || /^\/_\/oauth\/authorize\?[^#]*$/.test(next)) { window.location.assign(next); return; }
     // Python page routes match no route here; they, sign-in and the root open the start page.
-    if (!now || now.name === 'login' || now.name === 'home') await goStart(ctx, true);
+    if (!now || now.name === 'login' || now.name === 'home' && !isExplorer(now)) await goStart(ctx, true);
   };
 
   const connect = async () => {
@@ -203,7 +204,8 @@ export function App(options: AppOptions): Node {
 /** The page for the current route. A page is built again only when its path changes, not its query. */
 function Routes(ctx: AppContext): Node {
   const { router } = ctx;
-  const path = derive(() => { const route = router.route.get(); return route ? `${route.name}:${JSON.stringify(route.params)}` : 'none'; });
+  // The Explorer is the root path with ?explorer=<view>: it is its own page, and changing its view keeps it.
+  const path = derive(() => { const route = router.route.get(); return route ? `${route.name}:${JSON.stringify(route.params)}${isExplorer(route) ? ':explorer' : ''}` : 'none'; });
   return match(path, {}, () => {
     closePopover();
     ctx.crumbs.set([]);
@@ -218,7 +220,9 @@ function page(ctx: AppContext): Child {
   const route = ctx.router.route.peek();
   const known = (name: string) => rootModels(ctx.schema).find(model => model.name === name);
   switch (route?.name) {
-    case 'home': case 'login': return docsOn(ctx.session) ? DocsPage(ctx) : nothingToOpen(ctx);
+    case 'home': if (isExplorer(route)) return ExplorerPage(ctx);
+    // falls through
+    case 'login': return docsOn(ctx.session) ? DocsPage(ctx) : nothingToOpen(ctx);
     case 'docs': return docsOn(ctx.session) ? DocsPage(ctx) : unavailable(ctx);
     case 'topic': return docsOn(ctx.session) ? DocsPage(ctx, route.params.topic) : unavailable(ctx);
     case 'list': return known(route.params.model) ? ListPage(ctx, route.params.model) : unavailable(ctx);

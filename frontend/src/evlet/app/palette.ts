@@ -11,6 +11,7 @@ import { resolveTheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { identity, rootModels, titleOf, type ScreenModel } from './meta';
 import { REPORT_ICON, reportsOf } from './report-page';
+import { explorerHref } from './explorer';
 
 interface Tile { id: string; group: 'Lists' | 'Documents' | 'Reports' | 'Pages'; icon: string; tint: Tint; label: string; badge?: 'plus' | 'list'; run: () => void }
 interface Item { icon: string; tint: Tint | 'ghost'; label: string; sub?: string; hint?: string; run: () => void; tile?: boolean; record?: boolean; recent?: string }
@@ -23,6 +24,7 @@ export function quickTiles(ctx: AppContext): Tile[] {
   // Controls opens in a new tab, as from the account menu, for people allowed to open it.
   if (ctx.me.peek()?.controls) tiles.push({ id: 'p-controls', group: 'Pages', icon: 'sliders-horizontal', tint: 'slate', label: 'Go to Controls',
     run: () => { window.open('/controls', '_blank', 'noopener'); } });
+  tiles.push({ id: 'p-explorer', group: 'Pages', icon: 'layout-grid', tint: 'slate', label: 'Explorer', run: () => void ctx.router.navigate(explorerHref(ctx.router)) });
   for (const model of rootModels(ctx.schema)) {
     const { icon, tint } = identity(model);
     tiles.push({ id: `l-${model.name}`, group: 'Lists', icon, tint, label: model.plural, badge: 'list', run: () => void ctx.router.go('list', { model: model.name }) });

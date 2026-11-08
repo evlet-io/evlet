@@ -654,7 +654,10 @@ mount(document.querySelector('#app')!, () => DocFrame({
   before)** focuses that field's control once `root` is on the page, except on a touch device
   (`keyboardFirst()` in `core.ts`) or when the focus moved away from `before` while the form loaded.
   The record page uses both for new records and slips use them on open ([focus on new forms](ui.md#focus-on-new-forms)).
-- Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
+- Popovers anchor to their button and close on Esc or an outside click. `openPopover(anchor, render,
+  { align: 'side' })` places the panel beside the anchor on its right, top edges level (the Workspace
+  card), and below it when there is no room; `'left'` lines up the left edges and `'auto'` (the
+  default) picks the side that fits. Dialogs focus their
   first field (the dialog itself on a touch device), keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open
   when a phone keyboard resizes the window while the user types in it. `apiLinks()` reads
@@ -758,7 +761,9 @@ not part of the build.
 | Module | What it does |
 |---|---|
 | `app.ts` | Session, sign in and first-run setup, the shell and the route table |
-| `shell.ts` | Sidebar (models grouped, Library in development, the account and the theme button), top bar, keyboard |
+| `shell.ts` | Sidebar (the Workspace switcher, the workspace's sections and shortcuts, Explorer, Library in development, the account and the theme button), top bar, keyboard |
+| `workspaces.ts` | `workspaceNav(schema, links, fallback)`: the sidebar's workspaces, sections and shortcuts, `activeShortcut`, and the app each model and report belongs to |
+| `explorer.ts` | The Explorer ([ui.md](ui.md#explorer)): Reports, Data and Dashboards at `/?explorer=<view>` |
 | `recents.ts` | The history button left of search in the top bar: this session's recent records, newest first, with the model and when each was opened |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
@@ -875,13 +880,14 @@ locked record cannot change, so the upload control hides while `_locked` is true
 is recorded by `scripts/generate_ui_framework_fixtures.py`; none is written by hand.
 
 Model icons and accents come from the model name (invoice: receipt, blue; contact: people,
-violet), since the schema has no presentation keys. Models with a State or a Table are listed as
-Documents in the sidebar, the others as Records.
+violet), since the schema has no presentation keys. Until apps declare workspaces, models with a State
+or a Table are listed in the Documents section of their app's workspace, the others in Records
+([ui.md](ui.md#sidebar-and-workspaces)).
 
 Appearance, region, start page and sidebar counts are the person's Settings, kept on the server
 ([settings.md](settings.md)), and so is the theme ([Themes](#themes)). Layout preferences (sidebar, list column
-widths, child table columns, quick access, how each list opens records, the side panel's width and
-which form sections a person opened or closed) are kept in browser storage under `evlet.<username>.`.
+widths, child table columns, quick access, how each list opens records, the side panel's width,
+which form sections a person opened or closed, the chosen workspace and its closed sidebar sections) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
 session and go on sign-out. Each recent record keeps when it was last opened; the history button left
 of search lists them with the relative time and the exact time on hover. The account area is at the

@@ -1,5 +1,6 @@
-// The app shell (docs/ui-design/README.md section 4): sidebar with the Evlet brand, the app switcher,
-// the models grouped, and an edge button that collapses it; the top bar with breadcrumbs, recent
+// The app shell (docs/ui-design/README.md section 4): sidebar with the Evlet brand, the Workspace
+// switcher, the workspace's collapsible sections of shortcuts (app/workspaces.ts), the Explorer button
+// above the account area, and an edge button that collapses it; the top bar with breadcrumbs, recent
 // records, search, notifications and shortcuts; one scrolling view. Under 760 px the sidebar is a drawer
 // opened from the top bar.
 
@@ -15,8 +16,9 @@ import { canChangePassword, displayName, openPasswordDialog, PersonMark } from '
 import { InboxButton } from './inbox';
 import { RecentsButton } from './recents';
 import { rememberAppPage } from './last-page';
-import { groupOf, identity, rootModels, type ScreenModel } from './meta';
-import { REPORT_ICON, reportGroups, reportsOf } from './report-page';
+import { rootModels } from './meta';
+import { activeShortcut, modelCounts, workspaceNav, type NavSection, type NavShortcut, type Workspace } from './workspaces';
+import { explorerHref, isExplorer } from './explorer';
 
 const PHONE = '(max-width: 760px)';
 const isPhone = () => { try { return Boolean(window.matchMedia?.(PHONE)?.matches); } catch { return false; } };
@@ -30,7 +32,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const application = ctx.session.application ?? {};
   const appName = application.playground ? 'Playground' : application.name || 'Evlet';
   const tenant = (ctx.session.tenant as { label?: string; name?: string } | undefined);
-  const workspace = tenant?.label ?? tenant?.name ?? 'Workspace';
+  const site = tenant?.label ?? tenant?.name ?? 'Workspace';
   // The theme button flips what the page shows now; from "system" it becomes an explicit choice.
   const device = systemScheme();
   const dark = () => resolveTheme(ctx.me.get()?.prefs.theme ?? 'system', device.get()) === 'dark';
@@ -42,30 +44,57 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
 
   ctx.toggleSidebar = () => { if (isPhone()) mobileOpen.set(!mobileOpen.peek()); else collapsed.set(!collapsed.peek()); };
 
-  const activeModel = derive(() => { const now = route.get(); return now && ['list', 'record', 'create'].includes(now.name) ? now.params.model : null; });
   const navItem = (props: { href: string; icon: string; tint?: any; label: string; active: () => boolean; count?: Child }) => {
     const item = html`<a class="nav-item" class:active=${props.active} aria-current=${() => props.active() ? 'page' : null} href=${props.href}>
       ${Icon(props.icon, { tint: props.tint })}<span class="lbl">${props.label}</span>${props.count ?? null}</a>` as HTMLElement;
     tooltip(item, () => collapsed.get() ? props.label : null, 'right');
     return item;
   };
-  const reports = reportsOf(ctx);
-  const groups = ['Documents', 'Records'].map(name => [name, models.filter(model => groupOf(model) === name)] as const).filter(([, list]) => list.length);
   // Record counts beside each model, when the person turned them on in Settings.
-  const counts = cell<Record<string, number>>({});
+  const counts = modelCounts(ctx);
   // Only turning counts on fetches them; saving other preferences does not.
   const showCounts = derive(() => Boolean(ctx.me.get()?.prefs.counts));
   effect(() => {
     if (!showCounts.get()) return;
     for (const model of models) void ctx.api.list(model.name, { limit: 1 }).then(page => counts.set({ ...counts.peek(), [model.name]: page.total }), () => {});
   });
-  const modelItem = (model: ScreenModel) => {
-    const { icon, tint } = identity(model);
-    const count = () => ctx.me.get()?.prefs.counts && counts.get()[model.name] !== undefined
-      ? html`<span class="count">${(n => n > 999 ? `${(n / 1000).toFixed(1)}k` : String(n))(counts.get()[model.name])}</span>` : null;
-    return navItem({ href: router.href('list', { model: model.name }), icon, tint, label: model.plural, active: () => activeModel.get() === model.name, count });
+  const countOf = (item: NavShortcut) => () => {
+    const name = item.key.startsWith('model:') ? item.key.slice(6) : '';
+    const value = name && ctx.me.get()?.prefs.counts ? counts.get()[name] : undefined;
+    return value === undefined ? null : html`<span class="count">${value > 999 ? `${(value / 1000).toFixed(1)}k` : String(value)}</span>`;
   };
 
+  // Workspaces: the switcher picks one, and the sidebar shows its sections and shortcuts.
+  const nav = workspaceNav(ctx.schema.schema, { list: model => router.href('list', { model }), report: report => router.href('report', { report }) }, appName);
+  const here = derive(() => { const now = route.get(); return now ? activeShortcut(nav, now.url) : null; });
+  const chosen = prefs.cell<string>('nav.workspace', nav.workspaces[0]?.key ?? '');
+  // Opening a shortcut of another workspace (a link, Back, the palette) shows that workspace.
+  effect(() => { const found = here.get(); if (found && found.workspace.key !== chosen.peek()) chosen.set(found.workspace.key); });
+  const current = derive(() => nav.workspaces.find(workspace => workspace.key === chosen.get()) ?? nav.workspaces[0] ?? null);
+  // Open or closed sections, per person on this device; a section is open until closed.
+  const closed = prefs.cell<Record<string, boolean>>('nav.closed', {});
+  const sectionId = (workspace: Workspace, section: NavSection) => `${workspace.key}.${section.key}`;
+  const isOpen = (workspace: Workspace, section: NavSection) => !closed.get()[sectionId(workspace, section)];
+  const toggleSection = (workspace: Workspace, section: NavSection) => {
+    const id = sectionId(workspace, section), next = { ...closed.peek() };
+    if (next[id]) delete next[id]; else next[id] = true;
+    closed.set(next);
+  };
+  const shortcut = (item: NavShortcut) => {
+    const active = () => here.get()?.item === item;
+    const link = html`<a class="nav-item nav-sc" class:active=${active} aria-current=${() => active() ? 'page' : null} href=${item.href}>
+      <span class="nav-dot" aria-hidden="true"></span>${Icon(item.icon ?? 'circle', { tint: item.tint, className: 'nav-ic' })}<span class="lbl">${item.label}</span>${countOf(item)}</a>` as HTMLElement;
+    tooltip(link, () => collapsed.get() ? item.label : null, 'right');
+    return link;
+  };
+  const section = (workspace: Workspace, entry: NavSection) => {
+    const id = `ev-nav-${sectionId(workspace, entry).replace(/[^a-z0-9_-]/gi, '-')}`;
+    return html`<div class="nav-sec" class:open=${() => isOpen(workspace, entry)}>
+      <button type="button" class="nav-sec-h" aria-expanded=${() => String(isOpen(workspace, entry))} aria-controls=${id} on:click=${() => toggleSection(workspace, entry)}>
+        ${Icon(entry.icon, { size: 'sm', className: 'nav-sec-ic' })}<span class="lbl">${entry.label}</span>
+        ${entry.count === undefined ? null : html`<span class="count">${String(entry.count)}</span>`}${Icon('chevron-right', { size: 'xs', className: 'nav-sec-chev' })}</button>
+      <div class="nav-sec-items" id=${id} role="group" aria-label=${entry.label}>${entry.items.map(shortcut)}</div></div>`;
+  };
   // The one account area, at the bottom of the sidebar. Its menu follows the Settings design order.
   const settings = ctx.me;
   const fullName = () => settings.get()?.profile.full_name || ctx.user.username;
@@ -89,33 +118,48 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     <div style="min-width:0"><div class="n">${() => displayName(settings.get(), ctx.user.username)}</div><div class="e">${() => settings.get()?.profile.title || ctx.user.role}</div></div>
     ${Icon('chevrons-up-down', { size: 'xs', className: 'me-chev' })}</button>` as HTMLElement;
 
-  // The app switcher: the current app over its workspace; it opens a grid of the apps in this workspace.
-  const apps = [{ name: appName, icon: 'layers', tint: 'blue' as const }];
-  const appMenu = (anchor: HTMLElement) => openPopover(anchor, close => html`<div class="app-grid-h">Apps in ${workspace}</div>
-    <div class="app-grid" role="list">${apps.map(app => html`<button type="button" role="listitem" class="app-tile" class:on=${app.name === appName}
-      aria-current=${app.name === appName ? 'true' : null} on:click=${close}>${IconTile(app.icon, { tint: app.tint, size: 32 })}<span>${app.name}</span></button>`)}</div>`,
-  { label: 'Apps', role: 'dialog', className: 'app-pop', align: 'left' });
-  const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="dialog" aria-label=${`App: ${appName}, ${workspace}. Switch app`}
-    on:click=${(event: MouseEvent) => appMenu(event.currentTarget as HTMLElement)}
-    ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? `${appName} · ${workspace}` : null, 'right')}>${IconTile('layers', { tint: 'blue', size: 28 })}
-    <span class="as-text"><b>${appName}</b><small>${workspace}</small></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
+  // The Workspace switcher: the current workspace; it opens a card beside it with every workspace as a tile.
+  const pickWorkspace = (workspace: Workspace) => {
+    chosen.set(workspace.key);
+    const first = workspace.sections[0]?.items[0];
+    if (first) void router.navigate(first.href);
+  };
+  const workspaceMenu = (anchor: HTMLElement) => openPopover(anchor, close => {
+    const tiles = nav.workspaces.map(workspace => html`<button type="button" class="ws-tile" class:on=${() => current.get() === workspace}
+      aria-current=${() => current.get() === workspace ? 'true' : null} on:click=${() => { close(); pickWorkspace(workspace); }}>
+      ${IconTile(workspace.icon, { tint: workspace.tint, size: 32 })}<span>${workspace.label}</span></button>` as HTMLButtonElement);
+    const row = html`<div class="ws-row" role="group" aria-label="Workspaces">${tiles}</div>` as HTMLElement;
+    row.addEventListener('keydown', event => {
+      const step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[event.key];
+      const at = tiles.indexOf(document.activeElement as HTMLButtonElement);
+      let next = step === undefined ? (event.key === 'Home' ? 0 : event.key === 'End' ? tiles.length - 1 : -1) : (at + step + tiles.length) % tiles.length;
+      if (next < 0) return;
+      event.preventDefault();
+      tiles[next].focus();
+    });
+    queueMicrotask(() => (tiles.find(tile => tile.classList.contains('on')) ?? tiles[0])?.focus());
+    return html`<div class="ws-head">Workspace</div>${row}`;
+  }, { label: 'Workspace', role: 'dialog', className: 'ws-pop', align: 'side' });
+  const wsLabel = () => current.get()?.label ?? appName;
+  const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="dialog" aria-expanded="false" aria-label=${() => `Workspace: ${wsLabel()}. Switch workspace`}
+    on:click=${(event: MouseEvent) => workspaceMenu(event.currentTarget as HTMLElement)}
+    ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? `Workspace: ${wsLabel()}` : null, 'right')}>${() => IconTile(current.get()?.icon ?? 'layers', { tint: current.get()?.tint ?? 'blue', size: 28 })}
+    <span class="as-text"><b>${wsLabel}</b><small>${site}</small></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
+
+  const explorer = navItem({ href: explorerHref(router), icon: 'layout-grid', tint: 'slate', label: 'Explorer', active: () => isExplorer(route.get()) });
 
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
     <div class="brand">${Lockup()}${Logo('Evlet')}</div>
     <div class="side-body">
       ${appSwitch}
       <nav class="nav">
-        ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: 'file-text', tint: 'slate', label: 'Docs', active: () => ['docs', 'topic', 'home'].includes(route.get()?.name ?? '') }) : null}
+        ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: 'file-text', tint: 'slate', label: 'Docs', active: () => ['docs', 'topic', 'home'].includes(route.get()?.name ?? '') && !isExplorer(route.get()) }) : null}
         ${() => ctx.eva.get() ? navItem({ href: router.href('eva', {}), icon: 'sparkles', tint: 'violet', label: 'Eva', active: () => ['eva', 'evaChat', 'evaTasks'].includes(route.get()?.name ?? ''),
           count: () => ctx.eva.get()?.pending_approvals ? html`<span class="badge" title="Waiting for your approval">${ctx.eva.get()!.pending_approvals}</span>` : null }) : null}
-        ${groups.map(([name, list]) => html`<div class="nav-group"><div class="nav-label">${name}</div>${list.map(modelItem)}</div>`)}
-        ${reports.length ? html`<div class="nav-group"><div class="nav-label">Reports</div>${reportGroups(reports).map(([group, list]) => [
-          group && reportGroups(reports).length > 1 ? html`<div class="nav-sub">${group}</div>` : null,
-          list.map(report => navItem({ href: router.href('report', { report: report.name }), icon: REPORT_ICON, tint: 'rose', label: report.label,
-            active: () => route.get()?.name === 'report' && route.get()?.params.report === report.name }))])}</div>` : null}
+        ${() => { const workspace = current.get(); return workspace ? html`<div class="nav-secs">${workspace.sections.map(entry => section(workspace, entry))}</div>` : null; }}
       </nav>
-      ${ctx.dev ? html`<div class="side-bottom"><a class="nav-item" href=${ctx.libraryHref} rel="external" ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? 'Library' : null, 'right')}>
-        ${Icon('layers', { tint: 'violet' })}<span class="lbl">Library</span></a></div>` : null}
+      <div class="side-bottom">${explorer}${ctx.dev ? html`<a class="nav-item" href=${ctx.libraryHref} rel="external" ref=${(el: HTMLElement) => tooltip(el, () => collapsed.get() ? 'Library' : null, 'right')}>
+        ${Icon('layers', { tint: 'violet' })}<span class="lbl">Library</span></a>` : null}</div>
       <div class="side-foot">${me}${when(() => Boolean(ctx.me.get() && !ctx.me.get()!.portal), () => html`<button type="button" class="icon-btn theme-btn"
         aria-label=${() => dark() ? 'Switch to light theme' : 'Switch to dark theme'} on:click=${flipTheme}
         ref=${(el: HTMLElement) => tooltip(el, () => dark() ? 'Light theme' : 'Dark theme')}>${() => Icon(dark() ? 'sun' : 'moon')}</button>`)}</div>

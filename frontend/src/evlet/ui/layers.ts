@@ -26,8 +26,9 @@ export interface PopoverOptions {
   /** role of the panel: menu (default) or dialog. */
   role?: 'menu' | 'dialog';
   label?: string;
-  /** Align the panel's left edge with the anchor (auto picks the side that fits). */
-  align?: 'auto' | 'left';
+  /** Align the panel's left edge with the anchor (auto picks the side that fits), or place it beside
+   * the anchor on its right, top edges level (side); side falls back to below when it does not fit. */
+  align?: 'auto' | 'left' | 'side';
   onClose?: () => void;
 }
 
@@ -87,8 +88,15 @@ export function openPopover(anchor: HTMLElement, render: (close: () => void) => 
   return () => close(true);
 }
 
-function place(panel: HTMLElement, anchor: Element, align: 'auto' | 'left') {
+function place(panel: HTMLElement, anchor: Element, align: 'auto' | 'left' | 'side') {
   const box = anchor.getBoundingClientRect(), width = panel.offsetWidth, height = panel.offsetHeight;
+  panel.classList.toggle('pop-side', false);
+  if (align === 'side' && box.right + 8 + width <= window.innerWidth - 12) {
+    panel.classList.add('pop-side');
+    panel.style.left = `${box.right + 8}px`;
+    panel.style.top = `${Math.max(12, Math.min(box.top, window.innerHeight - height - 12))}px`;
+    return;
+  }
   let left = align === 'left' || box.left + width < window.innerWidth - 12 ? box.left : box.right - width;
   left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
   let top = box.bottom + 6;

@@ -12,14 +12,15 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 
 - Sign-in and first-run setup (the first administrator account).
 - Docs after sign-in, with its topics.
-- The shell: sidebar with the models; a top bar with a history button for recent records (left of
+- The shell: sidebar with the Workspace switcher, the workspace's sections and shortcuts, and
+  Explorer ([below](#sidebar-and-workspaces)); a top bar with a history button for recent records (left of
   search), the search palette, notifications and shortcuts. New records start from the New button
   on a model's list page or from the search palette.
 - Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
-  `/reports/<name>`, listed in the sidebar.
+  `/reports/<name>`, listed in the sidebar and in the Explorer.
 - Slips ([slips.md](slips.md)): forms presented from a record, an action, another slip or browser
   code, checked on the server and handed in to a handler or turned into a record.
 - Printing ([printing.md](printing.md)): a Print button on record views for roles that may print the
@@ -227,7 +228,57 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | `/controls`, `/controls/<page>` | Controls ([controls.md](controls.md)), a separate page for roles that open it |
 | `/eva`, `/eva/<chat>`, `/eva/tasks` | Eva's chat and scheduled tasks ([eva.md](eva.md)). Served only when config.py turns Eva on; the page asks `/api/_eva` and shows nothing of Eva to people without it |
 | `/reports`, `/reports/<name>` | The reports this role may run, and one report's view ([reports.md](reports.md)) |
+| `/?explorer=reports`, `data`, `dashboards` | The Explorer ([below](#explorer)) |
 | Registered Python page routes | Served, then open Docs |
+
+## Sidebar and workspaces
+
+The sidebar has three levels: workspace, section, shortcut.
+
+- **Workspace switcher.** The box at the top of the sidebar shows the current workspace. A click opens
+  a small card to its right, with every workspace as a tile in a row (it wraps when there are many).
+  Arrow keys, Home and End move between tiles, Enter opens one, and Esc closes the card and gives focus
+  back to the box. Opening a workspace shows its sections and opens its first shortcut. Opening a page
+  of another workspace (a link, Back, the search palette) switches the sidebar to it.
+- **Sections** are collapsible titles with an icon, an optional count and a chevron. Each one is open
+  until the person closes it. The closed ones are kept per person in browser storage
+  (`evlet.<username>.nav.closed`), and the chosen workspace in `evlet.<username>.nav.workspace`.
+  Blocked storage only means nothing is remembered.
+- **Shortcuts** sit under their section on a thin guide line, each with a small dot. The one the page
+  belongs to (a list and its records, or a report) has the accent background and an accent bar on the
+  left.
+- The collapsed sidebar shows each shortcut's icon with its name in a tooltip; section titles give way
+  to a thin rule. On phones the sidebar is the drawer, and the Workspace card opens below the box
+  when there is no room beside it.
+
+Apps cannot declare workspaces yet. Until they can, there is one workspace per installed app: the app
+is the first part of each model's `resource` in `/api/schema` (`showcase.Project` belongs to
+`showcase`), and models without one form a workspace named after the application. Its sections are
+**Documents** (models with a State or a Table), **Records** (the others) and **Reports** (the app's
+reports: the app in an installed app's report name, such as `showcase.ClientCredit`, else the app of the report's `model`). `workspaceNav()` in `app/workspaces.ts` builds this
+shape, and a declared workspace list will feed the same shape:
+
+```ts
+{ workspaces: [{ key, label, icon, sections: [{ key, label, icon, count?, items: [{ key, label, href, icon? }] }] }] }
+```
+
+### Explorer
+
+**Explorer**, just above the account area, opens a page with three views:
+
+- **Reports**: a card for every report the person may run, from every app, with its name, app and
+  description (when the server sends one).
+- **Data**: a card for every model the person can read, with its label, app and description. Child
+  tables are left out. Ledger models have no public surface, so the schema never lists them. A card
+  shows a record count only when the person turned sidebar counts on in Settings; the Explorer never
+  asks for counts of its own.
+- **Dashboards**: "No dashboards yet". The framework has no dashboards.
+
+Reports and Data have a search box (name, description and app) and an app filter. A card opens the
+report or the list. The address is `/?explorer=<view>`: the root path is the one desk path the server
+always serves, so the Explorer needs no server route, and a link or a refresh opens the same view.
+The search palette lists it under Pages. Reports over ledger models will be a view of their own once
+the server can list them.
 
 ### Between the app and Controls
 

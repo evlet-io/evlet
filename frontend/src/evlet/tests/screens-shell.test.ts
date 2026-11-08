@@ -96,7 +96,8 @@ describe('app shell', () => {
   it('groups models in the sidebar, marks the current one and has no New menu in the top bar', async () => {
     const { host } = start([...adminRoutes(), ['GET', /\/api\/customer\?/, screen.customers_page1]], '/app/customer');
     await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
-    const groups = [...host.querySelectorAll('.nav-group')].map(group => [text(group.querySelector('.nav-label')), [...group.querySelectorAll('.nav-item .lbl')].map(text)]);
+    // Models without an app in their resource id form one workspace, with the earlier groups as its sections.
+    const groups = [...host.querySelectorAll('.nav-sec')].map(group => [text(group.querySelector('.nav-sec-h .lbl')), [...group.querySelectorAll('.nav-item .lbl')].map(text)]);
     expect(groups).toEqual([['Documents', ['Orders']], ['Records', ['Customers', 'Products', 'Contacts', 'Quotes']]]);
     expect(text(host.querySelector('.nav-item.active'))).toBe('Customers');
     expect(host.querySelector('.nav-item.active')!.getAttribute('aria-current')).toBe('page');
@@ -107,7 +108,7 @@ describe('app shell', () => {
     expect(host.querySelector('.topbar .btn.primary')).toBeNull();
   });
 
-  it('shows the Evlet brand, an app switcher with its workspace, and collapses from the edge button', async () => {
+  it('shows the Evlet brand, the Workspace switcher, and collapses from the edge button', async () => {
     const { host } = start([...adminRoutes()]);
     await until(() => expect(host.querySelector('.app')).not.toBeNull());
     const app = host.querySelector('.app')!;
@@ -122,10 +123,11 @@ describe('app shell', () => {
     // The old app bar and repeated app title are gone.
     expect(host.querySelector('.appbar, .side-app, .sidebar .ws')).toBeNull();
     click(appSwitch);
-    const pop = document.querySelector('.pop.app-pop')!;
+    const pop = document.querySelector('.pop.ws-pop')!;
     expect(pop.getAttribute('role')).toBe('dialog');
-    expect([...pop.querySelectorAll('.app-tile')].map(text)).toEqual([appName]);
-    expect(pop.querySelector('.app-tile.on')!.getAttribute('aria-current')).toBe('true');
+    expect(pop.getAttribute('aria-label')).toBe('Workspace');
+    expect([...pop.querySelectorAll('.ws-tile')].map(text)).toEqual([appName]);
+    expect(pop.querySelector('.ws-tile.on')!.getAttribute('aria-current')).toBe('true');
     closeDialogs();
     // The edge button collapses and expands; the top bar's toggle is only for the phone drawer.
     const edge = host.querySelector<HTMLButtonElement>('.side-edge')!;
