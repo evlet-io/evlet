@@ -21,6 +21,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   negative id and tables without the trigger; it never rewrites ids
   ([docs/model-engine.md](docs/model-engine.md#only-evlet-makes-ids)).
 
+- **`customize_workspaces` in `GET /api/_settings/me`.** A boolean next to `controls`: true when
+  the signed-in person may use the workspace override routes (`/api/_controls/workspaces`). It
+  calls the routes' own check, so admin always, desk roles with Customize workspaces on, never
+  portal people, on the hosts and networks that open Controls. A session that still owes a two-step
+  code reports true and the routes ask for it. It only reports access, so the browser can offer
+  Customize without probing the route ([docs/settings.md](docs/settings.md#pages)).
+
 - **Record layouts.** `Meta.layout` can declare the whole record page: `Tab(title, blocks)`s, or
   plain blocks without tabs, holding `Section`s, `Table` field names (the table shows inside the tab
   or the form instead of on its own tab), `Related(model, link=None, filters=..., fields=..., limit=...,

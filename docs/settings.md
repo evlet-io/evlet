@@ -80,6 +80,15 @@ server for that person. Portal people don't have it.
 Mentions inbox in the top bar ("in Evlet") and by email through the mail connector ([journal.md](journal.md#mentions)).
 The other choices are stored for later. Security emails (a new device, a changed password) can't be turned off.
 
+**What the person may open.** `GET /api/_settings/me` carries two booleans for the signed-in
+person, side by side at the top level. `controls` is true when they open Controls (it shows the
+Controls entry in the account menu). `customize_workspaces` is true when they may use the
+workspace override routes, `/api/_controls/workspaces` ([controls.md](controls.md#workspaces)): it
+calls the same check as those routes, so admin always, desk roles with Customize workspaces on,
+never portal people or API keys, and only on the hosts and networks that open Controls. A session
+that still has to give a two-step code reports true; the routes then ask for the code as usual.
+Both only report access. They change no permission, and the routes check again on every request.
+
 ## Two-step sign-in
 
 Two-step sign-in uses an authenticator app (TOTP, 6 digits every 30 seconds, one step either

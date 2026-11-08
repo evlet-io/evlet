@@ -149,6 +149,25 @@ def test_who_may_change_workspaces(app):
     assert status == 422 and payload['fields'] == {'changes.0': 'Choose a known kind of change.'}
 
 
+def test_settings_me_reports_who_may_customize_workspaces(app):
+    def reported(role):
+        status, me, _ = client(app, role)('GET', '/api/_settings/me')
+        assert status == 200, me
+        return me['customize_workspaces']
+    admin = client(app)
+    assert admin('POST', '/api/_controls/roles', {'id': 'ops', 'base': 'editor'})[0] == 201
+    assert admin('PATCH', '/api/_controls/roles/ops', {'opens_controls': True})[0] == 200
+    assert admin('POST', '/api/auth/users', {'username': 'ops', 'password': PASSWORD, 'role': 'ops'})[0] == 201
+    # Admin always, a role with the flag, and nobody else: "Opens Controls" alone does not give it.
+    assert {role: reported(role) for role in ('admin', 'planner', 'clerk', 'editor', 'viewer', 'ops')} == {
+        'admin': True, 'planner': True, 'clerk': False, 'editor': False, 'viewer': False, 'ops': False}
+    # It follows the role's flag at once, and agrees with the routes.
+    assert admin('PATCH', '/api/_controls/roles/clerk', {'customize_workspaces': True})[0] == 200
+    assert reported('clerk') is True and client(app, 'clerk')('GET', ROUTE)[0] == 200
+    assert admin('PATCH', '/api/_controls/roles/planner', {'customize_workspaces': False})[0] == 200
+    assert reported('planner') is False and client(app, 'planner')('GET', ROUTE)[0] == 404
+
+
 def test_overrides_never_widen_access(app):
     admin = client(app)
     assert admin('PUT', ROUTE + '/sales', {'groups': [{'key': 'clients', 'items': [
