@@ -376,7 +376,7 @@ class AddIndex:
     """Index one field (`field` names it), or add a ledger model's Meta.indexes entry (`field` is a tuple of
     field names, such as ("member", "on_date"))."""
     table: str
-    field: object
+    field: str | tuple
     unique: bool = False
 
     def composite(self):

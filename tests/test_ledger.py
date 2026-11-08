@@ -771,3 +771,36 @@ def test_postgres_locks_validate_keys_and_need_a_write_transaction(locks):
         connection.execute('BEGIN')
         with pytest.raises(ValueError, match='inside database.transaction'):
             Session(connection, database.registry).lock(('stock', 1))
+
+
+# Playground
+
+def test_the_playground_awards_points_into_a_ledger_and_its_balance_cache(tmp_path, monkeypatch):
+    from examples.playground.app import create_app
+    from examples.playground.models import PointBalance as Balance, PointMove as Movement
+    from evlet.auth import password_hash
+    monkeypatch.setenv('EVLET_DATABASE', str(tmp_path / 'playground.sqlite3'))
+    app = create_app()
+    app.database.initialize()
+    app.business.initialize()
+    with app.database.transaction() as tx:
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', ('admin', password_hash(PASSWORD), 'admin'))
+    admin = client(app)
+    status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Acme'})
+    assert status == 201, customer
+    for _ in range(2):
+        status, payload, _ = admin('POST', f"/api/customer/{customer['id']}/actions/award_points", {})
+        assert status == 200, payload
+    assert [(row.points, row.reason) for row in app.database.list(Movement)] == [(10, 'Awarded from the customer page')] * 2
+    assert [row.points for row in app.database.list(Balance)] == [20]
+    assert admin('GET', '/api/pointmove')[0] == 404
+
+
+def test_applications_refuse_attachments_and_actions_on_ledger_models(tmp_path):
+    from evlet import Action
+    database = Database(tmp_path / 'refused.sqlite3', Registry(*MODELS))
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False)
+    with pytest.raises(ValueError, match='PointMove is a ledger model: it has no attachments'):
+        Application(database, auth=auth, attachments=(PointMove,))
+    with pytest.raises(ValueError, match='PointMove is a ledger model: it has no actions'):
+        Application(database, auth=auth, actions=(Action(PointMove, 'touch', 'Touch', lambda tx, user, row: None),))
