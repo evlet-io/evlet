@@ -182,6 +182,18 @@ export function measureText(index: SchemaIndex, model: ScreenModel, measure: Mea
   return field ? formatOf(field, value) : String(value);
 }
 
+/** The accents a list's measure cards take in turn: no measure declares its own colour. */
+export const MEASURE_TONES: Tint[] = ['blue', 'teal', 'violet', 'amber'];
+
+/** A measure card's icon by its function: a count, a sum of money or of numbers, a lowest or highest value. */
+export function measureIcon(model: ScreenModel, measure: MeasureSchema): string {
+  if (measure.function === 'count' || measure.function === 'count_distinct') return 'hash';
+  if (measure.function === 'min') return 'arrow-down';
+  if (measure.function === 'max') return 'arrow-up';
+  const field = !measure.model && measure.field ? fieldOf(model, measure.field) : undefined;
+  return field?.type === 'currency' ? 'wallet' : 'chart-column';
+}
+
 export const measureLabel = (measure: MeasureSchema) => measure.name.replace(/_/g, ' ').replace(/^./, char => char.toUpperCase());
 
 /** The record page tab id of a Meta.tabs name: a record tab keeps its name, a Table field's tab is t-<name>. */

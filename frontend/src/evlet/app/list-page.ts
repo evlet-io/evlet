@@ -30,7 +30,7 @@ import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
-import { fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureText, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
+import { fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureText, MEASURE_TONES, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
 import { recordId } from '../ids';
 
@@ -296,9 +296,10 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const toolbar = Toolbar({ label: `${model.plural} tools`, left: [search, FilterChips(filters, ctx.links)],
     right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
-  const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map(measure => ({
+  // Each measure is a card with an icon for its function; the accents take turns (no measure declares one).
+  const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map((measure, index) => ({
     label: measureLabel(measure), value: () => measureText(ctx.schema, model, measure, measures.get()?.[measure.name]),
-    note: measure.where ? 'Filtered by a rule' : undefined,
+    note: measure.where ? 'Filtered by a rule' : undefined, icon: measureIcon(model, measure), tone: MEASURE_TONES[index],
   }) as StatProps))) : null;
 
   // ---------- table ----------

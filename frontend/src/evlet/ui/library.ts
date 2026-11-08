@@ -12,7 +12,7 @@ import { formatMoney } from '../model/format';
 import catalog from './catalog.json';
 import {
   AddChip, Avatar, Button, Checkbox, Chip, CountBadge, Divider, EmptyState, FilterChip, Icon, IconButton, IconTile, InfoNote, Key, LinkButton, ProgressBar,
-  QuickAddInput, RecordMark, ScoreBars, SearchInput, SegmentedControl, Stat, StateBanner, StatusPill, SummaryStrip, Switch,
+  QuickAddInput, RecordMark, ScoreBars, SearchInput, SegmentedControl, Sparkline, StatCard, StateBanner, StatusPill, SummaryStrip, Switch,
 } from './base';
 import { ChildRows, ChildTable } from './childtable';
 import { SplitView } from './split';
@@ -45,7 +45,7 @@ export const ENTRIES: Entry[] = (() => {
   return [...withReference.slice(0, dates + 1), range, ...withReference.slice(dates + 1)];
 })();
 
-const WIDE = new Set(['data-table', 'summary-strip', 'tabs', 'toolbar', 'page-header', 'banner']);
+const WIDE = new Set(['data-table', 'summary-strip', 'stat', 'tabs', 'toolbar', 'page-header', 'banner']);
 const stack = (...items: Child[]) => html`<div class="lib-stack">${items}</div>`;
 const row = (...items: Child[]) => html`<div class="lib-row">${items}</div>`;
 
@@ -175,11 +175,14 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     'score-bars': () => row(ScoreBars({ score: 22 }), ScoreBars({ score: 56 }), ScoreBars({ score: 88 })),
     divider: () => row(Button({ label: 'Left', variant: 'ghost' }), Divider(), Button({ label: 'Right', variant: 'ghost' })),
     // display
-    stat: () => Stat({ label: 'Outstanding', value: 'AED 25,200', note: 'Due 16-12-2026' }),
+    stat: () => row(StatCard({ label: 'Outstanding', value: 'AED 25,200', note: 'Due 16-12-2026' }),
+      StatCard({ label: 'Pipeline', value: 'AED 1,150,000.00', icon: 'wallet', tone: 'blue', trend: [42, 48, 45, 61, 58, 72, 80], trendLabel: 'last 7 months' }),
+      StatCard({ label: 'Won deals', value: '18', tone: 'green', note: 'Filtered by a rule' })),
+    sparkline: () => row(Sparkline({ values: [3, 5, 4, 8, 6, 9, 12], tone: 'blue', label: 'Deals' }), Sparkline({ values: [9, 7, 8, 5, 6, 3], tone: 'rose', label: 'Overdue' }), Sparkline({ values: [4, 4, 4, 4], tone: 'teal', label: 'Flat' })),
     'summary-strip': onRecord(store => SummaryStrip([{ label: 'Total', value: () => formatMoney(store.field('total').value.get() as string), note: () => `${store.field('line_count').value.get()} lines` },
       { label: 'Issued', value: () => displayDate(store.field('issued').value.get()) }, { label: 'Due', value: () => displayDate(store.field('due').value.get()), note: 'From customer credit days' },
       { label: 'Stage', value: () => String(store.field('stage').value.get() ?? '') }]),
-    () => SummaryStrip([{ label: 'Total', value: 'AED 25,200' }, { label: 'Outstanding', value: 'AED 25,200', note: 'Not paid' }, { label: 'Due', value: '16-12-2026', note: 'In 45 days' }, { label: 'Payments', value: '0' }])),
+    () => SummaryStrip([{ label: 'Total', value: 'AED 25,200', icon: 'wallet', tone: 'blue' }, { label: 'Outstanding', value: 'AED 25,200', note: 'Not paid', icon: 'receipt', tone: 'teal' }, { label: 'Due', value: '16-12-2026', note: 'In 45 days', icon: 'calendar', tone: 'violet' }, { label: 'Payments', value: '0', icon: 'hash', tone: 'amber' }])),
     'kv-list': () => KeyValueList([f.select, f.currency, f.date], { save: () => true }),
     'empty-state': () => EmptyState({ icon: 'circle-check', tint: 'teal', title: 'No tasks', text: 'Add a follow-up so nothing slips.', action: Button({ label: 'Add task', icon: 'plus', size: 'small' }) }),
     banner: () => stack(StateBanner({ tone: 'neutral', title: 'Draft.', text: 'Everything can change. Issuing assigns the number and locks the invoice.' }),

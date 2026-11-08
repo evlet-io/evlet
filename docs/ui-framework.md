@@ -274,7 +274,7 @@ mark only.
 
 | Module | Components |
 |---|---|
-| `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, Stat, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
+| `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, StatCard (also exported as Stat), Sparkline, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
 | `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText` |
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type (RichTextField and RichTextView for rich text), `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
@@ -492,6 +492,50 @@ through `LinkSource.record()`, batched with Link titles (one list request per mo
 `currencyIn(meta, value)` with the row's values. An empty or unreadable source shows AED.
 
 The Link field's record mark is the 20 px `org-mark`; it never stretches.
+
+### Stat cards
+
+`StatCard` shows one number: a small muted label, a large value, and optionally a caption, an
+icon, an accent and a trend line. `SummaryStrip(stats)` puts up to four of them in a row that
+wraps: four across when there is room, never narrower than 180 px a card, two across on a phone.
+The list's measures and the record's summary strip both use it.
+
+```ts
+import { Sparkline, StatCard, SummaryStrip } from './evlet/ui';
+
+StatCard({
+  label: 'Budget',                   // small and muted
+  value: () => formatMoney(total.get()), // large; a string, accessor or cell
+  note: 'Filtered by a rule',         // optional caption under the value
+  empty: 'None',                      // optional muted text for an empty value
+  icon: 'wallet',                     // optional, on a tinted chip in the corner
+  tone: 'teal',                       // 'neutral' (the default) or a tint
+  trend: () => monthly.get(),         // optional numbers for a sparkline
+  trendLabel: 'last 6 months',        // optional, for the sparkline's spoken summary
+});
+SummaryStrip([{ label: 'Total', value: 'AED 25,200.00' }, { label: 'Lines', value: '4' }]);
+Sparkline({ values: [3, 5, 4, 9], tone: 'blue', label: 'Deals' }); // an SVG element, or null
+```
+
+- **Look.** The card uses the theme's surface, border and card radius (`--r-lg`), so it follows
+  light and dark themes. Colour stays small: the tone tints the icon chip and the trend line, or
+  draws a small dot before the label when there is no icon. The background never fills with colour.
+- **Tones.** `neutral`, `blue`, `green`, `amber`, `rose`, `violet`, `teal` and `slate`, the
+  names Select colours use. A tone sets `--stat-c` (the accent) and `--stat-bg` (the chip) on the
+  card; a stylesheet can set those two on `.stat-card` for its own accent. An unknown tone becomes
+  slate, so a class name is always safe.
+- **Trend.** `trend` takes numbers in order, oldest first. `Sparkline` draws a thin line with a
+  light area under it and a dot on the last point, with no axes. Values that are not finite numbers
+  are skipped, and with fewer than two left nothing is drawn. The line is an image with a spoken
+  summary, such as "Budget trend, last 6 months: 6 points, from 3 to 9, low 2, high 10"
+  (`trendSummary(values)` builds it). A reactive `trend` redraws when it changes.
+- **Measures on a list.** Each declared measure is a card with an icon for its function (`hash`
+  for a count, `wallet` for a sum of money, `chart-column` for another sum, `arrow-down` and
+  `arrow-up` for a lowest and a highest value). No measure declares a colour, so the cards take
+  blue, teal, violet and amber in turn. A measure with a `where` has the caption "Filtered by a
+  rule". There is no trend line yet: measures declare no trend.
+- **The record's summary strip** uses neutral cards with no icon, so the record header stays the
+  coloured part of the page.
 
 A screen composed by hand from a record store:
 
@@ -788,7 +832,7 @@ page in a new browser tab.
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
 | Unpost and repost | Offered from `_unpost` and `_repost` in the locked banner, the More menu and the unposted banner; Unpost asks for a reason, Repost takes an optional one |
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
-| `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
+| `Meta.measures` (Phase 9) | Model-level measures as stat cards over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
 | `Meta.key_fields` (Phase 10) | The header facts (the first three), and the Key fields side block while a tab other than Details is open (without it: the first fields). Never the summary strip |
 | Calculated fields, per-record measures | The summary strip, at most four: calculated values the header facts don't show, then per-record measures. No strip when nothing is left; `Meta.summary = False` turns it off |

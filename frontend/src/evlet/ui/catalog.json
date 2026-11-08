@@ -1510,7 +1510,7 @@
    "id": "sparkline",
    "name": "Sparkline",
    "level": "Element",
-   "desc": "Small trend line with an area and a marked last point.",
+   "desc": "Small trend line with an area and a marked last point. No axes; draws nothing under two numbers.",
    "props": [
     [
      "values",
@@ -1518,13 +1518,19 @@
      ""
     ],
     [
-     "tint",
+     "tone",
      "tint",
      ""
+    ],
+    [
+     "label",
+     "text",
+     "Spoken with a summary"
     ]
    ],
    "from": [],
    "used": [
+    "Stat cards",
     "KPI tiles"
    ],
    "variants": []
@@ -1591,9 +1597,9 @@
   {
    "cat": "display",
    "id": "stat",
-   "name": "Stat",
+   "name": "StatCard",
    "level": "Element",
-   "desc": "Label, value and a short note. The unit of the summary strip.",
+   "desc": "A number card: a muted label, a large value, an optional caption, icon, accent and trend line. The unit of the summary strip.",
    "props": [
     [
      "label",
@@ -1608,10 +1614,27 @@
     [
      "note",
      "text",
-     ""
+     "Caption under the value"
+    ],
+    [
+     "icon",
+     "icon name",
+     "On a tinted chip"
+    ],
+    [
+     "tone",
+     "tint or neutral",
+     "Neutral by default"
+    ],
+    [
+     "trend",
+     "list of numbers",
+     "Sparkline; none under two"
     ]
    ],
-   "from": [],
+   "from": [
+    "sparkline"
+   ],
    "used": [
     "Summary strip"
    ],
@@ -1622,7 +1645,7 @@
    "id": "summary-strip",
    "name": "SummaryStrip",
    "level": "Composite",
-   "desc": "Four stats in one bordered row. Values come from the model's measures.",
+   "desc": "Up to four stat cards in a row that wraps on narrow screens. Values come from the model's measures or the record's calculated fields.",
    "props": [
     [
      "stats",

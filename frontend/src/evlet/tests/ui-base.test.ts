@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cell } from '../reactive';
-import { Avatar, Button, Checkbox, Chip, EmptyState, Icon, IconButton, ProgressBar, SegmentedControl, StateBanner, StatusPill, Switch } from '../ui/base';
+import { Avatar, Button, Checkbox, Chip, EmptyState, Icon, IconButton, ProgressBar, SegmentedControl, Sparkline, StatCard, StateBanner, StatusPill, SummaryStrip, Switch, trendSummary } from '../ui/base';
 import { Menu, MenuButton, openDrawer, openModal, openPopover, toast } from '../ui/layers';
 import { tipText, tooltip } from '../ui/tooltip';
 import { cleanup, key, render, watch } from './ui-helpers';
@@ -223,5 +223,67 @@ describe('Modal, Drawer and Toast', () => {
       vi.advanceTimersByTime(200);
       expect(document.querySelectorAll('.toast')).toHaveLength(0);
     } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('StatCard, Sparkline and SummaryStrip', () => {
+  it('shows a muted label, the value, a caption, and an icon chip in its tone', () => {
+    const value = cell('AED 508,000.00');
+    const card = render(() => StatCard({ label: 'Budget', value, note: 'Filtered by a rule', icon: 'wallet', tone: 'teal' })).firstElementChild!;
+    expect(card.className).toBe('sum-t stat-card tone-teal');
+    expect(card.querySelector(':scope > span')!.textContent).toBe('Budget');
+    expect(card.querySelector('b')!.textContent).toBe('AED 508,000.00');
+    expect(card.querySelector('em')!.textContent).toBe('Filtered by a rule');
+    expect(card.querySelector('.stat-ic svg')!.getAttribute('aria-hidden')).toBe('true');
+    expect(card.querySelector('.stat-dot')).toBeNull();
+    value.set('AED 1.00');
+    expect(card.querySelector('b')!.textContent).toBe('AED 1.00');
+    expect(card.querySelector('b')!.getAttribute('title')).toBe('AED 1.00');
+  });
+
+  it('is neutral by default, keeps class names safe, and marks a tone without an icon with a dot', () => {
+    const plain = StatCard({ label: 'Projects', value: '7' });
+    expect(plain.className).toBe('sum-t stat-card');
+    expect(plain.querySelector('.stat-ic, .stat-dot, em, .stat-tr')).toBeNull();
+    expect(StatCard({ label: 'X', value: '1', tone: 'red<b>' as never }).className).toBe('sum-t stat-card tone-slate');
+    const dotted = StatCard({ label: 'Won', value: '3', tone: 'green' });
+    expect(dotted.querySelector('span > .stat-dot')).not.toBeNull();
+    expect(dotted.querySelector('span')!.textContent).toBe('Won');
+  });
+
+  it('draws a trend line from numbers, labelled with a summary, and nothing without data', () => {
+    const trend = cell<number[] | null>([3, 5, 4, 9]);
+    const card = render(() => StatCard({ label: 'Budget', value: '9', tone: 'blue', trend, trendLabel: 'last 4 months' })).firstElementChild!;
+    const svg = card.querySelector('.stat-tr svg.ev-spark')!;
+    expect(svg.namespaceURI).toBe('http://www.w3.org/2000/svg');
+    expect(svg.getAttribute('role')).toBe('img');
+    expect(svg.getAttribute('aria-label')).toBe('Budget trend, last 4 months: 4 points, from 3 to 9, low 3, high 9');
+    expect(svg.querySelectorAll('path')).toHaveLength(2);
+    expect(svg.querySelector('path.l')!.getAttribute('d')).toBe('M2 26 L32.67 18 L63.33 22 L94 2');
+    expect(svg.querySelector('path.a')!.getAttribute('d')).toMatch(/ L94 28 L2 28 Z$/);
+    expect(svg.querySelector('circle.p')!.getAttribute('cx')).toBe('94');
+    trend.set([7]);
+    expect(card.querySelector('svg.ev-spark')).toBeNull();
+    trend.set(null);
+    expect(card.querySelector('svg.ev-spark')).toBeNull();
+    trend.set([1, 2]);
+    expect(card.querySelector('svg.ev-spark')).not.toBeNull();
+  });
+
+  it('skips values that are not numbers, centres a flat line, and tints a standalone line', () => {
+    expect(Sparkline({ values: [] })).toBeNull();
+    expect(Sparkline({ values: [Number.NaN, 4] })).toBeNull();
+    const flat = Sparkline({ values: [4, Number.POSITIVE_INFINITY, 4, 4], tone: 'rose', width: 50, height: 20 })!;
+    expect(flat.getAttribute('class')).toBe('ev-spark c-rose');
+    expect(flat.getAttribute('viewBox')).toBe('0 0 50 20');
+    expect(flat.querySelector('path.l')!.getAttribute('d')).toBe('M2 10 L25 10 L48 10');
+    expect(flat.getAttribute('aria-label')).toBe('Trend: 3 points, from 4 to 4, low 4, high 4');
+    expect(trendSummary([1250.5, -3, 10])).toBe('3 points, from 1,250.5 to 10, low -3, high 1,250.5');
+  });
+
+  it('puts up to four cards in the summary strip', () => {
+    const strip = SummaryStrip([1, 2, 3, 4, 5].map(n => ({ label: `L${n}`, value: String(n) })));
+    expect(strip.className).toBe('sum');
+    expect(strip.querySelectorAll(':scope > .stat-card')).toHaveLength(4);
   });
 });
