@@ -154,6 +154,22 @@ class Context:
         self._active = [] if active is None else active
         self._recalculate = None  # (model, record_id) explicitly allowed to recalculate under the active plan.
         self._person = None  # (model, record_id) of the write a person sent over HTTP; Controls rules apply to it.
+        # Set only on the private copy a Move run method or an @action handler gets while it runs (handler_context).
+        self._session_open = False
+
+    @property
+    def session(self):
+        """The transaction session (evlet.Session) of the running move or action: trusted app code only.
+
+        Open only on the context a Move's run method or an @action handler gets as self.context while it
+        runs. Writes through it bypass row and field permissions and join the move or action's
+        transaction, so a failure anywhere rolls back the State, its Sequence number and every row written.
+        Every other context refuses it: business.context(), services, reports, jobs, and everything Eva,
+        assistants, tools, MCP and the connector reach."""
+        if not self._session_open:
+            raise AccessError(403, 'The transaction session is available only to a Move run method or an '
+                                   '@action handler, as self.context.session while it runs')
+        return self._tx
 
     def read_context(self):
         result = Context(self._business, self._tx, self.user, readonly=True, active=self._active, source=self.source, correlation_id=self.correlation_id)
@@ -1361,6 +1377,26 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
 
 
 @contextmanager
+def handler_context(context, draft):
+    """Give a Move run method or an @action handler its own copy of the context, with the transaction
+    session open, for as long as it runs. The caller's context (an HTTP route, a service, a tool) never
+    gets an open session, and the copy closes when the handler returns, even if the handler kept it."""
+    from copy import copy
+    inner = copy(context)  # Shares the transaction, the user and the recursion guard (_active).
+    inner._session_open = True
+    previous = draft.context
+    object.__setattr__(draft, 'context', inner)
+    try:
+        yield
+    finally:
+        inner._session_open = False
+        object.__setattr__(draft, 'context', previous)
+        for _, part in walk(draft):
+            if part.context is inner:
+                object.__setattr__(part, 'context', previous)
+
+
+@contextmanager
 def readonly_drafts(context, all_drafts):
     originals = [(part, part.context, part._readonly, part._values, part._rows) for _, part in all_drafts]
     for part, _, _, values, rows in originals:
@@ -1489,7 +1525,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     outcome = None
     if declared_move is not None:
         if declared_move.run is not None:
-            with trusted():
+            with trusted(), handler_context(context, draft):
                 outcome = getattr(model, declared_move.run)(draft)
     elif action is not None:
         method = getattr(model, action, None)
@@ -1497,7 +1533,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         if declaration is None or user.role not in declaration['roles']:
             raise AccessError(403, 'Action is unavailable')
         arguments = states.action_arguments(context, model, method, declaration, arguments, before)
-        with trusted():
+        with trusted(), handler_context(context, draft):
             outcome = method(draft, **arguments)
     elif before is not None:
         states.check_state_lock(context, draft, before)

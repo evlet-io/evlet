@@ -20778,7 +20778,61 @@
       },
       "child_only": false,
       "children": [],
-      "actions": [],
+      "actions": [
+        {
+          "name": "recognise",
+          "label": "Recognise",
+          "roles": [
+            "admin",
+            "editor"
+          ],
+          "guarded": false,
+          "available_when": null,
+          "inputs": [
+            {
+              "name": "points",
+              "type": "integer",
+              "required": true,
+              "unique": false,
+              "index": false,
+              "minimum": 1,
+              "maximum": 50,
+              "label": "Points",
+              "help_text": "",
+              "placeholder": "",
+              "hidden": false,
+              "read_only": false,
+              "default_kind": "none"
+            },
+            {
+              "name": "reason",
+              "type": "text",
+              "required": true,
+              "unique": false,
+              "index": false,
+              "max_length": 120,
+              "label": "Reason",
+              "help_text": "",
+              "placeholder": "",
+              "hidden": false,
+              "read_only": false,
+              "default_kind": "none"
+            }
+          ],
+          "arguments": [
+            {
+              "name": "points",
+              "type": "int",
+              "required": true
+            },
+            {
+              "name": "reason",
+              "type": "str",
+              "required": true
+            }
+          ]
+        }
+      ],
       "attachments": false,
       "journal": {
         "tamper_evident": true,

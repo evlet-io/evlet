@@ -28,6 +28,10 @@ UI_NAMES = ("Bind", "Button", "Card", "Column", "ComponentDefinition", "CustomCo
 SESSION = ("aggregate", "count", "create", "delete", "get", "insert_many", "list", "lock", "reserve_ids",
            "unlocked_periods", "update")
 
+# Members of the document context (`self.context` in model code) that only trusted handler code uses, which
+# is not exported itself: `session` is open only in a Move run method or an @action handler.
+CONTEXT = ("session",)
+
 # Methods and decorators apps call on exported names, beyond their constructors.
 MEMBERS = {"Model": ("to_dict", "validate"), "Child": ("to_dict", "validate"), "validate": ("confirm", "cancel"),
            "action": ("confirm", "cancel")}
@@ -67,6 +71,8 @@ def current():
             api["evlet"][f"{owner}.{name}"] = normalise(signature(getattr(getattr(evlet, owner), name)))
     from evlet.database import Session
     api["evlet.Session"] = {name: normalise(signature(getattr(Session, name))) for name in SESSION}
+    from evlet.documents import Context
+    api["evlet.Context"] = {name: type(inspect.getattr_static(Context, name)).__name__ for name in CONTEXT}
     # The options a model's Meta may declare, such as api and period.
     from evlet.ui.metadata import META_OPTIONS
     api["evlet"]["Model.Meta"] = f"options{sorted(META_OPTIONS)}"
@@ -77,7 +83,7 @@ def test_public_api_matches_snapshot():
     expected = json.loads(SNAPSHOT.read_text())
     actual = current()
     lines = []
-    for module in ("evlet", "evlet.fields", "evlet.ui"):
+    for module in ("evlet", "evlet.fields", "evlet.ui", "evlet.Session", "evlet.Context"):
         before, after = expected.get(module, {}), actual[module]
         for name in sorted(before.keys() - after.keys()):
             lines.append(f"  removed {module}.{name}")

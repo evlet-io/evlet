@@ -4,7 +4,10 @@ One set of tools serves every AI entry point: MCP clients (remote and `evlet mcp
 Eva when it arrives. Every tool call runs as the person, through the same routes and permission
 checks as the browser, and is checked again each time it runs. A tool listed earlier grants
 nothing. Tools never get database, SQL, file system or shell access, and never act as anyone
-else.
+else. The transaction session that a move's `run` method or an action handler gets
+(`self.context.session`) is refused on every context a tool reaches, services and reports
+included; a tool that runs an action runs the app's own handler
+([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 
 ## Tools
 

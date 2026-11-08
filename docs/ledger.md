@@ -99,6 +99,10 @@ with database.transaction() as tx:
   `run()` reads a ledger model through `self.context.aggregate` and `self.context.list`, which
   apply the person's `Rule(scope=...)` on the model, so declare `permissions` on a ledger model
   whose reports need row scopes ([reports.md](reports.md)).
+- A move's `run` method or an `@action` handler writes ledger rows through
+  `self.context.session`, its own transaction session, so the rows commit or roll back with the
+  move, its Sequence number and the record's changes
+  ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 
 ## Reserving ids (`tx.reserve_ids`)
 

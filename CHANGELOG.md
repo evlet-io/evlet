@@ -8,6 +8,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **`self.context.session` in run methods and actions.** A Move's `run` method and an `@action`
+  handler can write other rows, such as ledger rows, in the move or action's own transaction:
+  `self.context.session` is its `evlet.Session`, with `tx.lock`, `tx.insert_many`,
+  `tx.reserve_ids` and `tx.aggregate`. The State change, the Sequence number, the record's changes
+  and those rows commit together, and any failure rolls all of it back. It is trusted code that
+  bypasses row and field permissions. It is open only while the handler runs; every other context
+  refuses it with `AccessError` (403), including services, reports and everything Eva, assistants,
+  tools, MCP and the connector reach. Before, this needed a legacy `Action` and `tx.maintenance()`.
+  The Playground's Recognise action on an employee writes its Recognition ledger this way
+  ([docs/states-actions.md](docs/states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 - **`evlet setup` in one go.** `evlet setup myproject --app notes,crm --instance acme --dev` creates
   the project, apps and instance, installs the apps in dependency order and starts `evlet dev` on
   loopback. `--get URL,URL` fetches apps from Git with the `app --get` checks and trust question;

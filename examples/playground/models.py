@@ -1,7 +1,9 @@
 """A small consumer of Evlet's public API, not an accounting system."""
 
+from datetime import date
+
 from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Ref, Registry, RichText,
-                   Rule, Section, Select, Series, Text)
+                   Rule, Section, Select, Series, Sum, Text, ValidationError, action)
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
@@ -172,6 +174,44 @@ class Employee(Model):
     email = Text(max_length=254)
     reports_to = Link('employee', index=True, label='Reports to')
 
+    @action('Recognise', inputs={'points': Integer(required=True, minimum=1, maximum=50),
+                                 'reason': Text(required=True, max_length=120)})
+    def recognise(self, points, reason):
+        """Give recognition points: one row in the Recognition ledger, at most RECOGNITION_LIMIT a month each.
+
+        self.context.session is this action's own transaction, open only while the action runs. The lock
+        keeps two awards at once from both reading the same monthly total, the total counts rows written
+        earlier in this transaction, and a refusal rolls back everything the action wrote."""
+        tx = self.context.session
+        tx.lock(('recognition', self.id))
+        today = date.today()
+        given = tx.aggregate(Recognition, measures={'points': Sum('points')},
+                             filters={'employee': self.id, 'on_date__gte': today.replace(day=1)})
+        so_far = (given[0]['points'] if given else None) or 0
+        if so_far + points > RECOGNITION_LIMIT:
+            raise ValidationError({'points': f'Only {RECOGNITION_LIMIT - so_far} points are left this month'})
+        tx.insert_many(Recognition, [{'employee': self.id, 'on_date': today, 'reason': reason, 'points': points}])
+        return {'points_this_month': so_far + points}
+
+
+# Recognition points one employee may get in a calendar month.
+RECOGNITION_LIMIT = 100
+
+
+class Recognition(Model):
+    """Recognition points, one row per award. A ledger model: only the Recognise action on an employee
+    writes it, through its own transaction session, and the database refuses to change a row once written."""
+    class Meta:
+        ledger = True
+        append_only = True
+        timestamps = 'created'
+        indexes = [('employee', 'on_date')]
+
+    employee = Link(Employee, required=True)
+    on_date = Date(required=True)
+    reason = Text(default='', max_length=120)
+    points = Integer(required=True)
+
 
 class PointMove(Model):
     """Customer points, one row per award or spend. A ledger model: lean rows, no screens or routes, and the
@@ -203,4 +243,4 @@ class PointBalance(Model):
 # registry lists every Playground model; items.py links to customers by name, not by import.
 from .items import Item  # noqa: E402
 
-registry = Registry(Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item, Employee, PointMove, PointBalance)
+registry = Registry(Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item, Employee, PointMove, PointBalance, Recognition)

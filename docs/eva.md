@@ -3,7 +3,9 @@
 Eva is Evlet's built-in AI assistant. It runs on the Tool Engine ([tools.md](tools.md)), the one
 set of tools that Eva, MCP clients and the API share. Every tool call runs as the person, through the same routes
 and permission checks as the browser, and is checked again each time it runs. Eva never gets
-database, SQL, file system or shell access, and it never acts as anyone else.
+database, SQL, file system or shell access, and it never acts as anyone else. It never reaches
+the transaction session of a move or action handler (`self.context.session`) either; see
+[tools.md](tools.md).
 
 Eva is off by default. The framework works the same with no AI provider configured.
 

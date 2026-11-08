@@ -8,6 +8,8 @@ secrets and connector secrets (see [Controls](controls.md#connectors-and-secrets
 writing our own cipher is not an option. The connector calls the same authenticated HTTP routes used by
 the browser, so tenant, account, model, row, field, and action checks stay on the
 server. It has no database handle, arbitrary SQL, Python execution, or file tool.
+No context it reaches opens the transaction session of a move or action handler
+([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 The same tools are also served over HTTP at `/_/mcp` with OAuth sign-in; see
 [Remote MCP with OAuth](#remote-mcp-with-oauth).
 

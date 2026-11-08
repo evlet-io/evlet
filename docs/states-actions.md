@@ -216,6 +216,8 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   handlers) may create a record in the default state and may send the saved state back,
   but any other State change raises an error unless it runs inside `tx.maintenance()` for
   an audited repair. Legacy handlers should use `context.move()` or a model action instead.
+  A move's `run` method or a model action that must write other rows in the same transaction
+  uses `self.context.session` ([below](#the-transaction-session-in-run-methods-and-actions)).
 
 ## Moves
 
@@ -294,7 +296,8 @@ def record_payment(self, amount): ...
   `If-Match`. `context.action(Model, id, "name", **inputs)` does the same from Python.
 * Actions registered with `Action(...)` on `Application` keep working unchanged. They run
   as trusted code with the transaction and are not limited by a State lock, but they cannot
-  change the State itself outside `tx.maintenance()`.
+  change the State itself outside `tx.maintenance()`. To change the State and write other
+  rows in one transaction, declare a move with a `run` method that uses `self.context.session`.
 * An action changes Table rows through the draft: `self.lines[0].qty = 3` edits a row, and
   assigning a list replaces the rows, so `self.lines = [*self.lines, {"qty": "1", "rate": "2"}]`
   adds one. Rows already in the list keep their IDs; a dict is a new row, cleaned and
@@ -303,6 +306,58 @@ def record_payment(self, amount): ...
   `_outcome`, and the record view presents that slip next. See [slips.md](slips.md).
 * A `run` method or action that raises something other than a validation error rolls
   everything back and answers 500 `Internal server error`, without its message.
+
+## The transaction session in run methods and actions
+
+A move's `run` method and an `@action` handler change the record through `self`. When they must
+also write other rows in the same transaction, such as ledger rows that a move posts, they use
+`self.context.session`. It is the transaction session (`evlet.Session`, the `tx` of
+`database.transaction()`) of the move or action itself, with `tx.lock`, `tx.insert_many`,
+`tx.reserve_ids`, `tx.aggregate`, `tx.create` and the rest ([ledger.md](ledger.md)).
+
+```python
+class Transfer(Model):
+    item = Text(required=True)
+    origin = Text(default="store")
+    destination = Text(default="site")
+    quantity = Integer(default=1)
+    number = Sequence("TR{n:04}", assign_on="sent")
+    status = State(("draft", "sent"), default="draft",
+                   moves=(Move("draft", "sent", "Send", run="post_movements"),), locked=("sent",))
+
+    def post_movements(self):
+        tx = self.context.session
+        tx.lock(("place", self.item, self.origin))
+        held = tx.aggregate(Movement, measures={"quantity": Sum("quantity")},
+                            filters={"item": self.item, "place": self.origin})
+        if ((held[0]["quantity"] if held else None) or 0) < self.quantity:
+            raise ValidationError({"quantity": "Not enough on hand"})
+        tx.insert_many(Movement, [
+            {"transfer": self.id, "item": self.item, "place": self.origin, "quantity": -self.quantity},
+            {"transfer": self.id, "item": self.item, "place": self.destination, "quantity": self.quantity},
+        ])
+```
+
+* **One transaction.** The State change, the `run` method or action, the Sequence number, the
+  record's own changes and every row written through the session commit together. A failure
+  anywhere, in the method or after it (validation, a `changed()` hook, numbering), rolls all of
+  it back, and no Sequence number is used up. This holds when trusted code catches the failure
+  of `context.move()` or `context.action()` and its own transaction carries on.
+* **Trusted code.** Writes through the session bypass row and field permissions and Controls,
+  like any Python session ([AGENTS.md](../AGENTS.md): Python sessions and action handlers are
+  trusted code). The checks that decide whether the move or action may run at all are
+  unchanged: update permission and row scope, the roles of the move or action, guards and
+  `If-Match`.
+* **Only while the method runs.** The session is open only on the context the `run` method or
+  action handler gets as `self.context`, and only until it returns. A context kept past that
+  refuses it, and so do the rows' own `context` and `context.read_context()`.
+* **Nowhere else.** Every other context refuses it with `AccessError` (403):
+  `business.context()`, business services (`@api`), reports, cron functions, change hooks,
+  lifecycle handlers, and everything Eva, assistants, tools, MCP and the connector reach. Those
+  callers may still run an action or move they are allowed to: the app's own handler then gets
+  the session, never the caller.
+* Change the record being moved through `self`, not through the session. The session cannot
+  change the State either, outside `tx.maintenance()` for audited repairs.
 
 ## What the caller may do now
 
