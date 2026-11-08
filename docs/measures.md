@@ -68,7 +68,19 @@ calendar dates, so the server or user timezone never moves a record into another
 month or year. `DateTime` fields cannot be grouped by part, because a day depends on a
 timezone.
 
-`database.aggregate` is trusted: it applies no permissions. In request handlers,
+Inside a transaction, `tx.aggregate(...)` takes the same arguments and returns the same
+result, and it sees the transaction's own uncommitted writes:
+
+```python
+with database.transaction() as tx:
+    tx.create(Invoice, customer=4, total="10.00")
+    [row] = tx.aggregate(Invoice, measures={"amount": Sum("total")}, group_by="customer", filters={"customer": 4})
+```
+
+Use it in trusted code that checks a total before it writes, such as a job or a data step.
+It replaces calling `evlet.measures.aggregate(tx, ...)`, which is not public.
+
+`database.aggregate` and `tx.aggregate` are trusted: they apply no permissions. In request handlers,
 actions and services, use the permission-aware form on `Context`:
 
 ```python

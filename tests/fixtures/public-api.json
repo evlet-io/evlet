@@ -138,6 +138,19 @@
     "validate.cancel": "def(function=None, *, priority=0)",
     "validate.confirm": "def(function=None, *, priority=0)"
   },
+  "evlet.Session": {
+    "aggregate": "def(self, model, *, measures, group_by=(), filters=None)",
+    "count": "def(self, model, *, filters=None, search='')",
+    "create": "def(self, model, /, **values)",
+    "delete": "def(self, model, record_id)",
+    "get": "def(self, model, record_id)",
+    "insert_many": "def(self, model, rows)",
+    "list": "def(self, model, *, limit=50, offset=0, filters=None, order_by=None, search='')",
+    "lock": "def(self, *keys, timeout=None)",
+    "reserve_ids": "def(self, model, count)",
+    "unlocked_periods": "def(self, reason)",
+    "update": "def(self, model, record_id, /, **changes)"
+  },
   "evlet.fields": {
     "Field": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False, tracking='value', panel=True)"
   },

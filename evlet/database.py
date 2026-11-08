@@ -27,6 +27,21 @@ class ConflictError(ValueError):
     pass
 
 
+CONSTRAINT = 'A unique value or linked record constraint was violated'
+
+
+def conflict(registry, exc):
+    """The Evlet error for a database integrity failure, the same on SQLite and PostgreSQL: ValidationError
+    naming the fields of a unique Meta.indexes entry (evlet/indexes.py), ConflictError for a write an
+    append-only table refuses (evlet/ledger.py), and ConflictError for any other unique or foreign key."""
+    from .indexes import violated
+    diag = getattr(exc, 'diag', None)
+    text = (diag.message_primary or '') if diag is not None else str(exc)
+    if text.endswith(' ' + ledger.APPEND_ONLY):
+        return ConflictError(f'{text}: its rows are never changed or deleted')
+    return violated(registry, exc) or ConflictError(CONSTRAINT)
+
+
 @contextmanager
 def using(database):
     """Make a database's Layer (its instance fields and added options) active. Nested uses of the same
@@ -111,7 +126,7 @@ class Database:
                 connection.commit()
             except sqlite3.IntegrityError as exc:
                 connection.rollback()
-                raise ConflictError("A unique value or linked record constraint was violated") from exc
+                raise conflict(self.registry, exc) from exc
             except BaseException:
                 connection.rollback()
                 raise
@@ -173,6 +188,10 @@ class Database:
     def check(self):
         with self._connection() as connection:
             connection.execute("SELECT 1").fetchone()
+
+
+# The most ids one tx.reserve_ids call hands out.
+RESERVE_LIMIT = 100_000
 
 
 def ledger_id(value):
@@ -259,6 +278,8 @@ class Session:
         # Period locks read once per transaction, and whether unlocked_periods() is active (evlet/periods.py).
         self._period_locks = None
         self._periods_unlocked = False
+        # Ledger ids tx.reserve_ids handed out and insert_many has not used yet, as {model: {id}}.
+        self._reserved = {}
 
     @contextmanager
     def maintenance(self):
@@ -402,8 +423,9 @@ class Session:
     def insert_many(self, model, rows):
         """Insert rows of a ledger model with one prepared statement and return their ids, in order.
 
-        Each row is a dict of field values, validated like a create. Timestamps are filled, closed periods
-        are checked, and a journaled model gets one `created` entry per row."""
+        Each row is a dict of field values, validated like a create. A row may also give an `id` that
+        tx.reserve_ids returned in this transaction, so rows of one batch can link to each other. Timestamps
+        are filled, closed periods are checked, and a journaled model gets one `created` entry per row."""
         model = self._ledger(model, 'insert_many')
         if isinstance(rows, (str, bytes, dict)):
             raise ValidationError({'rows': 'Use a list of rows, each a dict of field values'})
@@ -413,11 +435,23 @@ class Session:
         table = identifier(self.registry.name_for(model))
         stamps = {key: ledger.now() for key in ('created_at', 'modified_at') if key in model.__fields__}
         names = list(model.__fields__)
-        records, stored = [], []
+        records, stored, given = [], [], []
+        reserved = self._reserved.get(model, set())
         for index, values in enumerate(rows):
             if not isinstance(values, dict):
                 raise ValidationError({'rows': f'Row {index + 1} is not a dict of field values'})
             refuse_timestamps(model, values)
+            values = dict(values)
+            row_id = values.pop('id', None)
+            if row_id is not None:
+                try:
+                    row_id = ledger_id(row_id)
+                except ValueError as exc:
+                    raise ValidationError({'id': f'Row {index + 1}: {exc}'}) from None
+                if row_id not in reserved or row_id in given:
+                    raise ValidationError({'id': f'Row {index + 1}: id {row_id} was not reserved with tx.reserve_ids in this '
+                                                 'transaction, or is used twice'})
+            given.append(row_id)
             record = model(**values, **stamps)
             periods.check(self, model, after=record._values)
             records.append(record)
@@ -425,7 +459,19 @@ class Session:
         columns = storage_columns(model, records[0]._values, names)[0]
         sql = f'INSERT INTO {table} ({", ".join(identifier(name) for name in columns)}) VALUES ({", ".join("?" for _ in columns)})' \
             if columns else f'INSERT INTO {table} DEFAULT VALUES'
-        if isinstance(self.connection, sqlite3.Connection):
+        if any(row_id is not None for row_id in given):
+            # Reserved ids are below the table's next id, so rows without one still take new ids.
+            named = ', '.join(identifier(name) for name in ('id', *columns))
+            with_id = f'INSERT INTO {table} ({named}) VALUES ({", ".join("?" for _ in range(len(columns) + 1))})'
+            ids = []
+            for row_id, values in zip(given, stored):
+                if row_id is None:
+                    ids.append(self.connection.execute(sql, values).lastrowid)
+                else:
+                    self.connection.execute(with_id, [row_id, *values])
+                    ids.append(row_id)
+            reserved.difference_update(given)
+        elif isinstance(self.connection, sqlite3.Connection):
             # One writer at a time (BEGIN IMMEDIATE) and AUTOINCREMENT ids: the rows take the next ids in order.
             self.connection.executemany(sql, stored)
             last = self.connection.execute('SELECT last_insert_rowid()').fetchone()[0]
@@ -435,6 +481,32 @@ class Session:
         if model in getattr(self.registry, 'journals', {}):
             for record_id, record in zip(ids, records):
                 self._ledger_journal(model, record_id, 'created', None, record)
+        return ids
+
+    def reserve_ids(self, model, count):
+        """Reserve `count` new ids of a ledger model and return them in increasing order, so rows inserted in
+        this transaction can name each other (or themselves) before insert_many stores them with those ids.
+
+        Rows inserted later without an id never take a reserved one. On SQLite the ids follow the table's last
+        id, under the write transaction (BEGIN IMMEDIATE), and a rollback returns them. On PostgreSQL they come
+        from the table's identity sequence (nextval), so they may have gaps and a rollback leaves a gap."""
+        model = self._ledger(model, 'reserve_ids')
+        if type(count) is not int or not 1 <= count <= RESERVE_LIMIT:
+            raise ValidationError({'count': f'Use an integer between 1 and {RESERVE_LIMIT}'})
+        table = self.registry.name_for(model)
+        if isinstance(self.connection, sqlite3.Connection):
+            if not self.connection.in_transaction:
+                raise ValueError('tx.reserve_ids works inside database.transaction()')
+            row = self.connection.execute('SELECT seq FROM sqlite_sequence WHERE name = ?', (table,)).fetchone()
+            top = max(row[0] if row else 0, self.connection.execute(f'SELECT coalesce(max("id"), 0) FROM {identifier(table)}').fetchone()[0])
+            if row is None:
+                self.connection.execute('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)', (table, top + count))
+            else:
+                self.connection.execute('UPDATE sqlite_sequence SET seq = ? WHERE name = ?', (top + count, table))
+            ids = list(range(top + 1, top + count + 1))
+        else:
+            ids = self.connection.reserve(table, count)
+        self._reserved.setdefault(model, set()).update(ids)
         return ids
 
     def _ledger(self, model, operation):
@@ -511,6 +583,12 @@ class Session:
             raise ValidationError({field_name: 'Expected a Link field'})
         record_id = getattr(record, field_name)
         return None if record_id is None else self.get(field.target, record_id)
+
+    def aggregate(self, model, *, measures, group_by=(), filters=None):
+        """Exact aggregates inside this transaction, so they see its uncommitted writes; the same arguments
+        and result as Database.aggregate (docs/measures.md). Trusted: no permissions apply."""
+        from .measures import aggregate
+        return aggregate(self, model, measures, group_by, filters)
 
     def count(self, model, *, filters=None, search=""):
         table = identifier(self.registry.name_for(model))

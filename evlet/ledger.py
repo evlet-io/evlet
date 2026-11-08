@@ -12,7 +12,7 @@ times, no public surface). It computes nothing; rows are stored as given.
             ledger = True
             append_only = True          # database triggers refuse UPDATE and DELETE
             timestamps = None           # "created", "modified" or "both"
-            indexes = [("member",)]     # composite and unique indexes
+            indexes = [("member",)]     # composite and unique indexes, as on any model
 
 This module checks the declaration when the class is created, describes the options for the saved
 schema, and holds the append-only triggers and the lock keys. Session (evlet/database.py) does the
@@ -29,8 +29,8 @@ FIELD_TYPES = ('Text', 'Integer', 'Decimal', 'Currency', 'Percent', 'Boolean', '
 # Meta options a ledger model may set; every other option belongs to records and their screens.
 META = frozenset(('ledger', 'append_only', 'journal', 'timestamps', 'indexes', 'period', 'period_scope', 'api', 'measures',
                   'label', 'description'))
-# Meta options that only a ledger model may set.
-LEDGER_ONLY = ('append_only', 'timestamps', 'indexes')
+# Meta options that only a ledger model may set (Meta.indexes is for every model, evlet/indexes.py).
+LEDGER_ONLY = ('append_only', 'timestamps')
 TIMESTAMPS = (None, 'created', 'modified', 'both')
 TIMESTAMP_FIELDS = ('created_at', 'modified_at')
 # Field options a ledger field may not use: calculations, rules and options that only screens read.
@@ -137,35 +137,9 @@ def check_class(name, namespace, bases, fields, tables, sources):
             raise ValueError(f'{name}.{key}: Select colors are a screen option; a ledger model has no screens')
         if field.default is types.CurrentUser:
             raise ValueError(f'{name}.{key}: default=CurrentUser needs a signed-in person; trusted code writes ledger rows')
-    indexes = normalize_indexes(name, option(meta, 'indexes', ()), {**fields, **timestamp_fields(timestamps)})
+    from .indexes import normalize
+    indexes = normalize(name, option(meta, 'indexes', ()), {**fields, **timestamp_fields(timestamps)})
     return append_only, timestamps, indexes
-
-
-def normalize_indexes(name, value, fields):
-    """Meta.indexes as a tuple of (field names, unique). An entry is a tuple of field names, or
-    (field names, {"unique": True})."""
-    if not isinstance(value, (list, tuple)):
-        raise ValueError(f'{name}: Meta.indexes is a list such as [("member", "on_date"), (("member",), {{"unique": True}})]')
-    result = []
-    for entry in value:
-        unique = False
-        if isinstance(entry, (list, tuple)) and len(entry) == 2 and isinstance(entry[0], (list, tuple)) and isinstance(entry[1], dict):
-            entry, extra = entry
-            if set(extra) - {'unique'} or type(extra.get('unique', False)) is not bool:
-                raise ValueError(f'{name}: Meta.indexes options are {{"unique": True or False}}')
-            unique = extra.get('unique', False)
-        if not isinstance(entry, (list, tuple)) or not entry or any(not isinstance(key, str) for key in entry):
-            raise ValueError(f'{name}: each Meta.indexes entry names one or more fields, such as ("member", "on_date")')
-        if len(set(entry)) != len(entry):
-            raise ValueError(f'{name}: Meta.indexes entry {tuple(entry)} names a field twice')
-        for key in entry:
-            if key not in fields:
-                raise ValueError(f'{name}: Meta.indexes names {key}, which is not a field of the model')
-        item = (tuple(entry), unique)
-        if any(other[0] == item[0] for other in result):
-            raise ValueError(f'{name}: Meta.indexes lists {tuple(entry)} twice')
-        result.append(item)
-    return tuple(result)
 
 
 def schema(model):
@@ -173,13 +147,8 @@ def schema(model):
     (created_at, modified_at), so they are not repeated here."""
     if not is_ledger(model):
         return None
-    return {'append_only': model.__append_only__,
-            'indexes': [{'fields': list(fields), 'unique': unique} for fields, unique in model.__indexes__]}
-
-
-def indexes_of(entry):
-    """(fields, unique) pairs from a saved schema's ledger entry."""
-    return {(tuple(item['fields']), item['unique']) for item in (entry or {}).get('indexes', ())}
+    from .indexes import schema as index_schema
+    return {'append_only': model.__append_only__, 'indexes': index_schema(model)}
 
 
 def now():
@@ -201,7 +170,7 @@ def add_triggers(connection, postgres, table):
     quoted, message = identifier(table), f'{table} {APPEND_ONLY}'
     if postgres:
         connection.execute("CREATE OR REPLACE FUNCTION evlet_ledger_append_only() RETURNS trigger LANGUAGE plpgsql AS "
-                           f"$$ BEGIN RAISE EXCEPTION '% {APPEND_ONLY}', TG_TABLE_NAME; END $$")
+                           f"$$ BEGIN RAISE EXCEPTION '% {APPEND_ONLY}', TG_TABLE_NAME USING ERRCODE = 'integrity_constraint_violation'; END $$")
         present = {row[0] for row in connection.execute(
             'SELECT tgname FROM pg_trigger WHERE tgrelid = ?::regclass AND NOT tgisinternal', (quoted,))}
         if 'evlet_append_only' not in present:

@@ -139,6 +139,13 @@ class ModelType(type):
         cls.__ledger__ = ledger
         if ledger:
             cls.__append_only__, cls.__timestamps__, cls.__indexes__ = ledger_options
+        elif getattr(cls, '__row__', False) and '__internal_fields__' not in namespace and 'evlet_position' not in fields:
+            # A Child row class gets its owner field when a Table registers it, so its entries may name that
+            # field; the generated row class checks them (evlet/indexes.py).
+            cls.__indexes__ = ()
+        else:
+            from .indexes import normalize
+            cls.__indexes__ = normalize(name, getattr(meta, 'indexes', ()) if meta is not None else (), fields)
         if revisable:
             fields['revises'].target = cls
             unique_and_required(name, fields, tables)
@@ -452,12 +459,13 @@ class Registry:
 
     def schema(self):
         """The stored schema app migrations work from. Instance fields (x_) belong to Controls, not to it."""
+        from .indexes import entry as index_entry
         from .ledger import schema as ledger_schema
         return {"version": 1, "models": [
             {"name": name, "label": model.__name__,
              "fields": [field.metadata() for field in model.__app_stored__.values() if not standard(field)],
-             # Ledger models record their options; normal models keep the entry they always had.
-             **({"ledger": ledger_schema(model)} if ledger_schema(model) is not None else {})}
+             # Ledger models record their options; normal models add Meta.indexes only when they declare some.
+             **({"ledger": ledger_schema(model)} if ledger_schema(model) is not None else index_entry(model))}
             for name, model in self.models.items()
         ]}
 

@@ -17,11 +17,32 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   prints the `sudo` steps; `--apply` runs them, showing each first. `--dev` and `--host` cannot be
   combined. A failed step is named, and running the same command again skips finished steps.
   Without the new options `evlet setup` is unchanged ([docs/cli.md](docs/cli.md#setup-in-one-go)).
+- **Composite and unique indexes on normal models.** `Meta.indexes` now works on every model, with
+  the ledger form: `[(("station", "on_date", "kind"), {"unique": True}), ("on_date",)]`. The
+  database enforces a unique entry on SQLite and PostgreSQL, and a write that breaks it raises
+  `ValidationError` on the entry's fields (HTTP 422). A `Child` row can name its owner field for a
+  value unique per record. The entries are part of the saved schema and the startup check, and
+  `AddIndex(table, ("a", "b"), unique=True)` adds one. Models without `Meta.indexes` are unchanged
+  ([docs/model-engine.md](docs/model-engine.md#composite-and-unique-indexes)).
+- **`tx.aggregate(...)`.** The transaction session runs the same exact aggregates as
+  `database.aggregate`, with the same arguments, limits and result, and sees the transaction's own
+  writes. Use it instead of the internal `evlet.measures.aggregate(tx, ...)`
+  ([docs/measures.md](docs/measures.md#ad-hoc-aggregates-in-python)).
+- **Ledger ids.** A ledger `Meta.indexes` entry may name `id`, such as `("serial", "id")`.
+  `tx.reserve_ids(model, count)` reserves ids so the rows of one `insert_many` batch can link to
+  each other or to themselves; `insert_many` and `tx.create` take a reserved `id`. On SQLite a
+  rollback hands the ids back; on PostgreSQL they come from the identity sequence and a rollback
+  leaves a gap ([docs/ledger.md](docs/ledger.md#reserving-ids-txreserve_ids)).
 - `Naming(..., label="Project number")` labels the standard `name` field for the model's domain on
   the form, in list columns, filters, search and the schema
   ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".
 
 ### Fixed
+
+- A raw `UPDATE` or `DELETE` that an append-only ledger table refuses raises `ConflictError` with
+  the message `<table> is append only: its rows are never changed or deleted` on SQLite and
+  PostgreSQL. PostgreSQL raised a generic database error before. New PostgreSQL triggers raise an
+  integrity error; ones made by 0.3 are recognised too, so no migration is needed.
 
 - Records with text ids show their move and action buttons again. The browser client now reads
   record details from paths with a text id, so allowed moves are no longer refused.

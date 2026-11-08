@@ -52,6 +52,46 @@ class Contact(Model):
   `ValidationError({"field": "message"})`. Both creation and updates run validation.
   Records remain immutable snapshots; change them through the database API.
 
+### Composite and unique indexes
+
+`Meta.indexes` declares indexes over one or more fields, the same way on normal and ledger models.
+An entry is a tuple of field names, or the tuple with `{"unique": True}`:
+
+```python
+class Sample(Model):
+    station = Link(Station, required=True)
+    on_date = Date(required=True)
+    kind = Select(("spot", "average"), default="spot")
+
+    class Meta:
+        indexes = [(("station", "on_date", "kind"), {"unique": True}), ("on_date",)]
+
+
+class Part(Child):
+    code = Text(max_length=20, required=True)
+
+    class Meta:
+        indexes = [(("evlet_owner", "code"), {"unique": True})]  # a code once per record
+```
+
+- The database enforces a unique entry, on SQLite and PostgreSQL. A create or update that breaks
+  one raises `ValidationError` with the same message on each of the entry's fields, such as
+  `Another record already has the same station, on date and kind`. HTTP answers 422 with those
+  field errors, as for any validation error. Rows that leave any of the fields empty (null) never
+  clash.
+- An entry names stored fields with one column each, and may name the row `id`. A `Reference`
+  (two columns) and `RichText` are refused, with a message naming the field. On PostgreSQL an
+  indexed `Text` needs `max_length` of 500 or less, as for `index=True`.
+- A `Child` row names its owner field, `evlet_owner` unless `Table(..., owner_field=...)` says
+  otherwise, to make a value unique per record. Its error says `Another row of this record
+  already has the same code` and is reported on the row's own fields.
+- A single field can still take `index=True` or `unique=True`. A plain `unique=True` field keeps
+  its `ConflictError` (409 over HTTP).
+- The saved schema records the entries, and the startup check compares them with the database:
+  a missing index is a `SchemaError`. A model without `Meta.indexes` saves the same definition as
+  before. `AddIndex("sample", ("station", "on_date", "kind"), unique=True)` adds an entry to an
+  existing table, and `evlet migrate --plan` suggests it.
+
 ### More field types
 
 ```python
@@ -445,7 +485,8 @@ document.
 `Meta.ledger = True` makes a lean model for high-volume rows that trusted Python writes, such as
 movements and balances: an integer `id` the database assigns, the declared columns and nothing
 else, no public surface, and optional `append_only`, `journal`, `timestamps`, `indexes` and
-`period`. Transactions also take named locks on business keys with `tx.lock(...)`. See
+`period`. Transactions also take named locks on business keys with `tx.lock(...)`, and reserve
+ledger ids with `tx.reserve_ids(model, count)` so the rows of one batch can link to each other. See
 [ledger.md](ledger.md).
 
 ## Closed periods
@@ -515,7 +556,8 @@ explicitly before startup, using the complete history including the new steps.
 The current model definitions must describe the target schema, including
 `display_name = Text(...)`, `active = Boolean(required=True)`, and
 `index=True` on `display_name`. `CreateModel(HistoricalModel)` adds a model;
-`AddIndex(..., unique=True)` adds a uniqueness constraint. Keep historical field
+`AddIndex(..., unique=True)` adds a uniqueness constraint, and `AddIndex(table, ("a", "b"),
+unique=True)` adds a [`Meta.indexes`](#composite-and-unique-indexes) entry. Keep historical field
 and model definitions in migration files unchanged. Do not point an old
 `CreateModel` operation at a model definition that will keep changing.
 Migrations compare stored fields only, so a frozen class may have any Python name:

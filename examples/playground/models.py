@@ -143,6 +143,9 @@ class ProjectTask(Model):
         label = 'Project task'
         plural = 'Project tasks'
         list_fields = ('title', 'done')
+        # A composite index for "open tasks of a project" (docs/model-engine.md#composite-and-unique-indexes);
+        # (fields, {"unique": True}) would make the pair unique.
+        indexes = [('project', 'done')]
 
     project = Link(Project, required=True, index=True)
     title = Text(required=True, max_length=160)
