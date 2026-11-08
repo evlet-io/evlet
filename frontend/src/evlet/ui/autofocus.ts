@@ -27,6 +27,17 @@ export function initialFocusField(model: { name: string }, layout: FocusSection[
   return null;
 }
 
+/**
+ * A form's sections in the order a declared record layout shows them on the tab a new record opens on:
+ * `shown` is the section labels of that tab (or of the layout's blocks without Tabs), in order. Sections it
+ * does not name are left out; without a layout, or when it names none of them, the form's own order stays.
+ */
+export function layoutFocusOrder<S extends { label: string }>(sections: readonly S[], shown: readonly string[] | null): S[] {
+  if (!shown) return [...sections];
+  const ordered = shown.flatMap(label => sections.filter(section => section.label === label));
+  return ordered.length ? ordered : [...sections];
+}
+
 function takesFocus(field: FieldLike): boolean {
   const meta = field.meta;
   if (meta.hidden || meta.read_only || field.calculated || (meta.compute !== null && meta.compute !== undefined)) return false;

@@ -454,7 +454,9 @@ and a record opens on its default tab, which the address then leaves out (`?tab=
 A new record (the full page `/app/<model>/new` and the side panel) and a slip focus their first
 editable field when they open, so typing can start at once. The field is the first one in screen
 order that shows and can be edited: read-only, calculated, hidden and locked fields are skipped, and
-so are the fields of a closed section and of a tab other than Details. The rules:
+so are the fields of a closed section and of a tab other than Details. With a declared record layout
+(`Meta.layout`), the form opens on the layout's first Tab and the order is the order of the sections
+that Tab shows (or of the layout's blocks when it has no Tabs). The rules:
 
 - An existing record never takes the focus on open, so keys and scrolling stay where they were.
 - Touch devices (no hover, or a coarse pointer) skip it, so the on-screen keyboard does not open.

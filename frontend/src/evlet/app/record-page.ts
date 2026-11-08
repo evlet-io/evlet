@@ -15,7 +15,7 @@ import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote,
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
 import { displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
-import { autofocusForm, initialFocusField } from '../ui/autofocus';
+import { autofocusForm, initialFocusField, layoutFocusOrder } from '../ui/autofocus';
 import { flowGrid, FoldSection, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
 import { NoteComposer } from './composer';
 import { FormSection, KeyValueList } from '../ui/inline';
@@ -803,9 +803,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   const side = isNew || panel ? undefined : SidePanel(ctx, model, store, view, relatedSide ? relations : [], related, active, null, formTabs);
 
-  // A new record focuses its first editable field, in an open section of the Details tab: when it opens, and
-  // again once its draft is restored or set aside (the restore bar held the focus).
-  const focusFirst = (before?: Element | null) => onCleanup(autofocusForm(frame, () => active.peek() !== 'details' ? null : initialFocusField(model, panelSections().map((section, index) => {
+  // A new record focuses its first editable field, in an open section of the tab it opens on (Details, or the first
+  // layout Tab): when it opens, and again once its draft is restored or set aside (the restore bar held the focus).
+  const formTab = firstTab(), focusTab = formTab ? layoutTabId(formTab) : 'details';
+  const shownSections = () => !layout ? null : (layoutTabs ? formTab ? tabBlocks(formTab.blocks, true) : [] : tabBlocks(layout.blocks ?? [], true)).flatMap(block => block.kind === 'section' ? [block.label] : []);
+  const focusFirst = (before?: Element | null) => onCleanup(autofocusForm(frame, () => active.peek() !== focusTab ? null : initialFocusField(model, layoutFocusOrder(panelSections(), shownSections()).map(section => {
+    // The index the section is drawn with: among all sections in a layout, among the shown ones on Details.
+    const index = (layout ? sections(model) : panelSections()).findIndex(group => group.label === section.label);
     const fields = section.fields.filter(meta => !isStateField(model, meta)).map(meta => view(meta.name)), fold = foldOf(section, index);
     return { fields, open: !fold.collapsible || untrack(() => folds.open(section.label, folds.start(fold.collapsed, index, fields)).get()) };
   })), before));

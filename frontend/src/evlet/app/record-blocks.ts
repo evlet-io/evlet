@@ -8,7 +8,7 @@ import { html, when, type Child } from '../dom';
 import { ApiError, type RecordData } from '../api';
 import { batch, cell, effect, untrack, type Readable } from '../reactive';
 import type { FieldSchema, LayoutBlock, LayoutCondition, LayoutTab, RecordLayout } from '../model/schema';
-import { IconButton } from '../ui/base';
+import { IconButton, StatCard } from '../ui/base';
 import { plotChart } from '../ui/chart';
 import { RichTextView } from '../ui/fields';
 import { humanize } from '../ui/kinds';
@@ -226,7 +226,7 @@ export function MeasureChart(ctx: AppContext, block: ChartBlock, record: BlockRe
     if (rows === null) return html`<p class="muted ev-block-note" role="status">Loading…</p>`;
     if (block.type === 'stat') {
       const row = rows[0] ?? {};
-      return html`<dl class="ev-stats">${measures.map(item => html`<div class="ev-stat"><dt>${measureLabel(item)}</dt><dd class="num">${value(row, item.name)}</dd></div>`)}</dl>`;
+      return html`<div class="sum">${measures.map(item => StatCard({ label: measureLabel(item), value: value(row, item.name) }))}</div>`;
     }
     if (!rows.length) return html`<p class="ev-related-empty">Nothing to chart yet.</p>`;
     const host = html`<div class="ev-report-chart-plot"></div>` as HTMLElement;

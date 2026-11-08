@@ -1,7 +1,7 @@
 // Autofocus on forms that start empty (docs/ui.md, New records): a new record and a slip focus their first
 // editable field; an existing record, a touch device and a focus moved elsewhere are left alone.
 import { afterEach, describe, expect, it } from 'vitest';
-import { autofocusForm, initialFocusField } from '../ui/autofocus';
+import { autofocusForm, initialFocusField, layoutFocusOrder } from '../ui/autofocus';
 import { localField } from '../ui/fields';
 import { DEFAULT_LIMITS } from '../app/unsaved';
 import { adminRoutes, byText, click, recorded, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
@@ -18,6 +18,17 @@ const text_ = (name: string, meta: Record<string, unknown> = {}, rules = {}) => 
 const model = { name: 'thing' };
 const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 const focusedField = () => document.activeElement?.closest('[data-field]')?.getAttribute('data-field') ?? null;
+
+describe('layoutFocusOrder', () => {
+  const sections = [{ label: 'A' }, { label: 'B' }, { label: 'C' }];
+  it('orders sections as the layout shows them and leaves out the others', () => {
+    expect(layoutFocusOrder(sections, ['C', 'A']).map(section => section.label)).toEqual(['C', 'A']);
+  });
+  it('keeps the form order without a layout or when it names none of them', () => {
+    expect(layoutFocusOrder(sections, null).map(section => section.label)).toEqual(['A', 'B', 'C']);
+    expect(layoutFocusOrder(sections, ['Z']).map(section => section.label)).toEqual(['A', 'B', 'C']);
+  });
+});
 
 describe('initialFocusField', () => {
   it('picks the first field that shows and can be edited', () => {

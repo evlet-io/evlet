@@ -280,7 +280,7 @@ mark only.
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type (RichTextField and RichTextView for rich text), `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
-| `autofocus.ts` | `initialFocusField`, `autofocusForm` ([focus on new forms](ui.md#focus-on-new-forms)) |
+| `autofocus.ts` | `initialFocusField`, `layoutFocusOrder`, `autofocusForm` ([focus on new forms](ui.md#focus-on-new-forms)) |
 | `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)), `flowGrid` (rows or columns) |
 | `draglist.ts` | `dragList(root, { kind, move, label, zoneLabel })`: reorder by mouse, touch or keyboard, with announcements |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
@@ -653,7 +653,9 @@ mount(document.querySelector('#app')!, () => DocFrame({
   where a model's own choice will plug in; nothing is read from it yet. **autofocusForm(root, choose,
   before)** focuses that field's control once `root` is on the page, except on a touch device
   (`keyboardFirst()` in `core.ts`) or when the focus moved away from `before` while the form loaded.
-  The record page uses both for new records and slips use them on open ([focus on new forms](ui.md#focus-on-new-forms)).
+  **layoutFocusOrder(sections, shown)** puts a form's sections in the order a declared record layout
+  shows them on its first Tab (`shown` is their labels), keeping the form order when there is no layout.
+  The record page uses all three for new records and slips use the first two on open ([focus on new forms](ui.md#focus-on-new-forms)).
 - Popovers anchor to their button and close on Esc or an outside click. `openPopover(anchor, render,
   { align: 'side' })` places the panel beside the anchor on its right, top edges level (the Workspace
   card), and below it when there is no room; `'left'` lines up the left edges and `'auto'` (the

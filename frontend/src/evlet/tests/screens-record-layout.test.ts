@@ -65,7 +65,7 @@ describe('a declared record layout', () => {
     expect(asked.map(filtersOf)).toEqual([[['site', 'eq', site]], [['site', 'eq', site]]]);
     expect(asked.map(item => new URL(item.url, 'http://127.0.0.1').searchParams.get('measures'))).toEqual(['hours,jobs', 'hours']);
     // The stat numbers are the aggregate route's.
-    expect([...host.querySelectorAll('.ev-chart-stat .ev-stat')].map(stat => `${text(stat.querySelector('dt'))} ${text(stat.querySelector('dd'))}`)).toEqual(['Hours 25.0000', 'Jobs 4']);
+    expect([...host.querySelectorAll('.ev-chart-stat .stat-card')].map(stat => `${text(stat.querySelector('span'))} ${text(stat.querySelector('b'))}`)).toEqual(['Hours 25.0000', 'Jobs 4']);
     // The bar chart draws one bar per status, named for screen readers.
     const bars = host.querySelector('.ev-chart-bar svg[role="img"]')!;
     expect(bars.getAttribute('aria-label')).toBe('Hours by status chart');
@@ -141,5 +141,32 @@ describe('record layout filters', () => {
     const job = ctx.schema.model('job');
     expect(viewAllHref(ctx, job, [['site', 'eq', site], ['status', 'eq', 'open']])).toBe(`/app/job?f=${JSON.stringify([['site', 'eq', site], ['status', 'in', ['open']]])}`);
     expect(viewAllHref(ctx, job, [['site', 'eq', site], ['nope', 'eq', 1]])).toBeNull();
+  });
+});
+
+describe('a new record with a declared layout', () => {
+  const focusedField = () => document.activeElement?.closest('[data-field]')?.getAttribute('data-field') ?? null;
+  // Other (notes) before Site (title, region) on the first Tab: the new record focuses notes first.
+  const otherFirst = (model: any) => {
+    const first = model.record_layout.tabs[0];
+    first.blocks = [first.blocks.find((block: { label?: string }) => block.label === 'Other'), ...first.blocks.filter((block: { label?: string }) => block.label !== 'Other')];
+  };
+
+  it('focuses the first field of the first section on the first layout Tab', async () => {
+    const { host } = start(routes(otherFirst), '/app/site/new');
+    await until(() => expect(host.querySelector('[data-field="notes"]')).not.toBeNull());
+    await until(() => expect(focusedField()).toBe('notes'));
+  });
+
+  it('uses the block order of a layout without Tabs', async () => {
+    const { host } = start(routes(model => { otherFirst(model); model.record_layout = { blocks: model.record_layout.tabs[0].blocks }; }), '/app/site/new');
+    await until(() => expect(host.querySelector('[data-field="notes"]')).not.toBeNull());
+    await until(() => expect(focusedField()).toBe('notes'));
+  });
+
+  it('keeps the form order when the layout places no section first', async () => {
+    const { host } = start(routes(), '/app/site/new');
+    await until(() => expect(host.querySelector('[data-field="title"]')).not.toBeNull());
+    await until(() => expect(focusedField()).toBe('title'));
   });
 });
