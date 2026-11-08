@@ -156,12 +156,18 @@ class Exporter:
             if section.get('flow') == 'columns':
                 children.append(f"    # Meta.layout: Section({section['title']!r}, ..., flow='columns')")
         notes = ''.join(f'# Meta.{key} = {value!r}\n' for key, value in (('tabs', tuple(tabs)), ('default_tab', default_tab)) if value)
+        # What the side panel hides has no FormView option: panel=False on the field, Section or Table, or Meta.panel.
+        from .customization import panel_of
+        if panel_of(value):
+            notes += f'# Side panel hides (panel=False or Meta.panel): {panel_of(value)!r}\n'
         return (f'{self.folder(model)}/views/__init__.py',
                 notes + f'{name.lower()}_form = FormView(model={name}, layout=Column(children=[\n' + '\n'.join(children) + '\n]))')
 
     def list_view(self, name, value):
+        # ListView has no list tabs; Meta.list_tabs and Meta.list_tab carry them.
+        notes = ''.join(f'# Meta.{key} = {value[key]!r}\n' for key in ('list_tabs', 'list_tab') if key in value)
         return (f'{self.folder(self.models[name])}/views/__init__.py',
-                f"{name.lower()}_list = {call('ListView', (), {'model': self.models[name], 'columns': value['columns'], 'page_size': value['page_size'], 'order_by': value['sort'], **({'open_in': value['open_in']} if 'open_in' in value else {})})}")
+                notes + f"{name.lower()}_list = {call('ListView', (), {'model': self.models[name], 'columns': value['columns'], 'page_size': value['page_size'], 'order_by': value['sort'], **({'open_in': value['open_in']} if 'open_in' in value else {})})}")
 
     def settings(self, values):
         """Security settings for config.py, allowed networks for routes.py and paused schedules beside the app's schedules."""

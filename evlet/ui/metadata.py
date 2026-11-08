@@ -27,7 +27,7 @@ OPEN_IN = ('page', 'panel')
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
-                          'status'))
+                          'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'ledger', 'append_only', 'timestamps', 'indexes'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -36,6 +36,12 @@ FLOWS = ('rows', 'columns')
 # The record page's own tabs. Meta.tabs also names Table fields (their child tables); a tab a record doesn't
 # have (Activity without a journal, say) is skipped.
 TABS = ('activity', 'details', 'revisions', 'related', 'postings')
+# The record page's side column blocks, for Meta.side_blocks: Key fields, Related, Files and Record info.
+SIDE_BLOCKS = ('key_fields', 'related', 'files', 'info')
+# What a list's side panel can leave out besides sections and fields: the summary strip and the side blocks.
+PANEL_BLOCKS = ('summary', *SIDE_BLOCKS)
+# The kinds of element a record's side panel can hide, as keys of the schema's "panel".
+PANEL_KINDS = ('sections', 'fields', 'tabs', 'blocks')
 
 
 def starts_valid(value):
@@ -48,16 +54,18 @@ class Section:
 
     `collapsed` is where it starts: False (open), True (closed) or 'empty' (closed when every field in
     it is empty on an existing record; a new record shows it open). A person's own choice wins after that.
-    A plain ('Title', fields) pair is a section that can't collapse."""
+    A plain ('Title', fields) pair is a section that can't collapse. `panel=False` leaves the section out when a
+    list opens the record in its side panel; the full page still shows it."""
 
-    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow')
+    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow', 'panel')
 
-    def __init__(self, title, fields, *, collapsible=True, collapsed=False, flow='rows'):
+    def __init__(self, title, fields, *, collapsible=True, collapsed=False, flow='rows', panel=True):
         self.title, self.fields, self.collapsible, self.collapsed, self.flow = title, fields, collapsible, collapsed, flow
+        self.panel = panel
 
     def __repr__(self):
         return (f'Section({self.title!r}, {self.fields!r}, collapsible={self.collapsible!r}, collapsed={self.collapsed!r}'
-                + (f', flow={self.flow!r})' if self.flow != 'rows' else ')'))
+                + (f', flow={self.flow!r}' if self.flow != 'rows' else '') + (', panel=False)' if self.panel is False else ')'))
 
     def check(self, model):
         """Raise ValueError naming the model and the section when the options can't work."""
@@ -74,6 +82,8 @@ class Section:
             raise ValueError(f'{where}: collapsed needs collapsible=True, because this section always shows')
         if type(self.flow) is not str or self.flow not in FLOWS:
             raise ValueError(f"{where}: flow must be 'rows' or 'columns', not {self.flow!r}")
+        if type(self.panel) is not bool:
+            raise ValueError(f'{where}: panel must be True or False')
 
 
 def view_for(model):
@@ -120,6 +130,22 @@ def view_for(model):
         raise ValueError(f'{model.__name__}.Meta.default_tab: name one tab, such as "details"')
     if default_tab is not None and tabs and default_tab not in tabs:
         raise ValueError(f'{model.__name__}.Meta.default_tab: {default_tab} is not in Meta.tabs')
+    # The summary strip under the record header: Meta.summary = False leaves it out.
+    summary = getattr(meta, 'summary', None)
+    if summary is not None and type(summary) is not bool:
+        raise ValueError(f'{model.__name__}.Meta.summary must be True or False, not {summary!r}')
+    # Which side column blocks a record page shows, in this order.
+    side_blocks = getattr(meta, 'side_blocks', None)
+    if side_blocks is not None and (not isinstance(side_blocks, (tuple, list)) or len(set(side_blocks)) != len(side_blocks)
+                                    or any(type(name) is not str or name not in SIDE_BLOCKS for name in side_blocks)):
+        raise ValueError(f'{model.__name__}.Meta.side_blocks: list blocks once each from {", ".join(SIDE_BLOCKS)}, '
+                         f'such as ("related", "files"), not {side_blocks!r}')
+    list_tabs = list_tabs_for(model, meta)
+    # A list offers a board only when Meta.board names the field its columns follow: the model's State.
+    board = getattr(meta, 'board', None)
+    if board is not None and (type(board) is not str or board != getattr(model, '__state__', None)):
+        raise ValueError(f'{model.__name__}.Meta.board: name the model\'s State field'
+                         + (f', {model.__state__!r}' if getattr(model, '__state__', None) else '; this model has no State'))
     # Leaving a record keeps its unsaved edits apart from it (evlet.unsaved); False keeps the leave prompt.
     from ..unsaved import autosave as keeps_unsaved
     autosave = keeps_unsaved(model)
@@ -146,15 +172,110 @@ def view_for(model):
             used.append(name)
         # A plain (label, fields) pair is a section that can't collapse.
         groups.append({'label': group[0], 'fields': list(group[1]), 'collapsible': bool(section and section.collapsible),
-                       'collapsed': section.collapsed if section and section.collapsible else False, 'flow': section.flow if section else 'rows'})
+                       'collapsed': section.collapsed if section and section.collapsible else False, 'flow': section.flow if section else 'rows',
+                       **({'panel': False} if section and section.panel is False else {})})
     # Visible fields the layout leaves out follow under Other, in declaration order.
     rest = [name for name in visible if name not in used]
     if rest:
         groups.append({'label': 'Other', 'fields': rest, 'collapsible': False, 'collapsed': False, 'flow': 'rows'})
+    titles = [group['label'] for group in groups]
+    if len(set(titles)) != len(titles):
+        if getattr(meta, 'panel', None) is not None or any(group.get('panel') is False for group in groups):
+            raise ValueError(f'{model.__name__}.Meta.layout: give sections different titles, so the side panel can name them')
+    panel = panel_for(model, meta, groups, visible)
+    for group in groups:
+        group.pop('panel', None)
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
             'tabs': list(tabs), 'default_tab': default_tab,
-            'autosave': autosave}
+            'autosave': autosave, **({'list_tabs': list_tabs} if list_tabs else {}),
+            **({'board': board} if board else {}),
+            # Additive keys: only a model that declares them carries them.
+            **({'summary': summary} if summary is not None else {}),
+            **({'side_blocks': list(side_blocks)} if side_blocks is not None else {}),
+            **({'panel': panel} if panel is not None else {})}
+
+
+def panel_names(model, groups, visible):
+    """The names Meta.panel may use, each with its kind: section titles, fields, Table fields (their tabs), the
+    record tabs, the summary strip and the side blocks. A section or field wins over a record tab or block of the
+    same name, so a field called info is the field."""
+    names = {name: 'tabs' for name in TABS}
+    names.update((name, 'blocks') for name in PANEL_BLOCKS if name != 'related')
+    names.update((name, 'tabs') for name in getattr(model, '__tables__', {}))
+    names.update((name, 'fields') for name in visible)
+    names.update((group['label'], 'sections') for group in groups)
+    return names
+
+
+def panel_for(model, meta, groups, visible):
+    """What a record opened in a list's side panel leaves out, or None when it shows everything.
+
+    The result lists hidden names by kind ({'sections', 'fields', 'tabs', 'blocks'}, each sorted) and, for
+    Meta.panel, the order it names tabs and blocks in. Meta.panel wins over panel=False flags. Display only:
+    permissions never read it. Related means the tab (the panel has no Related block)."""
+    tables = getattr(model, '__tables__', {})
+    keep = getattr(meta, 'panel', None)
+    where = f'{model.__name__}.Meta.panel'
+    if keep is None:
+        hidden = {'sections': [group['label'] for group in groups if group.get('panel') is False],
+                  'fields': [name for name, field in visible.items() if field.panel is False],
+                  'tabs': [name for name, table in tables.items() if getattr(table, 'panel', True) is False], 'blocks': []}
+        hidden = {kind: sorted(names) for kind, names in hidden.items() if names}
+        return hidden or None
+    if not isinstance(keep, (tuple, list)) or any(type(name) is not str or not name for name in keep) or len(set(keep)) != len(keep):
+        raise ValueError(f'{where}: list what the side panel shows once each, such as ("Contact", "notes", "activity")')
+    known = panel_names(model, groups, visible)
+    unknown = [name for name in keep if name not in known]
+    if unknown:
+        raise ValueError(f'{where} names unknown elements: {", ".join(unknown)}. Use section titles, field names, '
+                         f'tabs ({", ".join((*TABS, *tables))}) or blocks ({", ".join(name for name in PANEL_BLOCKS if name != "related")})')
+    kept = {kind: {name for name in keep if known[name] == kind} for kind in PANEL_KINDS}
+    # 'details' keeps every section; a named section keeps its fields; a named field keeps its section with only it.
+    every = 'details' in kept['tabs']
+    shown_sections = {group['label'] for group in groups if every or group['label'] in kept['sections']
+                      or any(name in kept['fields'] for name in group['fields'])}
+    whole = {group['label'] for group in groups if every or group['label'] in kept['sections']}
+    hidden = {
+        'sections': sorted(group['label'] for group in groups if group['label'] not in shown_sections),
+        # Fields of a hidden section go with it; a section shown for some of its fields hides the rest.
+        'fields': sorted(name for group in groups for name in group['fields']
+                         if group['label'] in shown_sections and group['label'] not in whole and name not in kept['fields']),
+        'tabs': sorted(name for name in (*TABS, *tables) if name != 'details' and name not in kept['tabs']),
+        'blocks': sorted(name for name in PANEL_BLOCKS if name != 'related' and name not in kept['blocks']),
+    }
+    # The order tabs and blocks show in; a section or field stands for the Details tab, where they live.
+    order = list(dict.fromkeys('details' if known[name] in ('sections', 'fields') else name for name in keep))
+    return {**{kind: names for kind, names in hidden.items() if names}, 'order': order}
+
+
+# The field kinds whose values can be list tabs (Meta.list_tabs).
+LIST_TAB_KINDS = ('state', 'select', 'link')
+
+
+def list_tabs_for(model, meta, fields=None):
+    """The list page's tabs: {field, kind, default}, or None for no tabs.
+
+    Meta.list_tabs names a State, Select or Link field; unset means the State field, if any, and None
+    means no tabs. Meta.list_tab is the tab the list opens on: "all" (the default) or one of the field's
+    values. For a Link it is the linked record's title or name, looked up when the page loads.
+    `fields` defaults to the app's fields; Controls passes the instance's."""
+    where = f'{model.__name__}.Meta'
+    name = getattr(meta, 'list_tabs', model.__state__)
+    default = getattr(meta, 'list_tab', 'all')
+    if type(default) is not str or not default.strip():
+        raise ValueError(f'{where}.list_tab: name the tab the list opens on, such as "all" or "active"')
+    if name is None:
+        if default != 'all':
+            raise ValueError(f'{where}.list_tab needs Meta.list_tabs: this list has no tabs')
+        return None
+    field = (model.__app_fields__ if fields is None else fields).get(name) if type(name) is str else None
+    kind = None if field is None else 'state' if name == model.__state__ else field.kind
+    if kind not in LIST_TAB_KINDS:
+        raise ValueError(f'{where}.list_tabs: name a State, Select or Link field of {model.__name__}, not {name!r}')
+    if kind != 'link' and default != 'all' and default not in field.choices:
+        raise ValueError(f'{where}.list_tab: {default!r} is not a value of {name}. Use "all" or one of {", ".join(field.choices)}')
+    return {'field': name, 'kind': kind, 'default': default}
 
 
 def check_tabs(tables, tabs, default_tab, where):
@@ -188,6 +309,10 @@ def field_schema(field):
     if result['default_kind'] == 'static':
         value = None if field.default is None else field.validate(field.default)
         result['default'] = field.serialize(value)
+    if getattr(field, 'ledger_target', False):
+        # A Link to a ledger row shows its plain integer id and is never written by a caller (evlet/ledger.py).
+        result.pop('target', None)
+        result.update(type='integer', read_only=True)
     return result
 
 

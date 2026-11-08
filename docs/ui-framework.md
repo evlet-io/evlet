@@ -379,7 +379,8 @@ none while the tab is hidden, and a catch-up the moment it shows again, so "just
 ago" by itself. With `exact` the element shows the exact time and the tooltip the words; with
 `onToggle` it is a button (`aria-pressed`) that switches them.
 
-The record page's Record info block shows **Created** and **Last modified** from the detail's
+The record page's Record info block shows **Created** and **Last modified** (and Revises and Revised by
+when they apply); the record's own id is copied from More > Copy record ID. It shows the times from the detail's
 `_audit` ([model-engine.md](model-engine.md#record-times)): `2 hours ago · Aslam`. Clicking a
 time switches every time in Record info between relative and exact, remembered per person
 (`prefs.exactTimes`). Who is the person's display name, a link to Controls Users for people who may
@@ -692,7 +693,8 @@ not part of the build.
 | Module | What it does |
 |---|---|
 | `app.ts` | Session, sign in and first-run setup, the shell and the route table |
-| `shell.ts` | Sidebar (models grouped, recent records, Library in development, the account and the theme button), top bar, keyboard |
+| `shell.ts` | Sidebar (models grouped, Library in development, the account and the theme button), top bar, keyboard |
+| `recents.ts` | The history button left of search in the top bar: this session's recent records, newest first, with the model and when each was opened |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
@@ -718,8 +720,9 @@ fill it, `?customer=4`), `/app/:model/:id` (a record; `?tab=` keeps the tab) and
 it in `?open=` (the id, or `new`) and the record's tab in `?rtab=`. `/reports` and `/reports/:report` are reports
 ([reports.md](reports.md)); `/controls` loads Controls as its own chunk (`frontend/src/evlet/controls/`,
 see [controls.md](controls.md)); any other address opens Docs. The earlier
-development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, saved view and filters in the query, so
-a link opens the same list. A record with unsaved changes asks before the page changes or the
+development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, tab and filters in the query, so
+a link opens the same list. Without `?tab=` it opens on the model's default tab (`Meta.list_tab`); choosing
+another, All included, puts it in the query. A record with unsaved changes asks before the page changes or the
 tab closes. Signing in keeps the address the user opened.
 
 ### Side panel
@@ -753,6 +756,12 @@ a title opens the full page in a new browser tab.
   the page; a saved or moved record updates its row.
 - When the content area is narrower than 900 px the panel covers the list with a back link
   (`Invoices`), and on phones it takes the screen.
+- The panel shows only what the model lets it: the schema's `panel` lists hidden `sections`,
+  `fields`, `tabs` and `blocks` (`summary`, `files`, `info`), and `order`, the order `Meta.panel`
+  names tabs and blocks in (`panelView` in `app/meta.ts`). Details shows while anything in it does.
+  A required field that is empty on a new record always shows. When anything is hidden, Details
+  ends with "Some parts of this invoice show only on the full page" (the model label) and an Open full page link. The
+  full page ignores `panel` ([ui.md](ui.md#what-a-side-panel-shows)).
 
 ### What the model decides
 
@@ -765,24 +774,30 @@ a title opens the full page in a new browser tab.
 | `Meta.search_fields` | The list search box and record search in the palette |
 | `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
+| `Meta.list_tabs`, `Meta.list_tab` | The list's tabs: All and one per value of a State, Select or Link field (the State without `list_tabs`, none with `list_tabs = None`), with counts from `GET /api/{model}/list_tabs`, and the tab the list opens on (`"all"` by default). A Link shows its 8 most used values, labelled by title ([ui.md](ui.md#list-tabs)) |
+| `Meta.board` | Names the model's State field, such as `"stage"`, to offer a List and Board switch on its list; the board has one column per state. Without it the list has no board, and `?view=board` opens the table. Any other field fails registration |
 | `Meta.autosave` | `True` (default): leaving a record with unsaved edits keeps them for later instead of asking to discard them; `False` keeps the leave prompt ([ui.md](ui.md#unsaved-changes)) |
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
 | `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records, or an entry in New; `?slip=name` on a record opens it. A slip that becomes a record for review opens New filled in, with a note |
-| `State` with moves (Phase 4) | Saved view tabs per state with counts from `GET /api/{model}/aggregate` (with or without declared measures), a board, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
+| `State` with moves (Phase 4) | List tabs per state unless `Meta.list_tabs` names another field (counts from `GET /api/{model}/list_tabs`), a board when `Meta.board` names the State, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column; tabs by another field narrow the cards and keep every column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
 | Unpost and repost | Offered from `_unpost` and `_repost` in the locked banner, the More menu and the unposted banner; Unpost asks for a reason, Repost takes an optional one |
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
 | `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
-| `Meta.key_fields` (Phase 10) | Header facts, the summary strip and the Key fields side block (without it: the first fields) |
-| `Meta.relations` (Phase 10) | The Related tab and side block |
-| `attachments` | The Files side block, with upload for roles that can update while the record is not locked |
+| `Meta.key_fields` (Phase 10) | The header facts (the first three), and the Key fields side block while a tab other than Details is open (without it: the first fields). Never the summary strip |
+| Calculated fields, per-record measures | The summary strip, at most four: calculated values the header facts don't show, then per-record measures. No strip when nothing is left; `Meta.summary = False` turns it off |
+| `Meta.relations` (Phase 10) | The Related tab and side block. The side block lists only relations with records, and goes when none has any; the tab lists them all. A relation named after its model counts in that model's words ("Payments, 1 payment"), any other name counts records; an empty relation is one line in the tab, with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
+| `Meta.side_blocks` | Which side blocks show, in order, from `key_fields`, `related`, `files` and `info`. Without it, all four in that order; `()` shows none |
+| `panel=False` on a field, `Section` or `Table`; `Meta.panel` | What a record opened in a list's side panel leaves out, or (`Meta.panel`) the only parts it keeps, in order. The schema carries `panel` only when something is hidden; the full page ignores it ([Side panel](#side-panel)) |
+| `attachments` | The Files side block, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
 | Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
-| Every record (`_audit`) | Created and Last modified in the Record info side block, as relative times with who ([Relative times](#relative-times)) |
+| Every record (`_audit`) | Created and Last modified in the Record info side block, as relative times with who ([Relative times](#relative-times)). The record's id is in More > Copy record ID |
+| Title, name and State | Shown in the header, so a saved record's Details form leaves them out: the title is edited in place in the header, the State by its badge or bar. A field the header shows but can't edit (a name typed by hand, a State with `show="none"`) stays in the form. A new record's form keeps them all |
 
 A section appears only when the schema or the detail carries its key. The screen tests replay
 these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,
@@ -801,8 +816,9 @@ Appearance, region, start page and sidebar counts are the person's Settings, kep
 widths, child table columns, quick access, how each list opens records, the side panel's width and
 which form sections a person opened or closed) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
-session and go on sign-out. The account area is at the bottom of the sidebar; the top bar keeps
-search and notifications.
+session and go on sign-out. Each recent record keeps when it was last opened; the history button left
+of search lists them with the relative time and the exact time on hover. The account area is at the
+bottom of the sidebar; the top bar keeps recent records, search and notifications.
 
 Signing out ends the local session only after the server confirms it (or answers that the
 session had already ended). If the request fails, the user stays signed in and a dialog says so,
@@ -830,7 +846,7 @@ record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
 
 ## Limits of this phase
 
-- Home, accounts, form dialogs, the notification panel, the layout control and Doc
+- Home, accounts, form dialogs, the layout control and Doc
   layout page are not built. Python pages (`evlet.ui` PageView), native panels and custom
   components are not rendered (owner decision); their Python APIs remain.
 - Bulk moves and deletes read each record first, one request per record.

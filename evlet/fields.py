@@ -101,7 +101,8 @@ class Field:
                  label=None, help_text="", tooltip="", placeholder="", suffix="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
-                 initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False, tracking="value"):
+                 initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False, tracking="value",
+                 panel=True):
         if tracking not in ("value", "mask", "exclude"):
             raise ValueError("tracking is value, mask or exclude")
         self.tracking = tracking
@@ -122,6 +123,11 @@ class Field:
         # help_text shows under the input; tooltip behind a ? icon at its right end.
         self.label, self.help_text, self.tooltip, self.placeholder, self.suffix = label, help_text, tooltip, placeholder, suffix
         self.hidden, self.read_only = hidden, read_only
+        # Whether the field shows when a list opens the record in its side panel. Display only: the full page
+        # and every permission check ignore it.
+        if type(panel) is not bool:
+            raise ValueError("panel must be True or False")
+        self.panel = panel
         self.compute, self.stored, self.query, self.fetch = compute, stored, query, fetch
         self.filters = dict(filters or {})
         self.visible_if, self.required_if, self.read_only_if = visible_if, required_if, read_only_if
@@ -536,7 +542,7 @@ class State(Select):
     `show` is how the record page draws it: "badge" (a status badge in the header, the default),
     "bar" (the stage bar, for pipelines such as draft, submitted, approved) or "none".
     """
-    OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length", "colors")
+    OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length", "colors", "panel")
     SHOW = ("badge", "bar", "none")
 
     def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), show="badge", **kwargs):
@@ -637,18 +643,32 @@ class Link(Integer):
         super().__init__(minimum=1, **kwargs)
         self.target = target
 
+    @property
+    def ledger_target(self):
+        """Whether the target is a ledger model, whose rows have plain integer ids (evlet/ledger.py)."""
+        return getattr(self.target, '__ledger__', False) is True
+
     def validate(self, value):
+        if self.ledger_target:
+            if type(value) is not int or not 1 <= value <= MAX_INTEGER:
+                raise ValueError("Use the integer id of a row")
+            return value
         try:
             return RecordId(value)
         except ValueError:
             raise ValueError("Use a record id") from None
 
     def from_storage(self, value):
-        return None if value is None else RecordId(super().from_storage(value))
+        if value is None:
+            return None
+        value = super().from_storage(value)
+        return value if self.ledger_target else RecordId(value)
 
     def serialize(self, value):
-        # A RecordId: JSON responses write its text form (identity.jsonable).
-        return None if value is None else RecordId(value)
+        # A RecordId: JSON responses write its text form (identity.jsonable). A ledger row id stays an int.
+        if value is None:
+            return None
+        return int(value) if self.ledger_target else RecordId(value)
 
     def metadata(self):
         target = self.target if isinstance(self.target, str) else storage_name(self.target)

@@ -39,6 +39,7 @@ app = AppDefinition(..., frontends=(crm, customer_portal))
 The framework has its own frontends: `evlet.desk` at `/app` (the generated screens),
 `evlet.docs` at `/docs`, `evlet.controls` at `/controls` and `evlet.settings` at
 `/settings`.
+Controls links back to the last app page, or `/` ([ui.md](ui.md#between-the-app-and-controls)).
 
 How each kind is served:
 

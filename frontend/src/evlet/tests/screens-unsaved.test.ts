@@ -16,6 +16,8 @@ const ORDER = '0000000000001';
 const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('.grid tbody tr[data-key]')];
 const cellOf = (row: Element, col: string) => [...row.querySelectorAll<HTMLElement>('td[data-col]')].find(td => td.dataset.col === col)!;
 const field = (host: Element, name: string) => host.querySelector<HTMLElement>(`.ff[data-field="${name}"]`);
+// A saved record's title is edited in the header, not in the Details form.
+const heading = (host: Element) => host.querySelector<HTMLElement>('.doc-head .doc-title');
 const dialogTitle = () => text(document.querySelector('[role="dialog"] h2, [role="alertdialog"] h2, .modal h2'));
 const bar = (host: Element) => host.querySelector('.ev-unsaved .inv-banner');
 
@@ -123,7 +125,7 @@ describe('returning to a record with kept changes', () => {
     click(byText(bar(host)!, 'button', 'Restore'));
     await until(() => expect(bar(host)).toBeNull());
     expect(text(host.querySelector('.ev-savebar'))).toContain('Unsaved changes');
-    expect(text(field(host, 'title'))).toContain('Kept title');
+    expect(text(heading(host))).toContain('Kept title');
     expect(lastToast()).toContain('Save to keep them');
     expect(requests(sent, 'PATCH', /order/)).toHaveLength(0);
   });
@@ -150,7 +152,7 @@ describe('returning to a record with kept changes', () => {
     click(byText(document, '.modal button', 'Restore'));
     await until(() => expect(document.querySelector('.modal')).toBeNull());
     expect(host.querySelector('.ev-savebar')).toBeNull();
-    expect(text(field(host, 'title'))).toContain(recorded.detail.body.title);
+    expect(text(heading(host))).toContain(recorded.detail.body.title);
   });
 
   it('says so when the person can no longer change the record', async () => {
@@ -160,7 +162,7 @@ describe('returning to a record with kept changes', () => {
 
   it('does not ask the server when the person has no kept changes', async () => {
     const { host, sent } = start(orderRoutes([], me(0)), `/app/order/${ORDER}`);
-    await until(() => expect(field(host, 'title')).not.toBeNull());
+    await until(() => expect(heading(host)).not.toBeNull());
     expect(requests(sent, 'GET', /_unsaved/)).toHaveLength(0);
   });
 });

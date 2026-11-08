@@ -128,7 +128,8 @@ function modelText(kind: string, value: unknown) {
   }
   if (kind === 'list') {
     const list = value as ListValue;
-    return `${list.columns.join(', ')} · ${list.page_size} rows · sorted by ${list.sort}${list.open_in === 'panel' ? ' · opens in a side panel' : ''}`;
+    const tabs = list.list_tabs === undefined ? '' : list.list_tabs === null ? ' · no tabs' : ` · tabs by ${list.list_tabs}${list.list_tab && list.list_tab !== 'all' ? `, opens on ${list.list_tab}` : ''}`;
+    return `${list.columns.join(', ')} · ${list.page_size} rows · sorted by ${list.sort}${list.open_in === 'panel' ? ' · opens in a side panel' : ''}${tabs}`;
   }
   return (value as SeriesValue[]).map(series => series.when ? `${series.format} when ${series.when}` : series.format).join(' · ');
 }

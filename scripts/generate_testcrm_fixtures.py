@@ -119,8 +119,8 @@ class Scenario:
         if model == 'deal':
             self.get(f'/api/{model}/{record_id}/measures')
         for relation in schema.get('relations', []):
-            self.get(f"/api/{model}/{record_id}/related/{relation['name']}?limit=1",
-                     f"/api/{model}/{record_id}/related/{relation['name']}?limit={relation['limit']}&offset=0")
+            # One page of five serves the Related block's count and the Related tab (related-data.ts).
+            self.get(f"/api/{model}/{record_id}/related/{relation['name']}?limit=5&offset=0")
         if schema.get('attachments'):
             self.get(f'/api/{model}/{record_id}/attachments')
         if schema.get('journal'):
@@ -188,9 +188,9 @@ def record(app, out):
     sara.get('/api/organization?limit=50&offset=0')
     # The list: page, search, a saved view per state, sort, the board and the palette search.
     sara.list_page('deal')
-    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage')
+    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage', '/api/deal/list_tabs')
     sara.list_page('deal', '&q=planning')
-    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage&q=planning')
+    sara.get('/api/deal/aggregate?measures=n:count,pipeline&group_by=stage&q=planning', '/api/deal/list_tabs?q=planning')
     sara.list_page('deal', '&filters=' + quote(json.dumps({'stage': 'proposal'}, separators=(',', ':'))))
     sara.list_page('deal', '&order_by=total')
     sara.list_page('deal', '&order_by=-total')
@@ -203,7 +203,8 @@ def record(app, out):
     portal = ids(sara, 'deal', title='Distributor portal')
     sara.get(f'/api/deal/{portal}')
     assert sara.write('POST', f'/api/deal/{portal}/moves/proposal', {}, read=f'/api/deal/{portal}')['status'] == 200
-    sara.get(f'/api/deal/{portal}', '/api/deal?limit=100&offset=0', '/api/deal/measures', '/api/deal/aggregate?measures=n:count,pipeline&group_by=stage')
+    sara.get(f'/api/deal/{portal}', '/api/deal?limit=100&offset=0', '/api/deal/measures', '/api/deal/aggregate?measures=n:count,pipeline&group_by=stage',
+             '/api/deal/list_tabs')
     sara.list_page('deal')
     out['sara_list'] = sara.dump()
 
@@ -232,7 +233,7 @@ def record(app, out):
     assert planned['status'] == 201, planned
     assert sara.call('POST', f'{url}/journal', {'kind': 'follow_up_done', 'follow_up': planned['body']['id'], 'text': 'Plan sent'})['status'] == 201
     sara.record_page('deal', deal)
-    sara.get(f'/api/deal/{deal}/related/task.deal?limit=10&offset=0')
+    sara.get(f'/api/deal/{deal}/related/task.deal?limit=5&offset=0')
     sara.get(f"/api/organization/{detail['organization']}")
     # A note from the Activity tab; the history is read again.
     sara.phases[-1][key('POST', f'{url}/journal')] = sara.call('POST', f'{url}/journal', {'kind': 'note', 'text': 'Kick-off agreed for next week'})

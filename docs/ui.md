@@ -12,8 +12,9 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 
 - Sign-in and first-run setup (the first administrator account).
 - Docs after sign-in, with its topics.
-- The shell: sidebar with the models, recent records, search palette and New menu.
-- Generated model screens: lists, boards for models with a State, record views (on their own
+- The shell: sidebar with the models; a top bar with a history button for recent records (left of
+  search), the search palette and the New menu.
+- Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
@@ -31,8 +32,115 @@ pinning keep the first column pinned. A child table's Focus view keeps the recor
 save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations`, `measures`, `open_in`, `autosave` and `status`. See "What the model decides" in
-[ui-framework.md](ui-framework.md).
+`layout`, `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`, `list_tab`, `autosave`, `status`, `board`,
+`summary`, `side_blocks` and `panel`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+
+### Each fact once on the record page
+
+A record page shows each fact in one place. The header has the title, the name, the State and up
+to three key fields. The summary strip under it has calculated values and per-record measures that
+the header doesn't show; with nothing left, there is no strip. The Details form of a saved record
+leaves out the title, name and State, because the header shows them and edits the title in place;
+a new record's form keeps them. The side column's Key fields block shows only while another tab
+is open (Activity, Related or a table), as a way back to the fields. Its Related block lists only
+relations that have records; the Related tab lists every one. Record info has Created and Last
+modified; More > Copy record ID copies the id.
+
+Two options change this per model:
+
+```python
+class Project(Model):
+    class Meta:
+        summary = False                              # no summary strip
+        side_blocks = ('related', 'info', 'key_fields')  # these side blocks, in this order
+```
+
+`side_blocks` takes `key_fields`, `related`, `files` and `info`, each once. Anything else, or a
+`summary` that is not True or False, fails when the registry is built.
+
+### What a side panel shows
+
+A list that opens records in a side panel (`Meta.open_in = 'panel'`, or "Open records in: Side
+panel") can show less of each record than the full page. Each app decides which parts:
+
+```python
+class Ticket(Model):
+    notes = LongText(panel=False)            # this field stays on the full page
+    lines = Table(Line, panel=False)         # so does this table's tab
+
+    class Meta:
+        open_in = 'panel'
+        layout = (Section('Ticket', ('subject', 'owner')),
+                  Section('Internal', ('audit_note',), panel=False))   # and this section
+```
+
+`panel=False` works on a field, a `Section` and a `Table`. For a model where only a few parts
+matter in the panel, `Meta.panel` names what to keep, in order, and hides everything else:
+
+```python
+    class Meta:
+        panel = ('Ticket', 'related', 'info')   # a section, the Related tab and Record info
+```
+
+Names are section titles, field names, `Table` field names, the record tabs (`activity`,
+`details`, `revisions`, `related`, `postings`), `summary` (the summary strip) and the side blocks
+(`key_fields`, `files`, `info`). Naming a section keeps all its fields; naming a field keeps its
+section with only that field; `details` keeps every section. Tabs and blocks show in the order
+`Meta.panel` names them. A section or field of the same name wins over a tab or block. When both
+are given, `Meta.panel` wins over the flags. An unknown name, a name given twice or a flag that is
+not True or False fails when the registry is built.
+
+- **Display only.** Hiding is never a permission: the API, row, field and action checks are
+  unchanged, and the full page shows everything.
+- **A new record can always be saved.** A required field that is empty on a new record shows in
+  the panel even when it is hidden.
+- **The full page is one click away.** When the panel hides anything, a line under Details says
+  so with an Open full page link, as well as the panel's Expand button.
+- Controls, Models, Form layout can change it per instance with the panel button on each section,
+  field and tab, and the Side panel card for the summary strip and blocks
+  ([controls.md](controls.md)).
+
+### List tabs
+
+A list shows a row of tabs above the toolbar: All, then one tab per value of one field, each with
+its count. `Meta.list_tabs` names that field and `Meta.list_tab` names the tab the list opens on.
+
+```python
+class Employee(Model):
+    status = Select(["active", "left", "on_leave"], default="active")
+    department = Link(Department)
+
+    class Meta:
+        list_tabs = "status"     # a State, Select or Link field
+        list_tab = "active"      # the tab the list opens on; "all" is the default
+```
+
+- **Which field.** A State, Select or Link field. Any other field, or a name the model does not
+  have, raises `ValueError` when the registry is built. Without `Meta.list_tabs` the model's State
+  drives the tabs, as before; a model without a State has none. `list_tabs = None` turns them off.
+- **The default tab.** For a State or Select, `list_tab` is `"all"` or one of the field's values,
+  checked at definition. For a Link it is the linked record's title (or name), found when the page
+  loads; if this person can't read such a record, the list opens on All. `list_tab` without tabs
+  raises `ValueError`.
+- **Link tabs** show the most used values, at most 8, most used first, each labelled with the
+  linked record's title. The filter finds the others. A record a link opened with `?tab=` keeps
+  its own tab even when it is not among them.
+- **Counts** come from `GET /api/{model}/list_tabs?filters=...&q=...`, which answers
+  `{"field", "total", "items": [{"value", "count"}], "more"}`. They follow the list's filters
+  and search box, but not the tab itself, and only count records the person may read (row scope).
+  Records without a value count in All only. Filters on fields the role can't read are refused.
+- **Who sees them.** `/api/schema` gives `list_tabs: {"field", "kind", "default"}` only to roles
+  that can read the field, and for a Link only when they can read the linked model without a row
+  scope (counting by it would reveal records they can't see). Others get no tabs, and the counts
+  route answers 403.
+- **The address.** With no `tab` in the address the list opens on the default tab. Choosing
+  another, All included, puts it in the address (`?tab=all`), so a link or a reload keeps it.
+  Clear filters goes back to the default tab. A tab with no records and no search or filters
+  offers Show all instead.
+- **Controls.** The list view sets both for an instance ("Tabs by" and "Opens on",
+  [controls.md](controls.md)).
+
+The Playground's Projects list opens on Active, with tabs for Planned, Active and Done.
 
 A record's State shows as a coloured badge in the header by default, with its moves as header
 buttons; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
@@ -41,6 +149,17 @@ payment status, coloured by `Select(..., colors={...})`. Badges and bar steps of
 moves this person may take now; everything else is plain text. Lists draw the same badges. The
 badge wraps with the key facts in the side panel and on a phone; the bar scrolls sideways there.
 See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
+
+Related records (`Meta.relations`) show in the side panel's Related block, with a count per
+relation, and in the Related tab, with a short table per relation. Nothing is asked for when a
+record opens: a relation's records load when the Related block or its tab section first scrolls
+into view (at once in a browser without IntersectionObserver). One server page of five records
+serves both the count and the tab, and it stays loaded while the record is open, so switching
+tabs asks again for nothing; a save of the record reloads the pages already shown. Each tab
+section shows five rows; with more, a small pager under it reads "1–5 of 12" with previous and
+next, each a server page (`limit` and `offset`). **View all** in the section's heading opens the
+related model's list filtered to this record (`?f=[["customer","eq","<id>"]]`), shown as a
+filter that can be removed. It is left out when the role cannot filter that list on the link.
 
 ## Not rendered by this interface
 
@@ -98,15 +217,25 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | --- | --- |
 | `/`, `/login` | Sign-in, or Docs when signed in |
 | `/docs`, `/docs/<topic>` | Docs |
-| `/app/<model>` | List (and board). Search, sort, page, view and filters are in the query |
+| `/app/<model>` | List (and board, when `Meta.board` names the State). Search, sort, page, view and filters are in the query |
 | `/app/<model>/new` | New record. Query values fill writable fields: `?customer=4` |
 | `/app/<model>/<id>` | Record view. `?tab=` keeps the tab |
 | `/app/<model>/<id>/view` | Older record link; opens the record view |
 | `/settings/<page>`, `/settings/app/<app>` | Settings ([settings.md](settings.md)); `/settings` opens the last page |
 | `/settings/accounts` | Redirects to `/controls/users` |
+| `/controls`, `/controls/<page>` | Controls ([controls.md](controls.md)), a separate page for roles that open it |
 | `/eva`, `/eva/<chat>`, `/eva/tasks` | Eva's chat and scheduled tasks ([eva.md](eva.md)). Served only when config.py turns Eva on; the page asks `/api/_eva` and shows nothing of Eva to people without it |
 | `/reports`, `/reports/<name>` | The reports this role may run, and one report's view ([reports.md](reports.md)) |
 | Registered Python page routes | Served, then open Docs |
+
+### Between the app and Controls
+
+People who may open Controls reach it from **Controls** in the account menu, or **Go to Controls**
+in the search palette. Both open it in a new tab. In Controls, **Back to <app>** sits at the top of
+the sidebar, on phones too. It is a real link, so a plain click goes back in the same tab and Cmd
+or Ctrl click opens a new one. It goes to the last app page this browser had open for the person,
+kept in localStorage (`evlet.last_app.<user>`, a same-origin path only). With none, it goes to `/`,
+which opens the person's start page. The server stores no last app page.
 
 The development-only `/ui` and `/m/<model>` paths of the earlier preview are gone.
 Signing in keeps the address the user opened. A record with unsaved changes asks
@@ -149,8 +278,13 @@ A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-f
 at rest the record shows the formatted text (read only when the record is locked), and list cells
 show its plain text. The Playground's projects have one, Brief.
 A record's Activity tab writes notes with the same editor; typing `@` mentions a person, with a
-warning when they can't open the record. The bell in the top bar is the Mentions inbox, with the
-unread count kept live by the event stream ([journal.md](journal.md#mentions)).
+warning when they can't open the record. The bell in the top bar opens the notification centre,
+with the unread count kept live by the event stream ([journal.md](journal.md#mentions)). It is a
+panel along the right edge under the top bar, grouped into Today and Earlier; a click anywhere else,
+Esc or the bell closes it. A click on an item marks it read. Go to shows only when the person can
+open the item's record, and opens it. While the panel is closed, new items slide in as popups at the
+top right for a few seconds (longer while pointed at or focused); a click on one opens the panel.
+Today the inbox holds mentions; other kinds show with a bell icon.
 
 ### Collapsible sections
 
@@ -267,9 +401,22 @@ The server still checks every Link on preview and save; the form only avoids kee
 
 ### Filters
 
-A list's Filter button (with a count of active filters) opens a panel of filter rows under the
-toolbar, as in Frappe. Each row is a field, a condition and a value, with a remove button; Add
-filter adds rows, and every row must match (AND). The field picker searches the model's fields
+The list's table has no card around it. It runs flush to the edges of the main area, as a child
+table does in focus view, and the first column keeps the page margin so it lines up with the
+toolbar. Beside a side panel and on a phone the table does the same.
+
+A list's Filter button (with a count of active filters) opens the filter side panel, docked
+beside the list inside the page, like the record side panel. There is no overlay and no
+backdrop: the list narrows and stays usable, and the panel fills the height to the bottom of the
+screen. On a phone it is a full-width sheet in the same place. The panel has two halves of about
+equal height, each scrolling on its own. The top half holds the filter rows, as in Frappe: each
+row is a field, a condition and a value on one line, with a remove button; Add filter adds rows
+with no limit, and every row must match (AND). The bottom half holds **Saved filters**: name the
+current filters and Save keeps them; choosing one applies its rows (the current one is marked);
+the trash button deletes it. Saved filters keep the rows in the same form as `?f=`, per person
+on the device (browser storage, like a report's saved views), up to 20 per list. Opening the
+panel moves focus to the first row's field, or adds a row and opens its field search; Escape
+closes the panel and returns focus to the Filter button. The field picker searches the model's fields
 and then each child table's ("Prices → Rate"), by any words of the label, and shows each field's
 type; it draws at most 100 matches at a time, so a model with hundreds of fields stays quick.
 Arrows and Enter pick a field.
@@ -292,8 +439,8 @@ refuses fields the role cannot read. The Playground's Items list (about 200 fiel
 prices and barcodes tables) shows the builder at scale.
 
 There is no OR group between rows, because the server combines filters only with AND; and there
-are no saved filters yet, because Evlet has no place to keep them. The saved views of a model's
-State stay as tabs.
+are no saved filters yet, because Evlet has no place to keep them. The list tabs
+([List tabs](#list-tabs)) stay above the toolbar.
 
 ## Python page API
 

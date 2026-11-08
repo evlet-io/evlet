@@ -139,6 +139,35 @@ migrations.append(Migration('0012_invoice_payment_status',
 ))
 
 
+class PointMove(Model):
+    """Frozen creation schema of the customer points ledger."""
+    customer = Link(Customer, required=True)
+    on_date = Date(required=True)
+    reason = Text(default='', max_length=120)
+    points = Integer(required=True)
+
+    class Meta:
+        ledger = True
+        append_only = True
+        timestamps = 'created'
+        indexes = [('customer', 'on_date')]
+
+
+class PointBalance(Model):
+    """Frozen creation schema of the customer points totals."""
+    customer = Link(Customer, required=True)
+    points = Integer(required=True, default=0)
+
+    class Meta:
+        ledger = True
+        timestamps = 'modified'
+        indexes = [(('customer',), {'unique': True})]
+
+
+# Customer points: an append-only ledger and its balance cache (docs/ledger.md).
+migrations.append(Migration('0013_points', CreateModel(PointMove), CreateModel(PointBalance)))
+
+
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""
     class Customer(Model):
