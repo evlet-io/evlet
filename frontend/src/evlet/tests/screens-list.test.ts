@@ -143,6 +143,24 @@ describe('board and saved views (recorded State fixtures)', () => {
     expect(text(host.querySelector('tbody .pill'))).not.toBe('');
   });
 
+  it('offers the board only when the model names its State field in Meta.board', async () => {
+    const { host } = start(routes(), '/app/invoice?view=board');
+    await until(() => expect(host.querySelectorAll('.board .card').length).toBe(3));
+    expect([...host.querySelectorAll('.ph .seg button')].map(text)).toEqual(['List', 'Board']);
+  });
+
+  it('opens a State model without Meta.board as a table, with no board switch, even from an old board link', async () => {
+    const schema = copy(invoice.schema);
+    for (const model of (schema.body as any).models) delete model.board;
+    const { host } = start([['GET', /\/api\/schema$/, schema], ...routes().slice(0, 1), ...routes().slice(2)], '/app/invoice?view=board');
+    await until(() => expect(host.querySelectorAll('.ev-list tbody tr').length).toBeGreaterThan(0));
+    expect(host.querySelector('.board')).toBeNull();
+    expect(byText(host, '.seg button', 'Board')).toBeFalsy();
+    // The saved views per state stay; only the board is opt-in.
+    expect(host.querySelectorAll('.ev-list [role="tab"]').length).toBe(5);
+    await until(() => expect(window.location.search).not.toContain('view=board'));
+  });
+
   it('moves a card with the keyboard through the move route, and explains a blocked move', async () => {
     const { host, sent } = start([...routes(),
       ['GET', new RegExp(`/api/invoice/${draftId}$`), invoice.invoice_draft],

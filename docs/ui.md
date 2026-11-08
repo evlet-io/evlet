@@ -13,7 +13,7 @@ The previous SolidJS interface and the Vue regression harness have been removed.
 - Sign-in and first-run setup (the first administrator account).
 - Docs after sign-in, with its topics.
 - The shell: sidebar with the models, recent records, search palette and New menu.
-- Generated model screens: lists, boards for models with a State, record views (on their own
+- Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
@@ -31,7 +31,7 @@ pinning keep the first column pinned. A child table's Focus view keeps the recor
 save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations`, `measures`, `open_in`, `autosave` and `status`. See "What the model decides" in
+`layout`, `key_fields`, `relations`, `measures`, `open_in`, `autosave`, `status` and `board`. See "What the model decides" in
 [ui-framework.md](ui-framework.md).
 
 A record's State shows as a coloured badge in the header by default, with its moves as header
@@ -98,7 +98,7 @@ Docs off it starts on the first list the role can open and hides the Docs links.
 | --- | --- |
 | `/`, `/login` | Sign-in, or Docs when signed in |
 | `/docs`, `/docs/<topic>` | Docs |
-| `/app/<model>` | List (and board). Search, sort, page, view and filters are in the query |
+| `/app/<model>` | List (and board, when `Meta.board` names the State). Search, sort, page, view and filters are in the query |
 | `/app/<model>/new` | New record. Query values fill writable fields: `?customer=4` |
 | `/app/<model>/<id>` | Record view. `?tab=` keeps the tab |
 | `/app/<model>/<id>/view` | Older record link; opens the record view |

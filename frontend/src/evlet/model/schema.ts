@@ -88,6 +88,8 @@ export interface ModelSchema {
   order_by?: string;
   /** How the list opens a record: the full page (default) or a side panel beside the list. */
   open_in?: 'page' | 'panel';
+  /** The State field a list board groups by (Meta.board); without it the list has no board. */
+  board?: string;
   /** Meta.autosave: false keeps the "Discard your changes?" prompt instead of keeping unsaved changes. */
   autosave?: boolean;
   children?: ChildSchema[];

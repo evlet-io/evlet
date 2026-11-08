@@ -6,6 +6,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Changed
+
+- **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
+  names its State field, such as `board = "stage"`, and the board groups by that field. Without
+  it the list is a table with the saved views per state, and an old `?view=board` link opens the
+  table. Apps that relied on the automatic board for every model with a State must now set
+  `Meta.board`. `Meta.board` on any other field fails registration naming the model.
+
 ### Added
 
 - **Ledger models.** `Meta.ledger = True` stores a model lean: an integer id the database assigns in
