@@ -11,8 +11,8 @@ import sqlite3
 from .audit import COLUMNS as AUDIT_COLUMNS, add_columns as add_audit_columns, column_sql as audit_column_sql
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
 from .identity import RecordId
+from . import ledger as ledgers
 from .models import identifier, storage_name
-from .identity import RecordId
 from .naming import declared_name, standard
 
 logger = logging.getLogger(__name__)
@@ -76,18 +76,25 @@ def _sequence_index(connection, table, name, field):
 def _create(connection, table, model):
     """A table for a model, with the standard name and title columns unless the model declares its own
     `name`: such a model describes the schema from before records had them (a frozen class in migration
-    history, a legacy registry), and framework step 0003 adds them once later migrations have run."""
+    history, a legacy registry), and framework step 0003 adds them once later migrations have run.
+    A ledger model's table has the id and its declared columns only (evlet/ledger.py)."""
     framework = not declared_name(model)
     fields = {name: field for name, field in model.__fields__.items() if framework or not standard(field)}
     columns = ['"id" INTEGER PRIMARY KEY AUTOINCREMENT']
     columns.extend(sql for name, field in fields.items() for sql in _column(name, field))
-    columns.extend(audit_column_sql(False))
+    if not ledgers.is_ledger(model):
+        columns.extend(audit_column_sql(False))
     connection.execute(f'CREATE TABLE {identifier(table)} ({", ".join(columns)})')
     for name, field in fields.items():
         if field.index or field.unique:
             _index(connection, table, name, unique=field.unique, columns=index_columns(name, field))
         if field.kind == 'sequence':
             _sequence_index(connection, table, name, field)
+    if ledgers.is_ledger(model):
+        for covered, unique in model.__indexes__:
+            _index(connection, table, '_'.join(covered), unique=unique, columns=covered)
+        if model.__append_only__:
+            ledgers.add_triggers(connection, False, table)
 
 
 def _metadata(connection):
@@ -166,8 +173,9 @@ def _check(connection, registry, *, rows=False):
         table = identifier(name)
         columns = connection.execute(f'PRAGMA table_info({table})').fetchall()
         names = [row['name'] for row in columns]
+        ledger = ledgers.is_ledger(model)
         skip = added.get(name, set()) | {column for field in retired.get(name, ()) for column in stored_columns(names, field)} \
-            | leftover_standard(model, {row['name']: not row['notnull'] for row in columns}) | audit_columns(name, names)
+            | leftover_standard(model, {row['name']: not row['notnull'] for row in columns}) | (set() if ledger else audit_columns(name, names))
         actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns if row['name'] not in skip}
         # A table made before records had standard columns gets them from framework step 0003 (evlet migrate).
         framework = standard_fields(model)
@@ -197,10 +205,14 @@ def _check(connection, registry, *, rows=False):
             indexed.add(fields)
             if index['unique']:
                 unique.add(fields)
-        if unique != {(key,) for key, field in model.__fields__.items() if field.unique and (key in present or not standard(field))}:
+        if unique != {(key,) for key, field in model.__fields__.items() if field.unique and (key in present or not standard(field))} \
+                | ledger_indexes(model, unique=True):
             raise SchemaError(f'{name}: unique constraints differ from models')
-        if any(index_columns(key, field) not in indexed for key, field in model.__fields__.items() if field.index):
+        if any(index_columns(key, field) not in indexed for key, field in model.__fields__.items() if field.index) \
+                or not ledger_indexes(model) <= indexed:
             raise SchemaError(f'{name}: an explicit index migration is required')
+        if ledger and ledgers.has_triggers(connection, False, name) != model.__append_only__:
+            raise SchemaError(f'{name}: the append-only triggers differ from Meta.append_only; run explicit migrations')
         if any((*field.scope, key) not in partial for key, field in model.__fields__.items() if field.kind == 'sequence'):
             raise SchemaError(f'{name}: a Sequence field is missing its unique index')
         if rows:
@@ -211,6 +223,27 @@ def _check(connection, registry, *, rows=False):
                     raise SchemaError(f'{name} #{RecordId(row["id"])}: stored data fails validation: {exc}') from exc
     if connection.execute('PRAGMA foreign_key_check').fetchone() is not None:
         raise SchemaError('Stored data contains a broken foreign key')
+
+
+def ledger_indexes(model, *, unique=None):
+    """The column tuples of a ledger model's Meta.indexes; with unique=True only the unique ones."""
+    if not ledgers.is_ledger(model):
+        return set()
+    return {covered for covered, is_unique in model.__indexes__ if unique is None or is_unique}
+
+
+def ledger_switch(saved, registry):
+    """Refuse a saved model that a registry now declares with Meta.ledger switched on or off."""
+    models = {model['name']: model for model in json.loads(saved)['models']}
+    for name, model in registry.models.items():
+        if name in models and ('ledger' in models[name]) != ledgers.is_ledger(model):
+            raise SchemaError(f'{name}: switching an existing model to Meta.ledger = True, or back, is not supported in this '
+                              'version; create a new ledger model and move the rows with a RunData step')
+
+
+def ledger_tables(registry):
+    """Storage names of the ledger models, whose tables have no record time columns."""
+    return {name for name, model in registry.models.items() if ledgers.is_ledger(model)}
 
 
 def _save_definition(connection, registry):
@@ -247,6 +280,8 @@ def initialize(database):
                 ensure_tables(connection)
             _metadata(connection)
             saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()
+            if saved:
+                ledger_switch(saved[0], database.registry)
             if saved and not _same(saved[0], database.registry):
                 raise SchemaError('Model definitions changed; run explicit migrations before startup')
             baseline = False
@@ -338,20 +373,49 @@ class RenameField:
 
 @dataclass(frozen=True)
 class AddIndex:
+    """Index one field (`field` names it), or add a ledger model's Meta.indexes entry (`field` is a tuple of
+    field names, such as ("member", "on_date"))."""
     table: str
-    field: str
+    field: object
     unique: bool = False
+
+    def composite(self):
+        return isinstance(self.field, tuple)
 
     def signature(self):
         identifier(self.table)
-        identifier(self.field)
-        return {'operation': 'add_index', 'table': self.table, 'field': self.field, 'unique': self.unique}
+        for name in (self.field if self.composite() else (self.field,)):
+            identifier(name)
+        if self.composite() and (not self.field or len(set(self.field)) != len(self.field)):
+            raise SchemaError('AddIndex names distinct fields')
+        return {'operation': 'add_index', 'table': self.table, 'field': list(self.field) if self.composite() else self.field,
+                'unique': self.unique}
 
     def apply(self, connection, columns=None):
         """columns: the table's column names (read from SQLite when not given); a Reference indexes both of its columns."""
+        if self.composite():
+            _index(connection, self.table, '_'.join(self.field), unique=self.unique, columns=self.field)
+            return
         if columns is None:
             columns = {row[1] for row in connection.execute(f'PRAGMA table_info({identifier(self.table)})')}
         _index(connection, self.table, self.field, unique=self.unique, columns=stored_columns(columns, self.field))
+
+
+@dataclass(frozen=True)
+class SetAppendOnly:
+    """Turn Meta.append_only on or off for a ledger model: add or drop the triggers that refuse UPDATE and
+    DELETE. Turning it on keeps the rows a table already has."""
+    table: str
+    enabled: bool
+
+    def signature(self):
+        identifier(self.table)
+        if type(self.enabled) is not bool:
+            raise SchemaError('SetAppendOnly enabled is True or False')
+        return {'operation': 'set_append_only', 'table': self.table, 'enabled': self.enabled}
+
+    def apply(self, connection, postgres=False):
+        (ledgers.add_triggers if self.enabled else ledgers.drop_triggers)(connection, postgres, self.table)
 
 
 @dataclass(frozen=True)
@@ -359,8 +423,10 @@ class CreateModel:
     model: type
 
     def signature(self):
+        ledger = ledgers.schema(self.model)
         return {'operation': 'create_model', 'name': storage_name(self.model),
-                'fields': [field.metadata() for field in self.model.__fields__.values() if not standard(field)]}
+                'fields': [field.metadata() for field in self.model.__fields__.values() if not standard(field)],
+                **({'ledger': ledger} if ledger is not None else {})}
 
     def apply(self, connection):
         _create(connection, storage_name(self.model), self.model)
@@ -859,7 +925,8 @@ def _write(session, model, record_id, values):
     session.connection.execute(f'UPDATE {identifier(session.registry.name_for(model))} SET {assignments} WHERE "id" = ?', [*stored, record_id])
 
 
-OPERATIONS = (AddField, RenameField, AddIndex, CreateModel, AddTable, RetireField, DropField, AlterField, RunData, Recompute)
+OPERATIONS = (AddField, RenameField, AddIndex, CreateModel, AddTable, RetireField, DropField, AlterField, RunData, Recompute,
+              SetAppendOnly)
 
 
 class Migration:
@@ -895,10 +962,31 @@ def _planned_definition(saved, pending, steps=None):
                     raise SchemaError(f'AddTable {name}: unknown parent model {operation.parent}')
                 models[name] = {'name': name, 'label': model.__name__,
                                 'fields': [field.metadata() for field in model.__fields__.values() if not standard(field)]}
+                if ledgers.schema(model) is not None:
+                    models[name]['ledger'] = ledgers.schema(model)
                 continue
             if operation.table not in models:
                 raise SchemaError(f'Unknown migration table: {operation.table}')
             fields = {field['name']: field for field in models[operation.table]['fields']}
+            ledger = models[operation.table].get('ledger')
+            if ledger is not None and ledger['append_only'] and isinstance(operation, (RenameField, RetireField, DropField, AlterField)):
+                raise SchemaError(f'{operation.table} is append only, so {type(operation).__name__} cannot change its stored '
+                                  'rows; turn it off first with SetAppendOnly in an earlier migration')
+            if isinstance(operation, SetAppendOnly):
+                if ledger is None:
+                    raise SchemaError(f'{operation.table}: SetAppendOnly is for ledger models (Meta.ledger = True)')
+                ledger['append_only'] = operation.enabled
+                continue
+            if isinstance(operation, AddIndex) and operation.composite():
+                if ledger is None:
+                    raise SchemaError(f'{operation.table}: an index over several fields is a Meta.indexes entry of a ledger model; '
+                                      'index one field with AddIndex(table, field)')
+                if set(operation.field) - set(fields):
+                    raise SchemaError('Index field does not exist')
+                if any(tuple(item['fields']) == operation.field for item in ledger['indexes']):
+                    raise SchemaError(f'{operation.table}: the index {operation.field} already exists')
+                ledger['indexes'].append({'fields': list(operation.field), 'unique': operation.unique})
+                continue
             if isinstance(operation, AddField):
                 if operation.name in fields or operation.name == 'id':
                     raise SchemaError('Added field already exists or is reserved')
@@ -970,6 +1058,24 @@ def differences(planned, current):
                     if old[field].get(key) != new[field].get(key):
                         result.append((name, field, f'{name}.{field}: {key} is {old[field].get(key)!r} after the migrations '
                                                     f'and {new[field].get(key)!r} in the models'))
+    return result + ledger_differences(planned, current)
+
+
+def ledger_differences(planned, current):
+    """(model, None, text) items for ledger options that differ between two comparable schemas."""
+    before = {model['name']: model.get('ledger') for model in planned['models']}
+    after = {model['name']: model.get('ledger') for model in current['models']}
+    result = []
+    for name in sorted(before.keys() & after.keys()):
+        old, new = before[name], after[name]
+        if old is None or new is None or old == new:
+            continue
+        if old['append_only'] != new['append_only']:
+            result.append((name, None, f'{name}: append_only is {old["append_only"]!r} after the migrations and '
+                                       f'{new["append_only"]!r} in the models (SetAppendOnly)'))
+        if ledgers.indexes_of(old) != ledgers.indexes_of(new):
+            result.append((name, None, f'{name}: Meta.indexes differ: {sorted(ledgers.indexes_of(old))} after the migrations and '
+                                       f'{sorted(ledgers.indexes_of(new))} in the models (AddIndex with a tuple of fields)'))
     return result
 
 
@@ -989,6 +1095,8 @@ def _normalized(schema):
     schema['models'].sort(key=lambda model: model['name'])
     for model in schema['models']:
         model['fields'].sort(key=lambda field: field['name'])
+        if 'ledger' in model:
+            model['ledger']['indexes'].sort(key=lambda item: (item['fields'], item['unique']))
     return schema
 
 
@@ -1058,6 +1166,8 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 raise SchemaError('Initialize the legacy database with its original models before migrating')
             pending = migrations[len(history):]
             steps = {}
+            if saved:
+                ledger_switch(saved[0], database.registry)
             if saved and (history or not _same(saved[0], database.registry)):
                 planned = _planned_definition(saved[0], pending, steps)
                 if _comparable(planned) != _comparable(database.registry.schema()):
@@ -1076,7 +1186,7 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             if not fresh:
                 # Data migrations write through Session, which fills the record time columns, so existing
                 # tables get them before any step runs (framework step 0004 does the same without migrations).
-                for table in sorted(_tables(connection)):
+                for table in sorted(_tables(connection) - ledger_tables(database.registry)):
                     add_audit_columns(connection, False, table)
             for position, migration in enumerate(pending, len(history) + 1):
                 if not fresh and not baseline:
@@ -1161,7 +1271,11 @@ def describe(operation):
     if isinstance(operation, RenameField):
         return f'rename field {operation.table}.{operation.old_name} to {operation.new_name}'
     if isinstance(operation, AddIndex):
+        if operation.composite():
+            return f'add {"unique " if operation.unique else ""}index on {operation.table} ({", ".join(operation.field)})'
         return f'add {"unique " if operation.unique else ""}index on {operation.table}.{operation.field}'
+    if isinstance(operation, SetAppendOnly):
+        return f'turn append only {"on" if operation.enabled else "off"} for {operation.table}'
     if isinstance(operation, Recompute):
         return f'recompute {operation.table}: {", ".join(operation.fields)}'
     if isinstance(operation, RetireField):
@@ -1208,9 +1322,21 @@ def _frozen_class(model, base, fields, storage=None):
     if storage:
         lines.append(f'    storage_name = {storage!r}')
     for key, field in fields.items():
+        if getattr(field, 'engine_timestamp', None):
+            continue  # Meta.timestamps below adds it.
         code, used = field_code(field)
         names |= used
         lines.append(f'    {key} = {code}')
+    if ledgers.is_ledger(model):
+        # The ledger options shape the table, so the frozen class keeps them; journal and period do not.
+        lines += ['', '    class Meta:', '        ledger = True']
+        if model.__append_only__:
+            lines.append('        append_only = True')
+        if model.__timestamps__:
+            lines.append(f'        timestamps = {model.__timestamps__!r}')
+        if model.__indexes__:
+            entries = [repr(covered) if not unique else f'({covered!r}, {{"unique": True}})' for covered, unique in model.__indexes__]
+            lines.append(f'        indexes = [{", ".join(entries)}]')
     if len(lines) == 1:
         lines.append('    pass')
     return lines, names
@@ -1292,6 +1418,18 @@ def suggest(registry, planned, name='0002_changes', tables=None):
                 code, used = field_code(model.__app_stored__[key])
                 operations.append(f'AlterField({table!r}, {key!r}, {code})')
                 names |= used | {'AlterField'}
+    planned_ledgers = {model['name']: model.get('ledger') for model in _comparable(planned)['models']}
+    for table, model in registry.models.items():
+        old = planned_ledgers.get(table)
+        if old is None or not ledgers.is_ledger(model) or tables is not None and table not in tables:
+            continue
+        new = ledgers.schema(model)
+        if old['append_only'] != new['append_only']:
+            operations.append(f'SetAppendOnly({table!r}, {new["append_only"]!r})')
+            names.add('SetAppendOnly')
+        for covered, unique in sorted(ledgers.indexes_of(new) - ledgers.indexes_of(old)):
+            operations.append(f'AddIndex({table!r}, {covered!r}' + (', unique=True)' if unique else ')'))
+            names.add('AddIndex')
     if not operations and not notes:
         return ''
     parts = [f'from evlet import {", ".join(sorted(names))}', *classes]

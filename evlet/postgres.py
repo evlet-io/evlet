@@ -83,6 +83,28 @@ class Connection:
         for row in rows:
             self.execute(sql, row)
 
+    def lock(self, numbers, milliseconds=None):
+        """Session.lock on PostgreSQL: transaction advisory locks on sorted 64-bit numbers (evlet/ledger.py).
+        With milliseconds, lock_timeout bounds the wait (and statement_timeout is lifted) until every lock is
+        held, then both are restored. A wait that runs out raises LockTimeout."""
+        from .ledger import LockTimeout
+        pq = self.database.driver.pq
+        if self.raw.info.transaction_status != pq.TransactionStatus.INTRANS \
+                or self.raw.execute("SELECT current_setting('transaction_read_only')").fetchone()[0] == 'on':
+            raise ValueError('tx.lock works inside database.transaction()')
+        errors = self.database.driver.errors
+        previous = None
+        if milliseconds is not None:
+            previous = tuple(self.raw.execute("SELECT current_setting('lock_timeout'), current_setting('statement_timeout')").fetchone())
+            self.raw.execute("SELECT set_config('lock_timeout', %s, true), set_config('statement_timeout', '0', true)", (str(milliseconds),))
+        try:
+            for number in numbers:
+                self.raw.execute('SELECT pg_advisory_xact_lock(%s)', (number,))
+        except (errors.LockNotAvailable, errors.QueryCanceled):
+            raise LockTimeout() from None
+        if previous is not None:
+            self.raw.execute("SELECT set_config('lock_timeout', %s, true), set_config('statement_timeout', %s, true)", previous)
+
     def commit(self):
         self.raw.commit()
 
