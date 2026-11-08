@@ -87,9 +87,10 @@ conservative and does **not** deliver the parallel write capacity described as a
 future scalability target. Separate databases have independent locks.
 
 Named business-key locks (`tx.lock`, [ledger.md](ledger.md#transaction-locks-txlock)) are further
-transaction advisory locks on hashed keys, taken in sorted order. Because of the database-wide lock
-above, they never wait on another Evlet write transaction today; they wait for any other holder of
-the same key, and keep a ledger writer's check-then-write correct if writes ever overlap.
+transaction advisory locks on hashed keys, taken in sorted order. Evlet writes are serialised today
+by the database-wide lock above, so a key lock never waits on another Evlet write transaction; it
+waits for any other holder of the same key. `tx.lock` is the business-key contract that stays
+correct if the global lock is ever relaxed.
 
 Read pages, counts, and permission serialization use one repeatable-read, read-only
 snapshot. Writes use read committed after acquiring the advisory lock. All writes

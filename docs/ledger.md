@@ -211,8 +211,8 @@ with database.transaction() as tx:
 - **Evlet writes are serialised today.** Every PostgreSQL write transaction also takes one
   database-wide advisory lock ([postgresql.md](postgresql.md)), so two Evlet transactions never
   overlap and a key lock never waits on another Evlet transaction. `tx.lock` still waits for any
-  other holder of the same key, and it is the contract ledger writers should code against, so
-  their checks stay correct if writes are ever allowed to overlap.
+  other holder of the same key. It is the business-key contract ledger writers code against, which
+  stays correct if the global lock is ever relaxed.
 - **SQLite.** A write transaction starts with `BEGIN IMMEDIATE`, so only one writer runs at a
   time. `tx.lock` checks the keys and returns.
 
