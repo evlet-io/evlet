@@ -160,11 +160,12 @@ class Database:
         with self._connection() as connection:
             return Session(connection, self.registry).count(model, filters=filters, search=search)
 
-    def aggregate(self, model, *, measures, group_by=(), filters=None):
-        """Exact aggregates over all records; see docs/measures.md."""
+    def aggregate(self, model, *, measures, group_by=(), filters=None, limit=None, after=None):
+        """Exact aggregates over all records; see docs/measures.md. With `limit` (and `after`), one page of
+        groups in a stable order, for trusted code that walks any number of groups."""
         from .measures import aggregate
         with self._connection() as connection:
-            return aggregate(Session(connection, self.registry), model, measures, group_by, filters)
+            return aggregate(Session(connection, self.registry), model, measures, group_by, filters, limit, after)
 
     def measures(self, model, record_id=None, *, filters=None):
         """Declared Meta.measures: model-level values, or per-record values when record_id is given."""
@@ -358,7 +359,8 @@ class Session:
         if type(offset) is not int or not 0 <= offset <= 2**63 - 1:
             raise ValidationError({"offset": "Use a non-negative 64-bit integer"})
         table = identifier(self.registry.name_for(model))
-        query = SqlQuery(self.registry, model)
+        # Trusted code: `in` lists may be long (evlet/query.py TRUSTED_IN_VALUES).
+        query = SqlQuery(self.registry, model, trusted=True)
         where, values = query.where(filters, search)
         order = query.ordering(order_by)
         rows = self.connection.execute(
@@ -584,15 +586,18 @@ class Session:
         record_id = getattr(record, field_name)
         return None if record_id is None else self.get(field.target, record_id)
 
-    def aggregate(self, model, *, measures, group_by=(), filters=None):
+    def aggregate(self, model, *, measures, group_by=(), filters=None, limit=None, after=None):
         """Exact aggregates inside this transaction, so they see its uncommitted writes; the same arguments
-        and result as Database.aggregate (docs/measures.md). Trusted: no permissions apply."""
+        and result as Database.aggregate (docs/measures.md). Trusted: no permissions apply.
+
+        Without `limit`, more than 500 groups is an error. With `limit` (1 to 10,000), one page of groups
+        ordered by their keys, empty values first; pass the page's last group as `after` for the next page."""
         from .measures import aggregate
-        return aggregate(self, model, measures, group_by, filters)
+        return aggregate(self, model, measures, group_by, filters, limit, after)
 
     def count(self, model, *, filters=None, search=""):
         table = identifier(self.registry.name_for(model))
-        where, values = SqlQuery(self.registry, model).where(filters, search)
+        where, values = SqlQuery(self.registry, model, trusted=True).where(filters, search)
         return self.connection.execute(
             f'SELECT count(*) FROM {table} AS "record"{where}', values,
         ).fetchone()[0]

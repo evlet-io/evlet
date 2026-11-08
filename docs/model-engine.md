@@ -389,12 +389,36 @@ returns the same list.
 
 Queries allow at most 50 conditions (counting those inside child groups), 100 values in an `in`
 or `nin` filter, four order fields,
-and 100 returned rows. Empty `in` lists match nothing; empty `nin` lists match everything. Use `isnull` for nulls
+and 100 returned rows. Trusted session queries (`tx.list`, `tx.count`, `tx.aggregate` and the
+`database` forms) take [long `in` lists](#long-in-lists-in-trusted-code). Empty `in` lists match nothing; empty `nin` lists match everything. Use `isnull` for nulls
 inside membership queries. Text matching treats `%` and `_` literally;
 `icontains` uses SQLite's built-in ASCII case folding, not full Unicode folding.
 Values are parameterized. Field paths and operators are checked against the
 registry; callers cannot supply SQL. Query values receive type validation without
 applying a field's business minimum/maximum or custom validator.
+
+### Long `in` lists in trusted code
+
+Batch jobs that verify or rebuild large tables often select rows by a long list of ids or
+keys. A trusted session accepts `in` and `nin` lists of any length up to 30,000 values in all
+for one query, for example `tx.count(Entry, filters={"id__in": ids})` with 10,000 ids. Each
+value is validated and bound as its own parameter, so values never become SQL. The total
+stays below SQLite's limit of 32,766 parameters per statement and PostgreSQL's 65,535, with
+room for the query's other values. Split a longer list with the standard library:
+
+```python
+from itertools import batched
+
+for chunk in batched(ids, 30_000):
+    total += tx.count(Entry, filters={"id__in": list(chunk)})
+```
+
+The design binds parameters rather than using a temporary table: it needs no schema writes,
+so it also works in read-only transactions and needs no cleanup, and it runs the same SQL on
+both databases.
+
+Only trusted Python code gets long lists. HTTP lists and aggregates, `Context`, Eva, tools,
+MCP and Connector keep the limit of 100 values per `in` or `nin`.
 
 ## HTTP API
 

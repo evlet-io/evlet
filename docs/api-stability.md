@@ -59,9 +59,18 @@ production ready, but the rules below hold from 0.3 on.
   append-only table refuses raises `ConflictError` on SQLite and PostgreSQL
   ([model-engine.md](model-engine.md#composite-and-unique-indexes), [ledger.md](ledger.md)).
 
-- **Aggregates in a transaction.** `Session.aggregate(model, *, measures, group_by=(), filters=None)`
-  (`tx.aggregate`), with the arguments, limits and result of `Database.aggregate`
-  ([measures.md](measures.md#ad-hoc-aggregates-in-python)). `evlet.measures` itself stays internal.
+- **Aggregates in a transaction.** `Session.aggregate(model, *, measures, group_by=(), filters=None,
+  limit=None, after=None)` (`tx.aggregate`), with the arguments, limits and result of
+  `Database.aggregate` ([measures.md](measures.md#ad-hoc-aggregates-in-python)). `evlet.measures`
+  itself stays internal.
+
+- **Trusted set-based queries.** `limit` (1 to 10,000) and `after` on `Session.aggregate` and
+  `Database.aggregate` page through any number of groups in a stable order
+  ([measures.md](measures.md#paging-through-many-groups)). `Session.list`, `Session.count`,
+  `Session.aggregate` and their `Database` forms take `in` and `nin` lists of up to 30,000
+  values in all per query
+  ([model-engine.md](model-engine.md#long-in-lists-in-trusted-code)). HTTP, `Context`, Eva,
+  tools, MCP and Connector keep 100 values per `in` and 500 groups per aggregate.
 
 - **Job progress.** `JobContext.progress(done, total=None, message='')`, `JobContext.checkpoint`,
   `Task(..., resumable=True)` with its return-value contract (a JSON checkpoint, or `None` when

@@ -79,6 +79,11 @@ the warning threshold.
   creation on every operation. Session state is discarded and unfinished writes
   rolled back before a connection returns to the pool. No write retry is added.
 
+- Trusted batch code walks any number of aggregate groups a page at a time
+  (`tx.aggregate(..., limit=, after=)`), each page one keyset query, and takes `in` lists of up
+  to 30,000 values. Tests walk 20,000 groups 500 at a time with a traced Python peak under
+  1.5 MB on SQLite and PostgreSQL; holding all groups at once takes about 5.7 MB.
+
 The existing hostname tenant catalog remains SQLite-only. PostgreSQL writes remain
 serialized per database. Neither additional API workers nor these local benchmark
 numbers establish parallel write capacity or production readiness.

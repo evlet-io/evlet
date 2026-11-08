@@ -11,6 +11,12 @@ OPERATORS = {'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'nin', 'isnu
              'contains', 'icontains', 'nicontains', 'startswith'}
 # One query takes at most this many conditions, counting those inside child groups.
 MAX_CONDITIONS = 50
+# Most values one `in` or `nin` condition takes from HTTP, Eva, tools and permission-aware Context.
+MAX_IN_VALUES = 100
+# Most `in` and `nin` values one trusted session query takes in all (tx.list, tx.count, tx.aggregate).
+# Each value is one bound parameter, so this stays below SQLite's 32,766 and PostgreSQL's 65,535
+# parameters per statement with room for the query's other values.
+TRUSTED_IN_VALUES = 30_000
 MATCHES = ('any', 'none')
 _TEXT = ('eq', 'ne', 'in', 'nin', 'contains', 'icontains', 'nicontains', 'startswith', 'isnull')
 _ORDERED = ('eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'between', 'isnull')
@@ -131,12 +137,17 @@ def conditions(filters):
 class SqlQuery:
     """Compiles filters, search and ordering into parameterized SQL (not the `evlet.Query` field source).
 
-    children: ChildTables (beyond the registry's Table declarations) that child groups may name."""
+    children: ChildTables (beyond the registry's Table declarations) that child groups may name.
+    trusted: the query comes from trusted Python code in a Session (tx.list, tx.count, tx.aggregate), so
+    `in` and `nin` take up to TRUSTED_IN_VALUES values in all instead of MAX_IN_VALUES per condition.
+    Permission-aware callers (HTTP, Eva, tools, MCP, Connector and Context) never set it."""
 
-    def __init__(self, registry, model, *, children=()):
+    def __init__(self, registry, model, *, children=(), trusted=False):
         self.registry = registry
         self.model = model
         self.alias = 0
+        self.trusted = trusted
+        self.in_values = 0
         self.children = child_tables(registry, children)
         registry.name_for(model)
 
@@ -171,8 +182,8 @@ class SqlQuery:
         return sql, target_field
 
     @staticmethod
-    def value(field, value):
-        # Query bounds need only type validation, not a model's business limits.
+    def loose(field):
+        """A copy of field for query values: they need only type validation, not a model's business limits."""
         field = copy(field)
         field.required = False
         field.validator = None
@@ -180,6 +191,11 @@ class SqlQuery:
             field.minimum = None
         if hasattr(field, 'maximum'):
             field.maximum = None
+        return field
+
+    @staticmethod
+    def value(field, value):
+        field = SqlQuery.loose(field)
         return field.to_storage(field.clean(value))
 
     def where(self, filters, search="", *, search_fields=None):
@@ -253,11 +269,16 @@ class SqlQuery:
         if value is None and operator in ('eq', 'ne'):
             return f'{column} IS {"" if operator == "eq" else "NOT "}NULL'
         if operator in ('in', 'nin'):
-            if not isinstance(value, (list, tuple)) or len(value) > 100:
-                raise ValueError(f'{operator} expects at most 100 values')
+            if not isinstance(value, (list, tuple)) or not self.trusted and len(value) > MAX_IN_VALUES:
+                raise ValueError(f'{operator} expects at most {MAX_IN_VALUES} values')
+            self.in_values += len(value)
+            if self.trusted and self.in_values > TRUSTED_IN_VALUES:
+                raise ValueError(f'A trusted query takes at most {TRUSTED_IN_VALUES} in and nin values in all; '
+                                 'split longer lists with itertools.batched')
             if any(item is None for item in value):
                 raise ValueError('Use isnull to query null values')
-            values.extend(self.value(field, item) for item in value)
+            loose = self.loose(field)
+            values.extend(loose.to_storage(loose.clean(item)) for item in value)
             if operator == 'in':
                 return f'{column} IN ({", ".join("?" for _ in value)})' if value else '1=0'
             # Not in also matches empty values, as "is not one of these" reads.

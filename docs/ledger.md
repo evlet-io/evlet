@@ -221,7 +221,11 @@ def spend(database, member_id, points, reason, on_date):
 ```
 
 Rebuilding the cache from the movements is app code too: group the movements with
-`database.aggregate(..., group_by=('member',))` and write the totals.
+`database.aggregate(..., group_by=('member',))` and write the totals. With more than 500
+members, page through the groups with `tx.aggregate(..., limit=1000, after=page[-1])`, and
+select a batch of members with a long `member__in` list
+([paging](measures.md#paging-through-many-groups),
+[long `in` lists](model-engine.md#long-in-lists-in-trusted-code)).
 
 ## Transaction locks (`tx.lock`)
 

@@ -80,6 +80,39 @@ with database.transaction() as tx:
 Use it in trusted code that checks a total before it writes, such as a job or a data step.
 It replaces calling `evlet.measures.aggregate(tx, ...)`, which is not public.
 
+### Paging through many groups
+
+A verification or rebuild job can need more than 500 groups, and a busy key can pass 500
+groups even when the job splits its work by another field. Trusted code pages through the
+groups instead. Give `limit` (1 to 10,000 groups per page) and pass the last group of each
+page as `after`:
+
+```python
+after = None
+while page := tx.aggregate(Entry, measures={"total": Sum("amount")}, group_by=("account", "on_date"),
+                           limit=1000, after=after):
+    for group in page:
+        check(group)
+    after = page[-1]
+```
+
+* Each group comes back exactly once. Groups are in a stable order: by each group key in
+  turn, ascending, empty values first. The database orders text keys by its collation,
+  so the order of text keys can differ between SQLite and PostgreSQL. It never changes
+  between pages of one walk.
+* Each page is one query that starts after `after`. No page reads the groups before it,
+  and the caller keeps only one page in memory, whatever the number of groups.
+* `after` is a dict with every group key, normally the previous page's last row. Its values
+  are checked and bound as parameters, like filter values.
+* Paging needs `group_by`. `after` needs `limit`. Without `limit` the 500-group limit
+  applies as before.
+* `database.aggregate(..., limit=, after=)` pages the same way, with each page read in
+  its own snapshot. Page inside one transaction (`tx.aggregate`) when the pages must agree
+  with each other.
+
+Paging is for trusted Python only. The HTTP route, `context.aggregate`, Eva, tools, MCP and
+Connector take no `limit` or `after` and keep the 500-group limit.
+
 `database.aggregate` and `tx.aggregate` are trusted: they apply no permissions. In request handlers,
 actions and services, use the permission-aware form on `Context`:
 
