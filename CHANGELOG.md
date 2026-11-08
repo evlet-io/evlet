@@ -8,6 +8,21 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Record layouts.** `Meta.layout` can declare the whole record page: `Tab(title, blocks)`s, or
+  plain blocks without tabs, holding `Section`s, `Table` field names (the table shows inside the tab
+  or the form instead of on its own tab), `Related(model, link=None, filters=..., fields=..., limit=...,
+  order=..., label=...)` lists of related records, `Html(...)` text from the app with `{field}`
+  values, and `Chart('stat' | 'bar' | 'line', x=..., y=..., model=..., link=...)` blocks over the
+  related model's declared measures. Filters use the list syntax and `Ref('field')` compares with
+  a field of the record. Related rows come from the list route and charts from the aggregate route,
+  so row scopes and field permissions apply; `/api/schema` sends the layout as `record_layout`, cut
+  to what each role reads. Everything is checked when the registry is built. A model whose layout
+  declares a `Related` block no longer shows the automatic Related tab and side block unless
+  `Meta.tabs` or `Meta.side_blocks` names `related`. Models with sections only are unchanged. Html
+  keeps to the rich text allowlist and inserts record values as text only. Controls "Export as
+  code" writes the full `Meta.layout`. The Playground's Employee uses every block
+  ([docs/ui.md](docs/ui.md#record-layouts)).
+
 - **`self.context.session` in run methods and actions.** A Move's `run` method and an `@action`
   handler can write other rows, such as ledger rows, in the move or action's own transaction:
   `self.context.session` is its `evlet.Session`, with `tx.lock`, `tx.insert_many`,
@@ -111,6 +126,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `list_tabs` and `list_tab`. Pasted into the model, they give the same screens as the
   overrides. Field widths follow the field type, and a list's page size and sort stay instance
   overrides; the export says so in a comment.
+- **Aggregate filters on row-scoped Links.** `GET /api/{model}/aggregate` (and `context.aggregate`)
+  now allow an `eq` or `in` filter on a Link to a model the caller reads under a row scope when
+  every id is a record the caller can read, as lists already did. Other ids still answer 403
+  ([docs/measures.md](docs/measures.md#permissions)).
+- **`Related` and `Chart` take more arguments.** `Related(model, link=None, ..., filters=None,
+  fields=())`: `link` stays required in `Meta.relations`, which refuses `filters` and `fields`.
+  `Chart(type, x=None, ..., model=None, link=None, filters=None)`: a report chart still needs `x`
+  and takes none of the new ones. Existing calls are unchanged.
 - **The list filter panel is a side panel.** It docks beside the table inside the page, with
   no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
   sit on top and saved filters below; each half scrolls on its own. Escape closes it.

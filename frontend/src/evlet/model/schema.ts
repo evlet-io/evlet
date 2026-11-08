@@ -107,6 +107,9 @@ export interface ModelSchema {
   /** What a record opened in a list's side panel leaves out, by kind: panel=False flags, Meta.panel or the Controls
    * toggles. order is the order Meta.panel names tabs and blocks in. Absent means the panel shows everything. */
   panel?: PanelSchema;
+  /** Meta.layout with Tabs or blocks besides sections (evlet.Tab, Related, Html, Chart, Table field names). Absent: the
+   * record page shows its sections on Details, each Table on its own tab, and the automatic Related tab and block. */
+  record_layout?: RecordLayout;
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };
@@ -126,6 +129,24 @@ export interface ModelSchema {
    */
   behavior?: Record<string, { filters?: Record<string, unknown>; filters_blocked?: boolean } & Record<string, unknown>>;
 }
+
+/** A filter condition of a layout block: [field, operator, value], where the value may be
+ * `{"$expr": "ref", "args": ["field"]}` for that field of the record. */
+export type LayoutCondition = [string, string, unknown];
+
+/** One block of a record layout, in order. Sections are named by title; their fields are in the model's layout. */
+export type LayoutBlock =
+  | { kind: 'section'; label: string }
+  | { kind: 'table'; name: string }
+  | { kind: 'related'; model: string; link: string; label: string; filters: LayoutCondition[]; fields: string[]; limit: number; order: string[] }
+  | { kind: 'html'; html: string }
+  | { kind: 'chart'; type: 'bar' | 'line' | 'stat'; model: string; link: string; x: string | null; y: string[]; label: string | null; filters: LayoutCondition[] };
+
+/** A record page tab declared with evlet.Tab: its name (Meta.tabs, ?tab=t-<name>), label and blocks. */
+export interface LayoutTab { name: string; label: string; blocks: LayoutBlock[] }
+
+/** The record layout: Tabs, or blocks shown on Details without Tabs. */
+export interface RecordLayout { tabs?: LayoutTab[]; blocks?: LayoutBlock[] }
 
 /** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */
 export interface PrintSchema { name: string; title: string; default: boolean }

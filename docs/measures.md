@@ -289,7 +289,10 @@ parameters. The record must be readable by the caller, otherwise 404.
   message, through HTTP and through `Context`. Shape errors (bad syntax, too many
   measures or group fields) are checked first and give 422.
 * Filters follow the list rules (`Policy.query_fields`). They are checked even when no
-  declared measure is available to the caller.
+  declared measure is available to the caller. As on lists, an `eq` or `in` filter on a Link to a
+  model the caller reads under a row scope is allowed when every id is a record the caller can
+  read, such as the record a page shows; any other id is refused with 403. Record layout charts
+  ([ui.md](ui.md#record-layouts)) filter this way.
 
 ## Schema
 

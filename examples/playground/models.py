@@ -2,8 +2,8 @@
 
 from datetime import date
 
-from evlet import (Boolean, Currency, Date, DateTime, Decimal, Hierarchy, Integer, Link, LongText, Model, Naming, Ref, Registry, RichText,
-                   Rule, Section, Select, Series, Sum, Text, ValidationError, action)
+from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Model, Naming, Ref,
+                   Registry, Related, RichText, Rule, Section, Select, Series, Sum, Tab, Table, Text, ValidationError, action)
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
@@ -159,12 +159,42 @@ class ProjectTask(Model):
 TEAM = Hierarchy('employee', parent='reports_to')
 
 
+class Skill(Child):
+    skill = Text(required=True, max_length=80)
+    level = Select(['learning', 'practised', 'expert'], required=True, default='practised')
+
+
+DEPARTMENTS = ['sales', 'finance', 'operations', 'people']
+
+
 class Employee(Model):
     class Meta:
         description = "People and who they report to."
         title_field = 'full_name'
-        list_fields = ('full_name', 'email', 'reports_to')
+        list_fields = ('full_name', 'email', 'department', 'reports_to')
         search_fields = ('full_name', 'email')
+        # The record page, declared block by block (docs/ui.md, Record layouts): two tabs instead of Details,
+        # the Skills table inside the Profile tab, text from the app, charts over the measure below, and two
+        # lists of direct reports, one narrowed to this employee's department. Listing related records here
+        # turns the automatic Related tab and side block off for employees.
+        layout = (
+            Tab('Profile', (
+                Section('Employee', ('full_name', 'email', 'department', 'reports_to'), collapsible=False),
+                Html('<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is on the Team tab.</p>'),
+                'skills',
+            )),
+            Tab('Team', (
+                Chart('stat', y='people', model='employee', link='reports_to', label='Direct reports'),
+                Chart('bar', x='department', y='people', model='employee', link='reports_to', label='Direct reports by department'),
+                Related('employee', 'reports_to', label='Direct reports', fields=('full_name', 'email', 'department'), order='full_name'),
+                Related('employee', 'reports_to', label='Reports in the same department', filters={'department': Ref('department')},
+                        fields=('full_name', 'email')),
+            )),
+        )
+        # A Tab of the layout can be where records open, as any record tab can.
+        default_tab = 'profile'
+        # People counted by the charts above; the list shows the count too.
+        measures = {'people': Count()}
 
     # Moving someone changes every team above them, so each save keeps who changed reports_to and when.
     track_changes = True
@@ -172,7 +202,9 @@ class Employee(Model):
                    'viewer': Rule(('read',), scope=TEAM.team())}
     full_name = Text(required=True, max_length=120, label='Full name')
     email = Text(max_length=254)
+    department = Select(DEPARTMENTS)
     reports_to = Link('employee', index=True, label='Reports to')
+    skills = Table(Skill)
 
     @action('Recognise', inputs={'points': Integer(required=True, minimum=1, maximum=50),
                                  'reason': Text(required=True, max_length=120)})

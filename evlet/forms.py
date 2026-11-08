@@ -49,18 +49,45 @@ class Column:
         if self.total and not self.unit: raise ValueError('Totals require an explicit common unit or currency')
 
 
+# Chart types: a report draws bars or lines; a record layout chart may also show its measures as stat numbers.
+CHART_TYPES = ('bar', 'line', 'stat')
+
+
 @dataclass(frozen=True)
 class Chart:
-    """A bar or line chart of a report's rows: one label column and up to four number columns."""
+    """A chart. In a report: bars or a line of the report's rows, one label column (x) and up to four number
+    columns (y). In Meta.layout: a block over the records of `model` whose Link `link` points to the record,
+    y naming up to four of that model's declared measures, grouped by its field x ('field' or 'field:month');
+    type 'stat' shows the measures as numbers, without x."""
     type: str
-    x: str
+    x: str = None
     y: tuple = ()
     label: str | None = None
+    model: object = None
+    link: str = None
+    filters: object = None
 
     def __post_init__(self):
-        if self.type not in ('bar', 'line'): raise ValueError('A report chart is bar or line')
+        if self.type not in CHART_TYPES: raise ValueError('A chart is bar, line or stat')
         object.__setattr__(self, 'y', (self.y,) if isinstance(self.y, str) else tuple(self.y))
-        if not 1 <= len(self.y) <= 4: raise ValueError('A report chart shows one to four columns')
+        if not 1 <= len(self.y) <= 4: raise ValueError('A chart shows one to four columns or measures')
+        if self.label is not None and (not isinstance(self.label, str) or not self.label):
+            raise ValueError('A chart label is nonempty text')
+        if self.model is None:
+            if self.type == 'stat' or self.link is not None or self.filters is not None:
+                raise ValueError('A report chart is bar or line over its own rows; model, link and filters are for record layout charts')
+            if not isinstance(self.x, str): raise ValueError('A report chart names its label column as x')
+            return
+        if not isinstance(self.model, (type, str)) or self.link is not None and (not isinstance(self.link, str) or not self.link):
+            raise ValueError('A layout chart names a model and, optionally, its Link field to this model')
+        if (self.type == 'stat') != (self.x is None):
+            raise ValueError("A bar or line chart groups by a field (x='status' or x='due:month'); a stat chart has no x")
+        if self.filters is not None and not isinstance(self.filters, (dict, list, tuple)):
+            raise ValueError('Chart filters use the list filter syntax: a dict or a list of conditions')
+
+    def public(self):
+        """A report chart as /api/_reports lists it."""
+        return {'type': self.type, 'x': self.x, 'y': list(self.y), 'label': self.label}
 
 
 class Report(Model):
@@ -203,7 +230,7 @@ class Forms:
                 if field not in registry.resolve(model).__declared_fields__: raise ValueError('Unknown column source: ' + column.source)
         if report.group_by is not None and report.group_by not in columns: raise ValueError('Report group_by names a declared column')
         chart = report.chart
-        if chart is not None and (not isinstance(chart, Chart) or chart.x not in columns
+        if chart is not None and (not isinstance(chart, Chart) or chart.model is not None or chart.x not in columns
                                   or any(columns.get(name) is None or columns[name].type not in numbers for name in chart.y)):
             raise ValueError('A report chart names a declared column and number columns')
 
@@ -246,7 +273,7 @@ class Forms:
                            'group': report.group, 'model': None if report.model is None else self.surfaced(report.model),
                            'sortable': [column for column in report.sortable if column not in hidden], 'export': report.export,
                            'group_by': None if report.group_by in hidden else report.group_by,
-                           'chart': None if chart is None else {**vars(chart), 'y': [column for column in chart.y if column not in hidden]}})
+                           'chart': None if chart is None else {**chart.public(), 'y': [column for column in chart.y if column not in hidden]}})
         return result
 
     def column(self, column):

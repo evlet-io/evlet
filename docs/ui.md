@@ -32,8 +32,8 @@ pinning keep the first column pinned. A child table's Focus view keeps the recor
 save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout`, `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`, `list_tab`, `autosave`, `status`, `board`,
-`summary`, `side_blocks` and `panel`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+`layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`,
+`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks` and `panel`. See "What the model decides" in [ui-framework.md](ui-framework.md).
 
 ### Each fact once on the record page
 
@@ -99,6 +99,86 @@ not True or False fails when the registry is built.
 - Controls, Models, Form layout can change it per instance with the panel button on each section,
   field and tab, and the Side panel card for the summary strip and blocks
   ([controls.md](controls.md)).
+
+### Record layouts
+
+`Meta.layout` can declare the whole record page instead of sections only. It is a list of `Tab`s,
+or of plain blocks when there are no tabs. A tab holds blocks in order:
+
+```python
+from evlet import Chart, Count, Html, Model, Ref, Related, Section, Tab
+
+
+class Employee(Model):
+    class Meta:
+        layout = (
+            Tab('Profile', (
+                Section('Employee', ('full_name', 'email', 'department', 'reports_to')),
+                Html('<p>Skills of <strong>{full_name}</strong> are kept with the record.</p>'),
+                'skills',                                  # a Table field, inside the tab
+            )),
+            Tab('Team', (
+                Chart('stat', y='people', model='employee', link='reports_to', label='Direct reports'),
+                Chart('bar', x='department', y='people', model='employee', link='reports_to'),
+                Related('employee', 'reports_to', label='Direct reports', fields=('full_name', 'email'), order='full_name'),
+                Related('employee', 'reports_to', label='Same department', filters={'department': Ref('department')}),
+            )),
+        )
+        measures = {'people': Count()}
+```
+
+| Block | What it shows |
+|---|---|
+| `Section(...)` or `('Title', fields)` | Fields, as before. |
+| A `Table` field name | The child table, inside the tab or the form instead of on its own tab. |
+| `Related(model, link=None, *, label, filters, fields, limit, order)` | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. |
+| `Html(content)` | Text from the app. `{field}` shows that field of the record. |
+| `Chart(type, x=None, y=..., *, model, link=None, filters, label)` | Declared measures of `model` over the records that point to this one: `'stat'` numbers, or `'bar'` or `'line'` grouped by `x` (`'status'`, `'due:month'`). |
+
+- **Tabs.** A `Tab(title, blocks, *, name=None, panel=True)` is named by its title in lowercase with
+  underscores (`Tab('Long text', ...)` is `long_text`), or by `name=`. `Meta.tabs`,
+  `Meta.default_tab`, `Meta.panel` and the address (`?tab=t-<name>`) use that name, and a tab named
+  `details` keeps the Details address. Layout tabs replace Details. Activity, Revisions and
+  Postings stay, and a Table that no block places keeps its own tab. Without tabs, the blocks show
+  on Details in order: a Table can sit between two sections of the form.
+- **Fields no section lists** show as Other, last on the first tab, as before.
+- **`link`** is the other model's Link field to this one. Leave it out when there is exactly one.
+- **Filters** use the list filter syntax on the other model's own fields, as a dict
+  (`{'status__ne': 'done'}`) or a list of conditions. `Ref('field')` compares with a field of this
+  record (eq, ne, gt, gte, lt, lte); the page reads it from the saved record. Paths and child-row
+  filters are refused.
+- **Charts** use only measures declared in the other model's `Meta.measures`, without `model=`
+  (model-level). Up to four. They read the aggregate route with the same filters, so they count
+  only records the person may read, and they draw like a report chart.
+- **Html** keeps to the rich text allowlist: paragraphs, h2 and h3 headings, lists, quotes, code,
+  strong, em, links and line breaks. Scripts, styles, frames, forms and event attributes fail when
+  the class is defined; anything else outside the list is dropped. Record values are always
+  inserted as text, never as markup. `{{` and `}}` are literal braces. It is the app's own trusted
+  text: never put user-entered HTML in it.
+- **The automatic Related tab and side block** turn off for a model whose layout declares a
+  `Related` block. Name `related` in `Meta.tabs` to keep the tab, or in `Meta.side_blocks` to keep
+  the side block. A model without Related blocks keeps both, as before.
+- **Permissions.** Related rows come from `GET /api/{model}` with the block's filters and
+  `[link, "eq", <record id>]`, and charts from `GET /api/{model}/aggregate`, so row scopes, field
+  permissions and filter checks apply as for any list. `/api/schema` leaves out a Related or Chart
+  block the role cannot use (the model, its Link, a filter field or every measure unreadable) and
+  cuts Related columns and order to readable fields.
+- **Loading.** A block asks for its rows when it first scrolls into view, and a save of the
+  record loads shown blocks again. A related record and a chart need a saved record, so a new
+  record shows only its sections, tables and Html.
+- **Side panel and phones.** In a list's side panel the tabs show as on the page, `panel=False`
+  on a `Tab` leaves it out, and the side column's blocks close the first tab. Blocks stack at
+  phone width, and the tabs move by keyboard (arrow keys) like the other record tabs.
+- **Errors.** An unknown model, field, Link or Table name, a bad filter or operator, a `Ref` to a
+  field the model does not show, an unknown measure or group field, a Tab inside a Tab, mixing
+  Tabs with plain blocks, two sections with one title, or a Tab named like a record tab fails
+  when the registry is built, naming the model, the tab and the block.
+
+`/api/schema` sends the layout as `record_layout`: `{"tabs": [{"name", "label", "blocks"}]}` or
+`{"blocks": [...]}`, each block with its `kind` (`section`, `table`, `related`, `html`, `chart`).
+Sections are named by title and keep their fields in `layout`, which every other client reads as
+before. A model whose layout has only sections has no `record_layout`, and its page is unchanged.
+The Playground's Employee page uses every block type.
 
 ### List tabs
 

@@ -74,3 +74,32 @@ def test_recognise_writes_the_ledger_in_the_actions_own_transaction(secured):
     member = client(secured, 'member')
     assert member('POST', url + '/actions/recognise', {'points': 1, 'reason': 'x'},
                   headers={b'if-match': member('GET', url)[2][b'etag']})[0] == 403
+
+
+def test_the_employee_record_layout_lists_and_charts_the_team_each_viewer_may_read(secured):
+    """Employee.Meta.layout: Related blocks and charts read through the list and aggregate routes, so a viewer's
+    team scope applies to them as it does to the Employees list."""
+    from urllib.parse import quote
+    accounts = seed_team(secured, PASSWORD)
+    manager, outsider = client(secured, 'manager'), client(secured, 'outsider')
+    entry = next(item for item in manager('GET', '/api/schema')[1]['models'] if item['name'] == 'employee')
+    tabs = entry['record_layout']['tabs']
+    assert [tab['name'] for tab in tabs] == ['profile', 'team']
+    assert [block['kind'] for block in tabs[0]['blocks']] == ['section', 'html', 'table']
+    assert [block['kind'] for block in tabs[1]['blocks']] == ['chart', 'chart', 'related', 'related']
+    # Nothing brings the automatic Related tab or side block back (the record page leaves them out).
+    assert 'related' not in entry['tabs'] and 'side_blocks' not in entry
+    reports, same = tabs[1]['blocks'][2], tabs[1]['blocks'][3]
+
+    def listed(c, block, record, department=None):
+        filters = [[block['link'], 'eq', record]] + [[field, op, department] for field, op, _ in block['filters']]
+        return c('GET', f"/api/employee?order_by={','.join(block['order'])}&filters=" + quote(json.dumps(filters)))
+
+    status, page, _ = listed(manager, reports, accounts['manager'])
+    assert status == 200 and [item['full_name'] for item in page['items']] == ['Omar Khalil', 'Ravi Menon']
+    assert [item['full_name'] for item in listed(manager, same, accounts['manager'], 'operations')[1]['items']] == ['Omar Khalil']
+    chart = f"/api/employee/aggregate?measures=people&group_by=department&filters=" + quote(json.dumps([['reports_to', 'eq', accounts['manager']]]))
+    assert manager('GET', chart)[1]['items'] == [{'department': 'finance', 'people': 1}, {'department': 'operations', 'people': 1}]
+    # The outsider cannot read the manager's record, so neither its team list nor its chart answers.
+    assert listed(outsider, reports, accounts['manager'])[0] == 403
+    assert outsider('GET', chart)[0] == 403
