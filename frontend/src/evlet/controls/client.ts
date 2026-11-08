@@ -31,6 +31,7 @@ export interface PrintListing {
 export interface Overrides { items: OverrideItem[]; problems: Problem[]; version: number }
 export interface RoleRow {
   id: string; kind: 'framework' | 'custom'; base: string | null; realm: 'desk' | 'portal'; opens_controls: boolean;
+  /** Edits the site's workspace overrides (always true for admin). */ customize_workspaces?: boolean;
   description: string; users: number; app: string | null; declared: boolean;
 }
 export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; assistants?: number; keys?: number; two_step?: { since: number | null; agent: string } | null;

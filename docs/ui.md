@@ -353,8 +353,17 @@ those without a group first).
 ]
 ```
 
-`source` is `declared` or `automatic`. `filters` is always in the list form a list address carries
-(`?f=`), or null. Hiding an item is never a permission: every route checks access as before.
+`source` is `declared`, `automatic` or `custom` (added on this site, with `app` null). `filters` is
+always in the list form a list address carries (`?f=`), or null. Hiding an item is never a
+permission: every route checks access as before.
+
+**Customizing a workspace on one site.** Admins, and roles with "Customize workspaces" on in Controls,
+can reorder, hide and rename groups and items, rename a workspace, add shortcuts and add whole
+workspaces for the site, and reset any of it. These are site overrides, stored and audited like the
+other Controls overrides ([controls.md](controls.md#workspaces)). `/api/schema` gives the effective
+workspaces: the declared ones, then the site's overrides, then permission filtering. An override can
+never show a role something it can't open: a shortcut to a model a role can't read stays hidden for
+that role.
 
 ## Not rendered by this interface
 

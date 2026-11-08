@@ -466,6 +466,64 @@ Paste the code, deploy, then reset the overrides. Overrides that no longer apply
 
 **MCP & AI** (kind `setting`) is described under [MCP and AI](#mcp-and-ai).
 
+## Workspaces
+
+Site overrides of the app's workspaces ([ui.md](ui.md#workspaces)). They are stored in
+`evlet_overrides` with kind `workspace` and the workspace key, never change app files, raise
+`evlet_config.version` like every override, and write audit rows (area `Workspaces`: Changed, Added,
+Reset to the declared workspace, Removed, with the value before and after). They have their own
+routes and are not part of `POST /api/_controls/overrides`, the Overrides page or Export as code.
+
+**Who.** Admins, and desk roles with **Customize workspaces** on (Roles page, `PATCH
+/api/_controls/roles/<id>` `{"customize_workspaces": true}`). Only admins turn it on or off; admin
+always has it and portal roles never do. It works like "Opens Controls" but is separate from it: a
+role with only Customize workspaces reaches the workspace routes and nothing else in Controls, and
+"Opens Controls" alone does not give it. The same hosts, allowed networks and two-step rules as
+Controls apply, and a change asks for a fresh two-step code. Like the rest of Controls, the routes
+stay hidden from everyone else: they answer 404. The one exception is a person who already opens
+Controls but whose role lacks Customize workspaces. Controls is not hidden from them, so they get
+403 with the reason.
+
+| Route | Does |
+|---|---|
+| `GET /api/_controls/workspaces` | `{items, problems}`: each workspace with `key`, `label`, `source`, `app`, its saved `override`, `changed_by`, `changed_at`, and how it looks to this person without (`declared`) and with (`effective`) the override |
+| `PUT /api/_controls/workspaces/<key>` | Save the override (it replaces the saved one). Answers the listing; 422 names each problem by path, such as `groups.0.items.2.shortcut` |
+| `DELETE /api/_controls/workspaces/<key>` | Reset to the declared workspace, or remove a custom one |
+
+The override of a declared or automatic workspace:
+
+```json
+{"label": "Sales desk", "icon": "handshake",
+ "groups": [
+   {"key": "deals", "label": "Pipeline", "items": [
+     {"key": "model:deal:large_deals", "label": "Big deals"},
+     {"key": "model:client"},
+     {"key": "slip:quick_deal", "hidden": true},
+     {"shortcut": {"model": "deal", "filters": {"stage": "won"}, "label": "Won deals"}}]},
+   {"key": "reports", "hidden": true},
+   {"key": "later", "label": "Later", "items": [{"shortcut": {"url": "/docs", "label": "Docs"}}]}]}
+```
+
+- `label` and `icon` rename the workspace and change its icon.
+- `groups` come first, in this order; declared groups the override doesn't list follow in their
+  declared order. A group key the workspace doesn't have adds a group, which needs a label.
+- In a group, the listed items come first, then its other declared items. An item listed in another
+  group moves there. `hidden` hides a group or an item, `label` renames it.
+- `{"key": ...}` names a declared item by its key; for an automatic workspace, any `model:<name>` or
+  `report:<name>` of its app. `{"shortcut": {...}}` adds one with the arguments of `Shortcut`
+  (`model`, `view`, `filters`, `label`, `report`, `slip`, `url`), checked exactly like a declared
+  one. Its key must not be one the workspace already has.
+- A new workspace is `{"custom": true, "label": ..., "icon": ..., "groups": [...]}` under a new key
+  (lowercase letters, digits and underscores). It holds shortcuts only and lists after the declared
+  workspaces, by key.
+- Sending `{}` for a declared workspace resets it.
+
+Permission filtering runs after the override, so an override never widens access: a shortcut to a
+model, report or slip a role can't use, or with filters on a field it can't read, stays hidden for
+that role, and groups and workspaces left empty are hidden. A saved override that no longer
+validates after an app update is left out (the workspace shows as declared) and listed in `problems`
+and under Needs attention until it is fixed or reset.
+
 ## Connectors and secrets
 
 Connectors are connections to other services. Apps declare them; the framework declares
@@ -854,7 +912,8 @@ newest first, 50 rows at a time.
 | `GET/POST /api/_controls/overrides` | File value, override, who and when; save changes. `display.currencies` needs an admin |
 | `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end", "revoke_keys": false}`. Each user row counts active `keys` |
 | `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules, fresh two-step code and audit rows; refused access is a 403 there |
-| `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls" and descriptions |
+| `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls", "Customize workspaces" and descriptions |
+| `GET /api/_controls/workspaces`, `PUT/DELETE /api/_controls/workspaces/<key>` | Workspace overrides: list, save, reset ([Workspaces](#workspaces)). Admins and roles with "Customize workspaces" |
 | `POST /api/_controls/fields/<Model>`, `DELETE /api/_controls/fields/<Model>/<x_name>` | Add or remove an instance field: `{name, type, label, help_text, tooltip, required, default, options, target}` |
 | `GET/POST /api/_controls/naming/<Model>/counters` | Counters; set one with `{prefix, value, note}` |
 | `POST /api/_controls/naming/<Model>/try` | `{values, series?}`: the matching series and name, and a check of each draft series. No counter changes |

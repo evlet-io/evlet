@@ -171,9 +171,10 @@ export interface WorkspaceSchema {
   key: string;
   label: string;
   icon: string | null;
-  /** The app that declares it ("app" for an application built by hand). */
-  app: string;
-  source: 'declared' | 'automatic';
+  /** The app that declares it ("app" for an application built by hand); null for a workspace added in Controls. */
+  app: string | null;
+  /** custom: added on this site (Controls workspace overrides). */
+  source: 'declared' | 'automatic' | 'custom';
   groups: WorkspaceGroup[];
 }
 
