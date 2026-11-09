@@ -135,6 +135,10 @@ production ready, but the rules below hold from 0.3 on.
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
   public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
 
+- **Cancelled states.** `State(..., cancelled=...)`, a list of final state names (empty by
+  default), the rule that `"void"` on a voidable State counts as cancelled, and `cancelled` in the
+  schema's `state` entry ([states-actions.md](states-actions.md#cancelled-states)).
+
 - **Currency display.** `set_currency_display(application, value, *, actor='cli')`, the setting
   `display.currencies` with its entry form (`symbol`, `image`, `position`, `space`, `tint`) and its
   limits, and `currency_display` in `/api/schema` ([controls.md](controls.md#currencies)).

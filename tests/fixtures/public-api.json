@@ -112,7 +112,7 @@
     "SetAppendOnly": "class(table: str, enabled: bool) -> None",
     "Shortcut": "class(model: object = None, view: str | None = None, filters: object = None, label: str | None = None, *, report: object = None, slip: object = None, url: str | None = None) -> None",
     "Slip": "class(**values)",
-    "State": "class(choices, *, default=<object object>, moves=(), locked=(), final=(), voidable=(), show='badge', **kwargs)",
+    "State": "class(choices, *, default=<object object>, moves=(), locked=(), final=(), voidable=(), cancelled=(), show='badge', **kwargs)",
     "StorageError": "exception",
     "Sum": "class(field, *, where=None, model=None, link=None, trend=None, color=None)",
     "Swap": "class(first, second)",

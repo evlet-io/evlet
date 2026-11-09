@@ -8,6 +8,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Cancelled states: `State(..., cancelled=...)`.** Names the final states that mean a record
+  was called off, such as cancelled or lost, so the browser can show them as cancelled instead of
+  guessing. Each must be a final state, checked when the class is created. On a voidable State,
+  `"void"` counts as cancelled without being listed. `/api/schema` carries the list as
+  `state.cancelled`. It changes no moves, locks or permissions
+  ([docs/states-actions.md](docs/states-actions.md#cancelled-states)).
+
 - **Derived values: `derive()` and `Meta.derives`.** A document builds stored values formulas
   cannot express in `derive(self)`, such as one row per distinct value of another Table or rows
   built from a linked record. `Meta.derives` may also name `"table.field"`: a field derive() sets on

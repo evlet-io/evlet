@@ -14,7 +14,7 @@ import { tintFor, type Tint } from '../ui/core';
 
 export interface MoveSchema { from: string[] | string; to: string; label: string; roles?: string[]; guarded?: boolean; when?: unknown; asks?: string[] }
 /** show: how the record page draws the State, a header badge (the default), the stage bar, or neither. */
-export interface StateMeta { field: string; states: string[]; default?: string; moves: MoveSchema[]; locked?: string[]; final?: string[]; voidable?: string[]; show?: StateShow }
+export interface StateMeta { field: string; states: string[]; default?: string; moves: MoveSchema[]; locked?: string[]; final?: string[]; voidable?: string[]; cancelled?: string[]; show?: StateShow }
 export type StateShow = 'badge' | 'bar' | 'none';
 /** A declared measure's trend (docs/measures.md#trends): read the series from GET /api/{model}/aggregate with
  * measures=<name>, group_by=<field>:<grain> and the list filters plus <field>__gte the start of the first of the

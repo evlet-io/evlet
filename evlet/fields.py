@@ -543,7 +543,8 @@ class State(Select):
     Ordinary writes may create a record in the default state and never set the value. `locked`
     states refuse ordinary writes to the record and its Table rows, `final` states have no moves
     out and `voidable` names the states a void (and a revise) may start from. A State with voidable
-    states must have a "void" state that is locked and final.
+    states must have a "void" state that is locked and final. `cancelled` names final states that
+    mean the record was called off, such as cancelled or lost; it only describes them, for display.
 
     `show` is how the record page draws it: "badge" (a status badge in the header, the default),
     "bar" (the stage bar, for pipelines such as draft, submitted, approved) or "none".
@@ -551,10 +552,11 @@ class State(Select):
     OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length", "colors", "panel", "copy")
     SHOW = ("badge", "bar", "none")
 
-    def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), show="badge", **kwargs):
+    def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), cancelled=(),
+                 show="badge", **kwargs):
         from .declarations import Move
         if set(kwargs) - set(self.OPTIONS):
-            raise ValueError("State takes choices, default, moves, locked, final, voidable, show and " + ", ".join(self.OPTIONS))
+            raise ValueError("State takes choices, default, moves, locked, final, voidable, cancelled, show and " + ", ".join(self.OPTIONS))
         if show not in self.SHOW:
             raise ValueError('State show is "badge", "bar" or "none"')
         self.show = show
@@ -564,13 +566,17 @@ class State(Select):
         if default not in self.choices:
             raise ValueError("A State default must be one of its states")
         groups = {}
-        for name, value in (("locked", locked), ("final", final), ("voidable", voidable)):
+        for name, value in (("locked", locked), ("final", final), ("voidable", voidable), ("cancelled", cancelled)):
             if isinstance(value, str) or not isinstance(value, (list, tuple)) or len(set(value)) != len(value):
                 raise ValueError(f"State {name} must be a list of distinct state names")
             if set(value) - set(self.choices):
                 raise ValueError(f"State {name} names an unknown state: " + ", ".join(sorted(set(value) - set(self.choices))))
             groups[name] = tuple(value)
         self.locked, self.final, self.voidable = groups["locked"], groups["final"], groups["voidable"]
+        self.cancelled = groups["cancelled"]
+        if set(self.cancelled) - set(self.final):
+            raise ValueError("State cancelled names a state that is not final: "
+                             + ", ".join(sorted(set(self.cancelled) - set(self.final))) + "; cancelled states must be final")
         if set(self.voidable) - set(self.locked) or set(self.voidable) & set(self.final):
             raise ValueError("Voidable states must be locked and not final")
         # A void moves the record to the state named "void", which keeps it locked and ends its life.
@@ -592,6 +598,11 @@ class State(Select):
                 if (source, move.to) in pairs:
                     raise ValueError(f"Declare one move from {source} to {move.to}")
                 pairs.add((source, move.to))
+
+    @property
+    def cancelled_states(self):
+        """The declared cancelled states, plus "void" on a State with voidable states."""
+        return self.cancelled + (("void",) if self.voidable and "void" not in self.cancelled else ())
 
     def move(self, current, to):
         """The declared move from the current state to `to`, or None."""
