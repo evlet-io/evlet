@@ -170,11 +170,28 @@ class Visit(Model):
   validation (`validate()`), then store what changed, and return the settled record. It runs as
   the engine, without roles or row scopes, like the session write itself. A failure raises and
   undoes that write even when the calling code catches it, and the rest of the transaction
-  goes on. The rules:
+  goes on.
+
+  A document's rows can go with it: `children=` on `session.create` and `session.update` takes
+  the document's Tables as the HTTP API does, a full list of rows (rows with an `id` are kept
+  and changed, the others removed) or a change set (`create`, `update`, `delete`, `order`). The
+  rows are written and the document settles once, so a Table with `min_rows` can be created
+  in one call, and `derive()` runs once instead of once per row. Derived Tables and derived row
+  fields are refused there too (`DERIVED_FIELD_WRITE`).
+
+  ```python
+  order = session.create(Order, customer=customer, children={"lines": [{"item": item, "qty": 2}]})
+  session.update(Order, order.id, children={"lines": {"delete": [line_id]}})
+  ```
+
+  The rules:
   * A document with calculations is a finite-v1 document, which the session already refuses to
     write: app code writes it through `Context.create`/`update` (or an action or move), and
     `derive()` runs there.
-  * A record with posted effects keeps its stored values, as on every other write.
+  * A record with posted effects keeps its stored values, as on every other write, and refuses
+    `children=`.
+  * `children=` is only for a document that declares `derive()` (`ValueError` otherwise). A model
+    with a field named `children` takes it as that field.
   * `session.maintenance()` stays a raw repair: `derive()` does not run, so the repair must
     leave the derived values consistent (or the next save restores them).
   * A session with no application behind it (a bare `Database`, or a migration step) refuses

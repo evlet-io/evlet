@@ -1767,23 +1767,28 @@ def owner_of(tx, model, record_id):
     return record_id
 
 
-def settle_saved(tx, model, record_id):
+def settle_saved(tx, model, record_id, children=None):
     """Settle a saved document after a trusted Session write to it or to one of its rows (evlet/database.py), for a
     model that declares derive(): derive, clean, calculate and validate, as on any write, then store what changed.
 
     It runs as the engine, without roles or row scopes, like the trusted write that called it. A record with posted
     effects keeps its stored results, as on every other write. derive() reads through a read-only session, so it
-    cannot write and start another settlement."""
+    cannot write and start another settlement. `children` are the document's Table rows the write sends with it,
+    merged like the rows of an HTTP write."""
     from .effects import EngineBusiness, ENGINE, SessionPolicy, has_postings
     business = EngineBusiness(tx._business)
     business.policy = SessionPolicy(tx._business.policy)
     context = Context(business, tx, ENGINE)
     current = tx.get(model, record_id)
     if has_postings(tx.connection, business.registry, model, current):
+        if children:
+            raise ValidationError({'children': 'This record has postings. To change its rows, void or revise it.'})
         return
+    derived_write(model, {}, children or {}, '')
     draft = Draft(model, dict(current._values), context=context, record_id=current.id)
     before = Draft(model, dict(current._values), context=context, record_id=current.id)
-    load_rows(context, model, draft, before, current.id, {}, False, '', set(), None, SavedRows(context, model, current.id), LinkTargets(context))
+    load_rows(context, model, draft, before, current.id, children or {}, False, '', set(), None,
+              SavedRows(context, model, current.id), LinkTargets(context))
     settle(context, draft, complete=True, previous=before)
     if before.stored_values() != draft.stored_values():
         write_snapshot(tx, draft, before, reload=False)

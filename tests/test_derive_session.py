@@ -62,6 +62,29 @@ class Order(Model):
             raise ValidationError({'lines': 'Use at most three lines'})
 
 
+class Batch(Model):
+    """A document that needs at least one line: trusted code creates it with its rows in one call."""
+    permissions = FULL
+
+    class Meta:
+        derives = ('line_count', 'lines.net')
+
+    class Line(Child):
+        qty = Decimal(scale=2, default=1)
+        price = Decimal(scale=2, default=0)
+        net = Decimal(scale=2)
+
+    label = Text(max_length=40, default='batch')
+    lines = Table(Line, min_rows=1)
+    line_count = Integer()
+
+    def derive(self):
+        SEEN.append((self.model, [line.model for line in self.lines]))
+        for line in self.lines:
+            line.net = (line.qty or 0) * (line.price or 0)
+        self.line_count = len(self.lines)
+
+
 class Note(Model):
     """A declarative model without derive(): trusted session writes stay raw writes."""
     permissions = FULL
@@ -83,19 +106,19 @@ class Desk(Model):
         return {'order': str(order.id)}
 
 
-def line_model(session, name='lines'):
-    return next(child.model for child in session.registry.children if child.parent is Order and child.name == name)
+def line_model(session, name='lines', parent=Order):
+    return next(child.model for child in session.registry.children if child.parent is parent and child.name == name)
 
 
-def rows(session, order_id, name='lines'):
-    model = line_model(session, name)
+def rows(session, order_id, name='lines', parent=Order):
+    model = line_model(session, name, parent)
     return session.list(model, filters={'evlet_owner': order_id}, order_by=('evlet_position', 'id'))
 
 
 @pytest.fixture
 def app(tmp_path):
     SEEN.clear()
-    database = Database(tmp_path / 'derive-session.sqlite3', Registry(Order, Note, Desk))
+    database = Database(tmp_path / 'derive-session.sqlite3', Registry(Order, Batch, Note, Desk))
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
@@ -242,3 +265,50 @@ def test_ledger_models_cannot_declare_derive():
 
             def derive(self):
                 self.double = self.amount * 2
+
+
+def test_a_trusted_create_takes_its_rows_and_settles_once(app):
+    with app.database.transaction() as tx:
+        batch = tx.create(Batch, label='two', children={'lines': [{'qty': '2', 'price': '3'}, {'qty': '1', 'price': '5'}]})
+        assert batch.line_count == 2
+        assert [line.net for line in rows(tx, batch.id, parent=Batch)] == [D('6.00'), D('5.00')]
+    # One derive() for the document and both rows, not one per row.
+    assert len(SEEN) == 1
+    # Without its rows the document is refused, as on any other write.
+    with app.database.transaction() as tx, pytest.raises(ValidationError) as caught:
+        tx.create(Batch, label='none')
+    assert 'lines' in caught.value.errors
+    with app.database.transaction() as tx:
+        assert tx.count(Batch) == 1
+
+
+def test_a_trusted_update_replaces_or_changes_rows_in_one_call(app):
+    with app.database.transaction() as tx:
+        batch = tx.create(Batch, children={'lines': [{'qty': '1', 'price': '1'}, {'qty': '1', 'price': '2'}]})
+        first, second = rows(tx, batch.id, parent=Batch)
+        # A full list: rows with an id are kept and changed, the others are removed, new ones added.
+        tx.update(Batch, batch.id, label='changed', children={'lines': [{'id': str(second.id), 'qty': '3'}, {'qty': '2', 'price': '4'}]})
+        saved = rows(tx, batch.id, parent=Batch)
+        assert [(line.id == second.id, line.net) for line in saved] == [(True, D('6.00')), (False, D('8.00'))]
+        assert tx.get(Batch, batch.id).label == 'changed' and tx.get(Batch, batch.id).line_count == 2
+        # A change set.
+        tx.update(Batch, batch.id, children={'lines': {'delete': [str(saved[1].id)]}})
+        assert tx.get(Batch, batch.id).line_count == 1
+
+
+def test_rows_sent_with_a_trusted_write_are_checked_and_rolled_back(app):
+    with app.database.transaction() as tx:
+        batch = tx.create(Batch, children={'lines': [{'qty': '1', 'price': '1'}]})
+        # Removing every row breaks min_rows: the header change and the rows are undone, though the error is caught.
+        with pytest.raises(ValidationError):
+            tx.update(Batch, batch.id, label='gone', children={'lines': []})
+        # A derived row field is the record's to set.
+        with pytest.raises(ValidationError) as caught:
+            tx.create(Batch, children={'lines': [{'qty': '1', 'net': '9'}]})
+        assert caught.value.errors == {'lines.net': 'DERIVED_FIELD_WRITE: this value is set by the record'}
+    with app.database.transaction() as tx:
+        assert tx.count(Batch) == 1
+        assert tx.get(Batch, batch.id).label == 'batch' and len(rows(tx, batch.id, parent=Batch)) == 1
+        # children= is only for a document the session settles.
+        with pytest.raises(ValueError, match='children= is for a document that declares derive'):
+            tx.create(Note, children={'lines': []})

@@ -368,9 +368,9 @@ class Session:
     def create(self, model, /, **values):
         if is_ledger(model):
             return self.get(model, self.insert_many(model, [values])[0])
-        owner = self._derived_owner(model)
+        owner, children = self._derived_owner(model), self._children(model, values)
         if owner is not None:
-            with self._settling(model, owner, None) as created:
+            with self._settling(model, owner, None, children) as created:
                 created.append(self._create(model, values).id)
             return self.get(model, created[0])
         return self._create(model, values)
@@ -426,9 +426,9 @@ class Session:
     def update(self, model, record_id, /, **changes):
         if is_ledger(model):
             return self._ledger_update(model, record_id, changes)
-        owner = self._derived_owner(model)
+        owner, children = self._derived_owner(model), self._children(model, changes)
         if owner is not None:
-            with self._settling(model, owner, record_id) as written:
+            with self._settling(model, owner, record_id, children) as written:
                 written.append(self._update(model, record_id, changes).id)
             return self.get(model, written[0])
         return self._update(model, record_id, changes)
@@ -461,8 +461,24 @@ class Session:
         root = self.registry.root_of(model)
         return root if getattr(root, '__derives__', ()) else None
 
+    def _children(self, model, values):
+        """`children=` of a create or update: the document's Table rows, written with it and settled once.
+
+        As on the HTTP API, each Table is a full list of rows (rows with an `id` are kept and changed, the rest
+        are removed) or a change set {create, update, delete, order}. Only a document that declares derive()
+        takes them, since it is the one the session settles."""
+        if 'children' not in values or 'children' in model.__declared_fields__:
+            return None
+        children = values.pop('children')
+        if self._derived_owner(model) is not model:
+            raise ValueError(f'{model.__name__}: children= is for a document that declares derive(); write other '
+                             'documents with their rows through Context.create/update')
+        if not isinstance(children, dict):
+            raise ValidationError({'children': 'Use an object of child collections'})
+        return children
+
     @contextmanager
-    def _settling(self, model, owner, record_id):
+    def _settling(self, model, owner, record_id, children=None):
         """A trusted write to a document that declares derive(), or to one of its rows: the raw write, then the
         saved document settles like any other write (derive, clean, calculate, validate) and what changed is
         stored. All or nothing, even when trusted code catches the failure: a savepoint covers both."""
@@ -482,7 +498,7 @@ class Session:
             documents += [written[0] if model is owner else owner_of(self, model, written[0]) for _ in written[:1]]
             for document in dict.fromkeys(documents):
                 if document is not None:
-                    settle_saved(self, owner, document)
+                    settle_saved(self, owner, document, children)
         except BaseException:
             self.connection.execute(f'ROLLBACK TO SAVEPOINT {name}')
             self.connection.execute(f'RELEASE SAVEPOINT {name}')

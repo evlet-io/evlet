@@ -92,7 +92,8 @@ production ready, but the rules below hold from 0.3 on.
   `DERIVED_FIELD_WRITE` refusal (keyed `table.field` for a row field), the `read_only` flag on
   a derived field, a derived row field and a derived `children` entry in `/api/schema`, `self.model`
   (the model class) on the drafts the hooks get, and trusted `session.create`, `update` and
-  `delete` of a model with `derive()` or of its rows settling the saved document (a bare
+  `delete` of a model with `derive()` or of its rows settling the saved document, with
+  `children=` on its create and update (a bare
   `Database` refuses them; `maintenance()` skips it) ([model-engine.md](model-engine.md#derived-values),
   [states-actions.md](states-actions.md#before-a-record-closes)).
 
