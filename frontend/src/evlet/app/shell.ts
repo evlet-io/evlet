@@ -94,7 +94,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   };
   const shortcut = (item: NavShortcut) => {
     const active = () => here.get()?.item.key === item.key && here.get()?.workspace.key === current.get()?.key;
-    // The kind's icon (app/nav-icons.ts), small and muted, in place of a dot; white on the active row.
+    // The kind's icon (app/nav-icons.ts), small and muted, in place of a dot; blue on the active row.
     const inside = [Icon(item.icon, { size: 'sm', className: 'nav-ic' }), html`<span class="lbl">${item.label}</span>`, countOf(item)];
     // A menu slip opens over the page; an http(s) address opens in a new tab.
     const link = (item.slip ? html`<button type="button" class="nav-item nav-sc" data-kind=${item.kind} on:click=${() => void presentSlip(item.slip!)}>${inside}</button>`
@@ -105,12 +105,12 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   };
   const section = (workspace: Workspace, entry: NavSection) => {
     const id = `ev-nav-${sectionId(workspace, entry).replace(/[^a-z0-9_-]/gi, '-')}`;
-    // The section holding the page's shortcut is tinted and its title bolder, open or closed.
+    // The section holding the page's shortcut is drawn in blue, open or closed. Its title counts its shortcuts.
     const holdsPage = () => here.get()?.section.key === entry.key && here.get()?.workspace.key === workspace.key && current.get()?.key === workspace.key;
     return html`<div class="nav-sec" class:open=${() => isOpen(workspace, entry)} class:on=${holdsPage}>
       <button type="button" class="nav-sec-h" aria-expanded=${() => String(isOpen(workspace, entry))} aria-controls=${id} on:click=${() => toggleSection(workspace, entry)}>
         ${Icon(entry.icon, { size: 'sm', className: 'nav-sec-ic' })}<span class="lbl">${entry.label}</span>
-        ${entry.count === undefined ? null : html`<span class="count">${String(entry.count)}</span>`}${Icon('chevron-right', { size: 'xs', className: 'nav-sec-chev' })}</button>
+        <span class="count">${String(entry.count ?? entry.items.length)}</span>${Icon('chevron-right', { size: 'xs', className: 'nav-sec-chev' })}</button>
       <div class="nav-sec-items" id=${id} role="group" aria-label=${entry.label}>${entry.items.map(shortcut)}</div></div>`;
   };
   // The one account area, at the bottom of the sidebar. Its menu follows the Settings design order.

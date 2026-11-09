@@ -146,6 +146,8 @@ describe('the workspace sidebar', () => {
     await until(() => expect(host.querySelector('.nav-sc.active')).not.toBeNull());
     const marked = () => [...host.querySelectorAll('.nav-sec.on')].map(group => text(group.querySelector('.nav-sec-h .lbl')));
     expect(marked()).toEqual(['Records']);
+    // Each title counts its shortcuts, from the sidebar itself, with no request of its own.
+    expect([...host.querySelectorAll('.nav-sec-h')].map(head => text(head.querySelector('.count')))).toEqual(['1', '2', '2']);
     // Closing the section keeps its mark, so the person still sees where they are.
     const records = byText(host, '.nav-sec', /^Records/)!;
     click(records.querySelector('.nav-sec-h'));

@@ -368,7 +368,7 @@ describe('the navigation icons', () => {
     expect(nav.workspaces[0].sections.map(section => section.icon)).toEqual(['file-text', 'layers']);
   });
 
-  it('draws the kind\'s icon at the start of each shortcut row, white on the active row, and in the collapsed sidebar with a tooltip', async () => {
+  it('draws the kind\'s icon at the start of each shortcut row, blue on the active row, and in the collapsed sidebar with a tooltip', async () => {
     const { host } = start(routes(), '/app/invoice?tab=issued');
     await until(() => expect(host.querySelector('.nav-sc.active')).not.toBeNull());
     const rows = [...host.querySelectorAll<HTMLElement>('.nav-sc')];
@@ -381,7 +381,7 @@ describe('the navigation icons', () => {
     }
     const active = host.querySelector('.nav-sc.active')!;
     expect(active.firstElementChild!.classList.contains('nav-ic')).toBe(true);
-    // The icon is muted, and white on the active row's solid blue.
+    // The icon is muted, and blue on the active row's light blue tint.
     const css = node.getBuiltinModule('node:fs').readFileSync(`${node.cwd()}/src/evlet/ui/styles.css`, 'utf8');
     expect(css).toContain('.nav-sc .nav-ic{color:var(--fg-3)}');
     expect(css).toContain('.nav-sc.active .nav-ic{color:var(--nav-on-fg)}');

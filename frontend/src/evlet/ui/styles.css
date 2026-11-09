@@ -53,9 +53,9 @@
   /* The two themes' grounds, cards and lines in every theme, for the theme pictures in Settings. */
   --swatch-light:#f4f5f8; --swatch-light-card:#ffffff; --swatch-light-line:#d8dce3; --swatch-dark:#14171c; --swatch-dark-card:#1a1e25; --swatch-dark-line:#323844;
   --shadow-edge:rgba(16,24,40,.18);
-  /* The sidebar's active shortcut: the primary button's blue with white text (5.5:1 light, 4.9:1 dark).
-     Its section: the sidebar ground with 3.5% of the text colour, and 7% for hover inside it. */
-  --nav-on-bg:#2f5be8; --nav-on-fg:#ffffff; --nav-sec-on-bg:#ecedf0; --nav-sec-on-hover:#e4e6e9;
+  /* The sidebar's active section and shortcut: the primary blue for text and icons, and a light tint of it
+     (about 9%) behind the active shortcut. Text on the tint is 4.9:1 light and 4.6:1 dark. */
+  --nav-on-fg:#2f5be8; --nav-on-bg:#ecf0fd;
   color-scheme:light;
 }
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
@@ -71,7 +71,7 @@
   --accent-solid:#4167e6; --accent-solid-hover:#3a60de; --on-tint:#0f1115; --knob:#ffffff;
   --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-hover:rgba(127,127,127,.25);
   --shadow-edge:rgba(0,0,0,.5);
-  --nav-on-bg:#4167e6; --nav-on-fg:#ffffff; --nav-sec-on-bg:#1b1e23; --nav-sec-on-hover:#23262b;
+  --nav-on-fg:#6488f6; --nav-on-bg:#1f2739;
   color-scheme:dark}}
 :root[data-theme="dark"]{
   --bg:#0f1115; --bg-subtle:#13161b; --bg-muted:#1a1e25; --side-bg:#14171c; --page-bg:#0f1115; --surface:#16191f; --overlay:rgba(0,0,0,.55);
@@ -86,7 +86,7 @@
   --accent-solid:#4167e6; --accent-solid-hover:#3a60de; --on-tint:#0f1115; --knob:#ffffff;
   --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-hover:rgba(127,127,127,.25);
   --shadow-edge:rgba(0,0,0,.5);
-  --nav-on-bg:#4167e6; --nav-on-fg:#ffffff; --nav-sec-on-bg:#1b1e23; --nav-sec-on-hover:#23262b;
+  --nav-on-fg:#6488f6; --nav-on-bg:#1f2739;
   color-scheme:dark}
 
 *{box-sizing:border-box}
@@ -615,35 +615,33 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .ws-item.on{color:var(--accent);font-weight:550}
 .ws-check{flex:none;margin-left:8px;color:var(--accent)}
 .ws-pop .mi:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-/* Sections of the current workspace: a collapsible title, then its shortcuts on a thin guide line. */
+/* Sections of the current workspace: a collapsible title (icon, bold label, count of its shortcuts while
+   closed, chevron), then its shortcuts on a thin guide line that starts under the title's icon. */
 .nav-secs{display:flex;flex-direction:column;gap:2px;margin-top:8px}
-.nav-sec-h{display:flex;align-items:center;gap:8px;width:100%;height:30px;padding:0 8px;border-radius:var(--r);color:var(--fg-2);font-weight:550;font-size:12.5px;text-align:left}
-.nav-sec-h:hover{background:var(--bg-muted);color:var(--fg)}
+.nav-sec-h{display:flex;align-items:center;gap:10px;width:100%;height:38px;padding:0 8px;border-radius:var(--r);color:var(--fg-2);font-weight:600;font-size:13.5px;text-align:left}
+.nav-sec-h:hover{background:var(--bg-muted)}
 .nav-sec-h .lbl{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.nav-sec-h .count{font-size:11.5px;color:var(--fg-3);font-weight:500}
-.nav-sec-ic{color:var(--fg-3)}
-.nav-sec-chev{color:var(--fg-3);transition:transform .15s ease}
+.nav-sec-h .count{font-size:12px;color:var(--fg-3);font-weight:400}
+.nav-sec.open .nav-sec-h .count{display:none}
+.nav-sec-ic{color:var(--fg-2);width:16px;height:16px;flex:none}
+.nav-sec-chev{color:var(--fg-3);flex:none;transition:transform .15s ease}
 .nav-sec.open .nav-sec-chev{transform:rotate(90deg)}
-.nav-sec-items{display:none;margin:0 0 4px 15px;padding-left:6px;border-left:1px solid var(--border)}
+.nav-sec-items{display:none;margin:0 0 6px 15px;padding-left:8px;border-left:1px solid var(--border)}
 .nav-sec.open .nav-sec-items{display:block}
-.nav-sc{position:relative;height:30px;gap:8px;padding-left:8px}
+.nav-item.nav-sc{position:relative;height:33px;gap:8px;padding-left:8px;font-weight:400;font-size:13px;color:var(--fg-2)}
 .nav-sc .nav-ic{color:var(--fg-3)}
-/* The section holding the page: a barely darker grey over its title and shortcuts, a bolder title, open or closed.
-   Its shortcut is the strongest mark inside: a solid blue row with white text at 600 and a white icon. */
-.nav-sec.on{background:var(--nav-sec-on-bg);border-radius:var(--r)}
-.nav-sec.on .nav-sec-h{color:var(--fg);font-weight:650}
-.nav-sec.on .nav-sec-ic{color:var(--accent)}
-.nav-sec.on .nav-sec-h:hover,.nav-sec.on .nav-item:not(.active):hover{background:var(--nav-sec-on-hover)}
+.nav-sc .count{font-size:12px;font-weight:400}
+/* The section holding the page: its icon, label and chevron in the primary blue, with no fill, open or closed.
+   Its shortcut: a light blue tint across the row, blue semibold label and icon; the count stays muted. */
+.nav-sec.on .nav-sec-h,.nav-sec.on .nav-sec-ic,.nav-sec.on .nav-sec-chev{color:var(--nav-on-fg)}
 .nav-item.nav-sc.active{background:var(--nav-on-bg);color:var(--nav-on-fg);font-weight:600;box-shadow:none}
 .nav-sc.active .nav-ic{color:var(--nav-on-fg)}
-.nav-sc.active .count{color:inherit}
 /* Collapsed: section titles give way to a thin rule, and every shortcut shows its kind's icon, a little larger. */
 .app.collapsed .nav-sec-h{display:none}
 .app.collapsed .nav-sec+.nav-sec{border-top:1px solid var(--border);padding-top:4px;margin-top:4px}
 .app.collapsed .nav-sec .nav-sec-items{display:block;margin:0;padding:0;border:0}
 .app.collapsed .nav-sc{padding:0}
 .app.collapsed .nav-sc .nav-ic{width:16px;height:16px}
-.app.collapsed .nav-sec.on{background:none}
 /* Collapse and expand: a round button on the sidebar's edge, just above the account card. */
 .app{position:relative}
 .side-edge{position:absolute;left:calc(var(--sidebar-w) - 12px);bottom:68px;width:24px;height:24px;border-radius:50%;display:grid;place-items:center;z-index:5;

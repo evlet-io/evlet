@@ -637,16 +637,18 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
   Blocked storage only means nothing is remembered.
 - **Shortcuts** sit under their section on a thin guide line, each starting with its kind's icon
   ([Navigation icons](#navigation-icons)), small and muted, in place of a dot. The one the page
-  opens exactly (a list with its view, tab and filters, or a report) is filled across the whole row with the primary
-  button's blue, with white text at weight 600 and a white icon. Hover on the other rows is a light grey.
+  opens exactly (a list with its view, tab and filters, or a report) gets a light blue tint across the whole
+  row, with its label and icon in the primary blue at weight 600; its record count stays muted. Hover on
+  the other rows is a light grey.
 - **The sidebar** is white (the surface colour) with a border on its right; the main area beside it is a
   light grey (`--page-bg`), so its cards read as cards. Dark themes keep the same structure: the sidebar
   and top bar on the dark surface, the main area a little darker.
-- **The section that holds that shortcut** gets a grey barely darker than the sidebar over its title and
-  shortcuts, and a bolder title with an accent icon. It keeps both when closed, so the person still sees
-  where they are.
-- The collapsed sidebar shows each shortcut's kind icon with its name in a tooltip, and the active one white
-  on the same solid blue tile; section titles give way to a thin rule. The round button on the sidebar's
+- **Section titles** show the section's icon, a bold label, the number of its shortcuts while it is
+  closed, and a chevron (right when closed, down when open). **The section that holds that shortcut**
+  has its icon, label and chevron in the primary blue, with no fill. It keeps them when closed, so the
+  person still sees where they are.
+- The collapsed sidebar shows each shortcut's kind icon with its name in a tooltip, and the active one blue
+  on the same light blue tile; section titles give way to a thin rule. The round button on the sidebar's
   edge, just above the account card, collapses and expands it (and `[`). On phones the sidebar is the
   drawer, opened from the top bar's menu button.
 
