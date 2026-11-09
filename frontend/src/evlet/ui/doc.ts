@@ -166,6 +166,11 @@ export function StatusFlow(props: {
 
 export interface BadgeMove { to: string; label: string }
 
+/** How a status badge is drawn: the coloured pill; red text with a ban icon (cancelled); a lock and grey text
+ * (locked or final); a dashed pill with a pencil (draft). */
+export type BadgeLook = 'pill' | 'cancelled' | 'locked' | 'draft';
+const LOOK_ICON: Record<Exclude<BadgeLook, 'pill'>, string> = { cancelled: 'ban', locked: 'lock', draft: 'pencil' };
+
 /**
  * A record's status as a coloured badge, named "Status: Active" for screen readers. With moves this
  * person may take, it opens a menu of them; without, it is plain text with no pointer or hover.
@@ -180,6 +185,8 @@ export function StatusBadge(props: {
   /** Why a move cannot run right now (unsaved changes, say), or null. */
   blocked?: (to: string) => string | null;
   onMove?: (to: string) => void;
+  /** How the value is drawn (BadgeLook); the pill when absent. */
+  look?: (value: string) => BadgeLook;
 }): Child {
   const label = (value: string) => props.label ? props.label(value) : humanize(value);
   const name = props.name ?? 'Status';
@@ -188,9 +195,11 @@ export function StatusBadge(props: {
     if (value === null || value === undefined || value === '') return null;
     const text = label(String(value)), color = tint(props.tint(String(value)));
     const moves = props.onMove ? props.moves?.() ?? [] : [];
-    const inner = [html`<span class="d" aria-hidden="true"></span>`, text];
-    if (!moves.length) return html`<span class=${`pill ev-status b-${color}`} role="img" aria-label=${`${name}: ${text}`}>${inner}</span>`;
-    const button = html`<button type="button" class=${`pill ev-status ev-status-go b-${color}`} aria-haspopup="menu" aria-expanded="false"
+    const look = props.look?.(String(value)) ?? 'pill';
+    const inner = look === 'pill' ? [html`<span class="d" aria-hidden="true"></span>`, text] : [Icon(LOOK_ICON[look], { size: 'xs', className: 'ev-status-ic' }), text];
+    const kind = look === 'pill' ? `pill ev-status b-${color}` : `ev-status ev-status-${look}${look === 'draft' ? ' pill' : ''}`;
+    if (!moves.length) return html`<span class=${kind} role="img" aria-label=${`${name}: ${text}`}>${inner}</span>`;
+    const button = html`<button type="button" class=${`${kind} ev-status-go`} aria-haspopup="menu" aria-expanded="false"
       aria-label=${`${name}: ${text}. Change ${name.toLowerCase()}`}>${inner}${Icon('chevron-down', { size: 'xs', className: 'chev' })}</button>` as HTMLButtonElement;
     button.addEventListener('click', () => openPopover(button, close => Menu(moves.map(move => ({ label: move.label, icon: 'arrow-right', onSelect: () => {
       const why = props.blocked?.(move.to) ?? null;

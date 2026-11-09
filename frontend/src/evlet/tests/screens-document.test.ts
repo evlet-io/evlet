@@ -142,7 +142,7 @@ describe('transaction document (recorded fixtures)', () => {
     expect(requests(sent, 'POST', /void$/)).toHaveLength(0);
     typeInto(dialog.querySelector('textarea')!, 'Customer cancelled the order');
     click(byText(dialog, '.modal-f button', 'Void invoice'));
-    await until(() => expect(banner(host)).toContain('Void.'));
+    await until(() => expect(banner(host)).toMatch(/^Void( on [^.]+)?\./));
     const request = requests(sent, 'POST', /void$/)[0];
     expect(request.body).toEqual({ reason: 'Customer cancelled the order' });
     expect(request.headers['if-match']).toBe(before.etag);
@@ -228,7 +228,7 @@ describe('transaction document (recorded fixtures)', () => {
 
   it('links a revised invoice to the copy that replaced it', async () => {
     const { host } = start(routes(invoice.invoice_revised_original), `/app/invoice/${revised}`);
-    await until(() => expect(banner(host)).toContain('Void.'));
+    await until(() => expect(banner(host)).toMatch(/^Void( on [^.]+)?\./));
     expect(host.querySelector<HTMLAnchorElement>('.inv-banner a')!.getAttribute('href')).toBe(`/app/invoice/${copyId}`);
     // Already revised: neither correction is offered again.
     expect(byText(host, '.inv-banner button', 'Revise')).toBeNull();

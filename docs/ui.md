@@ -144,6 +144,26 @@ class Project(Model):
 `side_blocks` takes `key_fields`, `related`, `files` and `info`, each once. Anything else, or a
 `summary` that is not True or False, fails when the registry is built.
 
+### How a record's lifecycle reads
+
+The State in the schema decides how a record's state is drawn, never the state's name:
+
+- **Cancelled**: a `final` state declared in red (`colors={'cancelled': 'rose'}`), or the framework's `void` state
+  of a State with `voidable` states. In every list (the table, the narrow list beside a panel and the board) its
+  first cell is struck through in grey after a ban icon and the row is muted a little; its status badge keeps its
+  colour. On the record the title is struck through in grey, the State reads as red "Cancelled" text with a ban
+  icon (no pill), and a soft red strip says "Cancelled on 09-11-2026 by sara. Reason: ...", from the newest move
+  into that state in the journal (its reason, or a text value the move asked for). Without a journal the strip
+  says only the state.
+- **Locked**: any other `locked` or `final` state, such as Confirmed or Done: a lock and the state's name in grey.
+  A separate `Meta.status` badge after it stays a soft pill ("Paid").
+- **Draft**: the state a record starts in (the State's `default`, else its first state) while not locked: a dashed
+  pill with a pencil.
+- Any other state keeps the coloured pill. The badges still open the moves this person may take.
+
+The schema has no "cancelled" marker of its own: a `final` state that is not red (or a model without colours) reads
+as Locked, since it may as well be a closed or won record.
+
 ### What a side panel shows
 
 A list that opens records in a side panel (`Meta.open_in = 'panel'`, or the Controls list view)

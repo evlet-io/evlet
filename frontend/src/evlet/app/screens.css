@@ -67,6 +67,20 @@
 /* ---------- lists ---------- */
 .ev-row-link{font-weight:550;color:var(--fg)}
 .ev-row-link:hover{color:var(--accent);text-decoration:underline}
+/* A cancelled record in a list: the first cell struck through in grey after a ban icon, the row's text, avatars and
+   chips a little muted; the status badge keeps its colour. */
+.ev-first{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%}
+.ev-cancel-ic{display:inline-flex;flex:none;color:var(--fg-4)}
+.ev-row-cancelled>td{color:var(--fg-3)}
+.ev-first-v{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ev-row-cancelled .ev-first-v,.ev-row-cancelled .ev-first-v :is(.ev-row-link,b){color:var(--fg-3);text-decoration:line-through}
+.ev-row-cancelled :is(.avatar,.org-mark,.chip,.pill:not(.ev-status)){opacity:.6}
+.ev-crow.ev-row-cancelled .l1 .num,.ev-crow.ev-row-cancelled .l2 .mono{color:var(--fg-4)}
+/* A cancelled record's title in its header, and its soft red state strip. */
+.doc-head.is-cancelled h1{color:var(--fg-3);text-decoration:line-through;text-decoration-thickness:1.5px}
+.doc-head.is-cancelled h1 .fval{color:inherit}
+.inv-banner.b-rose>div:not(.grow){color:var(--t-rose)}
+.inv-banner.b-rose b{color:var(--t-rose)}
 .ev-pager{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 2px;font-size:12.5px;color:var(--fg-3)}
 .ev-pager span{margin-right:6px}
 .ev-note{font-size:12.5px;margin:10px 2px}
@@ -431,6 +445,8 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-card>.inv-banner{margin:0;border-radius:0;padding:7px var(--cmp-pad);background:var(--bg-subtle);color:var(--fg-2);font-size:13.5px;
   border-bottom:1px solid var(--border);gap:8px}
 .ev-cmp-card>.inv-banner svg{color:var(--fg-3)}
+.ev-cmp-card>.inv-banner.b-rose{background:var(--t-rose-bg);color:var(--t-rose)}
+.ev-cmp-card>.inv-banner.b-rose svg{color:var(--t-rose)}
 /* Key cards: the list page's number cards (.sum, .stat-card) above the white card, spaced as on the list page. Wide,
    one row of as many cards as there are. */
 .doc-compact .ev-cards{grid-template-columns:repeat(var(--cards,4),minmax(0,1fr));gap:var(--page-gap);margin:0 0 var(--page-gap)}

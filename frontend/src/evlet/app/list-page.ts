@@ -18,7 +18,7 @@ import { ApiError, type RecordData } from '../api';
 import type { ListTabCounts } from './client';
 import { isRecordId } from '../ids';
 import { batch, cell, derive, effect, onCleanup, untrack } from '../reactive';
-import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedControl, SummaryStrip, type StatProps } from '../ui/base';
+import { Button, CountBadge, EmptyState, Icon, IconButton, SearchInput, SegmentedControl, SummaryStrip, type StatProps } from '../ui/base';
 import { currencyIn, displayValue, localField, stateTint, statusTint } from '../ui/fields';
 import { humanize } from '../ui/kinds';
 import { closeDialogs, DialogFooter, MenuButton, openModal, toast } from '../ui/layers';
@@ -30,7 +30,7 @@ import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
-import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, trendValues, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
+import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, trendValues, numberField, screenModel, sources, stateLook, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
 import { SCREEN_KEYS, useShortcuts } from './shortcuts';
 import { ariaKeys, withShortcut } from '../ui/shortcuts';
@@ -377,15 +377,19 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const plainClick = (event: MouseEvent) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
   const numbered = numberField(model);
   const showNumber = numbered && numbered.name !== model.title_field && fields.some(meta => meta.name === numbered.name) ? numbered : null;
+  // A cancelled record (stateLook) reads struck through and greyed in every list: its first cell gets a ban icon.
+  const isCancelled = (row: RecordData) => Boolean(state) && stateLook(model, row[state!.field]) === 'cancelled';
+  const firstCell = (row: () => RecordData, content: Child) => html`<span class="ev-first">${when(() => isCancelled(row()),
+    () => html`<span class="ev-cancel-ic" role="img" aria-label="Cancelled">${Icon('ban', { size: 'xs' })}</span>`)}<span class="ev-first-v">${content}</span></span>`;
   const columns: Column<RecordData>[] = fields.map((meta, index) => ({
     key: meta.name, label: meta.label, align: ['currency', 'decimal', 'integer', 'percent', 'duration'].includes(meta.type) ? 'right' : 'left',
     width: index === 0 ? 240 : meta.type === 'currency' ? 140 : 160, value: (row: RecordData) => row[meta.name],
     sortable: meta.stored !== false && meta.type !== 'tags' && meta.type !== 'longtext' && meta.type !== 'richtext',
     render: index === 0 && meta.name === model.title_field
-      ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => router.href('record', { model: name, id: String(row().id) })}
-          on:click=${(event: MouseEvent) => { if (openIn === 'panel' && plainClick(event)) { event.preventDefault(); open(row()); } }}>${() => titleOf(model, row())}</a>${showNumber
-          ? when(panelOpen, () => html`<small class="ev-row-no mono">${() => String(row()[showNumber.name] ?? '')}</small>`) : null}`
-      : (row: () => RecordData) => cellView(ctx, model, meta, row),
+      ? (row: () => RecordData) => [firstCell(row, html`<a class="ev-row-link" href=${() => router.href('record', { model: name, id: String(row().id) })}
+          on:click=${(event: MouseEvent) => { if (openIn === 'panel' && plainClick(event)) { event.preventDefault(); open(row()); } }}>${() => titleOf(model, row())}</a>`), showNumber
+          ? when(panelOpen, () => html`<small class="ev-row-no mono">${() => String(row()[showNumber.name] ?? '')}</small>`) : null]
+      : index === 0 ? (row: () => RecordData) => firstCell(row, cellView(ctx, model, meta, row)) : (row: () => RecordData) => cellView(ctx, model, meta, row),
   }));
   const onlyTab = derive(() => tab.get() !== 'all' && !query.get() && !filters.active.get().length);
   /** What a list shows while its rows load: placeholder lines, read out as "Loading projects". */
@@ -400,6 +404,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const current = derive(() => { const id = opened.get(); return id === null ? null : rows.get().find(row => String(row.id) === id)?.id ?? null; });
   const table = (narrow = false) => DataTable<RecordData>({ columns: narrow ? panelColumns : columns, rows, key: row => row.id, label: model.plural, pinned: 1,
     selectable: selectable && !narrow, selection, sort, serverSort: true, onOpen: row => open(row), prefs: tablePrefs, height: 640,
+    rowClass: row => isCancelled(row) ? 'ev-row-cancelled' : null,
     current: narrow ? current : undefined, onMove: narrow ? row => open(row, false) : undefined,
     // While rows load the table says so; it shows an empty state only once a load found nothing.
     // Empty only because of the tab: Clear filters would change nothing, so it offers All instead.
@@ -453,7 +458,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     label: `${model.plural} by ${state.field}`, columns: state.states.filter(value => only === 'all' || value === only).map(value => ({ value, label: humanize(value), tint: stateTint(value) }) as BoardColumn),
     cards: rows, key: row => row.id, group: row => String(row[state.field]),
     totals: () => boardTotals.get(), amounts: Boolean(valueField),
-    card: row => BoardCard({ title: () => titleOf(model, row()), tint,
+    card: row => BoardCard({ title: () => titleOf(model, row()), tint, cancelled: () => isCancelled(row()),
       company: linkField ? () => { const id = row()[linkField.name]; return id ? ctx.links.title(linkField.target!, String(id)).get() ?? '' : ''; } : undefined,
       value: valueField ? () => displayOf(valueField, row()[valueField.name], currencyIn(valueField, name => row()[name], ctx.links)) : undefined,
       date: dateField ? () => formatOf(dateField, row()[dateField.name]) : undefined,
@@ -572,9 +577,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     const stateMeta = state ? fieldOf(model, state.field) : undefined;
     const isCurrent = (row: RecordData) => String(row.id) === opened.get();
     const element = html`<div class="ev-compact" role="listbox" aria-label=${model.plural}>${each(rows, row => row.id, row => html`<div role="option" class="ev-crow"
-      data-key=${String(row().id)} aria-selected=${() => String(isCurrent(row()))} tabindex=${() => isCurrent(row()) || (!current.get() && rows.get()[0] === row()) ? '0' : '-1'}
+      data-key=${String(row().id)} class:ev-row-cancelled=${() => isCancelled(row())} aria-selected=${() => String(isCurrent(row()))} tabindex=${() => isCurrent(row()) || (!current.get() && rows.get()[0] === row()) ? '0' : '-1'}
       on:click=${() => open(row())} on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); open(row()); } }}>
-      <span class="l1"><b>${() => titleOf(model, row())}</b>${amountField ? html`<span class="num">${cellView(ctx, model, amountField, row)}</span>` : null}</span>
+      <span class="l1">${firstCell(row, html`<b>${() => titleOf(model, row())}</b>`)}${amountField ? html`<span class="num">${cellView(ctx, model, amountField, row)}</span>` : null}</span>
       <span class="l2">${showNumber ? html`<span class="mono">${() => String(row()[showNumber.name] ?? '')}</span>` : html`<span></span>`}${stateMeta ? cellView(ctx, model, stateMeta, row) : null}</span></div>`,
       { fallback: () => () => loading.get() && !failure.get() ? loadingRows() : html`<p class="muted ev-note">No ${model.plural.toLowerCase()} match.</p>` })}</div>` as HTMLElement;
     element.addEventListener('keydown', event => {

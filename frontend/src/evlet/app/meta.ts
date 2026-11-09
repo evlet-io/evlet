@@ -101,6 +101,31 @@ export const rootModels = (index: SchemaIndex): ScreenModel[] => index.schema.mo
 
 export const fieldOf = (model: ScreenModel, name: string): FieldSchema | undefined => model.fields.find(field => field.name === name);
 export const isStateField = (model: ScreenModel, field: FieldSchema) => model.state?.field === field.name || (field as any).state === true;
+
+/**
+ * How a record's State reads in lists and headers, from the schema alone (never from state names):
+ * - `cancelled`: a `final` state (no moves out) declared in red (`colors={...: 'rose'}`), or the framework's "void"
+ *   state of a voidable State: struck-through title, red "Cancelled" text, a soft red banner.
+ * - `locked`: any other `locked` or `final` state, such as Confirmed or Done: a lock and the state name in grey.
+ * - `draft`: the state a record starts in (the State's default, else its first state) while it is not locked:
+ *   a dashed pill with a pencil.
+ * - `open`: everything else, the coloured badge as before. Null without a State or a value.
+ */
+export type StateLook = 'cancelled' | 'locked' | 'draft' | 'open';
+export function stateLook(model: ScreenModel, value: unknown): StateLook | null {
+  const state = model.state;
+  if (!state || value === null || value === undefined || value === '') return null;
+  const name = String(value), meta = model.fields.find(field => field.name === state.field);
+  const final = (state.final ?? []).includes(name), locked = (state.locked ?? []).includes(name);
+  const colors = (meta as { colors?: Record<string, string> } | undefined)?.colors;
+  // The framework's own void state (a State with voidable states, docs/corrections) is a cancellation too.
+  const voids = Boolean((state as { voidable?: string[] }).voidable?.length) && name === 'void';
+  if (final && (voids || colors?.[name] === 'rose')) return 'cancelled';
+  if (final || locked) return 'locked';
+  const declared = (state as { default?: unknown }).default ?? meta?.default;
+  const start = declared !== undefined && declared !== null ? String(declared) : state.states[0];
+  return name === start ? 'draft' : 'open';
+}
 /** Query keys of a list's address: search, sort, page, view, saved view, filters, and the side panel's record and tab. */
 export const LIST_KEYS = ['q', 'sort', 'page', 'view', 'tab', 'f', 'open', 'rtab'];
 

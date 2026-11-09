@@ -144,10 +144,10 @@ export function Board<T>(props: BoardProps<T>): HTMLElement {
 
 /** Draggable record card: tags, title, linked record, value, date and owner. */
 export function BoardCard(props: { title: Prop<string>; tags?: Prop<string[]>; company?: Prop<string>; value?: Prop<Child>; date?: Prop<string>; overdue?: Prop<boolean>;
-  owner?: Prop<string>; onOpen?: () => void; tint?: Tint }): HTMLElement {
-  const card = html`<article class="card" on:click=${() => props.onOpen?.()} on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') props.onOpen?.(); }}>
+  owner?: Prop<string>; onOpen?: () => void; tint?: Tint; /** A cancelled record: the title struck through, the card greyed. */ cancelled?: Prop<boolean> }): HTMLElement {
+  const card = html`<article class="card" class:is-cancelled=${props.cancelled ?? false} on:click=${() => props.onOpen?.()} on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') props.onOpen?.(); }}>
     ${props.tags ? html`<div class="tags">${() => (read(props.tags!) ?? []).map(tag => Chip({ label: tag }))}</div>` : null}
-    <div class="t">${props.title}</div>
+    <div class="t">${props.cancelled ? when(() => Boolean(read(props.cancelled!)), () => html`<span class="ev-cancel-ic" role="img" aria-label="Cancelled">${Icon('ban', { size: 'xs' })}</span>`) : null}${props.title}</div>
     ${props.company ? html`<div class="o">${RecordMark({ name: props.company })}<span>${props.company}</span></div>` : null}
     <div class="f">${props.value ? html`<span class="v num">${props.value}</span>` : null}<span class="grow"></span>
       ${props.date ? html`<span class="dt" class:due-over=${props.overdue ?? false}>${Icon('calendar', { size: 'xs' })}${props.date}</span>` : null}

@@ -28,7 +28,7 @@ import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage } from './client';
 import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, keyFields, listFields, measureLabel, measureView, numberField, orderTabs, screenModel, sections, sequenceField,
-  summaryFields, titleOf, LIST_KEYS, panelView, type PanelView, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
+  summaryFields, titleOf, LIST_KEYS, panelView, stateLook, type PanelView, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
 import { blockFilters, declaresRelated, HtmlContent, layoutBlocks, layoutTabId, MeasureChart, placedTables, RelatedRecords, type BlockRecord } from './record-blocks';
@@ -528,8 +528,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const show = state?.show ?? 'badge';
   const statusMeta = model.status ? fieldOf(model, model.status) : undefined;
   const takeable = () => canUpdate ? (extras.get()._moves ?? []).filter(move => move.allowed) : [];
+  // How the State reads (stateLook): cancelled as red text with a ban icon, locked as a lock and grey text, the
+  // starting state as a dashed Draft pill, any other as the coloured pill.
+  const lookNow = () => stateLook(model, stateValue());
   const stateBadge = state && !isNew && (show === 'badge' || compact || panel || statusMeta?.name === state.field) ? StatusBadge({
     value: stateValue, tint: value => statusTint(fieldOf(model, state.field) ?? {}, value), name: 'Status',
+    look: value => { const kind = stateLook(model, value); return kind === null || kind === 'open' ? 'pill' : kind; },
     moves: () => takeable().map(move => ({ to: move.to, label: move.label })), blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) }) : null;
   const statusBadge = statusMeta && statusMeta.name !== state?.field && has(statusMeta.name) && !isNew ? StatusBadge({
     value: () => store.field(statusMeta.name).value.get() as string | null, tint: value => statusTint(statusMeta, value), name: statusMeta.label }) : null;
@@ -551,6 +555,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return value ? html`<span class="ev-fact mono" title="Name">${String(value)}</span>`
       : naming.placeholder ? html`<span class="muted">${naming.placeholder}</span>` : null;
   }) : null;
+  // A cancelled record's title is struck through in grey (screens.css .doc-head.is-cancelled).
+  const strikeTitle = (head: HTMLElement) => effect(() => { head.classList.toggle('is-cancelled', !isNew && lookNow() === 'cancelled'); });
   // The panel's number goes on the subtitle line (the page's breadcrumb ends with it).
   const numberText = numbered && numbered.name !== model.title_field && has(numbered.name) ? () => String(store.field(numbered.name).value.get() ?? '') : null;
   // One muted line under the title: in a side panel the record's number, then on a compact view (whose header has no
@@ -562,8 +568,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const imageMeta = !isNew && model.image ? fieldOf(model, model.image) : undefined;
   const image = imageMeta && has(imageMeta.name)
     ? RecordImage(() => imageSource(store.field(imageMeta.name).value.get()), { round: Boolean(look.person), label: () => titleText.get() }) : undefined;
-  // A lock after the badges while nothing can be changed: the record is locked by its state, or the role can't write.
-  const readOnly = () => !isNew && (locked.get() || !canWrite);
+  // A lock after the badges while nothing can be changed (locked by its state, or the role can't write), unless the
+  // State already shows one.
+  const readOnly = () => !isNew && (locked.get() || !canWrite) && !['locked', 'cancelled'].includes(lookNow() ?? '');
   const lockMark = when(readOnly, () => html`<span class="doc-lock" role="img" aria-label="Read only" title="Read only">${Icon('lock', { size: 'xs' })}</span>`);
   // Filled in below: the side column's drawer button, and in a side panel Expand and Close.
   const headTools = html`<span class="ev-head-tools"></span>` as HTMLElement;
@@ -581,6 +588,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     }) : null].filter(Boolean) as Child[],
     actions: [live(headerActions)],
   });
+  strikeTitle(header);
   // A side panel's header ends with the drawer button, Expand and Close. While the panel covers the list (a narrow
   // window) a line above it has Back to the list instead of Expand and Close.
   const panelTools = (toggle: Node | null): Child[] => panel ? [toggle, when(() => !panel.overlay.get(), () => [
@@ -592,11 +600,33 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // ---------- banners ----------
 
   const link = (target: number, label: string) => html`<a class="link-q" href=${router.href('record', { model: name, id: String(target) })}>${label}</a>`;
+  // When and by whom a cancelled record was cancelled, from its journal: the newest move into its state, with the
+  // reason the move recorded (or a value the move asked for). Nothing without a journal.
+  const cancelled = cell<{ at: string; by: string | null; reason: string | null } | null>(null);
+  if (!isNew && model.journal) effect(() => {
+    const value = stateValue();
+    if (lookNow() !== 'cancelled') return cancelled.set(null);
+    untrack(() => void api.journal(name, store.id!, { limit: 50 }).then(page => {
+      const entry = page.items.find(item => ['moved', 'voided'].includes(item.kind) && String(item.data?.to ?? '') === value);
+      if (!entry) return cancelled.set(null);
+      const asked = Object.entries((entry.data.fields ?? {}) as Record<string, { new?: unknown }>)
+        .map(([field, change]) => ({ meta: fieldOf(model, field), value: change?.new }))
+        .find(item => item.meta && ['text', 'longtext'].includes(item.meta.type) && typeof item.value === 'string' && item.value.trim());
+      const reason = typeof entry.data.reason === 'string' && entry.data.reason.trim() ? entry.data.reason.trim()
+        : asked ? String(asked.value).trim() : null;
+      cancelled.set({ at: entry.at, by: entry.actor === null ? null : page.users[String(entry.actor)] ?? null, reason });
+    }, () => cancelled.set(null)));
+  });
+  const cancelledLine = (value: string) => {
+    const info = cancelled.get();
+    const when = info ? ` on ${formatDateTime(info.at).slice(0, 10)}${info.by ? ` by ${info.by}` : ''}` : '';
+    return { title: `${humanize(value)}${when}.`, reason: info?.reason ? `Reason: ${info.reason.replace(/[.\s]+$/, '')}. ` : '' };
+  };
   const lifecycle = state && (state.locked?.length || state.voidable?.length) && !isNew ? () => {
     const value = stateValue(), now = extras.get(), revises = has('revises') ? store.field('revises').value.get() as number | null : null;
     const revisedBy = now.revised_by ?? null;
     const reviseOf = revises ? [' Revision of ', link(revises, `${model.label} ${revises}`), '.'] : [];
-    if (value === 'void') return StateBanner({ tone: 'danger', title: 'Void.', text: [`This ${model.label.toLowerCase()} was voided. What it posted was reversed and its number is kept.`,
+    if (value === 'void') return StateBanner({ tone: 'danger', icon: 'ban', title: cancelledLine(value).title, text: [cancelledLine(value).reason, `This ${model.label.toLowerCase()} was voided. What it posted was reversed and its number is kept.`,
       ...(revisedBy ? [' Replaced by ', link(revisedBy, `${model.label} ${revisedBy}`), '.'] : []), ...reviseOf] });
     if (now._locked) {
       const buttons = [now._revise?.allowed ? Button({ label: 'Revise', icon: 'copy', size: 'small', onClick: () => correct('revise') }) : null,
@@ -608,8 +638,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       // Only the corrections this user can make now (the state allows them and so does the role).
       const ways = [now._void?.allowed ? 'void' : null, now._revise?.allowed ? 'revise' : null].filter(Boolean);
       const correction = ways.length === 2 ? ' To correct it, void or revise.' : ways.length ? ` To correct it, ${ways[0]} it.` : '';
-      return StateBanner({ tone: 'info', title: `${humanize(value)} and locked.`, actions: buttons,
-        text: [editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.', correction, ...reviseOf] });
+      const what = [editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.', correction, ...reviseOf];
+      // Cancelled: a soft red strip with when and by whom, and the reason when one was given.
+      if (lookNow() === 'cancelled') {
+        const line = cancelledLine(value);
+        return StateBanner({ tone: 'danger', icon: 'ban', title: line.title, actions: buttons, text: [line.reason, ...what] });
+      }
+      return StateBanner({ tone: 'info', title: `${humanize(value)} and locked.`, actions: buttons, text: what });
     }
     const next = (state.moves.find(move => (Array.isArray(move.from) ? move.from : [move.from]).includes(value) && state.locked?.includes(move.to)));
     // An unposted record: what it posted was reversed, and it posts again by Repost (listed for roles that may).

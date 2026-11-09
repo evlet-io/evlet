@@ -380,6 +380,18 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .step-tx{display:inline-flex;align-items:center;gap:6px;cursor:default}
 /* The status badge in the record header (and in lists). With moves to offer it is a menu button. */
 .ev-status-go{border:0;font-family:inherit;cursor:pointer}
+/* Status looks (StatusBadge look): cancelled is red text with a ban icon, locked a lock and grey text, both without a
+   pill; draft a dashed pill with a pencil. */
+.ev-status-cancelled,.ev-status-locked{display:inline-flex;align-items:center;gap:4px;height:22px;font-size:12.5px;font-weight:550;white-space:nowrap;background:none;padding:0}
+.ev-status-cancelled{color:var(--t-rose)}
+.ev-status-locked{color:var(--fg-3);font-weight:500}
+.ev-status.ev-status-draft{background:none;border:1px dashed var(--border-strong);color:var(--fg-2);font-weight:500}
+.ev-status-ic{flex:none}
+.ev-status-cancelled.ev-status-go:hover,.ev-status-locked.ev-status-go:hover{filter:none;text-decoration:underline}
+/* A cancelled board card: the title struck through and grey, the rest a little muted. */
+.card.is-cancelled .t{color:var(--fg-3);text-decoration:line-through}
+.card .t>.ev-cancel-ic{display:inline-flex;margin-right:6px;vertical-align:-2px;color:var(--fg-4)}
+.card.is-cancelled :is(.o,.f){opacity:.7}
 .ev-status-go .chev{margin-left:-1px;opacity:.7}
 .ev-status-go:hover{filter:brightness(.96)}
 .ev-status-go:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
