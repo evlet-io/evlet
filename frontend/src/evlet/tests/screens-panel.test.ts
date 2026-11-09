@@ -1,7 +1,7 @@
 // A list that opens its records in a side panel (Meta.open_in = "panel" or the Controls list view), over the invoice responses recorded from the engine: the draft (3) with two lines,
 // the issued invoice (2) and the void one (1).
 import { afterEach, describe, expect, it } from 'vitest';
-import { byText, click, invoice, press, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
+import { byText, click, invoice, press, start, stopAll, text, until, type Route } from './screens-helpers';
 import { copy, type Recorded } from './server';
 
 afterEach(stopAll);
@@ -44,14 +44,16 @@ function storage(values: Record<string, unknown>): Storage {
     getItem: key => items.get(key) ?? null, setItem: (key, value) => { items.set(key, value); }, removeItem: key => { items.delete(key); } };
 }
 
-/** Open the draft's Lines tab in the panel and change the first line's quantity: an unsaved change. */
+/** Change the first line's quantity in the draft's Lines grid (in the panel's primary area): an unsaved change. */
 async function editFirstLine(host: HTMLElement) {
-  click(byText(panel(host)!, '[role="tab"]', /^Lines/));
-  await until(() => expect(panel(host)!.querySelectorAll('.crow')).toHaveLength(2));
-  click(panel(host)!.querySelector('.crow-h'));
-  const input = () => panel(host)!.querySelector<HTMLInputElement>('.crow-ed input:not([type="checkbox"])');
-  await until(() => expect(input()).not.toBeNull());
-  typeInto(input()!, '7');
+  const rows = () => [...panel(host)!.querySelectorAll<HTMLElement>('.grid tbody tr[data-key]')];
+  await until(() => expect(rows()).toHaveLength(2));
+  const qty = rows()[0].querySelector<HTMLElement>('td[data-col="qty"]')!;
+  click(qty);
+  const input = qty.querySelector('input')!;
+  input.value = '7';
+  press(input, 'Enter');
+  press(document.activeElement!, 'Escape');
   await until(() => expect(panel(host)!.querySelector('.ev-savebar')).not.toBeNull());
 }
 
@@ -67,12 +69,14 @@ describe('records in a side panel beside the list', () => {
     await until(() => expect(columns(host)).toEqual(['Number', 'Status', 'Total']));
     expect(row(host, three)!.getAttribute('aria-current')).toBe('true');
     expect(row(host, three)!.classList.contains('cur')).toBe(true);
-    // The full page's record view: its tabs, and its side column, behind the drawer button at the end of the top line.
-    expect([...panel(host)!.querySelectorAll('.doc-tabs [role="tab"]')].map(text)).toEqual(['Activity', 'Details', 'Lines2', 'Related', 'Postings']);
+    // The full page's record view, without tabs: the Lines grid in the primary area, then more information (Amounts,
+    // Related, Postings), and its side column (Attachments, Activity) behind the drawer button on the title row.
+    expect(panel(host)!.querySelector('[role="tablist"]')).toBeNull();
+    await until(() => expect(text(panel(host)!.querySelector('.ev-cmp-main .ev-cmp-th h3'))).toBe('Lines'));
+    expect([...panel(host)!.querySelectorAll('.ev-more-row')].map(item => text(item.querySelector('.ev-more-toggle')))).toEqual(['Amounts', 'Related', 'Postings']);
     const aside = panel(host)!.querySelector('.doc > .doc-side')!;
     expect(panel(host)!.querySelector('.doc-tools .ev-side-toggle button')!.getAttribute('aria-controls')).toBe(aside.id);
-    click(byText(panel(host)!, '[role="tab"]', 'Details'));
-    await until(() => expect(byText(aside, '.side-sec h4', /^Files/)).not.toBeNull());
+    await until(() => expect([...aside.querySelectorAll('.side-sec h4')].map(text)).toEqual(['Attachments', 'Activity']));
     // Record info is the footer row under the fields.
     await until(() => expect(panel(host)!.querySelector('.ev-rec-foot [data-part="created"]')).not.toBeNull());
     expect(byText(panel(host)!, '.side-sec h4', /^Record info/)).toBeNull();
@@ -107,16 +111,12 @@ describe('records in a side panel beside the list', () => {
     await until(() => expect(panel(host)).toBeNull());
   });
 
-  it('switching tabs keeps the record and writes rtab; leaving the record with unsaved changes asks', async () => {
+  it('leaving the record with unsaved changes asks', async () => {
     const { host } = start(routes(), `/app/invoice?open=${three}`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     await editFirstLine(host);
-    await until(() => expect(location.search).toBe(`?open=${three}&rtab=t-lines`));
-    // Another tab of the same record does not ask.
-    click(byText(panel(host)!, '[role="tab"]', 'Activity'));
-    await until(() => expect(location.search).toBe(`?open=${three}`));
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    // Another row does: Cancel keeps the record and its change, Discard moves on.
+    expect(location.search).toBe(`?open=${three}`);
+    // Another row asks: Cancel keeps the record and its change, Discard moves on.
     press(row(host, three)!, 'ArrowDown');
     await until(() => expect(dialogTitle()).toBe('Discard unsaved changes?'));
     click(byText(document, '[role="dialog"] button', 'Cancel'));
@@ -130,14 +130,12 @@ describe('records in a side panel beside the list', () => {
     expect(location.search).toBe(`?open=${two}`);
   });
 
-  it('a link or a reload opens the same record and tab; Escape closes it and returns focus to the row', async () => {
-    const { host } = start(routes('page'), `/app/invoice?open=${three}&rtab=t-lines`);
+  it('a link or a reload opens the same record; Escape closes it and returns focus to the row', async () => {
+    const { host } = start(routes('page'), `/app/invoice?open=${three}`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
-    expect(byText(panel(host)!, '[role="tab"]', /^Lines/)!.getAttribute('aria-selected')).toBe('true');
-    // Narrow child rows: the first value, the amount and Open full table.
-    await until(() => expect(panel(host)!.querySelectorAll('.crow')).toHaveLength(2));
-    expect(byText(panel(host)!, '.crows button', 'Open full table')).not.toBeNull();
-    press(panel(host)!.querySelector('.crow-h')!, 'Escape');
+    // The panel shows the same Lines grid as the page.
+    await until(() => expect(panel(host)!.querySelectorAll('.grid tbody tr[data-key]')).toHaveLength(2));
+    press(panel(host)!.querySelector('.doc-head')!, 'Escape');
     await until(() => expect(location.search).toBe(''));
     expect(panel(host)).toBeNull();
     await until(() => expect(document.activeElement).toBe(row(host, three)));
@@ -218,12 +216,12 @@ describe('records in a side panel beside the list', () => {
     expect(new URLSearchParams(location.search).get('open')).toBeNull();
   });
 
-  it('expands to the full page at the same tab with the unsaved change, without asking', async () => {
+  it('expands to the full page with the unsaved change, without asking', async () => {
     const { host } = start(routes(), `/app/invoice?open=${three}`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     await editFirstLine(host);
     click(panel(host)!.querySelector('.doc-tools button[aria-label="Open full page"]'));
-    await until(() => expect(location.pathname + location.search).toBe(`/app/invoice/${three}?tab=t-lines`));
+    await until(() => expect(location.pathname + location.search).toBe(`/app/invoice/${three}`));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await until(() => expect(host.querySelector('.ev-savebar')).not.toBeNull());
     expect(host.querySelector('.ev-panel')).toBeNull();

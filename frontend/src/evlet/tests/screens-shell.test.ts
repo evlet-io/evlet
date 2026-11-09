@@ -92,7 +92,7 @@ describe('addresses the Python server serves', () => {
       ['GET', /\/api\/contact\/0000000000001$/, screen.contact_detail],
       ['GET', /\/api\/contact\/0000000000001\/attachments$/, screen.attachments_empty],
     ], '/app/contact/0000000000001/view');
-    await until(() => expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['email', 'phone', 'notes']));
+    await until(() => expect([...host.querySelectorAll('.ev-cmp-card .ff')].map(item => item.getAttribute('data-field'))).toEqual(['email', 'phone', 'notes']));
     expect(location.pathname).toBe('/app/contact/0000000000001/view');
   });
 

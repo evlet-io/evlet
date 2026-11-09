@@ -2977,38 +2977,6 @@
   },
   {
    "cat": "sections",
-   "id": "child-rows",
-   "name": "ChildRows",
-   "level": "Section",
-   "desc": "Lines of a record in a narrow column: one line per row with its amount, opened in place to edit, totals below and Open full table for the grid. Locks with the record.",
-   "props": [
-    [
-     "lines",
-     "Lines field",
-     ""
-    ],
-    [
-     "totals",
-     "list",
-     ""
-    ],
-    [
-     "locked",
-     "rule",
-     ""
-    ]
-   ],
-   "from": [
-    "base-field",
-    "button"
-   ],
-   "used": [
-    "Side panel"
-   ],
-   "variants": []
-  },
-  {
-   "cat": "sections",
    "id": "form-section",
    "name": "FormSection",
    "level": "Section",

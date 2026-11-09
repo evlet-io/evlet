@@ -20,8 +20,7 @@ async function openLines({ detail = invoice.invoice_draft, schema = invoice.sche
     ['GET', /\/api\/invoice\/[0-9a-z]{13}\/(measures|related|journal|attachments)/, { status: 200, etag: null, body: { items: [], total: 0, limit: 50, offset: 0 } }],
     ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ], `/app/invoice/${id}`);
-  await until(() => expect(byText(host, '.doc-tabs [role="tab"]', /^Lines/)).not.toBeNull());
-  click(byText(host, '.doc-tabs [role="tab"]', /^Lines/));
+  // The Lines table is in the record's primary area.
   await until(() => expect(host.querySelectorAll('.grid tbody tr[data-key]')).toHaveLength(2));
   return host;
 }

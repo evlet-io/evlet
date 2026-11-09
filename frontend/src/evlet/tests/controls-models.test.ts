@@ -188,7 +188,7 @@ describe('order in the layout editor', () => {
   const key = (target: Element, name: string) => target.dispatchEvent(new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }));
   const grip = (host: Element, selector: string) => host.querySelector<HTMLElement>(`${selector} [data-drag-handle]`)!;
 
-  it('loads a layout saved as a plain list as rows, and saves flow, field and section order, tab order and the opening tab', async () => {
+  it('loads a layout saved as a plain list as rows, and saves flow, field and section order as a plain list', async () => {
     const { host, sent } = open('/controls/models?model=Lead&tab=layout');
     await until(() => expect(host.querySelector('.ctl-lsec-fold')).toBeTruthy());
     expect(text(host.querySelector('#ctl-ls-flow-0'))).toBe('Across, then down');
@@ -214,22 +214,17 @@ describe('order in the layout editor', () => {
     key(second(), ' ');
     await until(() => expect([...host.querySelectorAll<HTMLInputElement>('.ctl-lsec-head input')].map(input => input.value)).toEqual(['Section 2', 'Details']));
 
-    // Record tabs: Lines first, and records open on it.
-    const lines = () => grip(host, '.ctl-tabrow[data-drag-id="lines"]');
-    lines().focus();
-    for (const step of [' ', 'ArrowUp', 'ArrowUp', 'ArrowUp', ' ']) key(lines(), step);
-    await until(() => expect([...host.querySelectorAll<HTMLElement>('.ctl-tabrow')].map(row => row.dataset.dragId)).toEqual(['lines', 'activity', 'details', 'revisions', 'related', 'postings']));
-    click(host.querySelector('#ctl-tabs-home'));
-    click(byText(document.body, '[role="option"]', 'Lines'));
-    await until(() => expect(text(byText(host, '.ctl-tabrow', /^Lines/))).toContain('Opens first'));
+    // Record pages have no tabs: the parts are listed for the side panel only, with nothing to order.
+    expect([...host.querySelectorAll('.ctl-tabrow')].map(text)).toEqual(['Activity', 'Revisions', 'Lines', 'Related', 'Postings']);
+    expect(host.querySelector('#ctl-tabs-home')).toBeNull();
+    expect(host.querySelector('.ctl-tabrow [data-drag-handle]')).toBeNull();
 
     click(byText(bar()!, 'button', 'Save changes'));
     await until(() => expect(bar()).toBeNull());
     const posted = sent.filter(entry => entry.method === 'POST')[0].body.changes[0].value;
-    expect(posted.tabs).toEqual(['lines', 'activity', 'details', 'revisions', 'related', 'postings']);
-    expect(posted.default_tab).toBe('lines');
-    expect(posted.sections.map((section: { title: string }) => section.title)).toEqual(['Section 2', 'Details']);
-    expect(posted.sections[1]).toMatchObject({ flow: 'columns', fields: [{ name: 'title', width: 6 }, { name: 'source', width: 6 }, { name: 'notes', width: 12 }, { name: 'value', width: 6 }] });
+    expect(Array.isArray(posted)).toBe(true);
+    expect(posted.map((section: { title: string }) => section.title)).toEqual(['Section 2', 'Details']);
+    expect(posted[1]).toMatchObject({ flow: 'columns', fields: [{ name: 'title', width: 6 }, { name: 'source', width: 6 }, { name: 'notes', width: 12 }, { name: 'value', width: 6 }] });
   });
 });
 
@@ -242,11 +237,11 @@ describe('the side panel toggles', () => {
     const toggle = (label: string) => host.querySelector<HTMLButtonElement>(`button[aria-label="Show ${label} in the side panel"]`)!;
     expect(toggle('section Details').getAttribute('aria-pressed')).toBe('true');
     click(toggle('Value'));
-    click(toggle('Activity tab'));
+    click(toggle('Activity'));
     click(toggle('Summary strip'));
     await until(() => expect(toggle('Value').getAttribute('aria-pressed')).toBe('false'));
     // Details has no toggle: it shows while anything in it does.
-    expect(toggle('Details tab')).toBeNull();
+    expect(toggle('Details')).toBeNull();
     click(byText(host, 'button', 'Add section'));
     await until(() => expect(host.querySelectorAll('.ctl-lsec')).toHaveLength(2));
     click(toggle('section Section 2'));

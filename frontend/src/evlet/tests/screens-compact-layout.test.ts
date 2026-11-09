@@ -30,7 +30,6 @@ describe('a compact record page', () => {
   it('sends cards, the Main area and section descriptions in the schema', () => {
     const model = screen.compact_schema.body.models.find((item: { name: string }) => item.name === 'shipment');
     expect(model.cards).toEqual(['total', 'parcels', 'weight']);
-    expect(model.record_layout.compact).toBe(true);
     expect(model.record_layout.blocks.filter((block: { main?: boolean }) => block.main)).toEqual([
       { kind: 'section', label: 'Shipment', main: true }, { kind: 'table', name: 'stops', main: true }]);
     expect(model.layout.find((group: { label: string }) => group.label === 'Charges').description).toBe('What the shipment is worth and what it costs.');

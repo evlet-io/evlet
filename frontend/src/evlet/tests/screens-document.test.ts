@@ -24,7 +24,10 @@ const routes = (detail: Recorded = invoice.invoice_draft, journal = detail === i
   ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ['GET', new RegExp(`/api/payment/${invoice.invoice_payment.body.id}$`), invoice.invoice_payment],
 ];
-const tabs = (host: Element) => [...host.querySelectorAll('.doc-tabs [role="tab"]')].map(text);
+/** The record's "more information" rows, by title. */
+const rows = (host: Element) => [...host.querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')));
+/** Open a "more information" row by its title. */
+const openRow = (host: Element, title: string) => click(host.querySelector(`.ev-more-row[data-section="${title}"] .ev-more-toggle`));
 const banner = (host: Element) => text(host.querySelector('.inv-banner > div'));
 
 describe('transaction document (recorded fixtures)', () => {
@@ -41,14 +44,15 @@ describe('transaction document (recorded fixtures)', () => {
     expect(issue.hasAttribute('data-blocked')).toBe(false);
     // Record payment is listed for this role but blocked by its condition.
     expect(byText(host, '.doc-head button', 'Record payment')!.getAttribute('aria-disabled')).toBe('true');
-    expect(tabs(host)).toEqual(['Activity', 'Details', 'Lines2', 'Related', 'Postings']);
+    // No tabs: the Lines grid is in the primary area, the rest is more information, Activity is in the side column.
+    expect(host.querySelector('[role="tablist"]')).toBeNull();
+    expect(text(host.querySelector('.ev-cmp-main .ev-cmp-th'))).toMatch(/^Lines2/);
+    expect(rows(host)).toEqual(['Amounts', 'Related', 'Postings']);
     // E3: the header's stage bar shows and moves the State, so the read form leaves it out.
-    click(byText(host, '.doc-tabs [role="tab"]', 'Details'));
-    await until(() => expect(host.querySelector('.fs .ff')).not.toBeNull());
-    expect(host.querySelector('.fs .ff[data-field="status"]')).toBeNull();
-    click(byText(host, '.doc-tabs [role="tab"]', 'Activity'));
-    // Key fields show in the header only; the summary keeps what the header doesn't: per-record measures.
-    await until(() => expect(text(host.querySelector('.rec-meta'))).toContain('Al Sahra Trading'));
+    await until(() => expect(host.querySelector('.ev-cmp-card .ff')).not.toBeNull());
+    expect(host.querySelector('.ev-cmp-card .ff[data-field="status"]')).toBeNull();
+    // Key fields make the subtitle; the summary keeps what the header doesn't: per-record measures.
+    await until(() => expect(text(host.querySelector('.doc-head .doc-sub'))).toContain('Al Sahra Trading'));
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => `${text(item.querySelector('span'))}=${text(item.querySelector('b'))}`))
       .toEqual(['Payments=1', 'Paid=AED 500.00']));
     // Activity: the journal grouped by day, newest first, actors named from the page's users, field
@@ -61,16 +65,12 @@ describe('transaction document (recorded fixtures)', () => {
     expect(host.querySelector('.ev-partial')).toBeNull();
     expect(text(host.querySelector('.eff-note'))).toContain('Append-only history');
     expect(host.querySelector('.composer .rt-surface')).not.toBeNull();
-    // Side panel: key fields, related counts, files and record info.
-    await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Payments1'));
-    // Payments are named after their model, so the count reads in its words.
-    expect(byText(host, '.side-sec', /^Related/)!.querySelector('.rel-row')!.getAttribute('aria-label')).toBe('Payments, 1 payment');
-    expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf');
-    click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
+    // The side column: the record's files and its activity. The Related row counts related records while closed.
+    await until(() => expect(text(byText(host, '.side-sec', /^Attachments/))).toContain('signed-copy.pdf'));
+    await until(() => expect(text(host.querySelector('.ev-more-row[data-section="Related"] .ev-more-sum'))).toContain('Payments: 1'));
+    openRow(host, 'Related');
     // A payment has no text field, so its title is its id.
     await until(() => expect(text(host.querySelector('.ev-related .ev-row-link'))).toBe(String(invoice.invoice_payment.body.id)));
-    // The rows were loaded with the count, so they show before the address catches up.
-    await until(() => expect(location.search).toBe('?tab=related'));
   });
 
   it('explains a blocked move instead of running it', async () => {
@@ -87,7 +87,7 @@ describe('transaction document (recorded fixtures)', () => {
   });
 
   it('issues through the move route, then shows the number, the lock and the postings', async () => {
-    const { host, sent } = start([...routes(), ['POST', path(draft, '/moves/issued$'), invoice.invoice_issued]], `/app/invoice/${draft}?tab=details`);
+    const { host, sent } = start([...routes(), ['POST', path(draft, '/moves/issued$'), invoice.invoice_issued]], `/app/invoice/${draft}`);
     await until(() => expect(byText(host, '.doc-head button', 'Issue')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Issue'));
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe(invoice.invoice_issued.body.number));
@@ -98,14 +98,13 @@ describe('transaction document (recorded fixtures)', () => {
     expect(lastToast()).toBe(`Issue done. Number ${invoice.invoice_issued.body.number}.`);
     expect(banner(host)).toBe('Issued and locked. Only remarks can change. To correct it, void or revise.');
     // Locked: only the field declared editable_when_locked stays editable.
-    const editable = [...host.querySelectorAll('.fs .ff')].filter(item => item.querySelector('button.fval')).map(item => item.getAttribute('data-field'));
+    const editable = [...host.querySelectorAll('.ev-cmp-card .ff')].filter(item => item.querySelector('button.fval')).map(item => item.getAttribute('data-field'));
     expect(editable).toEqual(['remarks']);
     expect(text(host.querySelector('.ff[data-field="customer"] label'))).toContain('locked');
-    expect(tabs(host)).toEqual(['Activity', 'Details', 'Lines2', 'Related', 'Postings3']);
-    click(byText(host, '.doc-tabs [role="tab"]', /^Postings/));
-    expect([...host.querySelectorAll('.doc-main .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '0', 'Balanced']);
-    click(byText(host, '.doc-tabs [role="tab"]', /^Lines/));
-    expect(text(host.querySelector('.g-lock'))).toContain('Locked.');
+    expect(text(host.querySelector('.ev-more-row[data-section="Postings"] .ev-more-sum'))).toBe('Ledger entries: 3');
+    openRow(host, 'Postings');
+    await until(() => expect([...host.querySelectorAll('.doc-main .ev-more-row[data-section="Postings"] .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '0', 'Balanced']));
+    expect(text(host.querySelector('.ev-cmp-main .g-lock'))).toContain('Locked.');
   });
 
   it('records a payment through the action dialog, checking the inputs first', async () => {
@@ -151,8 +150,8 @@ describe('transaction document (recorded fixtures)', () => {
     expect(host.querySelector('.stepper .step.cur')!.classList.contains('lost')).toBe(true);
     expect(lastToast()).toBe('Voided. The number stays used.');
     // The reversal rows show beside the posted ones.
-    click(byText(host, '.doc-tabs [role="tab"]', /^Postings/));
-    expect([...host.querySelectorAll('.doc-main .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '3', 'Balanced']);
+    openRow(host, 'Postings');
+    await until(() => expect([...host.querySelectorAll('.ev-more-row[data-section="Postings"] .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '3', 'Balanced']));
   });
 
   it('unposts with a required reason as admin, then reposts from the banner', async () => {
@@ -183,8 +182,8 @@ describe('transaction document (recorded fixtures)', () => {
     (document.activeElement as HTMLElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     // The number stays; the reversal rows show beside the posted ones.
     expect(unposted.body.number).toBe(before.body.number);
-    click(byText(host, '.doc-tabs [role="tab"]', /^Postings/));
-    expect([...host.querySelectorAll('.doc-main .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '3', 'Balanced']);
+    openRow(host, 'Postings');
+    await until(() => expect([...host.querySelectorAll('.ev-more-row[data-section="Postings"] .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '3', 'Balanced']));
     // Repost needs no reason.
     click(byText(host, '.inv-banner button', 'Repost'));
     const again = document.querySelector('.modal')!;
@@ -204,7 +203,7 @@ describe('transaction document (recorded fixtures)', () => {
     expect(banner(host)).toContain('To correct it, void or revise.');
   });
 
-  it('revises: voids, then opens the editable copy on its lines with a link back', async () => {
+  it('revises: voids, then opens the editable copy with a link back', async () => {
     const before = invoice.invoice_revise_before;
     const { host, sent } = start([...routes(before),
       ['POST', path(revised, '/revise$'), invoice.invoice_revision],
@@ -217,13 +216,14 @@ describe('transaction document (recorded fixtures)', () => {
     typeInto(dialog.querySelector('textarea')!, 'Wrong quantity on line 2');
     click(byText(dialog, '.modal-f button', 'Revise invoice'));
     await until(() => expect(location.pathname).toBe(`/app/invoice/${copyId}`));
-    expect(location.search).toBe('?tab=t-lines');
+    expect(location.search).toBe('');
     const request = requests(sent, 'POST', /revise$/)[0];
     expect(request.body).toEqual({ reason: 'Wrong quantity on line 2' });
     expect(request.headers['if-match']).toBe(before.etag);
     await until(() => expect(banner(host)).toBe(`Draft. Everything can change until it is issued. Revision of Invoice ${revised}.`));
     expect(host.querySelector<HTMLAnchorElement>('.inv-banner a')!.getAttribute('href')).toBe(`/app/invoice/${revised}`);
-    expect(host.querySelector('.doc-tabs [aria-selected="true"]')!.textContent).toContain('Lines');
+    // Its lines are in the primary area.
+    expect(host.querySelector('.ev-cmp-main [data-table-block="lines"]')).not.toBeNull();
   });
 
   it('links a revised invoice to the copy that replaced it', async () => {
@@ -237,7 +237,7 @@ describe('transaction document (recorded fixtures)', () => {
 
   it('offers no upload and no remove on a locked record, whose files the server refuses to change', async () => {
     const { host } = start(routes(invoice.invoice_issued_detail), `/app/invoice/${draft}`);
-    await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('signed-copy.pdf'));
+    await until(() => expect(text(byText(host, '.side-sec', /^Attachments/))).toContain('signed-copy.pdf'));
     expect(host.querySelector('.ev-upload')).toBeNull();
     expect(host.querySelector('.ev-file-remove')).toBeNull();
     expect(invoice.invoice_attachment_locked.status).toBe(409);

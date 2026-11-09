@@ -116,9 +116,6 @@ describe('the shell grounds', () => {
     expect(rule(STYLES, '.topbar')).toMatch(/background:var\(--surface\)/);
     expect(rule(STYLES, '.main')).toMatch(/background:var\(--page-bg\)/);
     expect(rule(STYLES, '.sidebar')).toMatch(/border-right:1px solid var\(--border\)/);
-    // The record page's sticky tab bar sits on the grey ground; in a side panel on the card.
-    expect(rule(STYLES, '.tabs.tabs-sticky')).toMatch(/background:var\(--page-bg\)/);
-    expect(rule(STYLES, '.ev-panel .tabs.tabs-sticky')).toMatch(/background:var\(--surface\)/);
     const value = (block: string, name: string) => new RegExp(`${name}:(#[0-9a-f]{6})`).exec(block)![1];
     const light = STYLES.slice(STYLES.indexOf(':root{'), STYLES.indexOf('}', STYLES.indexOf(':root{')));
     const dark = STYLES.slice(STYLES.indexOf(':root[data-theme="dark"]{'), STYLES.indexOf('}', STYLES.indexOf(':root[data-theme="dark"]{')));

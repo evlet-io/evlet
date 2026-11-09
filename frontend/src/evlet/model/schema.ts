@@ -98,10 +98,8 @@ export interface ModelSchema {
   /** Form sections. collapsible and collapsed come from evlet.Section or a Controls layout (absent from older servers). */
   layout?: Array<{ label: string; fields: string[]; wide?: string[]; collapsible?: boolean; collapsed?: boolean | 'empty';
     /** rows: across then down; columns: down the left column, then the right. */ flow?: 'rows' | 'columns';
-    /** evlet.Main: the compact page's primary area, shown without a heading (label is the model's label). */ main?: boolean;
+    /** evlet.Main: the record page's primary area, shown without a heading (label is the model's label). */ main?: boolean;
     /** Section(description=...): a line of text under the title. */ description?: string }>;
-  /** Record page tabs in order (record tabs and child table names) and the tab a record opens on. */
-  tabs?: string[]; default_tab?: string | null;
   /** Rows per page and default order, from a Controls list view. */
   page_size?: number;
   order_by?: string;
@@ -161,12 +159,9 @@ export type LayoutBlock =
   | { kind: 'html'; html: string }
   | { kind: 'chart'; type: 'bar' | 'line' | 'stat'; model: string; link: string; x: string | null; y: string[]; label: string | null; filters: LayoutCondition[] };
 
-/** A record page tab declared with evlet.Tab: its name (Meta.tabs, ?tab=t-<name>), label and blocks. */
-export interface LayoutTab { name: string; label: string; blocks: LayoutBlock[] }
-
-/** The record layout: Tabs, or blocks shown on Details without Tabs. compact: Meta.layout starts with evlet.Main (never
- * with Tabs); its blocks marked main are the primary area and the rest are "more information". */
-export interface RecordLayout { tabs?: LayoutTab[]; blocks?: LayoutBlock[]; compact?: boolean }
+/** The record layout of a Meta.layout with Main or blocks besides sections. Blocks marked main are the primary area
+ * (without one, the first section is) and the rest are "more information". */
+export interface RecordLayout { blocks: LayoutBlock[] }
 
 /** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */
 export interface PrintSchema { name: string; title: string; default: boolean }

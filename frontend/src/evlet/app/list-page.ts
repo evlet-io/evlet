@@ -9,8 +9,8 @@
 // The filter builder (rows of field, condition and value, child tables included) is filters.ts.
 //
 // A record opens on its own page or in a side panel beside the narrowed list (Meta.open_in, or the
-// Controls list view). The panel's record is `?open=` in the list's address and its tab `?rtab=`,
-// so a link or a reload opens the same list and record. The record panel and the filter panel are
+// Controls list view). The panel's record is `?open=` in the list's address, so a link or a reload
+// opens the same list and record. The record panel and the filter panel are
 // never open together: opening one closes the other.
 
 import { each, html, match, when, type Child } from '../dom';
@@ -81,13 +81,12 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     return route?.name === 'list' && route.params.model === name ? route.query.open ?? null : null;
   }, { name: `${name}.open record` });
   const panelOpen = derive(() => opened.get() !== null);
-  /** The list's address with this record (and record tab) in the panel, or none. */
-  const listHref = (open: string | null, rtab: string | null = null) => {
+  /** The list's address with this record in the panel, or none. */
+  const listHref = (open: string | null) => {
     const route = router.route.peek();
     const mine = route?.name === 'list' && route.params.model === name ? route.query : {};
-    const query = Object.fromEntries(Object.entries(mine).filter(([key]) => LIST_KEYS.includes(key) && key !== 'open' && key !== 'rtab'));
+    const query = Object.fromEntries(Object.entries(mine).filter(([key]) => LIST_KEYS.includes(key) && key !== 'open'));
     if (open) query.open = open;
-    if (open && rtab) query.rtab = rtab;
     return router.href('list', { model: name }, query);
   };
 
@@ -133,7 +132,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   /** The list's own part of the address it last wrote (search, sort, page, view, tab, filters), to tell its own
    * changes from a navigation to the same list with others, such as a sidebar shortcut. */
   let written = '';
-  const ownPart = (query: Record<string, string>) => JSON.stringify(Object.entries(query).filter(([key]) => LIST_KEYS.includes(key) && key !== 'open' && key !== 'rtab').sort());
+  const ownPart = (query: Record<string, string>) => JSON.stringify(Object.entries(query).filter(([key]) => LIST_KEYS.includes(key) && key !== 'open').sort());
   const rewrite = cell(0, { name: `${name}.rewrite address` });
   effect(() => {
     rewrite.get();
@@ -148,7 +147,6 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     // The panel's record stays open while the list changes around it.
     const now = untrack(() => router.route.peek()?.query ?? {});
     if (now.open) params.open = now.open;
-    if (now.open && now.rtab) params.rtab = now.rtab;
     // A create link (?open=new&customer=4) keeps its values while the new record is open.
     if (now.open === 'new') for (const [key, value] of Object.entries(now)) if (!LIST_KEYS.includes(key)) params[key] = value;
     const href = router.href('list', { model: name }, params);
@@ -372,7 +370,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     if (openIn !== 'panel') return void router.go('record', { model: name, id: String(row.id) });
     if (opened.peek() === String(row.id)) return;
     focusPanel = focus;
-    void router.navigate(listHref(String(row.id), router.route.peek()?.query.rtab ?? null), { replace: panelOpen.peek() });
+    void router.navigate(listHref(String(row.id)), { replace: panelOpen.peek() });
   };
   const plainClick = (event: MouseEvent) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
   const numbered = numberField(model);
@@ -636,8 +634,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     void router.navigate(listHref(null)).then(done => { if (done && was) focusRow(was); });
   };
   const host = (id: string): PanelHost => ({
-    overlay, tab: router.route.peek()?.query.rtab,
-    setTab: next => void router.navigate(listHref(id, next), { replace: true }),
+    overlay,
     stays: to => Boolean(to && to.name === 'list' && to.params.model === name && (to.query.open ?? null) === id),
     close: closePanel,
     show: next => { refresh(); return router.navigate(listHref(String(next)), { replace: true }); },

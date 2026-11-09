@@ -53,7 +53,7 @@ export interface LayoutSection { title: string; fields: Array<{ name: string; wi
 /** What a list's side panel hides, by kind (an empty object shows everything). Display only. */
 /** A saved form layout: its sections, or its sections with the record tab order and default tab. */
 export interface PanelHidden { sections?: string[]; fields?: string[]; tabs?: string[]; blocks?: string[] }
-export type LayoutValue = LayoutSection[] | { sections: LayoutSection[]; tabs?: string[]; default_tab?: string | null; panel?: PanelHidden }
+export type LayoutValue = LayoutSection[] | { sections: LayoutSection[]; panel?: PanelHidden }
 export interface ListValue { columns: string[]; page_size: number; sort: string; /** How the list opens a record (absent in list views saved before it existed). */ open_in?: 'page' | 'panel';
   /** The field whose values are the list's tabs (a State, Select or Link field), or null for none; absent keeps the app's. */ list_tabs?: string | null;
   /** The tab the list opens on: "all", a value, or a linked record's title. */ list_tab?: string }

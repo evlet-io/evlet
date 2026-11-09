@@ -33,9 +33,9 @@ describe('the shell scrolls only its view', () => {
     // The top bar runs across the window; under it the sidebar and the main column, which holds only the view.
     expect([...app.children].filter(child => child.matches('.topbar, .sidebar, .main')).map(child => child.className)).toEqual(['topbar', 'sidebar', 'main']);
     expect([...host.querySelector('.app > .main')!.children].map(child => child.tagName.toLowerCase() + '.' + child.className)).toEqual(['main.view']);
-    // The whole record, its side column and its save bar included, lives in the view.
+    // The whole record, its footer and its save bar included, lives in the view.
     expect(view.contains(host.querySelector('.ev-record'))).toBe(true);
-    expect(view.contains(host.querySelector('.doc-side'))).toBe(true);
+    await until(() => expect(view.contains(host.querySelector('.ev-rec-foot'))).toBe(true));
     expect(document.scrollingElement?.scrollTop ?? 0).toBe(0);
   });
 

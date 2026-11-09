@@ -119,10 +119,12 @@ describe('new record forms', () => {
   it('skips the fields of a collapsed section', async () => {
     const schema = copy(screen.schema);
     const order = schema.body.models.find((item: { name: string }) => item.name === 'order');
-    order.layout = [{ label: 'Basics', collapsible: true, collapsed: true, flow: 'rows', fields: ['title', 'customer'] },
-      { label: 'More', collapsible: false, collapsed: false, flow: 'rows', fields: ['stage', 'issued', 'due', 'reason', 'remark', 'total', 'line_count'] }];
+    // The first section is the primary area, which never folds; here it has nothing to type in.
+    order.layout = [{ label: 'Totals', collapsible: false, collapsed: false, flow: 'rows', fields: ['total', 'line_count'] },
+      { label: 'Basics', collapsible: true, collapsed: true, flow: 'rows', fields: ['title', 'customer'] },
+      { label: 'More', collapsible: false, collapsed: false, flow: 'rows', fields: ['stage', 'issued', 'due', 'reason', 'remark'] }];
     const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema]], '/app/order/new');
-    await until(() => expect(host.querySelector('.fs-fold.closed')).not.toBeNull());
+    await until(() => expect(host.querySelector('.ev-more-row.closed[data-section="Basics"]')).not.toBeNull());
     await until(() => expect(focusedField()).toBe('stage'));
   });
 

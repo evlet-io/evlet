@@ -14,7 +14,7 @@ import {
   AddChip, Avatar, Button, Checkbox, Chip, CountBadge, Divider, EmptyState, Icon, IconButton, IconTile, InfoNote, Key, LinkButton, ProgressBar,
   QuickAddInput, RecordMark, ScoreBars, SearchInput, SegmentedControl, Sparkline, StatCard, StateBanner, StatusPill, SummaryStrip, Switch,
 } from './base';
-import { ChildRows, ChildTable } from './childtable';
+import { ChildTable } from './childtable';
 import { SplitView } from './split';
 import { tint, type Tint } from './core';
 import { DocFrame, DocHeader, LockBanner, MoveButton, SideBlock, StatusFlow, Tabs, type Lifecycle } from './doc';
@@ -225,8 +225,6 @@ function demos(record: RecordStore | null): Record<string, Demo> {
       blocked: to => to === 'won' && flowState.peek() !== 'negotiation' ? 'Move to Negotiation before marking it won' : null })}</div>`,
     'state-banner': () => stack(SegmentedControl({ options: [{ value: 'draft', label: 'Draft' }, { value: 'locked', label: 'Issued' }, { value: 'void', label: 'Void' }], value: lifecycle, size: 'small', label: 'Lifecycle' }),
       LockBanner({ lifecycle, state: 'Issued', lockedText: 'Only remarks can change. To correct it, void or revise.', reason: 'Customer cancelled the order.', onRevise: () => toast('Opened a revision'), onVoid: () => toast('Opened Void invoice') })),
-    'child-rows': onRecord(store => html`<div style="width:100%;max-width:420px">${ChildRows({ table: store.table('lines'), title: 'Lines' })}</div>`,
-      () => html`<span class="muted">Needs a record. Open this page from the dev server to see the sample order.</span>`),
     'child-table': onRecord(store => html`<div style="width:100%">${ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], title: 'Lines', icon: 'package', crumb: () => String(store.field('title').value.get() ?? ''), height: 340 })}</div>`,
       () => html`<span class="muted">Needs a record. Open this page from the dev server to see the sample order.</span>`),
     'form-section': onRecord(store => html`<div style="width:100%">${FormSection({ title: 'Details', note: 'Values save as you change them.', fields: ['title', 'customer', 'stage', 'issued', 'due', 'reason', 'remark', 'total'].map(name => store.field(name)) })}</div>`,

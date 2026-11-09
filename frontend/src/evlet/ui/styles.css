@@ -227,12 +227,6 @@ textarea.input{height:auto;padding:8px 10px;resize:vertical;min-height:72px;line
 .tabs button.on::after{content:"";position:absolute;left:8px;right:8px;bottom:-1px;height:2px;background:var(--accent);border-radius:2px}
 .tabs .n{font-size:11.5px;color:var(--fg-3);background:var(--bg-muted);border-radius:5px;padding:0 5px;line-height:17px}
 .tabs .add{color:var(--fg-4)}
-/* A record's tab bar stays at the top of its scrolling area (the view, or a side panel) while the content scrolls
-   under it: solid page colour, the tabs' own hairline below, no shadow. keepTabPlace() sets --tab-fill on the
-   panel shown after a switch, so a shorter tab still reaches the bottom of the area and the page stays still. */
-.tabs.tabs-sticky{position:sticky;top:0;z-index:4;background:var(--page-bg)}
-.ev-panel .tabs.tabs-sticky{background:var(--surface)}
-.tabs.tabs-sticky ~ [role="tabpanel"]{min-height:var(--tab-fill,auto)}
 .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap}
 .toolbar .grow{flex:1}
 .summary{display:flex;gap:16px;font-size:12.5px;color:var(--fg-3);white-space:nowrap}
@@ -775,10 +769,6 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .fval.ro{cursor:default}
 .fval.ro:hover{background:none!important;border-color:transparent!important}
 dd.editing .input,.ff-v .input{width:100%}
-.fs-link{display:flex;align-items:center;gap:12px;width:100%;padding:12px;border:1px dashed var(--border-strong);border-radius:var(--r);margin-top:12px;text-align:left}
-.fs-link .grow{display:flex;flex-direction:column;flex:1;min-width:0}
-.fs-link .muted{font-size:12.5px}
-.fs-link:hover{border-color:var(--acc);background:var(--acc-bg)}
 .side-sec h4 .h-link{font-size:12px;color:var(--accent);text-transform:none;letter-spacing:0;font-weight:550}
 .side-sec h4 .h-link:hover{text-decoration:underline}
 .side-empty{font-size:12.5px;margin:0}
@@ -1374,29 +1364,6 @@ th:hover>.rz::after{background:var(--border-strong)}
 @keyframes split-in{from{opacity:.4;transform:translateX(16px)}}
 @media (prefers-reduced-motion:reduce){.split-open .split-side{animation:none}.split-div::after{transition:none}}
 
-/* ---------- ChildRows: a child table in a narrow column ---------- */
-.crows-h{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px}
-.crows-h h3{margin:0 auto 0 0;font-size:13px;font-weight:600}
-.crows-lock{display:flex;align-items:center;gap:6px;font-size:12.5px;margin:0 0 6px}
-.crows-l{list-style:none;margin:0;padding:0;border-top:1px solid var(--divider)}
-.crow{border-bottom:1px solid var(--divider)}
-.crow-h{display:flex;align-items:flex-start;gap:10px;width:100%;padding:9px 4px;text-align:left;border-radius:var(--r-sm)}
-.crow-h:hover{background:var(--bg-subtle)}
-.crow-h .grow{flex:1;min-width:0}
-.crow-h b{display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.crow-sub{display:block;font-size:12px;color:var(--fg-3)}
-.crow-amt{font-weight:550;white-space:nowrap}
-.crow-chev{color:var(--fg-4);margin-top:3px;transition:transform .15s}
-.crow.open .crow-chev{transform:rotate(180deg)}
-.crow-ed{display:grid;gap:4px;padding:2px 4px 12px}
-.crow-ed .fields{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0;font-size:13px}
-.crow-ed dt{color:var(--fg-3)}.crow-ed dd{margin:0}
-.crow-actions{display:flex;justify-content:flex-end}
-.crows-empty{padding:12px 4px;font-size:13px}
-.crows-t{display:grid;grid-template-columns:1fr auto;gap:4px 16px;margin:10px 0 0 auto;max-width:300px;font-size:13px}
-.crows-t dt{color:var(--fg-2)}.crows-t dd{margin:0;text-align:right}
-.crows-t dt:last-of-type,.crows-t dd:last-of-type{font-weight:650;color:var(--fg)}
-
 /* ---------- collapsible form sections ---------- */
 .fs-toggle{display:inline-flex;align-items:center;gap:6px;font:inherit;color:inherit;padding:0}
 .fs-chev{color:var(--fg-4);transition:transform .15s}
@@ -1462,18 +1429,6 @@ th:hover>.rz::after{background:var(--border-strong)}
   .g-rec{gap:8px;padding:8px 12px}
   .g-rec-mark,.g-rec-type{display:none}
 }
-
-/* Related block in the record side panel: compact rows, empty relations folded into one line. */
-.rel-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
-.rel-row{display:flex;align-items:center;gap:8px;min-height:36px;padding:0 8px;border-radius:var(--r);color:var(--fg);text-decoration:none;min-width:0}
-.rel-row:hover{background:var(--bg-muted)}
-.rel-row:focus-visible{outline:none;box-shadow:0 0 0 2px var(--accent)}
-.rel-ic{width:20px;height:20px;border-radius:6px;display:inline-grid;place-items:center;flex:none}
-.rel-nm{flex:1;min-width:0;font-weight:550;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.rel-ct{flex:none;font-size:11.5px;line-height:1;padding:3px 7px;border-radius:999px;background:var(--bg-muted);color:var(--fg-3)}
-.rel-all{display:block;margin:4px 8px 0;padding:4px 0;font-size:12px;font-weight:550;color:var(--accent);background:none;border:0;cursor:pointer;border-radius:6px}
-.rel-all:hover{text-decoration:underline}
-.rel-all:focus-visible{outline:none;box-shadow:0 0 0 2px var(--accent)}
 
 /* Money with an image currency symbol (ui/money.ts): text height, on the number's baseline. "tint" paints the
    image's shape in the text colour, so a one-colour symbol reads in light and dark themes. */

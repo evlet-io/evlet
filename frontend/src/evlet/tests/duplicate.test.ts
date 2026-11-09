@@ -81,7 +81,7 @@ describe('Duplicate in the More menu', () => {
 describe('what Duplicate copies', () => {
   it('opens a new order with the plain fields and every line and part, dirty from the start; Create sends a POST without ids', async () => {
     const { host, sent } = await openOrder();
-    await until(() => expect(text(host.querySelector('.doc-tabs, [role="tablist"]'))).toContain('120'));
+    await until(() => expect(text(host.querySelector('.ev-cmp-th .ev-cmp-count'))).toBe('120'));
     openMore(host);
     click(duplicateItem());
     await until(() => expect(location.pathname).toBe('/app/order/new'));
@@ -92,7 +92,7 @@ describe('what Duplicate copies', () => {
     // Remark is unique: left empty and named in the note. Issued is closed to this role: not copied, not named.
     expect(text(host.querySelector('.ev-dup-unique'))).toBe('Unique fields were left empty: Remark.');
     expect(host.querySelector<HTMLInputElement>('.fld[data-field="title"] input')!.value).toBe('Big order');
-    expect(text(host.querySelector('[role="tablist"]'))).toContain('120');
+    expect(text(host.querySelector('.ev-cmp-th .ev-cmp-count'))).toBe('120');
     // Leaving asks: the copied values are unsaved.
     click(byText(host, '.crumbs a, a', 'Orders'));
     await until(() => expect(dialogTitle()).toBe('Discard unsaved changes?'));
@@ -169,7 +169,7 @@ describe('what the server can turn off (duplicate: false, copy: false)', () => {
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New order'));
     // Title starts at its default, as on any new order, not at the source's value.
     expect(host.querySelector<HTMLInputElement>('.fld[data-field="title"] input')!.value).toBe('order');
-    expect(text(host.querySelector('[role="tablist"]'))).not.toContain('120');
+    expect(text(host.querySelector('.ev-cmp-th .ev-cmp-count'))).not.toBe('120');
     // The rest is still copied; Create sends no title and no lines.
     host.querySelector<HTMLInputElement>('.fld[data-field="title"] input')!.value = 'Second order';
     host.querySelector<HTMLInputElement>('.fld[data-field="title"] input')!.dispatchEvent(new Event('change', { bubbles: true }));
@@ -274,7 +274,7 @@ describe('Duplicate in the side panel', () => {
     click(panel()!.querySelector('.doc-tools button[aria-label="Open full page"]'));
     await until(() => expect(location.pathname).toBe('/app/invoice/new'));
     await until(() => expect(text(host.querySelector('.inv-banner'))).toContain('Copied from Draft invoice.'));
-    expect(text(host.querySelector('[role="tablist"]'))).toContain('2');
+    expect(text(host.querySelector('.ev-cmp-th .ev-cmp-count'))).toBe('2');
   });
 });
 
