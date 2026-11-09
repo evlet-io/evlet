@@ -30,6 +30,36 @@ const narrowNow = () => { try { return Boolean(window.matchMedia?.(NARROW)?.matc
 const WIDTHS: Record<string, number> = { text: 200, longtext: 260, link: 200, currency: 140, decimal: 110, integer: 90, percent: 100, date: 120, datetime: 160,
   time: 90, duration: 110, select: 140, boolean: 90, email: 200, url: 200, phone: 150, tags: 200, state: 120, sequence: 150, reference: 180 };
 const RICH = new Set(['link', 'state', 'tags', 'sequence', 'boolean', 'currency']);
+// The narrowest a column gets when the table shrinks its columns to fit.
+const MIN_WIDTHS: Record<string, number> = { text: 120, longtext: 140, link: 120, currency: 100, decimal: 80, integer: 64, percent: 72, date: 104, datetime: 140,
+  time: 72, duration: 80, select: 100, boolean: 64, email: 120, url: 120, phone: 110, tags: 120, state: 96, sequence: 110, reference: 120 };
+// Columns a narrow table hides first: long text and lists, then calculated values, then the rest from the right.
+const LOW = new Set(['longtext', 'tags', 'url', 'email']);
+
+/** Columns that fit `room` px: shrink each toward its minimum first, then hide low-priority columns (never the
+ * first, a pinned, a required or a summed one), and only when even that is too wide keep the minimums and let the
+ * table scroll sideways. A column the person sized keeps its width. No room (0) leaves the natural widths. */
+export function fitColumns<C extends { key: string; meta: FieldSchema; calculated: boolean }>(columns: C[], room: number,
+  options: { width: (column: C) => number; sized: (column: C) => boolean; keep: (column: C) => boolean }): { shown: C[]; widths: Map<string, number>; hidden: C[] } {
+  const natural = (column: C) => options.width(column);
+  const least = (column: C) => options.sized(column) ? natural(column) : Math.min(natural(column), MIN_WIDTHS[column.meta.type] ?? 100);
+  const total = (list: C[], size: (column: C) => number) => list.reduce((sum, column) => sum + size(column), 0);
+  const widths = (list: C[], size: (column: C) => number) => new Map(list.map(column => [column.key, size(column)]));
+  if (room <= 0 || total(columns, natural) <= room) return { shown: columns, widths: widths(columns, natural), hidden: [] };
+  const shown = [...columns], hidden: C[] = [];
+  const rank = (column: C) => LOW.has(column.meta.type) ? 0 : column.calculated ? 1 : 2;
+  while (total(shown, least) > room) {
+    const candidates = shown.filter((column, index) => index > 0 && !options.keep(column));
+    if (!candidates.length) return { shown, widths: widths(shown, least), hidden: columns.filter(column => hidden.includes(column)) };
+    const drop = candidates.reduce((worst, column) => rank(column) < rank(worst) || (rank(column) === rank(worst) && shown.indexOf(column) > shown.indexOf(worst)) ? column : worst);
+    shown.splice(shown.indexOf(drop), 1);
+    hidden.push(drop);
+  }
+  // Share the room left over the minimums by how much each column gave up, never past its natural width.
+  const spare = room - total(shown, least), give = total(shown, column => natural(column) - least(column));
+  const share = give > 0 ? Math.min(1, spare / give) : 0;
+  return { shown, widths: widths(shown, column => Math.floor(least(column) + (natural(column) - least(column)) * share)), hidden: columns.filter(column => hidden.includes(column)) };
+}
 
 export interface ChildColumn { key: string; label: string; width: number; meta: FieldSchema; calculated: boolean; align: 'left' | 'right' }
 export interface TotalItem { label: string; value: Prop<Child>; grand?: boolean }
@@ -159,19 +189,29 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const calculated = meta.compute !== null && meta.compute !== undefined;
     return { key: name, label: meta.label, width: WIDTHS[meta.type] ?? 160, meta, calculated, align: kindOf(meta.type).align === 'right' ? 'right' : 'left' };
   });
-  const columns = derive(() => arrange(allColumns, prefs.get()), { name: `${table.name} (shown columns)` });
+  const arranged = derive(() => arrange(allColumns, prefs.get()), { name: `${table.name} (arranged columns)` });
   const narrow = cell(narrowNow(), { name: `${table.name} (narrow)` });
   // The control column: checkbox, drag handle and the row's number with Edit (a phone leaves out the handle and the number).
   const ctl = () => narrow.get() ? 64 : 104;
-  const widthOf = (column: ChildColumn) => prefs.get().widths[column.key]
-    ?? (narrow.get() && columns.get()[0]?.key === column.key ? Math.min(column.width, 120) : column.width);
+  const baseWidth = (column: ChildColumn) => prefs.get().widths[column.key]
+    ?? (narrow.get() && arranged.get()[0]?.key === column.key ? Math.min(column.width, 120) : column.width);
+  const allKeys = allColumns.map(column => column.key);
+  // The table's visible width; columns fit it before the table scrolls sideways (fitColumns). 0 until measured.
+  const room = cell(0, { name: `${table.name} (room)` });
+  const sums = props.totals ?? parentSums(table), sumKeys = new Set(Object.keys(sums));
+  const fit = derive(() => {
+    const pinned = pinnedKeys(prefs.get(), allKeys, 1);
+    return fitColumns(arranged.get(), room.get() - ctl(), { width: baseWidth, sized: column => prefs.get().widths[column.key] !== undefined,
+      keep: column => pinned.has(column.key) || sumKeys.has(column.key) || Boolean(column.meta.required) });
+  }, { name: `${table.name} (fitted columns)` });
+  const columns = derive(() => fit.get().shown, { name: `${table.name} (shown columns)` });
+  const hiddenToFit = derive(() => fit.get().hidden, { name: `${table.name} (hidden to fit)` });
+  const widthOf = (column: ChildColumn) => fit.get().widths.get(column.key) ?? baseWidth(column);
   const totalWidth = derive(() => ctl() + columns.get().reduce((sum, column) => sum + widthOf(column), 0));
   // Pinned columns stay on the left after the row control column (one by default).
-  const allKeys = allColumns.map(column => column.key);
   const { pin } = pinTracker(() => columns.get(), () => pinnedKeys(prefs.get(), allKeys, 1), widthOf, ctl);
   const locked = derive(() => Boolean(read(props.locked ?? false)), { name: `${table.name} (locked)` });
   const readOnly = derive(() => locked.get() || !record.ready.get());
-  const sums = props.totals ?? parentSums(table);
   const grand = props.totals ? [] : parentGrandTotals(table, sums as Record<string, Field>);
   const summary = props.summary ?? [...Object.entries(sums), ...grand.map(field => [field.meta.name, field] as const)].map(([key, value], index, all) => ({
     label: value && typeof value === 'object' && 'meta' in value ? value.meta.label : allColumns.find(column => column.key === key)?.label ?? key,
@@ -582,7 +622,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   };
 
   const columnsMenu = (anchor: HTMLElement) => openPopover(anchor, () => ColumnsMenu({ columns: allColumns, prefs, pinned: 1,
-    widthOf: key => widthOf(allColumns.find(column => column.key === key)!), viewWidth: () => scroller.clientWidth - ctl() }),
+    widthOf: key => baseWidth(allColumns.find(column => column.key === key)!), viewWidth: () => scroller.clientWidth - ctl() }),
   { role: 'dialog', label: 'Columns', className: 'cols-pop' });
 
   const enterFocus = () => {
@@ -618,6 +658,12 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
         ${Button({ icon: 'copy', label: 'Duplicate', variant: 'ghost', size: 'small', onClick: () => duplicate(selectedRows()) })}
         ${Button({ icon: 'trash-2', label: 'Delete', variant: 'soft-danger', size: 'small', onClick: () => remove(selectedRows()) })}`)}
       <span class="grow"></span>
+      ${when(() => hiddenToFit.get().length > 0 && rows.get().length > 0, () => {
+        const more = html`<button type="button" class="g-more link-q" on:click=${() => openEditor((rows.peek()[0]).key)}>${() => {
+          const count = hiddenToFit.get().length; return `${count} more ${count === 1 ? 'column' : 'columns'}`; }}</button>` as HTMLElement;
+        tooltip(more, () => `Hidden to fit: ${hiddenToFit.get().map(column => column.label).join(', ')}. Open a row to see every field.`);
+        return more;
+      })}
       ${(() => { const button = Button({ icon: 'columns-3', label: 'Columns', size: 'small', hideLabelOnPhone: true, onClick: () => columnsMenu(button) }); button.setAttribute('aria-haspopup', 'dialog'); return button; })()}
       ${focusButton()}
     </div>
@@ -658,6 +704,13 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   onCleanup(() => media?.removeEventListener?.('change', onMedia));
   const width = () => grid.style.setProperty('--gw', `${scroller.clientWidth || 600}px`);
   width();
+  // Measure the room the columns have; a hidden scroller (the row editor is open) keeps the last measure.
+  const measure = () => { const now = scroller.clientWidth; if (now > 0 && now !== room.peek()) room.set(now); };
+  const sizer = typeof ResizeObserver === 'function' ? new ResizeObserver(() => measure()) : null;
+  sizer?.observe(scroller);
+  window.addEventListener('resize', measure);
+  queueMicrotask(measure);
+  onCleanup(() => { sizer?.disconnect(); window.removeEventListener('resize', measure); });
   scroller.addEventListener('scroll', () => grid.classList.toggle('scrolled', scroller.scrollLeft > 0), { passive: true });
 
   // ---------- keyboard ----------

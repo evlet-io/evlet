@@ -633,7 +633,12 @@ mount(document.querySelector('#app')!, () => DocFrame({
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the
   record saves or the lines are locked), moved by their drag handle (mouse, touch, or Space and
-  the arrow keys), and the table can take over the view (focus view). A row's **Edit** (the pencil
+  the arrow keys), and the table can take over the view (focus view). Columns fit the table's width
+  before it scrolls sideways (`fitColumns`): each column shrinks toward a minimum for its type, then
+  low-priority columns hide (long text and lists first, then calculated values, then from the right;
+  never the first, a pinned, a required or a summed column), and "2 more columns" in the toolbar opens
+  the row editor, which shows every field. Only when the kept columns at their minimum still don't
+  fit does the table scroll sideways. A column the person resized keeps its width. A row's **Edit** (the pencil
   by its number) opens the **row editor** in focus view: the rows as a narrow list on the left (click
   or the arrow keys switch row) and the row's fields as one form on the right, in the table's frame,
   with the row's number, title and a one-line summary ("4 × 2,228.26 = 8,913.04": two values typed in
