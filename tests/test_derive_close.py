@@ -109,11 +109,55 @@ class Leg(Model):
     status = State(('open', 'cancelled'), default='open', moves=(Move('open', 'cancelled', 'Cancel'),), final=('cancelled',))
 
 
+class Factor(Model):
+    """A factor table keyed on a pair of values, which derive() reads through the read-only session."""
+    permissions = FULL
+    origin = Text(max_length=10, required=True)
+    target = Text(max_length=10, required=True)
+    factor = Decimal(scale=4, required=True)
+
+
+class Sheet(Model):
+    """People edit the lines; derive() sets each line's net and converted values, which formulas cannot express."""
+    permissions = FULL
+
+    class Meta:
+        calculation_language = 'finite-v1'
+        derives = ('lines.net', 'lines.converted')
+
+    class Line(Child):
+        qty = Decimal(scale=2, default=1)
+        price = Decimal(scale=2, default=0)
+        discount = Decimal(scale=4, default=0)
+        unit = Text(max_length=10, default='a')
+        net = Decimal(scale=4)
+        converted = Decimal(scale=4)
+
+    decimals = Integer(default=2, minimum=0, maximum=4)
+    target = Text(max_length=10, default='b')
+    lines = Table(Line)
+    # Reads the derived row field, so derive() ran first.
+    total = Decimal(scale=4, compute=lines.sum('net'))
+
+    def derive(self):
+        if 'rows' in MISBEHAVE:
+            self.lines = []
+        if 'append' in MISBEHAVE:
+            self.lines.append(self.lines[0])
+        step = D(10) ** -self.decimals
+        for line in self.lines:
+            net = ((line.qty or 0) * (line.price or 0) * (1 - (line.discount or 0))).quantize(step)
+            # A string on purpose: derived row values are cleaned too.
+            line.net = str(net)
+            found = self.context.session.list(Factor, filters={'origin': line.unit, 'target': self.target}, limit=1)
+            line.converted = net * found[0].factor if found else None
+
+
 @pytest.fixture
 def app(tmp_path):
     SEEN.clear()
     MISBEHAVE.clear()
-    database = Database(tmp_path / 'derive.sqlite3', Registry(Plan, Trip, Leg))
+    database = Database(tmp_path / 'derive.sqlite3', Registry(Plan, Trip, Leg, Factor, Sheet))
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
@@ -379,3 +423,109 @@ def test_before_close_cannot_write(app):
     assert caught.value.status == 403
     with app.database.transaction() as tx:
         assert tx.count(Plan) == 0 and tx.get(Trip, trip).status == 'open'
+
+
+# Derived fields on the rows of a Table callers edit ("table.field" in Meta.derives)
+
+LINES = [{'_key': 'a', 'qty': '3', 'price': '10.00', 'discount': '0.1', 'unit': 'a'},
+         {'_key': 'b', 'qty': '1', 'price': '2.50', 'unit': 'c'}]
+
+
+def sheet(app, admin, **values):
+    with app.database.transaction() as tx:
+        tx.create(Factor, origin='a', target='b', factor=D('1.5'))
+    status, body, _ = admin('POST', '/api/sheet', {'children': {'lines': LINES}, **values})
+    assert status == 201, body
+    return body
+
+
+def nets(body):
+    return [(row['net'], row['converted']) for row in body['children']['lines']]
+
+
+def test_derived_row_fields_are_set_cleaned_calculated_and_returned(app):
+    app, admin = app
+    body = sheet(app, admin, decimals=1)
+    # net = qty x price x (1 - discount), rounded to the record's decimals; converted through the factor table.
+    assert nets(body) == [('27.0000', '40.5000'), ('2.5000', None)]
+    assert body['total'] == '29.5000'
+    # Editing a line recalculates its derived values; the rows stay the caller's.
+    line = body['children']['lines'][1]['id']
+    url = f"/api/sheet/{body['id']}"
+    status, after, _ = admin('PATCH', url, {'decimals': 2, 'children': {'lines': {'update': [{'id': line, 'price': '2.55', 'unit': 'a'}]}}},
+                             headers={b'if-match': admin('GET', url)[2][b'etag']})
+    assert status == 200, after
+    assert nets(after) == [('27.0000', '40.5000'), ('2.5500', '3.8250')] and after['total'] == '29.5500'
+    assert [row['id'] for row in after['children']['lines']] == [row['id'] for row in body['children']['lines']]
+    with app.database.transaction() as tx:
+        stored = tx.connection.execute('SELECT net FROM sheet_lines ORDER BY "evlet_position"').fetchall()
+        # Stored exactly, as scaled integers (scale 4).
+        assert [row[0] for row in stored] == [270000, 25500]
+
+
+def test_a_preview_sets_derived_row_fields(app):
+    app, admin = app
+    with app.database.transaction() as tx:
+        tx.create(Factor, origin='a', target='b', factor=D('2'))
+    status, body, _ = admin('POST', '/api/_draft/sheet', {'values': {'children': {'lines': LINES}}})
+    assert status == 200 and body['errors'] == {}, body
+    lines = body['values']['children']['lines']
+    assert [(row['net'], row['converted']) for row in lines] == [('27.0000', '54.0000'), ('2.5000', None)]
+    assert body['values']['total'] == '29.5000'
+
+
+def test_callers_cannot_write_derived_row_fields(app):
+    app, admin = app
+    status, body, _ = admin('POST', '/api/sheet', {'children': {'lines': [{'_key': 'a', 'qty': '1', 'net': '5'}]}})
+    assert status == 422 and body['fields'] == {'lines.net': 'DERIVED_FIELD_WRITE: this value is set by the record'}
+    saved = sheet(app, admin)
+    line = saved['children']['lines'][0]['id']
+    url = f"/api/sheet/{saved['id']}"
+    status, body, _ = admin('PATCH', url, {'children': {'lines': {'update': [{'id': line, 'converted': '1'}]}}},
+                            headers={b'if-match': admin('GET', url)[2][b'etag']})
+    assert status == 422 and body['fields'] == {'lines.converted': 'DERIVED_FIELD_WRITE: this value is set by the record'}
+    with app.business.context(ADMIN) as context, pytest.raises(ValidationError) as caught:
+        context.update(Sheet, saved['id'], children={'lines': {'create': [{'_key': 'n', 'net': '1'}]}})
+    assert caught.value.errors == {'lines.net': 'DERIVED_FIELD_WRITE: this value is set by the record'}
+    # The schema marks them read only on the row; the Table itself stays editable.
+    schema = admin('GET', '/api/schema')[1]
+    entry = next(model for model in schema['models'] if model['name'] == 'sheet')
+    child = entry['children'][0]
+    assert 'read_only' not in child
+    row = next(model for model in schema['models'] if model['name'] == child['model'])
+    flags = {field['name']: field['read_only'] for field in row['fields'] if field['name'] in ('qty', 'net', 'converted')}
+    assert flags == {'qty': False, 'net': True, 'converted': True}
+
+
+@pytest.mark.parametrize('misbehave', ['rows', 'append'])
+def test_derive_keeps_the_rows_of_a_table_callers_edit(app, misbehave):
+    app, admin = app
+    MISBEHAVE.append(misbehave)
+    with app.business.context(ADMIN) as context, pytest.raises(AttributeError):
+        context.create(Sheet, children={'lines': [{'qty': '1'}]})
+    with app.database.transaction() as tx:
+        assert tx.count(Sheet) == 0
+
+
+def test_row_field_declarations_are_checked():
+    with pytest.raises(ValueError, match='not a Table'):
+        class NoTable(Model):
+            class Meta:
+                derives = ('lines.net',)
+            def derive(self): pass
+    with pytest.raises(ValueError, match='not a field of'):
+        class NoField(Model):
+            class Meta:
+                derives = ('lines.missing',)
+            class Line(Child):
+                qty = Integer()
+            lines = Table(Line)
+            def derive(self): pass
+    with pytest.raises(ValueError, match='sets its rows whole'):
+        class Both(Model):
+            class Meta:
+                derives = ('lines', 'lines.qty')
+            class Line(Child):
+                qty = Integer()
+            lines = Table(Line)
+            def derive(self): pass

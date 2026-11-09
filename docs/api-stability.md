@@ -85,11 +85,12 @@ production ready, but the rules below hold from 0.3 on.
   refused (`AccessError`, 403) on every other context
   ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 
-- **Derived values and closing checks.** `Meta.derives` with `derive(self)`, and
+- **Derived values and closing checks.** `Meta.derives` with `derive(self)` (field, Table and
+  `"table.field"` row field names), and
   `before_close(self, to)` on a model: when they run, what `to` is, the read-only
   `self.context.session` they get (`get`, `list`, `count`, `related`, `aggregate`), the
-  `DERIVED_FIELD_WRITE` refusal, and the `read_only` flag on a derived field and a derived
-  `children` entry in `/api/schema` ([model-engine.md](model-engine.md#derived-values),
+  `DERIVED_FIELD_WRITE` refusal (keyed `table.field` for a row field), and the `read_only` flag on
+  a derived field, a derived row field and a derived `children` entry in `/api/schema` ([model-engine.md](model-engine.md#derived-values),
   [states-actions.md](states-actions.md#before-a-record-closes)).
 
 - **Measure trends and colours.** `trend=` and `color=` on `Count`, `CountDistinct`, `Sum`, `Min` and

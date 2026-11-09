@@ -468,7 +468,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     state_write(model, scalars, current)
     sequence_write(model, scalars, current, business.policy.fields(user, model))
     computed_write(business, model, scalars, '')
-    derived_write(model, scalars, collections)
+    derived_write(model, scalars, collections, '')
     drop_echoes(model, scalars, current._values if current else None)
     business.policy.check_values(tx, user, model, scalars)
     # A new record takes the defaults Controls set on this instance for fields the caller left out.
@@ -506,12 +506,12 @@ def computed_write(business, model, values, prefix):
 DERIVED = 'DERIVED_FIELD_WRITE: this value is set by the record'
 
 
-def derived_write(model, scalars, collections):
-    """Fields and Tables that derive() sets (Meta.derives) have one writer: callers cannot send them."""
+def derived_write(model, scalars, collections, prefix):
+    """Fields, Tables and row fields that derive() sets (Meta.derives) have one writer: callers cannot send them."""
     derives = getattr(model, '__derives__', ())
     written = [name for name in (*scalars, *collections) if name in derives]
     if written:
-        raise ValidationError({name: DERIVED for name in written})
+        raise ValidationError({prefix + name: DERIVED for name in written})
 
 
 def row_bounds(business, child):
@@ -807,6 +807,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             keys_seen.add(temporary) if temporary is not None and fresh else None
             value, nested = business.split_body(value)
             computed_write(business, child.model, value, prefix + child.name + '.')
+            derived_write(child.model, value, nested, prefix + child.name + '.')
             original = originals.get(row_id) if row_id is not None else None
             drop_echoes(child.model, value, getattr(original, '_values', None))
             business.policy.check_values(tx, user, child.model, value, targets=targets)
@@ -1029,11 +1030,21 @@ def derive(context, draft, internal, errors, targets):
     model = draft._definition
     names = model.__derives__
     tables = {name for name in names if name in model.__tables__}
-    fields = set(names) - tables
+    fields = {name for name in names if name in model.__declared_fields__}
+    # "table.field": fields derive() sets on the rows of a Table callers edit; it keeps those rows.
+    row_fields = {}
+    for name in names:
+        if '.' in name:
+            table, field = name.split('.')
+            row_fields.setdefault(table, set()).add(field)
     saved = {name: [row for row in draft._rows.get(name, []) if row.id] for name in tables}
+    edited = {name: list(rows) for name, rows in draft._rows.items() if name not in tables}
     before = list(walk(draft))
     for prefix, item in before:
-        object.__setattr__(item, '_derives', frozenset(names) if item is draft else None if prefix.split('.')[0] in tables else frozenset())
+        top = prefix.split('.')[0]
+        allowed = frozenset(names) if item is draft else None if top in tables else \
+            frozenset(row_fields.get(top, ())) if item.parent is draft else frozenset()
+        object.__setattr__(item, '_derives', allowed)
     try:
         with trusted(), hook_context(context, draft):
             draft.derive()
@@ -1042,12 +1053,20 @@ def derive(context, draft, internal, errors, targets):
     finally:
         for _, item in [*before, *walk(draft)]:
             object.__setattr__(item, '_derives', None)
+    for name, rows in edited.items():
+        if [id(row) for row in draft._rows.get(name, [])] != [id(row) for row in rows]:
+            raise AttributeError(f'derive() cannot add, remove or reorder the rows of {model.__name__}.{name}, which '
+                                 'callers edit; name the Table itself in Meta.derives to build its rows')
     all_drafts = list(walk(draft))
     targets.prefetch(link_values([item for _, item in all_drafts if item.id is None], fetches_only=True))
     for prefix, item in all_drafts:
         if item is draft:
             apply_inputs(item, prefix, internal(item) | (set(model.__declared_fields__) - fields), errors)
             item._caller.update({name: item._values.get(name) for name in fields})
+        elif item.parent is draft and prefix.split('.')[0] in row_fields:
+            names_here = row_fields[prefix.split('.')[0]]
+            apply_inputs(item, prefix, internal(item) | (set(item._definition.__declared_fields__) - names_here), errors)
+            item._caller.update({name: item._values.get(name) for name in names_here})
         elif prefix.split('.')[0] in tables:
             unknown = set(item._values) - set(item._definition.__declared_fields__)
             if unknown:

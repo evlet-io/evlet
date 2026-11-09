@@ -10,7 +10,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 - **Derived values: `derive()` and `Meta.derives`.** A document builds stored values formulas
   cannot express in `derive(self)`, such as one row per distinct value of another Table or rows
-  built from a linked record. It runs on every write and preview, before calculations, and what
+  built from a linked record. `Meta.derives` may also name `"table.field"`: a field derive() sets on
+  each row of a Table people edit, such as a line's net or converted amount, while the rows stay
+  the caller's. It runs on every write and preview, before calculations, and what
   it sets is cleaned, calculated, validated and returned like caller input. The fields and Tables
   named in `Meta.derives` are refused to callers (`DERIVED_FIELD_WRITE`, 422) and marked
   `read_only` in `/api/schema`; the record page shows a derived Table without editing. It reads
