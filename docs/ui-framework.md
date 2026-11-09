@@ -681,7 +681,8 @@ mount(document.querySelector('#app')!, () => DocFrame({
 - **FormSection** with `fold` is a **FoldSection**: a heading button with `aria-expanded`, `aria-controls` and a chevron, a summary and an error
   count while closed, and `hidden` on the closed body so Tab skips it. A `Folds` holds one form's state: the
   person's choices (a preferences cell of title to open) over each section's start (`collapsed`, the phone rule,
-  `'empty'`); `reveal(title)` opens one for now and `reset()` forgets the choices. `revealField(root, name)`
+  `'empty'`). A number still at a zero default (0, 0.00 that nobody typed) counts as empty for the summary and
+  for `'empty'` (`isBlank(field)`); `reveal(title)` opens one for now and `reset()` forgets the choices. `revealField(root, name)`
   opens the section holding a field and focuses it. `flowGrid(cells, flow)` lays a section's fields out
   across then down, or down each column with full-width fields as breaks, in DOM order.
 - **dragList** reorders items in one or more lists. Mark items `data-drag-item="<kind>"` with
