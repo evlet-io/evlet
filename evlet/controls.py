@@ -1183,7 +1183,12 @@ class Controls:
     # ---------- workspaces ----------
 
     def customizes(self, scope, user):
-        """Admins, and desk roles with "Customize workspaces" on, on the hosts and networks that open Controls."""
+        """Admins, and desk roles with "Customize workspaces" on, on the hosts and networks that open Controls.
+
+        The access rule of the workspace override routes, also reported as ``customize_workspaces`` by
+        ``GET /api/_settings/me``. Two-step sign-in is checked by the routes, not here."""
+        if self.routes is None or getattr(self.business, 'workspaces', None) is None:
+            return False
         role = self.roles.get(user.role)
         if user.access is not None or not self.host_allowed(scope) or role is None or role['realm'] != 'desk':
             return False
@@ -1195,7 +1200,7 @@ class Controls:
 
     def workspace_route(self, scope, body, user):
         """GET /api/_controls/workspaces, PUT and DELETE /api/_controls/workspaces/<key>: the site's workspace overrides."""
-        if self.routes is None or getattr(self.business, 'workspaces', None) is None or not self.customizes(scope, user):
+        if not self.customizes(scope, user):
             # Like the rest of Controls, the area stays hidden (404). Someone who already opens Controls sees it
             # exists, so they get 403 with the reason instead.
             if self.routes is not None and self.allows(scope, user):
