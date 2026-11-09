@@ -598,7 +598,9 @@ mount(document.querySelector('#app')!, () => DocFrame({
   tint: 'blue',
   main: [
     // The title row: the type's icon tile, the title and its status, actions on the right, key facts under it.
-    DocHeader({ type: 'Order', icon: 'receipt', tint: 'blue', title: record.field('title') }),
+    // subtitle: one muted line under the title; image: a picture left of the title in place of the tile; tools:
+    // small buttons at the end of the title row.
+    DocHeader({ type: 'Order', icon: 'receipt', tint: 'blue', title: record.field('title'), subtitle: () => 'Desert Rose Retail' }),
     LockBanner({ lifecycle: () => record.field('stage').value.get() === 'won' ? 'locked' : 'draft', state: 'Won' }),
     SummaryStrip([{ label: 'Total', value: () => formatMoney(record.field('total').value.get() as string) }]),
     tabs,

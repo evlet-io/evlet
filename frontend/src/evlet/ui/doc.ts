@@ -77,6 +77,13 @@ export interface DocHeaderProps {
   meta?: Child[];
   /** Outline buttons, then the main move (a SplitButton), then More: right of the title, centred on its row. */
   actions?: Child[];
+  /** One muted line under the title ("Desert Rose Retail · 08-11-2026"); nothing shows while it is empty. */
+  subtitle?: Prop<string>;
+  /** A record image (a round avatar or a square thumbnail) left of the title, in place of the mark. Takes no space
+   * while it renders nothing. */
+  image?: Child;
+  /** Small buttons at the end of the title row, after the actions (a side panel's Expand and Close). */
+  tools?: Child[];
 }
 
 /**
@@ -92,15 +99,19 @@ export function DocHeader(props: DocHeaderProps): HTMLElement {
   let mark = props.mark;
   if (!mark) {
     const tile = IconTile(props.icon, { tint: props.tint, size: 36 });
+    tile.classList.add('doc-tile');
     tile.setAttribute('role', 'img');
     tile.setAttribute('aria-label', props.type);
     mark = tile;
   }
   const status = props.status?.filter(Boolean) ?? [];
+  const subtitle = props.subtitle;
   return html`<header class="doc-head"><div class="doc-row">
-    <div class="doc-mark">${mark}</div>
-    <div class="ttl"><div class="doc-title-line">${title}${status.length ? html`<span class="doc-status">${status.map(item => html`${item}`)}</span>` : null}</div></div>
+    <div class="doc-mark">${props.image === undefined ? null : html`<span class="doc-img">${props.image}</span>`}${mark}</div>
+    <div class="ttl"><div class="doc-title-line">${title}${status.length ? html`<span class="doc-status">${status.map(item => html`${item}`)}</span>` : null}</div>${
+      subtitle === undefined ? null : html`<p class="doc-sub" hidden=${() => !read(subtitle)} title=${() => read(subtitle) || null}>${subtitle}</p>`}</div>
     ${props.actions?.length ? html`<div class="ph-actions">${props.actions}</div>` : null}
+    ${props.tools?.length ? html`<div class="doc-tools">${props.tools}</div>` : null}
     ${props.meta?.length ? html`<div class="rec-meta">${props.meta.map(item => html`<span>${item}</span>`)}</div>` : null}</div></header>` as HTMLElement;
 }
 

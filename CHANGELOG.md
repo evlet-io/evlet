@@ -8,6 +8,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **The side panel reads as one white section.** A compact record in a list's side panel has its header (record
+  image slot, title, status badge, a lock while it can't be changed, then the drawer button, Expand and Close), a
+  muted subtitle of its number and first key fields, a thin line, the key cards as plain pairs, then the fields two
+  to a row and the tables. The panel shows no stage bar. `DocHeader` takes `subtitle`, `image` and `tools`, and
+  the record page shows a schema's `image` field left of the title when the schema names one
+  ([docs/ui.md](docs/ui.md#what-a-side-panel-shows)).
+
 - **Key cards as number cards, and `Meta.panel_summary`.** A compact record page draws `Meta.cards` as the
   list page's number cards above the white card, two or three to a row in a side panel or on a phone.
   `Meta.panel_summary = False` leaves the summary strip or the key cards out of a list's side panel; the full page

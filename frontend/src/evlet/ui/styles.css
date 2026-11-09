@@ -677,11 +677,25 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 /* The record's title row: mark, title and status pills, the actions on the right centred on the row; the key facts
    on a small line under the title. A narrow header (side panel, phone) puts the actions on their own line. */
 .doc-head{margin-bottom:18px;container-type:inline-size}
-.doc-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto;column-gap:12px;row-gap:4px;align-items:center}
+.doc-row{display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;column-gap:12px;row-gap:4px;align-items:center}
 .doc-mark{grid-row:1;grid-column:1;display:flex}
 .doc-head .ttl{grid-row:1;grid-column:2;min-width:0}
 .doc-head .ph-actions{grid-row:1;grid-column:3;justify-content:flex-end;flex-wrap:nowrap}
-.doc-head .rec-meta{grid-row:2;grid-column:2/4;row-gap:4px}
+.doc-head .rec-meta{grid-row:2;grid-column:2/-1;row-gap:4px}
+/* Small buttons at the end of the title row (a side panel's drawer button, Expand and Close). */
+.doc-tools{grid-row:1;grid-column:4;display:flex;align-items:center;gap:2px;align-self:start}
+.doc-tools:not(:has(button)){display:none}
+.ev-head-tools{display:contents}
+/* The muted line under the title. */
+.doc-sub{margin:1px 0 0;font-size:12.5px;line-height:18px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.doc-sub[hidden]{display:none}
+/* The read-only lock after the status badges. */
+.doc-lock{display:inline-flex;align-items:center;color:var(--fg-3)}
+/* The record image slot: in place of the icon tile while it has a picture, no space without one. */
+.doc-img{display:contents}
+.doc-img-pic{width:36px;height:36px;object-fit:cover;border-radius:var(--r);border:1px solid var(--border);background:var(--bg-subtle);display:block}
+.doc-img-pic.round{border-radius:50%}
+.doc-mark:has(.doc-img-pic)>:not(.doc-img){display:none}
 .doc-title-line{display:flex;align-items:center;gap:6px 10px;flex-wrap:wrap;min-width:0}
 .doc-status{display:inline-flex;align-items:center;gap:6px;flex-wrap:wrap}
 .doc-status:empty{display:none}

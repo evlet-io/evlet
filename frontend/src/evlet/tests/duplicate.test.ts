@@ -271,7 +271,7 @@ describe('Duplicate in the side panel', () => {
     await until(() => expect(text(panel()?.querySelector('.doc-head h1'))).toBe('New invoice'));
     expect(text(panel()!.querySelector('.inv-banner'))).toContain('Copied from Draft invoice.');
     // Open full page takes the copy along, lines and banner included.
-    click(panel()!.querySelector('.ev-panel-bar button[aria-label="Open full page"]'));
+    click(panel()!.querySelector('.doc-tools button[aria-label="Open full page"]'));
     await until(() => expect(location.pathname).toBe('/app/invoice/new'));
     await until(() => expect(text(host.querySelector('.inv-banner'))).toContain('Copied from Draft invoice.'));
     expect(text(host.querySelector('[role="tablist"]'))).toContain('2');

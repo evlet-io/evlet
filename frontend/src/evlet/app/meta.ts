@@ -52,6 +52,9 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   /** Meta.cards: up to five derived values for the top of a compact record page, each a field (compute, fetch or
    * query) or a per-record measure, cut to what this role may read. Absent: the automatic summary strip. */
   cards?: string[];
+  /** The field (type "image") whose picture shows left of the record's title. Read defensively: absent, or naming a
+   * field this role does not read, shows nothing. */
+  image?: string;
   relations?: RelationSchema[];
   attachments?: boolean;
   attachment_limits?: { max_files: number; max_size: number };

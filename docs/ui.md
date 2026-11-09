@@ -194,7 +194,16 @@ name, a name given twice or a flag that is not True or False fails when the regi
 - **One view.** The full page and the side panel draw the same record view (title row, banners, tabs or the compact
   card, side column and footer); `Meta.panel` only filters it. The view is responsive to its own width, not the
   window's: in a narrow frame (a side panel, a narrow window) there is no side column, and the drawer button at the
-  end of the breadcrumb row (in a panel, its top line) opens it. A layout change therefore applies to both.
+  end of the breadcrumb row (in a panel, the title row, before Expand and Close) opens it. A layout change therefore
+  applies to both.
+- **The panel header.** The record image (when the model has one), the title, the status badge (also for a State
+  shown as a bar: the panel has no stage bar), a lock while the record can't be changed, then the drawer button,
+  Expand and Close. Under the title a muted line has the record's number and, on a compact view, its first two key
+  fields with a value ("Desert Rose Retail · 08-11-2026"). While the panel covers the list, a line above it has
+  the Back button instead of Expand and Close.
+- **A compact record in the panel is one white section**, like a document preview: the header, a thin line, the key
+  cards as plain label-over-value pairs, the Main fields two to a row and its tables, then more information. No
+  boxes inside it. It is the same view as the page, styled by the panel.
 - Controls, Models, Form layout can change it per instance with the panel button on each section,
   field and tab, and the Side panel card for the summary strip and blocks
   ([controls.md](controls.md)).
@@ -341,8 +350,10 @@ class Shipment(Model):
 - **`Section(..., description=...)`** adds a line of text under a section's title. Any layout can use it.
 - **More information.** Every `Section`, `Table`, `Related`, `Html` and `Chart` after `Main` shows
   as a row that opens and closes, with a one-line summary while it is closed.
-- **Header and side column.** The header has the title, the status badge (`Meta.status`) and the
-  actions. `Meta.key_fields` keep every other use (search, reference labels, lists, board cards,
+- **Header and side column.** The header has the title, the status badge (`Meta.status`), a lock while the record
+  can't be changed, and the actions; under the title a muted line with the first two key fields that have a value.
+  A model whose schema names a record image (`image`, a field of type `image`) shows it left of the title, a round
+  avatar for a person and a square thumbnail otherwise, in place of the icon tile; without one, nothing shows. `Meta.key_fields` keep every other use (search, reference labels, lists, board cards,
   connectors); on a compact page their values show in the form itself, not in the header or the side column.
 
 `/api/schema` sends `record_layout` as `{"compact": true, "blocks": [...]}`. The Main fields are a
@@ -1086,7 +1097,7 @@ On a phone the card scrolls with the page and the table is as tall as its rows.
 A record opened in the list's side panel is its own white card beside the list card, about 13 px
 apart, with its own border and 4 px corners; it is not a drawer against the window's edge. Both cards
 fill the visible height and each scrolls inside: the table's body in the list card, the record in its
-card, whose header (the type with Expand and Close, then the title and status) is at its top. The
+card, whose header (the title, its status and Expand and Close on one row) is at its top. The
 divider between the cards still resizes the panel. When the panel covers the list (a narrow window,
 a phone) it fills the main area as before. The docked filter panel is a card the same way.
 

@@ -143,6 +143,35 @@ describe('a compact record page', () => {
     expect(charges.querySelector('[data-field="declared"]')).not.toBeNull();
   });
 
+  it('has a muted subtitle of its first key fields, and a lock while the role cannot change it', async () => {
+    const { host } = await start(routes, `/app/shipment/${shipment}`);
+    await until(() => expect(text(host.querySelector('.doc-head .doc-sub'))).toBe('Falcon Freight'));
+    expect(host.querySelector('.doc-head .doc-lock')).toBeNull();
+    stopAll();
+    const readOnly = await start(withSchema(shipmentSchema({ permissions: { create: true, delete: true, update: false } })), `/app/shipment/${shipment}`);
+    await until(() => expect(readOnly.host.querySelector('.doc-head .doc-status .doc-lock')?.getAttribute('aria-label')).toBe('Read only'));
+  });
+
+  it('shows the record image left of the title when the schema names one, and nothing without it', async () => {
+    const { host } = await start(routes, `/app/shipment/${shipment}`);
+    await until(() => expect(host.querySelector('.doc-head h1')).not.toBeNull());
+    expect(host.querySelector('.doc-head .doc-img')).toBeNull();
+    stopAll();
+    const body = copy(screen.compact_shipment_detail).body;
+    body.photo = '/files/spring.png';
+    const model = { image: 'photo', fields: [...screen.compact_schema.body.models.find((item: { name: string }) => item.name === 'shipment').fields, { name: 'photo', label: 'Photo', type: 'image' }] };
+    const withImage = withSchema(shipmentSchema(model)).map(route => String(route[1]) === String(new RegExp(`/api/shipment/${shipment}$`))
+      ? [route[0], route[1], { ...screen.compact_shipment_detail, body }] as Route : route);
+    const second = await start(withImage, `/app/shipment/${shipment}`);
+    await until(() => expect(second.host.querySelector('.doc-head .doc-mark .doc-img img')?.getAttribute('src')).toBe('/files/spring.png'));
+    expect(second.host.querySelector('.doc-head .doc-img img')!.getAttribute('alt')).toBe('Spring order');
+    const { imageSource } = await import('../app/record-compact');
+    expect(imageSource({ url: 'https://example.test/a.png' })).toBe('https://example.test/a.png');
+    expect(imageSource('01j7kzz1hre6c')).toBeNull();
+    expect(imageSource('//elsewhere.test/a.png')).toBeNull();
+    expect(imageSource(null)).toBeNull();
+  });
+
   it('counts the rows of a closed Table row', async () => {
     const { rowsText, rowNoun } = await import('../app/record-compact');
     expect(rowsText(0)).toBe('No rows');
@@ -183,9 +212,10 @@ describe('a compact record in a side panel', () => {
     expect(panel(host).querySelectorAll('.ev-cards .stat-card')).toHaveLength(3);
     expect([...panel(host).querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')))).toEqual(['Charges', 'Notes', 'Parcels']);
     expect(panel(host).querySelector('.ev-cmp-card + .ev-rec-foot')).not.toBeNull();
-    // The same side column, in the frame, with the drawer button at the end of the panel's top line.
+    // The same side column, in the frame, with the drawer button on the title row, before Expand and Close.
     expect(panel(host).querySelector('.doc > .doc-side .side-sec h4') && text(panel(host).querySelector('.doc > .doc-side .side-sec h4'))).toBe('Attachments');
-    const bar = panel(host).querySelector('.ev-panel-bar')!;
+    const bar = panel(host).querySelector('.doc-head .doc-tools')!;
+    expect([...bar.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual([expect.stringMatching(/side panel|attachments/i), 'Open full page', 'Close (Esc)']);
     const toggle = bar.querySelector<HTMLButtonElement>('.ev-side-toggle button')!;
     expect(toggle.getAttribute('aria-controls')).toBe(panel(host).querySelector('.doc-side')!.id);
     expect(panel(host).querySelector('.ev-crumb-row')).toBeNull();
@@ -205,6 +235,24 @@ describe('a compact record in a side panel', () => {
     resize(doc, 1000);
     resize(doc.querySelector('.doc-main')!, 590);
     expect([...doc.classList].filter(name => /^doc-(narrow|m|s|xs)$/.test(name))).toEqual(['doc-m']);
+  });
+
+  it('reads as one white section: header with subtitle and panel buttons, a line, flat key cards, fields two to a row', async () => {
+    const { host } = await start(withSchema(shipmentSchema({ open_in: 'panel' })), `/app/shipment?open=${shipment}`);
+    await until(() => expect(panel(host)?.querySelector('.ev-cmp-card')).toBeTruthy());
+    const head = panel(host).querySelector('.ev-panel-head .doc-head')!;
+    expect(text(head.querySelector('h1'))).toContain('Spring order');
+    await until(() => expect(text(head.querySelector('.doc-sub'))).toBe('Falcon Freight'));
+    expect([...head.querySelectorAll('.doc-tools button')].map(button => button.getAttribute('aria-label'))).toEqual(['Open full page', 'Close (Esc)']);
+    // No separate type line above the header while the panel sits beside the list.
+    expect(panel(host).querySelector('.ev-panel-bar')).toBeNull();
+    // Vitest hands CSS imports over empty, so the source is read from disk (vitest runs from frontend/).
+    const node = (globalThis as any).process;
+    const css = node.getBuiltinModule('node:fs').readFileSync(`${node.cwd()}/src/evlet/app/screens.css`, 'utf8') as string;
+    expect(css).toMatch(/\.doc-panel\.doc-compact \.doc-main\{background:var\(--surface\)\}/);
+    expect(css).toMatch(/\.doc-panel \.ev-cmp-card\{[^}]*border:0/);
+    expect(css).toMatch(/\.doc-panel \.ev-cards>\.stat-card\{[^}]*border:0/);
+    expect(css).toMatch(/\.doc-panel \.ev-cmp-grid \.fs-g\{grid-template-columns:repeat\(2,minmax\(0,1fr\)\)\}/);
   });
 
   it('leaves the key cards out of the panel with Meta.panel_summary = False, and the full page keeps them', async () => {

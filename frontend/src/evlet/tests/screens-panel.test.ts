@@ -70,7 +70,7 @@ describe('records in a side panel beside the list', () => {
     // The full page's record view: its tabs, and its side column, behind the drawer button at the end of the top line.
     expect([...panel(host)!.querySelectorAll('.doc-tabs [role="tab"]')].map(text)).toEqual(['Activity', 'Details', 'Lines2', 'Related', 'Postings']);
     const aside = panel(host)!.querySelector('.doc > .doc-side')!;
-    expect(panel(host)!.querySelector('.ev-panel-bar .ev-side-toggle button')!.getAttribute('aria-controls')).toBe(aside.id);
+    expect(panel(host)!.querySelector('.doc-tools .ev-side-toggle button')!.getAttribute('aria-controls')).toBe(aside.id);
     click(byText(panel(host)!, '[role="tab"]', 'Details'));
     await until(() => expect(byText(aside, '.side-sec h4', /^Files/)).not.toBeNull());
     // Record info is the footer row under the fields.
@@ -222,7 +222,7 @@ describe('records in a side panel beside the list', () => {
     const { host } = start(routes(), `/app/invoice?open=${three}`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     await editFirstLine(host);
-    click(panel(host)!.querySelector('.ev-panel-bar button[aria-label="Open full page"]'));
+    click(panel(host)!.querySelector('.doc-tools button[aria-label="Open full page"]'));
     await until(() => expect(location.pathname + location.search).toBe(`/app/invoice/${three}?tab=t-lines`));
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     await until(() => expect(host.querySelector('.ev-savebar')).not.toBeNull());

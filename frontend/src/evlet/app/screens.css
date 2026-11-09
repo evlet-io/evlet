@@ -518,3 +518,21 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .doc.doc-s .ev-more-desc{display:none}
 .doc.doc-s .ev-cmp-grid .fs-g,.doc.doc-s .ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
 .doc.doc-xs .ev-cmp-grid .fs-g,.doc.doc-xs .ev-more-body .fs-g{grid-template-columns:1fr}
+/* A compact record in a list's side panel reads as one white section, like a document preview: the header (image,
+   title, badges, lock and subtitle, then the panel buttons), a thin line, the key cards as plain label-over-value
+   pairs, then the fields two to a row and the tables, with no boxes inside. The same view as the page; only the panel
+   variant (DocFrame's doc-panel) styles it so. */
+.doc-panel .ev-panel-bar{margin:0 0 6px}
+.doc-panel .doc-mark:not(:has(.doc-img-pic)):has(> .doc-tile){display:none}
+.doc-panel .doc-row:has(> .doc-mark > .doc-tile):not(:has(.doc-img-pic)) .ttl{grid-column:1/3}
+.doc-panel.doc-compact{--cmp-pad:18px}
+.doc-panel.doc-compact .doc-main{background:var(--surface)}
+.doc-panel.doc-compact .ev-panel-head{margin-bottom:0}
+.doc-panel.doc-compact .doc-head{margin-bottom:12px}
+.doc-panel .ev-cmp-card{margin:0 -18px;border:0;border-radius:0;background:none}
+.doc-panel .ev-cmp-card>.inv-banner:first-child{border-top:0}
+.doc-panel .ev-cards{margin:0 -18px;padding:12px 18px;gap:10px 14px;border-bottom:1px solid var(--border)}
+.doc-panel .ev-cards>.stat-card{padding:0;border:0;border-radius:0;background:none}
+.doc-panel .ev-cmp-grid .fs-g{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc-panel.doc-xs .ev-cmp-grid .fs-g{grid-template-columns:1fr}
+.doc-panel .ev-cmp-card+.ev-rec-foot,.doc-panel .ev-cmp-card~.ev-panel-more{border-top:1px solid var(--border);margin:0 -18px;padding:10px 18px}

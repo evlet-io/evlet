@@ -88,10 +88,10 @@ describe('the record beside the list', () => {
     const split = host.querySelector<HTMLElement>('.ev-list-split')!;
     const side = split.querySelector<HTMLElement>(':scope > .split-side')!;
     expect(side.querySelector(':scope > .ev-panel')).not.toBeNull();
-    // Its header (the type, Expand and Close, then the title and status) is at the top of the card.
+    // Its header (the title and status, then Expand and Close on the title row) is at the top of the card.
     const head = side.querySelector<HTMLElement>('.doc-main > .ev-panel-head')!;
-    expect(head.firstElementChild!.classList.contains('ev-panel-bar')).toBe(true);
     expect(head.querySelector('.doc-head h1')).not.toBeNull();
+    expect(head.querySelector('.doc-head .doc-tools button[aria-label="Open full page"]')).not.toBeNull();
     expect(head.parentElement!.firstElementChild).toBe(head);
     // No breadcrumb in the panel: the list page has the one.
     expect(side.querySelector('.page-crumbs')).toBeNull();

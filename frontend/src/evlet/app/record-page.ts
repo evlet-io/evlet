@@ -32,7 +32,7 @@ import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateF
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
 import { blockFilters, declaresRelated, HtmlContent, layoutBlocks, layoutTabId, MeasureChart, placedTables, RelatedRecords, type BlockRecord } from './record-blocks';
-import { CardRow, fieldsSummary, MoreRow, rowNoun, rowsText } from './record-compact';
+import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowNoun, rowsText, valueText } from './record-compact';
 import type { LayoutBlock, LayoutTab } from '../model/schema';
 import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
 import { filterFields } from './filters';
@@ -528,7 +528,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const show = state?.show ?? 'badge';
   const statusMeta = model.status ? fieldOf(model, model.status) : undefined;
   const takeable = () => canUpdate ? (extras.get()._moves ?? []).filter(move => move.allowed) : [];
-  const stateBadge = state && !isNew && (show === 'badge' || compact || statusMeta?.name === state.field) ? StatusBadge({
+  const stateBadge = state && !isNew && (show === 'badge' || compact || panel || statusMeta?.name === state.field) ? StatusBadge({
     value: stateValue, tint: value => statusTint(fieldOf(model, state.field) ?? {}, value), name: 'Status',
     moves: () => takeable().map(move => ({ to: move.to, label: move.label })), blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) }) : null;
   const statusBadge = statusMeta && statusMeta.name !== state?.field && has(statusMeta.name) && !isNew ? StatusBadge({
@@ -551,13 +551,29 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return value ? html`<span class="ev-fact mono" title="Name">${String(value)}</span>`
       : naming.placeholder ? html`<span class="muted">${naming.placeholder}</span>` : null;
   }) : null;
+  // The panel's number goes on the subtitle line (the page's breadcrumb ends with it).
+  const numberText = numbered && numbered.name !== model.title_field && has(numbered.name) ? () => String(store.field(numbered.name).value.get() ?? '') : null;
+  // One muted line under the title: in a side panel the record's number, then on a compact view (whose header has no
+  // facts line) its first two key fields that have a value, such as "Desert Rose Retail · 08-11-2026".
+  const subtitleFacts = compact ? factFields.slice(0, 2) : [];
+  const subtitle = (panel && numberText) || subtitleFacts.length
+    ? () => [panel && numberText ? numberText() : '', ...subtitleFacts.map(meta => valueText(view(meta.name), ctx.links))].filter(Boolean).join(' · ') : undefined;
+  // A record image (Meta.image naming a field of type "image") left of the title, in place of the icon tile.
+  const imageMeta = !isNew && model.image ? fieldOf(model, model.image) : undefined;
+  const image = imageMeta && has(imageMeta.name)
+    ? RecordImage(() => imageSource(store.field(imageMeta.name).value.get()), { round: Boolean(look.person), label: () => titleText.get() }) : undefined;
+  // A lock after the badges while nothing can be changed: the record is locked by its state, or the role can't write.
+  const readOnly = () => !isNew && (locked.get() || !canWrite);
+  const lockMark = when(readOnly, () => html`<span class="doc-lock" role="img" aria-label="Read only" title="Read only">${Icon('lock', { size: 'xs' })}</span>`);
+  // Filled in below: the side column's drawer button, and in a side panel Expand and Close.
+  const headTools = html`<span class="ev-head-tools"></span>` as HTMLElement;
   const header = DocHeader({
-    type: model.label, icon: look.icon, tint: look.tint, mark,
+    type: model.label, icon: look.icon, tint: look.tint, mark, subtitle, image, tools: [headTools],
     title: titleProp,
     mono: () => Boolean(numbered && model.title_field === numbered.name && has(numbered.name) && store.field(numbered.name).value.get())
       // A title that is the record's name (no other title source) reads as a document number too.
       || Boolean(naming && store.field('name').value.get() && String(store.field('name').value.get()) === titleText.get()),
-    status: [stateBadge, statusBadge].filter(Boolean) as Child[],
+    status: [stateBadge, statusBadge, lockMark].filter(Boolean) as Child[],
     // A compact page's header has only the title, the status badges and the actions: its facts are in Record info.
     meta: compact ? [] : [nameFact, ...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
       const current = extras.get()._lifecycle;
@@ -565,14 +581,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     }) : null].filter(Boolean) as Child[],
     actions: [live(headerActions)],
   });
-  // The panel's top line: the record type and its number, Expand and Close (Back to the list while the panel covers it).
-  const numberText = numbered && numbered.name !== model.title_field && has(numbered.name) ? () => String(store.field(numbered.name).value.get() ?? '') : null;
-  // The drawer button for the side column goes at its end, as on the page's breadcrumb row; the rest is panel chrome.
-  const panelBar = (toggle: Node | null) => panel ? html`<div class="ev-panel-bar">
-    ${when(panel.overlay, () => Button({ label: model.plural, icon: 'chevron-left', variant: 'ghost', size: 'small', onClick: () => panel.close() }))}
-    <span class="eyebrow">${Icon(look.icon, { size: 'xs' })}${model.label}</span>${numberText ? html`<span class="mono muted">${numberText}</span>` : null}<span class="grow"></span>
-    ${toggle}${when(() => !panel.overlay.get(), () => [IconButton({ icon: 'maximize-2', tip: 'Open full page', onClick: () => expand(active.peek()) }),
-      IconButton({ icon: 'x', tip: 'Close (Esc)', onClick: () => panel.close() })])}</div>` : null;
+  // A side panel's header ends with the drawer button, Expand and Close. While the panel covers the list (a narrow
+  // window) a line above it has Back to the list instead of Expand and Close.
+  const panelTools = (toggle: Node | null): Child[] => panel ? [toggle, when(() => !panel.overlay.get(), () => [
+    IconButton({ icon: 'maximize-2', tip: 'Open full page', onClick: () => expand(active.peek()) }),
+    IconButton({ icon: 'x', tip: 'Close (Esc)', onClick: () => panel.close() })])] : [];
+  const panelBar = () => panel ? when(panel.overlay, () => html`<div class="ev-panel-bar">
+    ${Button({ label: model.plural, icon: 'chevron-left', variant: 'ghost', size: 'small', onClick: () => panel.close() })}</div>`) : null;
 
   // ---------- banners ----------
 
@@ -640,8 +655,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     <button type="button" class="link-q" on:click=${() => expand(active.peek() === 'details' ? null : active.peek())}>Open full page</button></p>` : null;
   // ---------- flow and summary ----------
 
-  // The stage bar, for a State declared show="bar": only the states this person can move to now are buttons.
-  const flow = state && !isNew && show === 'bar' && !compact ? (() => {
+  // The stage bar, for a State declared show="bar": only the states this person can move to now are buttons. A side
+  // panel has none; its header carries the status badge instead.
+  const flow = state && !isNew && show === 'bar' && !compact && !panel ? (() => {
     const { steps, good, bad } = flowFromState(state as any);
     return StatusFlow({ steps, good, bad, current: stateValue, label: `${model.label} status`, canMove: to => takeable().some(move => move.to === to),
       blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) });
@@ -1002,11 +1018,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     active: sideOpen, onClick: () => sideOpen.set(!sideOpen.peek()) })}</span>` as HTMLElement : null;
   sideToggle?.firstElementChild?.setAttribute('aria-controls', sideId);
   const crumbRow = panel ? null : html`<div class="ev-crumb-row">${ctx.crumbBar?.() ?? null}${sideToggle}</div>`;
+  if (panel) headTools.append(html`${panelTools(sideToggle)}`);
   // The footer under the form: who made and changed it, the record ID and its link. A side panel shows it when its
   // Record info block is on.
   const footer = isNew || (shows && !shows.block('info')) ? null : RecordFooter(ctx, model, String(store.id));
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
-    main: [panel ? html`<div class="ev-panel-head">${panelBar(sideToggle)}${header}</div>` : [crumbRow, header], UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
+    main: [panel ? html`<div class="ev-panel-head">${panelBar()}${header}</div>` : [crumbRow, header], UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
       options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems),

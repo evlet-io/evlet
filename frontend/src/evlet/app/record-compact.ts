@@ -19,6 +19,21 @@ export function CardRow(stats: StatProps[]): HTMLElement {
   return html`<div class="sum ev-cards" data-count=${String(shown.length)} style:--cards=${String(shown.length)}>${shown.map(StatCard)}</div>` as HTMLElement;
 }
 
+/** Where a record image's picture is: a URL or path string, or an object with a url (an uploaded file). Anything
+ * else (no value, an id the browser can't show) is null, and the header shows no image. */
+export function imageSource(value: unknown): string | null {
+  const url = typeof value === 'string' ? value : value && typeof value === 'object' && typeof (value as { url?: unknown }).url === 'string' ? (value as { url: string }).url : '';
+  return /^(https?:\/\/|\/(?!\/)|data:image\/)/i.test(url.trim()) ? url.trim() : null;
+}
+
+/** The record image left of the title: a square thumbnail, or a round avatar for a person. Nothing without a picture. */
+export function RecordImage(source: () => string | null, props: { round: boolean; label: () => string }): Child {
+  return () => {
+    const src = source();
+    return src ? html`<img class="doc-img-pic" class:round=${props.round} src=${src} alt=${props.label} width="36" height="36" loading="lazy" />` : null;
+  };
+}
+
 /** A field's value as plain text for a one-line summary: a Link as its record's title, rich text as text. */
 export function valueText(field: FieldLike, links: LinkSource | null): string {
   const meta = field.meta, value = field.value.get();
