@@ -34,7 +34,7 @@ describe('the row editor', () => {
     expect(position(host)).toBe('2 of 3');
     expect(host.querySelector('.g-ed-badge')!.textContent).toBe('2');
     // The summary: the two values typed in times each other, and the calculated one.
-    expect(host.querySelector('.g-ed-sum')!.textContent).toBe('2.0000 × AED 2.50 = AED 5.00');
+    expect(host.querySelector('.g-ed-sum')!.textContent).toBe('2 × AED 2.50 = AED 5.00');
     // Every field of the row, as inputs (a row is saved with the record).
     expect([...host.querySelectorAll('.g-ed-body .fld')].length).toBeGreaterThanOrEqual(4);
     press(host.querySelector('.g-ed-main')!, 'Escape');
@@ -113,18 +113,25 @@ describe('Focus and Columns from outside the table', () => {
   });
 });
 
-/** The recorded order with its lines able to take sections, and two section rows among them. */
-async function sectionedOrder() {
+/** The recorded order with its lines able to take sections (summing amount), two section rows on the first page, and
+ * one on the second page before its first line, as the lines route pages them. */
+async function sectionedOrder(options: { sums?: string[] | null; page?: boolean } = {}) {
   const sectioned = structuredClone(schema) as AppSchema;
-  sectioned.models.find(model => model.name === 'order')!.children![0].sections = true;
+  const child = sectioned.models.find(model => model.name === 'order')!.children![0];
+  child.sections = true;
+  if (options.sums !== null) child.section_sums = options.sums ?? ['amount'];
   const detail = copy(responses.detail);
   const lines: Array<Record<string, unknown>> = detail.body.children.lines;
   lines.splice(2, 0, { id: 's2', section: 'Services' });
   lines.splice(0, 0, { id: 's1', section: 'Hardware' });
-  const { api } = backend([['GET', /\/api\/order\/0000000000001$/, detail]]);
+  const page = copy(responses.lines_page);
+  if (options.page) (page.body.items as Array<Record<string, unknown>>).unshift({ id: 's3', section: 'Spares' });
+  const asked: string[] = [];
+  const { api } = backend([['GET', /\/api\/order\/0000000000001$/, detail],
+    ['GET', /\/api\/order\/0000000000001\/lines\/lines\?/, (sent: { url: string }) => { asked.push(sent.url); return page; }]]);
   const store = new RecordStore({ api, schema: sectioned, model: 'order', today: () => '2026-11-01' });
   await store.open(id(1));
-  return store;
+  return Object.assign(store, { asked });
 }
 
 describe('section rows', () => {
@@ -201,6 +208,60 @@ describe('section rows', () => {
     table.remove(second);
     expect(table.sections.peek()[1].before).toBe(third.key);
     expect(first.key).toBe(table.sections.peek()[0].before);
+  });
+
+  it('pages in lines only: a later page brings the section rows before its first line, and asks once', async () => {
+    const store = await sectionedOrder({ page: true });
+    const table = store.table('lines');
+    expect(table.rows.peek()).toHaveLength(120);
+    expect(store.asked).toHaveLength(1);
+    expect(table.sections.peek().map(section => [section.label, section.before])).toEqual([
+      ['Hardware', table.rows.peek()[0].key], ['Services', table.rows.peek()[2].key], ['Spares', table.rows.peek()[100].key]]);
+    const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'] }));
+    expect([...host.querySelectorAll('tr.g-sec .g-sec-n')].map(node => node.textContent)).toEqual(['2 lines', '98 lines', '20 lines']);
+  });
+
+  it('sums only the fields section_sums names, and none without it', async () => {
+    const store = await sectionedOrder({ sums: null });
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'amount'] }));
+    const cells = host.querySelectorAll('tr.g-sec')[0].querySelectorAll('td');
+    expect([...cells].slice(2).map(cell => cell.textContent)).toEqual(['', '']);
+    cleanup();
+    const qty = await sectionedOrder({ sums: ['qty'] });
+    const other = render(() => ChildTable({ table: qty.table('lines'), columns: ['product', 'qty', 'amount'] }));
+    const row = other.querySelectorAll('tr.g-sec')[0].querySelectorAll('td');
+    expect(row[2].textContent).not.toBe('');
+    expect(row[3].textContent).toBe('');
+  });
+
+  it('offers no section edits on a locked record', async () => {
+    const store = await sectionedOrder();
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'amount'], locked: true }));
+    const section = host.querySelector('tr.g-sec')!;
+    expect(section.querySelector('button.g-sec-name')).toBeNull();
+    expect(section.querySelector('.g-sec-name')!.textContent).toBe('Hardware');
+    expect(section.querySelector('.g-drag')).toBeNull();
+    expect(section.querySelector('.icon-btn')).toBeNull();
+    expect(host.querySelector('.g-add-sec')).toBeNull();
+    // Closing a section only changes the view, so it stays.
+    expect(section.querySelector('.g-sec-tog')).not.toBeNull();
+  });
+
+  it('keeps the sections in a duplicate, as {section} entries in their places', async () => {
+    const store = await sectionedOrder();
+    const { duplicateOf } = await import('../app/duplicate');
+    const model = store.index.model('order') as never;
+    const copied = duplicateOf(model, store.root, 'Big order').values.children as Record<string, Array<Record<string, unknown>>>;
+    expect(copied.lines[0]).toEqual({ section: 'Hardware' });
+    expect(copied.lines[3]).toEqual({ section: 'Services' });
+    expect(copied.lines.filter(item => 'section' in item)).toHaveLength(2);
+    const { api } = backend();
+    const fresh = new RecordStore({ api, schema: (store as unknown as { index: { schema: AppSchema } }).index.schema, model: 'order', today: () => '2026-11-01' });
+    await fresh.create({ ...duplicateOf(model, store.root, 'Big order').values });
+    const table = fresh.table('lines');
+    expect(table.rows.peek()).toHaveLength(120);
+    expect(table.sections.peek().map(section => [section.label, section.before])).toEqual([['Hardware', table.rows.peek()[0].key], ['Services', table.rows.peek()[2].key]]);
+    fresh.dispose();
   });
 
   it('works as before when the schema has no sections', async () => {

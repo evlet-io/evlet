@@ -57,7 +57,9 @@ export interface ChildSchema { name: string; model: string; label: string; link:
   /** Table(copy=False): Duplicate leaves these rows out of the new record. Absent means they are copied. */
   copy?: boolean
   /** The table takes section rows, {id, section} among its rows, grouping the lines after them. Absent: no sections. */
-  sections?: boolean }
+  sections?: boolean
+  /** The line fields a section row sums over its own lines. Absent: a section shows no sums. */
+  section_sums?: string[] }
 export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>; dialog?: boolean }
 
 /** Phase 4 state metadata (field, states, moves with labels and roles, locked, final). Optional until the backend sends it. */

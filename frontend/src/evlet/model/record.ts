@@ -129,8 +129,21 @@ export class Row {
       const table = new Table(this, child, record.index.model(child.model));
       this.tables.set(child.name, table);
       const items: Array<Record<string, any>> = data.children?.[child.name] ?? [];
-      // A new record may start with new rows; their _key is kept when it is valid.
-      if (isNew) table.rows.set(items.map(item => new Row(record, table.model, this, child.name, record.claimKey(item._key), null, true, item)));
+      // A new record may start with new rows; their _key is kept when it is valid. Section rows ({section}, as
+      // Duplicate sends them) become the table's sections, each before the line that follows it.
+      if (isNew) {
+        const lines: Row[] = [], sections: TableSection[] = [];
+        let pending: TableSection[] = [];
+        for (const item of items) {
+          if (child.sections && isSectionItem(item)) { pending.push({ key: record.claimKey(item._key), id: null, label: String(item.section), before: null }); continue; }
+          const line = new Row(record, table.model, this, child.name, record.claimKey(item._key), null, true, item);
+          for (const section of pending) sections.push({ ...section, before: line.key });
+          pending = [];
+          lines.push(line);
+        }
+        table.rows.set(lines);
+        table.sections.set([...sections, ...pending]);
+      }
       else table.replace(items as RecordData[], data.children_pages?.[child.name], {});
     }
   }
@@ -551,7 +564,8 @@ export class RecordStore {
           if (!page.items.length) break;
           table.appendSaved(page.items);
           table.total.set(page.total);
-          offset += page.items.length;
+          // Pages count lines only; section rows ride along with the lines that follow them.
+          offset += page.items.filter(item => !isSectionItem(item)).length;
         }
         table.complete();
       }

@@ -91,7 +91,11 @@ export interface ChildTableControls {
 /** A row's key values on one line: "4 × 2,228.26 = 8,913.04" from two values typed in and a calculated one, else
  * the first values that are set. */
 export function rowSummary(row: Row, columns: ChildColumn[]): string {
-  const text = (column: ChildColumn) => kindOf(column.meta.type).format(untrack(() => row.field(column.key).value.get()), column.meta);
+  // A Decimal shows its significant digits ("2", not "2.0000"); other values as the field formats them.
+  const text = (column: ChildColumn) => {
+    const shown = kindOf(column.meta.type).format(untrack(() => row.field(column.key).value.get()), column.meta);
+    return column.meta.type === 'decimal' ? shown.replace(/(\.\d*?)0+(?=\D*$)/, '$1').replace(/\.(?=\D*$)/, '') : shown;
+  };
   const numeric = columns.slice(1).filter(column => NUMERIC.has(column.meta.type));
   const typed = numeric.filter(column => !column.calculated), derived = numeric.filter(column => column.calculated);
   if (typed.length >= 2 && derived.length && typed.slice(0, 2).every(column => text(column))) {
@@ -218,6 +222,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     for (const section of sections) if (section.before === null || !list.some(row => row.key === section.before)) out.push({ kind: 'section', section });
     return out;
   }, { name: `${table.name} (entries)` });
+  /** The line fields a section row sums (the schema's section_sums); none without it. */
+  const sectionSums = new Set(table.meta.section_sums ?? []);
   /** The sum of a column over some lines, exact (decimal text), formatted as the total line formats it. */
   const sumOf = (lines: Row[], column: ChildColumn): Child => {
     let scale = 0;
@@ -226,8 +232,11 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const total = values.reduce((sum, value) => { const [whole, part = ''] = value.replace('-', '').split('.'); const units = BigInt(whole + part.padEnd(scale, '0')); return sum + (value.startsWith('-') ? -units : units); }, 0n);
     const negative = total < 0n, digits = (negative ? -total : total).toString().padStart(scale + 1, '0');
     const text = `${negative ? '-' : ''}${scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits}`;
-    const parent = sums[column.key];
-    if (column.meta.type === 'currency' && parent && typeof parent === 'object' && 'meta' in parent) return moneyChild(text, currencyFor(parent)(), typeof column.meta.scale === 'number' ? column.meta.scale : 2);
+    const parent = sums[column.key], places = typeof column.meta.scale === 'number' ? column.meta.scale : 2;
+    if (column.meta.type === 'currency') {
+      const source = parent && typeof parent === 'object' && 'meta' in parent ? parent : lines[0] ? lines[0].field(column.key) : null;
+      if (source) return moneyChild(text, currencyFor(source)(), places);
+    }
     return kindOf(column.meta.type).format(text, column.meta);
   };
   const addSection = () => {
@@ -530,7 +539,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const lines = () => sectionLines.get().get(key) ?? [];
     const open = () => !closedSections.get().has(key);
     const label = () => {
-      if (renaming.get() !== key) return html`<button type="button" class="g-sec-name" title="Rename" disabled=${() => readOnly.get()} on:click=${() => renaming.set(key)}><b>${() => item().label}</b></button>`;
+      // A locked or confirmed record refuses section edits: the label is plain text then.
+      if (readOnly.get()) return html`<b class="g-sec-name">${() => item().label}</b>`;
+      if (renaming.get() !== key) return html`<button type="button" class="g-sec-name" title="Rename" on:click=${() => renaming.set(key)}><b>${() => item().label}</b></button>`;
       const input = html`<input class="input g-sec-input" aria-label="Section name" value=${untrack(() => item().label)}>` as HTMLInputElement;
       const done = (keep: boolean) => { if (renaming.peek() !== key) return; const text = input.value.trim(); renaming.set(null); if (keep && text && text !== untrack(() => item().label)) table.renameSection(key, text); };
       input.addEventListener('keydown', event => {
@@ -543,12 +554,12 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     };
     return html`<tr class="g-sec" role="row" data-key=${`s:${key}`} data-drag-item="line" data-drag-id=${`s:${key}`}>
       <td class="g-ctl stk" style="left:0" role="gridcell"><div class="g-ci">
-        <button type="button" class="g-drag" data-drag-handle="line" aria-label=${() => `Move section ${item().label}`} aria-roledescription="draggable section" disabled=${() => readOnly.get()}>${Icon('grip-vertical', { size: 'xs' })}</button>
+        ${when(() => !readOnly.get(), () => html`<button type="button" class="g-drag" data-drag-handle="line" aria-label=${() => `Move section ${item().label}`} aria-roledescription="draggable section">${Icon('grip-vertical', { size: 'xs' })}</button>`)}
         <button type="button" class="g-sec-tog" aria-expanded=${() => String(open())} aria-label=${() => `${open() ? 'Hide' : 'Show'} the lines of ${item().label}`}
           on:click=${() => toggleSection(key)}>${Icon('chevron-down', { size: 'xs' })}</button></div></td>
       ${each(columns, column => column.key, (column, index) => html`<td role="gridcell" class=${column().align === 'right' ? 'r num' : ''} class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => index() === 0
         ? html`<span class="g-sec-l">${label}<span class="muted g-sec-n">${() => `${lines().length} ${lines().length === 1 ? 'line' : 'lines'}`}</span>${when(() => !readOnly.get(), () => IconButton({ icon: 'trash-2', tip: () => `Delete section ${item().label} (its lines stay)`, size: 'small', onClick: () => table.removeSection(key) }))}</span>`
-        : sums[column().key] ? sumOf(lines(), column()) : ''}</td>`)}</tr>`;
+        : sectionSums.has(column().key) ? sumOf(lines(), column()) : ''}</td>`)}</tr>`;
   };
   /** A line or section moved by its drag handle to before item `before` (a line key, s:<section key>, or null for the end). */
   const moveLine = (id: string, before: string | null) => {

@@ -54,7 +54,14 @@ function copyRow(row: Row, skip: ReadonlySet<string>, unique: string[], where: s
   for (const [name, table] of row.tables) {
     if (!tableCopied(table.meta)) continue;
     // A row's link to its parent is set by the server when the new parent is created.
-    const rows = table.saved.map(item => copyRow(item, new Set([table.meta.link]), unique, `${table.meta.label}: `));
+    const rows: Array<Record<string, unknown>> = [];
+    // Section rows come along as {section: label}, each before the line it starts at.
+    const sections = table.meta.sections ? table.savedSections : [];
+    for (const item of table.saved) {
+      rows.push(...sections.filter(section => section.before === item.key).map(section => ({ section: section.label })));
+      rows.push(copyRow(item, new Set([table.meta.link]), unique, `${table.meta.label}: `));
+    }
+    rows.push(...sections.filter(section => section.before === null || !table.saved.some(item => item.key === section.before)).map(section => ({ section: section.label })));
     if (rows.length) children[name] = rows;
   }
   if (Object.keys(children).length) values.children = children;

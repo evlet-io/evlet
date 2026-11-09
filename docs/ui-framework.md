@@ -645,10 +645,12 @@ mount(document.querySelector('#app')!, () => DocFrame({
   A Table whose schema has `"sections": true` takes **section rows** (`{"id", "section": "<label>"}`
   among its rows in a payload, `Table.sections` in the store): each is a full-width heading with a
   drag handle, a chevron that hides its lines, its label (renamed in place), "N lines", and the sums of
-  its own lines in the columns the total line sums. The add row offers "or add a section"; deleting a
-  section keeps its lines. A save sends sections as `{_key, section}` to create, `{id, section}` to
-  rename, their ids to delete, and `order` with rows and sections whenever a section changed. Without
-  the key the table is as before. With `heading` (the record's type,
+  its own lines in the fields the schema's `section_sums` names (none without it). The add row offers "or
+  add a section"; deleting a section keeps its lines; a locked or confirmed record offers no section edits.
+  Line pages count lines only, each page bringing the section rows before its first line. A save sends
+  sections as `{_key, section}` to create (`_row_ids` maps the key back), `{id, section}` to rename, their
+  ids to delete, and `order` with rows and sections whenever a section changed; Duplicate copies them as
+  `{section}` entries in their places. Without the key the table is as before. With `heading` (the record's type,
   icon, mark, title, number and a `footer` such as the form's save bar), focus view keeps a compact
   record header above the table and the save bar below it, outside the rows that scroll; on a phone
   the header is one line. Esc or Back to form returns to the form. Under 480 px the control column
