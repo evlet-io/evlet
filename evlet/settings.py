@@ -380,6 +380,9 @@ class Settings:
             'user': user.public(), 'portal': portal, 'pages': list(self.pages(scope, user)), 'apps': apps,
             'last_page': prefs.get('last_page', 'profile'),
             'controls': not portal and controls.routes is not None and controls.allows(scope, user),
+            # The workspace override routes (/api/_controls/workspaces): the same check they use. A session that
+            # still has to give a two-step code reports true; the routes ask for the code.
+            'customize_workspaces': not portal and controls.customizes(scope, user),
             'development': getattr(getattr(self.business, 'routes', None), 'primary', None) is None,
             'profile': {key: row[key] for key in ('full_name', 'short_name', 'title', 'phone', 'email', 'signature')} | {'photo': row['photo_file'] is not None},
             'prefs': {key: prefs.get(key, value) for key, value in APPEARANCE.items()},

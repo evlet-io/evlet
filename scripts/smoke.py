@@ -61,7 +61,7 @@ def main():
     csrf = request('/api/auth/login', {'username': username, 'password': password})['csrf']
     schema = request("/api/schema")
     check(schema["version"] == 1 and schema["ui_version"] == 1, "Unexpected schema version")
-    check({item["name"] for item in schema["models"]} == {"customer", "invoice", "payment", "ledgerentry", "project", "projecttask", "item", "item_prices", "item_barcodes", "employee"}, "Missing Playground models")
+    check({item["name"] for item in schema["models"]} == {"customer", "invoice", "payment", "ledgerentry", "project", "projecttask", "item", "item_prices", "item_barcodes", "employee", "employee_skills"}, "Missing Playground models")
     suffix = uuid4().hex[:12]
     customer = request("/api/customer", {"customer_name": f"Smoke {suffix}"}, 201)
     check(customer["title"] == f"Smoke {suffix}" and isinstance(customer["id"], str), "Customer title or text id missing")

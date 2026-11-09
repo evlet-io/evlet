@@ -5138,6 +5138,7 @@
     }
    ],
    "controls": true,
+   "customize_workspaces": true,
    "development": true,
    "last_page": "profile",
    "notifications": {
