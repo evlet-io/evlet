@@ -110,6 +110,15 @@ production ready, but the rules below hold from 0.3 on.
   (left out when unset or unreadable for the role) and on a slip surface (left out when unset). It is
   display only ([ui.md](ui.md#where-the-cursor-starts), [slips.md](slips.md)).
 
+- **Section rows.** `Table(..., sections=True)` (a boolean, `ValueError` otherwise, and when the row
+  model has a field named `section` or `derive()` builds the Table); `self.lines.sections()` as
+  `(label, rows)` pairs with a leading `None` group; iteration yielding real rows only; section
+  rows written as `{"section": label}` or `{"id", "section"}` from Python, `children=` and HTTP
+  change sets and full lists; the `{"id", "section"}` entries in a record's `children` and in
+  `lines/` pages; `sections` and `section_sums` on a schema `children` entry; the Journal's
+  `sections` change; and the `sections` template variable on print designs
+  ([model-engine.md](model-engine.md#section-rows)). The `evlet_sections` table is internal.
+
 - **Duplicate options.** `Meta.duplicate` on a model (default `True`) and `copy=` on every field
   and on `Table` (default `True`), each checked as a boolean with a `ValueError` (`Meta.duplicate`
   when the registry is built, `copy=` when the field or table is defined). The `duplicate: false` key

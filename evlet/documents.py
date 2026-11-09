@@ -20,6 +20,7 @@ from .models import ASSIGNED_ID, ValidationError, identifier, refuse_id
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
 from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal, wire
+from . import sections
 
 
 class Snapshot:
@@ -45,6 +46,8 @@ class Draft:
         object.__setattr__(self, '_definition', definition)
         object.__setattr__(self, '_values', dict(values or {}))
         object.__setattr__(self, '_rows', {})
+        # Section rows of Tables declared with sections=True: {table: [SectionRow]} (evlet/sections.py).
+        object.__setattr__(self, '_sections', {})
         object.__setattr__(self, '_sources', {})
         object.__setattr__(self, 'context', context)
         object.__setattr__(self, 'parent', parent)
@@ -70,7 +73,13 @@ class Draft:
         if name in self._definition.__declared_fields__:
             return self._values.get(name)
         if name in self._definition.__tables__:
-            return self._rows.get(name, [])
+            rows = self._rows.get(name, [])
+            if sections.enabled(self._definition, name) and not isinstance(rows, sections.TableRows):
+                # The real rows, with sections() for the grouping; kept in place so list changes still apply.
+                rows = sections.TableRows(rows, self._sections.setdefault(name, []) if isinstance(self._sections, dict) else ())
+                if isinstance(self._rows, dict) and name in self._rows:
+                    self._rows[name] = rows
+            return rows
         if name in self._definition.__sources__:
             return self._sources.get(name)
         value = getattr(self._definition, name)
@@ -95,18 +104,54 @@ class Draft:
             self._values[name] = value
         elif name in self._definition.__tables__:
             limit = self._definition.__tables__[name].max_rows
-            if not isinstance(value, (list, tuple)) or len(value) > limit:
+            sectioned = sections.enabled(self._definition, name)
+            if not isinstance(value, (list, tuple)):
+                raise ValidationError({name: f'Use at most {limit} rows'})
+            marked = [isinstance(item, sections.SectionRow) or sectioned and sections.is_entry(item) for item in value]
+            if sum(1 for flag in marked if not flag) > limit:
                 raise ValidationError({name: f'Use at most {limit} rows'})
             # The registry's row model (declared Child classes are copied with an owner link and position).
             owned = self.context._business.children.get((self._definition, name)) if self.context is not None else None
             child = owned.model if owned is not None else self._definition.__tables__[name].child
-            rows = [row if isinstance(row, Draft) else Draft(child, row, context=self.context, parent=self, source=self.source) for row in value]
+            old_rows = list(self._rows.get(name, []))
+            items = [item if flag else item if isinstance(item, Draft) else Draft(child, item, context=self.context, parent=self, source=self.source)
+                     for item, flag in zip(value, marked)]
+            if any(marked):
+                if not sectioned:
+                    raise ValidationError({name: f'{name} has no section rows; declare Table(..., sections=True)'})
+                items = [self._section_item(name, item) if flag else item for item, flag in zip(items, marked)]
+                rows, found = sections.split(items)
+                if len(found) > sections.MAX_SECTIONS:
+                    raise ValidationError({name: f'Use at most {sections.MAX_SECTIONS} section rows'})
+            else:
+                rows = items
+                found = sections.reanchor(old_rows, rows, self._sections.get(name, [])) if sectioned else []
+            ordered = sections.combined(rows, found) if sectioned else rows
             if 'evlet_position' in child.__fields__:
-                for row, position in zip(rows, positions(rows, set())):
+                for row, position in zip(ordered, positions(ordered, set())):
                     row._values['evlet_position'] = position
+            if sectioned:
+                self._sections[name] = found
+                rows = sections.TableRows(rows, found)
             self._rows[name] = rows
         else:
             raise AttributeError('Unknown draft field: ' + name)
+
+    def _section_item(self, name, item):
+        """A SectionRow from {"section": label} (a new one) or {"id": ..., "section": label} (one this Table holds)."""
+        if isinstance(item, sections.SectionRow):
+            return item
+        sections.check_entry(item, name)
+        label = sections.label_of(item['section'], name)
+        if item.get('id') is None:
+            return sections.SectionRow(label)
+        known = {section.id: section for section in self._sections.get(name, [])}
+        section_id = item_id(item['id'])
+        if section_id not in known:
+            raise ValidationError({name: CHILD_ID})
+        found = known[section_id].copy()
+        found.label = label
+        return found
 
     def read(self, path):
         parts = path.split('.')
@@ -572,7 +617,7 @@ class SavedRows:
     def __init__(self, context, model, record_id):
         business, tx, user = context._business, context._tx, context.user
         bounded = business.registry.plan_for(model) is not None
-        self.rows, self.hidden = {}, set()
+        self.rows, self.hidden, self.sections = {}, set(), {}
         level, loaded = {model: [record_id]}, 0
         while level:
             following = {}
@@ -588,6 +633,8 @@ class SavedRows:
                     for owner_id, (records, _) in found.items():
                         self.rows[child, owner_id] = records
                         found_ids.extend(record.id for record in records)
+                    for owner_id, items in sections.load(tx, child, ids).items():
+                        self.sections[child, owner_id] = items
                     loaded += len(found_ids)
                     if bounded and loaded > LIMITS['document_rows']:
                         raise ValidationError({'children': 'This document exceeds the owned row limit'})
@@ -599,6 +646,11 @@ class SavedRows:
 
     def of(self, child, owner_id):
         return self.rows.get((child, owner_id), [])
+
+    def sections_of(self, child, owner_id):
+        """Copies of a collection's saved section rows, placed among its saved rows."""
+        saved = [item.copy() for item in self.sections.get((child, owner_id), [])]
+        return sections.anchored(self.of(child, owner_id), saved)
 
 
 CHANGES = ('create', 'update', 'delete', 'order')
@@ -767,6 +819,9 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         originals = {row.id: row for row in existing}
         hidden = {row.id for row in existing if (child.model, row.id) in saved.hidden}
         positioned = 'evlet_position' in child.model.__fields__
+        sectioned = sections.enabled(model, child.name)
+        headings = saved.sections_of(child, record_id) if record_id and sectioned else []
+        known = {item.id: item for item in headings}
 
         def stored(row, owner, counter):
             item = Draft(child.model, row._values, context=context, parent=owner, record_id=row.id)
@@ -774,29 +829,46 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             return item
         if old is not None:
             old._rows[child.name] = [stored(row, old, None if loaded is None else [0, 0]) for row in existing]
+            if sectioned: old._sections[child.name] = [item.copy() for item in headings]
         if child.name not in collections:
             draft._rows[child.name] = [stored(row, draft, loaded) for row in existing]
+            if sectioned: draft._sections[child.name] = [item.copy() for item in headings]
             continue
         submitted = collections[child.name]
+        listed = submitted if isinstance(submitted, list) else [*submitted.get('create', []), *submitted.get('update', [])] \
+            if isinstance(submitted, dict) and all(isinstance(submitted.get(key, []), list) for key in ('create', 'update')) else []
+        if not sectioned and 'section' not in child.model.__declared_fields__ and any(sections.is_entry(value) for value in listed):
+            raise ValidationError({prefix + child.name: f'{child.label} has no section rows'})
+        # A Table with sections orders its rows and section rows together; section rows are never hidden.
+        everything = sections.combined(existing, headings) if sectioned else existing
         if isinstance(submitted, dict):
-            entries = row_changes(submitted, existing, hidden, positioned, prefix + child.name)
-        elif isinstance(submitted, list) and len(submitted) <= max_rows:
+            entries = row_changes(submitted, everything, hidden, positioned, prefix + child.name)
+        elif isinstance(submitted, list) and sum(1 for value in submitted if not (sectioned and sections.is_entry(value))) <= max_rows:
             if len(existing) - len(hidden) > ROW_LIMIT:
                 # A detail embeds only the first ROW_LIMIT rows, so a full list from it would drop the rest.
                 raise ValidationError({prefix + child.name: f'This collection has more than {ROW_LIMIT} rows; send a change set '
                                                              '{"create", "update", "delete", "order"} instead of the full list'})
-            entries = full_list(submitted, existing, hidden)
+            entries = full_list(submitted, everything, hidden)
         else:
             raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
-        count(sum(1 for kind, value, _ in entries if kind == 'row' and isinstance(value, dict) and value.get('id') is None), 1)
-        kept, keys, merged = set(), set(), []
+        count(sum(1 for kind, value, _ in entries if kind == 'row' and isinstance(value, dict) and value.get('id') is None
+                  and not (sectioned and sections.is_entry(value))), 1)
+        kept, keys, merged, kept_sections = set(), set(), [], set()
         for kind, value, placed in entries:
             if kind == 'keep':
+                if value in known:
+                    kept_sections.add(value)
+                    merged.append(known[value].copy())
+                    continue
                 if value not in hidden: kept.add(value)
                 merged.append(stored(originals[value], draft, loaded))
                 continue
             if not isinstance(value, dict):
                 raise ValidationError({prefix + child.name: 'Each row must be an object'})
+            if sectioned and (sections.is_entry(value) or item_id(value.get('id')) in known):
+                merged.append(section_entry(business, user, child, value, known, kept_sections, originals, placed, preview,
+                                            prefix + child.name, keys_seen))
+                continue
             value = dict(value)
             row_id = value.pop('id', None)
             if row_id is not None:
@@ -834,11 +906,50 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
                 for _, item in walk(stored(originals[row_id], draft, None if loaded is None else [0, 0])):
                     if not business.policy.allows(user, item._definition, 'delete') or (item._definition, item.id) in saved.hidden:
                         raise AccessError(403, 'You do not have permission for this operation')
-        if len(merged) > max_rows: raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
+        if known.keys() - kept_sections and not preview:
+            business.policy.require(user, child.model, 'delete')
+        if sum(1 for row in merged if not isinstance(row, sections.SectionRow)) > max_rows:
+            raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
         if positioned:
             for row, position in zip(merged, positions(merged, hidden)):
                 row._values['evlet_position'] = position
+        if sectioned:
+            merged, found = sections.split(merged)
+            if len(found) > sections.MAX_SECTIONS:
+                raise ValidationError({prefix + child.name: f'Use at most {sections.MAX_SECTIONS} section rows'})
+            draft._sections[child.name] = found
         draft._rows[child.name] = merged
+
+
+def section_entry(business, user, child, value, known, kept, originals, placed, preview, where, keys_seen):
+    """A SectionRow from a submitted section row: {"section": label} creates one, {"id": ..., "section": label}
+    renames a saved one, and {"id": ...} keeps or places it. A row never turns into a section or back."""
+    sections.check_entry(value, where)
+    row_id = value.get('id')
+    temporary = value.get('_key')
+    if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary)
+                                  or row_id is None and temporary in keys_seen):
+        raise ValidationError({where: 'Row keys must be distinct (new rows: within the document) and use at most 64 letters, digits, hyphens or underscores'})
+    if row_id is None:
+        if not preview:
+            business.policy.require(user, child.model, 'create')
+        if temporary is not None:
+            keys_seen.add(temporary)
+        return sections.SectionRow(sections.label_of(value['section'], where), key=temporary, placed=placed)
+    row_id = item_id(row_id)
+    if row_id in originals:
+        raise ValidationError({where: 'A row cannot become a section row; remove it and add a section'})
+    if row_id not in known or row_id in kept:
+        raise ValidationError({where: CHILD_ID})
+    kept.add(row_id)
+    item = known[row_id].copy()
+    item._placed = placed
+    if 'section' in value:
+        label = sections.label_of(value['section'], where)
+        if label != item.label and not preview:
+            business.policy.require(user, child.model, 'update')
+        item.label = label
+    return item
 
 
 def walk(draft, prefix=''):
@@ -1706,7 +1817,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
                                                      user.username, record=draft, context=context, record_id=draft.id)
     prior = before.stored_values() if before else None
     after = draft.stored_values()
-    if prior == after and lifecycle is None:
+    if prior == after and lifecycle is None and (before is None or sections.signature(before) == sections.signature(draft)):
         if plan is not None:
             record_plan(tx, business.registry.name_for(model), record_id, version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
@@ -1815,6 +1926,13 @@ def persist_rows(context, model, draft, before, owner_id, keys):
         old_rows = before._rows.get(child.name, []) if before else []
         old_by_id = {row.id: row for row in old_rows}
         rows = draft._rows.get(child.name, [])
+        sectioned = sections.enabled(model, child.name)
+        if sectioned:
+            # Rows and section rows share one order; a handler that changed the rows in place may leave gaps or ties.
+            ordered = sections.combined(rows, draft._sections.get(child.name, []))
+            if not sections.ordered_positions(ordered):
+                for item, position in zip(ordered, positions(ordered, set())):
+                    item._values['evlet_position'] = position
         retained = {row.id for row in rows if row.id}
         delete_rows(business, tx, child.model, sorted(set(old_by_id) - retained))
         added, updated, moved, nested = [], [], {}, {}
@@ -1850,6 +1968,10 @@ def persist_rows(context, model, draft, before, owner_id, keys):
         changes[child.name] = {'added': added, 'updated': updated, 'removed': sorted(set(old_by_id) - retained),
                                'reordered': [row.id for row in old_rows] != [row.id for row in rows]}
         if nested: changes[child.name]['rows'] = nested
+        if sectioned:
+            headings = sections.persist(context, child, owner_id, before._sections.get(child.name, []) if before else [],
+                                        draft._sections.get(child.name, []), keys, old_rows, rows)
+            if headings: changes[child.name]['sections'] = headings
     return changes
 
 
@@ -1873,6 +1995,7 @@ def delete_rows(business, tx, model, record_ids):
     ids = list(dict.fromkeys(record_ids))
     if not ids:
         return
+    sections.forget(tx.connection, business.registry, model, ids)
     for child in business.children.values():
         if child.parent is model:
             table, link = identifier(business.registry.name_for(child.model)), identifier(child.link)

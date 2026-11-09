@@ -346,6 +346,98 @@ symbol, before or after the amount ([controls.md](controls.md#currencies)).
 `Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
 `Time`, `Tags` and references cannot be used in calculations.
 
+## Section rows
+
+`Table(Line, sections=True)` lets a Table hold section rows: headings such as "Goods" and
+"Services and charges" that group the rows below them, the way a quotation groups its lines.
+A section row has an id, a label and a place among the rows, and none of the row's fields.
+
+```python
+from evlet import Child, Decimal, Model, Table, Text
+
+class Quotation(Model):
+    class Meta:
+        calculation_language = "finite-v1"
+
+    class Line(Child):
+        item = Text(max_length=80, required=True)
+        qty = Decimal(scale=2, default=1)
+        amount = Decimal(scale=2, default=0)
+
+    lines = Table(Line, sections=True)
+    total_qty = Decimal(scale=2, compute=lines.sum("qty"))
+    total = Decimal(scale=2, compute=lines.sum("amount"))
+```
+
+- **Python sees real lines.** Iterating `self.lines` in `derive()`, actions, Move run methods,
+  postings (`rows` methods) and `changed()` yields only real rows, so existing code, `len()`,
+  `lines.sum(...)` and every finite calculation stay correct without changes. Required checks,
+  field validation, defaults, fetches and `derive()` never see a section row.
+- **The grouping.** `self.lines.sections()` returns `(label, rows)` pairs in order. Rows above the
+  first section come first with the label `None` (only when there are any), and a section with no
+  rows has an empty tuple:
+
+  ```python
+  for label, rows in self.lines.sections():
+      ...  # ("Goods", (line,)), ("Services and charges", (line, line)), ("Later", ())
+  ```
+- **Writing them from Python.** An action or run method that assigns the rows may name section
+  rows as `{"section": "Goods"}` (a new one) or `{"id": ..., "section": "Goods"}` (one the Table
+  holds). A list that names none keeps the existing sections: each stays above the first of its
+  rows that is still there, so `self.lines = [line for line in self.lines if line.qty]` does not
+  lose them. Trusted `session.create` and `session.update` take section rows in `children=` the
+  same way.
+- **Sums.** A section row shows, for its rows, the sums of the fields the Table's total line sums:
+  the parent's unfiltered finite sums over the Table (`total = lines.sum("amount")`). They are
+  computed for display (by the browser from the rows, and by print) and never stored.
+  `/api/schema` names them in `section_sums`.
+- **Storage.** Section rows live in the framework table `evlet_sections`, never in the row table,
+  so row queries, reports, measures and ledger postings see only real rows. Tools, Eva, MCP and the
+  Connector read and write records through the HTTP payload below, so they see section rows there. Turning
+  `sections=True` on or off needs no migration. Turned off, saved section rows are not shown or
+  changed, and they come back if it is turned on again. Deleting a record or a row deletes the
+  section rows of the Tables it owns.
+- **Limits.** At most 100 section rows per collection, apart from `max_rows`. A label is text of 1
+  to 200 characters. The row model cannot declare a field named `section` (`ValueError`), and a
+  Table that `derive()` builds (named in `Meta.derives`) cannot have sections (`ValueError`), nor can
+  a Table of a dialog, report or slip.
+
+### Section rows over HTTP
+
+A record's `children` list section rows in their places as `{"id": "...", "section": "Goods"}`;
+real rows are unchanged:
+
+```json
+{"children": {"lines": [
+  {"id": "01japh13dyv63", "section": "Goods"},
+  {"id": "01japh13dscnr", "item": "Steel shelving unit", "qty": "4.00", "amount": "8913.04"},
+  {"id": "01japh13dyv64", "section": "Services and charges"},
+  {"id": "01japh13dyv61", "item": "Installation service", "qty": "1.00", "amount": "4861.00"}
+]}}
+```
+
+The existing record routes write them, with the same account, tenant, row, field and action
+checks as rows:
+
+| Change | Change set (`{create, update, delete, order}`) | Full list |
+| --- | --- | --- |
+| Add | `"create": [{"section": "Goods", "_key": "s1"}]` (`_row_ids` maps `s1` to the new id) | `{"section": "Goods"}` in place |
+| Rename | `"update": [{"id": "...", "section": "Products"}]` | `{"id": "...", "section": "Products"}` |
+| Move | `"order"` lists section ids with row ids | its place in the list |
+| Delete | `"delete": ["..."]` | leave it out |
+
+- A change set that does not mention a section row keeps it in place.
+- Adding a section row needs `create` on the row model, renaming or placing one `update`, and
+  removing one `delete`, like rows. A locked or confirmed record refuses all of them.
+- A section row takes only `id`, `section` and `_key` (422 otherwise). A row id cannot become a
+  section, a section id cannot become a row, and a Table without `sections=True` refuses section
+  rows (422).
+- `GET /api/{model}/{id}/lines/{name}` pages count real rows (`total`, `limit`, `offset`); each page
+  also carries the section rows placed after the previous page's last row, and the last page those
+  after all rows.
+- The Journal records `"sections": {"added", "renamed", "removed", "moved"}` under the Table in a
+  `created` or `changed` entry. A revise copies section rows as new section rows.
+
 ## Updates, deletes, and relationships
 
 ```python

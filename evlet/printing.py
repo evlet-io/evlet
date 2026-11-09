@@ -604,16 +604,40 @@ def document_context(business, tx, user, model, record):
         result.setdefault('name', values.get('id'))
         return result
 
+    from . import sections
+    groups = {}
+
     def tree(definition, values):
         result = values_of(definition, values)
         for child in business.children.values():
             if child.parent is definition:
                 rows = values.get('children', {}).get(child.name)
                 if rows is not None:
-                    result[child.name] = [tree(child.model, row) for row in rows]
+                    sectioned = sections.enabled(definition, child.name)
+                    # doc.lines holds the real rows only; on the document, `sections` groups them under their headings.
+                    built = [row if sectioned and sections.is_entry(row) else tree(child.model, row) for row in rows]
+                    result[child.name] = [row for row in built if not (sectioned and sections.is_entry(row))]
+                    if sectioned and definition is model:
+                        groups[child.name] = section_groups(sections.total_fields(definition, child.name), built)
         return result
 
-    return {'doc': tree(model, detail), 'model': model, 'user': user}
+    def section_groups(fields, built):
+        result, current = [], {'label': None, 'rows': []}
+        for row in built:
+            if sections.is_entry(row):
+                if current['label'] is not None or current['rows']:
+                    result.append(current)
+                current = {'label': row['section'], 'rows': []}
+            else:
+                current['rows'].append(row)
+        if current['label'] is not None or current['rows']:
+            result.append(current)
+        for group in result:
+            # Only fields this person reads on every row of the section are summed.
+            group['sums'] = sections.sums(group['rows'], [name for name in fields if all(name in row for row in group['rows'])])
+        return result
+
+    return {'doc': tree(model, detail), 'sections': groups, 'model': model, 'user': user}
 
 
 def report_context(context, report, filters):
@@ -774,7 +798,7 @@ class Compiler:
         self.env = environment()
         controls = getattr(business, 'controls', None)
         self.formats = Formats(design, Markup, controls.settings.get('display.currencies') if controls is not None else None)
-        self.variables = {**{key: value for key, value in context.items() if key in ('doc', 'report')},
+        self.variables = {**{key: value for key, value in context.items() if key in ('doc', 'report', 'sections')},
                           'money': self.formats.money, 'date': self.formats.date, 'number': self.formats.number, 'ar': self.formats.ar,
                           'title': design.title}
         report = context.get('definition')
@@ -902,12 +926,24 @@ class Compiler:
             style = f' style="width: {escape(column.width)}"' if column.width else ''
             head.append(f'<th class="{classes}"{style}>{escape(label)}</th>')
         body = []
-        for row in rows:
-            cells = []
-            for name, label, field, column in columns:
-                value = display(field, row.get(name), row, self.formats, self.business, self.design)
-                cells.append(f'<td class="{self.cell_classes(field, column)}">{value if hasattr(value, "__html__") else escape(value)}</td>')
-            body.append('<tr>' + ''.join(cells) + '</tr>')
+        groups = self.context.get('sections', {}).get(block.source) if self.report is None else None
+        for group in groups or [{'label': None, 'rows': rows, 'sums': {}}]:
+            if group['label'] is not None:
+                # A section row: its label, then the sums of its rows under the columns the total line sums.
+                cells = []
+                for index, (name, label, field, column) in enumerate(columns):
+                    total = group['sums'].get(name)
+                    value = display(field, total, {}, self.formats, self.business, self.design) if total is not None else ''
+                    text = group['label'] if index == 0 else value
+                    cells.append(f'<td class="{self.cell_classes(field, column) if index else "evlet-left"}">'
+                                 f'{text if hasattr(text, "__html__") else escape(text)}</td>')
+                body.append('<tr class="evlet-section">' + ''.join(cells) + '</tr>')
+            for row in group['rows']:
+                cells = []
+                for name, label, field, column in columns:
+                    value = display(field, row.get(name), row, self.formats, self.business, self.design)
+                    cells.append(f'<td class="{self.cell_classes(field, column)}">{value if hasattr(value, "__html__") else escape(value)}</td>')
+                body.append('<tr>' + ''.join(cells) + '</tr>')
         if self.report is not None and self.context['report']['totals'] and any(name in self.context['report']['totals'] for name, *_ in columns):
             cells = []
             for index, (name, label, field, column) in enumerate(columns):
@@ -1060,6 +1096,8 @@ h1 {{ font-size: 1.6em; margin: 0 0 1mm; }}
 .evlet-table td {{ border-bottom: 0.4pt solid #ccc; padding: 1.1mm 1.5mm; vertical-align: top; overflow-wrap: anywhere; }}
 .evlet-table tbody tr {{ break-inside: avoid; }}
 .evlet-table tr.evlet-total {{ break-before: avoid; }}
+.evlet-table tr.evlet-section {{ break-after: avoid; }}
+.evlet-table tr.evlet-section td {{ font-weight: 700; background: #f2f2f2; }}
 .evlet-table tr.evlet-total td {{ font-weight: 700; border-top: 0.8pt solid #333; }}
 .evlet-block .evlet-right {{ text-align: right; }} .evlet-block .evlet-center {{ text-align: center; }} .evlet-block .evlet-left {{ text-align: left; }}
 .evlet-nowrap {{ white-space: nowrap; overflow-wrap: normal !important; }}

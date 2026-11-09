@@ -381,6 +381,9 @@ def check_state_lock(context, draft, before):
             saved = old._rows.get(table, [])
             if [row.id for row in rows] != [row.id for row in saved]:
                 errors[prefix + table] = message
+            # Adding, renaming, removing or moving a section row is a change too.
+            if [(s.id, s.label, s.at) for s in item._sections.get(table, [])] != [(s.id, s.label, s.at) for s in old._sections.get(table, [])]:
+                errors[prefix + table] = message
             by_id = {row.id: row for row in saved}
             for row in rows:
                 if row.id in by_id:

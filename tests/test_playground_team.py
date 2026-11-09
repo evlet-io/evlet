@@ -133,3 +133,19 @@ def test_employee_skill_levels_are_derived_and_delete_waits_for_their_reports(se
     assert status == 422 and refused['fields'] == {'_form': 'Move their reports to another manager first: Sara Nasser'}
     outsider = f"/api/employee/{accounts['outsider']}"
     assert editor('DELETE', outsider, None, headers={b'if-match': editor('GET', outsider)[2][b'etag']})[0] == 204
+
+
+def test_employee_skills_take_section_rows(secured):
+    """Employee.skills has sections=True: headings group the skills, and derive() still counts real skills only."""
+    accounts = seed_team(secured, PASSWORD)
+    editor = client(secured, 'editor')
+    url = f"/api/employee/{accounts['member']}"
+    skills = {'create': [{'section': 'Languages'}, {'skill': 'Python', 'level': 'expert'}, {'skill': 'SQL', 'level': 'learning'},
+                         {'section': 'Tools'}, {'skill': 'Excel', 'level': 'practised'}]}
+    status, body, _ = editor('PATCH', url, {'children': {'skills': skills}}, headers={b'if-match': editor('GET', url)[2][b'etag']})
+    assert status == 200, body
+    assert [row.get('section') or row['skill'] for row in body['children']['skills']] == ['Languages', 'Python', 'SQL', 'Tools', 'Excel']
+    assert body['skill_count'] == 3
+    schema = editor('GET', '/api/schema')[1]
+    employee = next(model for model in schema['models'] if model['name'] == 'employee')
+    assert next(child for child in employee['children'] if child['name'] == 'skills')['sections'] is True

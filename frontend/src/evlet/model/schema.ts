@@ -55,7 +55,14 @@ export interface ChildSchema { name: string; model: string; label: string; link:
   /** Table(copy=False): Duplicate leaves these rows out of the new record. Absent means they are copied. */
   copy?: boolean
   /** The record fills these rows itself on every save (Meta.derives): read only, and never sent. */
-  read_only?: boolean }
+  read_only?: boolean
+  /** Table(sections=True): the rows may include section rows {id, section}, headings that group the rows below them. */
+  sections?: boolean
+  /** Row fields each section row sums over its rows: the fields the table's total line sums. */
+  section_sums?: string[] }
+
+/** A section row in a record's children: {id, section}. It has none of the row fields. */
+export const isSectionRow = (item: Record<string, unknown>) => typeof item.section === 'string' && Object.keys(item).every(key => key === 'id' || key === 'section' || key === '_key');
 export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>; dialog?: boolean }
 
 /** Phase 4 state metadata (field, states, moves with labels and roles, locked, final). Optional until the backend sends it. */

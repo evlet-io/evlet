@@ -544,6 +544,8 @@ class Session:
         periods.check(self, model, before=current._values)
         record_id = current.id
         table = identifier(self.registry.name_for(model))
+        from .sections import forget
+        forget(self.connection, self.registry, model, [record_id])
         self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))
 
     # Ledger models (evlet/ledger.py)

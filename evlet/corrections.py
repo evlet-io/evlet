@@ -21,7 +21,7 @@ from .auth import AccessError
 from .fields import Link, Reference
 from .identity import RecordId
 from .models import ValidationError, checked_body, identifier
-from . import periods
+from . import periods, sections
 from .permissions import CHUNK, corrects, trusted
 
 VOID = 'void'
@@ -285,6 +285,7 @@ def copy_draft(context, model, record):
             if not owners:
                 continue
             found = owned_rows(tx, child, list(owners))
+            headings = sections.load(tx, child, list(owners))
             for owner_id, item in owners.items():
                 rows = []
                 for saved in found.get(owner_id, ((), 0))[0]:
@@ -292,6 +293,11 @@ def copy_draft(context, model, record):
                     rows.append(row)
                     following.append((child.model, saved.id, row))
                 item._rows[child.name] = rows
+                if owner_id in headings:
+                    # Section rows are copied too, as new section rows in the same places.
+                    placed = sections.anchored(found[owner_id][0], headings[owner_id])
+                    item._sections[child.name] = [sections.SectionRow(heading.label, at=heading.at,
+                                                                      position=heading._values['evlet_position']) for heading in placed]
         level = following
     return root
 

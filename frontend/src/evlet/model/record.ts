@@ -21,7 +21,7 @@ import { buildChanges, findField } from './changes';
 import { dependentsOf, fitsRecord, linkScope } from './links';
 import { todayGst } from './format';
 import { Session } from './session';
-import { isCalculated, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
+import { isCalculated, isSectionRow, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
 
 export type Rules = { applies: boolean; required: boolean; locked: boolean };
 export type Outcome = { state: 'ready' } | { state: 'pending' | 'error'; code: string };
@@ -128,7 +128,8 @@ export class Row {
     for (const child of model.children ?? []) {
       const table = new Table(this, child, record.index.model(child.model));
       this.tables.set(child.name, table);
-      const items: Array<Record<string, any>> = data.children?.[child.name] ?? [];
+      // Section rows ({id, section}) are not rows: this editor leaves them out, and change sets keep them in place.
+      const items: Array<Record<string, any>> = (data.children?.[child.name] ?? []).filter((item: Record<string, any>) => !(child.sections && isSectionRow(item)));
       // A new record may start with new rows; their _key is kept when it is valid.
       if (isNew) table.rows.set(items.map(item => new Row(record, table.model, this, child.name, record.claimKey(item._key), null, true, item)));
       else table.replace(items as RecordData[], data.children_pages?.[child.name], {});
@@ -173,7 +174,8 @@ export class Row {
       field.result.set(READY);
     }
     for (const [name, table] of this.tables) {
-      if (data.children && Object.prototype.hasOwnProperty.call(data.children, name)) table.replace(data.children[name], data.children_pages?.[name], rowIds);
+      if (data.children && Object.prototype.hasOwnProperty.call(data.children, name))
+        table.replace(data.children[name].filter((item: Record<string, any>) => !(table.meta.sections && isSectionRow(item))), data.children_pages?.[name], rowIds);
       else table.revert();
     }
   }
@@ -465,10 +467,12 @@ export class RecordStore {
         let offset = table.rows.peek().length;
         while (offset < table.total.peek()) {
           const page = await this.api.lines(this.meta.name, this.root.id!, table.apiPath(), { limit: PAGE, offset });
-          if (!page.items.length) break;
-          table.appendSaved(page.items);
+          // A page of a Table with sections also carries its section rows; offsets count real rows only.
+          const items = page.items.filter(item => !(table.meta.sections && isSectionRow(item as Record<string, unknown>)));
+          if (!items.length) break;
+          table.appendSaved(items);
           table.total.set(page.total);
-          offset += page.items.length;
+          offset += items.length;
         }
         table.complete();
       }

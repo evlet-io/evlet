@@ -135,6 +135,9 @@ def check_write(context, model, draft, before):
     if {name: [row.stored_values() for row in rows] for name, rows in before._rows.items()} != {
             name: [row.stored_values() for row in rows] for name, rows in draft._rows.items()}:
         raise AccessError(409, 'Child tables are locked')
+    from .sections import signature
+    if signature(before) != signature(draft):
+        raise AccessError(409, 'Child tables are locked')
 
 
 @dataclass(frozen=True)

@@ -130,6 +130,9 @@ def declared_hooks(cls, name, meta, fields, tables, row):
             continue
         field = fields.get(key)
         if key in tables:
+            if getattr(tables[key], 'sections', False):
+                raise ValueError(f'{name}: {key} has sections=True, so derive() cannot build it; '
+                                 'section rows belong to Tables people edit')
             continue
         if field is None:
             raise ValueError(f'{name}: Meta.derives names {key!r}, which is not a field or Table of the model')
@@ -214,6 +217,9 @@ class ModelType(type):
         cls.__app_fields__ = MappingProxyType(fields)
         cls.__app_stored__ = MappingProxyType({key: value for key, value in fields.items() if value.stored})
         cls.__tables__ = MappingProxyType(tables)
+        if getattr(cls, '__transient__', False) and any(getattr(table, 'sections', False) for table in tables.values()):
+            raise ValueError(f'{name}: section rows (Table(..., sections=True)) are for Tables of saved records, '
+                             'not dialogs, reports or slips')
         cls.__sources__ = MappingProxyType(sources)
         states = [key for key, value in fields.items() if isinstance(value, State)]
         if len(states) > 1:

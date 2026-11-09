@@ -104,6 +104,10 @@ commits, no entry is left behind.
 
 A removed row lists its last values and its own removed rows. `reordered` is set when rows
 that stayed changed their order. A create lists every value that is not empty.
+A Table with section rows ([model-engine.md](model-engine.md#section-rows)) adds `sections`:
+`{"added": [{"id", "label"}], "renamed": [{"id", "old", "new"}], "removed": [{"id", "label"}],
+"moved": true}`, each key only when it applies. A section has moved when it changed places with
+another section or now sits above another row; rows added or removed around it do not move it.
 
 A `created` entry lists every value of every row, so an entry for a large document is large:
 creating a document with 1,000 lines stores an entry of about 400 KB, and a page of 50

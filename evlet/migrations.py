@@ -101,6 +101,9 @@ def _create(connection, table, model):
 def _metadata(connection):
     connection.execute('CREATE TABLE IF NOT EXISTS evlet_schema (id INTEGER PRIMARY KEY CHECK(id = 1), definition TEXT NOT NULL)')
     connection.execute('CREATE TABLE IF NOT EXISTS evlet_migrations (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, checksum TEXT NOT NULL)')
+    # Section rows of Tables declared with sections=True (evlet/sections.py); framework-owned, so no app migration.
+    from .sections import create_store
+    create_store(connection)
 
 
 def _definition(registry):

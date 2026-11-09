@@ -24,9 +24,10 @@ DEFAULT_TABLE_ROWS = 100
 
 class Table:
     """Owned rows. `min_rows` is checked on save (`required=True` means at least one row);
-    `max_rows` (default 100, at most 1,000) bounds the collection in both runtimes."""
+    `max_rows` (default 100, at most 1,000) bounds the collection in both runtimes. `sections=True` lets
+    the Table hold section rows: headings that group the rows below them (evlet/sections.py)."""
     def __init__(self, child, *, required=False, min_rows=None, max_rows=DEFAULT_TABLE_ROWS, label=None,
-                 storage_name=None, owner_field='evlet_owner', panel=True, copy=True):
+                 storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False):
         for name, value in (('min_rows', min_rows), ('max_rows', max_rows)):
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f'Table {name} must be a nonnegative integer')
@@ -50,6 +51,13 @@ class Table:
         if type(copy) is not bool:
             raise ValueError('Table copy must be True or False')
         self.copy = copy
+        # Section rows live in evlet_sections, so turning this on or off needs no migration.
+        if type(sections) is not bool:
+            raise ValueError('Table sections must be True or False')
+        self.sections = sections
+        if sections and 'section' in {*getattr(child, '__declared_fields__', {}), *getattr(child, '__tables__', {})}:
+            # {"section": label} marks a section row, so the rows cannot have a field of that name.
+            raise ValueError('A Table with sections=True needs a row model without a field named section')
 
     def __set_name__(self, owner, name):
         self.name = name
