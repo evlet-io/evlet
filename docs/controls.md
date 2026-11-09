@@ -482,7 +482,9 @@ role with only Customize workspaces reaches the workspace routes and nothing els
 Controls apply, and a change asks for a fresh two-step code. Like the rest of Controls, the routes
 stay hidden from everyone else: they answer 404. The one exception is a person who already opens
 Controls but whose role lacks Customize workspaces. Controls is not hidden from them, so they get
-403 with the reason.
+403 with the reason. The browser learns whether to offer this from `customize_workspaces` in
+`GET /api/_settings/me` ([settings.md](settings.md#pages)), which uses the same check as the
+routes.
 
 | Route | Does |
 |---|---|

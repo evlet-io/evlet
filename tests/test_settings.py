@@ -308,6 +308,7 @@ def test_portal_hosts_serve_the_portal_subset_of_settings(tmp_path, monkeypatch,
     buyer = lambda method, path, body=None: http(app, method, path, body, cookie=headers[b'set-cookie'].decode().split(';')[0], csrf=data['csrf'], headers=host)
     me = buyer('GET', '/api/_settings/me')[1]
     assert me['portal'] and me['pages'] == ['profile', 'security', 'notifications'] and me['apps'] == [] and not me['controls']
+    assert me['customize_workspaces'] is False
     assert [group['group'] for group in me['notifications']['events']] == ['Account']
     assert buyer('PATCH', '/api/_settings/me/profile', {'full_name': 'Buyer One'})[0] == 200
     assert buyer('PATCH', '/api/_settings/me/prefs', {'notify.new_device': [False, True], 'last_page': 'security'})[0] == 200

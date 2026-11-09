@@ -36,20 +36,12 @@ const ROUTE = '/api/_controls/workspaces';
 // ---------- access ----------
 
 // GET /api/_settings/me says whether this person may customize workspaces (`customize_workspaces`, the
-// routes' own check). A server that predates that key leaves it out: then the first time the switcher card
-// opens it asks the listing once, since the routes answer 404 to everyone else. Portal people never ask.
+// routes' own check), so the switcher never asks the routes just to find out.
 const access = new WeakMap<AppContext, Cell<boolean>>();
 export function customizeAccess(ctx: AppContext): Cell<boolean> {
   let found = access.get(ctx);
-  if (found) return found;
-  const me = ctx.me.peek();
-  const reported = me?.customize_workspaces;
-  access.set(ctx, found = cell(reported === true, { name: 'workspaces.customize' }));
-  const result = found;
-  if (typeof reported !== 'boolean' && !me?.portal && Array.isArray(ctx.schema.schema.workspaces)) {
-    void ctx.api.request<Listing>('GET', ROUTE).then(() => result.set(true), () => result.set(false));
-  }
-  return result;
+  if (!found) access.set(ctx, found = cell(ctx.me.peek()?.customize_workspaces === true, { name: 'workspaces.customize' }));
+  return found;
 }
 
 // ---------- the editor's model ----------

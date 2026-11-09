@@ -56,7 +56,9 @@ def discover(package, modules=None):
         module = import_module(name)
         if name == package.name + '.workspaces' or name.startswith(package.name + '.workspaces.'):
             # Workspaces keep the order they are defined in, which is the order the switcher lists them.
-            workspaces.extend(value for value in vars(module).values() if isinstance(value, Workspace)
+            # One imported from another app belongs to that app, as models and reports do, so it is not collected here.
+            foreign = imported_names(package, module)
+            workspaces.extend(value for key, value in vars(module).items() if isinstance(value, Workspace) and key not in foreign
                               and all(value is not other for other in workspaces))
         if name == package.name + '.services' or name.startswith(package.name + '.services.'):
             from .services import collect_service
@@ -87,6 +89,14 @@ def discover(package, modules=None):
             raise ValueError(f'Unknown permission role in {model.__resource_id__}')
     return AppDefinition(models=models, reports=reports, apis=endpoints, tasks=tasks, schedules=schedules,
                          permissions=rules, migrations=sorted(migrations, key=lambda migration: migration.name), workspaces=workspaces)
+
+
+def imported_names(package, module):
+    """Module-level names a module imports from outside its own app (from other import NAME)."""
+    import ast
+    tree = ast.parse(Path(module.__file__).read_text(encoding='utf-8'))
+    return {alias.asname or alias.name for node in tree.body if isinstance(node, ast.ImportFrom) and node.level == 0
+            and node.module != package.name and not (node.module or '').startswith(package.name + '.') for alias in node.names}
 
 
 def resource_identity(package, definition):

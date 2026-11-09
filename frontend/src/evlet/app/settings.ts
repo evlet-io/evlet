@@ -22,9 +22,8 @@ export interface Me {
   apps: Array<{ id: string; title: string; can_edit: boolean; labels: string[] }>;
   last_page: string;
   controls: boolean;
-  /** May use the workspace override routes (/api/_controls/workspaces): the same check those routes make.
-   * Missing on a server that predates it; the switcher then asks the route once (app/workspace-editor.ts). */
-  customize_workspaces?: boolean;
+  /** May use the workspace override routes (/api/_controls/workspaces): the same check those routes make. */
+  customize_workspaces: boolean;
   development: boolean;
   profile: { full_name: string; short_name: string; title: string; phone: string; email: string; signature: string; photo: boolean };
   prefs: { theme: Theme; density: 'comfortable' | 'compact'; text: 'default' | 'large'; start: string; counts: boolean; lang: string; tz: string; date: DateFormat; num: NumberFormat; week: string;

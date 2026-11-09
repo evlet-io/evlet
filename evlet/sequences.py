@@ -75,7 +75,7 @@ class Sequence(Text):
     model's State; the value stays null until then and only the engine writes it.
     """
     kind = 'sequence'
-    OPTIONS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden')
+    OPTIONS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'copy')
 
     def __init__(self, format, *, scope=(), assign_on='create', date=None, **kwargs):
         if set(kwargs) - set(self.OPTIONS):

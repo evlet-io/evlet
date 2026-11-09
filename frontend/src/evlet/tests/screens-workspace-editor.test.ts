@@ -62,6 +62,7 @@ describe('the editor dialog', () => {
       ['GET', /\/api\/invoice\?/, invoice.invoices],
       ['GET', /\/api\/invoice\/(measures|aggregate|list_tabs)/, { status: 200, etag: null, body: { measures: {}, items: [], group_by: [] } }],
       ['GET', /\/api\/customer\?/, screen.customers_page1],
+      ['GET', /\/api\/_settings\/me$/, screen.settings_me],
       ['GET', /\/api\/_controls\/workspaces$/, { status: 200, etag: null, body: { items: [entry()], problems: [] } }],
       ['PUT', /\/api\/_controls\/workspaces\/[a-z_0-9]+$/, answer],
       ['DELETE', /\/api\/_controls\/workspaces\/billing$/, { status: 200, etag: null, body: { items: [entry()], problems: [] } }],

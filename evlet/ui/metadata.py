@@ -28,7 +28,7 @@ META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'ledger', 'append_only', 'timestamps', 'indexes',
-                          'focus', 'cards'))
+                          'focus', 'cards', 'duplicate'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -348,6 +348,10 @@ def view_for(model):
     summary = getattr(meta, 'summary', None)
     if summary is not None and type(summary) is not bool:
         raise ValueError(f'{model.__name__}.Meta.summary must be True or False, not {summary!r}')
+    # Meta.duplicate = False hides the record's Duplicate action. Display only: a create is checked as any other.
+    duplicate = getattr(meta, 'duplicate', True)
+    if type(duplicate) is not bool:
+        raise ValueError(f'{model.__name__}.Meta.duplicate must be True or False, not {duplicate!r}')
     # Which side column blocks a record page shows, in this order.
     side_blocks = getattr(meta, 'side_blocks', None)
     if side_blocks is not None and (not isinstance(side_blocks, (tuple, list)) or len(set(side_blocks)) != len(side_blocks)
@@ -439,6 +443,7 @@ def view_for(model):
             **({'summary': summary} if summary is not None else {}),
             **({'side_blocks': list(side_blocks)} if side_blocks is not None else {}),
             **({'focus': focus} if focus is not None else {}),
+            **({'duplicate': False} if not duplicate else {}),
             **({'panel': panel} if panel is not None else {})}
 
 
@@ -768,6 +773,8 @@ def field_schema(field):
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),
               **currency_schema(field),
               **({'editable_when_locked': True} if getattr(field, 'editable_when_locked', False) else {}),
+              # Duplicate leaves this value out of the new record (display only).
+              **({'copy': False} if getattr(field, 'copy', True) is False else {}),
               **({'sequence': field.schema()} if field.kind == 'sequence' else {}),
               'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'user' if field.default is CurrentUser
               else 'callable' if callable(field.default) else 'static'}

@@ -39,8 +39,6 @@ export interface FieldSchema {
   stored?: boolean;
   /** No two records may hold the same value: Duplicate leaves it empty. */
   unique?: boolean;
-  /** false: never copied by Duplicate (when the server provides it; absent means copy). */
-  copy?: boolean;
   compute?: Expression;
   initial?: Expression;
   applies_when?: Expression;
@@ -48,13 +46,15 @@ export interface FieldSchema {
   locked_when?: Expression;
   /** What a list filter may use on the field (evlet/query.py); empty when it cannot be filtered. */
   operators?: string[];
+  /** copy=False: Duplicate leaves this value out of the new record. Absent means it is copied. */
+  copy?: boolean;
 }
 
 /** row_changes false: the parent's save takes only full row lists without _key (a ChildTable on a plain model). */
 export interface ChildSchema { name: string; model: string; label: string; link: string; min_rows?: number; max_rows?: number; row_changes?: boolean
   /** Whether list filters may match the parent on these rows. */
   filterable?: boolean
-  /** false: Duplicate leaves this table empty (when the server provides it; absent means copy). */
+  /** Table(copy=False): Duplicate leaves these rows out of the new record. Absent means they are copied. */
   copy?: boolean }
 export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>; dialog?: boolean }
 
@@ -85,8 +85,6 @@ export interface ListTabsSchema { field: string; kind: 'state' | 'select' | 'lin
 
 export interface ModelSchema {
   name: string;
-  /** false: the model offers no Duplicate (when the server provides it; absent means allowed). */
-  duplicate?: boolean;
   label: string;
   plural: string;
   /** The model's docstring, '' when it has none. */
@@ -123,6 +121,8 @@ export interface ModelSchema {
   /** Meta.focus: the field a new record's form puts the cursor in. Absent, or a field this role cannot edit: the
    * first editable field. Display only. */
   focus?: string;
+  /** Meta.duplicate: false hides the record's Duplicate action. Absent means Duplicate shows to roles that may create. */
+  duplicate?: boolean;
   /** What a record opened in a list's side panel leaves out, by kind: panel=False flags, Meta.panel or the Controls
    * toggles. order is the order Meta.panel names tabs and blocks in. Absent means the panel shows everything. */
   panel?: PanelSchema;

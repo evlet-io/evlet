@@ -284,18 +284,17 @@ describe('the sidebar with declared workspaces', () => {
     await until(() => expect(requests(sent, 'POST', /\/api\/_slips\/quick_customer/).length).toBeGreaterThan(0));
   });
 
-  it('offers Customize in the switcher to people the workspace routes answer', async () => {
-    const { host } = start([...routes(), ['GET', /\/api\/_controls\/workspaces$/, listing]], '/app/invoice');
+  it('offers Customize in the switcher to people who may customize workspaces', async () => {
+    const { host } = start([...routes(), ['GET', /\/api\/_settings\/me$/, screen.settings_me], ['GET', /\/api\/_controls\/workspaces$/, listing]], '/app/invoice');
     await until(() => expect(host.querySelector('.app-switch')).not.toBeNull());
     click(host.querySelector('.app-switch'));
     await until(() => expect(text(document.querySelector('.ws-pop .ws-edit'))).toBe('Customize'));
   });
 
-  // GET /api/_settings/me reports customize_workspaces; the switcher asks the route only when it is missing.
-  const me = (customize?: boolean): Recorded => {
+  // GET /api/_settings/me reports customize_workspaces; the switcher never asks the route to find out.
+  const me = (customize: boolean): Recorded => {
     const value = copy(screen.settings_me);
-    if (customize === undefined) delete value.body.customize_workspaces;
-    else value.body.customize_workspaces = customize;
+    value.body.customize_workspaces = customize;
     return value;
   };
   const openSwitcher = async (settings: Recorded) => {
@@ -320,11 +319,6 @@ describe('the sidebar with declared workspaces', () => {
     expect(requests(sent, 'GET', /\/api\/_controls\/workspaces$/)).toEqual([]);
   });
 
-  it('asks the route once when settings leave the key out (an older server)', async () => {
-    const { sent } = await openSwitcher(me());
-    await until(() => expect(text(document.querySelector('.ws-pop .ws-edit'))).toBe('Customize'));
-    expect(requests(sent, 'GET', /\/api\/_controls\/workspaces$/).length).toBe(1);
-  });
 });
 
 describe('the Explorer ledger reports', () => {
@@ -401,7 +395,7 @@ describe('the navigation icons', () => {
   });
 
   it('shows the kind\'s icon beside each item in the workspace editor, with no icon picker', async () => {
-    const editorRoutes: Route[] = [...routes(), ['GET', /\/api\/_controls\/workspaces$/, { status: 200, etag: null, body: { items: [
+    const editorRoutes: Route[] = [...routes(), ['GET', /\/api\/_settings\/me$/, screen.settings_me], ['GET', /\/api\/_controls\/workspaces$/, { status: 200, etag: null, body: { items: [
       { key: 'billing', label: 'Billing', source: 'declared', app: 'app', override: null, changed_by: null, changed_at: null,
         declared: declared().body.workspaces[0], effective: declared().body.workspaces[0] }], problems: [] } }]];
     const { host } = start(editorRoutes, '/app/invoice');

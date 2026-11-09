@@ -24,6 +24,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   without them are unchanged. The Playground's Project uses it, so its record tabs are gone
   and its Planning section is now Budget ([docs/ui.md](docs/ui.md#compact-record-page)).
 
+- **Duplicate options.** `Meta.duplicate = False` hides a model's record Duplicate action, and
+  `copy=False` on any field or `Table` keeps that value or those rows out of a duplicate. Both
+  default to `True`, must be booleans (`ValueError`), and show in `/api/schema` only when off
+  (`duplicate: false` on the model, `copy: false` on the field or `children` entry). They are
+  display only: the stored schema, migrations and their checksums are unchanged, so no migration
+  is needed. The Playground's Invoice `reference` uses `copy=False`
+  ([docs/ui.md](docs/ui.md#duplicate)).
+
 - **Only Evlet makes record ids, and ids never change.** A caller-supplied `id` is refused on every
   create and update path with one message, `ValidationError({'id': 'The id is assigned by Evlet when
   the record is created and never changes; leave it out'})`: `database`/`tx.create` and `update`
@@ -36,6 +44,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `evlet migrate` after upgrading. `evlet ids check INSTANCE` reports rows with an empty, zero or
   negative id and tables without the trigger; it never rewrites ids
   ([docs/model-engine.md](docs/model-engine.md#only-evlet-makes-ids)).
+
+- **`customize_workspaces` in `GET /api/_settings/me`.** A boolean next to `controls`: true when
+  the signed-in person may use the workspace override routes (`/api/_controls/workspaces`). It
+  calls the routes' own check, so admin always, desk roles with Customize workspaces on, never
+  portal people, on the hosts and networks that open Controls. A session that still owes a two-step
+  code reports true and the routes ask for it. It only reports access, so the browser can offer
+  Customize without probing the route ([docs/settings.md](docs/settings.md#pages)).
 
 - **Record layouts.** `Meta.layout` can declare the whole record page: `Tab(title, blocks)`s, or
   plain blocks without tabs, holding `Section`s, `Table` field names (the table shows inside the tab
@@ -146,6 +161,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- A `Workspace` is registered once: listing the same one twice no longer fails as a key clash with
+  itself, and a workspace another app's `workspaces.py` imports stays with the app that declares it.
+  A real key clash names both workspaces and their sources, such as `app notes (notes/workspaces.py)`
+  ([docs/ui.md](docs/ui.md#workspaces)).
 - A raw `UPDATE` or `DELETE` that an append-only ledger table refuses raises `ConflictError` with
   the message `<table> is append only: its rows are never changed or deleted` on SQLite and
   PostgreSQL. PostgreSQL raised a generic database error before. New PostgreSQL triggers raise an
