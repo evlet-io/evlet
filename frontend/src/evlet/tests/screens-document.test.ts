@@ -52,7 +52,9 @@ describe('transaction document (recorded fixtures)', () => {
     await until(() => expect(host.querySelector('.ev-cmp-card .ff')).not.toBeNull());
     expect(host.querySelector('.ev-cmp-card .ff[data-field="status"]')).toBeNull();
     // Key fields make the subtitle; the summary keeps what the header doesn't: per-record measures.
-    await until(() => expect(text(host.querySelector('.doc-head .doc-sub'))).toContain('Al Sahra Trading'));
+    // The customer is in the primary area, so the subtitle leaves it out: a value shows once per view.
+    await until(() => expect(text(host.querySelector('.ev-cmp-main [data-field="customer"]'))).toContain('Al Sahra Trading'));
+    expect(text(host.querySelector('.doc-head .doc-sub'))).not.toContain('Al Sahra Trading');
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => `${text(item.querySelector('span'))}=${text(item.querySelector('b'))}`))
       .toEqual(['Payments=1', 'Paid=AED 500.00']));
     // Activity: the journal grouped by day, newest first, actors named from the page's users, field
@@ -100,6 +102,8 @@ describe('transaction document (recorded fixtures)', () => {
     // Locked: only the field declared editable_when_locked stays editable.
     const editable = [...host.querySelectorAll('.ev-cmp-card .ff')].filter(item => item.querySelector('button.fval')).map(item => item.getAttribute('data-field'));
     expect(editable).toEqual(['remarks']);
+    // The number shows in the header (here the title); the form leaves it out, so no stray row repeats it.
+    expect(host.querySelector('.ev-cmp-card [data-field="number"]')).toBeNull();
     // The banner says it is locked once; the fields carry no lock of their own.
     expect(host.querySelector('.ff[data-field="customer"] .ff-hint')).toBeNull();
     expect(host.querySelectorAll('.ev-cmp-card .ff-hint:not(.calc):not(.init)')).toHaveLength(0);

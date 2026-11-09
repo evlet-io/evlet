@@ -47,11 +47,12 @@ describe('generated record view', () => {
     await until(() => expect([...host.querySelectorAll('.sum-t span')].map(text)).toEqual(['Due', 'Total', 'Line count']));
     // A model without Meta.layout: one section, its primary area with no heading, holding every field and then the Table.
     expect(host.querySelector('.ev-cmp-main h3:not(.ev-cmp-th h3)')).toBeNull();
-    expect([...host.querySelectorAll('.ev-cmp-main .ff')].map(item => item.getAttribute('data-field'))).toEqual(['customer', 'stage', 'issued', 'due', 'reason', 'remark', 'total', 'line_count']);
+    // The summary strip's values (due, total, line count) show there, not again in the form.
+    expect([...host.querySelectorAll('.ev-cmp-main .ff')].map(item => item.getAttribute('data-field'))).toEqual(['customer', 'stage', 'issued', 'reason', 'remark']);
     expect(host.querySelector('.ev-more-row')).toBeNull();
     // reason applies only when the stage is lost.
     expect(field(host, 'reason')!.hidden).toBe(true);
-    expect(text(field(host, 'total')!.querySelector('label'))).toContain('ƒ calculated');
+    expect(field(host, 'total')).toBeNull();
     expect(text(host.querySelector('.ev-cmp-main .ev-cmp-th h3'))).toBe('Lines');
     expect(text(host.querySelector('.ev-cmp-main .ev-cmp-count'))).toBe('120');
     // The action from the schema is a header button; the record is remembered under the history button
@@ -472,16 +473,18 @@ describe('each fact shows once on the record page', () => {
   const stats = (host: Element) => [...host.querySelectorAll('.sum-t > span')].map(text);
   const blocks = (host: Element) => [...host.querySelectorAll('.side-sec h4')].map(item => text(item).replace(/All fields$/, ''));
 
-  it('E1: key fields make the subtitle, and the summary keeps only what the header does not show', async () => {
+  it('E1: key fields the form does not show make the subtitle, and the summary keeps only what the header does not show', async () => {
     const { host } = start(withOrder({ key_fields: ['customer', 'total'] }), '/app/order/0000000000001');
     await until(() => expect(stats(host)).toEqual(['Due', 'Line count']));
-    await until(() => expect(text(host.querySelector('.doc-head .doc-sub'))).toMatch(/^.+ · .+$/));
+    // Both key fields are in the primary area, so they show there once and the subtitle stays empty.
+    expect(host.querySelector('.doc-head .doc-sub')).toBeNull();
+    expect(field(host, 'customer')).not.toBeNull();
+    expect(field(host, 'total')).not.toBeNull();
   });
 
   it('E1, E6: no summary strip when nothing is left to show, or when Meta.summary is False', async () => {
     const { host } = start(withOrder({ key_fields: ['customer', 'due', 'total'], fields: copy(screen.schema).body.models.find((model: { name: string }) => model.name === 'order').fields
       .map((field: { name: string }) => field.name === 'line_count' ? { ...field, compute: null } : field) }), '/app/order/0000000000001');
-    await until(() => expect(text(host.querySelector('.doc-head .doc-sub'))).not.toBe(''));
     await until(() => expect(host.querySelector('.ev-rec-foot [data-part="created"]')).not.toBeNull());
     expect(host.querySelector('.sum')).toBeNull();
     stopAll();

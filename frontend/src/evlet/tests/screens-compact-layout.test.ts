@@ -135,16 +135,23 @@ describe('a compact record page', () => {
     await until(() => expect(charges.classList.contains('closed')).toBe(true));
     const summary = charges.querySelector('.ev-more-sum') as HTMLElement;
     expect(summary.hidden).toBe(false);
-    expect(text(summary)).toMatch(/^Declared value: 1,200(\.0+)? · Fee: 35\.5\d* · Total: 1,235\.5\d*$/);
+    // Total is a key card, so the row leaves it out: a value shows once per view.
+    expect(text(summary)).toMatch(/^Declared value: 1,200(\.0+)? · Fee: 35\.5\d*$/);
+    expect(host.querySelector('.ev-cmp-card [data-field="total"]')).toBeNull();
     expect(summary.title).toBe(text(summary));
     expect(charges.querySelector('.ev-more-toggle')!.getAttribute('aria-expanded')).toBe('false');
     // The fields stay in the page while closed, so a #field address or an error can still open the row.
     expect(charges.querySelector('[data-field="declared"]')).not.toBeNull();
   });
 
-  it('has a muted subtitle of its first key fields, and a lock while the role cannot change it', async () => {
-    const { host } = await start(routes, `/app/shipment/${shipment}`);
-    await until(() => expect(text(host.querySelector('.doc-head .doc-sub'))).toBe('Falcon Freight'));
+  it('has a muted subtitle of its first key fields the primary area does not show, and a lock while the role cannot change it', async () => {
+    // Carrier, a key field, is in the primary area, so the subtitle leaves it out.
+    const plain = await start(routes, `/app/shipment/${shipment}`);
+    await until(() => expect(plain.host.querySelector('.ev-cmp-main [data-field="carrier"]')).not.toBeNull());
+    expect(plain.host.querySelector('.doc-head .doc-sub')).toBeNull();
+    stopAll();
+    const { host } = await start(withSchema(shipmentSchema({ key_fields: ['carrier', 'fee'] })), `/app/shipment/${shipment}`);
+    await until(() => expect(text(host.querySelector('.doc-head .doc-sub'))).toMatch(/^35\.5/));
     expect(host.querySelector('.doc-head .doc-lock')).toBeNull();
     stopAll();
     const readOnly = await start(withSchema(shipmentSchema({ permissions: { create: true, delete: true, update: false } })), `/app/shipment/${shipment}`);
@@ -244,11 +251,11 @@ describe('a compact record in a side panel', () => {
   });
 
   it('reads as one white section: header with subtitle and panel buttons, a line, flat key cards, fields two to a row', async () => {
-    const { host } = await start(withSchema(shipmentSchema({ open_in: 'panel' })), `/app/shipment?open=${shipment}`);
+    const { host } = await start(withSchema(shipmentSchema({ open_in: 'panel', key_fields: ['carrier', 'fee'] })), `/app/shipment?open=${shipment}`);
     await until(() => expect(panel(host)?.querySelector('.ev-cmp-card')).toBeTruthy());
     const head = panel(host).querySelector('.ev-panel-head .doc-head')!;
     expect(text(head.querySelector('h1'))).toContain('Spring order');
-    await until(() => expect(text(head.querySelector('.doc-sub'))).toBe('Falcon Freight'));
+    await until(() => expect(text(head.querySelector('.doc-sub'))).toMatch(/^35\.5/));
     expect([...head.querySelectorAll('.doc-tools button')].map(button => button.getAttribute('aria-label'))).toEqual(['Open full page', 'Close (Esc)']);
     // No separate type line above the header while the panel sits beside the list.
     expect(panel(host).querySelector('.ev-panel-bar')).toBeNull();

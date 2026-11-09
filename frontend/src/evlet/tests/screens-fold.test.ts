@@ -15,6 +15,8 @@ function schema() {
     { label: 'Notes', fields: ['reason', 'remark'], collapsible: true, collapsed: 'empty' },
     { label: 'Totals', fields: ['total', 'line_count'], collapsible: true, collapsed: false },
   ];
+  // No summary strip, so Totals keeps its values in the form (a value shows once per view).
+  value.body.models.find((model: any) => model.name === 'order').summary = false;
   return value;
 }
 const routes = (extra: Route[] = []): Route[] => [

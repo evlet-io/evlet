@@ -81,11 +81,14 @@ under the title. Records are edited in place, so there is no Edit button.
 
 ### Each fact once on the record page
 
-A record page shows each fact in one place. The header has the title, the name, the State and the
-first two key fields as its subtitle. The summary strip (or the key cards) under it has calculated
-values and per-record measures that the header doesn't show; with nothing left, there is no strip. The
-form of a saved record leaves out the title, name and State, because the header shows them and edits
-the title in place; a new record's form keeps them. Related records are a row of "more information"
+A record page shows each value once per view. The header has the title, the name, the State and, as its
+subtitle, the first two key fields the primary area does not show. The key cards (or, without them, the summary
+strip) have calculated values and per-record measures the header doesn't show; with nothing left, there is no strip.
+The form of a saved record leaves out what the header and the cards or strip show: the title, name and State, a
+record number nothing can edit (the breadcrumb, or in a side panel the subtitle, shows it), and the cards' or
+strip's fields. While a side panel hides the cards or strip (`Meta.panel_summary = False`), the form keeps their
+fields. So a section left with only such fields, such as Other holding the number, does not show. A new record's
+form keeps everything. Related records are a row of "more information"
 that counts each relation while closed and lists every one when open. A slim footer under the form has
 Created and Modified (who and when), the record ID with a copy button, and a Copy link button for the
 record's address; More has Copy link and Copy record ID too, and More > Duplicate starts a copy

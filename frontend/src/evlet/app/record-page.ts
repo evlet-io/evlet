@@ -556,8 +556,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // The panel's number goes on the subtitle line (the page's breadcrumb ends with it).
   const numberText = numbered && numbered.name !== model.title_field && has(numbered.name) ? () => String(store.field(numbered.name).value.get() ?? '') : null;
   // One muted line under the title: in a side panel the record's number, then its first two key fields that have a
-  // value, such as "Desert Rose Retail · 08-11-2026".
-  const subtitleFacts = factFields.slice(0, 2);
+  // value, such as "Desert Rose Retail · 08-11-2026". A value shows once per view: key fields the primary area already
+  // shows are left out of the subtitle.
+  const primaryFields = new Set((() => { const all = sections(model); const main = all.find(section => section.main) ?? all[0]; return main ? main.fields.map(meta => meta.name) : []; })());
+  const subtitleFacts = factFields.filter(meta => !primaryFields.has(meta.name)).slice(0, 2);
   const subtitle = (panel && numberText) || subtitleFacts.length
     ? () => [panel && numberText ? numberText() : '', ...subtitleFacts.map(meta => valueText(view(meta.name), ctx.links))].filter(Boolean).join(' · ') : undefined;
   // A record image (Meta.image naming a field of type "image") left of the title, in place of the icon tile.
@@ -681,7 +683,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     ...(has(model.title_field) && (titleInHeader || !formEditable(fieldOf(model, model.title_field)!)) ? [model.title_field] : []),
     ...(naming && !formEditable(fieldOf(model, 'name')!) ? ['name'] : []),
     ...(state && (show === 'badge' || show === 'bar' || statusMeta?.name === state.field) ? [state.field] : []),
+    // The record's number, when nothing can edit it: the breadcrumb (in a side panel, the subtitle) shows it.
+    ...(numbered && numbered.name !== model.title_field && has(numbered.name) && !formEditable(numbered) ? [numbered.name] : []),
   ]);
+  /** Values shown above the form, by field: the key cards, or the summary strip when there are no cards. A value
+   * shows once per view, so the form leaves these out; while the panel hides the cards or strip, the form keeps them. */
+  const shownAbove = () => !summaryShown ? new Set<string>()
+    : new Set(cardNames ? cardStats.length ? cardNames.filter(card => fieldOf(model, card)) : [] : stats.length ? summaryFields(model, new Set(factFields.map(meta => meta.name))).map(meta => meta.name) : []);
   // ---------- what a side panel shows ----------
 
   // model.panel (panel=False, Meta.panel or the Controls toggles) applies only here; the full page shows everything.
@@ -689,8 +697,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const shows = panel ? panelView(model) : null;
   const mustShow = new Set(isNew ? model.fields.filter(meta => meta.required && has(meta.name) && isEmpty(store.field(meta.name).value.peek())).map(meta => meta.name) : []);
   const fieldShown = (section: string, name: string) => !shows || mustShow.has(name) || (shows.section(section) && shows.field(name));
-  const panelSections = () => sections(model).map(section => ({ ...section, fields: section.fields.filter(meta => has(meta.name) && !inHeader.has(meta.name) && fieldShown(section.label, meta.name)) }))
-    .filter(section => section.fields.length);
+  const panelSections = () => { const above = isNew ? new Set<string>() : shownAbove(); return sections(model).map(section => ({ ...section, fields: section.fields.filter(meta => has(meta.name) && !inHeader.has(meta.name) && !above.has(meta.name) && fieldShown(section.label, meta.name)) }))
+    .filter(section => section.fields.length); };
   /** Meta.panel keeps this part of the record (Activity, a "more information" row) in the panel. */
   const tabShown = (id: string) => !shows || shows.tab(id);
   const fullPageNote = shows?.hides ? html`<p class="ev-panel-more muted">Some parts of this ${model.label.toLowerCase()} show only on the full page.
