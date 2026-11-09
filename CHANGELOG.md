@@ -11,7 +11,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Lifecycle on lists and records.** Cancelled records (a red `final` state, or `void`) are struck through and
   greyed in lists and boards, and show red "Cancelled" text and a soft red strip with when, who and why on the record.
   Locked or final states read as a lock and grey text, the starting state as a dashed Draft pill. Read from the
-  State's `final`, `locked`, `voidable`, `default` and colours ([docs/ui.md](docs/ui.md#how-a-records-lifecycle-reads)).
+  state field's `cancelled` list when the schema sends one, else from the State's `final`, `voidable` and colours,
+  with `locked` and `default` ([docs/ui.md](docs/ui.md#how-a-records-lifecycle-reads)).
 
 - **The side panel reads as one white section.** A compact record in a list's side panel has its header (record
   image slot, title, status badge, a lock while it can't be changed, then the drawer button, Expand and Close), a

@@ -16,7 +16,7 @@ const project = (colors?: Record<string, string>) => ({
 }) as unknown as ScreenModel;
 
 describe('stateLook', () => {
-  it('reads the State from the schema: final in red is cancelled, locked or final is locked, the default is draft', () => {
+  it('falls back without a cancelled list: final in red is cancelled, locked or final is locked, the default is draft', () => {
     const model = project({ cancelled: 'rose', done: 'green' });
     expect(['draft', 'active', 'done', 'cancelled', '', null].map(value => stateLook(model, value))).toEqual(['draft', 'open', 'locked', 'cancelled', null, null]);
     // Without a red colour a final state is only locked: the schema can't tell a cancellation from a closed record.
@@ -25,6 +25,24 @@ describe('stateLook', () => {
     const voidable = { ...project(), state: { ...project().state, states: ['draft', 'issued', 'void'], final: ['void'], locked: ['issued', 'void'], voidable: ['issued'] } } as unknown as ScreenModel;
     expect(stateLook(voidable, 'void')).toBe('cancelled');
     expect(stateLook({ ...project(), state: undefined } as unknown as ScreenModel, 'draft')).toBeNull();
+  });
+
+  it('takes the schema\'s cancelled list as the only test when the state field has one', () => {
+    const marked = (cancelled: string[]) => {
+      const model = project({ cancelled: 'rose' }) as unknown as { fields: Array<Record<string, unknown>> };
+      model.fields[0].cancelled = cancelled;
+      return model as unknown as ScreenModel;
+    };
+    // Listed: cancelled whatever its colour or finality; a red final state left off the list is only locked.
+    expect(stateLook(marked(['active']), 'active')).toBe('cancelled');
+    expect(stateLook(marked(['active']), 'cancelled')).toBe('locked');
+    expect(stateLook(marked([]), 'cancelled')).toBe('locked');
+    expect(stateLook(marked(['cancelled']), 'cancelled')).toBe('cancelled');
+    expect(stateLook(marked(['cancelled']), 'done')).toBe('locked');
+    expect(stateLook(marked(['cancelled']), 'draft')).toBe('draft');
+    // A void state the list leaves out is not cancelled by the fallback.
+    const voidable = { ...project(), state: { ...project().state, states: ['draft', 'issued', 'void'], final: ['void'], locked: ['issued', 'void'], voidable: ['issued'], cancelled: [] } } as unknown as ScreenModel;
+    expect(stateLook(voidable, 'void')).toBe('locked');
   });
 
   it('draws a status badge as red text, a lock and grey text, or a dashed Draft pill', () => {
@@ -42,17 +60,19 @@ describe('stateLook', () => {
 });
 
 const voided = String(invoice.invoice_void.body.id), draft = String(invoice.invoice_draft.body.id);
-function schema(panel = false): Recorded {
+function schema(panel = false, cancelled?: string[]): Recorded {
   const body = copy(invoice.schema).body;
-  if (panel) body.models.find((model: { name: string }) => model.name === 'invoice').open_in = 'panel';
+  const model = body.models.find((item: { name: string }) => item.name === 'invoice');
+  if (panel) model.open_in = 'panel';
+  if (cancelled) model.fields.find((field: { name: string }) => field.name === model.state.field).cancelled = cancelled;
   return { ...invoice.schema, body };
 }
 // The void invoice's journal: the void, by sara, with its reason.
 const journal: Recorded = { status: 200, etag: null, body: { items: [{ id: 9, kind: 'voided', actor: 2, at: '2026-11-09T08:00:00.000Z',
   data: { from: 'issued', to: 'void', reason: 'Customer cancelled the order' } }], total: 1, limit: 50, offset: 0, users: { 2: 'sara' } } };
-const routes = (panel = false): Route[] => [
+const routes = (panel = false, cancelled?: string[]): Route[] => [
   ['GET', /\/api\/auth\/session$/, invoice.session],
-  ['GET', /\/api\/schema$/, schema(panel)],
+  ['GET', /\/api\/schema$/, schema(panel, cancelled)],
   ['GET', /\/api\/invoice\?/, invoice.invoices],
   ['GET', /\/api\/invoice\/measures/, invoice.invoice_measures],
   ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
@@ -78,6 +98,12 @@ describe('a cancelled record', () => {
     const other = host.querySelector(`tr[data-key="${draft}"]`)!;
     expect(other.classList.contains('ev-row-cancelled')).toBe(false);
     expect(other.querySelector('.ev-cancel-ic')).toBeNull();
+  });
+
+  it('follows the state field\'s cancelled list when the schema sends one', async () => {
+    const { host } = start(routes(false, ['draft']), '/app/invoice');
+    await until(() => expect(host.querySelector(`tr[data-key="${draft}"].ev-row-cancelled`)).not.toBeNull());
+    expect(host.querySelector(`tr[data-key="${voided}"]`)!.classList.contains('ev-row-cancelled')).toBe(false);
   });
 
   it('has its title struck through, red Cancelled text and a soft red strip with when, who and why', async () => {

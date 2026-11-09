@@ -148,8 +148,10 @@ class Project(Model):
 
 The State in the schema decides how a record's state is drawn, never the state's name:
 
-- **Cancelled**: a `final` state declared in red (`colors={'cancelled': 'rose'}`), or the framework's `void` state
-  of a State with `voidable` states. In every list (the table, the narrow list beside a panel and the board) its
+- **Cancelled**: a state the State lists in `cancelled` (`State(..., cancelled=('cancelled', 'lost'))`, sent as
+  `"cancelled"` on the state field, the void state included). A schema without that key falls back to a `final`
+  state declared in red (`colors={'cancelled': 'rose'}`), or the framework's `void` state of a State with `voidable`
+  states. In every list (the table, the narrow list beside a panel and the board) its
   first cell is struck through in grey after a ban icon and the row is muted a little; its status badge keeps its
   colour. On the record the title is struck through in grey, the State reads as red "Cancelled" text with a ban
   icon (no pill), and a soft red strip says "Cancelled on 09-11-2026 by sara. Reason: ...", from the newest move
@@ -161,8 +163,8 @@ The State in the schema decides how a record's state is drawn, never the state's
   pill with a pencil.
 - Any other state keeps the coloured pill. The badges still open the moves this person may take.
 
-The schema has no "cancelled" marker of its own: a `final` state that is not red (or a model without colours) reads
-as Locked, since it may as well be a closed or won record.
+Without the `cancelled` list a `final` state that is not red (or a model without colours) reads as Locked, since it
+may as well be a closed or won record.
 
 ### What a side panel shows
 

@@ -104,8 +104,9 @@ export const isStateField = (model: ScreenModel, field: FieldSchema) => model.st
 
 /**
  * How a record's State reads in lists and headers, from the schema alone (never from state names):
- * - `cancelled`: a `final` state (no moves out) declared in red (`colors={...: 'rose'}`), or the framework's "void"
- *   state of a voidable State: struck-through title, red "Cancelled" text, a soft red banner.
+ * - `cancelled`: a state the State lists in `cancelled` (State(cancelled=(...)), the void state included). Without
+ *   that key (older schemas): a `final` state declared in red (`colors={...: 'rose'}`), or the framework's "void"
+ *   state of a voidable State. Struck-through title, red "Cancelled" text, a soft red banner.
  * - `locked`: any other `locked` or `final` state, such as Confirmed or Done: a lock and the state name in grey.
  * - `draft`: the state a record starts in (the State's default, else its first state) while it is not locked:
  *   a dashed pill with a pencil.
@@ -118,9 +119,15 @@ export function stateLook(model: ScreenModel, value: unknown): StateLook | null 
   const name = String(value), meta = model.fields.find(field => field.name === state.field);
   const final = (state.final ?? []).includes(name), locked = (state.locked ?? []).includes(name);
   const colors = (meta as { colors?: Record<string, string> } | undefined)?.colors;
-  // The framework's own void state (a State with voidable states, docs/corrections) is a cancellation too.
-  const voids = Boolean((state as { voidable?: string[] }).voidable?.length) && name === 'void';
-  if (final && (voids || colors?.[name] === 'rose')) return 'cancelled';
+  // State(cancelled=(...)): the schema's own list of cancelled states (the void state included), on the state field
+  // or the State. Older schemas without it: a final state in red, or the framework's void state of a voidable State.
+  const marked = (meta as { cancelled?: unknown } | undefined)?.cancelled ?? (state as { cancelled?: unknown }).cancelled;
+  if (Array.isArray(marked)) {
+    if (marked.map(String).includes(name)) return 'cancelled';
+  } else {
+    const voids = Boolean((state as { voidable?: string[] }).voidable?.length) && name === 'void';
+    if (final && (voids || colors?.[name] === 'rose')) return 'cancelled';
+  }
   if (final || locked) return 'locked';
   const declared = (state as { default?: unknown }).default ?? meta?.default;
   const start = declared !== undefined && declared !== null ? String(declared) : state.states[0];
