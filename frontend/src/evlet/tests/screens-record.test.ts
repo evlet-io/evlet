@@ -44,7 +44,7 @@ describe('generated record view', () => {
   });
   it('lays out the header, summary, Details sections and a tab per Table from the schema', async () => {
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
-    await until(() => expect(text(host.querySelector('.doc-head .eyebrow'))).toBe('Order'));
+    await until(() => expect(host.querySelector('.doc-head .doc-mark .ph-icon')?.getAttribute('aria-label')).toBe('Order'));
     expect(text(host.querySelector('.doc-head h1'))).toContain('Big order');
     expect(text(host.querySelector('.crumbs .cur'))).toBe('Big order');
     expect([...host.querySelectorAll('.doc-tabs [role="tab"]')].map(text)).toEqual(['Details', 'Lines120']);
@@ -379,8 +379,11 @@ describe('printing a record', () => {
   it('opens the server PDF of the chosen design, with Download and File a copy', async () => {
     let filed = 0;
     const { host, sent } = start(routes(printing(), () => { filed += 1; }), '/app/contact/0000000000001');
-    await until(() => expect(byText(host, '.doc-head button', 'Print')).not.toBeNull());
-    click(byText(host, '.doc-head button', 'Print'));
+    // Print is in More, with the record's other items.
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Mariam Haddad'));
+    expect(byText(host, '.doc-head button', 'Print')).toBeNull();
+    click(host.querySelector('.doc-head button[aria-label="More actions"]'));
+    click(byText(document, '[role="menuitem"]', 'Print'));
     const drawer = () => document.querySelector<HTMLElement>('.drawer.ev-print')!;
     await until(() => expect(drawer()).not.toBeNull());
     const frame = drawer().querySelector('iframe')!;
@@ -403,7 +406,8 @@ describe('printing a record', () => {
     for (const schema of [printing(false), printing(true, [])]) {
       const { host } = start(routes(schema), '/app/contact/0000000000001');
       await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Mariam Haddad'));
-      expect(byText(host, '.doc-head button', 'Print')).toBeNull();
+      click(host.querySelector('.doc-head button[aria-label="More actions"]'));
+      expect([...document.querySelectorAll('[role="menuitem"]')].map(text)).not.toContain('Print');
       stopAll();
     }
   });

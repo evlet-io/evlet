@@ -46,7 +46,7 @@ const built = new Map<string, SVGSVGElement>();
 /** Icon on a soft tinted square, 22 to 44 px. */
 export function IconTile(name: string, options: { tint?: Tint; size?: number } = {}): HTMLElement {
   const size = Math.max(22, Math.min(44, options.size ?? 32));
-  const element = html`<span class="ph-icon b-${tint(options.tint)}" style:width=${`${size}px`} style:height=${`${size}px`} style:border-radius=${`${Math.round(size / 3.6)}px`}>${Icon(name, { size: size >= 32 ? 'lg' : size >= 26 ? 'md' : 'sm' })}</span>` as HTMLElement;
+  const element = html`<span class="ph-icon b-${tint(options.tint)}" style:width=${`${size}px`} style:height=${`${size}px`}>${Icon(name, { size: size >= 32 ? 'lg' : size >= 26 ? 'md' : 'sm' })}</span>` as HTMLElement;
   return element;
 }
 

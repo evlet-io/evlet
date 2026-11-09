@@ -279,7 +279,7 @@ mark only.
 |---|---|
 | `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, StatCard (also exported as Stat), Sparkline, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
-| `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText`, `DialogFooter`, `primaryAction(panel)`: the footer's main action, which a dialog without a field focuses and Mod+S presses; the arrow keys move between footer actions and Mod+Shift+D cancels |
+| `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `SplitButton` (a main button with a chevron for the alternatives), `openModal`, `openDrawer`, `toast` (with Undo), `copyText`, `DialogFooter`, `primaryAction(panel)`: the footer's main action, which a dialog without a field focuses and Mod+S presses; the arrow keys move between footer actions and Mod+Shift+D cancels |
 | `shortcuts.ts` | `isMac`, `keyMatches(event, 'Mod+S')`, `formatKeys(combo)` (⌘S or Ctrl+S), `withShortcut(label, combo)` for tooltips, `ariaKeys(combo)` for `aria-keyshortcuts`, `isTyping`, `commitTyped` ([keyboard shortcuts](ui.md#keyboard-shortcuts)) |
 | `../app/shortcuts.ts` | `useShortcuts({ root, inner, area, actions, help })`: a screen binds Save, Delete, New and Duplicate; one document listener runs the action of the screen holding the focus. `openShortcutSheet(everywhere)` is the ? sheet |
 | `../app/duplicate.ts` | `duplicateOf(model, row, from)`: what More > Duplicate copies of a saved record (writable, visible, stored fields and every table's rows without ids; not the name, number, State, calculated or unique fields, nor fields and tables with `copy: false`); `duplicateAllowed(model)` reads `duplicate: false`; `holdDuplicate` and `takeDuplicate` hand it in memory to the next new record of the model ([Duplicate](ui.md#duplicate)) |
@@ -577,7 +577,7 @@ A screen composed by hand from a record store:
 ```ts
 import './evlet/ui/styles.css';
 import { mount } from './evlet/dom';
-import { ChildTable, DocFrame, DocHeader, FormSection, LockBanner, RecordMark, SideBlock,
+import { ChildTable, DocFrame, DocHeader, FormSection, LockBanner, SideBlock,
   KeyValueList, SummaryStrip, TabPanel, Tabs } from './evlet/ui';
 import { cell } from './evlet/reactive';
 import { formatMoney } from './evlet/model/format';
@@ -592,7 +592,8 @@ const tabs = Tabs({ tabs: [{ id: 'details', label: 'Details' }, { id: 'lines', l
 mount(document.querySelector('#app')!, () => DocFrame({
   tint: 'blue',
   main: [
-    DocHeader({ type: 'Order', icon: 'receipt', mark: RecordMark({ name: 'Big order', size: 'lg' }), title: record.field('title') }),
+    // The title row: the type's icon tile, the title and its status, actions on the right, key facts under it.
+    DocHeader({ type: 'Order', icon: 'receipt', tint: 'blue', title: record.field('title') }),
     LockBanner({ lifecycle: () => record.field('stage').value.get() === 'won' ? 'locked' : 'draft', state: 'Won' }),
     SummaryStrip([{ label: 'Total', value: () => formatMoney(record.field('total').value.get() as string) }]),
     tabs,
@@ -694,7 +695,7 @@ mount(document.querySelector('#app')!, () => DocFrame({
   asks for in one turn, none for a record already read or being read), keeps them for the session
   and forgets them when it ends; `recordOf(field)` gives a field's record store. Data is always text: nothing a record holds is parsed as markup.
 
-The Library page (`ui/library.ts`) lists all 117 components of the design catalog with their
+The Library page (`ui/library.ts`) lists all 118 components of the design catalog with their
 details and a live demo for each one built here; the rest are marked for the screens phase.
 The development entry (`frontend/evlet.html`, `src/evlet/dev.ts`) runs it against a sample
 order replayed from `api-fixture.json`, so record-bound components work without a server. It
@@ -845,7 +846,7 @@ page in a new browser tab.
   entry, so Back closes the panel. Escape and the close button close it and return focus to the
   row. The divider resizes the panel, and the width is kept per list.
 - The panel is the record view with `DocFrame`'s panel variant: the same sections in one column.
-  The header keeps two buttons and puts the rest in More; key facts sit under the title; the side
+  The header keeps the split move button and one outline button and puts the rest in More; key facts sit under the title; the side
   column's Files and Record info close the Details tab and Related is a tab; sections close from
   their heading with the same FoldSection and saved state as the record page (`form.<model>.open`, by
   section title; [collapsible sections](ui.md#collapsible-sections)), and in the panel every section can close; child tables are ChildRows with Open full table; the save

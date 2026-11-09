@@ -10,7 +10,15 @@ afterEach(stopAll);
 const rows = (host: Element) => [...host.querySelectorAll<HTMLElement>('.doc-main tbody tr[data-key]')];
 const cellOf = (row: Element, col: string) => row.querySelector<HTMLElement>(`td[data-col="${col}"]`)!;
 const sums = (host: Element) => text(host.querySelector('.g-sum'));
-const button = (host: Element, label: string) => byText<HTMLButtonElement>(host, '.doc-head button', label)!;
+// A header button, or a move behind the split button's chevron (the main move is the button itself).
+const button = (host: Element, label: string): HTMLButtonElement => {
+  const shown = byText<HTMLButtonElement>(host, '.doc-head button', label);
+  if (shown || !host.querySelector('.doc-head .split-more')) return shown!;
+  const open = byText<HTMLButtonElement>(document, '[role="menuitem"]', label);
+  if (open) return open;
+  click(host.querySelector('.doc-head .split-more'));
+  return byText<HTMLButtonElement>(document, '[role="menuitem"]', label)!;
+};
 const current = (host: Element) => text(host.querySelector('.stepper .step.cur'));
 // A lead's status is not a pipeline: it shows as the header badge.
 const badge = (host: Element) => text(host.querySelector('.doc-head .ev-status'));
@@ -118,9 +126,20 @@ describe('testCRM: a deal and its lines', () => {
     run.skip(1);
     const { host } = run.start(`/app/deal/${id}?tab=details`);
     await until(() => expect(current(host)).toBe('Qualified'));
-    const proposal = button(host, 'Send proposal');
-    expect(proposal.getAttribute('aria-disabled')).toBe('true');
-    click(proposal);
+    // Its guard is not met, so Mark lost is the split button and Send proposal waits behind the chevron.
+    expect(text(host.querySelector('.doc-head .split-main'))).toBe('Mark lost');
+    expect(host.querySelector('.doc-head .split-main')!.classList.contains('primary')).toBe(true);
+    // The title row: the model's icon tile (no letter mark), the title with the status pill on its line.
+    expect(host.querySelector('.doc-head .doc-mark .ph-icon svg')).not.toBeNull();
+    expect(host.querySelector('.doc-head .doc-mark .org-mark')).toBeNull();
+    expect(text(host.querySelector('.doc-title-line h1'))).toBe('Shipment tracking integration');
+    // The breadcrumb ends with the deal's number, not its title again.
+    expect(text(host.querySelector('.crumbs .cur'))).toMatch(/^DL-\d{4}-\d{4}$/);
+    click(host.querySelector('.doc-head .split-more'));
+    const others = [...document.querySelectorAll('[role="menuitem"]')].map(text);
+    expect(others).toContain('Send proposal');
+    expect(others).not.toContain('Mark lost');
+    click(button(host, 'Send proposal'));
     expect(lastToast()).toBe('The condition for this move is not met');
     expect(run.writes).toHaveLength(0);
     // The lost reason applies only once the deal is lost.
@@ -250,7 +269,9 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
     expect(run.writes[1].body).toMatchObject({ title: 'ERP rollout, 3 entities and Oman' });
     expect(Object.keys(run.writes[1].body).filter(name => !name.startsWith('_'))).toEqual(['title']);
     expect(run.writes[1].headers['if-match']).not.toBe(run.writes[0].headers['if-match']);
-    await until(() => expect(text(host.querySelector('.crumbs .cur'))).toBe('ERP rollout, 3 entities and Oman'));
+    await until(() => expect(heading(host)!.querySelector('input')?.value ?? text(heading(host))).toBe('ERP rollout, 3 entities and Oman'));
+    // The breadcrumb ends with the deal's number.
+    expect(text(host.querySelector('.crumbs .cur'))).toBe('DL-2026-0001');
     expect(run.misses).toEqual([]);
   });
 

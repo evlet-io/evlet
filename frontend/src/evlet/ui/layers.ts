@@ -148,6 +148,17 @@ export function MenuButton(props: ButtonProps & { items: MenuItem[] | (() => Men
   return button;
 }
 
+/**
+ * A main button with a chevron beside it that opens a menu of the alternatives: "Resume" with Complete and
+ * Cancel behind the chevron. The two halves read as one button; without alternatives there is no chevron.
+ */
+export function SplitButton(props: { main: HTMLButtonElement; items: MenuItem[] | (() => MenuItem[]); menuLabel: string; variant?: ButtonProps['variant'] }): HTMLElement {
+  const count = () => (typeof props.items === 'function' ? props.items() : props.items).length;
+  props.main.classList.add('split-main');
+  const more = count() ? MenuButton({ icon: 'chevron-down', variant: props.variant ?? 'primary', tip: props.menuLabel, ariaLabel: props.menuLabel, menuLabel: props.menuLabel, items: props.items, className: 'split-more' }) : null;
+  return html`<div class="btn-split" class:solo=${!more}>${props.main}${more}</div>` as HTMLElement;
+}
+
 // ---------- dialogs ----------
 
 export interface ModalOptions {

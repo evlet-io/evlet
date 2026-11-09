@@ -20,7 +20,7 @@ import { tint, type Tint } from './core';
 import { DocFrame, DocHeader, LockBanner, MoveButton, SideBlock, StatusFlow, Tabs, type Lifecycle } from './doc';
 import { BaseField, displayValue, localField, type FieldLike } from './fields';
 import { FormSection, KeyValueList } from './inline';
-import { DialogFooter, Menu, MenuButton, openDrawer, openModal, openPopover, toast } from './layers';
+import { DialogFooter, Menu, MenuButton, openDrawer, openModal, openPopover, SplitButton, toast } from './layers';
 import { Board, BoardCard, BulkBar, Filters, ListSummary, PageHeader, Toolbar, type ActiveFilter } from './list';
 import { DateRangePanel, rangePresets, rangeText, type DateRange } from './pickers';
 import { DataTable, type Column } from './table';
@@ -155,6 +155,8 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     'icon-button': () => row(IconButton({ icon: 'bell', tip: 'Notifications' }), IconButton({ icon: 'panel-left', tip: 'Toggle sidebar', active: cell(true) }), IconButton({ icon: 'copy', tip: 'Copy link' })),
     'menu-button': () => MenuButton({ label: 'New', icon: 'plus', variant: 'primary', items: [{ label: 'Deal', icon: 'handshake', tint: 'blue', hint: 'C', onSelect: () => toast('Opened New deal') },
       { label: 'Lead', icon: 'target', tint: 'teal', onSelect: () => toast('Opened New lead') }, 'separator', { label: 'Contact', icon: 'user-plus', tint: 'violet', onSelect: () => toast('Opened New contact') }] }),
+    'split-button': () => SplitButton({ main: MoveButton({ label: 'Resume', icon: 'play', variant: 'primary', blocked: null, onMove: () => toast('Moved to Active') }), menuLabel: 'Other moves',
+      items: [{ label: 'Complete', icon: 'circle-check', onSelect: () => toast('Moved to Completed') }, { label: 'Cancel', icon: 'circle-x', onSelect: () => toast('Moved to Cancelled') }] }),
     'move-button': () => row(MoveButton({ label: 'Issue', icon: 'send', variant: 'primary', blocked: null, onMove: () => toast('Issued as INV-2026-00042') }),
       MoveButton({ label: 'Mark paid', icon: 'circle-check', blocked: 'Outstanding is AED 25,200. Record the payment first.', onMove: () => {} })),
     'link-button': () => LinkButton({ label: 'All fields', icon: 'chevron-right', onClick: () => toast('Opened Details') }),
@@ -213,9 +215,10 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     popover: () => { const button: HTMLButtonElement = Button({ label: 'Open a menu', icon: 'chevron-down', onClick: () => openPopover(button, close => Menu([{ label: 'Copy link', icon: 'link', onSelect: () => toast('Copied the link') }, { label: 'Delete', icon: 'trash-2', danger: true, onSelect: () => toast('Deleted') }], close)) }); return button; },
     'bulk-bar': () => html`<div class="lib-bulk">${BulkBar({ count: () => selected.get().size, actions: [{ label: 'Assign', icon: 'user', onClick: () => toast('Assigned') }, { label: 'Delete', icon: 'trash-2', onClick: () => toast('Deleted') }], onClear: () => selected.set(new Set()) })}</div>`,
     // sections
-    'doc-header': onRecord(store => DocHeader({ type: 'Order', icon: 'receipt', mark: RecordMark({ name: () => String(store.field('title').value.get() ?? ''), size: 'lg' }), title: store.field('title'),
+    'doc-header': onRecord(store => DocHeader({ type: 'Order', icon: 'receipt', tint: 'blue', title: store.field('title'), status: [StatusPill({ label: 'Draft', tint: 'slate' })],
       meta: [html`<b class="num">${() => formatMoney(store.field('total').value.get() as string)}</b>`, displayValue(store.field('customer')), html`${Icon('calendar', { size: 'xs' })}${() => `Due ${displayDate(store.field('due').value.get())}`}`],
-      actions: [Button({ label: 'Email', icon: 'mail', iconTint: 'blue', hideLabelOnPhone: true }), MoveButton({ label: 'Mark won', icon: 'trophy', variant: 'success', blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null, onMove: () => toast('Moved to Won') }),
+      actions: [Button({ label: 'Email', icon: 'mail', hideLabelOnPhone: true }), SplitButton({ main: MoveButton({ label: 'Mark won', icon: 'circle-check', variant: 'primary', blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null, onMove: () => toast('Moved to Won') }),
+        menuLabel: 'Other moves', items: [{ label: 'Mark lost', icon: 'circle-x', onSelect: () => toast('Moved to Lost') }] }),
         MenuButton({ icon: 'ellipsis', tip: 'More actions', items: [{ label: 'Copy link', icon: 'link', onSelect: () => toast('Copied the link') }] })] }),
       () => DocHeader({ type: 'Deal', icon: 'handshake', mark: RecordMark({ name: 'Al Sahra Trading', size: 'lg' }), title: 'ERP rollout, 3 entities', meta: [html`<b class="num">AED 186,000</b>`, 'Al Sahra Trading'] })),
     'status-flow': () => html`<div style="width:100%">${StatusFlow({ steps: STAGES.slice(0, 5), current: flowState, good: ['won'], onMove: to => { flowState.set(to); toast(`Moved to ${stageOf(to).label}`); },

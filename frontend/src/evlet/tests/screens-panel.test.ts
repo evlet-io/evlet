@@ -226,11 +226,11 @@ describe('records in a side panel beside the list', () => {
     expect(host.querySelector('.doc-side')).not.toBeNull();
   });
 
-  it('keeps two header buttons in the panel and moves the rest into More', async () => {
+  it('keeps one outline button and the move in the panel, and moves the rest into More', async () => {
     const { host } = start(routes(), `/app/invoice?open=${three}`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     const buttons = () => [...panel(host)!.querySelectorAll('.doc-head .ph-actions button:not([aria-label="More actions"])')].map(text);
-    await until(() => expect(buttons()).toEqual(['Issue', 'Record payment']));
+    await until(() => expect(buttons()).toEqual(['Record payment', 'Issue']));
     click(panel(host)!.querySelector('button[aria-label="More actions"]'));
     const items = () => [...document.querySelectorAll('[role="menuitem"]')].map(text);
     await until(() => expect(items()).toContain('Open full page'));
@@ -244,7 +244,7 @@ describe('records in a side panel beside the list', () => {
     const { host } = start(routes().map(route => String(route[1]).includes('schema') ? [route[0], route[1], printable] as Route : route), `/app/invoice?open=${three}`);
     await until(() => expect(panelTitle(host)).toBe('Draft invoice'));
     const buttons = () => [...panel(host)!.querySelectorAll('.doc-head .ph-actions button:not([aria-label="More actions"])')].map(text);
-    await until(() => expect(buttons()).toEqual(['Issue', 'Record payment']));
+    await until(() => expect(buttons()).toEqual(['Record payment', 'Issue']));
     click(panel(host)!.querySelector('button[aria-label="More actions"]'));
     const items = () => [...document.querySelectorAll('[role="menuitem"]')].map(text);
     await until(() => expect(items()).toContain('Print'));

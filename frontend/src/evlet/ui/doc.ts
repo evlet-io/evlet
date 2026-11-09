@@ -5,7 +5,7 @@
 import { html, when, type Child } from '../dom';
 import { effect, untrack, type Cell, type Readable } from '../reactive';
 import type { StateSchema } from '../model/schema';
-import { Button, Icon, StateBanner, type ButtonProps } from './base';
+import { Button, Icon, IconTile, StateBanner, type ButtonProps } from './base';
 import { read, tint, uid, type Prop, type Tint } from './core';
 import { type FieldLike } from './fields';
 import { InlineValue } from './inline';
@@ -25,30 +25,49 @@ export function DocFrame(props: { tint: Tint; main: Child; side?: Child; sidePos
 }
 
 export interface DocHeaderProps {
-  /** Record type, shown as the eyebrow: "Invoice". */
+  /** Record type ("Invoice"): the accessible name of the default mark. The breadcrumb above names it on screen. */
   type: string;
+  /** The record type's icon, on the default mark: a tinted square tile, as on the list page. */
   icon: string;
-  mark: Node;
+  /** The mark at the start of the title row; defaults to the type's icon tile. */
+  mark?: Node;
+  /** Tint of the default icon tile. */
+  tint?: Tint;
   /** Plain title, or a field edited in place (never a sequence number). */
   title: Prop<string> | FieldLike;
   /** Shown in mono (document numbers). */
   mono?: Prop<boolean>;
-  /** Key facts: money, linked record, dates, owner. */
+  /** Status pills, on the title's line after the title. */
+  status?: Child[];
+  /** Key facts: money, linked record, dates, owner. One small line under the title row. */
   meta?: Child[];
+  /** Outline buttons, then the main move (a SplitButton), then More: right of the title, centred on its row. */
   actions?: Child[];
 }
 
-/** Record mark, record type, title, key facts and the main actions. */
+/**
+ * The title row: mark, title and status pills, the main actions on the right; key facts on a small line
+ * under it. A narrow header (a side panel, a phone) puts the actions on their own line under the title.
+ */
 export function DocHeader(props: DocHeaderProps): HTMLElement {
   const field = typeof props.title === 'object' && props.title !== null && 'meta' in props.title ? props.title as FieldLike : null;
   const titleId = uid('doc');
   const title = field && field.meta.type !== 'sequence'
     ? html`<h1 id=${titleId} class="doc-title">${InlineValue({ field, labelledBy: titleId })}</h1>`
     : html`<h1 id=${titleId} class:mono=${props.mono ?? false}>${field ? () => String(field.value.get() ?? '') : props.title as Prop<string>}</h1>`;
-  return html`<header class="doc-head">
-    <div class="doc-mark">${props.mark}</div>
-    <div class="ttl"><div class="eyebrow">${Icon(props.icon, { size: 'xs' })}${props.type}</div>${title}${props.meta?.length ? html`<div class="rec-meta">${props.meta.map(item => html`<span>${item}</span>`)}</div>` : null}</div>
-    ${props.actions?.length ? html`<div class="ph-actions">${props.actions}</div>` : null}</header>` as HTMLElement;
+  let mark = props.mark;
+  if (!mark) {
+    const tile = IconTile(props.icon, { tint: props.tint, size: 36 });
+    tile.setAttribute('role', 'img');
+    tile.setAttribute('aria-label', props.type);
+    mark = tile;
+  }
+  const status = props.status?.filter(Boolean) ?? [];
+  return html`<header class="doc-head"><div class="doc-row">
+    <div class="doc-mark">${mark}</div>
+    <div class="ttl"><div class="doc-title-line">${title}${status.length ? html`<span class="doc-status">${status.map(item => html`${item}`)}</span>` : null}</div></div>
+    ${props.actions?.length ? html`<div class="ph-actions">${props.actions}</div>` : null}
+    ${props.meta?.length ? html`<div class="rec-meta">${props.meta.map(item => html`<span>${item}</span>`)}</div>` : null}</div></header>` as HTMLElement;
 }
 
 /**

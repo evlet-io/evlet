@@ -28,7 +28,7 @@ describe('the shell scrolls only its view', () => {
 
   it('puts a record page inside the view, beside the sidebar and under the top bar', async () => {
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
-    await until(() => expect(text(host.querySelector('.doc-head .eyebrow'))).toBe('Order'));
+    await until(() => expect(host.querySelector('.doc-head .doc-mark .ph-icon')?.getAttribute('aria-label')).toBe('Order'));
     const app = host.querySelector('.app')!, view = host.querySelector('#ev-view')!;
     // The top bar runs across the window; under it the sidebar and the main column, which holds only the view.
     expect([...app.children].filter(child => child.matches('.topbar, .sidebar, .main')).map(child => child.className)).toEqual(['topbar', 'sidebar', 'main']);

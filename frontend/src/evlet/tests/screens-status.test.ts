@@ -56,8 +56,9 @@ describe('record status display', () => {
     expect(text(badge)).toBe('Draft');
     expect(badge.tagName).toBe('BUTTON');
     expect(badge.getAttribute('aria-label')).toBe('Status: Draft. Change status');
-    // The badge sits with the key facts, before them.
-    expect(badge.closest('.rec-meta')).not.toBeNull();
+    // The badge sits on the title's line, after the title.
+    expect(badge.closest('.doc-title-line')).not.toBeNull();
+    expect(badge.closest('.rec-meta')).toBeNull();
     // The moves stay as header buttons too.
     expect(byText(host, '.doc-head .ph-actions button', 'Issue')).not.toBeNull();
     click(badge);

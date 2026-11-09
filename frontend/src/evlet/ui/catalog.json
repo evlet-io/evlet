@@ -958,6 +958,38 @@
   },
   {
    "cat": "buttons",
+   "id": "split-button",
+   "name": "SplitButton",
+   "level": "Composite",
+   "desc": "A main button with a chevron that opens a menu of the alternatives: the record's main move, its other moves behind the chevron.",
+   "props": [
+    [
+     "main",
+     "button",
+     ""
+    ],
+    [
+     "items",
+     "list of MenuItem",
+     "No chevron when empty"
+    ],
+    [
+     "menuLabel",
+     "text",
+     ""
+    ]
+   ],
+   "from": [
+    "button",
+    "menu-button"
+   ],
+   "used": [
+    "Doc header"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
    "id": "move-button",
    "name": "MoveButton",
    "level": "Element",
@@ -2763,7 +2795,7 @@
    "id": "doc-header",
    "name": "DocHeader",
    "level": "Section",
-   "desc": "Record mark, record type, title, key facts and the main actions. Moves and actions come from the model.",
+   "desc": "The record's title row: the type's icon tile, the title with its status, the main actions on the right and key facts under it. Moves and actions come from the model.",
    "props": [
     [
      "record",
@@ -2786,7 +2818,8 @@
     "pill",
     "move-button",
     "button",
-    "menu-button"
+    "menu-button",
+    "split-button"
    ],
    "used": [
     "Every record"

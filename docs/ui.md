@@ -26,8 +26,8 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   `/reports/<name>`, listed in the sidebar and in the Explorer.
 - Slips ([slips.md](slips.md)): forms presented from a record, an action, another slip or browser
   code, checked on the server and handed in to a handler or turned into a record.
-- Printing ([printing.md](printing.md)): a Print button on record views for roles that may print the
-  model, when the server has the print extra (in a side panel, Print is in the More menu). It opens a drawer with the server's PDF in the browser's
+- Printing ([printing.md](printing.md)): Print in a record's More menu for roles that may print the
+  model, when the server has the print extra. It opens a drawer with the server's PDF in the browser's
   own viewer, a choice of design, Download, and File a copy on records that keep attachments.
 
 Tables keep per-person column choices. The Columns menu of a record's child tables and of a report
@@ -59,6 +59,19 @@ registry is built with a `ValueError` that names the model and the field, such a
 `key_fields`, it is left out for a role that cannot read the field. It is display only and never a
 permission. Without it, or when this role cannot edit the field, the browser puts the cursor in the
 first editable field. Slips take the same option as `focus = "field"` ([slips.md](slips.md)).
+
+### Record title row
+
+A record opens with one title row under the breadcrumb: the model's icon on a tinted square tile (a
+person's avatar for a person model), the title, and the status badges on the title's line. On the
+right, centred on the row, are up to two outline buttons (the model's actions and slips, then Ask
+Eva), the main move as a solid split button, and More. The split button runs the first move this
+person may take now; its chevron lists the other moves, and with one move there is no chevron. A
+model without a State or lifecycle has no split button. Everything that does not fit, Print and the
+record's own items (Copy link, Duplicate, Delete) are in More. The key facts are one small line under
+the row. A new record's row has Cancel and Create instead. In a side panel the row keeps one outline
+button, and when the header is narrow (a side panel, a phone) the buttons wrap onto their own line
+under the title. Records are edited in place, so there is no Edit button.
 
 ### Each fact once on the record page
 
@@ -295,12 +308,12 @@ class Employee(Model):
 
 The Playground's Projects list opens on Active, with tabs for Planned, Active and Done.
 
-A record's State shows as a coloured badge in the header by default, with its moves as header
-buttons; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
+A record's State shows as a coloured badge on the title's line by default, with its moves on the
+header's split button; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
 draws neither. `Meta.status` adds a status badge for a Select the system sets, such as a
 payment status, coloured by `Select(..., colors={...})`. Badges and bar steps offer only the
 moves this person may take now; everything else is plain text. Lists draw the same badges. The
-badge wraps with the key facts in the side panel and on a phone; the bar scrolls sideways there.
+badge wraps with the title in the side panel and on a phone; the bar scrolls sideways there.
 See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
 
 Related records (`Meta.relations`) show in the side panel's Related block, with a count per
@@ -680,6 +693,8 @@ the one. It scrolls away with the title.
 - The first crumb names the workspace the page belongs to (the first declared one holding it).
   Clicking it shows that workspace in the sidebar, the page staying open. When the page's next crumb
   has the workspace's name, the two are one crumb.
+- A record's last crumb is its document number when the model has one ("Projects / PRJ-2026-0021"),
+  else its title. The last crumb is darker than the others.
 - Phones keep the last two crumbs; a long last crumb is cut with an ellipsis.
 
 ### Explorer

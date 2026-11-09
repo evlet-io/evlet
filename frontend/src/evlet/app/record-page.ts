@@ -20,7 +20,7 @@ import { flowGrid, FoldSection, Folds, isEmpty, revealField, revealFirstError } 
 import { NoteComposer } from './composer';
 import { FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
-import { copyText, DialogFooter, MenuButton, openDrawer, openModal, toast, type MenuItem } from '../ui/layers';
+import { copyText, DialogFooter, MenuButton, openDrawer, SplitButton, openModal, toast, type MenuItem } from '../ui/layers';
 import { DataTable, emptyPrefs, type Column } from '../ui/table';
 import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
@@ -221,7 +221,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const data: Record<string, unknown> = { id: store.id, [model.title_field]: field?.value.get() };
     return titleOf(model, data);
   });
-  if (!panel) effect(() => ctx.crumbs.set([{ label: model.plural, href: router.href('list', { model: name }) }, { label: titleText.get() }]));
+  // The breadcrumb ends with the record: its document number when the model has one, else its title.
+  const crumbText = () => {
+    const number = numbered && has(numbered.name) ? store.field(numbered.name).value.get()
+      : model.naming?.field === 'name' && has('name') ? store.field('name').value.get() : null;
+    return isNew || !number ? titleText.get() : String(number);
+  };
+  if (!panel) effect(() => ctx.crumbs.set([{ label: model.plural, href: router.href('list', { model: name }) }, { label: crumbText() }]));
   if (!isNew) {
     const remember = () => {
       const entry = { model: name, id: store.id!, title: untrack(() => titleText.get()), at: Date.now() };
@@ -456,48 +462,52 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     } else void runLifecycle(operation).then(error => { if (error) toast(error, { icon: 'info' }); });
   };
 
-  // The header's buttons: lifecycle operations, moves, actions and slips, in that order.
-  type HeaderEntry = { label: string; icon: string; blocked: () => string | null; run: () => void; variant: 'primary' | 'success' | 'default' };
-  const headerEntries = (): HeaderEntry[] => {
-    const moves = extras.get()._moves ?? [];
-    const firstAllowed = moves.findIndex(move => move.allowed);
-    return [
-      ...(extras.get()._lifecycle_actions ?? []).map(operation => ({ label: model.lifecycle?.labels[operation] ?? humanize(operation), icon: operation === 'cancel' ? 'rotate-ccw' : 'arrow-right',
-        blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null, run: () => lifecycleAction(operation), variant: 'primary' as const })),
-      ...moves.map((move, index) => ({ label: move.label, icon: 'arrow-right', blocked: () => blockedMove(move.to), run: () => void runMove(move.to),
-        variant: index === (firstAllowed < 0 ? 0 : firstAllowed) ? (/won|paid|done|complete|approve/i.test(move.to) ? 'success' as const : 'primary' as const) : 'default' as const })),
-      ...actions().map(action => ({ label: action.label, icon: 'zap', blocked: () => actionBlocked(action), run: () => runAction(action),
-        variant: !moves.length && action === actions()[0] ? 'primary' as const : 'default' as const })),
-      ...(model.slips ?? []).map(slip => ({ label: slip.label, icon: 'file-text', blocked: slipBlocked, run: () => openSlip(slip.name), variant: 'default' as const })),
-    ];
-  };
+  // The header's buttons. The moves (lifecycle operations, then State moves) make one split button: the first
+  // move this person may take on it, the others behind its chevron. Actions, slips and Ask Eva are outline
+  // buttons before it, as many as fit (OUTLINE_BUTTONS, one in a side panel); the rest, Print and the record's
+  // own items (Copy link, Duplicate, Delete...) are in More.
+  type HeaderEntry = { label: string; icon: string; allowed: boolean; blocked: () => string | null; run: () => void };
+  const moveEntries = (): HeaderEntry[] => [
+    ...(extras.get()._lifecycle_actions ?? []).map(operation => ({ label: model.lifecycle?.labels[operation] ?? humanize(operation), icon: operation === 'cancel' ? 'rotate-ccw' : 'arrow-right',
+      allowed: true, blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null, run: () => lifecycleAction(operation) })),
+    ...(extras.get()._moves ?? []).map(move => ({ label: move.label, icon: moveIcon(move.to), allowed: move.allowed, blocked: () => blockedMove(move.to), run: () => void runMove(move.to) })),
+  ];
+  const outlineEntries = (): HeaderEntry[] => [
+    ...actions().map(action => ({ label: action.label, icon: actionIcon(action), allowed: true, blocked: () => actionBlocked(action), run: () => runAction(action) })),
+    ...(model.slips ?? []).map(slip => ({ label: slip.label, icon: 'file-text', allowed: true, blocked: slipBlocked, run: () => openSlip(slip.name) })),
+  ];
+  const menuEntry = (entry: HeaderEntry): MenuItem => ({ label: entry.label, icon: entry.icon,
+    onSelect: () => { const why = untrack(entry.blocked); if (why) toast(why, { icon: 'info' }); else entry.run(); } });
   const askEvaNow = () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek());
-  /** In a side panel the header keeps two buttons; the rest join the More menu. */
-  const PANEL_BUTTONS = 2;
+  /** Outline buttons in the title row: two on the page, one in a side panel; the rest join More. */
+  const OUTLINE_BUTTONS = panel ? 1 : 2;
   // A new record's title row carries Cancel and Create where a saved record keeps its moves; the save bar below repeats them.
   const newActions = (): Child => [Button({ label: 'Cancel', onClick: () => void discardNew() }),
     canWrite ? withSaveKeys(Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check',
       disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save(), tip: withShortcut(`Create ${model.label.toLowerCase()}`, SCREEN_KEYS.save) })) : null];
   const headerActions = (): Child => {
     if (isNew) return newActions();
-    const entries = headerEntries();
-    const shown = panel ? entries.slice(0, PANEL_BUTTONS) : entries;
-    const buttons = shown.map(entry => MoveButton({ label: entry.label, icon: entry.icon, blocked: entry.blocked, variant: entry.variant, onMove: entry.run }));
+    const moves = moveEntries();
     // Ask Eva, when Eva is on for this person: a chat about this record, in a side panel.
-    const askEva = ctx.eva.get() && !panel ? Button({ label: 'Ask Eva', icon: 'sparkles', iconTint: 'violet', hideLabelOnPhone: true, onClick: askEvaNow }) : null;
+    const eva: HeaderEntry | null = ctx.eva.get() ? { label: 'Ask Eva', icon: 'sparkles', allowed: true, blocked: () => null, run: askEvaNow } : null;
+    const outline = [...outlineEntries(), ...(eva && !panel ? [eva] : [])];
+    const shown = outline.slice(0, OUTLINE_BUTTONS), rest = outline.slice(OUTLINE_BUTTONS);
+    const buttons = shown.map(entry => entry === eva ? Button({ label: 'Ask Eva', icon: 'sparkles', iconTint: 'violet', hideLabelOnPhone: true, onClick: askEvaNow })
+      : MoveButton({ label: entry.label, icon: entry.icon, blocked: entry.blocked, onMove: entry.run }));
+    const main = moves.find(move => move.allowed) ?? moves[0];
+    const split = main ? SplitButton({ main: MoveButton({ label: main.label, icon: main.icon, blocked: main.blocked, variant: 'primary', onMove: main.run }),
+      items: moves.filter(move => move !== main).map(menuEntry), menuLabel: 'Other moves' }) : null;
     // Print, when the role may print this model and the server has the print extra: the preview is the server's PDF.
     const designs = ctx.schema.schema.printing?.available ? model.prints ?? [] : [];
     const printNow = () => openPrint(ctx, model, store.id!, titleText.peek(), designs);
-    const print = designs.length && !panel ? Button({ label: 'Print', icon: 'printer', hideLabelOnPhone: true, onClick: printNow }) : null;
     const items = (): MenuItem[] => {
-      if (!panel) return moreItems();
-      const rest: MenuItem[] = entries.slice(PANEL_BUTTONS).map(entry => ({ label: entry.label, icon: entry.icon,
-        onSelect: () => { const why = untrack(entry.blocked); if (why) toast(why, { icon: 'info' }); else entry.run(); } }));
-      if (designs.length) rest.push({ label: 'Print', icon: 'printer', onSelect: printNow });
-      if (ctx.eva.peek()) rest.push({ label: 'Ask Eva', icon: 'sparkles', onSelect: askEvaNow });
-      return [...rest, ...(rest.length ? ['separator' as const] : []), { label: 'Open full page', icon: 'maximize-2', onSelect: () => expand(active.peek()) }, ...moreItems()];
+      const first: MenuItem[] = rest.map(menuEntry);
+      if (designs.length) first.push({ label: 'Print', icon: 'printer', onSelect: printNow });
+      if (panel && eva) first.push(menuEntry(eva));
+      if (panel) first.push({ label: 'Open full page', icon: 'maximize-2', onSelect: () => expand(active.peek()) });
+      return [...first, ...(first.length ? ['separator' as const] : []), ...moreItems()];
     };
-    return [...buttons, print, askEva, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items, menuLabel: 'More actions' })];
+    return [...buttons, split, MenuButton({ icon: 'ellipsis', tip: 'More actions', ariaLabel: 'More actions', items, menuLabel: 'More actions' })];
   };
 
   // ---------- header ----------
@@ -505,8 +515,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // The title is edited in place, except a new record's and a document number.
   const titleProp = isNew || !has(model.title_field) || (numbered && model.title_field === numbered.name) ? () => titleText.get() : view(model.title_field);
   const markName = () => titleText.get();
-  // A new record has no name yet: its mark is the model's icon tile, as on the list page.
-  const mark = isNew ? IconTile(look.icon, { tint: look.tint, size: 36 }) : look.person ? Avatar({ name: markName, size: 'xl' }) : RecordMark({ name: markName, size: 'lg', tint: look.tint });
+  // The mark is the model's icon tile, as on the list page (DocHeader's default); a person keeps their avatar.
+  const mark = look.person && !isNew ? Avatar({ name: markName, size: 'xl' }) : undefined;
   // The status badges: the State (show="badge", or named by Meta.status) offers the moves this person may take
   // now; a Meta.status field that is not the State is shown, never changed, here.
   const show = state?.show ?? 'badge';
@@ -528,16 +538,21 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const value = store.field('name').value.get();
     // A title that falls back to the name already shows it as the heading.
     if (value && String(value) === titleText.get()) return null;
+    // Shown once: on the page the breadcrumb ends with it (unless another number field takes that place); in a
+    // side panel the top line has it when it is the number field.
+    const numberIsName = Boolean(numbered && numbered.name === 'name');
+    if (value && (panel ? numberIsName && numbered!.name !== model.title_field : numberIsName || !(numbered && has(numbered.name)))) return null;
     return value ? html`<span class="ev-fact mono" title="Name">${String(value)}</span>`
       : naming.placeholder ? html`<span class="muted">${naming.placeholder}</span>` : null;
   }) : null;
   const header = DocHeader({
-    type: model.label, icon: look.icon, mark,
+    type: model.label, icon: look.icon, tint: look.tint, mark,
     title: titleProp,
     mono: () => Boolean(numbered && model.title_field === numbered.name && has(numbered.name) && store.field(numbered.name).value.get())
       // A title that is the record's name (no other title source) reads as a document number too.
       || Boolean(naming && store.field('name').value.get() && String(store.field('name').value.get()) === titleText.get()),
-    meta: [stateBadge, statusBadge, nameFact, ...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
+    status: [stateBadge, statusBadge].filter(Boolean) as Child[],
+    meta: [nameFact, ...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
       const current = extras.get()._lifecycle;
       return current ? Chip({ label: `${model.lifecycle!.labels[current.state]} · Revision ${current.revision}`, tone: current.state === 'confirmed' ? 'green' : 'slate' }) : null;
     }) : null].filter(Boolean) as Child[],
@@ -884,6 +899,30 @@ function withSaveKeys(button: HTMLButtonElement): HTMLButtonElement {
 }
 
 // ---------- action dialog ----------
+
+/** A move's icon, read from where it goes: Resume plays, On hold pauses, Complete checks, Cancel crosses. */
+function moveIcon(to: string): string {
+  if (/cancel|void|lost|reject|declin|unqualif/i.test(to)) return 'circle-x';
+  if (/hold|pause|suspend|block/i.test(to)) return 'pause';
+  if (/won|paid|done|complete|approve|accept|close|finish|deliver/i.test(to)) return 'circle-check';
+  if (/issue|send|submit|sent/i.test(to)) return 'send';
+  if (/active|progress|resume|start|open|running/i.test(to)) return 'play';
+  return 'arrow-right';
+}
+
+/** An action's icon: the one it declares, else one read from its name ("Log hours" a clock), else a bolt. */
+function actionIcon(action: ActionMeta): string {
+  const declared = (action as ActionMeta & { icon?: string }).icon;
+  if (declared) return declared;
+  const words = `${action.name} ${action.label}`;
+  if (/hour|time|log/i.test(words)) return 'clock';
+  if (/mail|remind/i.test(words)) return 'mail';
+  if (/send|share/i.test(words)) return 'send';
+  if (/pay|receipt/i.test(words)) return 'wallet';
+  if (/note|comment/i.test(words)) return 'message-square';
+  if (/assign|owner/i.test(words)) return 'user';
+  return 'zap';
+}
 
 const ARGUMENT_TYPES: Record<string, string> = { str: 'text', int: 'integer', bool: 'boolean', float: 'decimal' };
 
