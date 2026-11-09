@@ -100,7 +100,9 @@ describe('transaction document (recorded fixtures)', () => {
     // Locked: only the field declared editable_when_locked stays editable.
     const editable = [...host.querySelectorAll('.ev-cmp-card .ff')].filter(item => item.querySelector('button.fval')).map(item => item.getAttribute('data-field'));
     expect(editable).toEqual(['remarks']);
-    expect(text(host.querySelector('.ff[data-field="customer"] label'))).toContain('locked');
+    // The banner says it is locked once; the fields carry no lock of their own.
+    expect(host.querySelector('.ff[data-field="customer"] .ff-hint')).toBeNull();
+    expect(host.querySelectorAll('.ev-cmp-card .ff-hint:not(.calc):not(.init)')).toHaveLength(0);
     expect(text(host.querySelector('.ev-more-row[data-section="Postings"] .ev-more-sum'))).toBe('Ledger entries: 3');
     openRow(host, 'Postings');
     await until(() => expect([...host.querySelectorAll('.doc-main .ev-more-row[data-section="Postings"] .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '0', 'Balanced']));

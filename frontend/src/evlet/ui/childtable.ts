@@ -439,6 +439,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // read only, as the cells do. A view over the field, so writes and recordOf() still reach it.
   const rowField = (field: Field): FieldLike => Object.create(field, {
     editable: { value: derive(() => !readOnly.get() && field.editable.get()) },
+    // Locked lines say so once, under the table, not beside each field of the row editor.
+    recordLocked: { value: locked },
     rules: { value: derive(() => { const rules = field.rules.get(); return locked.get() && !rules.locked ? { ...rules, locked: true } : rules; }) },
     set: { value: (value: unknown) => field.set(value) },
     touched: { get: () => field.touched, set: (value: boolean) => { field.touched = value; } },

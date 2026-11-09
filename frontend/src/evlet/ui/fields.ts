@@ -40,6 +40,9 @@ export interface FieldLike {
   readonly result?: Readable<Outcome>;
   readonly calculated: boolean;
   readonly editable: Readable<boolean>;
+  /** The whole record can't change now (its state locks it, or the role can't write it). The banner or header says
+   * so once, so the field shows no lock of its own; a field read only while the record is editable still does. */
+  readonly recordLocked?: Readable<boolean>;
   set(value: unknown): void;
 }
 
@@ -304,7 +307,7 @@ export function FieldHints(field: FieldLike): Node[] {
       return hint;
     }));
   }
-  hints.push(when(() => field.rules.get().locked || meta.read_only, () => {
+  hints.push(when(() => (field.rules.get().locked || meta.read_only) && !field.recordLocked?.get(), () => {
     const hint = html`<span class="ff-hint" tabindex="-1">${Icon('lock', { size: 'xs' })}${meta.read_only ? 'read only' : 'locked'}</span>` as HTMLElement;
     tooltip(hint, meta.locked_when && !meta.read_only ? `Locked when ${phrase(meta.locked_when, label)}` : meta.read_only ? 'This value can’t be changed here' : 'Locked');
     return hint;

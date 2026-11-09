@@ -67,8 +67,9 @@ describe('a read-only child table, expanded', () => {
     const host = await openLines({ detail: invoice.invoice_issued_detail });
     expect(text(grid(host).querySelector('.g-lock'))).toContain('Locked.');
     expectReadOnly(host);
-    // The row editor says why, as the form does.
-    expect(text(openRow(host).querySelector('.fld[data-field="qty"] label'))).toContain('locked');
+    // The lock shows once, under the table, not beside each field of the row editor.
+    expect(text(openRow(host).querySelector('.fld[data-field="qty"] label'))).not.toContain('locked');
+    expect(text(grid(host).querySelector('.g-lock'))).toContain('Locked.');
   });
 
   it('stays read only for a record the server reports locked, as a cancelled one is', async () => {
@@ -94,6 +95,8 @@ describe('a read-only child table, expanded', () => {
     expect(cellOf(host, 'qty').getAttribute('aria-readonly')).toBe('true');
     const panel = openRow(host);
     expect(controls(panel, 'qty').every(control => control.disabled)).toBe(true);
+    // Read only while the lines are editable: this field keeps its own lock.
+    expect(text(panel.querySelector('.fld[data-field="qty"] label'))).toContain('read only');
     expect(controls(panel, 'rate').every(control => !control.disabled)).toBe(true);
     expect(buttons(panel)).toEqual(expect.arrayContaining(['Delete line', 'Insert below']));
   });

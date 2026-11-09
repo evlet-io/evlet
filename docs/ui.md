@@ -405,6 +405,9 @@ The record page draws it on a record's full page and in a list's side panel (the
   them in one row. A narrow one (a side panel, a phone) puts them two to a row, three when there are three; an odd
   last card takes the whole row, and long values wrap rather than being cut short. A model without `Meta.cards`
   keeps the summary strip. `Meta.panel_summary = False` hides them in a side panel.
+- **Locks show once.** A record its state locks, or one the role can't change, says so in its banner or with the
+  lock in its header; its fields carry no lock of their own. A field that is read only while the record can still
+  change keeps its "read only" or "locked" hint. The row editor of locked lines does the same.
 - **One white card** holds the rest of the record: the state banner strip at its top, the Main area and more
   information, separated by thin lines.
 - **The Main area** has the Main fields in a grid of four columns (three, two, then one as the record's own width narrows), edited in place, then its Tables: each with its title, a muted row count, Add on the right and two small buttons, Focus (the table takes the content area; Esc leaves it) and Columns, and a light dashed box

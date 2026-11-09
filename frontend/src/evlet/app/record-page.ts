@@ -54,9 +54,11 @@ function gate(field: Field, locked: Readable<boolean>, canWrite: boolean): Field
   const stateLocked = derive(() => locked.get() && !(field.meta as any).editable_when_locked);
   const rules = derive<Rules>(() => { const rules = field.rules.get(); return stateLocked.get() && !rules.locked ? { ...rules, locked: true } : rules; });
   const editable = derive(() => canWrite && field.editable.get() && !stateLocked.get());
+  // Locked by the record (its state, or no write access): the banner or header says so once, not each field.
+  const recordLocked = derive(() => !canWrite || stateLocked.get());
   // A view over the field (its prototype), so recordOf() still finds the record; writes go to the field itself.
   return Object.create(field, {
-    meta: { value: meta }, rules: { value: rules }, editable: { value: editable },
+    meta: { value: meta }, rules: { value: rules }, editable: { value: editable }, recordLocked: { value: recordLocked },
     set: { value: (value: unknown) => field.set(value) },
     touched: { get: () => field.touched, set: (value: boolean) => { field.touched = value; } },
   }) as FieldLike;
