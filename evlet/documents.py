@@ -48,6 +48,9 @@ class Draft:
         object.__setattr__(self, '_sources', {})
         object.__setattr__(self, 'context', context)
         object.__setattr__(self, 'parent', parent)
+        # The model class, for hooks such as derive() that run on a draft (a field named `model` wins).
+        if not hasattr(definition, 'model') and not {'model'} & {*definition.__declared_fields__, *definition.__tables__, *definition.__sources__}:
+            object.__setattr__(self, 'model', definition)
         if 'source' not in definition.__declared_fields__:
             # A flat record may name a field `source` (an effect target's Reference); the field wins.
             object.__setattr__(self, 'source', source)
@@ -1749,6 +1752,47 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if keys: result['_row_ids'] = keys
     if outcome is not None: result['_outcome'] = outcome
     return result
+
+
+def owner_of(tx, model, record_id):
+    """The id of the document a saved Table row belongs to, through every level of rows; None when it is gone."""
+    owners = {child.model: child for child in tx.registry.children}
+    while model in owners:
+        child = owners[model]
+        row = tx.connection.execute(f'SELECT {identifier(child.link)} FROM {identifier(tx.registry.name_for(model))} WHERE id = ?',
+                                    (record_id,)).fetchone()
+        if row is None or row[0] is None:
+            return None
+        model, record_id = child.parent, row[0]
+    return record_id
+
+
+def settle_saved(tx, model, record_id, children=None):
+    """Settle a saved document after a trusted Session write to it or to one of its rows (evlet/database.py), for a
+    model that declares derive(): derive, clean, calculate and validate, as on any write, then store what changed.
+
+    It runs as the engine, without roles or row scopes, like the trusted write that called it. A record with posted
+    effects keeps its stored results, as on every other write. derive() reads through a read-only session, so it
+    cannot write and start another settlement. `children` are the document's Table rows the write sends with it,
+    merged like the rows of an HTTP write."""
+    from .effects import EngineBusiness, ENGINE, SessionPolicy, has_postings
+    business = EngineBusiness(tx._business)
+    business.policy = SessionPolicy(tx._business.policy)
+    context = Context(business, tx, ENGINE)
+    current = tx.get(model, record_id)
+    if has_postings(tx.connection, business.registry, model, current):
+        if children:
+            raise ValidationError({'children': 'This record has postings. To change its rows, void or revise it.'})
+        return
+    derived_write(model, {}, children or {}, '')
+    draft = Draft(model, dict(current._values), context=context, record_id=current.id)
+    before = Draft(model, dict(current._values), context=context, record_id=current.id)
+    load_rows(context, model, draft, before, current.id, children or {}, False, '', set(), None,
+              SavedRows(context, model, current.id), LinkTargets(context))
+    settle(context, draft, complete=True, previous=before)
+    if before.stored_values() != draft.stored_values():
+        write_snapshot(tx, draft, before, reload=False)
+    persist_rows(context, model, draft, before, current.id, {})
 
 
 def record_plan(tx, resource, record_id, version):

@@ -373,6 +373,15 @@ class EnginePolicy(Policy):
         return found[record_id]
 
 
+class SessionPolicy(EnginePolicy):
+    """The engine policy for settling a document after a trusted Session write: it may also write the document's rows."""
+    def allows(self, user, model, operation):
+        return operation in ('read', 'create', 'update', 'delete')
+
+    def _scoped(self, tx, user, model, record_ids, operation, columns):
+        return super()._scoped(tx, user, model, record_ids, 'read', columns)
+
+
 class EngineBusiness:
     """The application's business with the engine policy, for the engine's own Context."""
     def __init__(self, business):

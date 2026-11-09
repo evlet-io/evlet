@@ -245,7 +245,8 @@ class Employee(Model):
         """Refuse to delete someone while people still report to them, naming who (to is None for a delete).
 
         It reads through self.context.session, read only, inside the delete's own transaction."""
-        reports = self.context.session.list(Employee, filters={'reports_to': self.id}, order_by=('full_name',), limit=6)
+        # self.model is the model class (Employee) on the draft a hook gets.
+        reports = self.context.session.list(self.model, filters={'reports_to': self.id}, order_by=('full_name',), limit=6)
         if reports:
             names = ', '.join(report.full_name for report in reports[:5]) + (' and others' if len(reports) > 5 else '')
             raise ValidationError({'_form': f'Move their reports to another manager first: {names}'})
