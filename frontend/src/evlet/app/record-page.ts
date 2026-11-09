@@ -474,8 +474,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const askEvaNow = () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek());
   /** In a side panel the header keeps two buttons; the rest join the More menu. */
   const PANEL_BUTTONS = 2;
+  // A new record's title row carries Cancel and Create where a saved record keeps its moves; the save bar below repeats them.
+  const newActions = (): Child => [Button({ label: 'Cancel', onClick: () => void discardNew() }),
+    canWrite ? withSaveKeys(Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check',
+      disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save(), tip: withShortcut(`Create ${model.label.toLowerCase()}`, SCREEN_KEYS.save) })) : null];
   const headerActions = (): Child => {
-    if (isNew) return null;
+    if (isNew) return newActions();
     const entries = headerEntries();
     const shown = panel ? entries.slice(0, PANEL_BUTTONS) : entries;
     const buttons = shown.map(entry => MoveButton({ label: entry.label, icon: entry.icon, blocked: entry.blocked, variant: entry.variant, onMove: entry.run }));
@@ -501,7 +505,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // The title is edited in place, except a new record's and a document number.
   const titleProp = isNew || !has(model.title_field) || (numbered && model.title_field === numbered.name) ? () => titleText.get() : view(model.title_field);
   const markName = () => titleText.get();
-  const mark = look.person ? Avatar({ name: markName, size: 'xl' }) : RecordMark({ name: markName, size: 'lg', tint: look.tint });
+  // A new record has no name yet: its mark is the model's icon tile, as on the list page.
+  const mark = isNew ? IconTile(look.icon, { tint: look.tint, size: 36 }) : look.person ? Avatar({ name: markName, size: 'xl' }) : RecordMark({ name: markName, size: 'lg', tint: look.tint });
   // The status badges: the State (show="badge", or named by Meta.status) offers the moves this person may take
   // now; a Meta.status field that is not the State is shown, never changed, here.
   const show = state?.show ?? 'badge';

@@ -208,6 +208,24 @@ describe('generated record view', () => {
     expect(lastToast()).toContain('Customer created');
   });
 
+  it('gives a new record the record title row: the model icon tile, Cancel and Create', async () => {
+    const created = { status: 201, etag: '"new"', body: { id: id(56), title: 'Acme Trading', rate: '0.00', credit_days: 30 } };
+    const { host, sent } = start([...adminRoutes(),
+      ['POST', /\/api\/customer$/, created],
+      ['GET', /\/api\/customer\/000000000001r$/, { ...created, status: 200 }],
+    ], '/app/customer/new?title=Acme%20Trading');
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New customer'));
+    // No name yet, so no letter mark: the model's icon on a tinted tile.
+    expect(host.querySelector('.doc-head .doc-mark .ph-icon svg')).not.toBeNull();
+    expect(host.querySelector('.doc-head .doc-mark .org-mark')).toBeNull();
+    const actions = [...host.querySelectorAll<HTMLButtonElement>('.doc-head .ph-actions button')];
+    expect(actions.map(button => text(button))).toEqual(['Cancel', 'Create customer']);
+    expect(actions[1].classList.contains('primary')).toBe(true);
+    click(actions[1]);
+    await until(() => expect(location.pathname).toBe('/app/customer/000000000001r'));
+    expect(requests(sent, 'POST', /customer$/)).toHaveLength(1);
+  });
+
   it('a naming series field says it is assigned on save, is never sent, and titles the saved record', async () => {
     const created = screen.quote_create, id = created.body.id;
     const { host, sent } = start([...adminRoutes(),
