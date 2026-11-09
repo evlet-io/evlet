@@ -909,6 +909,7 @@ table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:1
 .g .s2{--edge:inset -1px 0 0 var(--border);box-shadow:var(--edge)}
 .grid.scrolled .g .s2{--edge:inset -1px 0 0 var(--border),var(--pin-shade);box-shadow:var(--edge)}
 .g-ctl{padding:0 6px!important}
+.g-ci-n{justify-content:center;font-size:12px}
 .g-ci{display:flex;align-items:center;gap:4px}
 .g-drag{display:inline-grid;place-items:center;width:16px;height:24px;border-radius:var(--r-sm);color:var(--fg-4);cursor:grab;flex:none}
 .g-drag:hover:not(:disabled){color:var(--fg-2);background:var(--bg-muted)}

@@ -89,6 +89,9 @@ export interface ChildTableProps {
   locked?: Prop<boolean>;
   /** Why the lines are locked; read when the lock shows, so it follows the record's state. */
   lockedText?: Prop<string>;
+  /** Rows nobody edits here (a table the record fills itself): no selection, drag handles or Edit, only the row
+   * number, and no lock line unless lockedText says something. */
+  derived?: boolean;
   /** Footer values by column; defaults to the parent's sums over this table. */
   totals?: Record<string, FieldLike | Prop<Child>>;
   /** Totals under the table (net, VAT, grand total); defaults to the footer sums. */
@@ -192,7 +195,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const arranged = derive(() => arrange(allColumns, prefs.get()), { name: `${table.name} (arranged columns)` });
   const narrow = cell(narrowNow(), { name: `${table.name} (narrow)` });
   // The control column: checkbox, drag handle and the row's number with Edit (a phone leaves out the handle and the number).
-  const ctl = () => narrow.get() ? 64 : 104;
+  const derived = Boolean(props.derived);
+  const ctl = () => derived ? 44 : narrow.get() ? 64 : 104;
   const baseWidth = (column: ChildColumn) => prefs.get().widths[column.key]
     ?? (narrow.get() && arranged.get()[0]?.key === column.key ? Math.min(column.width, 120) : column.width);
   const allKeys = allColumns.map(column => column.key);
@@ -566,10 +570,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const rowActive = derive(() => active.get() ? rowSpot.get() : number() === 1 ? columns.get()[0]?.key ?? null : null);
     const tr = html`<tr role="row" data-key=${row.key} class:sel=${() => selection.get().has(row.key)} data-drag-item="line" data-drag-id=${row.key}
       aria-rowindex=${() => String(number() + 1)} aria-selected=${() => String(selection.get().has(row.key))}>
-      <td class="g-ctl stk" style="left:0" role="gridcell"><div class="g-ci">${Checkbox({ checked: () => selection.get().has(row.key), onChange: on => toggle(row.key, on), ariaLabel: () => `Select row ${number()}` })}
+      <td class="g-ctl stk" style="left:0" role="gridcell">${derived ? html`<div class="g-ci g-ci-n"><span class="num muted">${() => String(number())}</span></div>` : html`<div class="g-ci">${Checkbox({ checked: () => selection.get().has(row.key), onChange: on => toggle(row.key, on), ariaLabel: () => `Select row ${number()}` })}
         <button type="button" class="g-drag" data-drag-handle="line" aria-label=${() => `Move row ${number()}`} aria-roledescription="draggable row" disabled=${() => readOnly.get()}>${Icon('grip-vertical', { size: 'xs' })}</button>
         <button type="button" class="g-exp" aria-label=${() => `Edit row ${number()}`} title="Edit"
-          on:click=${() => openEditor(row.key)}><span class="num">${() => String(number())}</span>${Icon('pencil', { size: 'xs' })}</button></div></td>
+          on:click=${() => openEditor(row.key)}><span class="num">${() => String(number())}</span>${Icon('pencil', { size: 'xs' })}</button></div>`}</td>
       ${each(columns, column => column.key, column => cellView(row, column, () => rowEdit.get(), () => rowActive.get(), () => rowSpot.get()))}</tr>`;
     return tr;
   };
@@ -596,7 +600,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     };
     return html`<tr class="g-sec" role="row" data-key=${`s:${key}`} data-drag-item="line" data-drag-id=${`s:${key}`}>
       <td class="g-ctl stk" style="left:0" role="gridcell"><div class="g-ci">
-        ${when(() => !readOnly.get(), () => html`<button type="button" class="g-drag" data-drag-handle="line" aria-label=${() => `Move section ${item().label}`} aria-roledescription="draggable section">${Icon('grip-vertical', { size: 'xs' })}</button>`)}
+        ${when(() => !readOnly.get() && !derived, () => html`<button type="button" class="g-drag" data-drag-handle="line" aria-label=${() => `Move section ${item().label}`} aria-roledescription="draggable section">${Icon('grip-vertical', { size: 'xs' })}</button>`)}
         <button type="button" class="g-sec-tog" aria-expanded=${() => String(open())} aria-label=${() => `${open() ? 'Hide' : 'Show'} the lines of ${item().label}`}
           on:click=${() => toggleSection(key)}>${Icon('chevron-down', { size: 'xs' })}</button></div></td>
       ${each(columns, column => column.key, (column, index) => html`<td role="gridcell" class=${column().align === 'right' ? 'r num' : ''} class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => index() === 0
@@ -672,7 +676,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       <table class="g" role="grid" aria-labelledby=${titleId} aria-rowcount=${() => String(rows.get().length + 1)} aria-colcount=${() => String(columns.get().length + 1)}
         aria-readonly=${() => readOnly.get() ? 'true' : null} style:width=${() => `${totalWidth.get()}px`}>
         <colgroup><col style:width=${() => `${ctl()}px`}>${each(columns, column => column.key, column => html`<col style:width=${() => `${widthOf(column())}px`}>`)}</colgroup>
-        <thead><tr role="row" aria-rowindex="1"><th class="g-ctl stk" style="left:0" scope="col">${Checkbox({ checked: () => rows.get().length > 0 && selectedRows().length === rows.get().length,
+        <thead><tr role="row" aria-rowindex="1"><th class="g-ctl stk" style="left:0" scope="col">${derived ? html`<span class="sr-only">Row</span>` : Checkbox({ checked: () => rows.get().length > 0 && selectedRows().length === rows.get().length,
           mixed: () => selectedRows().length > 0 && selectedRows().length < rows.get().length, ariaLabel: 'Select all rows',
           onChange: on => selection.set(on ? new Set(rows.peek().map(row => row.key)) : new Set()) })}</th>${each(columns, column => column.key, header)}</tr></thead>
         <tbody data-drop-zone="line" data-zone="lines">
@@ -687,7 +691,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
             ? valueText(sums[column().key]) : index() === 0 ? `Total · ${rows.get().length} ${rows.get().length === 1 ? 'line' : 'lines'}` : ''}</td>`)}</tr></tfoot>`)}
       </table>
     </div>
-    <div class="g-under">${when(locked, () => html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
+    <div class="g-under">${when(locked, () => derived && !read(props.lockedText ?? '') ? null : html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
       () => html`${Button({ icon: 'plus', label: 'Add row', size: 'small', className: 'g-add', disabled: () => !record.ready.get(), onClick: add })}${sectioned
         ? html`<span class="g-add-sec">or <button type="button" class="link-q" disabled=${() => !record.ready.get()} on:click=${addSection}>add a section</button></span>` : null}<span class="muted hide-sm">${Key('Tab')} next cell · ${Key('Enter')} cell below · ${Key('Esc')} cancel</span>`)}
       <span class="grow"></span>${summary.length ? html`<div class="g-sum">${summary.map(item => html`<div class:gt=${Boolean(item.grand)}><span>${item.label}</span><b class="num">${item.value}</b></div>`)}</div>` : null}</div>

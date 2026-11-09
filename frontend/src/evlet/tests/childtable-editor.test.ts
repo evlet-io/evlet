@@ -272,3 +272,16 @@ describe('section rows', () => {
     expect(tableChanges(store.table('lines'))).not.toHaveProperty('order');
   });
 });
+
+describe('a derived table', () => {
+  it('keeps only the row number: no selection, drag handles or Edit, and no lock line without a note', async () => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty'], derived: true, locked: true, lockedText: '' }));
+    expect(host.querySelector('.g-ctl input[type="checkbox"]')).toBeNull();
+    expect(host.querySelector('.g-drag')).toBeNull();
+    expect(host.querySelector('.g-exp')).toBeNull();
+    expect(rowsIn(host).map(row => row.querySelector('.g-ci-n')!.textContent)).toEqual(['1', '2']);
+    expect(host.querySelector('.g-lock')).toBeNull();
+    expect(host.querySelector('.g-add')).toBeNull();
+  });
+});
