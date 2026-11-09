@@ -453,7 +453,9 @@ class Business:
                                   'filterable': self.policy.rule(user, child.model).scope is None,
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child))),
                                   # Table(copy=False): Duplicate leaves these rows out of the new record (display only).
-                                  **({'copy': False} if getattr(getattr(model, '__tables__', {}).get(child.name), 'copy', True) is False else {})}
+                                  **({'copy': False} if getattr(getattr(model, '__tables__', {}).get(child.name), 'copy', True) is False else {}),
+                                  # A Table that derive() fills (Meta.derives) is read only on the form; the save sends none of its rows.
+                                  **({'read_only': True} if child.name in getattr(model, '__derives__', ()) else {})}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
             # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
             # unknown when the model was defined) stays out of the side panel too.

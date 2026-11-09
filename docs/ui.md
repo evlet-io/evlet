@@ -32,6 +32,11 @@ columns above the menu's divider stay in place while the table scrolls sideways.
 pinning keep the first column pinned. A child table's Focus view keeps the record's header and its
 save bar in view ([ui-framework.md](ui-framework.md)).
 
+A Table the record fills itself (`Meta.derives`, [model-engine.md](model-engine.md#derived-values))
+is read only on the record page, in focus view and in the row editor, whatever the state: it reads
+"Filled in by the record when it is saved." and a save never sends its rows. Its fields show read
+only too.
+
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `cards`, `relations`, `measures`, `open_in`, `list_tabs`,
 `list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks`, `panel`, `focus` and `duplicate`. See "What the model decides" in [ui-framework.md](ui-framework.md).

@@ -764,11 +764,15 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
   // The first layout Tab this view shows: it takes the unplaced sections and, in a side panel, the side column's blocks.
   const firstTab = (): LayoutTab | undefined => layoutTabs?.find(tab => tabItems.some(item => item.id === layoutTabId(tab)));
-  const tablePanel = (child: { name: string; label: string }) => panel ? ChildRows({ table: store.table(child.name), title: child.label,
-    locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, onOpenFull: () => expand(`t-${child.name}`),
+  // A Table the record fills itself (Meta.derives) is read only here, whatever the state.
+  const derivedText = () => 'Filled in by the record when it is saved.';
+  const tableLocked = (child: { read_only?: boolean }) => () => Boolean(child.read_only) || locked.get() || !canWrite;
+  const tableText = (child: { read_only?: boolean }) => child.read_only ? derivedText : lockedText;
+  const tablePanel = (child: { name: string; label: string; read_only?: boolean }) => panel ? ChildRows({ table: store.table(child.name), title: child.label,
+    locked: tableLocked(child), lockedText: tableText(child), links: ctx.links, onOpenFull: () => expand(`t-${child.name}`),
     totals: model.fields.filter(meta => (meta.compute as any)?.$expr === 'aggregate' && (meta.compute as any).table === child.name && has(meta.name))
       .map(meta => ({ label: meta.label, value: () => displayOf(meta, store.field(meta.name).value.get(), meta.type === 'currency' ? currencyFor(store.field(meta.name), ctx.links)() : undefined) })) }) : ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
-    locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, crumb: () => titleText.get(),
+    locked: tableLocked(child), lockedText: tableText(child), links: ctx.links, crumb: () => titleText.get(),
     // Focus view keeps a compact copy of this header, and the save bar, above and below the lines.
     heading: { type: model.label, icon: look.icon, title: () => titleText.get(),
       number: numberText ?? (naming ? () => { const value = store.field('name').value.get(); return value && String(value) !== titleText.get() ? String(value) : ''; } : null),

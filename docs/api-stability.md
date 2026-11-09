@@ -85,6 +85,13 @@ production ready, but the rules below hold from 0.3 on.
   refused (`AccessError`, 403) on every other context
   ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 
+- **Derived values and closing checks.** `Meta.derives` with `derive(self)`, and
+  `before_close(self, to)` on a model: when they run, what `to` is, the read-only
+  `self.context.session` they get (`get`, `list`, `count`, `related`, `aggregate`), the
+  `DERIVED_FIELD_WRITE` refusal, and the `read_only` flag on a derived field and a derived
+  `children` entry in `/api/schema` ([model-engine.md](model-engine.md#derived-values),
+  [states-actions.md](states-actions.md#before-a-record-closes)).
+
 - **Measure trends and colours.** `trend=` and `color=` on `Count`, `CountDistinct`, `Sum`, `Min` and
   `Max` in `Meta.measures`: a trend is a Date field name or `(field, grain, points)` with grain `day`,
   `month` or `year` and 2 to 24 points, on model-level measures only, and a colour is one of the Select

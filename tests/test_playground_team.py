@@ -85,7 +85,7 @@ def test_the_employee_record_layout_lists_and_charts_the_team_each_viewer_may_re
     entry = next(item for item in manager('GET', '/api/schema')[1]['models'] if item['name'] == 'employee')
     tabs = entry['record_layout']['tabs']
     assert [tab['name'] for tab in tabs] == ['profile', 'team']
-    assert [block['kind'] for block in tabs[0]['blocks']] == ['section', 'html', 'table']
+    assert [block['kind'] for block in tabs[0]['blocks']] == ['section', 'html', 'table', 'table']
     assert [block['kind'] for block in tabs[1]['blocks']] == ['chart', 'chart', 'related', 'related']
     # Nothing brings the automatic Related tab or side block back (the record page leaves them out).
     assert 'related' not in entry['tabs'] and 'side_blocks' not in entry
@@ -103,3 +103,33 @@ def test_the_employee_record_layout_lists_and_charts_the_team_each_viewer_may_re
     # The outsider cannot read the manager's record, so neither its team list nor its chart answers.
     assert listed(outsider, reports, accounts['manager'])[0] == 403
     assert outsider('GET', chart)[0] == 403
+
+
+def test_employee_skill_levels_are_derived_and_delete_waits_for_their_reports(secured):
+    """Employee.derive builds the Skill levels table on every save; before_close refuses a delete while people
+    report to the employee, naming them."""
+    accounts = seed_team(secured, PASSWORD)
+    editor = client(secured, 'editor')
+    url = f"/api/employee/{accounts['member']}"
+    skills = {'create': [{'_key': 'a', 'skill': 'Excel', 'level': 'expert'}, {'_key': 'b', 'skill': 'SQL', 'level': 'learning'},
+                         {'_key': 'c', 'skill': 'Python', 'level': 'expert'}]}
+    status, body, _ = editor('PATCH', url, {'children': {'skills': skills}}, headers={b'if-match': editor('GET', url)[2][b'etag']})
+    assert status == 200, body
+    assert body['skill_count'] == 3
+    assert [(row['level'], row['skills']) for row in body['children']['skill_levels']] == [('learning', 1), ('expert', 2)]
+    # Nobody writes them: the field and the table are read only.
+    status, refused, _ = editor('PATCH', url, {'skill_count': 9}, headers={b'if-match': editor('GET', url)[2][b'etag']})
+    assert status == 422 and refused['fields'] == {'skill_count': 'DERIVED_FIELD_WRITE: this value is set by the record'}
+    schema = editor('GET', '/api/schema')[1]
+    employee = next(model for model in schema['models'] if model['name'] == 'employee')
+    assert {child['name']: child.get('read_only', False) for child in employee['children']} == {'skills': False, 'skill_levels': True}
+    # The manager has two direct reports, so the delete is refused and names them; nothing is deleted.
+    manager = f"/api/employee/{accounts['manager']}"
+    status, refused, _ = editor('DELETE', manager, None, headers={b'if-match': editor('GET', manager)[2][b'etag']})
+    assert status == 422 and refused['fields']['_form'].startswith('Move their reports to another manager first: ')
+    assert editor('GET', manager)[0] == 200
+    # So is the member's (Sara Nasser reports to them); someone nobody reports to can go.
+    status, refused, _ = editor('DELETE', url, None, headers={b'if-match': editor('GET', url)[2][b'etag']})
+    assert status == 422 and refused['fields'] == {'_form': 'Move their reports to another manager first: Sara Nasser'}
+    outsider = f"/api/employee/{accounts['outsider']}"
+    assert editor('DELETE', outsider, None, headers={b'if-match': editor('GET', outsider)[2][b'etag']})[0] == 204

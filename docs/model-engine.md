@@ -50,7 +50,86 @@ class Contact(Model):
 - A field validator receives the cleaned non-null value and raises `ValueError`
   on rejection. Override `Model.validate()` for cross-field rules and raise
   `ValidationError({"field": "message"})`. Both creation and updates run validation.
+  `validate()` is for checks only: it runs last, after calculations, so a value it assigns
+  skips cleaning, calculations and the save response. Values a document builds for itself go
+  in `derive()` ([Derived values](#derived-values)).
   Records remain immutable snapshots; change them through the database API.
+
+## Derived values
+
+Some stored values come from the rest of the document in ways a formula cannot express: one
+row per distinct value used in another Table, or rows built from a linked record, with a
+remainder row. A document builds them in `derive(self)` and names what it sets in
+`Meta.derives`.
+
+```python
+class Visit(Model):
+    class Meta:
+        derives = ("places", "place_count", "parts")
+
+    class Stop(Child):
+        place = Text(required=True)
+        minutes = Integer(default=0)
+
+    class PlaceTotal(Child):
+        place = Text()
+        minutes = Decimal(scale=2)
+
+    class Part(Child):
+        amount = Decimal(scale=2)
+        remainder = Boolean(default=False)
+
+    plan = Link("plan")
+    amount = Decimal(scale=2, default=0)
+    stops = Table(Stop)
+    places = Table(PlaceTotal)
+    place_count = Integer()
+    parts = Table(Part)
+
+    def derive(self):
+        totals = {}
+        for stop in self.stops:
+            totals[stop.place] = totals.get(stop.place, 0) + (stop.minutes or 0)
+        self.places = [{"place": place, "minutes": minutes} for place, minutes in sorted(totals.items())]
+        self.place_count = len(totals)
+        parts = []
+        if self.plan is not None:
+            count = self.context.session.get(Plan, self.plan).parts
+            share = (self.amount / count).quantize(D("0.01"), rounding="ROUND_DOWN")  # D is decimal.Decimal
+            parts = [{"amount": share} for _ in range(count - 1)]
+            parts.append({"amount": self.amount - share * (count - 1), "remainder": True})
+        self.parts = parts
+```
+
+* **When it runs.** On every write of the document (create, update, move, action, lifecycle
+  operation, revise copy) and every preview (`POST /api/_draft/{model}`), after the caller's
+  values are checked and fetched and before calculations. Formulas may read what it set; it
+  cannot read their results. A locked or posted record keeps its derived values on the writes
+  that keep its saved results, so `derive()` does not run there
+  ([finite-calculations.md](finite-calculations.md#server-writes)).
+* **Like caller input.** What it sets is cleaned like a value a caller sent (a string becomes
+  a Decimal, defaults fill the fields a row it builds leaves out, fetches run on those rows),
+  then calculated, validated and stored, and the save or preview response returns it. A
+  `ValidationError` it raises is reported like a field error, and the save writes nothing.
+* **What it may set.** Only the fields and Tables in `Meta.derives`, and the rows of those
+  Tables. Assigning anything else raises `AttributeError`. Rows are dictionaries of the row's
+  fields. A derived Table's row keeps the id of the saved row in the same place, so a Table
+  that comes out the same is not rewritten and its row ids stay. Its rows' own Tables are not
+  filled by `derive()`.
+* **Callers cannot write them.** Every caller, HTTP, `Context`, actions' callers, tools, MCP
+  and the connector, is refused a derived field or Table with `DERIVED_FIELD_WRITE: this value
+  is set by the record` (422), like `COMPUTED_FIELD_WRITE`. `/api/schema` marks derived fields
+  `read_only` and derived Tables `"read_only": true` in `children`, and the record page shows
+  those rows without editing and never sends them.
+* **Trusted and read only.** `derive()` is app code. `self.context` is a read-only context
+  whose `session` is the write's transaction, read only (`get`, `list`, `count`, `related` and
+  `aggregate`; no write methods), for looking up linked records. Reads through it bypass
+  permissions, as in any Python session.
+* `Meta.derives` without `derive()`, `derive()` without `Meta.derives`, a name that is not a
+  field or Table of the model, or a calculated, State, Sequence or standard field is a
+  `ValueError` when the class is defined. A Table row (`Child`) cannot declare `derive()`.
+* Adding a derived field or Table to a saved model needs its migration, like any field. Saved
+  records get the values on their next save.
 
 ### Composite and unique indexes
 

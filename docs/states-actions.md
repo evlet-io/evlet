@@ -358,6 +358,8 @@ class Transfer(Model):
   the session, never the caller.
 * Change the record being moved through `self`, not through the session. The session cannot
   change the State either, outside `tx.maintenance()` for audited repairs.
+* `derive()` and `before_close()` get the session read only, for lookups
+  ([model-engine.md](model-engine.md#derived-values), [Before a record closes](#before-a-record-closes)).
 
 ## What the caller may do now
 
@@ -395,6 +397,44 @@ Detail responses of a model with a State, or with an action that declares
   without loading its rows. Guards that read owned rows or virtual results use the rows the
   detail response already read when the caller can read every row; otherwise they load the
   saved document once per request.
+
+## Before a record closes
+
+A record often may not close while other records still depend on it: a later document must be
+cancelled first. `before_close(self, to)` is the one place for that check, instead of a check in
+each Move's run method.
+
+```python
+class Booking(Model):
+    status = State(("open", "closed", "cancelled"), default="open",
+                   moves=(Move("open", "closed", "Close"), Move("open", "cancelled", "Cancel")),
+                   locked=("closed", "cancelled"), final=("cancelled",))
+
+    def before_close(self, to):
+        later = self.context.session.list(Booking, filters={"follows": self.id, "status__in": ["open"]})
+        if later:
+            raise ValidationError({"_form": "Cancel the later documents first: " + ", ".join(item.name for item in later)})
+```
+
+* **When it runs.** Before a move into a `final` state (`to` is that state), before a void or a
+  revise that voids (`to` is `"void"`), before a lifecycle cancel of a confirmable document
+  (`to` is `"cancelled"`), and before a delete (`to` is `None`). It runs after the checks that
+  decide whether the change may happen at all (permissions, row scope, the role of the move, its
+  guard, the locked and posted rules of delete) and before the Move's `run` method or anything
+  else is written. A move into a state that is not final does not call it.
+* **Refusing.** Raise `ValidationError` (a plain `ValueError` becomes a `_form` error). The
+  change is refused with 422 and nothing is written: not the State, a Sequence number, a Journal
+  entry or a row.
+* **Every surface.** HTTP routes, `Context.move()`, `delete()`, `void()` and `revise()`, actions
+  that move or delete other records, tools, MCP and the connector all reach it, since they all go
+  through the same document operations. Writes through a Python `Session` (trusted code) do not.
+* **Read only.** `self` is the saved record and its rows, read only. `self.context` is a
+  read-only context whose `session` is the transaction, read only (`get`, `list`, `count`,
+  `related`, `aggregate`). Reads through it bypass permissions, as in any Python session, so
+  name only what the caller may know in the message.
+* A `before_close` that does not take `self` and `to` is a `ValueError` when the class is
+  defined; a Table row cannot declare it. Record details do not run it: a move or Delete it would
+  refuse still shows, and the refusal comes when it is tried.
 
 ## Void and revise
 

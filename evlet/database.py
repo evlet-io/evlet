@@ -268,6 +268,43 @@ def _insert(connection, table, names, values, title_position=None):
     raise ConflictError('Could not find a free record id')
 
 
+class ReadSession:
+    """The transaction session, read only: what derive() and before_close() get as self.context.session.
+
+    It reads inside the write's transaction, so it sees that transaction's uncommitted rows, with no
+    permissions applied (trusted code). It has no write methods and no connection."""
+    __slots__ = ('_session',)
+
+    def __init__(self, session):
+        object.__setattr__(self, '_session', session)
+
+    def __setattr__(self, name, value):
+        raise AttributeError('The session is read only here')
+
+    @property
+    def registry(self):
+        return self._session.registry
+
+    @property
+    def timezone(self):
+        return self._session.timezone
+
+    def get(self, model, record_id):
+        return self._session.get(model, record_id)
+
+    def list(self, model, *, limit=50, offset=0, filters=None, order_by=None, search=""):
+        return self._session.list(model, limit=limit, offset=offset, filters=filters, order_by=order_by, search=search)
+
+    def count(self, model, *, filters=None, search=""):
+        return self._session.count(model, filters=filters, search=search)
+
+    def related(self, record, field_name):
+        return self._session.related(record, field_name)
+
+    def aggregate(self, model, *, measures, group_by=(), filters=None, limit=None, after=None):
+        return self._session.aggregate(model, measures=measures, group_by=group_by, filters=filters, limit=limit, after=after)
+
+
 class Session:
     """Available inside Database.transaction(); do not retain it afterwards."""
 

@@ -53,7 +53,9 @@ export interface ChildSchema { name: string; model: string; label: string; link:
   /** Whether list filters may match the parent on these rows. */
   filterable?: boolean
   /** Table(copy=False): Duplicate leaves these rows out of the new record. Absent means they are copied. */
-  copy?: boolean }
+  copy?: boolean
+  /** The record fills these rows itself on every save (Meta.derives): read only, and never sent. */
+  read_only?: boolean }
 export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>; dialog?: boolean }
 
 /** Phase 4 state metadata (field, states, moves with labels and roles, locked, final). Optional until the backend sends it. */
