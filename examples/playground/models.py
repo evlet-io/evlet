@@ -179,6 +179,12 @@ class Skill(Child):
     level = Select(['learning', 'practised', 'expert'], required=True, default='practised')
 
 
+class SkillLevel(Child):
+    """One row per level used in an employee's skills, built by Employee.derive on every save."""
+    level = Select(['learning', 'practised', 'expert'])
+    skills = Integer(default=0)
+
+
 DEPARTMENTS = ['sales', 'finance', 'operations', 'people']
 
 
@@ -194,9 +200,10 @@ class Employee(Model):
         # turns the automatic Related tab and side block off for employees.
         layout = (
             Tab('Profile', (
-                Section('Employee', ('full_name', 'email', 'department', 'reports_to'), collapsible=False),
+                Section('Employee', ('full_name', 'email', 'department', 'reports_to', 'skill_count'), collapsible=False),
                 Html('<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is on the Team tab.</p>'),
                 'skills',
+                'skill_levels',
             )),
             Tab('Team', (
                 Chart('stat', y='people', model='employee', link='reports_to', label='Direct reports'),
@@ -210,6 +217,9 @@ class Employee(Model):
         default_tab = 'profile'
         # People counted by the charts above; the list shows the count too.
         measures = {'people': Count()}
+        # derive() below sets these on every save and preview; nobody writes them, and the Skill levels
+        # table is read only on the form (docs/model-engine.md#derived-values).
+        derives = ('skill_count', 'skill_levels')
 
     # Moving someone changes every team above them, so each save keeps who changed reports_to and when.
     track_changes = True
@@ -220,6 +230,25 @@ class Employee(Model):
     department = Select(DEPARTMENTS)
     reports_to = Link('employee', index=True, label='Reports to')
     skills = Table(Skill)
+    skill_count = Integer(label='Skills')
+    skill_levels = Table(SkillLevel, label='Skill levels')
+
+    def derive(self):
+        """How many skills, and one row per level they use: values a formula cannot build."""
+        counts = {}
+        for skill in self.skills:
+            counts[skill.level] = counts.get(skill.level, 0) + 1
+        self.skill_count = len(self.skills)
+        self.skill_levels = [{'level': level, 'skills': counts[level]} for level in ('learning', 'practised', 'expert') if level in counts]
+
+    def before_close(self, to):
+        """Refuse to delete someone while people still report to them, naming who (to is None for a delete).
+
+        It reads through self.context.session, read only, inside the delete's own transaction."""
+        reports = self.context.session.list(Employee, filters={'reports_to': self.id}, order_by=('full_name',), limit=6)
+        if reports:
+            names = ', '.join(report.full_name for report in reports[:5]) + (' and others' if len(reports) > 5 else '')
+            raise ValidationError({'_form': f'Move their reports to another manager first: {names}'})
 
     @action('Recognise', inputs={'points': Integer(required=True, minimum=1, maximum=50),
                                  'reason': Text(required=True, max_length=120)})

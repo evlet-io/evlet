@@ -8,6 +8,25 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Derived values: `derive()` and `Meta.derives`.** A document builds stored values formulas
+  cannot express in `derive(self)`, such as one row per distinct value of another Table or rows
+  built from a linked record. `Meta.derives` may also name `"table.field"`: a field derive() sets on
+  each row of a Table people edit, such as a line's net or converted amount, while the rows stay
+  the caller's. It runs on every write and preview, before calculations, and what
+  it sets is cleaned, calculated, validated and returned like caller input. The fields and Tables
+  named in `Meta.derives` are refused to callers (`DERIVED_FIELD_WRITE`, 422) and marked
+  `read_only` in `/api/schema`; the record page shows a derived Table without editing. It reads
+  linked records through a read-only `self.context.session`. `validate()` stays for checks only:
+  apps that assigned values there should move them to `derive()`. The Playground's Employee
+  derives its Skill levels (migration `0017_employee_skill_levels`)
+  ([docs/model-engine.md](docs/model-engine.md#derived-values)).
+
+- **Closing checks: `before_close(self, to)`.** One read-only hook that runs before a move into a
+  final state, a void, a lifecycle cancel and a delete, on every surface, and refuses with a
+  `ValidationError` before anything is written. Use it for "cancel the later documents first"
+  checks instead of repeating them in each Move's run method. The Playground's Employee refuses a
+  delete while people report to them ([docs/states-actions.md](docs/states-actions.md#before-a-record-closes)).
+
 - **Compact record page: `Meta.cards`, `Main` and section descriptions.** `Meta.cards` names zero
   to five derived values for cards at the top of a record: fields with `compute=`, `fetch=` or
   `query=` (stored or not) and per-record measures. `Main(fields, *tables)` as the first block of

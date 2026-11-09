@@ -73,6 +73,75 @@ def checked_body(body, allowed, message, *, exact=False, nonempty=False, field='
     return body
 
 
+def closes(model):
+    """Whether a model declares before_close(self, to)."""
+    import inspect
+    return inspect.isfunction(getattr(model, 'before_close', None))
+
+
+def declared_hooks(cls, name, meta, fields, tables, row):
+    """Check derive() with Meta.derives and before_close(self, to); returns the names derive() writes.
+
+    derive(self) builds stored values that formulas cannot express. It runs on every write and preview
+    of the document, before calculations, and may assign only the fields, Tables and "table.field" row
+    fields Meta.derives names;
+    callers cannot write those (docs/model-engine.md#derived-values)."""
+    import inspect
+    derive = getattr(cls, 'derive', None)
+    derives = getattr(meta, 'derives', ()) if meta is not None else ()
+    if isinstance(derives, str) or not isinstance(derives, (tuple, list)):
+        raise ValueError(f'{name}: Meta.derives is a tuple of field and Table names')
+    derives = tuple(derives)
+    if not inspect.isfunction(derive):
+        if derives:
+            raise ValueError(f'{name}: Meta.derives needs a derive(self) method that sets them')
+        derive = None
+    elif not derives:
+        raise ValueError(f'{name}.derive: name the fields and Tables it sets in Meta.derives')
+    if derive is not None and len(inspect.signature(derive).parameters) != 1:
+        raise ValueError(f'{name}.derive takes only self')
+    if derive is not None and row:
+        raise ValueError(f'{name}: derive() belongs to the document; a Table row cannot declare it')
+    if len(set(derives)) != len(derives):
+        raise ValueError(f'{name}: Meta.derives names each field or Table once')
+    from .calc import is_finite
+
+    def source(owner, key, field):
+        if not field.stored or field.compute is not None or field.query is not None or is_finite(field) or \
+                isinstance(field, State) or field.kind == 'sequence' or standard(field) or getattr(field, 'engine_revises', False):
+            raise ValueError(f'{owner}.{key}: derive() sets stored source fields; calculated, State, Sequence and '
+                             'standard fields have their own writers')
+    for key in derives:
+        if not isinstance(key, str):
+            raise ValueError(f'{name}: Meta.derives is a tuple of field and Table names')
+        if key.count('.') == 1:
+            # "table.field": a field on every row of a Table that callers edit.
+            table_name, row_field = key.split('.')
+            table = tables.get(table_name)
+            if table is None or not isinstance(table.child, type):
+                raise ValueError(f'{name}: Meta.derives names {key!r}, but {table_name!r} is not a Table of the model')
+            if table_name in derives:
+                raise ValueError(f'{name}: Meta.derives names the Table {table_name!r}, so it sets its rows whole; '
+                                 f'leave out {key!r}')
+            field = table.child.__app_fields__.get(row_field)
+            if field is None:
+                raise ValueError(f'{name}: Meta.derives names {key!r}, which is not a field of {table.child.__name__}')
+            source(table.child.__name__, row_field, field)
+            continue
+        field = fields.get(key)
+        if key in tables:
+            continue
+        if field is None:
+            raise ValueError(f'{name}: Meta.derives names {key!r}, which is not a field or Table of the model')
+        source(name, key, field)
+    close = getattr(cls, 'before_close', None)
+    if inspect.isfunction(close) and len(inspect.signature(close).parameters) != 2:
+        raise ValueError(f'{name}.before_close takes self and to')
+    if inspect.isfunction(close) and row:
+        raise ValueError(f'{name}: before_close() belongs to the document; a Table row cannot declare it')
+    return derives
+
+
 class ModelType(type):
     def __new__(mcls, name, bases, namespace):
         fields = {}
@@ -167,6 +236,7 @@ class ModelType(type):
         if revisable:
             fields['revises'].target = cls
             unique_and_required(name, fields, tables)
+        cls.__derives__ = declared_hooks(cls, name, meta, fields, tables, is_row_table(namespace, bases, fields))
         from .lifecycle import configure_model
         configure_model(cls)
         # Meta.journal = Journal(...) makes a document, so every write goes through the journaled pipeline.
@@ -176,7 +246,7 @@ class ModelType(type):
             journaled = isinstance(meta.journal, Journal)
         if ledger:
             pass  # Trusted code writes ledger rows through the session; nothing is declarative.
-        elif getattr(cls, "confirmable", False) or getattr(cls, "track_changes", False) or journaled or states or sources or tables or 'permissions' in namespace or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        elif getattr(cls, "confirmable", False) or getattr(cls, "track_changes", False) or journaled or states or sources or tables or 'permissions' in namespace or cls.__derives__ or closes(cls) or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}
@@ -327,6 +397,8 @@ class Registry:
                 'evlet_position': Integer(required=True, default=0, hidden=True, read_only=True),
                 '__internal_fields__': (table.owner_field, 'evlet_position'),
             })
+            # Row fields the document's derive() sets ("table.field" in Meta.derives) are refused to callers.
+            child.__derives__ = tuple(key.split('.')[1] for key in getattr(model, '__derives__', ()) if key.startswith(name + '.'))
             expanded.append(child)
             self.children.append(ChildTable(model, name, child, table.owner_field, table.label or name.replace('_', ' ').title()))
             return child

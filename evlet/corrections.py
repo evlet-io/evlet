@@ -179,6 +179,8 @@ def void(context, model, record_id, reason):
     """Void a saved record; returns its permission-filtered detail with every readable row."""
     business, tx, user = context._business, context._tx, context.user
     record, reason = check(context, model, record_id, 'void', reason)
+    from .documents import check_close
+    check_close(context, model, record.id, VOID)
     void_record(context, model, record, reason)
     return business.detail(tx, user, tx.get(model, record.id), row_limit=None)
 
@@ -190,6 +192,8 @@ def revise(context, model, record_id, reason):
     business, tx, user = context._business, context._tx, context.user
     record, reason = check(context, model, record_id, 'revise', reason)
     if record._values.get(model.__state__) != VOID:
+        from .documents import check_close
+        check_close(context, model, record.id, VOID)
         void_record(context, model, record, reason)
     copy = copy_draft(context, model, record)
     prepare_copy(context, model, record, copy)

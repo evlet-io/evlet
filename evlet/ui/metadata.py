@@ -28,7 +28,7 @@ META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'ledger', 'append_only', 'timestamps', 'indexes',
-                          'focus', 'cards', 'duplicate'))
+                          'focus', 'cards', 'duplicate', 'derives'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')

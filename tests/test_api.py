@@ -29,8 +29,9 @@ def request(app, method, path, data=None, *, body=None, content_type=b"applicati
 def test_complete_customer_invoice_payment_api(application):
     assert request(application, "GET", "/health")[:2] == (200, {"status": "ok"})
     status, schema, _ = request(application, "GET", "/api/schema")
-    # Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item with its two tables, and Employee with its Skills.
-    assert status == 200 and len(schema["models"]) == 11
+    # Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item with its two tables, and Employee with its
+    # Skills and Skill levels.
+    assert status == 200 and len(schema["models"]) == 12
     status, customer, headers = request(application, "POST", "/api/customer", {"customer_name": "Studio"})
     assert status == 201
     assert headers[b"location"] == f'/api/customer/{customer["id"]}'.encode()

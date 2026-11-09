@@ -197,6 +197,25 @@ describe('editing', () => {
 });
 
 describe('saving', () => {
+  it('never sends a read-only Table, one the record fills itself (Meta.derives)', async () => {
+    const derived = structuredClone(schema);
+    const order = derived.models.find(model => model.name === 'order')!;
+    order.children = order.children!.map(child => child.name === 'lines' ? { ...child, read_only: true } : child);
+    const stub = server([
+      ['GET', /\/api\/order\/0000000000001$/, 'detail'],
+      ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, 'lines_page'],
+      ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
+      ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
+    ]);
+    const store = new RecordStore({ api: createClient({ fetch: stub.fetch }), schema: derived, model: 'order', today: () => '2026-11-01' });
+    stores.push(store);
+    await store.open(id(1));
+    await store.idle();
+    store.field('title').set('Renamed');
+    line(store, 2).field('qty').set('3');
+    expect(buildChanges(store.root)).toEqual({ title: 'Renamed' });
+  });
+
   it('builds a change set, saves with If-Match, and the response replaces the draft', async () => {
     const { store, sent } = backend();
     await store.open(id(1));

@@ -206,6 +206,22 @@ migrations.append(Migration('0016_employee_profile',
 ))
 
 
+class EmployeeSkillLevel(Model):
+    """Frozen creation schema of an employee's Skill levels table, which Employee.derive fills."""
+    storage_name = 'employee_skill_levels'
+    evlet_owner = Link(Employee, required=True, index=True)
+    evlet_position = Integer(required=True, default=0)
+    level = Select(['learning', 'practised', 'expert'])
+    skills = Integer(default=0)
+
+
+# Skill counts that Employee.derive sets on every save; saved employees get them when next saved.
+migrations.append(Migration('0017_employee_skill_levels',
+    AddField('employee', 'skill_count', Integer()),
+    CreateModel(EmployeeSkillLevel),
+))
+
+
 def legacy_registry():
     """Frozen Milestone 1 definitions used only to validate a legacy baseline."""
     class Customer(Model):

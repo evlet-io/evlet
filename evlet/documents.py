@@ -60,6 +60,8 @@ class Draft:
         # Field rule states from the last settlement, and source values as the caller left them (lock checks).
         object.__setattr__(self, '_rules', {})
         object.__setattr__(self, '_caller', {})
+        # While derive() runs: the names it may assign on this draft (None is no limit).
+        object.__setattr__(self, '_derives', None)
 
     def __getattr__(self, name):
         if name in self._definition.__declared_fields__:
@@ -76,6 +78,9 @@ class Draft:
             raise AttributeError('Evaluation drafts are read only')
         if name == 'id':
             raise ValidationError({'id': ASSIGNED_ID})
+        if self._derives is not None and name not in self._derives:
+            raise AttributeError(f'derive() sets only what Meta.derives names, and the rows of those Tables; '
+                                 f'{self._definition.__name__}.{name} is not one of them')
         if name in self._definition.__declared_fields__:
             if is_finite(self._definition.__declared_fields__[name]):
                 raise ValidationError({name: 'COMPUTED_FIELD_WRITE: this value is calculated'})
@@ -156,7 +161,8 @@ class Context:
         self._active = [] if active is None else active
         self._recalculate = None  # (model, record_id) explicitly allowed to recalculate under the active plan.
         self._person = None  # (model, record_id) of the write a person sent over HTTP; Controls rules apply to it.
-        # Set only on the private copy a Move run method or an @action handler gets while it runs (handler_context).
+        # Set only on the private copy a Move run method or an @action handler gets while it runs (handler_context),
+        # or 'read' on the read-only copy derive() and before_close() get (hook_context).
         self._session_open = False
 
     @property
@@ -167,7 +173,13 @@ class Context:
         runs. Writes through it bypass row and field permissions and join the move or action's
         transaction, so a failure anywhere rolls back the State, its Sequence number and every row written.
         Every other context refuses it: business.context(), services, reports, jobs, and everything Eva,
-        assistants, tools, MCP and the connector reach."""
+        assistants, tools, MCP and the connector reach.
+
+        derive() and before_close() get it read only (evlet.database.ReadSession): get, list, count,
+        related and aggregate inside the write's transaction, and no writes."""
+        if self._session_open == 'read':
+            from .database import ReadSession
+            return ReadSession(self._tx)
         if not self._session_open:
             raise AccessError(403, 'The transaction session is available only to a Move run method or an '
                                    '@action handler, as self.context.session while it runs')
@@ -355,6 +367,7 @@ class Context:
         lifecycle_delete(self, model, record_id)
         from .states import check_delete
         check_delete(self, model, record)
+        check_close(self, model, record_id, None)
         before, _ = load_draft(self, model, record_id, {}, preview=True)
         child_changes = {}
         subtree = {}
@@ -455,6 +468,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     state_write(model, scalars, current)
     sequence_write(model, scalars, current, business.policy.fields(user, model))
     computed_write(business, model, scalars, '')
+    derived_write(model, scalars, collections, '')
     drop_echoes(model, scalars, current._values if current else None)
     business.policy.check_values(tx, user, model, scalars)
     # A new record takes the defaults Controls set on this instance for fields the caller left out.
@@ -487,6 +501,17 @@ def computed_write(business, model, values, prefix):
     written = [name for name in values if name in model.__declared_fields__ and is_finite(model.__declared_fields__[name])]
     if written:
         raise ValidationError({prefix + name: 'COMPUTED_FIELD_WRITE: this value is calculated' for name in written})
+
+
+DERIVED = 'DERIVED_FIELD_WRITE: this value is set by the record'
+
+
+def derived_write(model, scalars, collections, prefix):
+    """Fields, Tables and row fields that derive() sets (Meta.derives) have one writer: callers cannot send them."""
+    derives = getattr(model, '__derives__', ())
+    written = [name for name in (*scalars, *collections) if name in derives]
+    if written:
+        raise ValidationError({prefix + name: DERIVED for name in written})
 
 
 def row_bounds(business, child):
@@ -782,6 +807,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             keys_seen.add(temporary) if temporary is not None and fresh else None
             value, nested = business.split_body(value)
             computed_write(business, child.model, value, prefix + child.name + '.')
+            derived_write(child.model, value, nested, prefix + child.name + '.')
             original = originals.get(row_id) if row_id is not None else None
             drop_echoes(child.model, value, getattr(original, '_values', None))
             business.policy.check_values(tx, user, child.model, value, targets=targets)
@@ -975,6 +1001,9 @@ def settle(context, draft, *, complete, previous=None, kept=False):
         object.__setattr__(item, '_caller', dict(item._values))
         if not kept:
             apply_fetches(context, item, prefix, prior(item), errors, targets)
+    # derive() sets its values before calculations; a locked or posted record keeps them, like its results.
+    if getattr(draft._definition, '__derives__', ()) and draft.parent is None and not kept:
+        all_drafts = derive(context, draft, internal, errors, targets)
     plan = registry.plan_for(draft._definition)
     if plan is not None:
         if kept:
@@ -991,6 +1020,108 @@ def settle(context, draft, *, complete, previous=None, kept=False):
     return errors, states
 
 
+def derive(context, draft, internal, errors, targets):
+    """Run the document's derive() and treat what it set like caller input: cleaned, with defaults and
+    fetches on the rows it built. Returns the document's drafts again, since it may replace rows.
+
+    Rows it builds for a Table take the ids of the saved rows they replace, in order, so a derived
+    Table that comes out the same is not rewritten. A ValidationError it raises is reported like a
+    field error."""
+    model = draft._definition
+    names = model.__derives__
+    tables = {name for name in names if name in model.__tables__}
+    fields = {name for name in names if name in model.__declared_fields__}
+    # "table.field": fields derive() sets on the rows of a Table callers edit; it keeps those rows.
+    row_fields = {}
+    for name in names:
+        if '.' in name:
+            table, field = name.split('.')
+            row_fields.setdefault(table, set()).add(field)
+    saved = {name: [row for row in draft._rows.get(name, []) if row.id] for name in tables}
+    edited = {name: list(rows) for name, rows in draft._rows.items() if name not in tables}
+    before = list(walk(draft))
+    for prefix, item in before:
+        top = prefix.split('.')[0]
+        allowed = frozenset(names) if item is draft else None if top in tables else \
+            frozenset(row_fields.get(top, ())) if item.parent is draft else frozenset()
+        object.__setattr__(item, '_derives', allowed)
+    try:
+        with trusted(), hook_context(context, draft):
+            draft.derive()
+    except ValidationError as exc:
+        errors.update(exc.errors)
+    finally:
+        for _, item in [*before, *walk(draft)]:
+            object.__setattr__(item, '_derives', None)
+    for name, rows in edited.items():
+        if [id(row) for row in draft._rows.get(name, [])] != [id(row) for row in rows]:
+            raise AttributeError(f'derive() cannot add, remove or reorder the rows of {model.__name__}.{name}, which '
+                                 'callers edit; name the Table itself in Meta.derives to build its rows')
+    all_drafts = list(walk(draft))
+    targets.prefetch(link_values([item for _, item in all_drafts if item.id is None], fetches_only=True))
+    for prefix, item in all_drafts:
+        if item is draft:
+            apply_inputs(item, prefix, internal(item) | (set(model.__declared_fields__) - fields), errors)
+            item._caller.update({name: item._values.get(name) for name in fields})
+        elif item.parent is draft and prefix.split('.')[0] in row_fields:
+            names_here = row_fields[prefix.split('.')[0]]
+            apply_inputs(item, prefix, internal(item) | (set(item._definition.__declared_fields__) - names_here), errors)
+            item._caller.update({name: item._values.get(name) for name in names_here})
+        elif prefix.split('.')[0] in tables:
+            unknown = set(item._values) - set(item._definition.__declared_fields__)
+            if unknown:
+                raise ValueError(f'derive() built a {item._definition.__name__} row with unknown fields: {", ".join(sorted(map(str, unknown)))}')
+            apply_inputs(item, prefix, internal(item), errors)
+            object.__setattr__(item, '_caller', dict(item._values))
+            apply_fetches(context, item, prefix, None, errors, targets)
+    for name in tables:
+        rows = draft._rows.get(name, [])
+        kept = {row.id for row in rows if row.id}
+        free = [row for row in saved[name] if row.id not in kept]
+        for row in rows:
+            if row.id is None and free:
+                old = free.pop(0)
+                object.__setattr__(row, 'id', old.id)
+                object.__setattr__(row, 'key', str(old.id))
+    return list(walk(draft))
+
+
+@contextmanager
+def hook_context(context, draft):
+    """Give derive() or before_close() a read context with the session open read only, for as long as it runs."""
+    inner = context.read_context()
+    inner._session_open = 'read'
+    previous = draft.context
+    object.__setattr__(draft, 'context', inner)
+    try:
+        yield
+    finally:
+        inner._session_open = False
+        for _, part in walk(draft):
+            if part.context is inner or part is draft:
+                object.__setattr__(part, 'context', previous)
+
+
+def check_close(context, model, record_id, to):
+    """Run the model's before_close(self, to) on the saved record before it closes: a move into a final
+    state (`to` is that state), a void ("void"), a lifecycle cancel ("cancelled") or a delete (None).
+
+    The record is read only, its session is read only, and a ValidationError (or ValueError) refuses
+    the change before anything is written."""
+    from .models import closes
+    if not closes(model):
+        return
+    record, _ = load_draft(context, model, record_id, {}, preview=True)
+    freeze_draft(record)
+    try:
+        with trusted(), hook_context(context, record):
+            record.before_close(to)
+    except ValidationError:
+        raise
+    except ValueError as exc:
+        raise ValidationError({'_form': str(exc)}) from None
+
+
 def current_user(item, field):
     """The signed-in user's username (Text) or account id (Integer), from the root draft's context."""
     root = item
@@ -1003,7 +1134,7 @@ def current_user(item, field):
 
 
 def apply_inputs(item, prefix, internal, errors):
-    """Creation defaults, then type validation of every source (non-calculated) field."""
+    """Creation defaults, then type validation of every source (non-calculated) field not in `internal`."""
     for name, field in item._definition.__declared_fields__.items():
         if name in internal: continue
         value = item._values.get(name, MISSING)
@@ -1490,6 +1621,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         # The move is checked on the saved record before its values, so values never reveal which moves exist.
         draft, before = load_draft(context, model, record_id, {})
         declared_move = states.begin_move(context, model, draft, before, move)
+        if declared_move.to in model.__declared_fields__[model.__state__].final:
+            check_close(context, model, record_id, declared_move.to)
         if values:
             states.check_move_values(context, model, declared_move, values)
             draft, before = load_draft(context, model, record_id, values)
@@ -1499,6 +1632,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     from . import lifecycle as lifecycle_engine
     if lifecycle is not None:
         lifecycle_engine.begin(context, model, draft, lifecycle, reason)
+        if lifecycle == 'cancel':
+            check_close(context, model, record_id, 'cancelled')
     else:
         lifecycle_engine.check_write(context, model, draft, before)
     # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
