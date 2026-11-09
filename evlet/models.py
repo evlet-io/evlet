@@ -55,6 +55,16 @@ class ValidationError(ValueError):
         super().__init__("; ".join(f"{key}: {value}" for key, value in errors.items()))
 
 
+# Record ids are made by the framework on every create path and never change (docs/model-engine.md#record-ids).
+ASSIGNED_ID = 'The id is assigned by Evlet when the record is created and never changes; leave it out'
+
+
+def refuse_id(values):
+    """Refuse a caller-supplied `id` on any create or update path, with one clear message."""
+    if 'id' in values:
+        raise ValidationError({'id': ASSIGNED_ID})
+
+
 def checked_body(body, allowed, message, *, exact=False, nonempty=False, field='_form'):
     """A JSON request body that is an object with only the allowed keys (exactly those when exact)."""
     keys = set(body) if isinstance(body, dict) else None
@@ -215,12 +225,15 @@ class Model(metaclass=ModelType):
         raise AttributeError(name)
 
     def __setattr__(self, name, value):
+        if name == 'id':
+            raise ValidationError({'id': ASSIGNED_ID})
         if name.startswith('x_'):
             raise AttributeError("Records are snapshots; use Database.update() to save changes")
         object.__setattr__(self, name, value)
 
     def __init__(self, /, **values):
         self._layer = active_layer()
+        refuse_id(values)
         errors = {key: f"{key} is an instance field. Build the record inside database.transaction() or database.activated()"
                   if key.startswith('x_') and ACTIVE.get() is None else "Unknown field" for key in values if key not in self.__fields__}
         cleaned = {}
@@ -396,6 +409,9 @@ class Registry:
         configure(self, child_models)
         from .measures import compile_declared
         self.measures = MappingProxyType(compile_declared(self, models))
+        # Cards at the top of a compact record page: derived fields and per-record measures (evlet/meaning.py).
+        from .meaning import cards_for
+        self.cards = MappingProxyType(cards_for(self, models, child_models))
         # Record layouts with Tabs, Related, Html, Chart or Table blocks (Meta.layout, evlet/ui/metadata.py).
         from .ui.metadata import compile_layouts
         self.layouts = MappingProxyType(compile_layouts(self))

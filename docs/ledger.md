@@ -104,6 +104,14 @@ with database.transaction() as tx:
   move, its Sequence number and the record's changes
   ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 
+## Ids
+
+A ledger row's id is the integer the database assigns (SQLite `AUTOINCREMENT`, a PostgreSQL identity),
+not a record id. A caller may give an `id` only when `tx.reserve_ids` handed it out in the same
+transaction (below). No update may change an id: `tx.update(model, row_id, id=...)` raises the same
+`ValidationError` as record models, and the database trigger every model table has refuses a raw
+`UPDATE` of `id` with `ConflictError` ([model-engine.md](model-engine.md#only-evlet-makes-ids)).
+
 ## Reserving ids (`tx.reserve_ids`)
 
 Rows written in one batch sometimes point at each other: a row that names itself as the first of

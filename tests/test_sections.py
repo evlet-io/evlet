@@ -59,7 +59,7 @@ def test_section_options_do_not_change_migration_checksums():
 def test_the_playground_shows_all_three_starting_states():
     from examples.playground.models import Project
     assert [(group['label'], group['collapsible'], group['collapsed']) for group in view_for(Project)['layout']] == [
-        ('Project', False, False), ('Planning', True, False), ('Schedule', True, True), ('Notes', True, 'empty')]
+        ('Project', False, False), ('Budget', True, False), ('Schedule', True, True), ('Notes', True, 'empty')]
 
 
 # ---------- flow and record tabs ----------
@@ -104,7 +104,8 @@ def test_meta_tab_mistakes_fail_registration(meta, message):
 def test_the_playground_shows_column_flow_and_a_tab_order():
     from examples.playground.models import Customer, Project
     assert [group['flow'] for group in view_for(Customer)['layout']] == ['columns']
-    assert (view_for(Project)['tabs'], view_for(Project)['default_tab']) == (['details', 'related', 'activity'], 'details')
+    # Project uses the compact record page (Main), which has no record tabs.
+    assert (view_for(Project)['tabs'], view_for(Project)['default_tab']) == ([], None)
     assert view_for(Project)['side_blocks'] == ['related', 'info', 'key_fields']
 
 

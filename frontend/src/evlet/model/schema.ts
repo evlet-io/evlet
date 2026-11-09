@@ -99,7 +99,9 @@ export interface ModelSchema {
   search_fields?: string[];
   /** Form sections. collapsible and collapsed come from evlet.Section or a Controls layout (absent from older servers). */
   layout?: Array<{ label: string; fields: string[]; wide?: string[]; collapsible?: boolean; collapsed?: boolean | 'empty';
-    /** rows: across then down; columns: down the left column, then the right. */ flow?: 'rows' | 'columns' }>;
+    /** rows: across then down; columns: down the left column, then the right. */ flow?: 'rows' | 'columns';
+    /** evlet.Main: the compact page's primary area, shown without a heading (label is the model's label). */ main?: boolean;
+    /** Section(description=...): a line of text under the title. */ description?: string }>;
   /** Record page tabs in order (record tabs and child table names) and the tab a record opens on. */
   tabs?: string[]; default_tab?: string | null;
   /** Rows per page and default order, from a Controls list view. */
@@ -153,8 +155,8 @@ export type LayoutCondition = [string, string, unknown];
 
 /** One block of a record layout, in order. Sections are named by title; their fields are in the model's layout. */
 export type LayoutBlock =
-  | { kind: 'section'; label: string }
-  | { kind: 'table'; name: string }
+  | { kind: 'section'; label: string; main?: boolean }
+  | { kind: 'table'; name: string; main?: boolean }
   | { kind: 'related'; model: string; link: string; label: string; filters: LayoutCondition[]; fields: string[]; limit: number; order: string[] }
   | { kind: 'html'; html: string }
   | { kind: 'chart'; type: 'bar' | 'line' | 'stat'; model: string; link: string; x: string | null; y: string[]; label: string | null; filters: LayoutCondition[] };
@@ -162,8 +164,9 @@ export type LayoutBlock =
 /** A record page tab declared with evlet.Tab: its name (Meta.tabs, ?tab=t-<name>), label and blocks. */
 export interface LayoutTab { name: string; label: string; blocks: LayoutBlock[] }
 
-/** The record layout: Tabs, or blocks shown on Details without Tabs. */
-export interface RecordLayout { tabs?: LayoutTab[]; blocks?: LayoutBlock[] }
+/** The record layout: Tabs, or blocks shown on Details without Tabs. compact: Meta.layout starts with evlet.Main (never
+ * with Tabs); its blocks marked main are the primary area and the rest are "more information". */
+export interface RecordLayout { tabs?: LayoutTab[]; blocks?: LayoutBlock[]; compact?: boolean }
 
 /** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */
 export interface PrintSchema { name: string; title: string; default: boolean }

@@ -580,11 +580,13 @@ class Customization:
                 field['choices'] = [item for item in field['choices'] if item not in retired] + changed.get('options_add', [])
                 field['retired_choices'] = list(retired)
         if model in self.layouts or any(getattr(field, 'instance', None) for field in model.__declared_fields__.values()):
-            # Sections with nothing this role can read are left out, titles included.
+            # Sections with nothing this role can read are left out, titles included. A section keeps the app's Main
+            # mark and description by its title.
+            declared = {group['label']: {key: group[key] for key in ('main', 'description') if key in group} for group in entry.get('layout', [])}
             entry['layout'] = [{'label': section['title'], 'fields': [item['name'] for item in section['fields'] if item['name'] in readable],
                                 'wide': [item['name'] for item in section['fields'] if item['width'] == 12 and item['name'] in readable],
                                 'collapsible': section.get('collapsible', False), 'collapsed': section.get('collapsed', False),
-                                'flow': section.get('flow', 'rows')}
+                                'flow': section.get('flow', 'rows'), **declared.get(section['title'], {})}
                                for section in self.layout(model) if any(item['name'] in readable for item in section['fields'])]
             wide = {name for section in entry['layout'] for name in section['wide']}
             for field in entry['fields']:

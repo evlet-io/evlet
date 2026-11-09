@@ -8,6 +8,31 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Compact record page: `Meta.cards`, `Main` and section descriptions.** `Meta.cards` names zero
+  to five derived values for cards at the top of a record: fields with `compute=`, `fetch=` or
+  `query=` (stored or not) and per-record measures. `Main(fields, *tables)` as the first block of
+  `Meta.layout` is the primary area, with no heading; every block after it is "more information".
+  A layout with `Main` takes no `Tab`s, `Meta.tabs` or `Meta.default_tab`, and places every `Table`
+  field. `Section(..., description=...)` adds a line under a section's title. All of it is checked
+  when the registry is built, and `/api/schema` sends `cards` (cut per role, like `key_fields`),
+  `"compact": true` and `"main": true` on the record layout, and `description` on sections. Models
+  without them are unchanged. The record page draws the compact design in a later release; until
+  then it shows the blocks in order. The Playground's Project uses it, so its record tabs are gone
+  and its Planning section is now Budget ([docs/ui.md](docs/ui.md#compact-record-page)).
+
+- **Only Evlet makes record ids, and ids never change.** A caller-supplied `id` is refused on every
+  create and update path with one message, `ValidationError({'id': 'The id is assigned by Evlet when
+  the record is created and never changes; leave it out'})`: `database`/`tx.create` and `update`
+  (in `tx.maintenance()` too), `context.create`, `update` and `move` values, `self.id = ...` in
+  handlers, and HTTP POST and PATCH, which now answer 422 on `id` instead of 403 "One or more fields
+  cannot be written". Before, Python callers got "id: Unknown field". Every model table also gets a
+  database trigger that refuses an `UPDATE` changing `id` on SQLite and PostgreSQL
+  (`ConflictError: <table>: record ids never change`). Ledger rows keep database-assigned ids and
+  `tx.reserve_ids`. **Upgrade:** framework step `0006_fixed_ids` adds the triggers, so run
+  `evlet migrate` after upgrading. `evlet ids check INSTANCE` reports rows with an empty, zero or
+  negative id and tables without the trigger; it never rewrites ids
+  ([docs/model-engine.md](docs/model-engine.md#only-evlet-makes-ids)).
+
 - **Record layouts.** `Meta.layout` can declare the whole record page: `Tab(title, blocks)`s, or
   plain blocks without tabs, holding `Section`s, `Table` field names (the table shows inside the tab
   or the form instead of on its own tab), `Related(model, link=None, filters=..., fields=..., limit=...,

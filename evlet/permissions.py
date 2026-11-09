@@ -9,7 +9,7 @@ from .auth import AccessError, PORTAL, PUBLIC, ROLES
 from .identity import RecordId
 from .naming import title_sources
 from .fields import Link, Reference
-from .models import Model, ValidationError, identifier
+from .models import Model, ValidationError, identifier, refuse_id
 from .query import Condition, SqlQuery, child_tables, conditions
 
 
@@ -553,6 +553,7 @@ class Policy:
         return found
 
     def check_values(self, tx, user, model, values, *, targets=None):
+        refuse_id(values)
         if set(values) - self.fields(user, model, write=True):
             raise AccessError(403, 'One or more fields cannot be written')
         for name, value in values.items():

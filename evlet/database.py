@@ -6,7 +6,7 @@ import sqlite3
 
 from .fields import ACTIVE, EMPTY_LAYER, Link, MISSING, Reference, RichText
 from . import audit
-from .identity import RecordId, new_id, sequential
+from .identity import FIXED_ID, RecordId, new_id, sequential
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .naming import has_title, title_of
@@ -33,12 +33,14 @@ CONSTRAINT = 'A unique value or linked record constraint was violated'
 def conflict(registry, exc):
     """The Evlet error for a database integrity failure, the same on SQLite and PostgreSQL: ValidationError
     naming the fields of a unique Meta.indexes entry (evlet/indexes.py), ConflictError for a write an
-    append-only table refuses (evlet/ledger.py), and ConflictError for any other unique or foreign key."""
+    append-only table refuses (evlet/ledger.py) or an id change (evlet/identity.py), and ConflictError for any other unique or foreign key."""
     from .indexes import violated
     diag = getattr(exc, 'diag', None)
     text = (diag.message_primary or '') if diag is not None else str(exc)
     if text.endswith(' ' + ledger.APPEND_ONLY):
         return ConflictError(f'{text}: its rows are never changed or deleted')
+    if text.endswith(': ' + FIXED_ID):
+        return ConflictError(text)
     return violated(registry, exc) or ConflictError(CONSTRAINT)
 
 

@@ -9,7 +9,7 @@ production ready, but the rules below hold from 0.3 on.
 - **Root exports.** Every name in `evlet.__all__`: fields, `Model`, `Child`, `Registry`,
   migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), lifecycle
   (`State`, `Move`, `action`, `validate`), form sections and record layouts (`Section`, `Tab`,
-  `Html`, and `Related` and `Chart` as layout blocks), slips, measures, settings, connectors,
+  `Main`, `Html`, and `Related` and `Chart` as layout blocks), slips, measures, settings, connectors,
   storage, jobs, routing and the application classes. Import them from `evlet`, not from the
   module that defines them. `AppDefinition(views=())` stays accepted for apps scaffolded
   before 0.4; a non-empty `views` or a `ui` registry is refused.
@@ -27,7 +27,9 @@ production ready, but the rules below hold from 0.3 on.
 
 - **Record identity.** Every record has `id`, `name` and `title`. `id` is a 13-character text id in
   JSON and URLs and a `RecordId` in Python; `name` and `title` are reserved field names on record
-  models ([model-engine.md](model-engine.md#record-ids)).
+  models ([model-engine.md](model-engine.md#record-ids)). Evlet makes every id; a caller-supplied `id`
+  on any create or update path is refused with a `ValidationError` on `id` (HTTP 422), and the
+  database refuses a raw id `UPDATE` ([model-engine.md](model-engine.md#only-evlet-makes-ids)).
 
 - **Rich text storage.** `RichText` values are the HTML subset in
   [internal/rich-text.md](internal/rich-text.md): the allowed tags and attributes, and the canonical
@@ -43,6 +45,12 @@ production ready, but the rules below hold from 0.3 on.
   (the list's tabs and the one it opens on, [ui.md](ui.md#list-tabs)). `Session.unlocked_periods(reason)`
   and `Context.unlocked_periods(reason)` are public for trusted code
   ([model-engine.md](model-engine.md#closed-periods)).
+
+- **Compact record pages.** `Meta.cards` (zero to five derived fields or per-record measures),
+  `Main(fields, *tables)` as the first block of `Meta.layout`, `Section(..., description=None)`, and
+  the schema keys they add: `cards` on a model entry, `"compact": true` on `record_layout`,
+  `"main": true` on the Main blocks and layout section, and `description` on a layout section
+  ([ui.md](ui.md#compact-record-page)).
 
 - **Ledger models and transaction locks.** The `Meta` options `ledger`, `append_only`, `timestamps`
   (`None`, `"created"`, `"modified"` or `"both"`) and `indexes`, the `created_at` and `modified_at`
