@@ -1,7 +1,7 @@
 """An item master as wide as an ERP one: about 200 fields and two child tables, so list filters
 can be tried at scale (search the field picker, filter on price rows)."""
 
-from evlet import Boolean, Child, Currency, Date, Decimal, Integer, Link, LongText, Model, Rule, Select, Table, Text
+from evlet import Boolean, Child, Currency, Date, Decimal, Image, Integer, Link, LongText, Model, Rule, Select, Table, Text
 
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
 GROUPS = ['raw material', 'finished good', 'spare part', 'consumable', 'service']
@@ -102,9 +102,11 @@ def market_fields(markets):
 
 class Meta:
     description = 'Items with about 200 fields, prices and barcodes: a list to try filters on.'
+    # The item's photo is its avatar in the record header and side panel.
+    image = 'photo'
     list_fields = ('item_code', 'item_name', 'item_group', 'standard_rate', 'disabled')
     search_fields = ('item_code', 'item_name')
-    layout = (('Item', ITEM_FIELDS),
+    layout = (('Item', ('photo', *ITEM_FIELDS)),
               ('Details', tuple(name for name in core_fields() if name not in ITEM_FIELDS)),
               ('GCC markets', market_fields(MARKETS[:6])), ('Other markets', market_fields(MARKETS[6:])),
               ('Warehouses', tuple(f'{key}_{suffix}' for key, _ in WAREHOUSES
@@ -114,6 +116,8 @@ class Meta:
 
 Item = type('Item', (Model,), {'__module__': __name__, '__doc__': 'An item and its selling, stock and specification fields.',
                                'Meta': Meta, **core_fields(), **item_fields(),
+                               # One image per item: PNG, JPEG, GIF or WebP, uploaded on the form (migration 0018).
+                               'photo': Image(label='Photo', help_text='PNG, JPEG, GIF or WebP, up to 2 MiB.'),
                                # A model with tables denies by default; these are the Playground's usual roles.
                                'permissions': {'admin': Rule(('read', 'create', 'update', 'delete')),
                                                'editor': Rule(('read', 'create', 'update', 'delete')), 'viewer': Rule(('read',))},

@@ -3,7 +3,7 @@
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
-                     Link, LongText, MultiSelect, Percent, Phone, Reference, RichText, Select, State, Tags, Text, Time, URL)
+                     Image, Link, LongText, MultiSelect, Percent, Phone, Reference, RichText, Select, State, Tags, Text, Time, URL)
 from .migrations import (AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, Migration, MigrationPlan, Recompute,
                          RenameField, RetireField, RunData, SchemaError)
 from .models import Model, Registry, ValidationError, Child
@@ -14,7 +14,7 @@ install_decorators(action)
 
 __all__ = [
     "AddField", "AddIndex", "AddTable", "AlterField", "Application", "Boolean", "ConflictError", "CreateModel", "DropField",
-    "Currency", "CurrentUser", "Database", "Date", "DateTime", "Decimal", "Email", "Integer", "Link",
+    "Currency", "CurrentUser", "Database", "Date", "DateTime", "Decimal", "Email", "Image", "Integer", "Link",
     "LongText", "Migration", "MigrationPlan", "Model", "MultiSelect", "NotFoundError", "Registry", "RenameField",
     "SchemaError", "Select", "Text", "URL", "ValidationError",
     "Duration", "Naming", "Percent", "Phone", "Recompute", "Reference", "RetireField", "RichText", "RunData", "Sequence", "Series", "State", "Tags", "Time",
