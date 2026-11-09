@@ -3,6 +3,12 @@ import { formatDate, formatDateTime, formatMoney, formatNumber, parseDate, plain
 import { kindOf, parseDateTime } from '../ui/kinds';
 
 describe('formatting', () => {
+  it('shows an Integer with grouping=False, such as a year, without thousands separators', () => {
+    const integer = kindOf('integer');
+    expect(integer.format(2023, { name: 'year_made', type: 'integer', grouping: false } as never)).toBe('2023');
+    expect(integer.format(2023, { name: 'count', type: 'integer' } as never)).toBe('2,023');
+  });
+
   it('formats money exactly in AED', () => {
     expect(formatMoney('25200')).toBe('AED 25,200.00');
     expect(formatMoney('1234567.875')).toBe('AED 1,234,567.88');

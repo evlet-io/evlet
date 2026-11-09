@@ -702,6 +702,8 @@ def field_schema(field):
     result = {**field.metadata(), 'label': field.label or label_for(field.name),
               'help_text': field.help_text, **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
               **({'suffix': field.suffix} if field.suffix else {}),
+              # Integer(grouping=False): shown without thousands separators (display only).
+              **({'grouping': False} if getattr(field, 'grouping', True) is False else {}),
               # Forms leave out the standard title and a name no naming fills (evlet/naming.py); responses keep them.
               'hidden': field.hidden or form_hidden(field), 'read_only': field.read_only,
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),

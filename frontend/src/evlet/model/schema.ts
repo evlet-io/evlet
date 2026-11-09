@@ -18,6 +18,8 @@ export interface FieldSchema {
   placeholder?: string;
   /** A unit shown after the input, such as % or days. */
   suffix?: string;
+  /** Integer(grouping=False): shown without thousands separators, such as a year. */
+  grouping?: boolean;
   scale?: number | null;
   /** A Currency field's code when it is fixed (on the field, or an app setting read by the server). */
   currency?: string;

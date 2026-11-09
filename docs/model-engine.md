@@ -292,6 +292,10 @@ input and after the value at rest, such as `"%"` or `"days"`. It is display meta
 `prefix` on a UI control. `Percent` fields always show `%`; a `Decimal` with `suffix="%"` looks
 the same and keeps its own scale.
 
+`Integer(grouping=False)` shows the number without thousands separators, for numbers that are not
+amounts, such as a year (`2023`, not `2,023`) or a code. It is display only: storage and migrations
+are unchanged, and an edit accepts the number either way.
+
 Every field, and a `Table`, takes `copy=` (default `True`). `copy=False` means the browser's
 Duplicate action never copies this value or these rows into the new record, for example a unique
 customer reference. It must be `True` or `False` (a `ValueError` otherwise). It is display

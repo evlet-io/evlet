@@ -22,6 +22,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **`Integer(grouping=False)`.** Shows a number without thousands separators, such as a year (`2023`). Display
+  only; `/api/schema` sends `"grouping": false` ([docs/model-engine.md](docs/model-engine.md)).
+
 - **Child table tools, row editor and section rows.** A compact record's table has Focus and Columns buttons by
   its title. A row's Edit (a pencil by its number, beside a new drag handle) opens the row editor in focus view: the
   rows as a list beside one form for the row, with a summary line, previous and next, Delete line, Insert below and

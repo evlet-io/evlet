@@ -50,7 +50,7 @@
     "Html": "class(content)",
     "Image": "class(**kwargs)",
     "Instance": "class(name: str, database: str = 'sqlite', storage: str = 'local', domain: str | None = None, timezone: str = 'UTC', trusted_proxies: tuple = ()) -> None",
-    "Integer": "class(*, minimum=None, maximum=None, rounding=None, **kwargs)",
+    "Integer": "class(*, minimum=None, maximum=None, rounding=None, grouping=True, **kwargs)",
     "JobContext": "class(id: int, tenant: str, attempt: int, user: evlet.auth.User | None, idempotency_key: str, checkpoint: object = None) -> None",
     "JobQueue": "class(database, tasks, *, tenant='local', events=None, policy=None)",
     "JobReceipt": "class(id: int, state: str) -> None",

@@ -113,3 +113,22 @@ def test_meta_summary_and_side_blocks_go_into_the_schema_only_when_set():
 def test_meta_summary_and_side_block_mistakes_fail_registration(meta, message):
     with pytest.raises(ValueError, match=message):
         Registry(tabbed(**meta))
+
+
+# ---------- display options ----------
+
+def test_integer_grouping_false_shows_a_year_without_separators_and_is_checked():
+    from evlet import Integer
+    from evlet.ui.metadata import field_schema
+
+    class Machine(Model):
+        title = Text()
+        year_made = Integer(grouping=False)
+        count = Integer()
+    fields = {field['name']: field for field in Registry(Machine).ui_schema()['models'][0]['fields']}
+    assert fields['year_made']['grouping'] is False and 'grouping' not in fields['count']
+    # Display only: the field's metadata (and so its migrations) does not change.
+    assert Integer(grouping=False).metadata() == Integer().metadata()
+    assert 'grouping' not in field_schema(Integer())
+    with pytest.raises(ValueError, match='grouping must be True or False'):
+        Integer(grouping='no')
