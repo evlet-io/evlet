@@ -8,6 +8,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **The compact record page is drawn.** A layout that starts with `Main` shows its cards, the Main card with
+  the state banner inside it, "more information" rows with one-line summaries while closed, and a side column
+  with Attachments, Activity and Record info. It has no tabs. Section descriptions show under section titles
+  on every record layout ([docs/ui.md](docs/ui.md#compact-record-page)).
+
 - **Compact record page: `Meta.cards`, `Main` and section descriptions.** `Meta.cards` names zero
   to five derived values for cards at the top of a record: fields with `compute=`, `fetch=` or
   `query=` (stored or not) and per-record measures. `Main(fields, *tables)` as the first block of
@@ -16,8 +21,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   field. `Section(..., description=...)` adds a line under a section's title. All of it is checked
   when the registry is built, and `/api/schema` sends `cards` (cut per role, like `key_fields`),
   `"compact": true` and `"main": true` on the record layout, and `description` on sections. Models
-  without them are unchanged. The record page draws the compact design in a later release; until
-  then it shows the blocks in order. The Playground's Project uses it, so its record tabs are gone
+  without them are unchanged. The Playground's Project uses it, so its record tabs are gone
   and its Planning section is now Budget ([docs/ui.md](docs/ui.md#compact-record-page)).
 
 - **Only Evlet makes record ids, and ids never change.** A caller-supplied `id` is refused on every

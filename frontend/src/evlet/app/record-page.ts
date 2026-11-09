@@ -18,7 +18,7 @@ import { currencyFor, displayValue, enterMovesToNextField, fieldFor, localField,
 import { autofocusForm, initialFocusField, layoutFocusOrder } from '../ui/autofocus';
 import { flowGrid, FoldSection, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
 import { NoteComposer } from './composer';
-import { FormSection, KeyValueList } from '../ui/inline';
+import { FieldGrid, FormSection, KeyValueList } from '../ui/inline';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, MenuButton, openDrawer, SplitButton, openModal, toast, type MenuItem } from '../ui/layers';
 import { DataTable, emptyPrefs, type Column } from '../ui/table';
@@ -30,7 +30,8 @@ import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateF
   summaryFields, titleOf, LIST_KEYS, panelView, type PanelView, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
-import { declaresRelated, HtmlContent, layoutBlocks, layoutTabId, MeasureChart, placedTables, RelatedRecords, type BlockRecord } from './record-blocks';
+import { blockFilters, declaresRelated, HtmlContent, layoutBlocks, layoutTabId, MeasureChart, placedTables, RelatedRecords, type BlockRecord } from './record-blocks';
+import { CardRow, fieldsSummary, MoreRow, rowNoun, rowsText } from './record-compact';
 import type { LayoutBlock, LayoutTab } from '../model/schema';
 import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
 import { filterFields } from './filters';
@@ -212,6 +213,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const has = (field: string) => store.root.fields.has(field);
   const sequence = sequenceField(model), numbered = numberField(model);
   const stateValue = state ? () => String(store.field(state.field).value.get() ?? '') : () => '';
+  // A compact record page (Meta.layout starting with Main): cards, a primary area and "more information" rows, no tabs.
+  // A list's side panel keeps the blocks in order.
+  const compact = Boolean(model.record_layout?.compact) && !panel;
 
   // ---------- title and crumbs ----------
 
@@ -522,7 +526,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const show = state?.show ?? 'badge';
   const statusMeta = model.status ? fieldOf(model, model.status) : undefined;
   const takeable = () => canUpdate ? (extras.get()._moves ?? []).filter(move => move.allowed) : [];
-  const stateBadge = state && !isNew && (show === 'badge' || statusMeta?.name === state.field) ? StatusBadge({
+  const stateBadge = state && !isNew && (show === 'badge' || compact || statusMeta?.name === state.field) ? StatusBadge({
     value: stateValue, tint: value => statusTint(fieldOf(model, state.field) ?? {}, value), name: 'Status',
     moves: () => takeable().map(move => ({ to: move.to, label: move.label })), blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) }) : null;
   const statusBadge = statusMeta && statusMeta.name !== state?.field && has(statusMeta.name) && !isNew ? StatusBadge({
@@ -552,7 +556,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       // A title that is the record's name (no other title source) reads as a document number too.
       || Boolean(naming && store.field('name').value.get() && String(store.field('name').value.get()) === titleText.get()),
     status: [stateBadge, statusBadge].filter(Boolean) as Child[],
-    meta: [nameFact, ...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
+    // A compact page's header has only the title, the status badges and the actions: its facts are in Record info.
+    meta: compact ? [] : [nameFact, ...metaFacts, numberFact, model.lifecycle && !isNew ? live(() => {
       const current = extras.get()._lifecycle;
       return current ? Chip({ label: `${model.lifecycle!.labels[current.state]} · Revision ${current.revision}`, tone: current.state === 'confirmed' ? 'green' : 'slate' }) : null;
     }) : null].filter(Boolean) as Child[],
@@ -631,7 +636,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // ---------- flow and summary ----------
 
   // The stage bar, for a State declared show="bar": only the states this person can move to now are buttons.
-  const flow = state && !isNew && show === 'bar' ? (() => {
+  const flow = state && !isNew && show === 'bar' && !compact ? (() => {
     const { steps, good, bad } = flowFromState(state as any);
     return StatusFlow({ steps, good, bad, current: stateValue, label: `${model.label} status`, canMove: to => takeable().some(move => move.to === to),
       blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) });
@@ -639,7 +644,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   const perRecord = (model.measures ?? []).filter(measure => measure.per_record);
   const recordMeasures = cell<Record<string, unknown> | null>(null);
-  if (perRecord.length && !isNew && model.summary !== false) effect(() => { options.detail.get(); void api.recordMeasures(name, store.id!).then(values => recordMeasures.set(values), () => recordMeasures.set(null)); });
+  // Meta.cards on a compact page: these replace the summary strip (an empty tuple shows no cards).
+  const cardNames = compact ? model.cards : undefined;
+  const measuredCards = perRecord.some(measure => cardNames?.includes(measure.name));
+  if (perRecord.length && !isNew && (cardNames ? measuredCards : model.summary !== false)) effect(() => { options.detail.get(); void api.recordMeasures(name, store.id!).then(values => recordMeasures.set(values), () => recordMeasures.set(null)); });
   const stats: StatProps[] = summaryFields(model, new Set(factFields.map(meta => meta.name))).filter(meta => has(meta.name)).map(meta => ({
     label: meta.label, value: () => {
       const value = view(meta.name).value.get();
@@ -650,7 +658,19 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     note: view(meta.name).calculated ? 'Calculated' : undefined,
   }));
   if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' });
-  const summary = stats.length && !isNew && (!shows || shows.block('summary')) ? SummaryStrip(stats) : null;
+  const cardStats = (cardNames ?? []).flatMap((card): StatProps[] => {
+    const measure = perRecord.find(item => item.name === card);
+    if (measure) return [{ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' }];
+    const meta = fieldOf(model, card);
+    if (!meta || !has(card)) return [];
+    return [{ label: meta.label, empty: 'Not set', note: meta.compute ? 'Calculated' : undefined, value: () => {
+      const value = view(card).value.get();
+      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
+      return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(card), ctx.links)()) : formatOf(meta, value);
+    } }];
+  });
+  const summary = cardNames ? (cardStats.length && !isNew ? CardRow(cardStats) : null)
+    : stats.length && !isNew && (!shows || shows.block('summary')) ? SummaryStrip(stats) : null;
 
   // ---------- tabs ----------
 
@@ -685,6 +705,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // A side panel shows only the tabs the app lets it, in Meta.panel's order. Details stays while it has anything to show.
   const panelTabs = shows ? shows.order(ordered.tabs.filter(tab => tab.id === 'details' ? detailsShown() : shows.tab(tab.id)), tab => tab.id) : ordered.tabs;
   tabItems.splice(0, tabItems.length, ...panelTabs);
+  // A compact page has no tabs: what they held is in "more information" and the side column.
+  if (compact) tabItems.splice(0);
   const home = tabItems.some(tab => tab.id === ordered.home) ? ordered.home : tabItems[0]?.id ?? 'details';
   const wanted = panel ? panel.tab : options.query.tab;
   const active = cell(tabItems.some(tab => tab.id === wanted) ? wanted! : home, { name: `${name} tab` });
@@ -764,10 +786,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
           const section = groups.find(group => group.label === block.label)!, index = all.findIndex(group => group.label === block.label);
           if (isNew) {
             const fields = section.fields.filter(meta => (!meta.read_only || meta.name === model.naming?.field) && !meta.compute && !isStateField(model, meta)).map(meta => view(meta.name));
-            return fields.length ? FoldSection({ title: section.label, fields, folds, ...foldOf(section, index),
+            return fields.length ? FoldSection({ title: section.label, note: section.description, fields, folds, ...foldOf(section, index),
               body: flowGrid(fields.map(field => ({ node: fieldFor({ field, links: ctx.links }), wide: Boolean(field.meta.wide ?? field.meta.type === 'longtext') })), section.flow) }) : null;
           }
-          return FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
+          return FormSection({ title: section.label, note: section.description, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
             extra: position === lastSection && links.length ? links : null, flow: section.flow, fold: { folds, ...foldOf(section, index) } });
         }
         case 'table': return html`<div class="ev-block ev-table-block">${tablePanel(tables.find(child => child.name === block.name)!)}</div>`;
@@ -831,7 +853,109 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     postings ? TabPanel(tabs, 'postings', active, () => Postings(ctx, postings)) : null,
   ];
   // Switching tabs keeps the page still: under the stuck tab bar, or where it was above it.
-  keepTabPlace(tabs, active);
+  if (!compact) keepTabPlace(tabs, active);
+
+  // ---------- a compact record page ----------
+
+  /** A Table on a compact page: its title, a muted row count and Add on the right (in Main), the grid, and a light
+   * dashed box while it has no rows. Add uses the grid's own Add row, so the new row's first cell starts editing. */
+  const compactTable = (child: { name: string; label: string }, withTitle: boolean) => {
+    const table = store.table(child.name);
+    const count = () => table.rows.get().length;
+    const canAdd = () => canWrite && !locked.get();
+    const noun = rowNoun(child.label);
+    let host: HTMLElement | null = null;
+    const add = () => {
+      const button = host?.querySelector<HTMLButtonElement>('.g-add');
+      if (button) { button.click(); return; }
+      try { table.add(); } catch (error) { toast((error as Error).message, { icon: 'info' }); }
+    };
+    const addLink = () => when(canAdd, () => html`<button type="button" class="link-q ev-cmp-add" on:click=${add}>${Icon('plus', { size: 'xs' })}Add ${noun}</button>`);
+    host = html`<div class="ev-cmp-table" class:is-empty=${() => count() === 0} data-table-block=${child.name}>
+      ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span><span class="grow"></span>${addLink()}</div>` : null}
+      ${when(() => count() === 0, () => html`<div class="ev-cmp-empty"><span>No ${child.label.toLowerCase()} yet.</span>${withTitle ? null : addLink()}</div>`)}
+      ${tablePanel(child)}</div>` as HTMLElement;
+    return host;
+  };
+  /** Where a "more information" row that is not a section starts: open, except on a phone after the first. */
+  const rowStart = (open: boolean, index: number) => folds.phone && index > 0 ? false : open;
+  const compactContent = () => {
+    const blocks = tabBlocks(layout?.blocks ?? [], true);
+    const groups = panelSections(), all = sections(model);
+    const fieldsOf = (label: string) => {
+      const section = groups.find(group => group.label === label);
+      if (!section) return [];
+      const metas = isNew ? section.fields.filter(meta => (!meta.read_only || meta.name === model.naming?.field) && !meta.compute && !isStateField(model, meta)) : section.fields;
+      return metas.map(meta => view(meta.name));
+    };
+    const grid = (fields: FieldLike[], flow?: 'rows' | 'columns') => isNew
+      ? flowGrid(fields.map(field => ({ node: fieldFor({ field, links: ctx.links }), wide: Boolean(field.meta.wide ?? field.meta.type === 'longtext') })), flow)
+      : FieldGrid(fields, { links: ctx.links, flow });
+    const mainParts = blocks.filter(block => (block.kind === 'section' || block.kind === 'table') && block.main).map(block => block.kind === 'section'
+      ? html`<div class="ev-cmp-grid">${grid(fieldsOf(block.label), all.find(group => group.label === block.label)?.flow)}</div>`
+      : compactTable(tables.find(child => child.name === (block as { name: string }).name)!, true));
+    const rows: Node[] = [];
+    let index = 0;
+    for (const block of blocks.filter(item => !('main' in item && item.main))) {
+      const position = ++index;
+      switch (block.kind) {
+        case 'section': {
+          const section = all.find(group => group.label === block.label);
+          const fields = fieldsOf(block.label);
+          if (!fields.length) continue;
+          rows.push(MoreRow({ title: block.label, description: section?.description, folds, eager: true, fields,
+            start: folds.start(section?.collapsible ? section.collapsed ?? false : false, position, fields),
+            summary: () => fieldsSummary(fields, ctx.links), body: () => grid(fields, section?.flow) }));
+          break;
+        }
+        case 'table': {
+          const child = tables.find(item => item.name === block.name)!;
+          const table = store.table(child.name);
+          rows.push(MoreRow({ title: child.label, folds, start: rowStart(untrack(() => table.rows.get().length) > 0, position),
+            summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false) }));
+          break;
+        }
+        case 'related': {
+          // The count for the closed row: one row asked for, with the block's filters, once the row shows.
+          const total = cell<number | null>(null);
+          const target = ctx.schema.schema.models.find(item => item.name === block.model);
+          const count = () => {
+            const filters = blockFilters(block, blockRecord);
+            if (!filters || !target) { total.set(0); return; }
+            void api.list(block.model, { limit: 1, offset: 0, filters }).then(page => total.set((page as { total?: number }).total ?? page.items.length), () => total.set(null));
+          };
+          const row = MoreRow({ title: block.label, folds, start: rowStart(true, position), none: 'Loading…',
+            summary: () => total.get() === null ? '' : `${target ? (target as { plural?: string }).plural ?? block.label : block.label}: ${total.get()}`,
+            body: () => RelatedRecords(ctx, block, blockRecord) as Child });
+          whenVisible(row, count);
+          rows.push(row);
+          break;
+        }
+        case 'html': {
+          const text = block.html.replace(/<[^>]*>/g, ' ').replace(/\{[a-z_][a-z0-9_]*\}/g, '…').replace(/\s+/g, ' ').trim();
+          rows.push(MoreRow({ title: 'Notes', folds, start: rowStart(true, position), summary: () => text, body: () => HtmlContent(ctx, model, block, blockRecord) }));
+          break;
+        }
+        case 'chart':
+          rows.push(MoreRow({ title: block.label ?? 'Chart', folds, start: rowStart(true, position), summary: () => '', none: 'A chart', body: () => MeasureChart(ctx, block, blockRecord) }));
+          break;
+      }
+    }
+    // What would have been tabs: related records the layout does not list, revisions and postings.
+    if (relations.length && relatedTab) {
+      const row = MoreRow({ title: 'Related', folds, start: rowStart(false, ++index), none: 'Loading…',
+        summary: () => relations.map(relation => { const count = related(relation.name).total.get(); return count === null ? '' : `${relation.label}: ${count}`; }).filter(Boolean).join(' · '),
+        body: () => Related(ctx, model, store.id!, relations, related) });
+      whenVisible(row, () => relations.forEach(relation => related(relation.name).ensure()));
+      rows.push(row);
+    }
+    if (model.lifecycle && !isNew) rows.push(MoreRow({ title: 'Revisions', folds, start: false, summary: () => '', none: 'Every confirmed revision of this record',
+      body: () => Revisions(ctx, model, store.id!) }));
+    if (postings) rows.push(MoreRow({ title: 'Postings', folds, start: false, none: 'Nothing posted yet',
+      summary: () => (postings.get() ?? []).map(item => `${item.target}: ${item.rows + item.reversals}`).join(' · '), body: () => Postings(ctx, postings) }));
+    return [html`<section class="ev-cmp-main" aria-label=${model.label}>${lifecycle ? live(lifecycle) : null}${mainParts}</section>`,
+      rows.length ? html`<div class="ev-more" role="group" aria-labelledby=${`ev-more-${name}`}><h2 class="ev-more-label" id=${`ev-more-${name}`}>More information</h2>${rows}</div>` : null];
+  };
 
   // ---------- save bar ----------
 
@@ -848,7 +972,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- side panel ----------
 
-  const side = isNew || panel ? undefined : SidePanel(ctx, model, store, view, relatedSide ? relations : [], related, active, null, formTabs);
+  const side = isNew || panel ? undefined : compact ? CompactSide(ctx, model, store, view, journal)
+    : SidePanel(ctx, model, store, view, relatedSide ? relations : [], related, active, null, formTabs);
 
   // A new record focuses its first editable field, in an open section of the tab it opens on (Details, or the first
   // layout Tab): when it opens, and again once its draft is restored or set aside (the restore bar held the focus).
@@ -864,7 +989,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     main: [panel ? html`<div class="ev-panel-head">${panelBar}${header}</div>` : [ctx.crumbBar?.() ?? null, header], UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
-      options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems), lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels, saveBar], side });
+      options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems),
+    ...(compact ? [summary, compactContent()] : [lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels]), saveBar], side });
+  if (compact) frame.classList.add('doc-compact');
   // The person's "Enter moves to the next field" setting (Settings, Appearance).
   enterMovesToNextField(frame, () => Boolean(ctx.me.get()?.prefs.enter_next));
   if (isNew) focusFirst(options.focusedAtOpen);
@@ -1015,6 +1142,32 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
   const listed = (model.side_blocks ?? SIDE_BLOCKS).filter((name): name is SideBlockName => name in build);
   const names = panel ? panel.order(listed.filter(name => panel.block(name)), name => name) : listed;
   return names.map(name => build[name]()).filter(block => block !== null);
+}
+
+/** A compact page's side column: Attachments, Activity, and Record info with the key fields the header leaves out. */
+function CompactSide(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, journal: boolean): Child {
+  const has = (field: string) => store.root.fields.has(field);
+  const keys = keyFields(model).filter(meta => has(meta.name) && meta.name !== model.title_field && !isStateField(model, meta) && meta.name !== model.status);
+  const numbered = numberField(model);
+  // The record's number, unless a section shows it already (the breadcrumb ends with it too).
+  const placed = new Set(sections(model).flatMap(section => section.fields.map(meta => meta.name)));
+  const candidate = numbered && has(numbered.name) && numbered.name !== model.title_field ? numbered
+    : model.naming?.field === 'name' && model.title_field !== 'name' && has('name') ? fieldOf(model, 'name') ?? null : null;
+  const number = candidate && !placed.has(candidate.name) ? candidate : null;
+  const revises = has('revises') ? view('revises') : null;
+  const extras = () => extrasOf(ctx.api.detail(model.name, store.id!).get());
+  const audit = () => extras()._audit;
+  return [
+    model.attachments ? SideBlock({ title: 'Attachments', body: Files(ctx, model, store) }) : null,
+    journal ? SideBlock({ title: 'Activity', body: html`<div class="ev-cmp-activity">${Activity(ctx, model, store)}</div>` }) : null,
+    SideBlock({ title: 'Record info', body: [
+      keys.length ? KeyValueList(keys.map(meta => view(meta.name)), { links: ctx.links }) : null,
+      html`<dl class="fields">
+        ${number ? html`<dt>${number.label}</dt><dd class="mono">${() => String(store.field(number.name).value.get() ?? '') || 'Not assigned yet'}</dd>` : null}
+        ${revises ? when(() => Boolean(revises.value.get()), () => html`<dt>Revises</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(revises.value.get()) })}>${() => `${model.label} ${revises.value.get()}`}</a></dd>`) : null}
+        ${when(() => Boolean(extras().revised_by), () => html`<dt>Revised by</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(extras().revised_by) })}>${() => `${model.label} ${extras().revised_by}`}</a></dd>`)}
+        ${RecordTimes(ctx, audit)}</dl>`] }),
+  ];
 }
 
 /** Created and Last modified in Record info: relative times that a click switches to exact ones (for every time

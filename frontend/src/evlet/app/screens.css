@@ -391,3 +391,64 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .wse-meta { margin: 0; font-size: 12px; }
 .wse-more { display: flex; gap: 6px; flex-wrap: wrap; }
 @media (max-width: 560px) { .wse-top { grid-template-columns: 1fr; } }
+
+/* A compact record page (Meta.layout starting with Main; record-page.ts and record-compact.ts): cards, the Main card
+   with the state banner at its top, "more information" rows, and the side column. Tight, thin lines, no tabs. */
+.doc-compact .doc-main{padding-top:16px}
+.doc-compact .doc-head{margin-bottom:12px}
+.ev-cards{grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-bottom:12px}
+.ev-cards .stat-card{padding:9px 12px;box-shadow:none}
+.ev-cmp-main{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);padding:12px 16px 14px;margin-bottom:16px}
+.ev-cmp-main>.inv-banner{margin:-4px -8px 12px;padding:7px 10px;background:var(--bg-muted);color:var(--fg-2);font-size:12.5px}
+.ev-cmp-main>.inv-banner.b-slate{background:var(--bg-muted)}
+.ev-cmp-grid .fs-g,.ev-more-body .fs-g{grid-template-columns:repeat(auto-fill,minmax(max(170px,calc((100% - 60px) / 4)),1fr));gap:0 20px}
+.ev-more-body .fs-g{grid-template-columns:repeat(auto-fill,minmax(max(170px,calc((100% - 40px) / 3)),1fr))}
+.ev-more-body .fs-cols .fs-colrun{gap:0 20px}
+.doc-compact .ff{padding:2px 0}
+.doc-compact .ff label{font-size:11.5px;color:var(--fg-3)}
+.doc-compact .ff .fval{min-height:28px;padding:2px 6px;margin-left:-6px;width:calc(100% + 6px)}
+.doc-compact .fval .muted{color:var(--fg-4)}
+.ev-cmp-table{margin-top:14px;padding-top:12px;border-top:1px solid var(--divider)}
+.ev-more-body .ev-cmp-table{margin-top:0;padding-top:0;border-top:0}
+.ev-cmp-th{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.ev-cmp-th h3{margin:0;font-size:13px;font-weight:600}
+.ev-cmp-count{font-size:12px}
+.ev-cmp-th .grow{flex:1}
+.ev-cmp-add{display:inline-flex;align-items:center;gap:4px;font-size:12.5px;color:var(--accent)}
+.ev-cmp-table .g-t,.ev-cmp-table .g-under .g-add,.ev-cmp-table .g-under .g-add~.muted{display:none}
+.ev-cmp-table.is-empty>.grid{display:none}
+.ev-cmp-table .grid{box-shadow:none}
+.ev-cmp-empty{display:flex;align-items:center;gap:12px;justify-content:space-between;border:1px dashed var(--border-strong);border-radius:var(--r);padding:10px 12px;font-size:12.5px;color:var(--fg-3);background:var(--bg-subtle)}
+.ev-more{margin-top:4px}
+.ev-more-label{margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--fg-3)}
+.ev-more-row{display:grid;grid-template-columns:minmax(150px,200px) minmax(0,1fr);gap:4px 20px;padding:10px 0;border-top:1px solid var(--border)}
+.ev-more-row:last-child{border-bottom:1px solid var(--border)}
+.ev-more-l{min-width:0}
+.ev-more-toggle{display:flex;align-items:center;gap:6px;font:inherit;font-size:13px;font-weight:600;color:var(--fg);padding:0;min-height:24px;text-align:left}
+.ev-more-chev{color:var(--fg-4);transition:transform .15s;flex:none}
+.ev-more-row.closed .ev-more-chev{transform:rotate(-90deg)}
+.ev-more-desc{margin:2px 0 0 18px;font-size:12px;line-height:1.4;color:var(--fg-3)}
+.ev-more-l .fs-err{margin:4px 0 0 18px;display:inline-block}
+.ev-more-l .fs-err[hidden]{display:none}
+.ev-more-r{min-width:0}
+.ev-more-sum{margin:0;min-height:24px;line-height:24px;font-size:12.5px;color:var(--fg-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
+.ev-more-none{color:var(--fg-4)}
+.ev-more-body .ev-related{border:0;margin:0}
+.ev-more-body .ev-related>.panel-h{padding:0 0 6px;border:0}
+.ev-more-body .ev-related>.panel-h h3{display:none}
+.ev-more-body .ev-related>.panel-h .num{display:none}
+.ev-cmp-activity .timeline{max-height:420px;overflow:auto}
+@media (max-width:760px){
+  .ev-more-row{grid-template-columns:1fr}
+  .ev-more-desc{display:none}
+  .ev-cmp-main{padding:10px 12px}
+  .ev-cmp-grid .fs-g,.ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:420px){.ev-cmp-grid .fs-g,.ev-more-body .fs-g{grid-template-columns:1fr}}
+.ev-more-body .ev-related>.panel-h{justify-content:flex-end}
+.ev-more-body .ev-related>.panel-h:not(:has(.ev-view-all)){display:none}
+/* Activity in the side column: the note box stays small until it is used. */
+.ev-cmp-activity>.eff-note{display:none}
+.ev-cmp-activity .composer{margin-bottom:12px}
+.ev-cmp-activity .composer:not(:focus-within) .rt-toolbar{display:none}
+.ev-cmp-activity .composer:not(:focus-within) .rt-surface{min-height:38px}

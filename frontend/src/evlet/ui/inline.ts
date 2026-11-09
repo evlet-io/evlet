@@ -182,20 +182,25 @@ export function KeyValueList(items: Array<FieldLike | { label: string; field: Fi
   })}</dl>` as HTMLElement;
 }
 
+/** Fields as labelled InlineValues in a grid (two columns, or as many as the grid's CSS gives); long text spans the row. */
+export function FieldGrid(fields: FieldLike[], options: { save?: Save; links?: LinkSource | null; flow?: Flow } = {}): HTMLElement | null {
+  const wide = (field: FieldLike) => Boolean(field.meta.wide ?? field.meta.type === 'longtext');
+  const cells = fields.map(field => {
+    const id = uid('ff');
+    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
+      <label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
+      <div class="ff-v">${InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</div></div>` as Node;
+  });
+  return flowGrid(cells.map((node, index) => ({ node, wide: wide(fields[index]) })), options.flow);
+}
+
 /** A titled group of fields in two columns; long text spans both. */
 export function FormSection(props: { title: string; note?: string; fields: FieldLike[]; save?: Save; links?: LinkSource | null; extra?: Child;
   /** rows (default): across then down; columns: down the left column, then the right. */
   flow?: Flow;
   /** A collapsible form section (FoldSection): its form's Folds, how it starts and its place in the form. */
   fold?: { folds: Folds; collapsible: boolean; collapsed: FoldStart; index: number } }): HTMLElement {
-  const wide = (field: FieldLike) => Boolean(field.meta.wide ?? field.meta.type === 'longtext');
-  const cells = props.fields.map(field => {
-    const id = uid('ff');
-    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
-      <label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
-      <div class="ff-v">${InlineValue({ field, save: props.save, labelledBy: id, links: props.links })}</div></div>` as Node;
-  });
-  const grid = flowGrid(cells.map((node, index) => ({ node, wide: wide(props.fields[index]) })), props.flow);
+  const grid = FieldGrid(props.fields, props);
   if (props.fold) {
     return FoldSection({ title: props.title, note: props.note, fields: props.fields, folds: props.fold.folds, collapsible: props.fold.collapsible,
       collapsed: props.fold.collapsed, index: props.fold.index, body: [grid, props.extra ?? null] });

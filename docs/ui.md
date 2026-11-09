@@ -311,8 +311,21 @@ class Shipment(Model):
 `section` block named by the model's label and the Main tables are `table` blocks, each with
 `"main": true`; the section in `layout` has `"main": true` too, and a section with a description
 has `"description"`. A client that ignores these keys shows the blocks in order, as it would any
-record layout. The compact design itself (cards, collapsed rows with one-line summaries, the side
-column) is drawn by the record page in a later release. The Playground's Project uses it.
+record layout. The Playground's Project uses it.
+
+The record page draws it on a record's full page (a list's side panel keeps the blocks in order):
+
+- **Cards** for `Meta.cards` replace the summary strip, up to five on one row; a calculated field says so beside its
+  label. A model without `Meta.cards` keeps the summary strip.
+- **The Main card** holds the state banner at its top, then the Main fields in a grid of up to four columns, edited
+  in place, then its Tables: each with its title, a muted row count and Add on the right, and a light dashed box
+  while it has no rows.
+- **More information** lists every later block as a row: the title, the section description and a chevron on the
+  left, the content on the right. Closed, a Section shows its filled values on one line ("Label: value · ...",
+  cut with an ellipsis), a Table its row count and a Related block its record count. Sections start as
+  `collapsed` says and the person's choice is kept, as for any Section. Related records the layout does not list,
+  Revisions and Postings, which would be tabs, are rows here too.
+- **The side column** has Attachments, Activity and Record info, which holds the key fields.
 
 ### List tabs
 
