@@ -70,7 +70,7 @@
 /* A cancelled record in a list: the first cell struck through in grey after a ban icon, the row's text, avatars and
    chips a little muted; the status badge keeps its colour. */
 .ev-first{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%}
-.ev-cancel-ic{display:inline-flex;flex:none;color:var(--fg-4)}
+.ev-state-ic{display:inline-flex;flex:none;width:12px;color:var(--fg-4)}
 .ev-row-cancelled>td{color:var(--fg-3)}
 .ev-first-v{min-width:0;overflow:hidden;text-overflow:ellipsis}
 .ev-row-cancelled .ev-first-v,.ev-row-cancelled .ev-first-v :is(.ev-row-link,b){color:var(--fg-3);text-decoration:line-through}

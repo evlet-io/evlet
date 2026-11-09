@@ -156,6 +156,10 @@ The State in the schema decides how a record's state is drawn, never the state's
   says only the state.
 - **Locked**: any other `locked` or `final` state, such as Confirmed or Done: a lock and the state's name in grey.
   A separate `Meta.status` badge after it stays a soft pill ("Paid").
+- In lists (the table, the narrow list beside a panel and board cards), a small muted icon before the first value
+  says the same: a ban for cancelled, a lock for locked or final, a pencil for a draft; only cancelled rows are
+  struck through and greyed. A list of a model with a State keeps the icon's room on every row, so the first
+  column stays aligned.
 - **Draft**: the state a record starts in (the State's `default`, else its first state) while not locked: a dashed
   pill with a pencil.
 - Any other state keeps the coloured pill. The badges still open the moves this person may take.

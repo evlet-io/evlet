@@ -91,13 +91,37 @@ describe('a cancelled record', () => {
     await until(() => expect(host.querySelector(`tr[data-key="${voided}"]`)).not.toBeNull());
     const row = host.querySelector(`tr[data-key="${voided}"]`)!;
     expect(row.classList.contains('ev-row-cancelled')).toBe(true);
-    expect(row.querySelector('.ev-first .ev-cancel-ic[aria-label="Cancelled"] svg')).not.toBeNull();
+    expect(row.querySelector('.ev-first .ev-state-ic[aria-label="Cancelled"] svg')).not.toBeNull();
     expect(row.querySelector('.ev-first .ev-first-v')).not.toBeNull();
     // The status badge stays the coloured pill in the list.
     expect(row.querySelector('.ev-status')!.classList.contains('pill')).toBe(true);
     const other = host.querySelector(`tr[data-key="${draft}"]`)!;
     expect(other.classList.contains('ev-row-cancelled')).toBe(false);
-    expect(other.querySelector('.ev-cancel-ic')).toBeNull();
+    expect(other.querySelector('.ev-state-ic[aria-label="Cancelled"]')).toBeNull();
+  });
+
+  it('marks a draft with a pencil and a locked record with a lock, neither struck through, keeping the icon room on every row', async () => {
+    const { host } = start(routes(), '/app/invoice');
+    await until(() => expect(host.querySelector(`tr[data-key="${draft}"]`)).not.toBeNull());
+    const icon = (id: string) => host.querySelector(`tr[data-key="${id}"] .ev-first > .ev-state-ic`)!;
+    expect(icon(draft).getAttribute('aria-label')).toBe('Draft');
+    expect(icon(draft).querySelector('svg')).not.toBeNull();
+    // The issued invoice is locked.
+    const issued = String(invoice.invoices.body.items.find((item: { status: string }) => item.status === 'issued').id);
+    expect(icon(issued).getAttribute('aria-label')).toBe('Locked');
+    expect(host.querySelector(`tr[data-key="${issued}"]`)!.classList.contains('ev-row-cancelled')).toBe(false);
+    // Every row of a model with a State has the slot, so the first column lines up.
+    expect([...host.querySelectorAll('tr[data-key] .ev-first')].every(cell => cell.firstElementChild?.classList.contains('ev-state-ic'))).toBe(true);
+  });
+
+  it('puts the same icons on board cards, an open state without one', async () => {
+    const { StateIcon } = await import('../app/list-page');
+    expect(StateIcon('open').getAttribute('aria-hidden')).toBe('true');
+    expect(StateIcon('open').querySelector('svg')).toBeNull();
+    expect(StateIcon('locked').getAttribute('aria-label')).toBe('Locked');
+    const { BoardCard } = await import('../ui/list');
+    const card = BoardCard({ title: 'Deal', mark: () => StateIcon('draft') });
+    expect(card.querySelector('.t > .ev-state-ic')!.getAttribute('aria-label')).toBe('Draft');
   });
 
   it('follows the state field\'s cancelled list when the schema sends one', async () => {

@@ -44,6 +44,14 @@ const COMPACT_WIDTH = 460;
 /** Bulk changes send at most this many requests at once. */
 const BULK_AT_ONCE = 4;
 
+/** The small icon before a record's first value in a list: a ban (cancelled), a lock (locked or final) or a pencil
+ * (draft), muted; an empty slot of the same width for any other state. */
+export function StateIcon(look: ReturnType<typeof stateLook>): HTMLElement {
+  const icon = look === 'cancelled' ? ['ban', 'Cancelled'] : look === 'locked' ? ['lock', 'Locked'] : look === 'draft' ? ['pencil', 'Draft'] : null;
+  return (icon ? html`<span class="ev-state-ic" role="img" aria-label=${icon[1]}>${Icon(icon[0], { size: 'xs' })}</span>`
+    : html`<span class="ev-state-ic" aria-hidden="true"></span>`) as HTMLElement;
+}
+
 /** A list cell: status badge for the State and Meta.status, record title for links, formatted value. */
 export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema, row: () => RecordData): Child {
   if (isStateField(model, meta) || meta.name === model.status) return StatusBadge({
@@ -375,10 +383,12 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const plainClick = (event: MouseEvent) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
   const numbered = numberField(model);
   const showNumber = numbered && numbered.name !== model.title_field && fields.some(meta => meta.name === numbered.name) ? numbered : null;
-  // A cancelled record (stateLook) reads struck through and greyed in every list: its first cell gets a ban icon.
-  const isCancelled = (row: RecordData) => Boolean(state) && stateLook(model, row[state!.field]) === 'cancelled';
-  const firstCell = (row: () => RecordData, content: Child) => html`<span class="ev-first">${when(() => isCancelled(row()),
-    () => html`<span class="ev-cancel-ic" role="img" aria-label="Cancelled">${Icon('ban', { size: 'xs' })}</span>`)}<span class="ev-first-v">${content}</span></span>`;
+  // How the record's State reads (stateLook), as on its header. Its first cell starts with a small icon: a ban for a
+  // cancelled record (struck through and greyed too), a lock for a locked or final one, a pencil for a draft. With a
+  // State, every row keeps the icon's room, so the first column stays aligned.
+  const lookOf = (row: RecordData) => state ? stateLook(model, row[state.field]) : null;
+  const isCancelled = (row: RecordData) => lookOf(row) === 'cancelled';
+  const firstCell = (row: () => RecordData, content: Child) => html`<span class="ev-first">${state ? () => StateIcon(lookOf(row())) : null}<span class="ev-first-v">${content}</span></span>`;
   const columns: Column<RecordData>[] = fields.map((meta, index) => ({
     key: meta.name, label: meta.label, align: ['currency', 'decimal', 'integer', 'percent', 'duration'].includes(meta.type) ? 'right' : 'left',
     width: index === 0 ? 240 : meta.type === 'currency' ? 140 : 160, value: (row: RecordData) => row[meta.name],
@@ -456,7 +466,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     label: `${model.plural} by ${state.field}`, columns: state.states.filter(value => only === 'all' || value === only).map(value => ({ value, label: humanize(value), tint: stateTint(value) }) as BoardColumn),
     cards: rows, key: row => row.id, group: row => String(row[state.field]),
     totals: () => boardTotals.get(), amounts: Boolean(valueField),
-    card: row => BoardCard({ title: () => titleOf(model, row()), tint, cancelled: () => isCancelled(row()),
+    card: row => BoardCard({ title: () => titleOf(model, row()), tint, cancelled: () => isCancelled(row()), mark: state ? () => StateIcon(lookOf(row())) : undefined,
       company: linkField ? () => { const id = row()[linkField.name]; return id ? ctx.links.title(linkField.target!, String(id)).get() ?? '' : ''; } : undefined,
       value: valueField ? () => displayOf(valueField, row()[valueField.name], currencyIn(valueField, name => row()[name], ctx.links)) : undefined,
       date: dateField ? () => formatOf(dateField, row()[dateField.name]) : undefined,
