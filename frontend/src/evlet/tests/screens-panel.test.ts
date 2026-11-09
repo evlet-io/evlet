@@ -67,11 +67,12 @@ describe('records in a side panel beside the list', () => {
     await until(() => expect(columns(host)).toEqual(['Number', 'Status', 'Total']));
     expect(row(host, three)!.getAttribute('aria-current')).toBe('true');
     expect(row(host, three)!.classList.contains('cur')).toBe(true);
-    // Same sections as the full page: tabs, and the side column folded into Details.
+    // The full page's record view: its tabs, and its side column, behind the drawer button at the end of the top line.
     expect([...panel(host)!.querySelectorAll('.doc-tabs [role="tab"]')].map(text)).toEqual(['Activity', 'Details', 'Lines2', 'Related', 'Postings']);
-    expect(panel(host)!.querySelector('.doc-side')).toBeNull();
+    const aside = panel(host)!.querySelector('.doc > .doc-side')!;
+    expect(panel(host)!.querySelector('.ev-panel-bar .ev-side-toggle button')!.getAttribute('aria-controls')).toBe(aside.id);
     click(byText(panel(host)!, '[role="tab"]', 'Details'));
-    await until(() => expect(byText(panel(host)!, '.side-sec h4', /^Files/)).not.toBeNull());
+    await until(() => expect(byText(aside, '.side-sec h4', /^Files/)).not.toBeNull());
     // Record info is the footer row under the fields.
     await until(() => expect(panel(host)!.querySelector('.ev-rec-foot [data-part="created"]')).not.toBeNull());
     expect(byText(panel(host)!, '.side-sec h4', /^Record info/)).toBeNull();

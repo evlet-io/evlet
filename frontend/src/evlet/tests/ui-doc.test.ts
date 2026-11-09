@@ -3,7 +3,7 @@ import { html } from '../dom';
 import { cell } from '../reactive';
 import { Button, RecordMark } from '../ui/base';
 import { SplitButton } from '../ui/layers';
-import { DocFrame, DocHeader, flowFromState, LockBanner, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type Lifecycle } from '../ui/doc';
+import { DOC_NARROW, DocFrame, DocHeader, docWidthClasses, flowFromState, LockBanner, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type Lifecycle } from '../ui/doc';
 import { ENTRIES, LibraryPage, builtIds } from '../ui/library';
 import { Board, BoardCard, BulkBar, Filters, PageHeader, type ActiveFilter } from '../ui/list';
 import { tipText } from '../ui/tooltip';
@@ -155,6 +155,16 @@ describe('doc view blocks', () => {
     side.set('off');
     expect(host.querySelector('.doc-side')).toBeNull();
     expect(frame.classList.contains('no-side')).toBe(true);
+  });
+
+  it('DocFrame is responsive to its own width: the side column leaves a narrow frame, the main column steps down', () => {
+    // Not the window's width: a record page and a list's side panel use the same frame and the same rules.
+    expect(docWidthClasses(0, 0)).toEqual([]);
+    expect(docWidthClasses(1200, 780)).toEqual([]);
+    expect(docWidthClasses(DOC_NARROW - 1, DOC_NARROW - 37)).toEqual(['doc-narrow']);
+    expect(docWidthClasses(1000, 590)).toEqual(['doc-m']);
+    expect(docWidthClasses(480, 444)).toEqual(['doc-narrow', 'doc-m', 'doc-s']);
+    expect(docWidthClasses(375, 343)).toEqual(['doc-narrow', 'doc-m', 'doc-s', 'doc-xs']);
   });
 
   it('DocHeader puts the status on the title line, the actions on its row and, without a mark, the type icon tile', () => {

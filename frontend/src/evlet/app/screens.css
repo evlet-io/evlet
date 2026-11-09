@@ -155,22 +155,23 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
    and scrolls on its own. Stacked under the main column (narrow windows, phones) it scrolls with it. */
 .view>.ev-record .doc:not(.no-side)>.doc-side{position:sticky;top:0;align-self:start;height:calc(100vh - var(--topbar-h));height:calc(100dvh - var(--topbar-h));
   overflow-y:auto;overscroll-behavior:contain}
-/* Step 2 of keeping the main column wide (980 px and under; step 1 is the sidebar drawer, ui/styles.css): the side
-   column leaves the page. The button at the end of the breadcrumb row opens it as a drawer on the right. */
+/* A narrow record frame (DocFrame's doc-narrow: a side panel, or a window of about 980 px and under, after the sidebar
+   drawer of ui/styles.css) keeps its side column out of the main column's way. The button at the end of the breadcrumb
+   row (in a side panel, of its top line) opens it as a drawer on the right. The page and the panel share these rules. */
 .ev-crumb-row{display:flex;align-items:center;gap:8px;min-width:0;margin:0 0 6px}
 .ev-crumb-row>.crumbs{flex:1;margin:0}
 .ev-crumb-row>.crumbs[hidden]{display:block;visibility:hidden}
 .ev-side-toggle{display:none;margin:-6px -6px -6px auto}
 .ev-side-drawer-scrim{display:none}
-@media (max-width:980px){
-  .ev-side-toggle{display:grid}
-  .ev-side-drawer-scrim{display:block}
-  .view>.ev-record .doc:not(.no-side)>.doc-side{position:fixed;top:0;right:0;bottom:0;left:auto;width:min(var(--doc-side-w),90vw);height:auto;align-self:stretch;z-index:52;
-    border-top:0;border-left:1px solid var(--border);overflow-y:auto;overscroll-behavior:contain;outline:none;
-    padding-top:max(16px,env(safe-area-inset-top,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
-    transform:translateX(100%);visibility:hidden;transition:transform .22s ease,visibility 0s .22s}
-  .view>.ev-record .doc.side-open:not(.no-side)>.doc-side{transform:none;visibility:visible;box-shadow:var(--shadow-lg);transition:transform .22s ease}
-}
+.doc-narrow:not(.no-side) .ev-side-toggle{display:grid}
+.doc-narrow:not(.no-side)>.ev-side-drawer-scrim{display:block}
+.ev-record .doc.doc-narrow:not(.no-side)>.doc-side{position:fixed;top:0;right:0;bottom:0;left:auto;width:min(var(--doc-side-w),90vw);height:auto;align-self:stretch;z-index:52;
+  border-top:0;border-left:1px solid var(--border);overflow-y:auto;overscroll-behavior:contain;outline:none;
+  padding-top:max(16px,env(safe-area-inset-top,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  transform:translateX(100%);visibility:hidden}
+/* It slides only once the frame has its first width (doc-sized), so a record opening narrow does not flash its column. */
+.ev-record .doc.doc-narrow.doc-sized:not(.no-side)>.doc-side{transition:transform .22s ease,visibility 0s .22s}
+.ev-record .doc.doc-narrow.side-open:not(.no-side)>.doc-side{transform:none;visibility:visible;box-shadow:var(--shadow-lg);transition:transform .22s ease}
 /* The record footer, under the form: Created, Modified, the ID with Copy, and Copy link, on one quiet line. */
 .ev-rec-foot{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px;margin:12px 0 0;padding:0 2px;font-size:12.5px;line-height:24px;color:var(--fg-3)}
 .ev-rec-foot .grow{flex:1}
@@ -308,7 +309,6 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-panel-bar{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:12px;color:var(--fg-3);min-height:30px}
 .ev-panel-bar .eyebrow{display:inline-flex;align-items:center;gap:5px;font-weight:550}
 .ev-panel-bar .grow{flex:1}
-.ev-panel-blocks{margin-top:8px}
 .ev-compact{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden}
 .ev-crow{display:grid;gap:3px;padding:9px 12px;border-bottom:1px solid var(--divider);cursor:pointer;outline:none}
 .ev-crow:last-child{border-bottom:0}
@@ -318,7 +318,6 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-crow .l1 b{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .ev-crow .l2{font-size:12px;color:var(--fg-4)}
 .ev-sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.ev-panel-blocks .fields dd{margin:0;padding:6px 0;display:flex;align-items:center}
 /* The line under a side panel that leaves parts out: the full page shows them. */
 .ev-panel-more{margin:12px 0 0;font-size:12.5px}
 .ev-panel-more .link-q{margin-left:4px;background:none;border:0;padding:0;font:inherit;cursor:pointer}
@@ -506,15 +505,16 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .rt-toolbar-compact{padding:2px 4px;gap:0}
 .rt-toolbar-compact .rt-tool{width:26px;height:26px}
 .ev-cmp-activity .composer:not(:focus-within) .rt-surface{min-height:38px}
-@media (max-width:1100px){.ev-cmp-grid .fs-g{grid-template-columns:repeat(3,minmax(0,1fr))}.ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media (max-width:760px){
-  .doc-compact{--cmp-pad:10px}
-  .ev-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .ev-kc{padding:9px var(--cmp-pad);border-left:0;border-top:1px solid var(--border)}
-  .ev-kc:nth-child(-n+2){border-top:0}
-  .ev-kc:nth-child(even){border-left:1px solid var(--border)}
-  .ev-more-row{grid-template-columns:1fr}
-  .ev-more-desc{display:none}
-  .ev-cmp-grid .fs-g,.ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-}
-@media (max-width:420px){.ev-cmp-grid .fs-g,.ev-more-body .fs-g{grid-template-columns:1fr}}
+/* The compact view steps down with its main column's width (DocFrame's doc-m, doc-s and doc-xs), on the page and in
+   a side panel alike: three field columns, then the phone layout, then one column. */
+.doc.doc-m .ev-cmp-grid .fs-g{grid-template-columns:repeat(3,minmax(0,1fr))}
+.doc.doc-m .ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc-compact.doc-s{--cmp-pad:10px}
+.doc.doc-s .ev-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc.doc-s .ev-kc{padding:9px var(--cmp-pad);border-left:0;border-top:1px solid var(--border)}
+.doc.doc-s .ev-kc:nth-child(-n+2){border-top:0}
+.doc.doc-s .ev-kc:nth-child(even){border-left:1px solid var(--border)}
+.doc.doc-s .ev-more-row{grid-template-columns:1fr}
+.doc.doc-s .ev-more-desc{display:none}
+.doc.doc-s .ev-cmp-grid .fs-g,.doc.doc-s .ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.doc.doc-xs .ev-cmp-grid .fs-g,.doc.doc-xs .ev-more-body .fs-g{grid-template-columns:1fr}

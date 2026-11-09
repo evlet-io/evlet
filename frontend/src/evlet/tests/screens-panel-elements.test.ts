@@ -84,7 +84,9 @@ describe('what a record shows in a side panel', () => {
     await until(() => expect(sections(panel(host))).toEqual(['Invoice']));
     expect(field(panel(host), 'customer')).not.toBeNull();
     expect(field(panel(host), 'posting_date')).toBeNull();
-    expect(blocks(panel(host))).toEqual([]);
+    // The side column keeps only what Meta.panel leaves: not Files, Record info or Key fields.
+    expect(blocks(panel(host)).filter(title => ['Files', 'Record info', 'Key fields'].includes(title))).toEqual([]);
+    expect(panel(host).querySelector('.ev-rec-foot')).toBeNull();
   });
 
   it('always shows a required field that is empty on a new record', async () => {

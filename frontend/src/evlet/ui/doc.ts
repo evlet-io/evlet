@@ -3,7 +3,7 @@
 // and ChildTable into the one layout every record uses.
 
 import { html, when, type Child } from '../dom';
-import { effect, untrack, type Cell, type Readable } from '../reactive';
+import { effect, onCleanup, untrack, type Cell, type Readable } from '../reactive';
 import type { StateSchema } from '../model/schema';
 import { Button, Icon, IconTile, StateBanner, type ButtonProps } from './base';
 import { read, tint, uid, type Prop, type Tint } from './core';
@@ -12,16 +12,50 @@ import { InlineValue } from './inline';
 import { humanize } from './kinds';
 import { Menu, openPopover, toast } from './layers';
 
+/** Below this width of the frame the side column leaves it (a drawer, or stacked under the main column). */
+export const DOC_NARROW = 960;
+/** Main column widths that step the layout down: fewer field columns, then the phone layout, then one column. */
+export const DOC_MAIN_STEPS = { m: 640, s: 520, xs: 360 } as const;
+
+/** The width classes a frame of `frame` px with a main column of `main` px gets (0: not measured yet). */
+export function docWidthClasses(frame: number, main: number): string[] {
+  return [frame > 0 && frame < DOC_NARROW ? 'doc-narrow' : '',
+    ...(main > 0 ? (Object.entries(DOC_MAIN_STEPS) as Array<[string, number]>).filter(([, width]) => main < width).map(([step]) => `doc-${step}`) : [])].filter(Boolean);
+}
+
 /**
- * The record layout: main column and side panel (right, left or off), comfortable or compact.
- * The panel variant is the narrow layout of a record opened beside a list: one column, no side panel.
+ * The record layout: main column and side column (right, left or off), comfortable or compact.
+ * It is responsive to its own width, not the window's: a frame narrower than DOC_NARROW gets `doc-narrow`
+ * (the side column leaves the grid), and its main column's width steps `doc-m`, `doc-s` and `doc-xs`; `doc-sized`
+ * follows the first measure. A record
+ * page and a list's side panel use the same frame; the panel variant only changes its padding and title size.
  */
 export function DocFrame(props: { tint: Tint; main: Child; side?: Child; sidePosition?: Prop<'left' | 'right' | 'off'>; density?: Prop<'comfortable' | 'compact'>; variant?: 'page' | 'panel' }): HTMLElement {
-  const position = () => props.variant === 'panel' ? 'off' : read(props.sidePosition ?? 'right');
+  const position = () => read(props.sidePosition ?? 'right');
   const accent = tint(props.tint);
-  return html`<div class="doc" class:doc-panel=${props.variant === 'panel'} class:no-side=${() => position() === 'off' || !props.side} class:side-left=${() => position() === 'left'}
+  const frame = html`<div class="doc" class:doc-panel=${props.variant === 'panel'} class:no-side=${() => position() === 'off' || !props.side} class:side-left=${() => position() === 'left'}
     class:compact=${() => read(props.density ?? 'comfortable') === 'compact'} style:--acc=${`var(--t-${accent})`} style:--acc-bg=${`var(--t-${accent}-bg)`}>
     <div class="doc-main">${props.main}</div>${props.side ? when(() => position() !== 'off', () => html`<aside class="doc-side" aria-label="Side panel">${props.side}</aside>`) : null}</div>` as HTMLElement;
+  // Measure the frame and its main column; without ResizeObserver (old browsers) it keeps the wide layout.
+  if (typeof ResizeObserver !== 'undefined') {
+    const main = frame.firstElementChild as HTMLElement;
+    const widths = { frame: 0, main: 0 };
+    let applied: string[] = [];
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) widths[entry.target === frame ? 'frame' : 'main'] = Math.round(entry.contentRect.width);
+      const next = docWidthClasses(widths.frame, widths.main);
+      // After the first width, changes may animate (a drawer sliding out, say), not the first layout itself.
+      if (widths.frame > 0 && !frame.classList.contains('doc-sized')) requestAnimationFrame(() => frame.classList.add('doc-sized'));
+      if (next.join() === applied.join()) return;
+      frame.classList.remove(...applied);
+      frame.classList.add(...next);
+      applied = next;
+    });
+    observer.observe(frame);
+    observer.observe(main);
+    onCleanup(() => observer.disconnect());
+  }
+  return frame;
 }
 
 export interface DocHeaderProps {

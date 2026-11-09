@@ -60,10 +60,12 @@ describe('the shell scrolls only its view', () => {
     expect(side).toContain('top:0');
     expect(side).toContain('overflow-y:auto');
     expect(side).toContain('height:calc(100dvh - var(--topbar-h))');
-    // On narrow windows it leaves the page and opens as a drawer on the right, from the end of the breadcrumb row.
-    const narrow = screens.slice(screens.indexOf('@media (max-width:980px){\n  .ev-side-toggle{display:grid}'));
-    expect(narrow).toMatch(/\.view>\.ev-record \.doc:not\(\.no-side\)>\.doc-side\{position:fixed;top:0;right:0;bottom:0/);
-    expect(narrow).toContain('.view>.ev-record .doc.side-open:not(.no-side)>.doc-side{transform:none;visibility:visible');
+    // In a narrow frame (its own width, page or side panel alike) it leaves the main column and opens as a drawer on
+    // the right, from the end of the breadcrumb row. No window media query decides it.
+    expect(rule(screens, '.doc-narrow:not(.no-side) .ev-side-toggle')).toContain('display:grid');
+    expect(rule(screens, '.ev-record .doc.doc-narrow:not(.no-side)>.doc-side')).toMatch(/^position:fixed;top:0;right:0;bottom:0/);
+    expect(rule(screens, '.ev-record .doc.doc-narrow.side-open:not(.no-side)>.doc-side')).toContain('transform:none;visibility:visible');
+    expect(screens).not.toContain('@media (max-width:980px)');
   });
 });
 

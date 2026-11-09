@@ -180,8 +180,12 @@ not True or False fails when the registry is built.
   unchanged, and the full page shows everything.
 - **A new record can always be saved.** A required field that is empty on a new record shows in
   the panel even when it is hidden.
-- **The full page is one click away.** When the panel hides anything, a line under Details says
+- **The full page is one click away.** When the panel hides anything, a line under the record says
   so with an Open full page link, as well as the panel's Expand button.
+- **One view.** The full page and the side panel draw the same record view (title row, banners, tabs or the compact
+  card, side column and footer); `Meta.panel` only filters it. The view is responsive to its own width, not the
+  window's: in a narrow frame (a side panel, a narrow window) there is no side column, and the drawer button at the
+  end of the breadcrumb row (in a panel, its top line) opens it. A layout change therefore applies to both.
 - Controls, Models, Form layout can change it per instance with the panel button on each section,
   field and tab, and the Side panel card for the summary strip and blocks
   ([controls.md](controls.md)).
@@ -278,7 +282,7 @@ class Employee(Model):
   record loads shown blocks again. A related record and a chart need a saved record, so a new
   record shows only its sections, tables and Html.
 - **Side panel and phones.** In a list's side panel the tabs show as on the page, `panel=False`
-  on a `Tab` leaves it out, and the side column's blocks close the first tab. Blocks stack at
+  on a `Tab` leaves it out, and the side column opens from the drawer button. Blocks stack at
   phone width, and the tabs move by keyboard (arrow keys) like the other record tabs.
 - **Errors.** An unknown model, field, Link or Table name, a bad filter or operator, a `Ref` to a
   field the model does not show, an unknown measure or group field, a Tab inside a Tab, mixing
@@ -338,13 +342,13 @@ class Shipment(Model):
 has `"description"`. A client that ignores these keys shows the blocks in order, as it would any
 record layout. The Playground's Project uses it.
 
-The record page draws it on a record's full page (a list's side panel keeps the blocks in order):
+The record page draws it on a record's full page and in a list's side panel (the same view, narrower there):
 
 - **One white card** holds the whole record: the state banner strip at its top, then the key cards, the Main area
   and more information, separated by thin lines.
 - **Key cards** for `Meta.cards` replace the summary strip: one row of equal cells, each a muted label over a bold
   value; a calculated field says so beside its label. A model without `Meta.cards` keeps the summary strip.
-- **The Main area** has the Main fields in a grid of four columns, edited in place, then its Tables: each with its title, a muted row count and Add on the right, and a light dashed box
+- **The Main area** has the Main fields in a grid of four columns (three, two, then one as the record's own width narrows), edited in place, then its Tables: each with its title, a muted row count and Add on the right, and a light dashed box
   while it has no rows.
 - **More information** lists every later block as a row: the title, the section description and a chevron on the
   left, the content on the right. Closed, a Section shows its values on one line ("Label: value · Label: Not set · ...",
@@ -758,8 +762,9 @@ above each page's title ([Breadcrumb](#breadcrumb)).
   under, the sidebar and the switcher leave the page: a menu button at the top bar's left opens them as a
   drawer over the page, with the brand at its top (the same lockup and size as the top bar), the
   switcher, then the navigation. Esc, a click outside or opening a page closes it. The collapsed rail
-  is for wider windows only. At 980 px and under, a record's side column leaves the page too: a button
-  at the end of the breadcrumb row (the `panel-right` icon) opens it as a drawer on the right.
+  is for wider windows only. A record whose own frame is under 960 px wide (about a 960 px window, or
+  any side panel of default width) has no side column: a button at the end of the breadcrumb row (the
+  `panel-right` icon) opens it as a drawer on the right. This step follows the record's width, not the window's.
 - **Phones** (under 760 px): the menu button, then on the right the search icon, history and
   notifications. The page never scrolls sideways.
 

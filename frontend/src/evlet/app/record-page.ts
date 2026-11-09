@@ -215,8 +215,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const sequence = sequenceField(model), numbered = numberField(model);
   const stateValue = state ? () => String(store.field(state.field).value.get() ?? '') : () => '';
   // A compact record page (Meta.layout starting with Main): cards, a primary area and "more information" rows, no tabs.
-  // A list's side panel keeps the blocks in order.
-  const compact = Boolean(model.record_layout?.compact) && !panel;
+  // A list's side panel draws the same view: one record view for both, responsive to its width (DocFrame), with
+  // Meta.panel hiding parts of it in the panel.
+  const compact = Boolean(model.record_layout?.compact);
 
   // ---------- title and crumbs ----------
 
@@ -566,10 +567,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   });
   // The panel's top line: the record type and its number, Expand and Close (Back to the list while the panel covers it).
   const numberText = numbered && numbered.name !== model.title_field && has(numbered.name) ? () => String(store.field(numbered.name).value.get() ?? '') : null;
-  const panelBar = panel ? html`<div class="ev-panel-bar">
+  // The drawer button for the side column goes at its end, as on the page's breadcrumb row; the rest is panel chrome.
+  const panelBar = (toggle: Node | null) => panel ? html`<div class="ev-panel-bar">
     ${when(panel.overlay, () => Button({ label: model.plural, icon: 'chevron-left', variant: 'ghost', size: 'small', onClick: () => panel.close() }))}
     <span class="eyebrow">${Icon(look.icon, { size: 'xs' })}${model.label}</span>${numberText ? html`<span class="mono muted">${numberText}</span>` : null}<span class="grow"></span>
-    ${when(() => !panel.overlay.get(), () => [IconButton({ icon: 'maximize-2', tip: 'Open full page', onClick: () => expand(active.peek()) }),
+    ${toggle}${when(() => !panel.overlay.get(), () => [IconButton({ icon: 'maximize-2', tip: 'Open full page', onClick: () => expand(active.peek()) }),
       IconButton({ icon: 'x', tip: 'Close (Esc)', onClick: () => panel.close() })])}</div>` : null;
 
   // ---------- banners ----------
@@ -632,6 +634,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const panelSections = () => sections(model).map(section => ({ ...section, fields: section.fields.filter(meta => has(meta.name) && !inHeader.has(meta.name) && fieldShown(section.label, meta.name)) }))
     .filter(section => section.fields.length);
   const detailsShown = () => isNew || panelSections().length > 0 || (['files', 'info'] as const).some(block => shows!.block(block));
+  /** Meta.panel keeps this record tab (a compact view's matching "more information" row) in the panel. */
+  const tabShown = (id: string) => !shows || shows.tab(id);
   const fullPageNote = shows?.hides ? html`<p class="ev-panel-more muted">Some parts of this ${model.label.toLowerCase()} show only on the full page.
     <button type="button" class="link-q" on:click=${() => expand(active.peek() === 'details' ? null : active.peek())}>Open full page</button></p>` : null;
   // ---------- flow and summary ----------
@@ -670,8 +674,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(card), ctx.links)()) : formatOf(meta, value);
     } }];
   });
-  const summary = cardNames ? (cardStats.length && !isNew ? CardRow(cardStats) : null)
-    : stats.length && !isNew && (!shows || shows.block('summary')) ? SummaryStrip(stats) : null;
+  const summaryShown = !isNew && (!shows || shows.block('summary'));
+  const summary = cardNames ? (cardStats.length && summaryShown ? CardRow(cardStats) : null)
+    : stats.length && summaryShown ? SummaryStrip(stats) : null;
 
   // ---------- tabs ----------
 
@@ -744,11 +749,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       return FoldSection({ title: section.label, fields, folds, ...foldOf(section, index),
         body: flowGrid(fields.map(field => ({ node: fieldFor({ field, links: ctx.links }), wide: Boolean(field.meta.wide ?? field.meta.type === 'longtext') })), section.flow) });
     })}</div>`;
-    const sectionsShown = groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
+    return groups.map((section, index) => FormSection({ title: section.label, fields: section.fields.map(meta => view(meta.name)), links: ctx.links,
       extra: index === groups.length - 1 ? childLinks : null, flow: section.flow, fold: { folds, ...foldOf(section, index) } }));
-    // The full page's side column folds into the panel: Files and Record info close the Details tab. When the
-    // panel leaves anything out, the full page is one click away.
-    return panel ? [...sectionsShown, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relations, related, active, shows)}</div>`, fullPageNote] : sectionsShown;
   };
   // ---------- a declared record layout ----------
 
@@ -799,9 +801,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         case 'chart': return MeasureChart(ctx, block, blockRecord);
       }
     });
-    const content = html`<div class=${isNew ? 'ev-new-form ev-layout' : 'ev-layout'}>${parts}${lastSection < 0 && links.length ? html`<div class="ev-block">${links}</div>` : null}</div>`;
-    // In a side panel the first tab also closes with the side column's blocks, as Details does.
-    return panel && first ? [content, html`<div class="ev-panel-blocks">${SidePanel(ctx, model, store, view, relatedSide ? relations : [], related, active, shows)}</div>`, fullPageNote] : content;
+    return html`<div class=${isNew ? 'ev-new-form ev-layout' : 'ev-layout'}>${parts}${lastSection < 0 && links.length ? html`<div class="ev-block">${links}</div>` : null}</div>`;
   };
   /** The tab a field's section is on: Details without Tabs. */
   const fieldTab = (name: string) => {
@@ -832,9 +832,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target)) { const tab = fieldTab(target); if (active.peek() !== tab) active.set(tab); revealField(frame, target); } };
   if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
   const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
-  // The first layout Tab this view shows: it takes the unplaced sections and, in a side panel, the side column's blocks.
+  // The first layout Tab this view shows: it takes the unplaced sections.
   const firstTab = (): LayoutTab | undefined => layoutTabs?.find(tab => tabItems.some(item => item.id === layoutTabId(tab)));
-  const tablePanel = (child: { name: string; label: string }) => panel ? ChildRows({ table: store.table(child.name), title: child.label,
+  // A side panel's tabs show a Table as rows that open one at a time; a compact view keeps its grid there too.
+  const tablePanel = (child: { name: string; label: string }) => panel && !compact ? ChildRows({ table: store.table(child.name), title: child.label,
     locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, onOpenFull: () => expand(`t-${child.name}`),
     totals: model.fields.filter(meta => (meta.compute as any)?.$expr === 'aggregate' && (meta.compute as any).table === child.name && has(meta.name))
       .map(meta => ({ label: meta.label, value: () => displayOf(meta, store.field(meta.name).value.get(), meta.type === 'currency' ? currencyFor(store.field(meta.name), ctx.links)() : undefined) })) }) : ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
@@ -943,16 +944,16 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       }
     }
     // What would have been tabs: related records the layout does not list, revisions and postings.
-    if (relations.length && relatedTab) {
+    if (relations.length && relatedTab && tabShown('related')) {
       const row = MoreRow({ title: 'Related', folds, start: rowStart(false, ++index), none: 'Loading…',
         summary: () => relations.map(relation => { const count = related(relation.name).total.get(); return count === null ? '' : `${relation.label}: ${count}`; }).filter(Boolean).join(' · '),
         body: () => Related(ctx, model, store.id!, relations, related) });
       whenVisible(row, () => relations.forEach(relation => related(relation.name).ensure()));
       rows.push(row);
     }
-    if (model.lifecycle && !isNew) rows.push(MoreRow({ title: 'Revisions', folds, start: false, summary: () => '', none: 'Every confirmed revision of this record',
+    if (model.lifecycle && !isNew && tabShown('revisions')) rows.push(MoreRow({ title: 'Revisions', folds, start: false, summary: () => '', none: 'Every confirmed revision of this record',
       body: () => Revisions(ctx, model, store.id!) }));
-    if (postings) rows.push(MoreRow({ title: 'Postings', folds, start: false, none: 'Nothing posted yet',
+    if (postings && tabShown('postings')) rows.push(MoreRow({ title: 'Postings', folds, start: false, none: 'Nothing posted yet',
       summary: () => (postings.get() ?? []).map(item => `${item.target}: ${item.rows + item.reversals}`).join(' · '), body: () => Postings(ctx, postings) }));
     // One white card: the state banner strip, the key cards, the Main fields and tables, then more information.
     return html`<div class="ev-cmp-card">${lifecycle ? live(lifecycle) : null}${summary}
@@ -973,10 +974,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         ${withSaveKeys(Button({ label: () => store.saving.get() ? 'Saving…' : 'Save', variant: 'primary', icon: 'check', disabled: () => store.saving.get(), onClick: () => void save(), tip: withShortcut('Save', SCREEN_KEYS.save) }))}</div>`);
   const saveBar = saveBarView();
 
-  // ---------- side panel ----------
+  // ---------- side column ----------
 
-  const side = isNew || panel ? undefined : compact ? CompactSide(ctx, model, store, journal)
-    : SidePanel(ctx, model, store, view, relatedSide ? relations : [], related, active, null, formTabs);
+  // The same side column on the page and in a list's side panel, less what Meta.panel hides there. A narrow frame
+  // (DocFrame: a side panel, a narrow window) keeps it out of the way, behind the drawer button.
+  const side = isNew ? undefined : compact ? CompactSide(ctx, model, store, journal && tabShown('activity'), !shows || shows.block('files'))
+    : SidePanel(ctx, model, store, view, relatedSide ? relations : [], related, active, shows, formTabs);
 
   // A new record focuses its first editable field, in an open section of the tab it opens on (Details, or the first
   // layout Tab): when it opens, and again once its draft is restored or set aside (the restore bar held the focus).
@@ -988,24 +991,25 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const fields = section.fields.filter(meta => !isStateField(model, meta)).map(meta => view(meta.name)), fold = foldOf(section, index);
     return { fields, open: !fold.collapsible || untrack(() => folds.open(section.label, folds.start(fold.collapsed, index, fields)).get()) };
   })), before));
-  // Narrow windows fold the side column away (screens.css, under 980 px): a button at the end of the breadcrumb
-  // row opens it as a drawer on the right, over the page; Esc, a click outside or the button closes it.
+  // A narrow frame folds the side column away (DocFrame's doc-narrow, screens.css): a button at the end of the
+  // breadcrumb row (in a side panel, of its top line) opens it as a drawer on the right; Esc, a click outside or the
+  // button closes it.
   const sideOpen = cell(false, { name: `${name} side drawer` });
   const sideId = uid('ev-side');
-  const sideWhat = compact ? [model.attachments ? 'attachments' : null, journal ? 'activity' : null].filter(Boolean).join(' and ') || 'side panel' : 'side panel';
+  const sideWhat = compact ? [model.attachments && (!shows || shows.block('files')) ? 'attachments' : null, journal && tabShown('activity') ? 'activity' : null].filter(Boolean).join(' and ') || 'side panel' : 'side panel';
   const sideToggle = side ? html`<span class="ev-side-toggle">${IconButton({ icon: 'panel-right', tip: () => `${sideOpen.get() ? 'Hide' : 'Show'} ${sideWhat}`,
     active: sideOpen, onClick: () => sideOpen.set(!sideOpen.peek()) })}</span>` as HTMLElement : null;
   sideToggle?.firstElementChild?.setAttribute('aria-controls', sideId);
-  const crumbRow = html`<div class="ev-crumb-row">${ctx.crumbBar?.() ?? null}${sideToggle}</div>`;
+  const crumbRow = panel ? null : html`<div class="ev-crumb-row">${ctx.crumbBar?.() ?? null}${sideToggle}</div>`;
   // The footer under the form: who made and changed it, the record ID and its link. A side panel shows it when its
   // Record info block is on.
-  const footer = isNew ? null : panel ? (shows!.block('info') ? RecordFooter(ctx, model, String(store.id)) : null) : RecordFooter(ctx, model, String(store.id));
+  const footer = isNew || (shows && !shows.block('info')) ? null : RecordFooter(ctx, model, String(store.id));
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
-    main: [panel ? html`<div class="ev-panel-head">${panelBar}${header}</div>` : [crumbRow, header], UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
+    main: [panel ? html`<div class="ev-panel-head">${panelBar(sideToggle)}${header}</div>` : [crumbRow, header], UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
       options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems),
-    ...(compact ? [compactContent()] : [lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels]), footer, saveBar], side });
+    ...(compact ? [compactContent()] : [lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels]), fullPageNote, footer, saveBar], side: side ?? undefined });
   if (compact) frame.classList.add('doc-compact');
   if (side) {
     const aside = frame.querySelector<HTMLElement>(':scope > .doc-side');
@@ -1017,6 +1021,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       if (event.key !== 'Escape' || !sideOpen.peek() || document.querySelector('.modal-wrap.show,.drawer.show,.pop.show:not([hidden]):not(.rt-mentions)')) return;
       event.preventDefault(); sideOpen.set(false); (sideToggle?.firstElementChild as HTMLElement | null)?.focus();
     };
+    // On the frame first, so in a side panel Escape closes the drawer before the list closes the panel.
+    frame.addEventListener('keydown', escape);
     document.addEventListener('keydown', escape);
     onCleanup(() => document.removeEventListener('keydown', escape));
   }
@@ -1126,31 +1132,30 @@ const SIDE_BLOCKS = ['key_fields', 'related', 'files', 'info'] as const;
 type SideBlockName = typeof SIDE_BLOCKS[number];
 
 function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, relations: NonNullable<ScreenModel['relations']>, related: (name: string) => RelatedPage,
-  active: { get(): string; set(value: string): void }, panel: PanelView | null = null, formTabs: ReadonlySet<string> = new Set(['details'])): Child {
-  // In a list's side panel (narrow): what model.panel lets it show, in its order.
-  const narrow = panel !== null;
+  active: { get(): string; set(value: string): void }, panel: PanelView | null = null, formTabs: ReadonlySet<string> = new Set(['details'])): Child[] | null {
+  // In a list's side panel: what model.panel lets it show, in its order.
   const has = (field: string) => store.root.fields.has(field);
   const build: Record<SideBlockName, () => Child> = {
     // A shortcut back to the fields from Activity, Related and the table tabs: hidden while Details is open, where
-    // the fields already are. A narrow panel shows key fields in its header.
+    // the fields already are.
     key_fields: () => {
-      const keys = narrow ? [] : keyFields(model).filter(meta => has(meta.name));
+      const keys = keyFields(model).filter(meta => has(meta.name));
       return keys.length ? when(() => !formTabs.has(active.get()), () => SideBlock({ title: 'Key fields',
         action: html`<button type="button" class="h-link" on:click=${() => active.set([...formTabs][0] ?? 'details')}>All fields</button>`,
         body: KeyValueList(keys.map(meta => view(meta.name)), { links: ctx.links }) })) : null;
     },
-    // Only relations with records; empty ones are listed in the Related tab. A narrow panel has the Related tab only.
+    // Only relations with records; empty ones are listed in the Related tab (in a side panel, only when it shows that tab).
     related: () => {
-      if (!relations.length || narrow) return null;
+      if (!relations.length || (panel && !panel.tab('related'))) return null;
       // The counts come with each relation's first page, asked for once the block scrolls into view; a save loads them again.
       const items = relations.map(relation => {
         const target = screenModel(ctx.schema, relation.model);
         return { key: relation.name, label: relation.label, href: ctx.router.href('record', { model: model.name, id: String(store.id) }, { tab: 'related' }), icon: identity(target).icon, tint: identity(target).tint,
           count: related(relation.name).total, noun: relatedNoun(relation.label, target) };
       });
-      const panel = RelatedPanel({ expanded: ctx.prefs.cell(`related.all.${model.name}`, false), onOpen: () => active.set('related'), items }) as Element;
-      whenVisible(panel, () => relations.forEach(relation => related(relation.name).ensure()));
-      return when(() => items.some(item => item.count.get() !== 0), () => SideBlock({ title: 'Related', body: panel }));
+      const box = RelatedPanel({ expanded: ctx.prefs.cell(`related.all.${model.name}`, false), onOpen: () => active.set('related'), items }) as Element;
+      whenVisible(box, () => relations.forEach(relation => related(relation.name).ensure()));
+      return when(() => items.some(item => item.count.get() !== 0), () => SideBlock({ title: 'Related', body: box }));
     },
     files: () => model.attachments ? SideBlock({ title: 'Files', body: Files(ctx, model, store) }) : null,
     // Record info is the footer under the form now (RecordFooter); 'info' stays a valid name for Meta.side_blocks.
@@ -1159,13 +1164,15 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
   // Meta.side_blocks picks and orders them; without it, all four in this order.
   const listed = (model.side_blocks ?? SIDE_BLOCKS).filter((name): name is SideBlockName => name in build);
   const names = panel ? panel.order(listed.filter(name => panel.block(name)), name => name) : listed;
-  return names.map(name => build[name]()).filter(block => block !== null);
+  const blocks = names.map(name => build[name]()).filter(block => block !== null);
+  return blocks.length ? blocks : null;
 }
 
 /** A compact page's side column: Attachments and Activity (with the slim note editor). */
-function CompactSide(ctx: AppContext, model: ScreenModel, store: RecordStore, journal: boolean): Child {
+function CompactSide(ctx: AppContext, model: ScreenModel, store: RecordStore, journal: boolean, files: boolean): Child[] | null {
+  if (!(model.attachments && files) && !journal) return null;
   return [
-    model.attachments ? SideBlock({ title: 'Attachments', body: Files(ctx, model, store) }) : null,
+    model.attachments && files ? SideBlock({ title: 'Attachments', body: Files(ctx, model, store) }) : null,
     journal ? SideBlock({ title: 'Activity', body: html`<div class="ev-cmp-activity">${Activity(ctx, model, store, 'compact')}</div>` }) : null,
   ];
 }

@@ -2548,7 +2548,7 @@
    "id": "doc-frame",
    "name": "DocFrame",
    "level": "Section",
-   "desc": "The record layout: main column on the left, side panel on the right (or left). Side panel drops below on narrow screens. The panel variant is one narrow column for a record opened beside a list.",
+   "desc": "The record layout: main column on the left, side panel on the right (or left). Responsive to its own width, not the window: a narrow frame (doc-narrow) drops the side panel below (records open it as a drawer) and the main column steps down (doc-m, doc-s, doc-xs). The panel variant is the same frame beside a list, with tighter padding.",
    "props": [
     [
      "side",

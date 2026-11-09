@@ -938,7 +938,10 @@ th:hover>.rz::after{background:var(--border-strong)}
 .dt .stk-last{box-shadow:inset -1px 0 0 var(--divider)}
 .table-wrap{max-height:calc(100vh - 230px)}
 
-@media (max-width:980px){.doc,.doc.side-left{grid-template-columns:1fr}.doc .doc-side,.doc.side-left .doc-side{order:0;border-left:0;border-right:0;border-top:1px solid var(--border)}}
+/* A frame narrower than DOC_NARROW (doc.ts measures it: a side panel, a narrow window) has one column; the side column
+   stacks under the main one (records make it a drawer, app/screens.css). */
+.doc.doc-narrow,.doc.doc-narrow.side-left{grid-template-columns:1fr}
+.doc.doc-narrow>.doc-side,.doc.doc-narrow.side-left>.doc-side{order:0;border-left:0;border-right:0;border-top:1px solid var(--border)}
 @media (max-width:760px){
   .doc-main{padding:18px max(var(--page-gutter),env(safe-area-inset-right,0px)) 32px max(var(--page-gutter),env(safe-area-inset-left,0px))}
   .doc-side{padding:18px max(16px,env(safe-area-inset-left,0px)) 96px max(16px,env(safe-area-inset-right,0px))}
@@ -1381,9 +1384,9 @@ th:hover>.rz::after{background:var(--border-strong)}
 @media print{.fs-fold .fs-body[hidden]{display:block!important}.fs-fold .fs-chev,.fs-fold .fs-sum,.fs-fold .fs-err{display:none!important}}
 
 /* ---------- DocFrame panel variant: a record beside a list ---------- */
-.doc.doc-panel{display:flex;flex-direction:column;min-height:100%}
-/* The save bar sits at the bottom of the panel, even under a short record. */
-.doc-panel .doc-main{padding:12px 18px 0;max-width:none;margin:0;flex:1;display:flex;flex-direction:column}
+/* The same frame as a record page; only its padding and title size differ. Its width classes do the rest.
+   The save bar sits at the bottom of the panel, even under a short record. */
+.doc-panel .doc-main{padding:12px 18px 0;max-width:none;margin:0;display:flex;flex-direction:column}
 .doc-panel .doc-main > *{flex:none}
 .doc-panel .doc-main > [role="tabpanel"]{margin-bottom:16px}
 .doc-panel .ev-savebar{margin-top:auto}
@@ -1391,10 +1394,11 @@ th:hover>.rz::after{background:var(--border-strong)}
 .doc-panel .doc-row{column-gap:10px}
 .doc-panel .doc-head h1{font-size:18px;line-height:26px}
 .doc-panel .stepper{margin-bottom:14px}
-.doc-panel .sum{grid-template-columns:repeat(2,minmax(0,1fr))}
 .doc-panel .fs{padding:12px 14px}
-.doc-panel .fs-g{grid-template-columns:minmax(0,1fr)}
-.doc-panel .ff.full{grid-column:auto}
+/* A narrow main column (doc-s): two stat cards a row, fields in one column. */
+.doc.doc-s .sum{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc.doc-s .fs-g{grid-template-columns:minmax(0,1fr)}
+.doc.doc-s .ff.full{grid-column:auto}
 .doc-panel .ev-savebar{margin-left:-6px;margin-right:-6px;margin-bottom:0;border-radius:var(--r) var(--r) 0 0}
 .dt tbody tr.cur td{background:var(--accent-soft)}
 .dt tbody tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
@@ -1415,7 +1419,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .fs-col{display:flex;flex-direction:column;min-width:0}
 .fs-cols>.full{margin:2px 0}
 @media (max-width:760px){.fs-colrun{grid-template-columns:1fr}}
-.doc-panel .fs-colrun{grid-template-columns:minmax(0,1fr)}
+.doc.doc-s .fs-colrun{grid-template-columns:minmax(0,1fr)}
 
 /* Focus view of a child table: the record's header, compact, above the table. */
 .g-rec{display:flex;align-items:center;gap:10px;padding:10px 20px;border-bottom:1px solid var(--border);background:var(--surface);min-width:0;flex:none}

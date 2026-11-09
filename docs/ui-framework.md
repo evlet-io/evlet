@@ -292,7 +292,7 @@ mark only.
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
 | `split.ts` | SplitView: a main area and a resizable side panel |
-| `doc.ts` | DocFrame (page or panel variant), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, keepTabPlace, SideBlock, LockBanner |
+| `doc.ts` | DocFrame (page or panel variant, responsive to its own width: DOC_NARROW, docWidthClasses), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, keepTabPlace, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
 | `time.ts` | `RelativeTime`, `relativeTime`, `exactTime`, `zoneLabel`, `RELATIVE_STEPS`, `minuteClock` ([Relative times](#relative-times)) |
@@ -850,9 +850,12 @@ page in a new browser tab.
 - Up and Down move along the list and the panel follows; switching rows replaces the history
   entry, so Back closes the panel. Escape and the close button close it and return focus to the
   row. The divider resizes the panel, and the width is kept per list.
-- The panel is the record view with `DocFrame`'s panel variant: the same sections in one column.
-  The header keeps the split move button and one outline button and puts the rest in More; key facts sit under the title; the side
-  column's Files close the Details tab, followed by the record footer when the panel shows Record info, and Related is a tab; sections close from
+- The panel is the record page's own view (`RecordView`, with `DocFrame`'s panel variant), not a copy: the same
+  title row, banners, tabs or compact card, side column and record footer, less what `Meta.panel` hides. The frame is
+  responsive to its own width, so a panel of the default width has one column and its side column (Files, or
+  Attachments and Activity) opens as a drawer from a button at the end of the panel's top line, and a wide panel
+  shows it beside the main column, as the page does.
+  The header keeps the split move button and one outline button and puts the rest in More; key facts sit under the title; sections close from
   their heading with the same FoldSection and saved state as the record page (`form.<model>.open`, by
   section title; [collapsible sections](ui.md#collapsible-sections)), and in the panel every section can close; child tables are ChildRows with Open full table; the save
   bar is pinned to the bottom of the panel. Tabs that do not fit scroll sideways.
