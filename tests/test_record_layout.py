@@ -1,4 +1,5 @@
-"""Declared record layouts: Tabs holding sections, Table fields, Related, Html and Chart blocks (Meta.layout).
+"""Declared record layouts: sections, Table fields, Related, Html and Chart blocks (Meta.layout). Tab, Meta.tabs and
+Meta.default_tab were removed in 0.4: they fail when the model is defined.
 
 Checked when the Registry is built, sent in /api/schema as record_layout, cut per role, and served by the
 existing list and aggregate routes on real SQLite (and PostgreSQL in test_postgres.py)."""
@@ -10,7 +11,7 @@ from urllib.parse import quote
 import pytest
 
 from evlet import (Chart, Child, Count, Database, Decimal, Html, Integer, Link, LongText, Model, Ref, Registry, Related, Rule,
-                   Section, Select, Sum, Tab, Table, Text)
+                   Section, Select, Sum, Table, Text)
 from evlet.ui.metadata import ui_schema, view_for
 from test_business import client
 from test_meaning import serve
@@ -33,18 +34,14 @@ class Account(Model):
 
     class Meta:
         layout = (
-            Tab('Overview', (
-                Section('Account', ('account_name', 'region')),
-                Html('<p>Work for <strong>{account_name}</strong> in {region}. Use {{braces}} freely.</p>'),
-                Chart('stat', y=('hours', 'jobs'), model='job', label='Totals'),
-                Chart('bar', x='status', y='hours', model='job', label='Hours by status'),
-            )),
-            Tab('Work', (
-                Related('job', label='Open jobs', filters={'status__ne': 'done'}, fields=('title', 'status', 'hours'), limit=2,
-                        order='-hours'),
-                Related('job', label='Same region', filters={'region': Ref('region')}),
-                'contacts',
-            )),
+            Section('Account', ('account_name', 'region')),
+            Html('<p>Work for <strong>{account_name}</strong> in {region}. Use {{braces}} freely.</p>'),
+            Chart('stat', y=('hours', 'jobs'), model='job', label='Totals'),
+            Chart('bar', x='status', y='hours', model='job', label='Hours by status'),
+            Related('job', label='Open jobs', filters={'status__ne': 'done'}, fields=('title', 'status', 'hours'), limit=2,
+                    order='-hours'),
+            Related('job', label='Same region', filters={'region': Ref('region')}),
+            'contacts',
         )
 
 
@@ -78,27 +75,26 @@ def schema_entry(registry, name):
     return next(item for item in ui_schema(registry)['models'] if item['name'] == name)
 
 
-def test_the_schema_sends_tabs_and_blocks_as_a_neutral_record_layout():
+def test_the_schema_sends_blocks_as_a_neutral_record_layout():
     layout = schema_entry(Registry(*MODELS), 'account')['record_layout']
-    assert layout == {'tabs': [
-        {'name': 'overview', 'label': 'Overview', 'blocks': [
-            {'kind': 'section', 'label': 'Account'},
-            {'kind': 'html', 'html': '<p>Work for <strong>{account_name}</strong> in {region}. Use {{braces}} freely.</p>'},
-            {'kind': 'chart', 'type': 'stat', 'model': 'job', 'link': 'account', 'x': None, 'y': ['hours', 'jobs'], 'label': 'Totals', 'filters': []},
-            {'kind': 'chart', 'type': 'bar', 'model': 'job', 'link': 'account', 'x': 'status', 'y': ['hours'], 'label': 'Hours by status', 'filters': []},
-            # Fields no section lists follow as Other, last on the first Tab.
-            {'kind': 'section', 'label': 'Other'}]},
-        {'name': 'work', 'label': 'Work', 'blocks': [
-            {'kind': 'related', 'model': 'job', 'link': 'account', 'label': 'Open jobs', 'filters': [['status', 'ne', 'done']],
-             'fields': ['title', 'status', 'hours'], 'limit': 2, 'order': ['-hours']},
-            {'kind': 'related', 'model': 'job', 'link': 'account', 'label': 'Same region',
-             'filters': [['region', 'eq', {'$expr': 'ref', 'args': ['region']}]], 'fields': [], 'limit': 5, 'order': ['-id']},
-            {'kind': 'table', 'name': 'contacts'}]}]}
+    assert layout == {'blocks': [
+        {'kind': 'section', 'label': 'Account'},
+        {'kind': 'html', 'html': '<p>Work for <strong>{account_name}</strong> in {region}. Use {{braces}} freely.</p>'},
+        {'kind': 'chart', 'type': 'stat', 'model': 'job', 'link': 'account', 'x': None, 'y': ['hours', 'jobs'], 'label': 'Totals', 'filters': []},
+        {'kind': 'chart', 'type': 'bar', 'model': 'job', 'link': 'account', 'x': 'status', 'y': ['hours'], 'label': 'Hours by status', 'filters': []},
+        {'kind': 'related', 'model': 'job', 'link': 'account', 'label': 'Open jobs', 'filters': [['status', 'ne', 'done']],
+         'fields': ['title', 'status', 'hours'], 'limit': 2, 'order': ['-hours']},
+        {'kind': 'related', 'model': 'job', 'link': 'account', 'label': 'Same region',
+         'filters': [['region', 'eq', {'$expr': 'ref', 'args': ['region']}]], 'fields': [], 'limit': 5, 'order': ['-id']},
+        {'kind': 'table', 'name': 'contacts'},
+        # Fields no section lists follow as Other, last.
+        {'kind': 'section', 'label': 'Other'}]}
     # The sections keep their usual schema entry, so every other client reads them as before.
     assert [group['label'] for group in view_for(Account)['layout']] == ['Account', 'Other']
 
 
-def test_a_layout_of_sections_only_is_unchanged():
+def test_a_layout_of_sections_only_sends_no_record_layout():
+    # The record page uses its first section as the primary area and the rest as more information.
     entry = schema_entry(Registry(Plain), 'plain')
     assert 'record_layout' not in entry
     assert [(group['label'], group['fields'], group['collapsible']) for group in entry['layout']] == [('Main', ['title'], True), ('More', ['body'], False)]
@@ -121,35 +117,33 @@ def test_blocks_without_tabs_place_a_table_inside_the_form():
                                                  {'kind': 'html', 'html': '<p>Thanks.</p>'}, {'kind': 'section', 'label': 'Notes'}]}
 
 
-def test_meta_tabs_default_tab_and_panel_name_layout_tabs():
-    class Desk(Model):
-        title = Text()
-        body = LongText()
+def test_tab_meta_tabs_and_default_tab_were_removed():
+    with pytest.raises(ImportError, match='evlet.Tab was removed: record pages have no tabs. Use Main'):
+        from evlet import Tab  # noqa: F401
+    for option in ('tabs', 'default_tab'):
+        with pytest.raises(ValueError, match=f'Desk.Meta.{option} was removed: record pages have no tabs.*Main'):
+            type('Desk', (Model,), {'__module__': __name__, 'title': Text(), 'Meta': type('Meta', (), {option: ('details' if option == 'default_tab' else ('details',))})})
 
-        class Meta:
-            layout = (Tab('Main', (Section('Main', ('title',)),)), Tab('Long text', (Section('Body', ('body',)),), name='body_tab', panel=False))
-            tabs = ('body_tab', 'main', 'activity')
-            default_tab = 'body_tab'
-    registry = Registry(Desk)
-    entry = schema_entry(registry, 'desk')
-    assert entry['tabs'] == ['body_tab', 'main', 'activity'] and entry['default_tab'] == 'body_tab'
-    assert [tab['name'] for tab in entry['record_layout']['tabs']] == ['main', 'body_tab']
-    assert entry['panel'] == {'tabs': ['body_tab']}
+    class Tab:
+        """Something named Tab in a layout, as an app written before 0.4 would build."""
+    with pytest.raises(ValueError, match='Tab was removed, record pages have no tabs; use Main'):
+        account_with(Tab())
 
+
+def test_meta_panel_names_the_record_parts():
     class Kept(Model):
         title = Text()
         body = LongText()
 
         class Meta:
-            layout = (Tab('Main', (Section('Main', ('title',)),)), Tab('Extra', (Section('Body', ('body',)),)))
-            panel = ('extra', 'title')
-    # A named Tab keeps every section on it; a named field keeps its Tab, in the order Meta.panel names them.
+            layout = (Section('Main', ('title',)), Section('Extra', ('body',)))
+            panel = ('Extra', 'activity')
     panel = view_for(Kept)['panel']
-    assert panel['order'] == ['extra', 'main'] and 'extra' not in panel.get('tabs', []) and 'main' not in panel.get('tabs', [])
-    assert 'sections' not in panel
+    assert panel['order'] == ['details', 'activity'] and panel['sections'] == ['Main']
+    assert 'activity' not in panel['tabs'] and 'revisions' in panel['tabs']
 
 
-def account_with(*blocks, tabs=False, models=()):
+def account_with(*blocks, models=()):
     """A Registry of a fresh Owner model whose Meta.layout holds blocks, with Job-like Work rows pointing to it."""
     class Owner(Model):
         name = Text()
@@ -162,7 +156,7 @@ def account_with(*blocks, tabs=False, models=()):
         rows = Table(Row)
 
         class Meta:
-            layout = (Tab('Main', blocks),) if tabs else blocks
+            layout = blocks
 
     class Work(Model):
         owner = Link(Owner)
@@ -182,43 +176,38 @@ def account_with(*blocks, tabs=False, models=()):
     return Registry(Owner, Work, Owner2, *models)
 
 
-@pytest.mark.parametrize('blocks, tabs, message', [
-    ((Tab('A', (Section('A', ('name',)),)), Section('B', ('kind',))), False, 'put every block inside a Tab'),
-    ((Tab('A', (Tab('B', ()),)),), False, 'cannot hold another Tab'),
-    ((Section('A', ('name',)), 'nope'), False, "'nope' is not a Table field"),
-    ((Section('A', ('name',)), 'rows', 'rows'), False, 'placed more than once'),
-    ((Section('A', ('name',)), 42), False, 'use Section'),
-    ((Section('A', ('name',)), Section('A', ('kind',)), 'rows'), False, 'give sections different titles'),
-    ((Tab('Activity', ()),), False, "name 'activity' is taken"),
-    ((Tab('Rows', ()),), False, "name 'rows' is taken"),
-    ((Tab('A', ()), Tab('A', ())), False, "name 'a' is taken"),
-    ((Related('missing'),), True, 'Unknown model: missing'),
-    ((Related('work', 'title'),), True, 'Work.title is not a visible Link to Owner'),
-    ((Related('owner2'),), True, 'has 2 Links to Owner (owner, twice); name one as link='),
-    ((Related('work', fields=('nope',)),), True, 'unknown or hidden on Work: nope'),
-    ((Related('work', fields=('title', 'kind', 'hours', 'due', 'owner', 'note', 'code')),), True, 'shows at most 6 fields'),
-    ((Related('work', filters={'nope': 1}),), True, "filter 'nope' names no stored, visible field of Work"),
-    ((Related('work', filters={'owner__title': 'x'}),), True, 'not a path or child rows'),
-    ((Related('work', filters={'kind__gt': 'a'}),), True, 'select fields do not take gt'),
-    ((Related('work', filters={'kind': 'zzz'}),), True, "filter 'kind'"),
-    ((Related('work', filters={'kind': Ref('nope')}),), True, "Ref('nope') is not a visible field of Owner"),
-    ((Related('work', filters={'kind__in': Ref('kind')}),), True, "Ref('field') compares with one field"),
-    ((Related('work', filters={'kind': Ref('secret')}),), True, "Ref('secret') is not a visible field"),
-    ((Related('work', order='nope'),), True, 'Related order must name stored fields'),
-    ((Related('work', limit=21),), True, 'shows 1 to 20 rows'),
-    ((Related('work', hidden=True),), True, 'hidden=True belongs in Meta.relations'),
-    ((Chart('stat', y='nope', model='work'),), True, 'Chart y names declared measures of Work'),
-    ((Chart('bar', x='nope', y='hours', model='work'),), True, "Chart x groups by a stored, visible field of Work, not 'nope'"),
-    ((Chart('bar', x='title:month', y='hours', model='work'),), True, 'after a Date or DateTime field'),
-    ((Chart('bar', x='kind', y='hours'),), True, 'a layout Chart names the model'),
-    ((Html('<p>{nope}</p>'),), True, 'Html shows unknown or hidden fields: nope'),
-    ((Html('<p>{secret}</p>'),), True, 'Html shows unknown or hidden fields: secret'),
-    ((Html('<p>a { b</p>'),), True, 'write {field} to show a field'),
-    ((Html('<p><a href="{name}">x</a></p>'),), True, 'not in attributes'),
+@pytest.mark.parametrize('blocks, message', [
+    ((Section('A', ('name',)), 'nope'), "'nope' is not a Table field"),
+    ((Section('A', ('name',)), 'rows', 'rows'), 'placed more than once'),
+    ((Section('A', ('name',)), 42), 'use Main(...), Section(...)'),
+    ((Section('A', ('name',)), Section('A', ('kind',)), 'rows'), 'give sections different titles'),
+    ((Related('missing'),), 'Unknown model: missing'),
+    ((Related('work', 'title'),), 'Work.title is not a visible Link to Owner'),
+    ((Related('owner2'),), 'has 2 Links to Owner (owner, twice); name one as link='),
+    ((Related('work', fields=('nope',)),), 'unknown or hidden on Work: nope'),
+    ((Related('work', fields=('title', 'kind', 'hours', 'due', 'owner', 'note', 'code')),), 'shows at most 6 fields'),
+    ((Related('work', filters={'nope': 1}),), "filter 'nope' names no stored, visible field of Work"),
+    ((Related('work', filters={'owner__title': 'x'}),), 'not a path or child rows'),
+    ((Related('work', filters={'kind__gt': 'a'}),), 'select fields do not take gt'),
+    ((Related('work', filters={'kind': 'zzz'}),), "filter 'kind'"),
+    ((Related('work', filters={'kind': Ref('nope')}),), "Ref('nope') is not a visible field of Owner"),
+    ((Related('work', filters={'kind__in': Ref('kind')}),), "Ref('field') compares with one field"),
+    ((Related('work', filters={'kind': Ref('secret')}),), "Ref('secret') is not a visible field"),
+    ((Related('work', order='nope'),), 'Related order must name stored fields'),
+    ((Related('work', limit=21),), 'shows 1 to 20 rows'),
+    ((Related('work', hidden=True),), 'hidden=True belongs in Meta.relations'),
+    ((Chart('stat', y='nope', model='work'),), 'Chart y names declared measures of Work'),
+    ((Chart('bar', x='nope', y='hours', model='work'),), "Chart x groups by a stored, visible field of Work, not 'nope'"),
+    ((Chart('bar', x='title:month', y='hours', model='work'),), 'after a Date or DateTime field'),
+    ((Chart('bar', x='kind', y='hours'),), 'a layout Chart names the model'),
+    ((Html('<p>{nope}</p>'),), 'Html shows unknown or hidden fields: nope'),
+    ((Html('<p>{secret}</p>'),), 'Html shows unknown or hidden fields: secret'),
+    ((Html('<p>a { b</p>'),), 'write {field} to show a field'),
+    ((Html('<p><a href="{name}">x</a></p>'),), 'not in attributes'),
 ])
-def test_layouts_are_checked_when_the_registry_is_built(blocks, tabs, message):
+def test_layouts_are_checked_when_the_registry_is_built(blocks, message):
     with pytest.raises(ValueError, match=__import__('re').escape(message)):
-        account_with(*blocks, tabs=tabs)
+        account_with(*blocks)
 
 
 @pytest.mark.parametrize('call, message', [
@@ -230,9 +219,6 @@ def test_layouts_are_checked_when_the_registry_is_built(blocks, tabs, message):
     (lambda: Chart('bar', y='hours', model='work'), 'groups by a field'),
     (lambda: Chart('pie', x='kind', y='hours', model='work'), 'bar, line or stat'),
     (lambda: Chart('stat', y='hours'), 'model, link and filters are for record layout charts'),
-    (lambda: Tab('', ()), 'Give every Tab a title'),
-    (lambda: Tab('A', (), name='Bad Name'), 'lowercase letters'),
-    (lambda: Tab('A', (), panel=1), 'panel must be True or False'),
     (lambda: Related('work', fields=(1,)), 'distinct field names'),
     (lambda: Related('work', filters='status'), 'list filter syntax'),
 ])
@@ -241,7 +227,7 @@ def test_block_arguments_are_checked(call, message):
         call()
 
 
-def test_relations_take_no_layout_options_and_unknown_tabs_fail():
+def test_relations_take_no_layout_options():
     class Owner(Model):
         name = Text()
 
@@ -253,15 +239,6 @@ def test_relations_take_no_layout_options_and_unknown_tabs_fail():
         title = Text()
     with pytest.raises(ValueError, match='take no filters or fields'):
         Registry(Owner, Work)
-
-    class Desk(Model):
-        title = Text()
-
-        class Meta:
-            layout = (Tab('Main', (Section('Main', ('title',)),)),)
-            tabs = ('nope',)
-    with pytest.raises(ValueError, match='names unknown tabs: nope'):
-        Registry(Desk)
 
 
 def test_html_keeps_to_the_rich_text_allowlist():
@@ -275,7 +252,7 @@ def test_the_record_layout_is_cut_to_what_each_role_reads(tmp_path):
 
     def blocks(c):
         entry = next(item for item in c('GET', '/api/schema')[1]['models'] if item['name'] == 'account')
-        return [block for tab in entry['record_layout']['tabs'] for block in tab['blocks']]
+        return entry['record_layout']['blocks']
     assert [block.get('label') for block in blocks(admin) if block['kind'] in ('chart', 'related')] == ['Totals', 'Hours by status', 'Open jobs', 'Same region']
     # The viewer cannot read hours: a chart keeps the measures it may read (or goes when none is left), and the
     # Related block keeps the columns it can read and an order it may use.
@@ -297,8 +274,8 @@ def check_layout_data(app):
             (south, 'Elsewhere', 'open', 'south', '40.0', editor_id)):
         assert admin('POST', '/api/job', {'account': account, 'title': title, 'status': status, 'region': region, 'hours': hours, 'owner': owner})[0] == 201
     layout = next(item for item in admin('GET', '/api/schema')[1]['models'] if item['name'] == 'account')['record_layout']
-    open_jobs, same_region = [block for block in layout['tabs'][1]['blocks'] if block['kind'] == 'related']
-    stat, bar = [block for block in layout['tabs'][0]['blocks'] if block['kind'] == 'chart']
+    open_jobs, same_region = [block for block in layout['blocks'] if block['kind'] == 'related']
+    stat, bar = [block for block in layout['blocks'] if block['kind'] == 'chart']
 
     def listed(c, block, record, region=None):
         # What the record page sends: the Link equal to the record, then the filters with Ref values filled in.
@@ -345,13 +322,13 @@ def test_controls_export_writes_the_record_layout(tmp_path):
     from evlet.controls_export import layout_code
     code = layout_code(Account, [{'title': 'Account', 'fields': [{'name': 'region'}, {'name': 'account_name'}]},
                                  {'title': 'Extra', 'fields': [{'name': 'notes'}]}])
-    assert code.startswith('layout = (\n    Tab(\'Overview\', (\n        Section(\'Account\', (\'region\', \'account_name\')')
+    assert code.startswith('layout = (\n    Section(\'Account\', (\'region\', \'account_name\')')
     assert "Html('<p>Work for <strong>{account_name}</strong> in {region}. Use {{braces}} freely.</p>')" in code
     assert "Chart('bar', x='status', y=('hours',), label='Hours by status', model='job')" in code
     assert "Related('job', label='Same region', filters={'region': Ref('region')})" in code
     assert "'contacts'," in code
-    # A section the app does not place (here one Controls added) goes last on the first Tab.
-    assert code.index("Section('Extra', ('notes',)") < code.index("Tab('Work'")
+    # A section the app does not place (here one Controls added) goes last.
+    assert code.index("'contacts',") < code.index("Section('Extra', ('notes',)")
     namespace = {}
-    exec('from evlet import Chart, Html, Ref, Related, Section, Tab\n' + code, namespace)
-    assert [type(block).__name__ for block in namespace['layout'][1].blocks] == ['Related', 'Related', 'str']
+    exec('from evlet import Chart, Html, Ref, Related, Section\n' + code, namespace)
+    assert [type(block).__name__ for block in namespace['layout']] == ['Section', 'Html', 'Chart', 'Chart', 'Related', 'Related', 'str', 'Section']

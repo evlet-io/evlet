@@ -101,8 +101,12 @@ Evlet 0.4 removes code the browser never used. Check each app before you upgrade
 
 - Search the app for `evlet.ui` imports. Delete `PageView`, `ListView`, `FormView` and
   `ViewRegistry` definitions and move what they set into `Model.Meta`: `layout` with
-  `Section(...)`, `list_fields`, `tabs`, `default_tab` and `open_in`. Controls, Export as code
+  `Section(...)`, `list_fields` and `open_in`. Controls, Export as code
   writes these for an instance's layout and list overrides.
+- Record pages have no tabs. Replace `Tab(...)` in `Meta.layout` with `Main(fields, *tables)` first
+  and `Section(...)` and the other blocks after it, and remove `Meta.tabs` and `Meta.default_tab`.
+  They fail when the model is defined, saying so. Activity moves to the side column; Revisions,
+  Related and Postings are rows of "more information".
 - An `AppDefinition(views=views)` whose `views` is empty keeps working. Remove `ui=` and any
   non-empty `views=`; Evlet refuses them at start-up.
 - Delete `.ts` and `.js` panel modules under `views/` and their `package-data` entry.

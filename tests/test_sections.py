@@ -62,7 +62,7 @@ def test_the_playground_shows_all_three_starting_states():
         ('Project', False, False), ('Budget', True, False), ('Schedule', True, True), ('Notes', True, 'empty')]
 
 
-# ---------- flow and record tabs ----------
+# ---------- flow, and the record tabs removed in 0.4 ----------
 
 def test_a_section_flows_in_rows_by_default_or_down_each_column():
     model = visit(('Visit', ('title',)), Section('Where', ('room', 'code'), flow='columns'), Section('More', ('notes',)))
@@ -79,33 +79,19 @@ def tabbed(name='Trip', **meta):
     return type(name, (Model,), {'title': Text(), 'stops': Table(line), 'Meta': type('Meta', (), meta)})
 
 
-def test_meta_tabs_order_the_record_page_and_name_its_default_tab():
-    registry = Registry(tabbed(tabs=('stops', 'details', 'activity'), default_tab='stops'))
-    view = view_for(registry.models['trip'])
-    assert (view['tabs'], view['default_tab']) == (['stops', 'details', 'activity'], 'stops')
-    assert (view_for(visit(('Visit', ('title',))))['tabs'], view_for(visit(('Visit', ('title',))))['default_tab']) == ([], None)
-    # A default tab alone keeps the usual order.
-    assert view_for(Registry(tabbed(name='Tour', default_tab='activity')).models['tour'])['default_tab'] == 'activity'
-
-
 @pytest.mark.parametrize('meta, message', [
-    (dict(tabs=('details', 'lines')), r'Trip.Meta.tabs names unknown tabs: lines. Use activity, details, revisions, related, postings, stops'),
-    (dict(default_tab='history'), r'Trip.Meta.tabs names unknown tabs: history'),
-    (dict(tabs=('details', 'details')), r'Trip.Meta.tabs: list tab names once each'),
-    (dict(tabs='details'), r'Trip.Meta.tabs: list tab names once each'),
-    (dict(tabs=('details',), default_tab='stops'), r'Trip.Meta.default_tab: stops is not in Meta.tabs'),
-    (dict(default_tab=3), r'Trip.Meta.default_tab: name one tab'),
+    (dict(tabs=('stops', 'details')), r'Trip.Meta.tabs was removed: record pages have no tabs.*Main\(fields, \*tables\)'),
+    (dict(default_tab='stops'), r'Trip.Meta.default_tab was removed: record pages have no tabs'),
 ])
-def test_meta_tab_mistakes_fail_registration(meta, message):
+def test_meta_tabs_and_default_tab_fail_when_the_model_is_defined(meta, message):
     with pytest.raises(ValueError, match=message):
-        Registry(tabbed(**meta))
+        tabbed(**meta)
 
 
-def test_the_playground_shows_column_flow_and_a_tab_order():
+def test_the_playground_shows_column_flow():
     from examples.playground.models import Customer, Project
     assert [group['flow'] for group in view_for(Customer)['layout']] == ['columns']
-    # Project uses the compact record page (Main), which has no record tabs.
-    assert (view_for(Project)['tabs'], view_for(Project)['default_tab']) == ([], None)
+    assert 'tabs' not in view_for(Project) and 'default_tab' not in view_for(Project)
     assert view_for(Project)['side_blocks'] == ['related', 'info', 'key_fields']
 
 

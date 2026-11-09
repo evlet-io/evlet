@@ -36,8 +36,6 @@
         "name"
       ],
       "open_in": "page",
-      "tabs": [],
-      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -191,8 +189,6 @@
         "title"
       ],
       "open_in": "panel",
-      "tabs": [],
-      "default_tab": null,
       "autosave": true,
       "focus": "customer",
       "panel": {
@@ -511,8 +507,6 @@
         "name"
       ],
       "open_in": "page",
-      "tabs": [],
-      "default_tab": null,
       "autosave": false,
       "fields": [
         {
@@ -663,8 +657,6 @@
         "name"
       ],
       "open_in": "page",
-      "tabs": [],
-      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -842,8 +834,6 @@
         "name"
       ],
       "open_in": "panel",
-      "tabs": [],
-      "default_tab": null,
       "autosave": true,
       "list_tabs": {
         "field": "status",
@@ -877,7 +867,6 @@
         ]
       },
       "record_layout": {
-        "compact": true,
         "blocks": [
           {
             "kind": "section",
@@ -1075,8 +1064,6 @@
         "name"
       ],
       "open_in": "page",
-      "tabs": [],
-      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -1414,8 +1401,6 @@
         "name"
       ],
       "open_in": "page",
-      "tabs": [],
-      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -5084,7 +5069,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Employee",
@@ -5105,99 +5091,87 @@
         "name"
       ],
       "open_in": "page",
-      "tabs": [],
-      "default_tab": "profile",
       "autosave": true,
       "record_layout": {
-        "tabs": [
+        "blocks": [
           {
-            "name": "profile",
-            "label": "Profile",
-            "blocks": [
-              {
-                "kind": "section",
-                "label": "Employee"
-              },
-              {
-                "kind": "html",
-                "html": "<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is on the Team tab.</p>"
-              },
-              {
-                "kind": "table",
-                "name": "skills"
-              }
+            "kind": "section",
+            "label": "Employee",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "skills",
+            "main": true
+          },
+          {
+            "kind": "html",
+            "html": "<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is listed below.</p>"
+          },
+          {
+            "kind": "chart",
+            "type": "stat",
+            "model": "employee",
+            "link": "reports_to",
+            "x": null,
+            "y": [
+              "people"
+            ],
+            "label": "Direct reports",
+            "filters": []
+          },
+          {
+            "kind": "chart",
+            "type": "bar",
+            "model": "employee",
+            "link": "reports_to",
+            "x": "department",
+            "y": [
+              "people"
+            ],
+            "label": "Direct reports by department",
+            "filters": []
+          },
+          {
+            "kind": "related",
+            "model": "employee",
+            "link": "reports_to",
+            "label": "Direct reports",
+            "filters": [],
+            "fields": [
+              "full_name",
+              "email",
+              "department"
+            ],
+            "limit": 5,
+            "order": [
+              "full_name"
             ]
           },
           {
-            "name": "team",
-            "label": "Team",
-            "blocks": [
-              {
-                "kind": "chart",
-                "type": "stat",
-                "model": "employee",
-                "link": "reports_to",
-                "x": null,
-                "y": [
-                  "people"
-                ],
-                "label": "Direct reports",
-                "filters": []
-              },
-              {
-                "kind": "chart",
-                "type": "bar",
-                "model": "employee",
-                "link": "reports_to",
-                "x": "department",
-                "y": [
-                  "people"
-                ],
-                "label": "Direct reports by department",
-                "filters": []
-              },
-              {
-                "kind": "related",
-                "model": "employee",
-                "link": "reports_to",
-                "label": "Direct reports",
-                "filters": [],
-                "fields": [
-                  "full_name",
-                  "email",
-                  "department"
-                ],
-                "limit": 5,
-                "order": [
-                  "full_name"
-                ]
-              },
-              {
-                "kind": "related",
-                "model": "employee",
-                "link": "reports_to",
-                "label": "Reports in the same department",
-                "filters": [
-                  [
-                    "department",
-                    "eq",
-                    {
-                      "$expr": "ref",
-                      "args": [
-                        "department"
-                      ]
-                    }
+            "kind": "related",
+            "model": "employee",
+            "link": "reports_to",
+            "label": "Reports in the same department",
+            "filters": [
+              [
+                "department",
+                "eq",
+                {
+                  "$expr": "ref",
+                  "args": [
+                    "department"
                   ]
-                ],
-                "fields": [
-                  "full_name",
-                  "email"
-                ],
-                "limit": 5,
-                "order": [
-                  "-id"
-                ]
-              }
+                }
+              ]
+            ],
+            "fields": [
+              "full_name",
+              "email"
+            ],
+            "limit": 5,
+            "order": [
+              "-id"
             ]
           }
         ]
@@ -5354,8 +5328,6 @@
         "currency"
       ],
       "open_in": "page",
-      "tabs": [],
-      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -5528,8 +5500,6 @@
         "barcode_type"
       ],
       "open_in": "page",
-      "tabs": [],
-      "default_tab": null,
       "autosave": true,
       "fields": [
         {
@@ -5628,8 +5598,6 @@
         "level"
       ],
       "open_in": "page",
-      "tabs": [],
-      "default_tab": null,
       "autosave": true,
       "fields": [
         {

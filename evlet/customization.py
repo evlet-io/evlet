@@ -138,13 +138,8 @@ def fold(section):
 
 
 def sections_of(value):
-    """The sections of a layout value: the list itself, or its "sections" when it also orders the record tabs."""
+    """The sections of a layout value: the list itself, or its "sections" when it also sets the side panel."""
     return value['sections'] if isinstance(value, dict) else value
-
-
-def tabs_of(value):
-    """The record tab order and default tab of a layout value ([] and None when it sets neither)."""
-    return (value.get('tabs', []), value.get('default_tab')) if isinstance(value, dict) else ([], None)
 
 
 def panel_of(value):
@@ -168,7 +163,7 @@ class Customization:
         self.controls, self.business = controls, controls.business
         self.registry = controls.registry
         self.effective, self.defaults, self.choices = {}, {}, {}
-        self.layouts, self.lists, self.read_only, self.tabs, self.panels = {}, {}, {}, {}, {}
+        self.layouts, self.lists, self.read_only, self.panels = {}, {}, {}, {}
         self.file_naming = dict(self.registry.naming)
         self.naming = MappingProxyType(self.file_naming)
         self.drop = None
@@ -204,10 +199,7 @@ class Customization:
                         for group in view['layout']]
             # What the app hides in a list's side panel (panel=False flags or Meta.panel), for the Controls toggles.
             panel = hidden_of(view.get('panel'))
-            if not (view['tabs'] or view['default_tab'] or panel):
-                return sections
-            return {'sections': sections, **({'tabs': view['tabs'], 'default_tab': view['default_tab']} if view['tabs'] or view['default_tab'] else {}),
-                    **({'panel': panel} if panel else {})}
+            return {'sections': sections, 'panel': panel} if panel else sections
         if kind == 'list':
             view = view_for(model)
             tabs = view.get('list_tabs')
@@ -245,12 +237,15 @@ class Customization:
         """A checked value, or None when it equals the file value. Raises ValueError.
 
         `saved` checks a stored override on start: a series whose condition names a missing field is then
-        skipped rather than refused."""
+        skipped rather than refused, and a layout saved with a record tab order (record pages had tabs before
+        0.4) keeps its sections and panel."""
         model, name = self.target(kind, key)
         if value is None:
             return None
         if kind == 'naming':
             checked = self.check_naming(model, name, value, saved)
+        elif kind == 'layout':
+            checked = self.check_layout(model, name, value, saved)
         else:
             checked = {'field': self.check_field, 'layout': self.check_layout, 'list': self.check_list}[kind](model, name, value)
         file = self.file_value(kind, model, name)
@@ -334,41 +329,30 @@ class Customization:
                 and not (prop in ('options_add', 'options_hidden') and not item)}
 
     def tab_names(self, model):
-        """Tabs a record page of the model can show, in their usual order: Activity, Details, Revisions, its child
-        tables, Related and Postings. Meta.tabs and the Controls tab order name these."""
+        """The record's parts the side panel can hide, as the schema's panel "tabs" names them: Activity, Details,
+        Revisions, its child tables, Related and Postings. Record pages have no tabs."""
         tables = [child.name for child in self.registry.children if child.parent is model]
-        # Tabs in Meta.layout take the place of Details, and a Table placed in the layout has no tab of its own.
-        layout = getattr(self.registry, 'layouts', {}).get(model)
-        if layout and 'tabs' in layout:
-            placed = {block['name'] for tab in layout['tabs'] for block in tab['blocks'] if block['kind'] == 'table'}
-            return ['activity', *(tab['name'] for tab in layout['tabs']), 'revisions', *(name for name in tables if name not in placed), 'related', 'postings']
         return ['activity', 'details', 'revisions', *tables, 'related', 'postings']
 
-    def check_layout(self, model, _, value):
-        tabs = default_tab = panel = None
+    def check_layout(self, model, _, value, saved=False):
+        panel = None
         if isinstance(value, dict):
-            # The record tab order and what the side panel hides ride along with the sections; a plain list is a
-            # layout with neither.
-            if not {'sections'} <= set(value) <= {'sections', 'tabs', 'default_tab', 'panel'}:
-                raise ValueError('Send the layout as a list of sections, or as sections with tabs, default_tab and panel.')
+            # What the side panel hides rides along with the sections; a plain list is a layout without it. A layout
+            # saved before 0.4 may carry a record tab order (tabs, default_tab): its sections and panel still apply.
+            old = {'tabs', 'default_tab'} & set(value)
+            if old and not saved:
+                raise ValueError('Record pages have no tabs: send the layout as a list of sections, or as sections and panel.')
+            if not {'sections'} <= set(value) - old <= {'sections', 'panel'}:
+                raise ValueError('Send the layout as a list of sections, or as sections and panel.')
             panel = value.get('panel')
-            tabs, default_tab = value.get('tabs', []), value.get('default_tab')
-            known = self.tab_names(model)
-            if not isinstance(tabs, list) or any(name not in known for name in tabs) or len(set(tabs)) != len(tabs):
-                raise ValueError(f'List record tabs of {model.__name__} once each, from {", ".join(known)}.')
-            if default_tab is not None and (default_tab not in known or (tabs and default_tab not in tabs)):
-                raise ValueError('Open records on one of the record tabs.')
             value = value['sections']
         sections = self.check_sections(model, value)
         if panel is not None:
             panel = self.check_panel(model, sections, panel)
-        if not (tabs or default_tab or panel is not None):
-            return sections
-        return {'sections': sections, **({'tabs': list(tabs), 'default_tab': default_tab} if tabs or default_tab else {}),
-                **({'panel': panel} if panel is not None else {})}
+        return sections if panel is None else {'sections': sections, 'panel': panel}
 
     def check_panel(self, model, sections, value):
-        """What a list's side panel hides: section titles, fields, tabs and blocks of this layout, by kind. An empty
+        """What a list's side panel hides: section titles, fields, record parts and blocks of this layout, by kind. An empty
         object shows everything, overriding the app's panel=False flags and Meta.panel. Display only."""
         if not isinstance(value, dict) or not set(value) <= set(PANEL_KINDS):
             raise ValueError(f'Send what the side panel hides as {", ".join(PANEL_KINDS)}, each a list of names.')
@@ -486,7 +470,7 @@ class Customization:
 
     def apply(self, stored, problems):
         """Build the effective field, layout, list and naming values from saved overrides."""
-        effective, defaults, choices, read_only, layouts, lists, tabs, panels = {}, {}, {}, {}, {}, {}, {}, {}
+        effective, defaults, choices, read_only, layouts, lists, panels = {}, {}, {}, {}, {}, {}, {}
         naming = dict(self.file_naming)
         models = self.controls.models()
         for model in models.values():
@@ -523,7 +507,6 @@ class Customization:
                     defaults.setdefault(model, {})[name] = props['default']
             elif kind == 'layout':
                 layouts[model] = sections_of(checked)
-                tabs[model] = tabs_of(checked)
                 if panel_of(checked) is not None:
                     panels[model] = panel_of(checked)
             elif kind == 'list':
@@ -537,7 +520,7 @@ class Customization:
             for model, values in defaults.items():
                 defaults[model] = {name: model.__declared_fields__[name].validate(value) for name, value in values.items()}
         self.effective, self.defaults, self.choices, self.read_only = effective, defaults, MappingProxyType(choices), read_only
-        self.layouts, self.lists, self.naming, self.tabs, self.panels = layouts, lists, MappingProxyType(naming), tabs, panels
+        self.layouts, self.lists, self.naming, self.panels = layouts, lists, MappingProxyType(naming), panels
 
     def layout(self, model):
         """The effective layout. Fields placed nowhere (instance fields, fields an app adds later) go to the
@@ -591,8 +574,6 @@ class Customization:
             wide = {name for section in entry['layout'] for name in section['wide']}
             for field in entry['fields']:
                 field['wide'] = field['name'] in wide
-        if model in self.tabs:
-            entry['tabs'], entry['default_tab'] = self.tabs[model]
         # What a list's side panel hides: the Controls choice when there is one, else the app's. The app's order stays.
         panel = {**self.panels[model], **({'order': entry['panel']['order']} if 'order' in entry.get('panel', {}) else {})} \
             if model in self.panels else entry.get('panel')
@@ -834,6 +815,9 @@ class Customization:
                     panel = {kind_: names for kind_, names in {**panel, 'fields': [item for item in panel.get('fields', []) if item != name],
                              'sections': [item for item in panel.get('sections', []) if item in titles]}.items() if names}
                     value = {**value, 'panel': panel}
+                if isinstance(value, dict):
+                    # A record tab order saved before 0.4 is dropped on the way.
+                    value = {key_: item for key_, item in value.items() if key_ not in ('tabs', 'default_tab')}
                 write(kind, key, ({**value, 'sections': kept} if isinstance(value, dict) else kept) if kept else None)
             elif kind == 'list' and (name in value['columns'] or value['sort'].removeprefix('-') == name):
                 columns = [item for item in value['columns'] if item != name]
@@ -997,9 +981,8 @@ class Customization:
         with self.business.database._connection() as connection:
             count = connection.execute(f'SELECT count(*) FROM {identifier(table)}').fetchone()[0]
         rules = self.naming.get(model)
-        # Record page tabs the form layout can order: the record's own tabs, then each child table with its label.
+        # The record's parts the side panel can hide: its own, then each child table with its label.
         labels = {child.name: child.label for child in self.registry.children if child.parent is model}
-        labels.update((tab['name'], tab['label']) for tab in getattr(self.registry, 'layouts', {}).get(model, {}).get('tabs', ()))
         tabs = [{'name': name, 'label': labels.get(name, name.capitalize())} for name in self.tab_names(model)]
         return {'table': table, 'records': count, 'fields_detail': fields, 'tabs': tabs,
                 'naming': None if rules is None else {'field': rules.field, 'date_field': rules.date_field}}

@@ -501,7 +501,7 @@ class Business:
                          for relation in self.visible_relations(user, model)]
             if relations:
                 entry['relations'] = relations
-            # Meta.layout's Tabs and blocks: Related and Chart blocks only over what this role may read.
+            # Meta.layout's blocks: Related and Chart blocks only over what this role may read.
             if 'record_layout' in entry:
                 from .ui.metadata import layout_for_role
                 entry['record_layout'] = layout_for_role(self, user, model, entry['record_layout'], readable)

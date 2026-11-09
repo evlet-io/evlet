@@ -265,7 +265,7 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
                               ('field', 'Lead.value', {'required': True, 'label': 'Expected value'}),
                               ('field', 'Lead.source', {'options_add': ['exhibition'], 'default': 'web'}),
                               ('field', 'Lead.x_lpo', {'help_text': 'From the purchase order', 'tooltip': 'Ask the customer if it is missing'}),
-                              ('layout', 'Lead', {'sections': sections, 'tabs': ['details', 'activity'], 'default_tab': 'details'}), ('list', 'Lead', {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'title', 'open_in': 'panel', 'list_tabs': 'source', 'list_tab': 'web'}),
+                              ('layout', 'Lead', sections), ('list', 'Lead', {'columns': ['title', 'value'], 'page_size': 25, 'sort': 'title', 'open_in': 'panel', 'list_tabs': 'source', 'list_tab': 'web'}),
                               ('naming', 'Invoice', series), ('setting', 'security.controls_ips', ['127.0.0.0/8']), ('setting', 'security.lockout', 4))
     assert status == 200, payload
     exported = {item['file']: item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1]}
@@ -296,8 +296,8 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     meta = lead['Meta']
     assert [(item.title, item.fields, item.collapsible, item.collapsed, item.flow) for item in meta.layout] == [
         ('Main', ('title', 'source'), False, False, 'columns'), ('More', ('value', 'customer', 'notes'), True, 'empty', 'rows')]
-    assert (meta.tabs, meta.default_tab, meta.list_fields, meta.open_in, meta.list_tabs, meta.list_tab) == (
-        ('details', 'activity'), 'details', ('title', 'value'), 'panel', 'source', 'web')
+    assert (meta.list_fields, meta.open_in, meta.list_tabs, meta.list_tab) == (('title', 'value'), 'panel', 'source', 'web')
+    assert not hasattr(meta, 'tabs') and not hasattr(meta, 'default_tab')
 
     routes = {}
     exec(exported['instances/<name>/routes.py'], names, routes)
@@ -323,10 +323,10 @@ def test_exported_layout_and_list_pasted_into_the_model_give_the_same_screens(tm
     sections = [{'title': 'Main', 'fields': [{'name': 'title', 'width': 6}, {'name': 'source', 'width': 6}], 'flow': 'columns'},
                 {'title': 'More', 'fields': [{'name': 'value', 'width': 6}, {'name': 'customer', 'width': 6}, {'name': 'notes', 'width': 12}],
                  'collapsible': True, 'collapsed': 'empty'}]
-    layout = {'sections': sections, 'tabs': ['details', 'activity'], 'default_tab': 'activity'}
+    layout = sections
     listed = {'columns': ['title', 'source', 'value'], 'page_size': 25, 'sort': 'title', 'open_in': 'panel', 'list_tabs': 'source', 'list_tab': 'referral'}
     assert save(admin, ('layout', 'Lead', layout), ('list', 'Lead', listed))[0] == 200
-    keys = ('layout', 'tabs', 'default_tab', 'list_fields', 'open_in', 'list_tabs')
+    keys = ('layout', 'list_fields', 'open_in', 'list_tabs')
     lead = lambda c: {key: entry.get(key) for entry in c('GET', '/api/schema')[1]['models'] if entry['name'] == 'lead' for key in keys}
     overridden = lead(admin)
     code = admin('GET', '/api/_controls/overrides/export?kind=layout&key=Lead')[1][0]['code']

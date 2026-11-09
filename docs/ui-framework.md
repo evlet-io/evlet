@@ -148,7 +148,7 @@ router.confirmLeave(() => record.dirty.get(), () => confirmDialog('Discard your 
   not know (such as `/api/...`), stay ordinary links.
 - `guard(fn)` can stop any navigation (sync or async). `confirmLeave` asks only while its
   condition is true and also asks before the tab closes. A navigation that changes only the
-  query, such as switching record tabs (`?tab=`), stays on the page and never asks. A refused back or forward step
+  query, such as a list's search or tab, stays on the page and never asks. A refused back or forward step
   returns to the page the user was on. The latest of two concurrent navigations wins.
 - `router.signal` is aborted when the route changes. Pass `() => router.signal` to the API
   client so requests of the old page stop.
@@ -290,9 +290,9 @@ mark only.
 | `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)), `flowGrid` (rows or columns) |
 | `draglist.ts` | `dragList(root, { kind, move, label, zoneLabel })`: reorder by mouse, touch or keyboard, with announcements |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
-| `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
+| `childtable.ts` | ChildTable over a record store `Table` |
 | `split.ts` | SplitView: a main area and a resizable side panel |
-| `doc.ts` | DocFrame (page or panel variant, responsive to its own width: DOC_NARROW, docWidthClasses), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, keepTabPlace, SideBlock, LockBanner |
+| `doc.ts` | DocFrame (page or panel variant, responsive to its own width: DOC_NARROW, docWidthClasses), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
 | `time.ts` | `RelativeTime`, `relativeTime`, `exactTime`, `zoneLabel`, `RELATIVE_STEPS`, `minuteClock` ([Relative times](#relative-times)) |
@@ -397,7 +397,7 @@ nothing else. More has Copy link and Copy record ID too. It shows the times from
 time switches every time in the footer between relative and exact, remembered per person
 (`prefs.exactTimes`). Who is the person's display name, a link to Controls Users for people who may
 open Controls and plain text otherwise; it is absent for engine writes and for portal roles. The
-Activity tab's entry times use RelativeTime too, without the toggle.
+Activity's entry times use RelativeTime too, without the toggle.
 
 ### Typing dates and times
 
@@ -611,12 +611,8 @@ mount(document.querySelector('#app')!, () => DocFrame({
 }));
 ```
 
-- **Tabs** with `sticky: true` stick to the top of the scrolling area they are in (the view or a side
-  panel), with the page colour behind them. **keepTabPlace(tabs, active)**, called after the
-  TabPanels, keeps the page still on a switch: the new panel starts right under a stuck tab bar, or
-  the scroll position stays when the bar is not stuck, and the panel gets a `--tab-fill` minimum
-  height that keeps that position and reaches the bottom of the scrolling area. The record page uses
-  both.
+- **Tabs** and **TabPanel** are for screens of your own (a list's tabs use Tabs); the record page has no
+  tabs since 0.4, and `sticky` and `keepTabPlace` went with them.
 - **InlineValue** reads first and edits in place: click or Enter opens the field's input,
   Enter saves (one field, through `record.save()`, no Save button), Esc cancels, leaving the
   field saves. Focus returns to the value after Enter or Esc; after Tab or a click elsewhere
@@ -665,9 +661,6 @@ mount(document.querySelector('#app')!, () => DocFrame({
   width is a cell the caller keeps; the panel takes at least `minSide` (380 px) and at most 70
   percent, leaving `minMain` (320 px). Below `breakpoint` (900 px) the panel covers the main area
   and `overlay` says so.
-- **ChildRows** shows a record `Table` in a narrow column: one line per row with its first value
-  and its last amount, the other numbers under it; a row opens in place with its fields, and Add
-  row, Remove row and Open full table sit around it. Locked lines show values only.
 - **FormSection** with `fold` is a **FoldSection**: a heading button with `aria-expanded`, `aria-controls` and a chevron, a summary and an error
   count while closed, and `hidden` on the closed body so Tab skips it. A `Folds` holds one form's state: the
   person's choices (a preferences cell of title to open) over each section's start (`collapsed`, the phone rule,
@@ -688,8 +681,8 @@ mount(document.querySelector('#app')!, () => DocFrame({
   calculated, hidden or locked). **autofocusForm(root, choose,
   before)** focuses that field's control once `root` is on the page, except on a touch device
   (`keyboardFirst()` in `core.ts`) or when the focus moved away from `before` while the form loaded.
-  **layoutFocusOrder(sections, shown)** puts a form's sections in the order a declared record layout
-  shows them on its first Tab (`shown` is their labels), keeping the form order when there is no layout.
+  **layoutFocusOrder(sections, shown)** puts a form's sections in the order the record page shows them
+  (`shown` is their labels, the primary area first).
   The record page uses all three for new records and slips use the first two on open ([focus on new forms](ui.md#focus-on-new-forms)).
 - Popovers anchor to their button and close on Esc or an outside click. `openPopover(anchor, render,
   { align: 'side' })` places the panel beside the anchor on its right, top edges level (the Workspace
@@ -824,9 +817,9 @@ values.
 
 Routes are the paths the Python server serves (`evlet/ui/routes.py`): `/docs` and
 `/docs/:topic`, `/app/:model` (list), `/app/:model/new` (a new record; field values in the query
-fill it, `?customer=4`), `/app/:model/:id` (a record; `?tab=` keeps the tab) and the older
+fill it, `?customer=4`), `/app/:model/:id` (a record) and the older
 `/app/:model/:id/view`, which opens the record. A list with a record in its side panel keeps
-it in `?open=` (the id, or `new`) and the record's tab in `?rtab=`. `/reports` and `/reports/:report` are reports
+it in `?open=` (the id, or `new`). `/reports` and `/reports/:report` are reports
 ([reports.md](reports.md)); `/controls` loads Controls as its own chunk (`frontend/src/evlet/controls/`,
 see [controls.md](controls.md)); any other address opens Docs. The earlier
 development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, tab and filters in the query, so
@@ -853,18 +846,17 @@ page in a new browser tab.
   entry, so Back closes the panel. Escape and the close button close it and return focus to the
   row. The divider resizes the panel, and the width is kept per list.
 - The panel is the record page's own view (`RecordView`, with `DocFrame`'s panel variant), not a copy: the same
-  title row, banners, tabs or compact card, side column and record footer, less what `Meta.panel` hides. The frame is
+  title row, banners, compact card, side column and record footer, less what `Meta.panel` hides. The frame is
   responsive to its own width, so a panel of the default width has one column and its side column (Files, or
   Attachments and Activity) opens as a drawer from a button at the end of the panel's top line, and a wide panel
   shows it beside the main column, as the page does.
-  The header keeps the split move button and one outline button and puts the rest in More; key facts sit under the title; sections close from
-  their heading with the same FoldSection and saved state as the record page (`form.<model>.open`, by
-  section title; [collapsible sections](ui.md#collapsible-sections)), and in the panel every section can close; child tables are ChildRows with Open full table; the save
-  bar is pinned to the bottom of the panel. Tabs that do not fit scroll sideways.
-- Unsaved changes follow the record page: another tab of the record does not ask; another row,
-  Close, Escape, Back or leaving the list does (`confirmLeave` with `stays`). Expand opens the
-  record page at the same tab with the same record store, so unsaved edits come along without a
-  prompt.
+  The header keeps the split move button and one outline button and puts the rest in More; key facts are the
+  subtitle; "more information" rows open and close with the same saved state as the record page
+  (`form.<model>.open`, by title; [collapsible sections](ui.md#collapsible-sections)); child tables are the
+  same ChildTable grids; the save bar is pinned to the bottom of the panel.
+- Unsaved changes follow the record page: another row, Close, Escape, Back or leaving the list asks
+  (`confirmLeave` with `stays`). Expand opens the record page with the same record store, so unsaved
+  edits come along without a prompt.
 - New opens `?open=new`; values in the link fill the new record as on `/app/:model/new`. Create
   shows the new record in the panel and its row in the list. Slips, moves and actions work as on
   the page; a saved or moved record updates its row.
@@ -886,7 +878,7 @@ page in a new browser tab.
 | `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields |
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |
 | `Meta.search_fields` | The list search box and record search in the palette |
-| `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other. With `Tab`s or blocks (`record_layout` in the schema), the record page's tabs and their sections, tables, Related lists, Html and charts, in order ([ui.md](ui.md#record-layouts)) |
+| `Meta.layout` | The record page's sections, the first one its primary area; readable fields it leaves out follow under Other. With `Main` or blocks (`record_layout` in the schema), the primary area and then its sections, tables, Related lists, Html and charts as "more information", in order ([ui.md](ui.md#record-layouts)) |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
 | `Meta.list_tabs`, `Meta.list_tab` | The list's tabs: All and one per value of a State, Select or Link field (the State without `list_tabs`, none with `list_tabs = None`), with counts from `GET /api/{model}/list_tabs`, and the tab the list opens on (`"all"` by default). A Link shows its 8 most used values, labelled by title ([ui.md](ui.md#list-tabs)) |
 | `Meta.board` | Names the model's State field, such as `"stage"`, to offer a List and Board switch on its list; the board has one column per state. Without it the list has no board, and `?view=board` opens the table. Any other field fails registration |
@@ -902,16 +894,16 @@ page in a new browser tab.
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
 | `Meta.measures` (Phase 9) | Model-level measures as stat cards over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
-| `Meta.key_fields` (Phase 10) | The header facts (the first three), and the Key fields side block while a tab other than Details is open (without it: the first fields). Never the summary strip. On a compact page (`Main`), the header has no facts and the key fields show in the form |
-| `Meta.cards`, `Main`, `Section(description=...)` | Sent in the schema for the compact record page (cards, a primary area without a heading, collapsible "more information" rows). The record page shows the blocks in order until it draws that design ([ui.md](ui.md#compact-record-page)) |
+| `Meta.key_fields` (Phase 10) | The header's subtitle (the first two with a value); the fields themselves show in the form. Never the summary strip |
+| `Meta.cards`, `Main`, `Section(description=...)` | The compact record page: key cards, a primary area without a heading, collapsible "more information" rows ([ui.md](ui.md#compact-record-page)) |
 | Calculated fields, per-record measures | The summary strip, at most four: calculated values the header facts don't show, then per-record measures. No strip when nothing is left; `Meta.summary = False` turns it off |
-| `Meta.relations` (Phase 10) | The Related tab and side block. The side block lists only relations with records, and goes when none has any; the tab lists them all. A relation named after its model counts in that model's words ("Payments, 1 payment"), any other name counts records; an empty relation is one line in the tab, with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
-| `Meta.side_blocks` | Which side blocks show, in order, from `key_fields`, `related`, `files` and `info`. Without it, all four in that order; `()` shows none |
+| `Meta.relations` (Phase 10) | The Related row of "more information": closed, a count per relation; open, every relation, an empty one as one line with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
+| `Meta.side_blocks` | `files` keeps the attachments in the side column (without it they go); `related` keeps the automatic Related row when the layout lists related records itself. `key_fields` and `info` are accepted and change nothing |
 | `panel=False` on a field, `Section` or `Table`; `Meta.panel_summary = False`; `Meta.panel` | What a record opened in a list's side panel leaves out, or (`Meta.panel`) the only parts it keeps, in order. The schema carries `panel` only when something is hidden; the full page ignores it ([Side panel](#side-panel)) |
 | `copy=False` on a field or `Table`; `Meta.duplicate = False` | What a record's Duplicate leaves out of the new record, or (`Meta.duplicate`) no Duplicate action at all. Duplicate shows only with `permissions.create`; the schema carries `copy` and `duplicate` only when off ([ui.md](ui.md#duplicate)) |
-| `attachments` | The Files side block, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
-| `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
-| Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
+| `attachments` | The Attachments block of the side column, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
+| `Effects` (Phase 6) | The Postings row: what was posted, reversals and the balance check |
+| Journal (Phase 8) | Activity in the side column: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
 | Every record (`_audit`) | Created and Modified in the record footer, as relative times with who ([Relative times](#relative-times)), with the record ID and Copy link. More has Copy record ID and Copy link |
 | Title, name and State | Shown in the header, so a saved record's Details form leaves them out: the title is edited in place in the header, the State by its badge or bar. A field the header shows but can't edit (a name typed by hand, a State with `show="none"`) stays in the form. A new record's form keeps them all |
 
@@ -919,7 +911,7 @@ A section appears only when the schema or the detail carries its key. The screen
 these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,
 measures, key fields, relations, files and a journal (engine and user entries, follow ups, and a
 viewer who sees the posting entry only in part). A record that has posted nothing yet still lists each
-effect target with zero rows; the Postings tab treats that as nothing posted. The files of a
+effect target with zero rows; the Postings row treats that as nothing posted. The files of a
 locked record cannot change, so the upload control hides while `_locked` is true. Every response
 is recorded by `scripts/generate_ui_framework_fixtures.py`; none is written by hand.
 

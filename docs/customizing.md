@@ -65,7 +65,7 @@ normal `serve` still requires `migrate` to record the reviewed source change.
 ## Screens
 
 The list, board and record screens come from the model. Set `Meta.layout` with
-`Section(...)`, `Meta.list_fields`, `Meta.tabs` and `Meta.open_in` to shape them, and
+`Main(...)` and `Section(...)`, `Meta.list_fields` and `Meta.open_in` to shape them, and
 use `evlet dev --instance acme` to see changes. [The UI guide](ui.md) lists every option.
 Model permissions still apply to every record request.
 

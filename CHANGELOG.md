@@ -6,6 +6,20 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Breaking
+
+- **Record pages have no tabs: every record uses the compact record page.** `Tab`, `Meta.tabs` and
+  `Meta.default_tab` are removed; using them fails when the model is defined, with a message pointing to
+  `Main` and `Section`. A model without `Meta.layout` puts every field in the primary area, in
+  declaration order, followed by its Tables; a layout of sections only uses its first section as the
+  primary area and the others as "more information". Activity moves to the side column (a drawer in a
+  narrow window, so the record comes first); Revisions, Related and Postings are rows of more
+  information. The record address no longer takes `?tab=`, and a list's side panel no longer writes
+  `?rtab=`. `record_layout` loses its `compact` key and is `{"blocks": [...]}` only. Controls layouts no
+  longer take a record tab order (`tabs`, `default_tab`); one saved before keeps its sections and panel.
+  The side panel's narrow child rows (`ChildRows`), the Key fields and Related side blocks, sticky record
+  tabs and `keepTabPlace` are gone ([docs/app-upgrades.md](docs/app-upgrades.md)).
+
 ### Added
 
 - **Lifecycle on lists and records.** Cancelled records (a red `final` state, or `void`) are struck through and

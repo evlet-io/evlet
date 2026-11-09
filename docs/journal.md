@@ -349,4 +349,4 @@ What it does not do:
   most four more statements with a hashed journal than without one (the previous hash, the
   entry, the SQLite insert guard trigger and the `_journal` summary).
 * The connector and the MCP server do not show the journal yet. The UI shows it in the
-  record view's Activity tab.
+  record view's Activity, in its side column.
