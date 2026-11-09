@@ -31,7 +31,7 @@ from .identity import RecordId, jsonable
 from .naming import standard
 from .fields import Boolean, Link, Reference
 from .models import Model, ValidationError, identifier
-from . import periods
+from . import periods, sections
 from .permissions import CHUNK, Policy, Rule
 
 NUMERIC = ('integer', 'decimal', 'currency', 'percent')
@@ -296,6 +296,7 @@ def load_document(business, tx, model, record_id):
             if not owners:
                 continue
             found = owned_rows(tx, child, list(owners))
+            headings = sections.load(tx, child, list(owners))
             for owner_id, item in owners.items():
                 rows = []
                 for row in found.get(owner_id, ((), 0))[0]:
@@ -303,6 +304,9 @@ def load_document(business, tx, model, record_id):
                     rows.append(draft)
                     following.append((child.model, row.id, draft))
                 item._rows[child.name] = rows
+                if owner_id in headings:
+                    # The rows method may read the grouping: self.lines.sections().
+                    item._sections[child.name] = sections.anchored(found[owner_id][0], headings[owner_id])
         level = following
     freeze_draft(root)
     return root
@@ -371,6 +375,15 @@ class EnginePolicy(Policy):
         if record_id not in found:
             raise AccessError(404, 'Record not found')
         return found[record_id]
+
+
+class SessionPolicy(EnginePolicy):
+    """The engine policy for settling a document after a trusted Session write: it may also write the document's rows."""
+    def allows(self, user, model, operation):
+        return operation in ('read', 'create', 'update', 'delete')
+
+    def _scoped(self, tx, user, model, record_ids, operation, columns):
+        return super()._scoped(tx, user, model, record_ids, 'read', columns)
 
 
 class EngineBusiness:

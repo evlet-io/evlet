@@ -270,6 +270,14 @@ def tree_changes(business, model, before, after, skip=()):
                 collection['positions'] = [{'id': row.id, 'old': index, 'new': next(i for i, item in enumerate(new_rows) if item.id == row.id)}
                                            for index, row in enumerate(old_rows) if row.id in new_ids
                                            and index != next(i for i, item in enumerate(new_rows) if item.id == row.id)]
+        # Section rows: {"added": [{"id", "label"}], "renamed": [{"id", "old", "new"}], "removed": [...], "moved": true}.
+        old_sections = getattr(before, '_sections', {}).get(child.name, []) if before is not None else []
+        new_sections = getattr(after, '_sections', {}).get(child.name, []) if after is not None else []
+        if old_sections or new_sections:
+            from .sections import changes as section_changes
+            headings = section_changes(old_sections, new_sections, old_rows, new_rows)
+            if headings:
+                collection['sections'] = headings
         if collection:
             rows[child.name] = collection
     return {**({'fields': fields} if fields else {}), **({'rows': rows} if rows else {})}
@@ -582,6 +590,10 @@ def shown_changes(business, user, model, data, visibility):
                     items.append({'id': text_id(row['id']), **inner})
             if items:
                 shown[part] = items
+        if collection.get('sections'):
+            # Section labels are part of the Table this role reads; ids are shown in their text form.
+            shown['sections'] = {key: [{**item, 'id': text_id(item['id'])} for item in value] if isinstance(value, list) else value
+                                 for key, value in collection['sections'].items()}
         if collection.get('reordered'):
             shown['reordered'] = True
             if not scoped and 'positions' in collection:

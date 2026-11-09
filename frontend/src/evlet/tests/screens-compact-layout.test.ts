@@ -164,6 +164,13 @@ describe('a compact record page', () => {
     const second = await start(withImage, `/app/shipment/${shipment}`);
     await until(() => expect(second.host.querySelector('.doc-head .doc-mark .doc-img img')?.getAttribute('src')).toBe('/files/spring.png'));
     expect(second.host.querySelector('.doc-head .doc-img img')!.getAttribute('alt')).toBe('Spring order');
+    stopAll();
+    // An Image field's value is an attachment id: the saved image comes from the record's attachments route.
+    const saved = copy(screen.compact_shipment_detail).body;
+    saved.photo = '12';
+    const third = await start(withSchema(shipmentSchema(model)).map(route => String(route[1]) === String(new RegExp(`/api/shipment/${shipment}$`))
+      ? [route[0], route[1], { ...screen.compact_shipment_detail, body: saved }] as Route : route), `/app/shipment/${shipment}`);
+    await until(() => expect(third.host.querySelector('.doc-head .doc-img img')?.getAttribute('src')).toBe(`/api/shipment/${shipment}/attachments/12`));
     const { imageSource } = await import('../app/record-compact');
     expect(imageSource({ url: 'https://example.test/a.png' })).toBe('https://example.test/a.png');
     expect(imageSource('01j7kzz1hre6c')).toBeNull();

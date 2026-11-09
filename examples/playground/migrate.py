@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sqlite3
 
-from evlet import (AddField, AddIndex, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Integer,
+from evlet import (AddField, AddIndex, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Image, Integer,
                    Link, LongText, Migration, Model, PostgreSQLDatabase, Recompute, Registry, RenameField, RetireField, RichText, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, Invoice, registry
@@ -204,6 +204,26 @@ migrations.append(Migration('0016_employee_profile',
     AddField('employee', 'department', Select(['sales', 'finance', 'operations', 'people'])),
     CreateModel(EmployeeSkill),
 ))
+
+
+class EmployeeSkillLevel(Model):
+    """Frozen creation schema of an employee's Skill levels table, which Employee.derive fills."""
+    storage_name = 'employee_skill_levels'
+    evlet_owner = Link(Employee, required=True, index=True)
+    evlet_position = Integer(required=True, default=0)
+    level = Select(['learning', 'practised', 'expert'])
+    skills = Integer(default=0)
+
+
+# Skill counts that Employee.derive sets on every save; saved employees get them when next saved.
+migrations.append(Migration('0017_employee_skill_levels',
+    AddField('employee', 'skill_count', Integer()),
+    CreateModel(EmployeeSkillLevel),
+))
+
+
+# A photo for each item (Item.Meta.image shows it as the record's avatar). Existing items start without one.
+migrations.append(Migration('0018_item_photo', AddField('item', 'photo', Image())))
 
 
 def legacy_registry():

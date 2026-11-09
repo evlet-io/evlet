@@ -1091,6 +1091,9 @@ th:hover>.rz::after{background:var(--border-strong)}
 .in-link svg{color:var(--fg-3)}
 .in-tags{display:flex;flex-wrap:wrap;gap:5px;align-items:center;min-height:32px;padding:4px 6px;border:1px solid var(--border-strong);border-radius:var(--r);background:var(--surface)}
 .in-tags input{border:0;outline:none;background:transparent;flex:1;min-width:70px;font-size:13px}
+/* Image fields: a small preview with Upload or Replace and Remove. The record header styles its own avatar. */
+.in-image{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.img-thumb{display:inline-flex;align-items:center;justify-content:center;width:48px;height:48px;object-fit:cover;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--bg-muted);color:var(--fg-3);vertical-align:middle}
 .sw-wrap,.ck-wrap{display:inline-flex;align-items:center;gap:9px;font-size:13px}
 .ck-wrap .check{margin:0}
 .wf{border:1.5px dashed var(--border-strong);border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:11.5px;color:var(--fg-3);background:var(--surface)}

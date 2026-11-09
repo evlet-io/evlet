@@ -381,6 +381,9 @@ def check_state_lock(context, draft, before):
             saved = old._rows.get(table, [])
             if [row.id for row in rows] != [row.id for row in saved]:
                 errors[prefix + table] = message
+            # Adding, renaming, removing or moving a section row is a change too.
+            if [(s.id, s.label, s.at) for s in item._sections.get(table, [])] != [(s.id, s.label, s.at) for s in old._sections.get(table, [])]:
+                errors[prefix + table] = message
             by_id = {row.id: row for row in saved}
             for row in rows:
                 if row.id in by_id:
@@ -638,7 +641,8 @@ def state_schema(business, user, model):
                       'when': guards[move].ir if move in guards and readable(business.policy, user, guards[move]) else None,
                       **({'asks': asks} if asks else {})})
     return {'field': name, 'states': list(field.choices), 'default': field.default, 'moves': moves,
-            'locked': list(field.locked), 'final': list(field.final), 'voidable': list(field.voidable), 'show': field.show}
+            'locked': list(field.locked), 'final': list(field.final), 'voidable': list(field.voidable),
+            'cancelled': list(field.cancelled_states), 'show': field.show}
 
 
 def action_schema(business, user, model, name):

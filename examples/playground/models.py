@@ -180,6 +180,12 @@ class Skill(Child):
     level = Select(['learning', 'practised', 'expert'], required=True, default='practised')
 
 
+class SkillLevel(Child):
+    """One row per level used in an employee's skills, built by Employee.derive on every save."""
+    level = Select(['learning', 'practised', 'expert'])
+    skills = Integer(default=0)
+
+
 DEPARTMENTS = ['sales', 'finance', 'operations', 'people']
 
 
@@ -194,7 +200,7 @@ class Employee(Model):
         # and two lists of direct reports, one narrowed to this employee's department. Listing related records
         # here turns the automatic Related rows off for employees.
         layout = (
-            Main(('full_name', 'email', 'department', 'reports_to'), 'skills'),
+            Main(('full_name', 'email', 'department', 'reports_to', 'skill_count'), 'skills', 'skill_levels'),
             Html('<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is listed below.</p>'),
             Chart('stat', y='people', model='employee', link='reports_to', label='Direct reports'),
             Chart('bar', x='department', y='people', model='employee', link='reports_to', label='Direct reports by department'),
@@ -204,6 +210,9 @@ class Employee(Model):
         )
         # People counted by the charts above; the list shows the count too.
         measures = {'people': Count()}
+        # derive() below sets these on every save and preview; nobody writes them, and the Skill levels
+        # table is read only on the form (docs/model-engine.md#derived-values).
+        derives = ('skill_count', 'skill_levels')
 
     # Moving someone changes every team above them, so each save keeps who changed reports_to and when.
     track_changes = True
@@ -213,7 +222,30 @@ class Employee(Model):
     email = Text(max_length=254)
     department = Select(DEPARTMENTS)
     reports_to = Link('employee', index=True, label='Reports to')
-    skills = Table(Skill)
+    # Section rows group skills under headings such as "Languages" or "Tools" (docs/model-engine.md#section-rows).
+    # They are stored apart from the rows, so turning this on needed no migration, and derive() below still
+    # counts real skills only.
+    skills = Table(Skill, sections=True)
+    skill_count = Integer(label='Skills')
+    skill_levels = Table(SkillLevel, label='Skill levels')
+
+    def derive(self):
+        """How many skills, and one row per level they use: values a formula cannot build."""
+        counts = {}
+        for skill in self.skills:
+            counts[skill.level] = counts.get(skill.level, 0) + 1
+        self.skill_count = len(self.skills)
+        self.skill_levels = [{'level': level, 'skills': counts[level]} for level in ('learning', 'practised', 'expert') if level in counts]
+
+    def before_close(self, to):
+        """Refuse to delete someone while people still report to them, naming who (to is None for a delete).
+
+        It reads through self.context.session, read only, inside the delete's own transaction."""
+        # self.model is the model class (Employee) on the draft a hook gets.
+        reports = self.context.session.list(self.model, filters={'reports_to': self.id}, order_by=('full_name',), limit=6)
+        if reports:
+            names = ', '.join(report.full_name for report in reports[:5]) + (' and others' if len(reports) > 5 else '')
+            raise ValidationError({'_form': f'Move their reports to another manager first: {names}'})
 
     @action('Recognise', inputs={'points': Integer(required=True, minimum=1, maximum=50),
                                  'reason': Text(required=True, max_length=120)})

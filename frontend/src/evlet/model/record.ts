@@ -21,7 +21,7 @@ import { buildChanges, findField } from './changes';
 import { dependentsOf, fitsRecord, linkScope } from './links';
 import { todayGst } from './format';
 import { Session } from './session';
-import { isCalculated, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
+import { isCalculated, isSectionRow, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
 
 export type Rules = { applies: boolean; required: boolean; locked: boolean };
 export type Outcome = { state: 'ready' } | { state: 'pending' | 'error'; code: string };
@@ -128,14 +128,15 @@ export class Row {
     for (const child of model.children ?? []) {
       const table = new Table(this, child, record.index.model(child.model));
       this.tables.set(child.name, table);
+      // Section rows ({id, section}, or {section} as Duplicate sends them) are not rows: the table keeps them apart as
+      // its sections, each before the row that follows it (Table.takeSections for saved records).
       const items: Array<Record<string, any>> = data.children?.[child.name] ?? [];
-      // A new record may start with new rows; their _key is kept when it is valid. Section rows ({section}, as
-      // Duplicate sends them) become the table's sections, each before the line that follows it.
+      // A new record may start with new rows; their _key is kept when it is valid.
       if (isNew) {
         const lines: Row[] = [], sections: TableSection[] = [];
         let pending: TableSection[] = [];
         for (const item of items) {
-          if (child.sections && isSectionItem(item)) { pending.push({ key: record.claimKey(item._key), id: null, label: String(item.section), before: null }); continue; }
+          if (child.sections && isSectionRow(item)) { pending.push({ key: record.claimKey(item._key), id: null, label: String(item.section), before: null }); continue; }
           const line = new Row(record, table.model, this, child.name, record.claimKey(item._key), null, true, item);
           for (const section of pending) sections.push({ ...section, before: line.key });
           pending = [];
@@ -186,7 +187,8 @@ export class Row {
       field.result.set(READY);
     }
     for (const [name, table] of this.tables) {
-      if (data.children && Object.prototype.hasOwnProperty.call(data.children, name)) table.replace(data.children[name], data.children_pages?.[name], rowIds);
+      if (data.children && Object.prototype.hasOwnProperty.call(data.children, name))
+        table.replace(data.children[name], data.children_pages?.[name], rowIds);
       else table.revert();
     }
   }
@@ -201,8 +203,6 @@ export class Row {
  * `before` is the key of the first line after it (null: after the last line). */
 export interface TableSection { key: string; id: string | null; label: string; before: string | null }
 
-/** Whether a row of a server payload is a section row ({id, section}). */
-export const isSectionItem = (item: Record<string, unknown>) => typeof item.section === 'string';
 
 export class Table {
   /** The rows in their current order. Key a list by row.key. */
@@ -367,7 +367,7 @@ export class Table {
     const lines: RecordData[] = [], found: TableSection[] = [];
     let pending: TableSection[] = [];
     for (const item of items) {
-      if (isSectionItem(item)) { pending.push({ key: String(item.id), id: String(item.id), label: String(item.section), before: null }); continue; }
+      if (isSectionRow(item)) { pending.push({ key: String(item.id), id: String(item.id), label: String(item.section), before: null }); continue; }
       for (const section of pending) found.push({ ...section, before: keyOf(item) });
       pending = [];
       lines.push(item);
@@ -561,11 +561,13 @@ export class RecordStore {
         let offset = table.rows.peek().length;
         while (offset < table.total.peek()) {
           const page = await this.api.lines(this.meta.name, this.root.id!, table.apiPath(), { limit: PAGE, offset });
+          // A page of a Table with sections also carries its section rows; offsets count real rows only.
+          // A page of a Table with sections also carries the section rows before its first row.
           if (!page.items.length) break;
           table.appendSaved(page.items);
           table.total.set(page.total);
-          // Pages count lines only; section rows ride along with the lines that follow them.
-          offset += page.items.filter(item => !isSectionItem(item)).length;
+          // Pages count real rows only; section rows ride along with the rows that follow them.
+          offset += page.items.filter(item => !(table.meta.sections && isSectionRow(item as Record<string, unknown>))).length;
         }
         table.complete();
       }

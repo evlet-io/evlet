@@ -56,10 +56,15 @@ export interface ChildSchema { name: string; model: string; label: string; link:
   filterable?: boolean
   /** Table(copy=False): Duplicate leaves these rows out of the new record. Absent means they are copied. */
   copy?: boolean
-  /** The table takes section rows, {id, section} among its rows, grouping the lines after them. Absent: no sections. */
+  /** The record fills these rows itself on every save (Meta.derives): read only, and never sent. */
+  read_only?: boolean
+  /** Table(sections=True): the rows may include section rows {id, section}, headings that group the rows below them. */
   sections?: boolean
-  /** The line fields a section row sums over its own lines. Absent: a section shows no sums. */
+  /** Row fields each section row sums over its own rows. Absent: a section shows no sums. */
   section_sums?: string[] }
+
+/** A section row in a record's children: {id, section}. It has none of the row fields. */
+export const isSectionRow = (item: Record<string, unknown>) => typeof item.section === 'string' && Object.keys(item).every(key => key === 'id' || key === 'section' || key === '_key');
 export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>; dialog?: boolean }
 
 /** Phase 4 state metadata (field, states, moves with labels and roles, locked, final). Optional until the backend sends it. */
@@ -123,6 +128,8 @@ export interface ModelSchema {
   /** Meta.focus: the field a new record's form puts the cursor in. Absent, or a field this role cannot edit: the
    * first editable field. Display only. */
   focus?: string;
+  /** Meta.image: the Image field shown as the record's avatar or thumbnail. Absent when none, or the role cannot read it. */
+  image?: string;
   /** Meta.duplicate: false hides the record's Duplicate action. Absent means Duplicate shows to roles that may create. */
   duplicate?: boolean;
   /** What a record opened in a list's side panel leaves out, by kind: panel=False flags, Meta.panel or the Controls

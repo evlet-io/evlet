@@ -19,8 +19,8 @@ export function CardRow(stats: StatProps[]): HTMLElement {
   return html`<div class="sum ev-cards" data-count=${String(shown.length)} style:--cards=${String(shown.length)}>${shown.map(StatCard)}</div>` as HTMLElement;
 }
 
-/** Where a record image's picture is: a URL or path string, or an object with a url (an uploaded file). Anything
- * else (no value, an id the browser can't show) is null, and the header shows no image. */
+/** A record image's picture when the value already is one: a URL or path string, or an object with a url. An
+ * attachment id (an Image field's value) is null here; the record page turns it into the attachments route. */
 export function imageSource(value: unknown): string | null {
   const url = typeof value === 'string' ? value : value && typeof value === 'object' && typeof (value as { url?: unknown }).url === 'string' ? (value as { url: string }).url : '';
   return /^(https?:\/\/|\/(?!\/)|data:image\/)/i.test(url.trim()) ? url.trim() : null;

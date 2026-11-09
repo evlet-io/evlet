@@ -1132,6 +1132,7 @@
         {
           "label": "Item",
           "fields": [
+            "photo",
             "item_code",
             "item_name",
             "item_group",
@@ -1402,6 +1403,7 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "image": "photo",
       "fields": [
         {
           "name": "item_code",
@@ -4596,6 +4598,20 @@
           "default_kind": "none"
         },
         {
+          "name": "photo",
+          "type": "image",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "label": "Photo",
+          "help_text": "PNG, JPEG, GIF or WebP, up to 2 MiB.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "copy": false,
+          "default_kind": "none"
+        },
+        {
           "name": "name",
           "type": "text",
           "required": false,
@@ -4831,6 +4847,7 @@
         "flavour": {},
         "fragrance": {},
         "gauge": {},
+        "photo": {},
         "name": {},
         "title": {}
       },
@@ -5039,6 +5056,7 @@
         "flavour",
         "fragrance",
         "gauge",
+        "photo",
         "name",
         "title",
         "prices.price_list",
@@ -5065,7 +5083,8 @@
             "full_name",
             "email",
             "department",
-            "reports_to"
+            "reports_to",
+            "skill_count"
           ],
           "collapsible": false,
           "collapsed": false,
@@ -5102,6 +5121,11 @@
           {
             "kind": "table",
             "name": "skills",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "skill_levels",
             "main": true
           },
           {
@@ -5242,6 +5266,21 @@
           "default_kind": "none"
         },
         {
+          "name": "skill_count",
+          "type": "integer",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": null,
+          "maximum": null,
+          "label": "Skills",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
           "name": "name",
           "type": "text",
           "required": false,
@@ -5277,6 +5316,7 @@
         "email": {},
         "department": {},
         "reports_to": {},
+        "skill_count": {},
         "name": {},
         "title": {}
       },
@@ -5285,12 +5325,17 @@
         "email",
         "department",
         "reports_to",
+        "skill_count",
         "name",
         "title",
         "skills.skill",
         "skills.level",
         "skills.evlet_owner",
-        "skills.evlet_position"
+        "skills.evlet_position",
+        "skill_levels.level",
+        "skill_levels.skills",
+        "skill_levels.evlet_owner",
+        "skill_levels.evlet_position"
       ],
       "sources": {}
     },
@@ -5633,6 +5678,104 @@
           "read_only": false,
           "default_kind": "static",
           "default": "practised"
+        },
+        {
+          "name": "evlet_owner",
+          "type": "link",
+          "required": true,
+          "unique": false,
+          "index": true,
+          "minimum": 1,
+          "maximum": null,
+          "target": "employee",
+          "label": "Evlet owner",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "none"
+        },
+        {
+          "name": "evlet_position",
+          "type": "integer",
+          "required": true,
+          "unique": false,
+          "index": false,
+          "minimum": null,
+          "maximum": null,
+          "label": "Evlet position",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": true,
+          "read_only": true,
+          "default_kind": "static",
+          "default": 0
+        }
+      ]
+    },
+    {
+      "name": "employee_skill_levels",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "level",
+            "skills"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
+        }
+      ],
+      "label": "Skill level",
+      "plural": "Skill levels",
+      "description": "",
+      "title_field": "level",
+      "list_fields": [
+        "id",
+        "level",
+        "skills"
+      ],
+      "search_fields": [
+        "level"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "fields": [
+        {
+          "name": "level",
+          "type": "select",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "learning",
+            "practised",
+            "expert"
+          ],
+          "label": "Level",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none"
+        },
+        {
+          "name": "skills",
+          "type": "integer",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": null,
+          "maximum": null,
+          "label": "Skills",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": 0
         },
         {
           "name": "evlet_owner",

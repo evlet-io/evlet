@@ -28,7 +28,7 @@ META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'panel_summary', 'ledger', 'append_only', 'timestamps', 'indexes',
-                          'focus', 'cards', 'duplicate'))
+                          'focus', 'cards', 'duplicate', 'derives', 'image'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -396,6 +396,8 @@ def view_for(model):
             **({'summary': summary} if summary is not None else {}),
             **({'side_blocks': list(side_blocks)} if side_blocks is not None else {}),
             **({'focus': focus} if focus is not None else {}),
+            # Meta.image: the Image field shown as the record's avatar or thumbnail (checked when the class is made).
+            **({'image': model.__image__} if getattr(model, '__image__', None) else {}),
             **({'duplicate': False} if not duplicate else {}),
             **({'panel': panel} if panel is not None else {})}
 
@@ -606,7 +608,7 @@ def layout_block(registry, model, kind, block, where):
     if block.x is not None:
         name, _, part = block.x.partition(':')
         field = source.__fields__.get(name)
-        if field is None or name not in visible or not field.stored or field.kind in ('tags', 'reference', 'longtext', 'richtext', 'multiselect'):
+        if field is None or name not in visible or not field.stored or field.kind in ('tags', 'reference', 'longtext', 'richtext', 'multiselect', 'image'):
             raise ValueError(f'{where}: Chart x groups by a stored, visible field of {source.__name__}, not {block.x!r}')
         if part and (part not in ('day', 'month', 'year') or field.kind not in ('date', 'datetime')):
             raise ValueError(f"{where}: Chart x takes :day, :month or :year after a Date or DateTime field, not {block.x!r}")

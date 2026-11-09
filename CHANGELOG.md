@@ -52,6 +52,56 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   with Attachments, Activity and Record info. It has no tabs. Section descriptions show under section titles
   on every record layout ([docs/ui.md](docs/ui.md#compact-record-page)).
 
+- **Section rows in Tables: `Table(..., sections=True)`.** A Table may hold section rows,
+  headings such as "Goods" that group the rows below them, like the sections of a quotation.
+  A section row has an id, a label and a place, and none of the row's fields. Iterating
+  `self.lines` still yields only real rows, so `derive()`, postings, validation, sums and existing
+  app code are unchanged; `self.lines.sections()` gives `(label, rows)` pairs. Records list them
+  in `children` as `{"id", "section"}`, and the existing routes create, rename, move and delete
+  them with the same checks as rows (`create`, `update`, `delete` on the row model; locked
+  records refuse them). `/api/schema` marks the Table `"sections": true` and names
+  `section_sums`, the fields the total line sums, which each section shows for its rows (computed,
+  never stored). Print shows them as heading rows with their sums, the Journal records them, and
+  a revise copies them. They are stored in the framework table `evlet_sections`, so turning
+  `sections=True` on needs no migration. The record page's table draws them (see Child table tools above). The Playground's Employee groups Skills this way, with no migration
+  ([docs/model-engine.md](docs/model-engine.md#section-rows)).
+- **Cancelled states: `State(..., cancelled=...)`.** Names the final states that mean a record
+  was called off, such as cancelled or lost, so the browser can show them as cancelled instead of
+  guessing. Each must be a final state, checked when the class is created. On a voidable State,
+  `"void"` counts as cancelled without being listed. `/api/schema` carries the list as
+  `state.cancelled`. It changes no moves, locks or permissions
+  ([docs/states-actions.md](docs/states-actions.md#cancelled-states)).
+- **Image fields: `Image()` and `Meta.image`.** A model can hold an image per field, such as an
+  item photo or a logo. The image is a private attachment of the record, stored and checked like
+  rich text images: PNG, JPEG, GIF or WebP by their bytes (SVG refused), up to Controls
+  `files.image_max_kb`. Upload to `/api/{model}/{id}/attachments` (or `/api/{model}/_images` before
+  the record is saved) with `"purpose": "image"`, then save the returned id in the field. Replacing
+  or clearing deletes the old image; deleting the record deletes its images; Duplicate leaves the
+  image out and a revision copies it. A person who cannot read the field cannot load the image.
+  `Meta.image` names the field used as the record's avatar and adds `"image"` to the model's
+  `/api/schema` entry. Forms show a preview with Upload, Replace and Remove. Add a field with
+  `AddField(model, name, Image())`. The Playground's items have a Photo (migration `0018_item_photo`)
+  ([docs/model-engine.md](docs/model-engine.md#image-fields)).
+
+- **Derived values: `derive()` and `Meta.derives`.** A document builds stored values formulas
+  cannot express in `derive(self)`, such as one row per distinct value of another Table or rows
+  built from a linked record. `Meta.derives` may also name `"table.field"`: a field derive() sets on
+  each row of a Table people edit, such as a line's net or converted amount, while the rows stay
+  the caller's. It runs on every write and preview, before calculations, and what
+  it sets is cleaned, calculated, validated and returned like caller input. The fields and Tables
+  named in `Meta.derives` are refused to callers (`DERIVED_FIELD_WRITE`, 422) and marked
+  `read_only` in `/api/schema`; the record page shows a derived Table without editing. It reads
+  linked records through a read-only `self.context.session`. `validate()` stays for checks only:
+  apps that assigned values there should move them to `derive()`. The Playground's Employee
+  derives its Skill levels (migration `0017_employee_skill_levels`)
+  ([docs/model-engine.md](docs/model-engine.md#derived-values)).
+
+- **Closing checks: `before_close(self, to)`.** One read-only hook that runs before a move into a
+  final state, a void, a lifecycle cancel and a delete, on every surface, and refuses with a
+  `ValidationError` before anything is written. Use it for "cancel the later documents first"
+  checks instead of repeating them in each Move's run method. The Playground's Employee refuses a
+  delete while people report to them ([docs/states-actions.md](docs/states-actions.md#before-a-record-closes)).
+
 - **Compact record page: `Meta.cards`, `Main` and section descriptions.** `Meta.cards` names zero
   to five derived values for cards at the top of a record: fields with `compute=`, `fetch=` or
   `query=` (stored or not) and per-record measures. `Main(fields, *tables)` as the first block of
@@ -199,6 +249,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".
 
 ### Fixed
+
+- **Rich text images in documents.** Saving a document (a model with a State, `Meta.journal` or other
+  declarations) now links the held images its rich text refers to and deletes the ones it no longer
+  uses, as plain models always did. Before, a document's new images stayed in the holding area and
+  were purged after a day.
 
 - A `Workspace` is registered once: listing the same one twice no longer fails as a key clash with
   itself, and a workspace another app's `workspaces.py` imports stays with the app that declares it.

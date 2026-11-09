@@ -44,13 +44,168 @@ class Contact(Model):
   may be ten times as long (at least 4,096 characters). A document with no text is stored as null,
   so `required=True` works. The field uses two columns, `<name>` (HTML) and `<name>_text` (the
   plain-text extract that search, filters and list cells use); it cannot be unique or indexed.
+- `Image()` holds one image, such as an item photo or a company logo. See [Image fields](#image-fields).
 - Omitted values use defaults; explicit `None` stays null unless required.
   Callable defaults run when a new record is constructed. A partial update keeps
   omitted values, including their original defaults.
 - A field validator receives the cleaned non-null value and raises `ValueError`
   on rejection. Override `Model.validate()` for cross-field rules and raise
   `ValidationError({"field": "message"})`. Both creation and updates run validation.
+  `validate()` is for checks only: it runs last, after calculations, so a value it assigns
+  skips cleaning, calculations and the save response. Values a document builds for itself go
+  in `derive()` ([Derived values](#derived-values)).
   Records remain immutable snapshots; change them through the database API.
+
+## Derived values
+
+Some stored values come from the rest of the document in ways a formula cannot express: one
+row per distinct value used in another Table, or rows built from a linked record, with a
+remainder row. A document builds them in `derive(self)` and names what it sets in
+`Meta.derives`.
+
+```python
+class Visit(Model):
+    class Meta:
+        derives = ("places", "place_count", "parts")
+
+    class Stop(Child):
+        place = Text(required=True)
+        minutes = Integer(default=0)
+
+    class PlaceTotal(Child):
+        place = Text()
+        minutes = Decimal(scale=2)
+
+    class Part(Child):
+        amount = Decimal(scale=2)
+        remainder = Boolean(default=False)
+
+    plan = Link("plan")
+    amount = Decimal(scale=2, default=0)
+    stops = Table(Stop)
+    places = Table(PlaceTotal)
+    place_count = Integer()
+    parts = Table(Part)
+
+    def derive(self):
+        totals = {}
+        for stop in self.stops:
+            totals[stop.place] = totals.get(stop.place, 0) + (stop.minutes or 0)
+        self.places = [{"place": place, "minutes": minutes} for place, minutes in sorted(totals.items())]
+        self.place_count = len(totals)
+        parts = []
+        if self.plan is not None:
+            count = self.context.session.get(Plan, self.plan).parts
+            share = (self.amount / count).quantize(D("0.01"), rounding="ROUND_DOWN")  # D is decimal.Decimal
+            parts = [{"amount": share} for _ in range(count - 1)]
+            parts.append({"amount": self.amount - share * (count - 1), "remainder": True})
+        self.parts = parts
+```
+
+* **When it runs.** On every write of the document (create, update, move, action, lifecycle
+  operation, revise copy) and every preview (`POST /api/_draft/{model}`), after the caller's
+  values are checked and fetched and before calculations. Formulas may read what it set; it
+  cannot read their results. A locked or posted record keeps its derived values on the writes
+  that keep its saved results, so `derive()` does not run there
+  ([finite-calculations.md](finite-calculations.md#server-writes)).
+* **Like caller input.** What it sets is cleaned like a value a caller sent (a string becomes
+  a Decimal, defaults fill the fields a row it builds leaves out, fetches run on those rows),
+  then calculated, validated and stored, and the save or preview response returns it. A
+  `ValidationError` it raises is reported like a field error, and the save writes nothing.
+* **What it may set.** Only the fields and Tables in `Meta.derives`, and the rows of those
+  Tables. Assigning anything else raises `AttributeError`. Rows are dictionaries of the row's
+  fields. A derived Table's row keeps the id of the saved row in the same place, so a Table
+  that comes out the same is not rewritten and its row ids stay. Its rows' own Tables are not
+  filled by `derive()`.
+* **Fields on rows people edit.** `Meta.derives` may also name a field on the rows of a Table
+  that callers edit, as `"table.field"`. `derive()` sets it on each row. It keeps those rows: adding,
+  removing or reordering them raises `AttributeError` (name the Table itself to build its rows).
+  The values are cleaned, calculated, validated and returned like the others, and the save and
+  preview responses carry them on each row. A Table and one of its fields cannot both be named.
+
+  ```python
+  class Sheet(Model):
+      class Meta:
+          derives = ("lines.net", "lines.converted")
+
+      class Line(Child):
+          qty = Decimal(scale=2, default=1)
+          price = Decimal(scale=2, default=0)
+          discount = Decimal(scale=4, default=0)
+          unit = Text(default="a")
+          net = Decimal(scale=4)
+          converted = Decimal(scale=4)
+
+      decimals = Integer(default=2)
+      target = Text(default="b")
+      lines = Table(Line)
+
+      def derive(self):
+          step = D(10) ** -self.decimals  # D is decimal.Decimal
+          for line in self.lines:
+              net = (line.qty * line.price * (1 - line.discount)).quantize(step)
+              line.net = net
+              found = self.context.session.list(Factor, filters={"origin": line.unit, "target": self.target}, limit=1)
+              line.converted = net * found[0].factor if found else None
+  ```
+* **Callers cannot write them.** Every caller, HTTP, `Context`, actions' callers, tools, MCP
+  and the connector, is refused a derived field or Table with `DERIVED_FIELD_WRITE: this value
+  is set by the record` (422), like `COMPUTED_FIELD_WRITE`. A derived row field is refused on the
+  row, keyed `table.field` (`lines.net`). `/api/schema` marks derived fields `read_only` (on the
+  row model for a row field) and derived Tables `"read_only": true` in `children`, and the record
+  page shows those rows without editing and never sends them.
+* **Trusted and read only.** `derive()` is app code. `self.context` is a read-only context
+  whose `session` is the write's transaction, read only (`get`, `list`, `count`, `related` and
+  `aggregate`; no write methods), for looking up linked records. Reads through it bypass
+  permissions, as in any Python session. Because it cannot write, a lookup never starts
+  another settlement.
+* **Its model.** `self.model` is the model class on every draft `derive()` and `before_close()`
+  see, and on each row (`line.model` is the row model). Use it for class attributes and shared
+  helpers instead of a registry of subclasses. A field, Table or class attribute named `model`
+  takes its place.
+* **Trusted session writes.** App code that writes through the transaction session (an
+  action's or move run's `self.context.session`, a job's `tx`, `database.transaction()` of an
+  application) gets the same derived values. `session.create`, `session.update` and
+  `session.delete` of a model that declares `derive()`, or of one of its Table rows, write the
+  record and then settle the saved document like any other write: `derive()`, cleaning and
+  validation (`validate()`), then store what changed, and return the settled record. It runs as
+  the engine, without roles or row scopes, like the session write itself. A failure raises and
+  undoes that write even when the calling code catches it, and the rest of the transaction
+  goes on.
+
+  A document's rows can go with it: `children=` on `session.create` and `session.update` takes
+  the document's Tables as the HTTP API does, a full list of rows (rows with an `id` are kept
+  and changed, the others removed) or a change set (`create`, `update`, `delete`, `order`). The
+  rows are written and the document settles once, so a Table with `min_rows` can be created
+  in one call, and `derive()` runs once instead of once per row. Derived Tables and derived row
+  fields are refused there too (`DERIVED_FIELD_WRITE`).
+
+  ```python
+  order = session.create(Order, customer=customer, children={"lines": [{"item": item, "qty": 2}]})
+  session.update(Order, order.id, children={"lines": {"delete": [line_id]}})
+  ```
+
+  The rules:
+  * A document with calculations is a finite-v1 document, which the session already refuses to
+    write: app code writes it through `Context.create`/`update` (or an action or move), and
+    `derive()` runs there.
+  * A record with posted effects keeps its stored values, as on every other write, and refuses
+    `children=`.
+  * `children=` is only for a document that declares `derive()` (`ValueError` otherwise). A model
+    with a field named `children` takes it as that field.
+  * `session.maintenance()` stays a raw repair: `derive()` does not run, so the repair must
+    leave the derived values consistent (or the next save restores them).
+  * A session with no application behind it (a bare `Database`, or a migration step) refuses
+    these writes with `ValueError`, since settling needs the application's Tables and Links. Use
+    `maintenance()` there.
+  * Ledger models cannot declare `derive()`, so `insert_many` and the other ledger writes do not
+    run it.
+* `Meta.derives` without `derive()`, `derive()` without `Meta.derives`, a name that is not a
+  field or Table of the model (or `"table.field"` of one of its Tables, one level deep), a Table
+  named with one of its fields, or a calculated, State, Sequence or standard field is a
+  `ValueError` when the class is defined. A Table row (`Child`) cannot declare `derive()`.
+* Adding a derived field or Table to a saved model needs its migration, like any field. Saved
+  records get the values on their next save.
 
 ### Composite and unique indexes
 
@@ -157,6 +312,64 @@ every model for any other form such as `isnull`. Renaming a reference with `Rena
 renames both columns. `Database.related()` does not
 follow references; read the target with `get`.
 
+### Image fields
+
+```python
+from evlet import Image, Model, Text
+
+class Product(Model):
+    class Meta:
+        image = "photo"          # the record's avatar or thumbnail
+    product_code = Text(required=True)
+    photo = Image(label="Photo")
+    logo = Image()
+```
+
+An `Image` field holds one image. The image is a private attachment of the record, stored with
+the application's file storage like every other attachment (`evlet/images.py`, the same store as
+rich text images). The field's value is that attachment's id: an `int` in Python, text such as
+`"12"` in JSON. There is no parallel file store and no public URL.
+
+- **Types and size.** PNG, JPEG, GIF and WebP only, decided by the bytes, never by the file name or
+  a declared type. SVG is refused, because an SVG can carry script. The size limit is Controls,
+  `files.image_max_kb` (2 MiB by default, 64 KiB to 8 MiB), and a record holds at most
+  `files.images_per_record` images across its rich text and Image fields (50 by default).
+- **Setting an image.** Upload, then save the id. For a saved record,
+  `POST /api/{model}/{id}/attachments` with `{"name", "content" (base64), "purpose": "image"}`
+  answers `201 {"id", "type", "size", "held": false}`. For a new record, `POST /api/{model}/_images`
+  with the same body holds the image for the person for a day (`"held": true`); the person can
+  preview it at `GET /api/{model}/_images/{image id}`. Then create or update the record with
+  `{"photo": "<image id>"}`. Saving links a held image to the record in the save transaction.
+  Uploading needs write access to one of the model's Image or RichText fields; saving needs write
+  access to the field, like any value.
+- **Replacing and clearing.** Save another id, or `null`. The record's old image is deleted in
+  the same transaction. Images have no DELETE route of their own.
+- **Reading.** `GET /api/{model}/{id}/attachments/{image id}` serves the image inline, with its
+  sniffed type, `nosniff` and a sandboxing content security policy. It runs the record's account,
+  tenant and row checks, and a person who cannot read the Image field holding the image gets 404.
+  A role that cannot read the field gets no value in record payloads either.
+- **What is refused.** An id that is not a positive integer, an image of another record, a held
+  image of another person, an image that was purged, and the same image in two fields of one record,
+  each with a `ValidationError` on the field (422). A database without the application's file
+  storage (a bare `Database`) refuses any image value.
+- **Duplicate and revisions.** `copy=` is always `False`: the browser's Duplicate leaves the image
+  out, because an image belongs to one record. `copy=True` is refused with a `ValueError`. A revision
+  (`revise`) gets its own copy of each Image field's image.
+- **Journal and audit.** A change is journaled like any value, as the old and new ids.
+- **Deleting the record** deletes its images, from the HTTP route and from trusted Python
+  (`tx.delete`). Files on disk or in object storage are reclaimed by the storage's `collect()`.
+- **Trusted Python and the Connector.** A trusted session may save any held image's id (it has no
+  person); the other rules are the same. The Connector uses the HTTP routes above.
+- **Options.** `label`, `help_text`, `tooltip`, `required`, `hidden`, `read_only`, `panel` and the
+  rules (`required_when`, `locked_when`, `applies_when`). Images have no `default`, `compute`,
+  `query` or `fetch`, and cannot be unique or indexed.
+- **Migrations.** One nullable integer column, added with `AddField("product", "photo", Image())`.
+
+`Meta.image` names the Image field shown as the record's avatar or thumbnail. It is checked when
+the class is made: naming anything but an Image field of the model raises a `ValueError`. The model's
+`/api/schema` entry carries `"image": "photo"`, left out when unset or when the role cannot read
+that field. Each Image field's schema `type` is `"image"`.
+
 ### Where a Currency field's code comes from
 
 `currency=` on `Currency` says which currency code the forms and lists show beside the amount.
@@ -191,6 +404,98 @@ symbol, before or after the amount ([controls.md](controls.md#currencies)).
 
 `Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
 `Time`, `Tags` and references cannot be used in calculations.
+
+## Section rows
+
+`Table(Line, sections=True)` lets a Table hold section rows: headings such as "Goods" and
+"Services and charges" that group the rows below them, the way a quotation groups its lines.
+A section row has an id, a label and a place among the rows, and none of the row's fields.
+
+```python
+from evlet import Child, Decimal, Model, Table, Text
+
+class Quotation(Model):
+    class Meta:
+        calculation_language = "finite-v1"
+
+    class Line(Child):
+        item = Text(max_length=80, required=True)
+        qty = Decimal(scale=2, default=1)
+        amount = Decimal(scale=2, default=0)
+
+    lines = Table(Line, sections=True)
+    total_qty = Decimal(scale=2, compute=lines.sum("qty"))
+    total = Decimal(scale=2, compute=lines.sum("amount"))
+```
+
+- **Python sees real lines.** Iterating `self.lines` in `derive()`, actions, Move run methods,
+  postings (`rows` methods) and `changed()` yields only real rows, so existing code, `len()`,
+  `lines.sum(...)` and every finite calculation stay correct without changes. Required checks,
+  field validation, defaults, fetches and `derive()` never see a section row.
+- **The grouping.** `self.lines.sections()` returns `(label, rows)` pairs in order. Rows above the
+  first section come first with the label `None` (only when there are any), and a section with no
+  rows has an empty tuple:
+
+  ```python
+  for label, rows in self.lines.sections():
+      ...  # ("Goods", (line,)), ("Services and charges", (line, line)), ("Later", ())
+  ```
+- **Writing them from Python.** An action or run method that assigns the rows may name section
+  rows as `{"section": "Goods"}` (a new one) or `{"id": ..., "section": "Goods"}` (one the Table
+  holds). A list that names none keeps the existing sections: each stays above the first of its
+  rows that is still there, so `self.lines = [line for line in self.lines if line.qty]` does not
+  lose them. Trusted `session.create` and `session.update` take section rows in `children=` the
+  same way.
+- **Sums.** A section row shows, for its rows, the sums of the fields the Table's total line sums:
+  the parent's unfiltered finite sums over the Table (`total = lines.sum("amount")`). They are
+  computed for display (by the browser from the rows, and by print) and never stored.
+  `/api/schema` names them in `section_sums`.
+- **Storage.** Section rows live in the framework table `evlet_sections`, never in the row table,
+  so row queries, reports, measures and ledger postings see only real rows. Tools, Eva, MCP and the
+  Connector read and write records through the HTTP payload below, so they see section rows there. Turning
+  `sections=True` on or off needs no migration. Turned off, saved section rows are not shown or
+  changed, and they come back if it is turned on again. Deleting a record or a row deletes the
+  section rows of the Tables it owns.
+- **Limits.** At most 100 section rows per collection, apart from `max_rows`. A label is text of 1
+  to 200 characters. The row model cannot declare a field named `section` (`ValueError`), and a
+  Table that `derive()` builds (named in `Meta.derives`) cannot have sections (`ValueError`), nor can
+  a Table of a dialog, report or slip.
+
+### Section rows over HTTP
+
+A record's `children` list section rows in their places as `{"id": "...", "section": "Goods"}`;
+real rows are unchanged:
+
+```json
+{"children": {"lines": [
+  {"id": "01japh13dyv63", "section": "Goods"},
+  {"id": "01japh13dscnr", "item": "Steel shelving unit", "qty": "4.00", "amount": "8913.04"},
+  {"id": "01japh13dyv64", "section": "Services and charges"},
+  {"id": "01japh13dyv61", "item": "Installation service", "qty": "1.00", "amount": "4861.00"}
+]}}
+```
+
+The existing record routes write them, with the same account, tenant, row, field and action
+checks as rows:
+
+| Change | Change set (`{create, update, delete, order}`) | Full list |
+| --- | --- | --- |
+| Add | `"create": [{"section": "Goods", "_key": "s1"}]` (`_row_ids` maps `s1` to the new id) | `{"section": "Goods"}` in place |
+| Rename | `"update": [{"id": "...", "section": "Products"}]` | `{"id": "...", "section": "Products"}` |
+| Move | `"order"` lists section ids with row ids | its place in the list |
+| Delete | `"delete": ["..."]` | leave it out |
+
+- A change set that does not mention a section row keeps it in place.
+- Adding a section row needs `create` on the row model, renaming or placing one `update`, and
+  removing one `delete`, like rows. A locked or confirmed record refuses all of them.
+- A section row takes only `id`, `section` and `_key` (422 otherwise). A row id cannot become a
+  section, a section id cannot become a row, and a Table without `sections=True` refuses section
+  rows (422).
+- `GET /api/{model}/{id}/lines/{name}` pages count real rows (`total`, `limit`, `offset`); each page
+  also carries the section rows placed after the previous page's last row, and the last page those
+  after all rows.
+- The Journal records `"sections": {"added", "renamed", "removed", "moved"}` under the Table in a
+  `created` or `changed` entry. A revise copies section rows as new section rows.
 
 ## Updates, deletes, and relationships
 
@@ -417,6 +722,7 @@ Each field kind takes these operators (the schema sends them as each field's `op
 | Tags, MultiSelect | `contains` `isnull` |
 | Reference | `eq` `isnull`, and `ne` with null |
 | RichText | `contains` `icontains` `nicontains` `isnull`, on its plain text |
+| Image | `isnull` |
 
 Any other operator for a field is refused with 422. `evlet.query.operators_for(model, name)`
 returns the same list.

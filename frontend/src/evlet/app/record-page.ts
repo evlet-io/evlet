@@ -559,9 +559,20 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const subtitle = (panel && numberText) || subtitleFacts.length
     ? () => [panel && numberText ? numberText() : '', ...subtitleFacts.map(meta => valueText(view(meta.name), ctx.links))].filter(Boolean).join(' · ') : undefined;
   // A record image (Meta.image naming a field of type "image") left of the title, in place of the icon tile.
+  // The field's value is an attachment id (docs/model-engine.md#image-fields): a saved image is served by the record's
+  // attachments route, one uploaded but not saved yet by the held image preview.
   const imageMeta = !isNew && model.image ? fieldOf(model, model.image) : undefined;
+  const imageUrl = (field: string) => {
+    const value = store.field(field).value.get();
+    const direct = imageSource(value);
+    if (direct) return direct;
+    const idText = value === null || value === undefined ? '' : String(value).trim();
+    if (!/^[1-9]\d*$/.test(idText)) return null;
+    const saved = String(store.field(field).server.get() ?? '') === idText;
+    return ctx.api.url(saved ? `/api/${name}/${store.id}/attachments/${idText}` : `/api/${name}/_images/${idText}`);
+  };
   const image = imageMeta && has(imageMeta.name)
-    ? RecordImage(() => imageSource(store.field(imageMeta.name).value.get()), { round: Boolean(look.person), label: () => titleText.get() }) : undefined;
+    ? RecordImage(() => imageUrl(imageMeta.name), { round: Boolean(look.person), label: () => titleText.get() }) : undefined;
   // A lock after the badges while nothing can be changed (locked by its state, or the role can't write), unless the
   // State already shows one.
   const readOnly = () => !isNew && (locked.get() || !canWrite) && !['locked', 'cancelled'].includes(lookNow() ?? '');
@@ -789,7 +800,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target)) revealField(frame, target); };
   if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
   const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
-  // A Table's grid. Focus view keeps a compact copy of this header, and the save bar, above and below the lines.
   /** A Table's row editor form: the row model's first section as a grid, the rest as "more information" rows, as
    * on the record itself; fields are inputs, since a row is saved with the record. */
   const rowForm = (child: { name: string; model?: string }) => {
@@ -812,9 +822,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     };
   };
   const tableControls = new Map<string, ChildTableControls>();
-  const tablePanel = (child: { name: string; label: string; model?: string }) => ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
+  // A Table the record fills itself (Meta.derives) is read only here, whatever the state.
+  const derivedText = () => 'Filled in by the record when it is saved.';
+  const tableLocked = (child: { read_only?: boolean }) => () => Boolean(child.read_only) || locked.get() || !canWrite;
+  const tableText = (child: { read_only?: boolean }) => child.read_only ? derivedText : lockedText;
+  const tablePanel = (child: { name: string; label: string; model?: string; read_only?: boolean }) => ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
     rowForm: rowForm(child), controls: controls => tableControls.set(child.name, controls),
-    locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, crumb: () => titleText.get(),
+    locked: tableLocked(child), lockedText: tableText(child), links: ctx.links, crumb: () => titleText.get(),
     heading: { type: model.label, icon: look.icon, title: () => titleText.get(),
       number: numberText ?? (naming ? () => { const value = store.field('name').value.get(); return value && String(value) !== titleText.get() ? String(value) : ''; } : null),
       mark: () => look.person ? Avatar({ name: markName, size: 'sm' }) : RecordMark({ name: markName, size: 'sm', tint: look.tint }), footer: () => saveBarView() },
@@ -824,10 +838,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   /** A Table on a compact page: its title, a muted row count and Add on the right (in Main), the grid, and a light
    * dashed box while it has no rows. Add uses the grid's own Add row, so the new row's first cell starts editing. */
-  const compactTable = (child: { name: string; label: string; model?: string }, withTitle: boolean) => {
+  const compactTable = (child: { name: string; label: string; model?: string; read_only?: boolean }, withTitle: boolean) => {
     const table = store.table(child.name);
     const count = () => table.rows.get().length;
-    const canAdd = () => canWrite && !locked.get();
+    const canAdd = () => canWrite && !locked.get() && !child.read_only;
     const noun = rowNoun(child.label);
     let host: HTMLElement | null = null;
     const add = () => {

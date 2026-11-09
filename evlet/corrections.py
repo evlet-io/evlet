@@ -21,7 +21,7 @@ from .auth import AccessError
 from .fields import Link, Reference
 from .identity import RecordId
 from .models import ValidationError, checked_body, identifier
-from . import periods
+from . import periods, sections
 from .permissions import CHUNK, corrects, trusted
 
 VOID = 'void'
@@ -179,6 +179,8 @@ def void(context, model, record_id, reason):
     """Void a saved record; returns its permission-filtered detail with every readable row."""
     business, tx, user = context._business, context._tx, context.user
     record, reason = check(context, model, record_id, 'void', reason)
+    from .documents import check_close
+    check_close(context, model, record.id, VOID)
     void_record(context, model, record, reason)
     return business.detail(tx, user, tx.get(model, record.id), row_limit=None)
 
@@ -190,6 +192,8 @@ def revise(context, model, record_id, reason):
     business, tx, user = context._business, context._tx, context.user
     record, reason = check(context, model, record_id, 'revise', reason)
     if record._values.get(model.__state__) != VOID:
+        from .documents import check_close
+        check_close(context, model, record.id, VOID)
         void_record(context, model, record, reason)
     copy = copy_draft(context, model, record)
     prepare_copy(context, model, record, copy)
@@ -202,6 +206,9 @@ def revise(context, model, record_id, reason):
     if name:
         copy._values[business.registry.naming[model].field] = name
     periods.check(tx, model, after=copy._values)
+    # The copy gets its own copy of each Image field's image (an image belongs to one record).
+    from .images import clone
+    clone(business, tx, user, model, copy._values)
     saved = write_snapshot(tx, copy)
     plan = business.registry.plan_for(model)
     if plan is not None:
@@ -281,6 +288,7 @@ def copy_draft(context, model, record):
             if not owners:
                 continue
             found = owned_rows(tx, child, list(owners))
+            headings = sections.load(tx, child, list(owners))
             for owner_id, item in owners.items():
                 rows = []
                 for saved in found.get(owner_id, ((), 0))[0]:
@@ -288,6 +296,11 @@ def copy_draft(context, model, record):
                     rows.append(row)
                     following.append((child.model, saved.id, row))
                 item._rows[child.name] = rows
+                if owner_id in headings:
+                    # Section rows are copied too, as new section rows in the same places.
+                    placed = sections.anchored(found[owner_id][0], headings[owner_id])
+                    item._sections[child.name] = [sections.SectionRow(heading.label, at=heading.at,
+                                                                      position=heading._values['evlet_position']) for heading in placed]
         level = following
     return root
 

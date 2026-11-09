@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
-from .fields import ACTIVE, EMPTY_LAYER, Link, MISSING, Reference, RichText
+from .fields import ACTIVE, EMPTY_LAYER, Image, Link, MISSING, Reference, RichText
 from . import audit
 from .identity import FIXED_ID, RecordId, new_id, sequential
 from .models import ValidationError, identifier
@@ -63,6 +63,8 @@ class Database:
     # Set by Controls: this database's instance fields and added options, and the instance timezone.
     layer = EMPTY_LAYER
     timezone = 'UTC'
+    # Set by the application's Business: its sessions settle writes to models that declare derive().
+    business = None
 
     def __init__(self, path, registry, *, migrations=None, must_exist=False):
         if str(path) == ":memory:":
@@ -124,7 +126,9 @@ class Database:
         with self._connection() as connection:
             try:
                 connection.execute("BEGIN IMMEDIATE")
-                yield Session(connection, self.registry, self.timezone)
+                session = Session(connection, self.registry, self.timezone)
+                session._business = self.business
+                yield session
                 connection.commit()
             except sqlite3.IntegrityError as exc:
                 connection.rollback()
@@ -268,8 +272,48 @@ def _insert(connection, table, names, values, title_position=None):
     raise ConflictError('Could not find a free record id')
 
 
+class ReadSession:
+    """The transaction session, read only: what derive() and before_close() get as self.context.session.
+
+    It reads inside the write's transaction, so it sees that transaction's uncommitted rows, with no
+    permissions applied (trusted code). It has no write methods and no connection."""
+    __slots__ = ('_session',)
+
+    def __init__(self, session):
+        object.__setattr__(self, '_session', session)
+
+    def __setattr__(self, name, value):
+        raise AttributeError('The session is read only here')
+
+    @property
+    def registry(self):
+        return self._session.registry
+
+    @property
+    def timezone(self):
+        return self._session.timezone
+
+    def get(self, model, record_id):
+        return self._session.get(model, record_id)
+
+    def list(self, model, *, limit=50, offset=0, filters=None, order_by=None, search=""):
+        return self._session.list(model, limit=limit, offset=offset, filters=filters, order_by=order_by, search=search)
+
+    def count(self, model, *, filters=None, search=""):
+        return self._session.count(model, filters=filters, search=search)
+
+    def related(self, record, field_name):
+        return self._session.related(record, field_name)
+
+    def aggregate(self, model, *, measures, group_by=(), filters=None, limit=None, after=None):
+        return self._session.aggregate(model, measures=measures, group_by=group_by, filters=filters, limit=limit, after=after)
+
+
 class Session:
     """Available inside Database.transaction(); do not retain it afterwards."""
+    # The application's business, when an application opened this transaction: it settles writes to models that
+    # declare derive() (documents.settle_saved). A bare Database has none.
+    _business = None
 
     def __init__(self, connection, registry, timezone='UTC'):
         self.connection = connection
@@ -324,6 +368,14 @@ class Session:
     def create(self, model, /, **values):
         if is_ledger(model):
             return self.get(model, self.insert_many(model, [values])[0])
+        owner, children = self._derived_owner(model), self._children(model, values)
+        if owner is not None:
+            with self._settling(model, owner, None, children) as created:
+                created.append(self._create(model, values).id)
+            return self.get(model, created[0])
+        return self._create(model, values)
+
+    def _create(self, model, values):
         self._guard(model)
         self._state(model, values.get(getattr(model, '__state__', None) or '', MISSING), None)
         table = identifier(self.registry.name_for(model))
@@ -374,6 +426,14 @@ class Session:
     def update(self, model, record_id, /, **changes):
         if is_ledger(model):
             return self._ledger_update(model, record_id, changes)
+        owner, children = self._derived_owner(model), self._children(model, changes)
+        if owner is not None:
+            with self._settling(model, owner, record_id, children) as written:
+                written.append(self._update(model, record_id, changes).id)
+            return self.get(model, written[0])
+        return self._update(model, record_id, changes)
+
+    def _update(self, model, record_id, changes):
         self._guard(model)
         current = self.get(model, record_id)
         self._state(model, changes.get(getattr(model, '__state__', None) or '', MISSING), current)
@@ -389,9 +449,64 @@ class Session:
             names, stored = [*names, *stamp_names], [*stored, *stamp_values]
             assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
             self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', stored + [current.id])
-            if any(isinstance(model.__fields__.get(name), RichText) for name in changes):
+            if any(isinstance(model.__fields__.get(name), (RichText, Image)) for name in changes):
                 images.settle(self, model, current.id, record._values)
         return self.get(model, current.id)
+
+    def _derived_owner(self, model):
+        """The document model whose derive() a write to `model` (the document or one of its Table rows) affects,
+        or None: no derive(), or a raw repair inside maintenance()."""
+        if self._maintenance:
+            return None
+        root = self.registry.root_of(model)
+        return root if getattr(root, '__derives__', ()) else None
+
+    def _children(self, model, values):
+        """`children=` of a create or update: the document's Table rows, written with it and settled once.
+
+        As on the HTTP API, each Table is a full list of rows (rows with an `id` are kept and changed, the rest
+        are removed) or a change set {create, update, delete, order}. Only a document that declares derive()
+        takes them, since it is the one the session settles."""
+        if 'children' not in values or 'children' in model.__declared_fields__:
+            return None
+        children = values.pop('children')
+        if self._derived_owner(model) is not model:
+            raise ValueError(f'{model.__name__}: children= is for a document that declares derive(); write other '
+                             'documents with their rows through Context.create/update')
+        if not isinstance(children, dict):
+            raise ValidationError({'children': 'Use an object of child collections'})
+        return children
+
+    @contextmanager
+    def _settling(self, model, owner, record_id, children=None):
+        """A trusted write to a document that declares derive(), or to one of its rows: the raw write, then the
+        saved document settles like any other write (derive, clean, calculate, validate) and what changed is
+        stored. All or nothing, even when trusted code catches the failure: a savepoint covers both."""
+        from .documents import owner_of, settle_saved
+        if self._business is None:
+            raise ValueError(f'{owner.__name__} declares derive(), so writes settle through the application; write it in a '
+                             'transaction the application opened (an action, a move run, a job, business.context()), '
+                             'or inside session.maintenance() for an audited repair that skips derive()')
+        self._savepoints = getattr(self, '_savepoints', 0) + 1
+        name = f'evlet_derive_{self._savepoints}'
+        self.connection.execute(f'SAVEPOINT {name}')
+        try:
+            # A row names its document before the write (a deleted row is gone after it) and after it.
+            documents = [] if record_id is None or model is owner else [owner_of(self, model, record_id)]
+            written = []
+            yield written
+            documents += [written[0] if model is owner else owner_of(self, model, written[0]) for _ in written[:1]]
+            for document in dict.fromkeys(documents):
+                if document is not None:
+                    settle_saved(self, owner, document, children)
+        except BaseException:
+            self.connection.execute(f'ROLLBACK TO SAVEPOINT {name}')
+            self.connection.execute(f'RELEASE SAVEPOINT {name}')
+            raise
+        else:
+            self.connection.execute(f'RELEASE SAVEPOINT {name}')
+        finally:
+            self._savepoints -= 1
 
     def check_references(self, model, values):
         """Reference fields have no SQL foreign key, so each write checks that the record exists."""
@@ -415,12 +530,25 @@ class Session:
     def delete(self, model, record_id):
         if is_ledger(model):
             return self._ledger_delete(model, record_id)
+        owner = self._derived_owner(model)
+        if owner is not None and owner is not model:
+            # A removed row changes what the document's derive() sees.
+            with self._settling(model, owner, record_id):
+                self._delete(model, record_id)
+            return
+        self._delete(model, record_id)
+
+    def _delete(self, model, record_id):
         self._guard(model)
         current = self.get(model, record_id)
         periods.check(self, model, before=current._values)
         record_id = current.id
         table = identifier(self.registry.name_for(model))
+        from .sections import forget
+        forget(self.connection, self.registry, model, [record_id])
         self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))
+        # The record's images (rich text and Image fields) go with it.
+        images.remove(self, model, record_id)
 
     # Ledger models (evlet/ledger.py)
 

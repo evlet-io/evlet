@@ -8,6 +8,7 @@
 // to create, {id, section} to rename and ids to delete, and `order` (rows and sections) whenever a section changed.
 // A table whose schema says row_changes: false (a ChildTable on a plain model) takes only a full
 // list: saved rows as {id, ...changed values}, new rows without _key, rows left out are deleted.
+// A read-only Table (one the record fills itself, Meta.derives) is never sent.
 
 import type { Field, Row, Table } from './record';
 
@@ -27,6 +28,7 @@ function fullRow(row: Row, withKey: boolean): Body {
   }
   const children: Body = {};
   for (const [name, table] of row.tables) {
+    if (table.meta.read_only) continue;
     const rows = table.rows.peek(), keyed = table.meta.row_changes !== false;
     // Section rows go in their places among the lines, as {_key, section}.
     const sections = new Map(table.sections.peek().map(section => [section.key, section]));
@@ -44,6 +46,7 @@ function changedRow(row: Row): Body {
   for (const field of writable(row)) if (field.dirty.peek()) body[field.name] = field.value.peek() ?? null;
   const children: Body = {};
   for (const [name, table] of row.tables) {
+    if (table.meta.read_only) continue;
     const changes = table.meta.row_changes === false ? fullList(table) : tableChanges(table);
     if (changes) children[name] = changes;
   }

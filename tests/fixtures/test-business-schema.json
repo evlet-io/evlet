@@ -2099,6 +2099,7 @@
         {
           "label": "Item",
           "fields": [
+            "photo",
             "item_code",
             "item_name",
             "item_group",
@@ -2369,6 +2370,7 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "image": "photo",
       "fields": [
         {
           "name": "item_code",
@@ -8813,6 +8815,29 @@
           "locked_when": null
         },
         {
+          "name": "photo",
+          "type": "image",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "label": "Photo",
+          "help_text": "PNG, JPEG, GIF or WebP, up to 2 MiB.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "copy": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
           "name": "name",
           "type": "text",
           "required": false,
@@ -9082,6 +9107,7 @@
         "flavour": {},
         "fragrance": {},
         "gauge": {},
+        "photo": {},
         "name": {},
         "title": {}
       },
@@ -9290,6 +9316,7 @@
         "flavour",
         "fragrance",
         "gauge",
+        "photo",
         "name",
         "title",
         "prices.price_list",
@@ -9342,7 +9369,8 @@
             "full_name",
             "email",
             "department",
-            "reports_to"
+            "reports_to",
+            "skill_count"
           ],
           "collapsible": false,
           "collapsed": false,
@@ -9379,6 +9407,11 @@
           {
             "kind": "table",
             "name": "skills",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "skill_levels",
             "main": true
           },
           {
@@ -9579,6 +9612,39 @@
           "locked_when": null
         },
         {
+          "name": "skill_count",
+          "type": "integer",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": null,
+          "maximum": null,
+          "label": "Skills",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": true,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
           "name": "name",
           "type": "text",
           "required": false,
@@ -9648,6 +9714,7 @@
         "email": {},
         "department": {},
         "reports_to": {},
+        "skill_count": {},
         "name": {},
         "title": {}
       },
@@ -9656,10 +9723,13 @@
         "email",
         "department",
         "reports_to",
+        "skill_count",
         "name",
         "title",
         "skills.skill",
-        "skills.level"
+        "skills.level",
+        "skill_levels.level",
+        "skill_levels.skills"
       ],
       "sources": {},
       "permissions": {
@@ -9677,7 +9747,20 @@
           "row_changes": true,
           "filterable": true,
           "min_rows": 0,
-          "max_rows": 100
+          "max_rows": 100,
+          "sections": true,
+          "section_sums": []
+        },
+        {
+          "name": "skill_levels",
+          "model": "employee_skill_levels",
+          "link": "evlet_owner",
+          "label": "Skill levels",
+          "row_changes": true,
+          "filterable": true,
+          "min_rows": 0,
+          "max_rows": 100,
+          "read_only": true
         }
       ],
       "actions": [
@@ -10208,6 +10291,112 @@
             "in",
             "nin",
             "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        }
+      ],
+      "permissions": {
+        "create": true,
+        "update": true,
+        "delete": true
+      },
+      "child_only": true,
+      "children": [],
+      "actions": [],
+      "attachments": false
+    },
+    {
+      "name": "employee_skill_levels",
+      "layout": [
+        {
+          "label": "Details",
+          "fields": [
+            "level",
+            "skills"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows"
+        }
+      ],
+      "label": "Skill level",
+      "plural": "Skill levels",
+      "description": "",
+      "title_field": "level",
+      "list_fields": [
+        "id",
+        "level",
+        "skills"
+      ],
+      "search_fields": [
+        "level"
+      ],
+      "open_in": "page",
+      "autosave": true,
+      "fields": [
+        {
+          "name": "level",
+          "type": "select",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "max_length": 255,
+          "choices": [
+            "learning",
+            "practised",
+            "expert"
+          ],
+          "label": "Level",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "in",
+            "nin",
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
+          "name": "skills",
+          "type": "integer",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "minimum": null,
+          "maximum": null,
+          "label": "Skills",
+          "help_text": "",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "default_kind": "static",
+          "default": 0,
+          "stored": true,
+          "operators": [
+            "eq",
+            "ne",
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "between",
+            "isnull",
+            "in",
+            "nin"
           ],
           "compute": null,
           "initial": null,

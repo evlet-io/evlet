@@ -20,6 +20,7 @@ from .models import ASSIGNED_ID, ValidationError, identifier, refuse_id
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
 from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal, wire
+from . import sections
 
 
 class Snapshot:
@@ -45,9 +46,14 @@ class Draft:
         object.__setattr__(self, '_definition', definition)
         object.__setattr__(self, '_values', dict(values or {}))
         object.__setattr__(self, '_rows', {})
+        # Section rows of Tables declared with sections=True: {table: [SectionRow]} (evlet/sections.py).
+        object.__setattr__(self, '_sections', {})
         object.__setattr__(self, '_sources', {})
         object.__setattr__(self, 'context', context)
         object.__setattr__(self, 'parent', parent)
+        # The model class, for hooks such as derive() that run on a draft (a field named `model` wins).
+        if not hasattr(definition, 'model') and not {'model'} & {*definition.__declared_fields__, *definition.__tables__, *definition.__sources__}:
+            object.__setattr__(self, 'model', definition)
         if 'source' not in definition.__declared_fields__:
             # A flat record may name a field `source` (an effect target's Reference); the field wins.
             object.__setattr__(self, 'source', source)
@@ -60,12 +66,20 @@ class Draft:
         # Field rule states from the last settlement, and source values as the caller left them (lock checks).
         object.__setattr__(self, '_rules', {})
         object.__setattr__(self, '_caller', {})
+        # While derive() runs: the names it may assign on this draft (None is no limit).
+        object.__setattr__(self, '_derives', None)
 
     def __getattr__(self, name):
         if name in self._definition.__declared_fields__:
             return self._values.get(name)
         if name in self._definition.__tables__:
-            return self._rows.get(name, [])
+            rows = self._rows.get(name, [])
+            if sections.enabled(self._definition, name) and not isinstance(rows, sections.TableRows):
+                # The real rows, with sections() for the grouping; kept in place so list changes still apply.
+                rows = sections.TableRows(rows, self._sections.setdefault(name, []) if isinstance(self._sections, dict) else ())
+                if isinstance(self._rows, dict) and name in self._rows:
+                    self._rows[name] = rows
+            return rows
         if name in self._definition.__sources__:
             return self._sources.get(name)
         value = getattr(self._definition, name)
@@ -76,6 +90,9 @@ class Draft:
             raise AttributeError('Evaluation drafts are read only')
         if name == 'id':
             raise ValidationError({'id': ASSIGNED_ID})
+        if self._derives is not None and name not in self._derives:
+            raise AttributeError(f'derive() sets only what Meta.derives names, and the rows of those Tables; '
+                                 f'{self._definition.__name__}.{name} is not one of them')
         if name in self._definition.__declared_fields__:
             if is_finite(self._definition.__declared_fields__[name]):
                 raise ValidationError({name: 'COMPUTED_FIELD_WRITE: this value is calculated'})
@@ -87,18 +104,54 @@ class Draft:
             self._values[name] = value
         elif name in self._definition.__tables__:
             limit = self._definition.__tables__[name].max_rows
-            if not isinstance(value, (list, tuple)) or len(value) > limit:
+            sectioned = sections.enabled(self._definition, name)
+            if not isinstance(value, (list, tuple)):
+                raise ValidationError({name: f'Use at most {limit} rows'})
+            marked = [isinstance(item, sections.SectionRow) or sectioned and sections.is_entry(item) for item in value]
+            if sum(1 for flag in marked if not flag) > limit:
                 raise ValidationError({name: f'Use at most {limit} rows'})
             # The registry's row model (declared Child classes are copied with an owner link and position).
             owned = self.context._business.children.get((self._definition, name)) if self.context is not None else None
             child = owned.model if owned is not None else self._definition.__tables__[name].child
-            rows = [row if isinstance(row, Draft) else Draft(child, row, context=self.context, parent=self, source=self.source) for row in value]
+            old_rows = list(self._rows.get(name, []))
+            items = [item if flag else item if isinstance(item, Draft) else Draft(child, item, context=self.context, parent=self, source=self.source)
+                     for item, flag in zip(value, marked)]
+            if any(marked):
+                if not sectioned:
+                    raise ValidationError({name: f'{name} has no section rows; declare Table(..., sections=True)'})
+                items = [self._section_item(name, item) if flag else item for item, flag in zip(items, marked)]
+                rows, found = sections.split(items)
+                if len(found) > sections.MAX_SECTIONS:
+                    raise ValidationError({name: f'Use at most {sections.MAX_SECTIONS} section rows'})
+            else:
+                rows = items
+                found = sections.reanchor(old_rows, rows, self._sections.get(name, [])) if sectioned else []
+            ordered = sections.combined(rows, found) if sectioned else rows
             if 'evlet_position' in child.__fields__:
-                for row, position in zip(rows, positions(rows, set())):
+                for row, position in zip(ordered, positions(ordered, set())):
                     row._values['evlet_position'] = position
+            if sectioned:
+                self._sections[name] = found
+                rows = sections.TableRows(rows, found)
             self._rows[name] = rows
         else:
             raise AttributeError('Unknown draft field: ' + name)
+
+    def _section_item(self, name, item):
+        """A SectionRow from {"section": label} (a new one) or {"id": ..., "section": label} (one this Table holds)."""
+        if isinstance(item, sections.SectionRow):
+            return item
+        sections.check_entry(item, name)
+        label = sections.label_of(item['section'], name)
+        if item.get('id') is None:
+            return sections.SectionRow(label)
+        known = {section.id: section for section in self._sections.get(name, [])}
+        section_id = item_id(item['id'])
+        if section_id not in known:
+            raise ValidationError({name: CHILD_ID})
+        found = known[section_id].copy()
+        found.label = label
+        return found
 
     def read(self, path):
         parts = path.split('.')
@@ -156,7 +209,8 @@ class Context:
         self._active = [] if active is None else active
         self._recalculate = None  # (model, record_id) explicitly allowed to recalculate under the active plan.
         self._person = None  # (model, record_id) of the write a person sent over HTTP; Controls rules apply to it.
-        # Set only on the private copy a Move run method or an @action handler gets while it runs (handler_context).
+        # Set only on the private copy a Move run method or an @action handler gets while it runs (handler_context),
+        # or 'read' on the read-only copy derive() and before_close() get (hook_context).
         self._session_open = False
 
     @property
@@ -167,7 +221,13 @@ class Context:
         runs. Writes through it bypass row and field permissions and join the move or action's
         transaction, so a failure anywhere rolls back the State, its Sequence number and every row written.
         Every other context refuses it: business.context(), services, reports, jobs, and everything Eva,
-        assistants, tools, MCP and the connector reach."""
+        assistants, tools, MCP and the connector reach.
+
+        derive() and before_close() get it read only (evlet.database.ReadSession): get, list, count,
+        related and aggregate inside the write's transaction, and no writes."""
+        if self._session_open == 'read':
+            from .database import ReadSession
+            return ReadSession(self._tx)
         if not self._session_open:
             raise AccessError(403, 'The transaction session is available only to a Move run method or an '
                                    '@action handler, as self.context.session while it runs')
@@ -355,6 +415,7 @@ class Context:
         lifecycle_delete(self, model, record_id)
         from .states import check_delete
         check_delete(self, model, record)
+        check_close(self, model, record_id, None)
         before, _ = load_draft(self, model, record_id, {}, preview=True)
         child_changes = {}
         subtree = {}
@@ -455,6 +516,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     state_write(model, scalars, current)
     sequence_write(model, scalars, current, business.policy.fields(user, model))
     computed_write(business, model, scalars, '')
+    derived_write(model, scalars, collections, '')
     drop_echoes(model, scalars, current._values if current else None)
     business.policy.check_values(tx, user, model, scalars)
     # A new record takes the defaults Controls set on this instance for fields the caller left out.
@@ -487,6 +549,17 @@ def computed_write(business, model, values, prefix):
     written = [name for name in values if name in model.__declared_fields__ and is_finite(model.__declared_fields__[name])]
     if written:
         raise ValidationError({prefix + name: 'COMPUTED_FIELD_WRITE: this value is calculated' for name in written})
+
+
+DERIVED = 'DERIVED_FIELD_WRITE: this value is set by the record'
+
+
+def derived_write(model, scalars, collections, prefix):
+    """Fields, Tables and row fields that derive() sets (Meta.derives) have one writer: callers cannot send them."""
+    derives = getattr(model, '__derives__', ())
+    written = [name for name in (*scalars, *collections) if name in derives]
+    if written:
+        raise ValidationError({prefix + name: DERIVED for name in written})
 
 
 def row_bounds(business, child):
@@ -544,7 +617,7 @@ class SavedRows:
     def __init__(self, context, model, record_id):
         business, tx, user = context._business, context._tx, context.user
         bounded = business.registry.plan_for(model) is not None
-        self.rows, self.hidden = {}, set()
+        self.rows, self.hidden, self.sections = {}, set(), {}
         level, loaded = {model: [record_id]}, 0
         while level:
             following = {}
@@ -560,6 +633,8 @@ class SavedRows:
                     for owner_id, (records, _) in found.items():
                         self.rows[child, owner_id] = records
                         found_ids.extend(record.id for record in records)
+                    for owner_id, items in sections.load(tx, child, ids).items():
+                        self.sections[child, owner_id] = items
                     loaded += len(found_ids)
                     if bounded and loaded > LIMITS['document_rows']:
                         raise ValidationError({'children': 'This document exceeds the owned row limit'})
@@ -571,6 +646,11 @@ class SavedRows:
 
     def of(self, child, owner_id):
         return self.rows.get((child, owner_id), [])
+
+    def sections_of(self, child, owner_id):
+        """Copies of a collection's saved section rows, placed among its saved rows."""
+        saved = [item.copy() for item in self.sections.get((child, owner_id), [])]
+        return sections.anchored(self.of(child, owner_id), saved)
 
 
 CHANGES = ('create', 'update', 'delete', 'order')
@@ -739,6 +819,9 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         originals = {row.id: row for row in existing}
         hidden = {row.id for row in existing if (child.model, row.id) in saved.hidden}
         positioned = 'evlet_position' in child.model.__fields__
+        sectioned = sections.enabled(model, child.name)
+        headings = saved.sections_of(child, record_id) if record_id and sectioned else []
+        known = {item.id: item for item in headings}
 
         def stored(row, owner, counter):
             item = Draft(child.model, row._values, context=context, parent=owner, record_id=row.id)
@@ -746,29 +829,46 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             return item
         if old is not None:
             old._rows[child.name] = [stored(row, old, None if loaded is None else [0, 0]) for row in existing]
+            if sectioned: old._sections[child.name] = [item.copy() for item in headings]
         if child.name not in collections:
             draft._rows[child.name] = [stored(row, draft, loaded) for row in existing]
+            if sectioned: draft._sections[child.name] = [item.copy() for item in headings]
             continue
         submitted = collections[child.name]
+        listed = submitted if isinstance(submitted, list) else [*submitted.get('create', []), *submitted.get('update', [])] \
+            if isinstance(submitted, dict) and all(isinstance(submitted.get(key, []), list) for key in ('create', 'update')) else []
+        if not sectioned and 'section' not in child.model.__declared_fields__ and any(sections.is_entry(value) for value in listed):
+            raise ValidationError({prefix + child.name: f'{child.label} has no section rows'})
+        # A Table with sections orders its rows and section rows together; section rows are never hidden.
+        everything = sections.combined(existing, headings) if sectioned else existing
         if isinstance(submitted, dict):
-            entries = row_changes(submitted, existing, hidden, positioned, prefix + child.name)
-        elif isinstance(submitted, list) and len(submitted) <= max_rows:
+            entries = row_changes(submitted, everything, hidden, positioned, prefix + child.name)
+        elif isinstance(submitted, list) and sum(1 for value in submitted if not (sectioned and sections.is_entry(value))) <= max_rows:
             if len(existing) - len(hidden) > ROW_LIMIT:
                 # A detail embeds only the first ROW_LIMIT rows, so a full list from it would drop the rest.
                 raise ValidationError({prefix + child.name: f'This collection has more than {ROW_LIMIT} rows; send a change set '
                                                              '{"create", "update", "delete", "order"} instead of the full list'})
-            entries = full_list(submitted, existing, hidden)
+            entries = full_list(submitted, everything, hidden)
         else:
             raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
-        count(sum(1 for kind, value, _ in entries if kind == 'row' and isinstance(value, dict) and value.get('id') is None), 1)
-        kept, keys, merged = set(), set(), []
+        count(sum(1 for kind, value, _ in entries if kind == 'row' and isinstance(value, dict) and value.get('id') is None
+                  and not (sectioned and sections.is_entry(value))), 1)
+        kept, keys, merged, kept_sections = set(), set(), [], set()
         for kind, value, placed in entries:
             if kind == 'keep':
+                if value in known:
+                    kept_sections.add(value)
+                    merged.append(known[value].copy())
+                    continue
                 if value not in hidden: kept.add(value)
                 merged.append(stored(originals[value], draft, loaded))
                 continue
             if not isinstance(value, dict):
                 raise ValidationError({prefix + child.name: 'Each row must be an object'})
+            if sectioned and (sections.is_entry(value) or item_id(value.get('id')) in known):
+                merged.append(section_entry(business, user, child, value, known, kept_sections, originals, placed, preview,
+                                            prefix + child.name, keys_seen))
+                continue
             value = dict(value)
             row_id = value.pop('id', None)
             if row_id is not None:
@@ -782,6 +882,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             keys_seen.add(temporary) if temporary is not None and fresh else None
             value, nested = business.split_body(value)
             computed_write(business, child.model, value, prefix + child.name + '.')
+            derived_write(child.model, value, nested, prefix + child.name + '.')
             original = originals.get(row_id) if row_id is not None else None
             drop_echoes(child.model, value, getattr(original, '_values', None))
             business.policy.check_values(tx, user, child.model, value, targets=targets)
@@ -805,11 +906,50 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
                 for _, item in walk(stored(originals[row_id], draft, None if loaded is None else [0, 0])):
                     if not business.policy.allows(user, item._definition, 'delete') or (item._definition, item.id) in saved.hidden:
                         raise AccessError(403, 'You do not have permission for this operation')
-        if len(merged) > max_rows: raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
+        if known.keys() - kept_sections and not preview:
+            business.policy.require(user, child.model, 'delete')
+        if sum(1 for row in merged if not isinstance(row, sections.SectionRow)) > max_rows:
+            raise ValidationError({prefix + child.name: f'Use at most {max_rows} rows'})
         if positioned:
             for row, position in zip(merged, positions(merged, hidden)):
                 row._values['evlet_position'] = position
+        if sectioned:
+            merged, found = sections.split(merged)
+            if len(found) > sections.MAX_SECTIONS:
+                raise ValidationError({prefix + child.name: f'Use at most {sections.MAX_SECTIONS} section rows'})
+            draft._sections[child.name] = found
         draft._rows[child.name] = merged
+
+
+def section_entry(business, user, child, value, known, kept, originals, placed, preview, where, keys_seen):
+    """A SectionRow from a submitted section row: {"section": label} creates one, {"id": ..., "section": label}
+    renames a saved one, and {"id": ...} keeps or places it. A row never turns into a section or back."""
+    sections.check_entry(value, where)
+    row_id = value.get('id')
+    temporary = value.get('_key')
+    if temporary is not None and (not isinstance(temporary, str) or not re.fullmatch('[A-Za-z0-9_-]{1,64}', temporary)
+                                  or row_id is None and temporary in keys_seen):
+        raise ValidationError({where: 'Row keys must be distinct (new rows: within the document) and use at most 64 letters, digits, hyphens or underscores'})
+    if row_id is None:
+        if not preview:
+            business.policy.require(user, child.model, 'create')
+        if temporary is not None:
+            keys_seen.add(temporary)
+        return sections.SectionRow(sections.label_of(value['section'], where), key=temporary, placed=placed)
+    row_id = item_id(row_id)
+    if row_id in originals:
+        raise ValidationError({where: 'A row cannot become a section row; remove it and add a section'})
+    if row_id not in known or row_id in kept:
+        raise ValidationError({where: CHILD_ID})
+    kept.add(row_id)
+    item = known[row_id].copy()
+    item._placed = placed
+    if 'section' in value:
+        label = sections.label_of(value['section'], where)
+        if label != item.label and not preview:
+            business.policy.require(user, child.model, 'update')
+        item.label = label
+    return item
 
 
 def walk(draft, prefix=''):
@@ -975,6 +1115,9 @@ def settle(context, draft, *, complete, previous=None, kept=False):
         object.__setattr__(item, '_caller', dict(item._values))
         if not kept:
             apply_fetches(context, item, prefix, prior(item), errors, targets)
+    # derive() sets its values before calculations; a locked or posted record keeps them, like its results.
+    if getattr(draft._definition, '__derives__', ()) and draft.parent is None and not kept:
+        all_drafts = derive(context, draft, internal, errors, targets)
     plan = registry.plan_for(draft._definition)
     if plan is not None:
         if kept:
@@ -991,6 +1134,108 @@ def settle(context, draft, *, complete, previous=None, kept=False):
     return errors, states
 
 
+def derive(context, draft, internal, errors, targets):
+    """Run the document's derive() and treat what it set like caller input: cleaned, with defaults and
+    fetches on the rows it built. Returns the document's drafts again, since it may replace rows.
+
+    Rows it builds for a Table take the ids of the saved rows they replace, in order, so a derived
+    Table that comes out the same is not rewritten. A ValidationError it raises is reported like a
+    field error."""
+    model = draft._definition
+    names = model.__derives__
+    tables = {name for name in names if name in model.__tables__}
+    fields = {name for name in names if name in model.__declared_fields__}
+    # "table.field": fields derive() sets on the rows of a Table callers edit; it keeps those rows.
+    row_fields = {}
+    for name in names:
+        if '.' in name:
+            table, field = name.split('.')
+            row_fields.setdefault(table, set()).add(field)
+    saved = {name: [row for row in draft._rows.get(name, []) if row.id] for name in tables}
+    edited = {name: list(rows) for name, rows in draft._rows.items() if name not in tables}
+    before = list(walk(draft))
+    for prefix, item in before:
+        top = prefix.split('.')[0]
+        allowed = frozenset(names) if item is draft else None if top in tables else \
+            frozenset(row_fields.get(top, ())) if item.parent is draft else frozenset()
+        object.__setattr__(item, '_derives', allowed)
+    try:
+        with trusted(), hook_context(context, draft):
+            draft.derive()
+    except ValidationError as exc:
+        errors.update(exc.errors)
+    finally:
+        for _, item in [*before, *walk(draft)]:
+            object.__setattr__(item, '_derives', None)
+    for name, rows in edited.items():
+        if [id(row) for row in draft._rows.get(name, [])] != [id(row) for row in rows]:
+            raise AttributeError(f'derive() cannot add, remove or reorder the rows of {model.__name__}.{name}, which '
+                                 'callers edit; name the Table itself in Meta.derives to build its rows')
+    all_drafts = list(walk(draft))
+    targets.prefetch(link_values([item for _, item in all_drafts if item.id is None], fetches_only=True))
+    for prefix, item in all_drafts:
+        if item is draft:
+            apply_inputs(item, prefix, internal(item) | (set(model.__declared_fields__) - fields), errors)
+            item._caller.update({name: item._values.get(name) for name in fields})
+        elif item.parent is draft and prefix.split('.')[0] in row_fields:
+            names_here = row_fields[prefix.split('.')[0]]
+            apply_inputs(item, prefix, internal(item) | (set(item._definition.__declared_fields__) - names_here), errors)
+            item._caller.update({name: item._values.get(name) for name in names_here})
+        elif prefix.split('.')[0] in tables:
+            unknown = set(item._values) - set(item._definition.__declared_fields__)
+            if unknown:
+                raise ValueError(f'derive() built a {item._definition.__name__} row with unknown fields: {", ".join(sorted(map(str, unknown)))}')
+            apply_inputs(item, prefix, internal(item), errors)
+            object.__setattr__(item, '_caller', dict(item._values))
+            apply_fetches(context, item, prefix, None, errors, targets)
+    for name in tables:
+        rows = draft._rows.get(name, [])
+        kept = {row.id for row in rows if row.id}
+        free = [row for row in saved[name] if row.id not in kept]
+        for row in rows:
+            if row.id is None and free:
+                old = free.pop(0)
+                object.__setattr__(row, 'id', old.id)
+                object.__setattr__(row, 'key', str(old.id))
+    return list(walk(draft))
+
+
+@contextmanager
+def hook_context(context, draft):
+    """Give derive() or before_close() a read context with the session open read only, for as long as it runs."""
+    inner = context.read_context()
+    inner._session_open = 'read'
+    previous = draft.context
+    object.__setattr__(draft, 'context', inner)
+    try:
+        yield
+    finally:
+        inner._session_open = False
+        for _, part in walk(draft):
+            if part.context is inner or part is draft:
+                object.__setattr__(part, 'context', previous)
+
+
+def check_close(context, model, record_id, to):
+    """Run the model's before_close(self, to) on the saved record before it closes: a move into a final
+    state (`to` is that state), a void ("void"), a lifecycle cancel ("cancelled") or a delete (None).
+
+    The record is read only, its session is read only, and a ValidationError (or ValueError) refuses
+    the change before anything is written."""
+    from .models import closes
+    if not closes(model):
+        return
+    record, _ = load_draft(context, model, record_id, {}, preview=True)
+    freeze_draft(record)
+    try:
+        with trusted(), hook_context(context, record):
+            record.before_close(to)
+    except ValidationError:
+        raise
+    except ValueError as exc:
+        raise ValidationError({'_form': str(exc)}) from None
+
+
 def current_user(item, field):
     """The signed-in user's username (Text) or account id (Integer), from the root draft's context."""
     root = item
@@ -1003,7 +1248,7 @@ def current_user(item, field):
 
 
 def apply_inputs(item, prefix, internal, errors):
-    """Creation defaults, then type validation of every source (non-calculated) field."""
+    """Creation defaults, then type validation of every source (non-calculated) field not in `internal`."""
     for name, field in item._definition.__declared_fields__.items():
         if name in internal: continue
         value = item._values.get(name, MISSING)
@@ -1464,6 +1709,11 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
         stamp_names, stamp_values = modified(tx.actor)
         names, values = [*names, *stamp_names], [*values, *stamp_values]
         tx.connection.execute(f'UPDATE {table} SET {", ".join(identifier(name) + "=?" for name in names)} WHERE id=?', [*values, draft.id])
+    # Rich text and Image fields: link held images, refuse other records' and delete the ones no longer used.
+    from . import images
+    holders = images.holders(model)
+    if holders and (before is None or any(before._values.get(name) != draft._values.get(name) for name in holders)):
+        images.settle(tx, model, draft.id, draft._values)
     return tx.get(model, draft.id) if reload else None
 
 
@@ -1490,6 +1740,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         # The move is checked on the saved record before its values, so values never reveal which moves exist.
         draft, before = load_draft(context, model, record_id, {})
         declared_move = states.begin_move(context, model, draft, before, move)
+        if declared_move.to in model.__declared_fields__[model.__state__].final:
+            check_close(context, model, record_id, declared_move.to)
         if values:
             states.check_move_values(context, model, declared_move, values)
             draft, before = load_draft(context, model, record_id, values)
@@ -1499,6 +1751,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     from . import lifecycle as lifecycle_engine
     if lifecycle is not None:
         lifecycle_engine.begin(context, model, draft, lifecycle, reason)
+        if lifecycle == 'cancel':
+            check_close(context, model, record_id, 'cancelled')
     else:
         lifecycle_engine.check_write(context, model, draft, before)
     # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
@@ -1568,7 +1822,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
                                                      user.username, record=draft, context=context, record_id=draft.id)
     prior = before.stored_values() if before else None
     after = draft.stored_values()
-    if prior == after and lifecycle is None:
+    if prior == after and lifecycle is None and (before is None or sections.signature(before) == sections.signature(draft)):
         if plan is not None:
             record_plan(tx, business.registry.name_for(model), record_id, version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
@@ -1616,6 +1870,47 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     return result
 
 
+def owner_of(tx, model, record_id):
+    """The id of the document a saved Table row belongs to, through every level of rows; None when it is gone."""
+    owners = {child.model: child for child in tx.registry.children}
+    while model in owners:
+        child = owners[model]
+        row = tx.connection.execute(f'SELECT {identifier(child.link)} FROM {identifier(tx.registry.name_for(model))} WHERE id = ?',
+                                    (record_id,)).fetchone()
+        if row is None or row[0] is None:
+            return None
+        model, record_id = child.parent, row[0]
+    return record_id
+
+
+def settle_saved(tx, model, record_id, children=None):
+    """Settle a saved document after a trusted Session write to it or to one of its rows (evlet/database.py), for a
+    model that declares derive(): derive, clean, calculate and validate, as on any write, then store what changed.
+
+    It runs as the engine, without roles or row scopes, like the trusted write that called it. A record with posted
+    effects keeps its stored results, as on every other write. derive() reads through a read-only session, so it
+    cannot write and start another settlement. `children` are the document's Table rows the write sends with it,
+    merged like the rows of an HTTP write."""
+    from .effects import EngineBusiness, ENGINE, SessionPolicy, has_postings
+    business = EngineBusiness(tx._business)
+    business.policy = SessionPolicy(tx._business.policy)
+    context = Context(business, tx, ENGINE)
+    current = tx.get(model, record_id)
+    if has_postings(tx.connection, business.registry, model, current):
+        if children:
+            raise ValidationError({'children': 'This record has postings. To change its rows, void or revise it.'})
+        return
+    derived_write(model, {}, children or {}, '')
+    draft = Draft(model, dict(current._values), context=context, record_id=current.id)
+    before = Draft(model, dict(current._values), context=context, record_id=current.id)
+    load_rows(context, model, draft, before, current.id, children or {}, False, '', set(), None,
+              SavedRows(context, model, current.id), LinkTargets(context))
+    settle(context, draft, complete=True, previous=before)
+    if before.stored_values() != draft.stored_values():
+        write_snapshot(tx, draft, before, reload=False)
+    persist_rows(context, model, draft, before, current.id, {})
+
+
 def record_plan(tx, resource, record_id, version):
     tx.connection.execute('INSERT INTO evlet_calculation_versions(resource,record_id,plan_hash) VALUES (?,?,?) '
                           'ON CONFLICT(resource, record_id) DO UPDATE SET plan_hash=excluded.plan_hash',
@@ -1636,6 +1931,13 @@ def persist_rows(context, model, draft, before, owner_id, keys):
         old_rows = before._rows.get(child.name, []) if before else []
         old_by_id = {row.id: row for row in old_rows}
         rows = draft._rows.get(child.name, [])
+        sectioned = sections.enabled(model, child.name)
+        if sectioned:
+            # Rows and section rows share one order; a handler that changed the rows in place may leave gaps or ties.
+            ordered = sections.combined(rows, draft._sections.get(child.name, []))
+            if not sections.ordered_positions(ordered):
+                for item, position in zip(ordered, positions(ordered, set())):
+                    item._values['evlet_position'] = position
         retained = {row.id for row in rows if row.id}
         delete_rows(business, tx, child.model, sorted(set(old_by_id) - retained))
         added, updated, moved, nested = [], [], {}, {}
@@ -1671,6 +1973,10 @@ def persist_rows(context, model, draft, before, owner_id, keys):
         changes[child.name] = {'added': added, 'updated': updated, 'removed': sorted(set(old_by_id) - retained),
                                'reordered': [row.id for row in old_rows] != [row.id for row in rows]}
         if nested: changes[child.name]['rows'] = nested
+        if sectioned:
+            headings = sections.persist(context, child, owner_id, before._sections.get(child.name, []) if before else [],
+                                        draft._sections.get(child.name, []), keys, old_rows, rows)
+            if headings: changes[child.name]['sections'] = headings
     return changes
 
 
@@ -1694,6 +2000,7 @@ def delete_rows(business, tx, model, record_ids):
     ids = list(dict.fromkeys(record_ids))
     if not ids:
         return
+    sections.forget(tx.connection, business.registry, model, ids)
     for child in business.children.values():
         if child.parent is model:
             table, link = identifier(business.registry.name_for(child.model)), identifier(child.link)

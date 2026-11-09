@@ -36,6 +36,11 @@ columns above the menu's divider stay in place while the table scrolls sideways.
 pinning keep the first column pinned. A child table's Focus view keeps the record's header and its
 save bar in view ([ui-framework.md](ui-framework.md)).
 
+A Table the record fills itself (`Meta.derives`, [model-engine.md](model-engine.md#derived-values))
+is read only on the record page, in focus view and in the row editor, whatever the state: it reads
+"Filled in by the record when it is saved." and a save never sends its rows. Its fields show read
+only too.
+
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `cards`, `relations`, `measures`, `open_in`, `list_tabs`,
 `list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks`, `panel`, `panel_summary`, `focus` and `duplicate`. See "What the model decides" in [ui-framework.md](ui-framework.md).
@@ -256,6 +261,19 @@ field or `Table` is defined, for `Meta.duplicate` when the registry is built. Du
 to roles that may create the model (the schema's `permissions.create`). Both options are display
 only: they never change storage, migrations or permissions.
 
+### Section rows
+
+A `Table(..., sections=True)` may hold section rows, headings that group the rows below them
+([model-engine.md](model-engine.md#section-rows)). The schema's `children` entry carries
+`"sections": true` and `"section_sums"`: the row fields each section row sums over its rows, which
+are the fields the table's total line sums. The record's `children` list the section rows in place
+as `{"id", "section"}`; the browser computes the sums from the rows, and nothing is stored.
+
+The table editor does not draw them yet: it leaves section rows out of the grid, and its change
+sets keep them where they are. Paging (`lines/`) counts real rows only. Duplicate copies only the
+rows, so a duplicate starts without the sections. A child row model's own `Meta.layout` (`Section`
+blocks with titles and descriptions) groups the fields of its row editor.
+
 ### Record layouts
 
 `Meta.layout` can declare the whole record page instead of sections only: `Main(...)` first, then
@@ -449,7 +467,9 @@ A record's State shows as a coloured badge on the title's line by default, with 
 header's split button; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
 draws neither. `Meta.status` adds a status badge for a Select the system sets, such as a
 payment status, coloured by `Select(..., colors={...})`. Badges and bar steps offer only the
-moves this person may take now; everything else is plain text. Lists draw the same badges. The
+moves this person may take now; everything else is plain text. Lists draw the same badges.
+`State(..., cancelled=(...))` marks final states that mean the record was called off; the
+schema's `state.cancelled` lists them, with `"void"` on a voidable State. The
 badge wraps with the title in the side panel and on a phone; the bar scrolls sideways there.
 See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
 
@@ -919,6 +939,12 @@ Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-fr
 A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-framework.md#rich-text)):
 at rest the record shows the formatted text (read only when the record is locked), and list cells
 show its plain text. The Playground's projects have one, Brief.
+An `Image` field ([model-engine.md](model-engine.md#image-fields)) shows a small preview with
+Upload (Replace once set) and Remove. The browser shrinks a large image and checks its type before
+upload; the server checks both again. A new record's image is held until the record is saved.
+List cells read "Image". `Meta.image` puts the model's `image` key in `/api/schema`, which the record
+header (page and side panel) shows left of the title: a round avatar for a person, else a square
+thumbnail, served by the attachments route. The Playground's items have a Photo.
 A record's Activity, in the side column, writes notes with the same editor; typing `@` mentions a person, with a
 warning when they can't open the record. The bell in the top bar opens the notification centre,
 with the unread count kept live by the event stream ([journal.md](journal.md#mentions)). It is a

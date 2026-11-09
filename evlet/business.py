@@ -107,6 +107,8 @@ class Gate:
 class Business:
     def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None):
         self.database, self.registry, self.auth = database, database.registry, auth
+        # Sessions of this database settle writes to models that declare derive() (Session.create/update).
+        database.business = self
         self.tenant = None
         self.gate = Gate()
         self.application = None
@@ -424,6 +426,9 @@ class Business:
             # Meta.focus is display only; like key_fields it is left out for a role that cannot read the field.
             if 'focus' in entry and entry['focus'] not in readable:
                 del entry['focus']
+            # The record's image field, likewise only for a role that can read it.
+            if 'image' in entry and entry['image'] not in readable:
+                del entry['image']
             # The field naming fills: the record page shows it as the document number, and until it has one,
             # when it will ("Assigned on save", "Assigned on confirm").
             naming = self.registry.naming.get(model)
@@ -445,6 +450,7 @@ class Business:
             entry['permissions'].update(corrections)
             entry['child_only'] = model in self.child_models
             from .documents import row_bounds
+            from .sections import enabled as sections_enabled, total_fields
             # row_changes: the parent's save takes {create, update, delete, order} change sets (document route);
             # otherwise it takes only full row lists without _key (legacy ChildTable on a plain model).
             entry['children'] = [{'name': child.name, 'model': self.registry.name_for(child.model), 'link': child.link, 'label': child.label,
@@ -453,7 +459,13 @@ class Business:
                                   'filterable': self.policy.rule(user, child.model).scope is None,
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child))),
                                   # Table(copy=False): Duplicate leaves these rows out of the new record (display only).
-                                  **({'copy': False} if getattr(getattr(model, '__tables__', {}).get(child.name), 'copy', True) is False else {})}
+                                  **({'copy': False} if getattr(getattr(model, '__tables__', {}).get(child.name), 'copy', True) is False else {}),
+                                  # Table(sections=True): rows may include section rows {"id", "section"}; each shows the sums
+                                  # of its rows for the fields the total line sums (computed by the client, never stored).
+                                  **({'sections': True, 'section_sums': list(total_fields(model, child.name))}
+                                     if sections_enabled(model, child.name) else {}),
+                                  # A Table that derive() fills (Meta.derives) is read only on the form; the save sends none of its rows.
+                                  **({'read_only': True} if child.name in getattr(model, '__derives__', ()) else {})}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
             # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
             # unknown when the model was defined) stays out of the side panel too.
@@ -1232,9 +1244,16 @@ class Business:
             for value in values.values():
                 value.pop(child.link, None)
                 value.pop('evlet_position', None)
+            from . import sections
+            headings = sections.load(tx, child, list(results))
             for owner, result in results.items():
                 rows, total = found.get(owner, ((), 0))
-                result.setdefault('children', {})[child.name] = [values[record.id] for record in rows]
+                listed = [values[record.id] for record in rows]
+                if owner in headings:
+                    # Section rows {"id", "section"} in their places; rows not embedded take their sections with them.
+                    listed = sections.payload([(record.evlet_position, record.id, values[record.id]) for record in rows],
+                                              headings[owner], complete=total <= len(rows))
+                result.setdefault('children', {})[child.name] = listed
                 if total > len(rows):
                     result.setdefault('children_pages', {})[child.name] = {'total': total, 'limit': row_limit, 'partial': True}
             if values:
@@ -1288,7 +1307,19 @@ class Business:
                 item.pop('evlet_position', None)
             if items:
                 self.embed(tx, user, child.model, items)
-        return 200, {'items': list(items.values()), 'total': total, 'limit': limit, 'offset': offset}, []
+            listed = list(items.values())
+            from . import sections
+            headings = sections.load(tx, child, [owner_id]).get(owner_id)
+            if headings:
+                # A page carries the section rows placed after the previous page's last row and up to its own last row
+                # (the last page also those after it).
+                before = connection.execute(f'SELECT record."evlet_position", record.id FROM {table} AS record{where}{order} LIMIT 1 OFFSET ?',
+                                            [*values, offset - 1]).fetchone() if offset else None
+                floor = (before[0], before[1]) if before else None
+                headings = [item for item in headings if floor is None or (item._values['evlet_position'], item.id) > floor]
+                listed = sections.payload([(row.evlet_position, row.id, items[row.id]) for row in rows], headings,
+                                          complete=offset + len(rows) >= total)
+        return 200, {'items': listed, 'total': total, 'limit': limit, 'offset': offset}, []
 
     def visible_relations(self, user, model):
         """Relations whose records this role may read and whose Link it may see."""
@@ -1386,7 +1417,7 @@ class Business:
         """Held rich text images are purged on each upload; with jobs, also hourly by a framework schedule."""
         from . import images
         from .jobs import Task
-        if self.jobs is None or not any(images.rich_fields(model) for model in self.registry.models.values()):
+        if self.jobs is None or not any(images.holders(model) for model in self.registry.models.values()):
             return
         self.jobs.tasks.setdefault(images.PURGE_TASK, Task(images.PURGE_TASK, images.purge_job(self), max_attempts=1))
         try:
@@ -1412,7 +1443,7 @@ class Business:
 
     def files(self, user, model, record_id, tail, method, body):
         from . import images
-        image_route = bool(images.rich_fields(model))
+        image_route = bool(images.holders(model))
         if (model not in self.attachments and not image_route) or len(tail) > 1:
             raise AccessError(404, 'Attachments unavailable')
         file_id = None
@@ -1461,10 +1492,12 @@ class Business:
             if row is None or (model not in self.attachments and row['purpose'] != 'image'):
                 raise AccessError(404, 'Attachment not found')
             if method == 'GET' and row['purpose'] == 'image':
+                if not images.readable(self, user, model, record, file_id):
+                    raise AccessError(404, 'Attachment not found')
                 return images.response(self, row)
             if method == 'DELETE' and row['purpose'] == 'image':
-                # A record's images go when its rich text no longer refers to them (on save).
-                raise AccessError(405, 'Remove the image from the text and save instead')
+                # A record's images go when its rich text or Image fields no longer refer to them (on save).
+                raise AccessError(405, 'Remove the image from the record and save instead')
             if method == 'GET':
                 return 200, Download(self.storage.read(row)), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
             if method == 'DELETE':

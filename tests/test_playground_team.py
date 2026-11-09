@@ -84,11 +84,11 @@ def test_the_employee_record_layout_lists_and_charts_the_team_each_viewer_may_re
     manager, outsider = client(secured, 'manager'), client(secured, 'outsider')
     entry = next(item for item in manager('GET', '/api/schema')[1]['models'] if item['name'] == 'employee')
     blocks = entry['record_layout']['blocks']
-    assert [block['kind'] for block in blocks] == ['section', 'table', 'html', 'chart', 'chart', 'related', 'related']
-    assert blocks[0]['main'] and blocks[1]['main']
+    assert [block['kind'] for block in blocks] == ['section', 'table', 'table', 'html', 'chart', 'chart', 'related', 'related']
+    assert blocks[0]['main'] and blocks[1]['main'] and blocks[2]['main']
     # Nothing brings the automatic Related rows or side block back (the record page leaves them out).
     assert 'side_blocks' not in entry
-    reports, same = blocks[5], blocks[6]
+    reports, same = blocks[6], blocks[7]
 
     def listed(c, block, record, department=None):
         filters = [[block['link'], 'eq', record]] + [[field, op, department] for field, op, _ in block['filters']]
@@ -102,3 +102,49 @@ def test_the_employee_record_layout_lists_and_charts_the_team_each_viewer_may_re
     # The outsider cannot read the manager's record, so neither its team list nor its chart answers.
     assert listed(outsider, reports, accounts['manager'])[0] == 403
     assert outsider('GET', chart)[0] == 403
+
+
+def test_employee_skill_levels_are_derived_and_delete_waits_for_their_reports(secured):
+    """Employee.derive builds the Skill levels table on every save; before_close refuses a delete while people
+    report to the employee, naming them."""
+    accounts = seed_team(secured, PASSWORD)
+    editor = client(secured, 'editor')
+    url = f"/api/employee/{accounts['member']}"
+    skills = {'create': [{'_key': 'a', 'skill': 'Excel', 'level': 'expert'}, {'_key': 'b', 'skill': 'SQL', 'level': 'learning'},
+                         {'_key': 'c', 'skill': 'Python', 'level': 'expert'}]}
+    status, body, _ = editor('PATCH', url, {'children': {'skills': skills}}, headers={b'if-match': editor('GET', url)[2][b'etag']})
+    assert status == 200, body
+    assert body['skill_count'] == 3
+    assert [(row['level'], row['skills']) for row in body['children']['skill_levels']] == [('learning', 1), ('expert', 2)]
+    # Nobody writes them: the field and the table are read only.
+    status, refused, _ = editor('PATCH', url, {'skill_count': 9}, headers={b'if-match': editor('GET', url)[2][b'etag']})
+    assert status == 422 and refused['fields'] == {'skill_count': 'DERIVED_FIELD_WRITE: this value is set by the record'}
+    schema = editor('GET', '/api/schema')[1]
+    employee = next(model for model in schema['models'] if model['name'] == 'employee')
+    assert {child['name']: child.get('read_only', False) for child in employee['children']} == {'skills': False, 'skill_levels': True}
+    # The manager has two direct reports, so the delete is refused and names them; nothing is deleted.
+    manager = f"/api/employee/{accounts['manager']}"
+    status, refused, _ = editor('DELETE', manager, None, headers={b'if-match': editor('GET', manager)[2][b'etag']})
+    assert status == 422 and refused['fields']['_form'].startswith('Move their reports to another manager first: ')
+    assert editor('GET', manager)[0] == 200
+    # So is the member's (Sara Nasser reports to them); someone nobody reports to can go.
+    status, refused, _ = editor('DELETE', url, None, headers={b'if-match': editor('GET', url)[2][b'etag']})
+    assert status == 422 and refused['fields'] == {'_form': 'Move their reports to another manager first: Sara Nasser'}
+    outsider = f"/api/employee/{accounts['outsider']}"
+    assert editor('DELETE', outsider, None, headers={b'if-match': editor('GET', outsider)[2][b'etag']})[0] == 204
+
+
+def test_employee_skills_take_section_rows(secured):
+    """Employee.skills has sections=True: headings group the skills, and derive() still counts real skills only."""
+    accounts = seed_team(secured, PASSWORD)
+    editor = client(secured, 'editor')
+    url = f"/api/employee/{accounts['member']}"
+    skills = {'create': [{'section': 'Languages'}, {'skill': 'Python', 'level': 'expert'}, {'skill': 'SQL', 'level': 'learning'},
+                         {'section': 'Tools'}, {'skill': 'Excel', 'level': 'practised'}]}
+    status, body, _ = editor('PATCH', url, {'children': {'skills': skills}}, headers={b'if-match': editor('GET', url)[2][b'etag']})
+    assert status == 200, body
+    assert [row.get('section') or row['skill'] for row in body['children']['skills']] == ['Languages', 'Python', 'SQL', 'Tools', 'Excel']
+    assert body['skill_count'] == 3
+    schema = editor('GET', '/api/schema')[1]
+    employee = next(model for model in schema['models'] if model['name'] == 'employee')
+    assert next(child for child in employee['children'] if child['name'] == 'skills')['sections'] is True

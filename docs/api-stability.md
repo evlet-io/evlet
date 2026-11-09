@@ -85,6 +85,18 @@ production ready, but the rules below hold from 0.3 on.
   refused (`AccessError`, 403) on every other context
   ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
 
+- **Derived values and closing checks.** `Meta.derives` with `derive(self)` (field, Table and
+  `"table.field"` row field names), and
+  `before_close(self, to)` on a model: when they run, what `to` is, the read-only
+  `self.context.session` they get (`get`, `list`, `count`, `related`, `aggregate`), the
+  `DERIVED_FIELD_WRITE` refusal (keyed `table.field` for a row field), the `read_only` flag on
+  a derived field, a derived row field and a derived `children` entry in `/api/schema`, `self.model`
+  (the model class) on the drafts the hooks get, and trusted `session.create`, `update` and
+  `delete` of a model with `derive()` or of its rows settling the saved document, with
+  `children=` on its create and update (a bare
+  `Database` refuses them; `maintenance()` skips it) ([model-engine.md](model-engine.md#derived-values),
+  [states-actions.md](states-actions.md#before-a-record-closes)).
+
 - **Measure trends and colours.** `trend=` and `color=` on `Count`, `CountDistinct`, `Sum`, `Min` and
   `Max` in `Meta.measures`: a trend is a Date field name or `(field, grain, points)` with grain `day`,
   `month` or `year` and 2 to 24 points, on model-level measures only, and a colour is one of the Select
@@ -92,11 +104,29 @@ production ready, but the rules below hold from 0.3 on.
   (`field`, `grain`, `points`) and `color` keys in a schema measure entry, present only when declared
   ([measures.md](measures.md#trends-and-colours)).
 
+- **Image fields.** `Image()` and `Meta.image`
+  ([model-engine.md](model-engine.md#image-fields)): the field type `"image"` in `/api/schema`, its
+  value as the text id of a private image attachment in JSON (`int` in Python), the model-level
+  `image` key (left out when unset or unreadable for the role), the upload body
+  `{"name", "content", "purpose": "image"}` on `/api/{model}/{id}/attachments` and
+  `/api/{model}/_images`, the image routes `GET /api/{model}/{id}/attachments/{image id}` and
+  `GET /api/{model}/_images/{image id}`, PNG, JPEG, GIF and WebP only, `copy=` fixed at `False`, and the
+  `ValueError` for a `Meta.image` that names no Image field.
+
 - **Form focus.** `Meta.focus` on a model and the `focus` option on a `Slip`: one visible, writable,
   stored field (not calculated, hidden, read only, a `Table` or a `Sequence`), checked with a
   `ValueError` at registration or application start. The `focus` key on a model's `/api/schema` entry
   (left out when unset or unreadable for the role) and on a slip surface (left out when unset). It is
   display only ([ui.md](ui.md#where-the-cursor-starts), [slips.md](slips.md)).
+
+- **Section rows.** `Table(..., sections=True)` (a boolean, `ValueError` otherwise, and when the row
+  model has a field named `section` or `derive()` builds the Table); `self.lines.sections()` as
+  `(label, rows)` pairs with a leading `None` group; iteration yielding real rows only; section
+  rows written as `{"section": label}` or `{"id", "section"}` from Python, `children=` and HTTP
+  change sets and full lists; the `{"id", "section"}` entries in a record's `children` and in
+  `lines/` pages; `sections` and `section_sums` on a schema `children` entry; the Journal's
+  `sections` change; and the `sections` template variable on print designs
+  ([model-engine.md](model-engine.md#section-rows)). The `evlet_sections` table is internal.
 
 - **Duplicate options.** `Meta.duplicate` on a model (default `True`) and `copy=` on every field
   and on `Table` (default `True`), each checked as a boolean with a `ValueError` (`Meta.duplicate`
@@ -122,6 +152,10 @@ production ready, but the rules below hold from 0.3 on.
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
   and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
   public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
+
+- **Cancelled states.** `State(..., cancelled=...)`, a list of final state names (empty by
+  default), the rule that `"void"` on a voidable State counts as cancelled, and `cancelled` in the
+  schema's `state` entry ([states-actions.md](states-actions.md#cancelled-states)).
 
 - **Currency display.** `set_currency_display(application, value, *, actor='cli')`, the setting
   `display.currencies` with its entry form (`symbol`, `image`, `position`, `space`, `tint`) and its

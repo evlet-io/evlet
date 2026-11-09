@@ -48,18 +48,20 @@ class Invoice(Model):
         self.remarks = f"Paid {amount} on {paid_on}"
 ```
 
-`State(choices, default=..., moves=..., locked=..., final=..., voidable=...)`:
+`State(choices, default=..., moves=..., locked=..., final=..., voidable=..., cancelled=...)`:
 
 * It is a `Select`. Its schema type is `select`, it is read only in forms, and finite
   expressions read it like any other Select (`F("status") == "issued"`).
 * `default` is the first state when left out. A new record always starts in it.
 * A model has at most one State, and only root documents have one (not `Table` rows).
-* Every state named in a move, `locked`, `final` or `voidable` must be one of the
+* Every state named in a move, `locked`, `final`, `voidable` or `cancelled` must be one of the
   choices. A final state has no moves out. Voidable states must be locked and not final.
 * A State with `voidable` states must also have a state named `void` that is locked and
   final. Void and revise (below) start only from a voidable state and end in `void`. No
   declared Move may then go to `void`: a record is voided only through void, with a reason,
   so later phases can always reverse its effects and record it.
+* `cancelled` names the final states that mean the record was called off, such as cancelled
+  or lost. See [Cancelled states](#cancelled-states).
 * State also takes `label`, `help_text`, `placeholder`, `hidden`, `index`, `max_length` and
   `colors` (as on a Select, below). It takes no rules, calculations or validators.
 * `show` says how the record page draws the State: `"badge"` (the default), `"bar"` or
@@ -119,6 +121,32 @@ Display never implies that a person can change the state:
 * The badge's accessible name is `Status: Active` (and `Status: Draft. Change status` while it
   offers moves). The bar is a list named after the model (`Invoice status`); the current step
   has `aria-current="step"`.
+
+### Cancelled states
+
+A final state can mean the work was done (paid, closed, won) or that it was called off
+(cancelled, lost). `cancelled` names the second kind, so the browser can tell them apart
+without guessing from names or colours:
+
+```python
+class Order(Model):
+    status = State(("open", "done", "cancelled", "lost"),
+                   moves=(Move("open", "done", "Done"), Move("open", "cancelled", "Cancel"),
+                          Move("open", "lost", "Mark lost")),
+                   locked=("done", "cancelled", "lost"), final=("done", "cancelled", "lost"),
+                   cancelled=("cancelled", "lost"))
+```
+
+* It is a list of distinct state names, empty by default. Each must be a state and must be
+  in `final`. Anything else fails when the class is created, for example
+  `State cancelled names a state that is not final: lost; cancelled states must be final`. A
+  state people can reopen is not final, so it cannot be marked cancelled.
+* On a State with `voidable` states, `"void"` counts as cancelled without being listed. Listing
+  it as well is allowed and changes nothing.
+* It is purely descriptive. It changes no moves, locks, permissions, voids or closing checks:
+  a cancelled state behaves exactly as the same final state without the marker.
+* The schema's `state` entry carries it as `cancelled`, the declared states plus `"void"` when
+  it applies, in declaration order, for the browser to show such records as cancelled.
 
 ### Meta.status
 
@@ -358,6 +386,11 @@ class Transfer(Model):
   the session, never the caller.
 * Change the record being moved through `self`, not through the session. The session cannot
   change the State either, outside `tx.maintenance()` for audited repairs.
+* `derive()` and `before_close()` get the session read only, for lookups
+  ([model-engine.md](model-engine.md#derived-values), [Before a record closes](#before-a-record-closes)).
+* A session write to another record whose model declares `derive()`, or to one of its rows, settles
+  that record too, so its derived values are stored with it
+  ([model-engine.md](model-engine.md#derived-values)).
 
 ## What the caller may do now
 
@@ -395,6 +428,44 @@ Detail responses of a model with a State, or with an action that declares
   without loading its rows. Guards that read owned rows or virtual results use the rows the
   detail response already read when the caller can read every row; otherwise they load the
   saved document once per request.
+
+## Before a record closes
+
+A record often may not close while other records still depend on it: a later document must be
+cancelled first. `before_close(self, to)` is the one place for that check, instead of a check in
+each Move's run method.
+
+```python
+class Booking(Model):
+    status = State(("open", "closed", "cancelled"), default="open",
+                   moves=(Move("open", "closed", "Close"), Move("open", "cancelled", "Cancel")),
+                   locked=("closed", "cancelled"), final=("cancelled",))
+
+    def before_close(self, to):
+        later = self.context.session.list(Booking, filters={"follows": self.id, "status__in": ["open"]})
+        if later:
+            raise ValidationError({"_form": "Cancel the later documents first: " + ", ".join(item.name for item in later)})
+```
+
+* **When it runs.** Before a move into a `final` state (`to` is that state), before a void or a
+  revise that voids (`to` is `"void"`), before a lifecycle cancel of a confirmable document
+  (`to` is `"cancelled"`), and before a delete (`to` is `None`). It runs after the checks that
+  decide whether the change may happen at all (permissions, row scope, the role of the move, its
+  guard, the locked and posted rules of delete) and before the Move's `run` method or anything
+  else is written. A move into a state that is not final does not call it.
+* **Refusing.** Raise `ValidationError` (a plain `ValueError` becomes a `_form` error). The
+  change is refused with 422 and nothing is written: not the State, a Sequence number, a Journal
+  entry or a row.
+* **Every surface.** HTTP routes, `Context.move()`, `delete()`, `void()` and `revise()`, actions
+  that move or delete other records, tools, MCP and the connector all reach it, since they all go
+  through the same document operations. Writes through a Python `Session` (trusted code) do not.
+* **Read only.** `self` is the saved record and its rows, read only. `self.context` is a
+  read-only context whose `session` is the transaction, read only (`get`, `list`, `count`,
+  `related`, `aggregate`). Reads through it bypass permissions, as in any Python session, so
+  name only what the caller may know in the message.
+* A `before_close` that does not take `self` and `to` is a `ValueError` when the class is
+  defined; a Table row cannot declare it. Record details do not run it: a move or Delete it would
+  refuse still shows, and the refusal comes when it is tried.
 
 ## Void and revise
 
@@ -630,7 +701,8 @@ refused with the names of the records that depend on it.
   gain `void` (and `revise` when revisable), for roles that can read the State. Entries of
   models that can unpost gain `unpostable: true` and `unpost` and `repost` in `permissions`.
   Other entries are unchanged. The `revises` field is listed with the other fields (type `link`, read only).
-* `state`: `field`, `states`, `default`, `locked`, `final`, `voidable` and `moves`, each
+* `state`: `field`, `states`, `default`, `locked`, `final`, `voidable`, `cancelled` (the
+  declared cancelled states plus `"void"` on a voidable State), `show` and `moves`, each
   with `from`, `to`, `label`, `roles`, `guarded`, `when` and, when the move asks for values,
   `asks`. `when` is the serialized
   finite-v1 expression when the role can read every value it reads, otherwise `null`.
