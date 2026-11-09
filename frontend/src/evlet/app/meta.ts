@@ -49,6 +49,9 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   unpostable?: boolean;
   measures?: MeasureSchema[];
   key_fields?: string[];
+  /** Meta.cards: up to five derived values for the top of a compact record page, each a field (compute, fetch or
+   * query) or a per-record measure, cut to what this role may read. Absent: the automatic summary strip. */
+  cards?: string[];
   relations?: RelationSchema[];
   attachments?: boolean;
   attachment_limits?: { max_files: number; max_size: number };

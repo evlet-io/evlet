@@ -33,7 +33,7 @@ pinning keep the first column pinned. A child table's Focus view keeps the recor
 save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
-`layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `relations`, `measures`, `open_in`, `list_tabs`,
+`layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `cards`, `relations`, `measures`, `open_in`, `list_tabs`,
 `list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks`, `panel` and `focus`. See "What the model decides" in [ui-framework.md](ui-framework.md).
 
 ### Where the cursor starts
@@ -200,6 +200,55 @@ class Employee(Model):
 Sections are named by title and keep their fields in `layout`, which every other client reads as
 before. A model whose layout has only sections has no `record_layout`, and its page is unchanged.
 The Playground's Employee page uses every block type.
+
+### Compact record page
+
+A layout that starts with `Main` asks for a compact record page: cards at the top, a primary area
+without a heading, and every block after it as "more information". There are no tabs.
+
+```python
+from evlet import Count, Currency, Main, Model, Related, Section, Sum
+
+
+class Shipment(Model):
+    class Meta:
+        cards = ('total', 'parcels', 'weight')          # up to five derived values
+        measures = {'parcels': Count('parcel', link='shipment'),
+                    'weight': Sum('weight', model='parcel', link='shipment')}
+        layout = (
+            Main(('title', 'carrier', 'status'), 'stops'),   # fields, then Table fields
+            Section('Charges', ('declared', 'fee', 'total'), description='What it is worth and costs.'),
+            Section('Notes', ('notes',), collapsed='empty'),
+            Related('parcel', label='Parcels'),
+        )
+```
+
+- **`Meta.cards`** names zero to five derived values: fields with `compute=`, `fetch=` or `query=`
+  (stored or `stored=False`) and per-record measures (`Meta.measures` with `model=` and `link=`). A
+  stored field people fill in, a hidden field, a model-level measure, an unknown name, a name given
+  twice, more than five, or a name that is both a field and a measure fails when the registry is
+  built. Cards are for root models, not Table rows. `/api/schema` sends `cards` as a list of names,
+  like `key_fields`, cut to what the role reads: a field it can read, a measure whose fields it can
+  read. Without `Meta.cards` nothing changes and the summary strip works as before.
+- **`Main(fields, *tables)`** is the primary area: a grid of fields, then Table fields, with no
+  heading. Use it once, first. A layout with `Main` has no `Tab`s, takes no `Meta.tabs` or
+  `Meta.default_tab`, and places every `Table` field (in `Main` or after it), since there is no tab
+  to put one on. Where a name is needed (`Meta.panel`, Controls, Form layout) the area is named by
+  the model's label, so a section cannot share that title.
+- **`Section(..., description=...)`** adds a line of text under a section's title. Any layout can use it.
+- **More information.** Every `Section`, `Table`, `Related`, `Html` and `Chart` after `Main` shows
+  as a row that opens and closes, with a one-line summary while it is closed.
+- **Header and side column.** The header has the title, the status badge (`Meta.status`) and the
+  actions. `Meta.key_fields` keep every other use (search, reference labels, lists, connectors), but
+  on a compact page their facts move to the side column's Record info, next to Attachments and
+  Activity.
+
+`/api/schema` sends `record_layout` as `{"compact": true, "blocks": [...]}`. The Main fields are a
+`section` block named by the model's label and the Main tables are `table` blocks, each with
+`"main": true`; the section in `layout` has `"main": true` too, and a section with a description
+has `"description"`. A client that ignores these keys shows the blocks in order, as it would any
+record layout. The compact design itself (cards, collapsed rows with one-line summaries, the side
+column) is drawn by the record page in a later release. The Playground's Project uses it.
 
 ### List tabs
 

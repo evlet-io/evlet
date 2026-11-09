@@ -1427,17 +1427,19 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         },
         {
-          "label": "Planning",
+          "label": "Budget",
           "fields": [
             "budget",
             "progress"
           ],
           "collapsible": true,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "description": "What the project may spend and how far the work has come."
         },
         {
           "label": "Schedule",
@@ -1446,7 +1448,8 @@
           ],
           "collapsible": true,
           "collapsed": true,
-          "flow": "rows"
+          "flow": "rows",
+          "description": "When the work starts."
         },
         {
           "label": "Notes",
@@ -1456,7 +1459,8 @@
           ],
           "collapsible": true,
           "collapsed": "empty",
-          "flow": "rows"
+          "flow": "rows",
+          "description": "Goals, scope and anything else worth keeping."
         }
       ],
       "label": "Project",
@@ -1476,12 +1480,8 @@
         "name"
       ],
       "open_in": "panel",
-      "tabs": [
-        "details",
-        "related",
-        "activity"
-      ],
-      "default_tab": "details",
+      "tabs": [],
+      "default_tab": null,
       "autosave": true,
       "list_tabs": {
         "field": "status",
@@ -1513,6 +1513,28 @@
           "details",
           "related",
           "info"
+        ]
+      },
+      "record_layout": {
+        "compact": true,
+        "blocks": [
+          {
+            "kind": "section",
+            "label": "Project",
+            "main": true
+          },
+          {
+            "kind": "section",
+            "label": "Budget"
+          },
+          {
+            "kind": "section",
+            "label": "Schedule"
+          },
+          {
+            "kind": "section",
+            "label": "Notes"
+          }
         ]
       },
       "fields": [
@@ -1855,12 +1877,63 @@
           "per_record": false,
           "model": null,
           "link": null
+        },
+        {
+          "name": "invoiced",
+          "function": "sum",
+          "field": "total",
+          "where": null,
+          "per_record": true,
+          "model": "invoice",
+          "link": "project"
+        },
+        {
+          "name": "paid",
+          "function": "sum",
+          "field": "amount_paid",
+          "where": null,
+          "per_record": true,
+          "model": "invoice",
+          "link": "project"
+        },
+        {
+          "name": "tasks",
+          "function": "count",
+          "field": null,
+          "where": null,
+          "per_record": true,
+          "model": "projecttask",
+          "link": "project"
+        },
+        {
+          "name": "open_tasks",
+          "function": "count",
+          "field": null,
+          "where": {
+            "$expr": "not",
+            "args": [
+              {
+                "$expr": "ref",
+                "scope": "self",
+                "field": "done"
+              }
+            ]
+          },
+          "per_record": true,
+          "model": "projecttask",
+          "link": "project"
         }
       ],
       "attachment_limits": {
         "max_files": 10,
         "max_size": 1048576
       },
+      "cards": [
+        "invoiced",
+        "paid",
+        "tasks",
+        "open_tasks"
+      ],
       "relations": [
         {
           "name": "invoice.project",
