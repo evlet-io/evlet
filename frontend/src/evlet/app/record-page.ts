@@ -598,7 +598,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (now._repost) return StateBanner({ tone: 'neutral', title: `${humanize(value)}, unposted.`,
       actions: now._repost.allowed ? [Button({ label: 'Repost', icon: 'repeat', size: 'small', onClick: () => correct('repost') })] : [],
       text: ['What it posted was reversed and its number is kept. Everything can change until it is reposted.', ...reviseOf] });
-    return StateBanner({ tone: 'neutral', title: `${humanize(value)}.`, text: [next ? `Everything can change until it is ${humanize(next.to).toLowerCase()}.` : 'Everything can change.', ...reviseOf] });
+    return StateBanner({ tone: 'neutral', icon: compact ? 'circle-alert' : undefined, title: `${humanize(value)}.`, text: [next ? `Everything can change until it is ${humanize(next.to).toLowerCase()}.` : 'Everything can change.', ...reviseOf] });
   } : null;
   const problems = () => {
     const conflict = store.conflict.get(), form = store.formError.get(), load = store.loadError.get();
@@ -873,7 +873,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const addLink = () => when(canAdd, () => html`<button type="button" class="link-q ev-cmp-add" on:click=${add}>${Icon('plus', { size: 'xs' })}Add ${noun}</button>`);
     host = html`<div class="ev-cmp-table" class:is-empty=${() => count() === 0} data-table-block=${child.name}>
       ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span><span class="grow"></span>${addLink()}</div>` : null}
-      ${when(() => count() === 0, () => html`<div class="ev-cmp-empty"><span>No ${child.label.toLowerCase()} yet.</span>${withTitle ? null : addLink()}</div>`)}
+      ${when(() => count() === 0, () => html`<div class="ev-cmp-empty"><span>${canAdd() ? `No ${child.label.toLowerCase()} yet. Add the first one.` : `No ${child.label.toLowerCase()} yet.`}</span>${withTitle ? null : addLink()}</div>`)}
       ${tablePanel(child)}</div>` as HTMLElement;
     return host;
   };
@@ -953,8 +953,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       body: () => Revisions(ctx, model, store.id!) }));
     if (postings) rows.push(MoreRow({ title: 'Postings', folds, start: false, none: 'Nothing posted yet',
       summary: () => (postings.get() ?? []).map(item => `${item.target}: ${item.rows + item.reversals}`).join(' · '), body: () => Postings(ctx, postings) }));
-    return [html`<section class="ev-cmp-main" aria-label=${model.label}>${lifecycle ? live(lifecycle) : null}${mainParts}</section>`,
-      rows.length ? html`<div class="ev-more" role="group" aria-labelledby=${`ev-more-${name}`}><h2 class="ev-more-label" id=${`ev-more-${name}`}>More information</h2>${rows}</div>` : null];
+    // One white card: the state banner strip, the key cards, the Main fields and tables, then more information.
+    return html`<div class="ev-cmp-card">${lifecycle ? live(lifecycle) : null}${summary}
+      <section class="ev-cmp-main" aria-label=${model.label}>${mainParts}</section>
+      ${rows.length ? html`<div class="ev-more" role="group" aria-labelledby=${`ev-more-${name}`}><h2 class="ev-more-label" id=${`ev-more-${name}`}>More information</h2>${rows}</div>` : null}</div>`;
   };
 
   // ---------- save bar ----------
@@ -990,7 +992,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
       options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems),
-    ...(compact ? [summary, compactContent()] : [lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels]), saveBar], side });
+    ...(compact ? [compactContent()] : [lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels]), saveBar], side });
   if (compact) frame.classList.add('doc-compact');
   // The person's "Enter moves to the next field" setting (Settings, Appearance).
   enterMovesToNextField(frame, () => Boolean(ctx.me.get()?.prefs.enter_next));

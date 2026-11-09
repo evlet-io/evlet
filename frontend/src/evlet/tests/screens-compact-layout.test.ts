@@ -36,12 +36,12 @@ describe('a compact record page', () => {
 
   it('shows Meta.cards at the top instead of the summary strip, measures included', async () => {
     const { host } = await start(routes, `/app/shipment/${shipment}`);
-    await until(() => expect(host.querySelectorAll('.ev-cards .stat-card')).toHaveLength(3));
-    const cards = [...host.querySelectorAll('.ev-cards .stat-card')].map(card => text(card));
+    await until(() => expect(host.querySelectorAll('.ev-cards .ev-kc')).toHaveLength(3));
+    const cards = [...host.querySelectorAll('.ev-cards .ev-kc')].map(card => text(card));
     expect(cards[0]).toContain('Total');
     expect(cards[0]).toContain('1,235.50');
-    await until(() => expect(text(host.querySelectorAll('.ev-cards .stat-card')[1])).toContain('2'));
-    expect(text(host.querySelectorAll('.ev-cards .stat-card')[2])).toContain('11.5');
+    await until(() => expect(text(host.querySelectorAll('.ev-cards .ev-kc')[1])).toContain('2'));
+    expect(text(host.querySelectorAll('.ev-cards .ev-kc')[2])).toContain('11.5');
   });
 
   it('has no tabs, keeps the header to the title and badges, and puts key fields in Record info', async () => {
@@ -62,6 +62,11 @@ describe('a compact record page', () => {
     expect(text(host.querySelector('.ev-cmp-th .ev-cmp-count'))).toBe('1');
     expect(text(host.querySelector('.ev-cmp-th .ev-cmp-add'))).toBe('Add stop');
     expect(text(host.querySelector('.ev-more-label'))).toBe('More information');
+    // One card holds the key cards, the Main area and more information.
+    const card = host.querySelector('.ev-cmp-card')!;
+    expect(card.querySelector('.ev-cards')).not.toBeNull();
+    expect(card.querySelector('.ev-cmp-main')).not.toBeNull();
+    expect(card.querySelector('.ev-more')).not.toBeNull();
     const rows = [...host.querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')));
     expect(rows).toEqual(['Charges', 'Notes', 'Parcels']);
     expect(text(host.querySelector('[data-section="Charges"] .ev-more-desc'))).toBe('What the shipment is worth and what it costs.');
@@ -71,9 +76,9 @@ describe('a compact record page', () => {
     const { host } = await start(routes, `/app/shipment/${shipment}`);
     await until(() => expect(host.querySelector('[data-section="Charges"]')).not.toBeNull());
     const charges = host.querySelector('[data-section="Charges"]')!;
-    // Notes is empty and starts closed (collapsed='empty'): one muted line says so.
+    // Notes is empty and starts closed (collapsed='empty'): its one line lists the field as Not set.
     expect(host.querySelector('[data-section="Notes"]')!.classList.contains('closed')).toBe(true);
-    expect(text(host.querySelector('[data-section="Notes"] .ev-more-sum'))).toBe('Nothing filled in');
+    expect(text(host.querySelector('[data-section="Notes"] .ev-more-sum'))).toBe('Notes: Not set');
     expect(charges.classList.contains('closed')).toBe(false);
     (charges.querySelector('.ev-more-toggle') as HTMLButtonElement).click();
     await until(() => expect(charges.classList.contains('closed')).toBe(true));

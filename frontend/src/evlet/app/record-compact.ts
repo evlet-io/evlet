@@ -4,16 +4,23 @@
 
 import { html, when, type Child } from '../dom';
 import { cell, derive, effect, untrack, type Readable } from '../reactive';
-import { Icon, StatCard, type StatProps } from '../ui/base';
+import { Icon, type StatProps } from '../ui/base';
+import { read } from '../ui/core';
 import { uid } from '../ui/core';
 import { isEmpty, type Folds } from '../ui/fold';
 import type { FieldLike, LinkSource } from '../ui/fields';
 import { formatOf } from './meta';
 import { plainOf } from '../richtext/html';
 
-/** Cards at the top of a compact page: up to five derived values (Meta.cards), on one row where they fit. */
+/** The key cards of a compact page (Meta.cards): one row of equal cells split by thin lines, each a muted label
+ * ("Planned cost · Calculated") over a bold value. Part of the page card, not separate boxes. */
 export function CardRow(stats: StatProps[]): HTMLElement {
-  return html`<div class="sum ev-cards" data-count=${String(stats.length)}>${stats.slice(0, 5).map(StatCard)}</div>` as HTMLElement;
+  const cell = (stat: StatProps) => {
+    const value = () => { const current = read(stat.value); return current === '' || current === null || current === undefined ? html`<span class="ev-unset">${stat.empty ?? 'Not set'}</span>` : current; };
+    return html`<div class="ev-kc"><span class="ev-kc-l">${stat.label}${stat.note ? html`<span> · ${stat.note}</span>` : null}</span><b class="ev-kc-v">${value}</b></div>`;
+  };
+  const shown = stats.slice(0, 5);
+  return html`<div class="ev-cards" data-count=${String(shown.length)} style:--cards=${String(shown.length)}>${shown.map(cell)}</div>` as HTMLElement;
 }
 
 /** A field's value as plain text for a one-line summary: a Link as its record's title, rich text as text. */
@@ -27,10 +34,9 @@ export function valueText(field: FieldLike, links: LinkSource | null): string {
   return text + unit;
 }
 
-/** "Label: value · Label: value" over the filled fields that apply; empty when none is filled. */
+/** "Label: value · Label: Not set · ..." over the fields that apply, in their order. */
 export function fieldsSummary(fields: FieldLike[], links: LinkSource | null): string {
-  return fields.filter(field => field.rules.get().applies).map(field => [field.meta.label, valueText(field, links)] as const)
-    .filter(([, text]) => text).map(([label, text]) => `${label}: ${text}`).join(' · ');
+  return fields.filter(field => field.rules.get().applies).map(field => `${field.meta.label}: ${valueText(field, links) || 'Not set'}`).join(' · ');
 }
 
 /** "3 rows", "1 row" or "No rows". */
