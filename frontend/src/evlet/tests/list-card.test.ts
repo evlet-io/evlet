@@ -125,3 +125,19 @@ describe('the shell grounds', () => {
     for (const block of [light, dark]) expect(value(block, '--page-bg')).not.toBe(value(block, '--surface'));
   });
 });
+
+// The edge of pinned columns while a table scrolls sideways is one even line: unblurred 1px steps every pinned cell
+// draws at its full height (a blur fades at each cell's ends, so the edge waved at every row line), and the current,
+// hovered or edited rows keep it.
+describe('the pinned column edge', () => {
+  it('is drawn without blur, the same in every row, in the list and in record tables', () => {
+    const shade = /--pin-shade:([^;]+)/.exec(rule(STYLES, 'table.dt'))![1];
+    // Four steps, each offset 1 px further with no blur or spread.
+    expect([...shade.matchAll(/(\d)px (\S+) (\S+) /g)].map(step => step.slice(1).join(' '))).toEqual(['1 0 0', '2 0 0', '3 0 0', '4 0 0']);
+    expect(rule(STYLES, '.table-wrap.scrolled .dt .stk-last')).toContain('var(--pin-shade)');
+    expect(rule(STYLES, '.grid.scrolled .g .s2')).toContain('var(--pin-shade)');
+    // Rows that set their own box shadow add the edge to it rather than replacing it.
+    for (const selector of ['.dt tbody tr.cur td:first-child', '.g td.ed:hover', '.g td.invalid', '.g td.noted']) expect(rule(STYLES, selector)).toContain('var(--edge,0 0 transparent)');
+    expect(STYLES).not.toMatch(/6px 0 10px -6px/);
+  });
+});

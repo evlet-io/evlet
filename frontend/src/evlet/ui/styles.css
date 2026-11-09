@@ -52,7 +52,7 @@
   --inverse-bg:#151821; --inverse-fg:#ffffff; --inverse-ok:#4ade80; --inverse-hover:rgba(127,127,127,.25);
   /* The two themes' grounds, cards and lines in every theme, for the theme pictures in Settings. */
   --swatch-light:#f4f5f8; --swatch-light-card:#ffffff; --swatch-light-line:#d8dce3; --swatch-dark:#14171c; --swatch-dark-card:#1a1e25; --swatch-dark-line:#323844;
-  --shadow-edge:rgba(16,24,40,.18);
+  --shadow-edge:rgba(16,24,40,.035);
   /* The sidebar's active section and shortcut: the primary blue for text and icons, and a light tint of it
      (about 9%) behind the active shortcut. Text on the tint is 4.9:1 light and 4.6:1 dark. */
   --nav-on-fg:#2f5be8; --nav-on-bg:#ecf0fd;
@@ -70,7 +70,7 @@
   --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.25); --shadow-lg:0 2px 6px rgba(0,0,0,.3),0 18px 48px rgba(0,0,0,.5);
   --accent-solid:#4167e6; --accent-solid-hover:#3a60de; --on-tint:#0f1115; --knob:#ffffff;
   --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-hover:rgba(127,127,127,.25);
-  --shadow-edge:rgba(0,0,0,.5);
+  --shadow-edge:rgba(0,0,0,.22);
   --nav-on-fg:#6488f6; --nav-on-bg:#1f2739;
   color-scheme:dark}}
 :root[data-theme="dark"]{
@@ -85,7 +85,7 @@
   --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 1px 2px rgba(0,0,0,.3),0 4px 12px rgba(0,0,0,.25); --shadow-lg:0 2px 6px rgba(0,0,0,.3),0 18px 48px rgba(0,0,0,.5);
   --accent-solid:#4167e6; --accent-solid-hover:#3a60de; --on-tint:#0f1115; --knob:#ffffff;
   --inverse-bg:#e8eaf0; --inverse-fg:#0f1115; --inverse-ok:#0e7340; --inverse-hover:rgba(127,127,127,.25);
-  --shadow-edge:rgba(0,0,0,.5);
+  --shadow-edge:rgba(0,0,0,.22);
   --nav-on-fg:#6488f6; --nav-on-bg:#1f2739;
   color-scheme:dark}
 
@@ -326,6 +326,10 @@ textarea.input{height:auto;padding:8px 10px;resize:vertical;min-height:72px;line
 
 /* ---------- table ---------- */
 .table-wrap{border:1px solid var(--border);border-radius:var(--r-lg);overflow:auto;background:var(--surface)}
+/* The edge of pinned table columns while the table scrolls sideways: four unblurred 1px steps fading out, drawn by
+   every pinned cell at its full height, so the edge is one even line down the table whatever the row's background. */
+table.dt,table.g{--pin-shade:1px 0 0 var(--shadow-edge),2px 0 0 color-mix(in srgb,var(--shadow-edge) 60%,transparent),
+  3px 0 0 color-mix(in srgb,var(--shadow-edge) 30%,transparent),4px 0 0 color-mix(in srgb,var(--shadow-edge) 15%,transparent)}
 table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .dt th{position:sticky;top:0;background:var(--bg-subtle);text-align:left;font-weight:550;color:var(--fg-3);font-size:12px;padding:0 12px;height:36px;border-bottom:1px solid var(--border);white-space:nowrap;z-index:1}
 .dt th.sortable{cursor:pointer;user-select:none}
@@ -878,17 +882,17 @@ table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:1
 .g td{height:38px;padding:0 10px;border-bottom:1px solid var(--divider);border-right:1px solid var(--divider);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:var(--surface)}
 .g td.r{text-align:right}
 .g td.ed{cursor:text}
-.g td.ed:hover{box-shadow:inset 0 0 0 1px var(--border-strong)}
+.g td.ed:hover{box-shadow:inset 0 0 0 1px var(--border-strong),var(--edge,0 0 transparent)}
 .g td.calc{color:var(--fg-2)}
 .g tbody tr:hover td{background:var(--bg-subtle)}
 .g tr.sel td{background:var(--accent-soft)}
 .g tr.open td{background:var(--acc-bg,var(--accent-soft))}
-.g td.editing{padding:0;box-shadow:inset 0 0 0 2px var(--accent)!important;overflow:visible;background:var(--surface)!important}
+.g td.editing{padding:0;box-shadow:inset 0 0 0 2px var(--accent),var(--edge,0 0 transparent)!important;overflow:visible;background:var(--surface)!important}
 .g td.editing .input{height:36px;border:0;border-radius:0;box-shadow:none;background:transparent;width:100%;padding:0 9px}
 .g .stk{position:sticky;z-index:1}
 .g th.stk{z-index:3}
-.g .s2{box-shadow:inset -1px 0 0 var(--border)}
-.grid.scrolled .g .s2{box-shadow:inset -1px 0 0 var(--border),6px 0 10px -6px var(--shadow-edge)}
+.g .s2{--edge:inset -1px 0 0 var(--border);box-shadow:var(--edge)}
+.grid.scrolled .g .s2{--edge:inset -1px 0 0 var(--border),var(--pin-shade);box-shadow:var(--edge)}
 .g-ctl{padding:0 6px!important}
 .g-ci{display:flex;align-items:center;gap:4px}
 .g-ci .check,.g th .check{width:16px;height:16px;margin:0}
@@ -959,7 +963,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .dt th{position:sticky;top:0}
 .dt .stk{position:sticky;z-index:1;background:var(--surface)}
 .dt th.stk{z-index:3;background:var(--bg-subtle)}
-.dt .stk-last{box-shadow:inset -1px 0 0 var(--divider)}
+.dt .stk-last{--edge:inset -1px 0 0 var(--divider);box-shadow:var(--edge)}
 .table-wrap{max-height:calc(100vh - 230px)}
 
 /* A frame narrower than DOC_NARROW (doc.ts measures it: a side panel, a narrow window) has one column; the side column
@@ -1183,11 +1187,11 @@ th:hover>.rz::after{background:var(--border-strong)}
 .dt tbody tr:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .dt th:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
 .dt th[draggable="true"]{cursor:grab}
-.table-wrap.scrolled .dt .stk-last{box-shadow:inset -1px 0 0 var(--border),6px 0 10px -6px var(--shadow-edge)}
+.table-wrap.scrolled .dt .stk-last{--edge:inset -1px 0 0 var(--border),var(--pin-shade);box-shadow:var(--edge)}
 /* The active cell holds the focus; a choice made with the mouse returns it there too, so it shows either way. */
 .g td:focus-visible,.g td.active:focus{outline:2px solid var(--accent);outline-offset:-2px}
-.g td.invalid{box-shadow:inset 0 0 0 1px var(--t-rose)}
-.g td.noted{box-shadow:inset 0 0 0 1px var(--t-amber)}
+.g td.invalid{box-shadow:inset 0 0 0 1px var(--t-rose),var(--edge,0 0 transparent)}
+.g td.noted{box-shadow:inset 0 0 0 1px var(--t-amber),var(--edge,0 0 transparent)}
 .g td.editing .in-affix,.g td.editing .in-link,.g td.editing .in-tags,.g td.editing .in-select{border:0;border-radius:0;box-shadow:none;height:36px;background:transparent}
 .g td.editing .in-affix>span{display:none}
 .g td.editing .sw-wrap{padding:0 9px;height:36px}
@@ -1425,7 +1429,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .doc.doc-s .ff.full{grid-column:auto}
 .doc-panel .ev-savebar{margin-left:-6px;margin-right:-6px;margin-bottom:0;border-radius:var(--r) var(--r) 0 0}
 .dt tbody tr.cur td{background:var(--accent-soft)}
-.dt tbody tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.dt tbody tr.cur td:first-child{box-shadow:inset 3px 0 0 var(--accent),var(--edge,0 0 transparent)}
 
 /* ---------- drag lists (draglist.ts) ---------- */
 .sr-only{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
