@@ -46,12 +46,21 @@ describe('a compact record page', () => {
 
   it('shows Meta.cards at the top instead of the summary strip, measures included', async () => {
     const { host } = await start(routes, `/app/shipment/${shipment}`);
-    await until(() => expect(host.querySelectorAll('.ev-cards .ev-kc')).toHaveLength(3));
-    const cards = [...host.querySelectorAll('.ev-cards .ev-kc')].map(card => text(card));
+    await until(() => expect(host.querySelectorAll('.ev-cards .stat-card')).toHaveLength(3));
+    const cards = [...host.querySelectorAll('.ev-cards .stat-card')].map(card => text(card));
     expect(cards[0]).toContain('Total');
     expect(cards[0]).toContain('1,235.50');
-    await until(() => expect(text(host.querySelectorAll('.ev-cards .ev-kc')[1])).toContain('2'));
-    expect(text(host.querySelectorAll('.ev-cards .ev-kc')[2])).toContain('11.5');
+    await until(() => expect(text(host.querySelectorAll('.ev-cards .stat-card')[1])).toContain('2'));
+    expect(text(host.querySelectorAll('.ev-cards .stat-card')[2])).toContain('11.5');
+    // The list page's number cards, above the white card and not inside it; plain labels, no "Calculated" caption.
+    const row = host.querySelector('.ev-cards')!;
+    expect(row.classList.contains('sum')).toBe(true);
+    expect(row.getAttribute('data-count')).toBe('3');
+    expect(row.nextElementSibling!.classList.contains('ev-cmp-card')).toBe(true);
+    expect(host.querySelector('.ev-cmp-card .ev-cards')).toBeNull();
+    expect(text(row.querySelector('.stat-card > span'))).toBe('Total');
+    expect(row.querySelector('.stat-card > em')).toBeNull();
+    expect(text(row)).not.toContain('Calculated');
   });
 
   it('has no tabs, keeps the header to the title and badges, and the side column to Attachments and Activity', async () => {
@@ -105,9 +114,9 @@ describe('a compact record page', () => {
     expect(text(host.querySelector('.ev-cmp-th .ev-cmp-count'))).toBe('1');
     expect(text(host.querySelector('.ev-cmp-th .ev-cmp-add'))).toBe('Add stop');
     expect(text(host.querySelector('.ev-more-label'))).toBe('More information');
-    // One card holds the key cards, the Main area and more information.
+    // One card holds the Main area and more information; the key cards sit above it.
     const card = host.querySelector('.ev-cmp-card')!;
-    expect(card.querySelector('.ev-cards')).not.toBeNull();
+    expect(card.previousElementSibling!.classList.contains('ev-cards')).toBe(true);
     expect(card.querySelector('.ev-cmp-main')).not.toBeNull();
     expect(card.querySelector('.ev-more')).not.toBeNull();
     const rows = [...host.querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')));
@@ -171,7 +180,7 @@ describe('a compact record in a side panel', () => {
     expect(doc.classList.contains('doc-compact')).toBe(true);
     expect(doc.classList.contains('doc-panel')).toBe(true);
     expect(panel(host).querySelector('[role="tablist"]')).toBeNull();
-    expect(panel(host).querySelectorAll('.ev-cards .ev-kc')).toHaveLength(3);
+    expect(panel(host).querySelectorAll('.ev-cards .stat-card')).toHaveLength(3);
     expect([...panel(host).querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')))).toEqual(['Charges', 'Notes', 'Parcels']);
     expect(panel(host).querySelector('.ev-cmp-card + .ev-rec-foot')).not.toBeNull();
     // The same side column, in the frame, with the drawer button at the end of the panel's top line.
@@ -185,6 +194,8 @@ describe('a compact record in a side panel', () => {
     resize(doc, 480);
     resize(doc.querySelector('.doc-main')!, 444);
     expect([...doc.classList].filter(name => /^doc-(narrow|m|s|xs)$/.test(name))).toEqual(['doc-narrow', 'doc-m', 'doc-s']);
+    // The narrow layout (screens.css doc-s) keys the card grid on how many cards there are.
+    expect(panel(host).querySelector('.doc.doc-s > .doc-main .ev-cards[data-count="3"]')).not.toBeNull();
     toggle.click();
     await until(() => expect(doc.classList.contains('side-open')).toBe(true));
     // Escape closes the drawer first, not the panel.
@@ -194,6 +205,16 @@ describe('a compact record in a side panel', () => {
     resize(doc, 1000);
     resize(doc.querySelector('.doc-main')!, 590);
     expect([...doc.classList].filter(name => /^doc-(narrow|m|s|xs)$/.test(name))).toEqual(['doc-m']);
+  });
+
+  it('leaves the key cards out of the panel with Meta.panel_summary = False, and the full page keeps them', async () => {
+    const { host } = await start(withSchema(shipmentSchema({ open_in: 'panel', panel: { blocks: ['summary'] } })), `/app/shipment?open=${shipment}`);
+    await until(() => expect(panel(host)?.querySelector('.ev-cmp-card')).toBeTruthy());
+    expect(panel(host).querySelector('.ev-cards')).toBeNull();
+    expect(panel(host).querySelector('.ev-cmp-main [data-field="carrier"]')).not.toBeNull();
+    byText(panel(host).querySelector('.ev-panel-more')!, 'button', 'Open full page')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    await until(() => expect(location.pathname).toBe(`/app/shipment/${shipment}`));
+    await until(() => expect(host.querySelectorAll('.ev-cards .stat-card')).toHaveLength(3));
   });
 
   it('hides what Meta.panel leaves out of the shared view, and the full page shows it', async () => {
@@ -211,7 +232,7 @@ describe('a compact record in a side panel', () => {
     expect(text(note)).toContain('Some parts of this shipment show only on the full page.');
     byText(note, 'button', 'Open full page')!.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     await until(() => expect(location.pathname).toBe(`/app/shipment/${shipment}`));
-    await until(() => expect(host.querySelectorAll('.ev-cards .ev-kc')).toHaveLength(3));
+    await until(() => expect(host.querySelectorAll('.ev-cards .stat-card')).toHaveLength(3));
     expect([...host.querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')))).toEqual(['Charges', 'Notes', 'Parcels']);
     expect(text(host.querySelector('.doc-side .side-sec h4'))).toBe('Attachments');
   });

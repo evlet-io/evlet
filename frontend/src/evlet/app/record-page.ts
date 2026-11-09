@@ -668,7 +668,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (measure) return [{ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' }];
     const meta = fieldOf(model, card);
     if (!meta || !has(card)) return [];
-    return [{ label: meta.label, empty: 'Not set', note: meta.compute ? 'Calculated' : undefined, value: () => {
+    return [{ label: meta.label, empty: 'Not set', value: () => {
       const value = view(card).value.get();
       if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
       return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(card), ctx.links)()) : formatOf(meta, value);
@@ -955,10 +955,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       body: () => Revisions(ctx, model, store.id!) }));
     if (postings && tabShown('postings')) rows.push(MoreRow({ title: 'Postings', folds, start: false, none: 'Nothing posted yet',
       summary: () => (postings.get() ?? []).map(item => `${item.target}: ${item.rows + item.reversals}`).join(' · '), body: () => Postings(ctx, postings) }));
-    // One white card: the state banner strip, the key cards, the Main fields and tables, then more information.
-    return html`<div class="ev-cmp-card">${lifecycle ? live(lifecycle) : null}${summary}
+    // The key cards as number cards above one white card: the state banner strip, the Main fields and tables, then
+    // more information.
+    return [summary, html`<div class="ev-cmp-card">${lifecycle ? live(lifecycle) : null}
       <section class="ev-cmp-main" aria-label=${model.label}>${mainParts}</section>
-      ${rows.length ? html`<div class="ev-more" role="group" aria-labelledby=${`ev-more-${name}`}><h2 class="ev-more-label" id=${`ev-more-${name}`}>More information</h2>${rows}</div>` : null}</div>`;
+      ${rows.length ? html`<div class="ev-more" role="group" aria-labelledby=${`ev-more-${name}`}><h2 class="ev-more-label" id=${`ev-more-${name}`}>More information</h2>${rows}</div>` : null}</div>`];
   };
 
   // ---------- save bar ----------

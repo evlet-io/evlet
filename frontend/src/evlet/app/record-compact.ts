@@ -1,26 +1,22 @@
-// The parts of a compact record page (docs/ui.md, Compact record page): the card row, "more information" rows
+// The parts of a compact record page (docs/ui.md, Compact record page): the key cards, "more information" rows
 // that open and close with a one-line summary while closed, and the summary texts. The record page puts them
 // together; nothing here knows a model.
 
 import { html, when, type Child } from '../dom';
 import { cell, derive, effect, untrack, type Readable } from '../reactive';
-import { Icon, type StatProps } from '../ui/base';
-import { read } from '../ui/core';
+import { Icon, StatCard, type StatProps } from '../ui/base';
 import { uid } from '../ui/core';
 import { isEmpty, type Folds } from '../ui/fold';
 import type { FieldLike, LinkSource } from '../ui/fields';
 import { formatOf } from './meta';
 import { plainOf } from '../richtext/html';
 
-/** The key cards of a compact page (Meta.cards): one row of equal cells split by thin lines, each a muted label
- * ("Planned cost · Calculated") over a bold value. Part of the page card, not separate boxes. */
+/** The key cards of a compact page (Meta.cards): the list page's number cards (StatCard in a summary strip), above the
+ * white card. Each is a field's plain label over its value, with no caption. data-count lets the narrow layout
+ * (screens.css) put them two or three to a row with an odd last card across the row. */
 export function CardRow(stats: StatProps[]): HTMLElement {
-  const cell = (stat: StatProps) => {
-    const value = () => { const current = read(stat.value); return current === '' || current === null || current === undefined ? html`<span class="ev-unset">${stat.empty ?? 'Not set'}</span>` : current; };
-    return html`<div class="ev-kc"><span class="ev-kc-l">${stat.label}${stat.note ? html`<span> · ${stat.note}</span>` : null}</span><b class="ev-kc-v">${value}</b></div>`;
-  };
-  const shown = stats.slice(0, 5);
-  return html`<div class="ev-cards" data-count=${String(shown.length)} style:--cards=${String(shown.length)}>${shown.map(cell)}</div>` as HTMLElement;
+  const shown = stats.slice(0, 5).map(stat => ({ ...stat, note: undefined }));
+  return html`<div class="sum ev-cards" data-count=${String(shown.length)} style:--cards=${String(shown.length)}>${shown.map(StatCard)}</div>` as HTMLElement;
 }
 
 /** A field's value as plain text for a one-line summary: a Link as its record's title, rich text as text. */

@@ -419,27 +419,21 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 @media (max-width: 560px) { .wse-top { grid-template-columns: 1fr; } }
 
 /* A compact record page (Meta.layout starting with Main; record-page.ts and record-compact.ts): one white card with a
-   thin border on the page background. Inside it, top to bottom: the state banner strip (the only tinted area), the key
-   cards as one row of cells split by thin lines, the Main fields and tables, then "more information" rows separated by
-   thin full-width lines. No grey fills, shadows or inner boxes. */
+   thin border on the page background, under the key cards. Inside it, top to bottom: the state banner strip (the only
+   tinted area), the Main fields and tables, then "more information" rows separated by thin full-width lines. No grey fills, shadows or inner boxes. */
 .doc-compact{--cmp-pad:14px}
 .doc-compact .doc-main{padding-top:12px;background:var(--page-bg)}
 .doc-compact .doc-side{background:var(--surface);padding:12px 12px 96px}
 .doc-compact .side-sec{margin-bottom:13px}
 .doc-compact .side-sec h4{margin-bottom:6px}
-.doc-compact .doc-head{margin-bottom:10px}
+.doc-compact .doc-head{margin-bottom:var(--page-gap)}
 .ev-cmp-card{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden;margin-bottom:12px}
 .ev-cmp-card>.inv-banner{margin:0;border-radius:0;padding:7px var(--cmp-pad);background:var(--bg-subtle);color:var(--fg-2);font-size:13.5px;
   border-bottom:1px solid var(--border);gap:8px}
 .ev-cmp-card>.inv-banner svg{color:var(--fg-3)}
-/* Key cards */
-.ev-cards{display:grid;grid-template-columns:repeat(var(--cards,4),minmax(0,1fr));border-bottom:1px solid var(--border)}
-.ev-kc{display:flex;flex-direction:column;gap:3px;min-width:0;padding:12px var(--cmp-pad);border-left:1px solid var(--border)}
-.ev-kc:first-child{border-left:0}
-.ev-kc-l{font-size:13.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ev-kc-v{font-size:20px;line-height:28px;font-weight:600;color:var(--fg);letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.ev-kc-v img,.ev-kc-v svg{height:.8em;width:auto;vertical-align:-.04em;display:inline}
-.ev-kc-v .ev-unset{color:var(--fg-4);font-weight:500}
+/* Key cards: the list page's number cards (.sum, .stat-card) above the white card, spaced as on the list page. Wide,
+   one row of as many cards as there are. */
+.doc-compact .ev-cards{grid-template-columns:repeat(var(--cards,4),minmax(0,1fr));gap:var(--page-gap);margin:0 0 var(--page-gap)}
 /* Main fields and tables */
 .ev-cmp-main{padding:12px var(--cmp-pad) 14px}
 .ev-cmp-main:empty{display:none}
@@ -468,9 +462,6 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-table .grid{box-shadow:none}
 .ev-cmp-table table.g{font-size:13.5px}
 .ev-cmp-table .g th,.ev-cmp-table .g tfoot td,.ev-cmp-table .g tr.g-xrow td{background:var(--surface)}
-.ev-cards[data-count="5"] .ev-kc{padding:12px 10px}
-.ev-cards[data-count="5"] .ev-kc-v{font-size:18px}
-.ev-cards[data-count="5"] .ev-kc:first-child{padding-left:var(--cmp-pad)}
 .ev-cmp-empty{display:flex;align-items:center;justify-content:center;gap:12px;border:1px dashed var(--border-strong);border-radius:6px;padding:13px 10px;
   font-size:13.5px;color:var(--fg-3);background:var(--surface);text-align:center}
 /* More information */
@@ -510,10 +501,19 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .doc.doc-m .ev-cmp-grid .fs-g{grid-template-columns:repeat(3,minmax(0,1fr))}
 .doc.doc-m .ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr))}
 .doc-compact.doc-s{--cmp-pad:10px}
-.doc.doc-s .ev-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
-.doc.doc-s .ev-kc{padding:9px var(--cmp-pad);border-left:0;border-top:1px solid var(--border)}
-.doc.doc-s .ev-kc:nth-child(-n+2){border-top:0}
-.doc.doc-s .ev-kc:nth-child(even){border-left:1px solid var(--border)}
+/* A narrower main column fits five cards as three over two. */
+.doc.doc-m .ev-cards[data-count="5"]{grid-template-columns:repeat(6,minmax(0,1fr))}
+.doc.doc-m .ev-cards[data-count="5"]>.stat-card{grid-column:span 2}
+.doc.doc-m .ev-cards[data-count="5"]>.stat-card:nth-child(n+4){grid-column:span 3}
+/* Narrow (a side panel, a phone): two cards a row, three when there are three; an odd last card takes the whole row.
+   Values keep one size (a card across the row would scale its value up) and wrap rather than being cut short. */
+.doc.doc-s .ev-cards,.doc.doc-s .ev-cards[data-count="5"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc.doc-s .ev-cards[data-count="5"]>.stat-card:nth-child(n){grid-column:auto}
+.doc.doc-s .ev-cards[data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
+.doc.doc-s .ev-cards:is([data-count="1"],[data-count="5"])>.stat-card:last-child{grid-column:1/-1}
+.doc.doc-s .ev-cards>.stat-card>b{font-size:16px;white-space:normal;overflow-wrap:anywhere}
+.doc.doc-xs .ev-cards[data-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc.doc-xs .ev-cards[data-count="3"]>.stat-card:last-child{grid-column:1/-1}
 .doc.doc-s .ev-more-row{grid-template-columns:1fr}
 .doc.doc-s .ev-more-desc{display:none}
 .doc.doc-s .ev-cmp-grid .fs-g,.doc.doc-s .ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}

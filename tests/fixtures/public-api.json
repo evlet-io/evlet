@@ -68,7 +68,7 @@
     "MigrationPlan": "class(state: str, pending: tuple, differences: tuple, suggestion: str, planned: dict = None) -> None",
     "Min": "class(field, *, where=None, model=None, link=None, trend=None, color=None)",
     "Model": "class(**values)",
-    "Model.Meta": "options['api', 'append_only', 'attachments', 'autosave', 'board', 'calculation_language', 'cards', 'default_tab', 'description', 'duplicate', 'effects', 'focus', 'indexes', 'journal', 'key_fields', 'label', 'layout', 'ledger', 'list_fields', 'list_tab', 'list_tabs', 'mail', 'measures', 'naming', 'numeric_profile', 'open_in', 'panel', 'period', 'period_scope', 'plural', 'relations', 'revisable', 'search_fields', 'side_blocks', 'status', 'summary', 'tabs', 'timestamps', 'title', 'title_field']",
+    "Model.Meta": "options['api', 'append_only', 'attachments', 'autosave', 'board', 'calculation_language', 'cards', 'default_tab', 'description', 'duplicate', 'effects', 'focus', 'indexes', 'journal', 'key_fields', 'label', 'layout', 'ledger', 'list_fields', 'list_tab', 'list_tabs', 'mail', 'measures', 'naming', 'numeric_profile', 'open_in', 'panel', 'panel_summary', 'period', 'period_scope', 'plural', 'relations', 'revisable', 'search_fields', 'side_blocks', 'status', 'summary', 'tabs', 'timestamps', 'title', 'title_field']",
     "Model.to_dict": "def(self)",
     "Model.validate": "def(self)",
     "Month": "class(field)",

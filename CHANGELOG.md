@@ -8,6 +8,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Key cards as number cards, and `Meta.panel_summary`.** A compact record page draws `Meta.cards` as the
+  list page's number cards above the white card, two or three to a row in a side panel or on a phone.
+  `Meta.panel_summary = False` leaves the summary strip or the key cards out of a list's side panel; the full page
+  keeps them ([docs/ui.md](docs/ui.md#what-a-side-panel-shows)).
+
 - **The compact record page is drawn.** A layout that starts with `Main` shows its cards, the Main card with
   the state banner inside it, "more information" rows with one-line summaries while closed, and a side column
   with Attachments, Activity and Record info. It has no tabs. Section descriptions show under section titles

@@ -38,7 +38,7 @@ save bar in view ([ui-framework.md](ui-framework.md)).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `cards`, `relations`, `measures`, `open_in`, `list_tabs`,
-`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks`, `panel`, `focus` and `duplicate`. See "What the model decides" in [ui-framework.md](ui-framework.md).
+`list_tab`, `autosave`, `status`, `board`, `summary`, `side_blocks`, `panel`, `panel_summary`, `focus` and `duplicate`. See "What the model decides" in [ui-framework.md](ui-framework.md).
 
 ### Where the cursor starts
 
@@ -160,7 +160,16 @@ class Ticket(Model):
                   Section('Internal', ('audit_note',), panel=False))   # and this section
 ```
 
-`panel=False` works on a field, a `Section` and a `Table`. For a model where only a few parts
+`panel=False` works on a field, a `Section` and a `Table`. `Meta.panel_summary = False` leaves out the
+summary strip, or on a compact page the key cards (`Meta.cards`); the full page still shows them:
+
+```python
+    class Meta:
+        cards = ('total', 'parcels')
+        panel_summary = False                   # key cards on the full page only
+```
+
+For a model where only a few parts
 matter in the panel, `Meta.panel` names what to keep, in order, and hides everything else:
 
 ```python
@@ -173,8 +182,8 @@ Names are section titles, field names, `Table` field names, the record tabs (`ac
 (`key_fields`, `files`, `info`). Naming a section keeps all its fields; naming a field keeps its
 section with only that field; `details` keeps every section. Tabs and blocks show in the order
 `Meta.panel` names them. A section or field of the same name wins over a tab or block. When both
-are given, `Meta.panel` wins over the flags. An unknown name, a name given twice or a flag that is
-not True or False fails when the registry is built.
+are given, `Meta.panel` wins over the flags (it keeps the strip or cards only when it names `summary`). An unknown
+name, a name given twice or a flag that is not True or False fails when the registry is built.
 
 - **Display only.** Hiding is never a permission: the API, row, field and action checks are
   unchanged, and the full page shows everything.
@@ -344,10 +353,13 @@ record layout. The Playground's Project uses it.
 
 The record page draws it on a record's full page and in a list's side panel (the same view, narrower there):
 
-- **One white card** holds the whole record: the state banner strip at its top, then the key cards, the Main area
-  and more information, separated by thin lines.
-- **Key cards** for `Meta.cards` replace the summary strip: one row of equal cells, each a muted label over a bold
-  value; a calculated field says so beside its label. A model without `Meta.cards` keeps the summary strip.
+- **Key cards** for `Meta.cards` replace the summary strip: number cards above the white card, the same thin stat
+  cards as a list's measures, each a field's label over its value, spaced as on the list page. A wide record puts
+  them in one row. A narrow one (a side panel, a phone) puts them two to a row, three when there are three; an odd
+  last card takes the whole row, and long values wrap rather than being cut short. A model without `Meta.cards`
+  keeps the summary strip. `Meta.panel_summary = False` hides them in a side panel.
+- **One white card** holds the rest of the record: the state banner strip at its top, the Main area and more
+  information, separated by thin lines.
 - **The Main area** has the Main fields in a grid of four columns (three, two, then one as the record's own width narrows), edited in place, then its Tables: each with its title, a muted row count and Add on the right, and a light dashed box
   while it has no rows.
 - **More information** lists every later block as a row: the title, the section description and a chevron on the

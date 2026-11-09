@@ -27,7 +27,7 @@ OPEN_IN = ('page', 'panel')
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'tabs', 'default_tab', 'autosave',
-                          'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'ledger', 'append_only', 'timestamps', 'indexes',
+                          'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'panel_summary', 'ledger', 'append_only', 'timestamps', 'indexes',
                           'focus', 'cards', 'duplicate'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
@@ -474,11 +474,15 @@ def panel_for(model, meta, groups, visible, layout_tabs=(), entries=()):
     home.update((block.title if isinstance(block, Section) else block[0], tab.name) for tab, kind, block in entries if kind == 'section' and tab)
     keep = getattr(meta, 'panel', None)
     where = f'{model.__name__}.Meta.panel'
+    # Meta.panel_summary = False leaves the summary strip (on a compact page, the key cards) out of the panel.
+    summary = getattr(meta, 'panel_summary', True)
+    if type(summary) is not bool:
+        raise ValueError(f'{model.__name__}.Meta.panel_summary must be True or False, not {summary!r}')
     if keep is None:
         hidden = {'sections': [group['label'] for group in groups if group.get('panel') is False],
                   'fields': [name for name, field in visible.items() if field.panel is False],
                   'tabs': [name for name, table in tables.items() if getattr(table, 'panel', True) is False]
-                  + [tab.name for tab in layout_tabs if tab.panel is False], 'blocks': []}
+                  + [tab.name for tab in layout_tabs if tab.panel is False], 'blocks': [] if summary else ['summary']}
         hidden = {kind: sorted(names) for kind, names in hidden.items() if names}
         return hidden or None
     if not isinstance(keep, (tuple, list)) or any(type(name) is not str or not name for name in keep) or len(set(keep)) != len(keep):
