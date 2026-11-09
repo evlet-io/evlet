@@ -326,7 +326,9 @@ A record's State shows as a coloured badge in the header by default, with its mo
 buttons; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
 draws neither. `Meta.status` adds a status badge for a Select the system sets, such as a
 payment status, coloured by `Select(..., colors={...})`. Badges and bar steps offer only the
-moves this person may take now; everything else is plain text. Lists draw the same badges. The
+moves this person may take now; everything else is plain text. Lists draw the same badges.
+`State(..., cancelled=(...))` marks final states that mean the record was called off; the
+schema's `state.cancelled` lists them, with `"void"` on a voidable State. The
 badge wraps with the key facts in the side panel and on a phone; the bar scrolls sideways there.
 See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
 
