@@ -316,8 +316,12 @@ def test_duplicate_keys_are_refused(tmp_path):
     with pytest.raises(ValueError, match=r"item Shortcut\(model=Client, filters=\{'region': 'north'\}, label='North'\): "
                                          r"the key 'model:client:north' is used by Shortcut\(model='client', label='North'\)"):
         registered(NavGroup('A', items=(Shortcut('client', label='North'), Shortcut(Client, filters={'region': 'north'}, label='North'))), tmp_path=tmp_path)
-    with pytest.raises(ValueError, match=r"Workspace 'Sales again': the key 'sales' is taken by workspace 'Sales'"):
+    with pytest.raises(ValueError, match=r"Workspace 'Sales again' in Application\(workspaces=\.\.\.\): the key 'sales' is taken by "
+                                         r"workspace 'Sales' in Application\(workspaces=\.\.\.\)"):
         registered(workspaces=(SALES, Workspace('Sales again', key='sales', groups=(NavGroup('A', items=('client',)),))), tmp_path=tmp_path)
+    # The same Workspace listed twice is registered once, not refused as a clash with itself.
+    plans = registered(workspaces=(SALES, PEOPLE, SALES), tmp_path=tmp_path).business.workspaces.plans
+    assert [plan['key'] for plan in plans] == ['sales', 'hr']
     with pytest.raises(ValueError, match='workspaces takes Workspace definitions'):
         registered(workspaces=(NavGroup('A', items=('client',)),), tmp_path=tmp_path)
     with pytest.raises(ValueError, match='Pass workspaces as a list or tuple'):
@@ -366,3 +370,55 @@ def test_flat_apps_declare_workspaces_in_workspaces_py(project):
     # The automatic workspace holds only its own app's models.
     assert shape(found)['tasks'] == {'records': ['model:tasksitem']}
     assert found[2]['label'] == 'Tasks'
+
+
+DESK_PY = ("from evlet import NavGroup, Workspace\n\n"
+           "DESK = Workspace('Desk', groups=(NavGroup('Notes', items=('{model}',)),))\n")
+
+
+def installed(project, apps):
+    """Installs the apps in one instance and returns its workspaces as an admin sees them."""
+    from evlet.cli.instance import create_instance
+    from evlet.cli.install import install
+    from evlet.instances import load_runtime
+    create_instance(project, 'acme')
+    install(project, 'acme', app_names=tuple(apps), trust=True)
+    app = load_runtime(project, 'acme')
+    app.initialize()
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
+    return [(item['key'], item['app'], item['source']) for item in client(app)('GET', '/api/schema')[1]['workspaces']]
+
+
+def legacy_app(project, name, listed, extra=''):
+    """A legacy app whose hooks.py imports its own workspaces.py and passes AppDefinition(workspaces=listed)."""
+    from evlet.cli.app import create_app
+    package = create_app(project, name, legacy=True) / name
+    (package / 'workspaces.py').write_text(DESK_PY.format(model=name + 'item') + extra)
+    hooks = (package / 'hooks.py').read_text().replace('from evlet import AppDefinition',
+                                                     'from evlet import AppDefinition\nfrom .workspaces import DESK')
+    (package / 'hooks.py').write_text(hooks.replace('migrations=migrations)', f'migrations=migrations, workspaces={listed})'))
+
+
+def test_a_legacy_apps_appdefinition_list_is_its_only_source_of_workspaces(project):
+    # hooks.py imports workspaces.py, which also defines a workspace it does not list: the list wins and
+    # workspaces.py is not collected again (a legacy app is never discovered as a flat package).
+    # The same Workspace listed twice is registered once.
+    legacy_app(project, 'notes', '(DESK, DESK)', extra="UNLISTED = Workspace('Unlisted', groups=(NavGroup('A', items=('notesitem',)),))\n")
+    assert installed(project, ['notes']) == [('desk', 'notes', 'declared')]
+
+
+def test_a_workspace_imported_from_another_app_is_not_registered_again(project):
+    from evlet.cli.app import create_app
+    (create_app(project, 'notes') / 'workspaces.py').write_text(DESK_PY.format(model='notesitem'))
+    # Like a model or report imported from another app, the workspace still belongs to the app that declares it.
+    (create_app(project, 'tasks') / 'workspaces.py').write_text('from notes.workspaces import DESK\n')
+    assert installed(project, ['notes', 'tasks']) == [('desk', 'notes', 'declared'), ('tasks', 'tasks', 'automatic')]
+
+
+def test_two_workspaces_with_one_key_name_both_sources(project):
+    from evlet.cli.app import create_app
+    (create_app(project, 'notes') / 'workspaces.py').write_text(DESK_PY.format(model='notesitem'))
+    legacy_app(project, 'tasks', '(DESK,)')
+    with pytest.raises(ValueError, match=r"Workspace 'Desk' in app tasks \(AppDefinition\): the key 'desk' is taken by "
+                                         r"workspace 'Desk' in app notes \(notes/workspaces.py\)"):
+        installed(project, ['notes', 'tasks'])

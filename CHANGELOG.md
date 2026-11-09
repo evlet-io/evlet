@@ -137,6 +137,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- A `Workspace` is registered once: listing the same one twice no longer fails as a key clash with
+  itself, and a workspace another app's `workspaces.py` imports stays with the app that declares it.
+  A real key clash names both workspaces and their sources, such as `app notes (notes/workspaces.py)`
+  ([docs/ui.md](docs/ui.md#workspaces)).
 - A raw `UPDATE` or `DELETE` that an append-only ledger table refuses raises `ConflictError` with
   the message `<table> is append only: its rows are never changed or deleted` on SQLite and
   PostgreSQL. PostgreSQL raised a generic database error before. New PostgreSQL triggers raise an

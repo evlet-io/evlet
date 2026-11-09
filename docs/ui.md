@@ -294,6 +294,14 @@ reports. An application built by hand passes `Application(workspaces=(...))`, an
 `AppDefinition(workspaces=(...))`. The Playground declares Sales, Projects and Company
 (`examples/playground/workspaces.py`).
 
+Each app has one source of workspaces. A legacy app's `AppDefinition(workspaces=...)` list is the
+whole list: a legacy app is never discovered, so a `workspaces.py` its `hooks.py` imports adds
+nothing it does not list. A `Workspace` imported from another app (`from notes.workspaces import
+DESK`) belongs to that app and is not collected again, as for models and reports. The same
+`Workspace` listed twice is registered once. Two different workspaces with one key are refused, and
+the message names both and where each comes from (`app tasks (AppDefinition)`,
+`app notes (notes/workspaces.py)` or `Application(workspaces=...)`).
+
 - `Workspace(label, *, key=None, icon=None, groups=(...))`. `key` defaults to the label in lowercase
   with underscores (`'Sales desk'` is `sales_desk`); give one when the label has no Latin letters.
 - `NavGroup(label, *, icon=None, items=(...))`.

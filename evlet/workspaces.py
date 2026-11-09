@@ -167,7 +167,8 @@ class Workspaces:
     def __init__(self, business, declared=(), *, name='Evlet'):
         self.business = business
         # One app for an Application built by hand; build_instance replaces it with the installed apps (load).
-        self.apps = [{'id': 'app', 'title': name, 'workspaces': tuple(declared), 'models': None, 'reports': None}]
+        self.apps = [{'id': 'app', 'title': name, 'workspaces': tuple(declared), 'models': None, 'reports': None,
+                      'source': 'Application(workspaces=...)'}]
         self.plans = self.compile()
         # Site overrides by workspace key, checked and compiled (load_overrides, from Controls).
         self.overridden = {}
@@ -175,9 +176,12 @@ class Workspaces:
     def load(self, definitions, packages=()):
         """The installed apps, from build_instance: each app's declared workspaces, or its automatic one."""
         registry, titles = self.business.registry, {package.name: getattr(package, 'title', '') for package in packages}
+        layouts = {package.name: getattr(package, 'layout', None) for package in packages}
+        # A flat app's workspaces come from its workspaces.py; a legacy app's only from its AppDefinition.
         self.apps = [{'id': name, 'title': titles.get(name) or name.replace('_', ' ').title(), 'workspaces': tuple(definition.workspaces),
                       'models': {registry.name_for(model) for model in definition.models},
-                      'reports': {getattr(report, '__resource_id__', report.__name__) for report in definition.reports}}
+                      'reports': {getattr(report, '__resource_id__', report.__name__) for report in definition.reports},
+                      'source': f'app {name} ({name}/workspaces.py)' if layouts.get(name) == 'flat' else f'app {name} (AppDefinition)'}
                      for name, definition in definitions]
         self.plans = self.compile()
 
@@ -190,10 +194,13 @@ class Workspaces:
             for workspace in app['workspaces']:
                 if not isinstance(workspace, Workspace):
                     raise ValueError(f'{app["id"]}: workspaces takes Workspace definitions, not {_shown(workspace)}')
+                if workspace.key in keys and keys[workspace.key][0] is workspace and keys[workspace.key][1] is app:
+                    continue  # The same Workspace listed twice by one app is registered once.
                 if workspace.key in keys or workspace.key in automatic:
-                    other = keys.get(workspace.key, 'the automatic workspace of app ' + workspace.key)
-                    raise ValueError(f'Workspace {workspace.label!r}: the key {workspace.key!r} is taken by {other}')
-                keys[workspace.key] = f'workspace {workspace.label!r}'
+                    other = (f'workspace {keys[workspace.key][0].label!r} in {keys[workspace.key][1]["source"]}' if workspace.key in keys
+                             else 'the automatic workspace of app ' + workspace.key)
+                    raise ValueError(f'Workspace {workspace.label!r} in {app["source"]}: the key {workspace.key!r} is taken by {other}')
+                keys[workspace.key] = (workspace, app)
                 plans.append({'key': workspace.key, 'label': workspace.label.strip(), 'icon': workspace.icon, 'app': app['id'],
                               'source': 'declared', 'groups': self.groups(workspace)})
             if not app['workspaces']:
