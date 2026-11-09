@@ -2114,6 +2114,7 @@
         {
           "label": "Item",
           "fields": [
+            "photo",
             "item_code",
             "item_name",
             "item_group",
@@ -2386,6 +2387,7 @@
       "tabs": [],
       "default_tab": null,
       "autosave": true,
+      "image": "photo",
       "fields": [
         {
           "name": "item_code",
@@ -8830,6 +8832,29 @@
           "locked_when": null
         },
         {
+          "name": "photo",
+          "type": "image",
+          "required": false,
+          "unique": false,
+          "index": false,
+          "label": "Photo",
+          "help_text": "PNG, JPEG, GIF or WebP, up to 2 MiB.",
+          "placeholder": "",
+          "hidden": false,
+          "read_only": false,
+          "copy": false,
+          "default_kind": "none",
+          "stored": true,
+          "operators": [
+            "isnull"
+          ],
+          "compute": null,
+          "initial": null,
+          "applies_when": null,
+          "required_when": null,
+          "locked_when": null
+        },
+        {
           "name": "name",
           "type": "text",
           "required": false,
@@ -9099,6 +9124,7 @@
         "flavour": {},
         "fragrance": {},
         "gauge": {},
+        "photo": {},
         "name": {},
         "title": {}
       },
@@ -9307,6 +9333,7 @@
         "flavour",
         "fragrance",
         "gauge",
+        "photo",
         "name",
         "title",
         "prices.price_list",

@@ -571,6 +571,11 @@ Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-fr
 A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-framework.md#rich-text)):
 at rest the record shows the formatted text (read only when the record is locked), and list cells
 show its plain text. The Playground's projects have one, Brief.
+An `Image` field ([model-engine.md](model-engine.md#image-fields)) shows a small preview with
+Upload (Replace once set) and Remove. The browser shrinks a large image and checks its type before
+upload; the server checks both again. A new record's image is held until the record is saved.
+List cells read "Image". `Meta.image` puts the model's `image` key in `/api/schema`, which the record
+header and side panel use for the record's avatar. The Playground's items have a Photo.
 A record's Activity tab writes notes with the same editor; typing `@` mentions a person, with a
 warning when they can't open the record. The bell in the top bar opens the notification centre,
 with the unread count kept live by the event stream ([journal.md](journal.md#mentions)). It is a

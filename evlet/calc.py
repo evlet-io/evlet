@@ -421,7 +421,7 @@ def is_finite(field):
 
 KINDS = ('initial', 'applies_when', 'required_when', 'locked_when')
 # Field kinds that finite expressions cannot read or produce.
-OPAQUE = ('tags', 'multiselect', 'reference', 'time', 'richtext')
+OPAQUE = ('tags', 'multiselect', 'reference', 'time', 'richtext', 'image')
 
 
 def options(field):

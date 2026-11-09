@@ -46,6 +46,8 @@ const CONDITIONS: Record<string, Condition[]> = {
   text: TEXT, email: TEXT, url: TEXT, phone: TEXT, longtext: TEXT, richtext: TEXT,
   integer: NUMBER, decimal: NUMBER, currency: NUMBER, percent: NUMBER, duration: NUMBER,
   date: DATE, datetime: MOMENT, time: MOMENT, link: LINK, select: CHOICE, boolean: CHECK, tags: TAGS, multiselect: TAGS,
+  // An Image field: there or not.
+  image: SET,
 };
 const TEXTUAL = new Set(['text', 'email', 'url', 'phone', 'longtext', 'richtext', 'tags']);
 

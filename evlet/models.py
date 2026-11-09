@@ -3,7 +3,7 @@
 import re
 from types import MappingProxyType
 
-from .fields import ACTIVE, Field, Link, MISSING, RULES, Reference, State, active_layer
+from .fields import ACTIVE, Field, Image, Link, MISSING, RULES, Reference, State, active_layer
 from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 from .identity import RecordId
 from .naming import standard
@@ -224,6 +224,13 @@ class ModelType(type):
             raise ValueError(f'{name}: Meta.revisable needs a State with voidable states, because a revise voids the original')
         cls.__revisable__ = revisable
         cls.__ledger__ = ledger
+        # Meta.image names the Image field shown as the record's avatar or thumbnail.
+        image = getattr(meta, 'image', None)
+        if image is not None and (type(image) is not str or not isinstance(fields.get(image), Image)):
+            images = [key for key, value in fields.items() if isinstance(value, Image)]
+            raise ValueError(f'{name}.Meta.image: name an Image field of {name}, not {image!r}'
+                             + (f' (it has {", ".join(images)})' if images else '; it declares none'))
+        cls.__image__ = image
         if ledger:
             cls.__append_only__, cls.__timestamps__, cls.__indexes__ = ledger_options
         elif getattr(cls, '__row__', False) and '__internal_fields__' not in namespace and 'evlet_position' not in fields:

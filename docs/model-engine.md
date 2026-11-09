@@ -44,6 +44,7 @@ class Contact(Model):
   may be ten times as long (at least 4,096 characters). A document with no text is stored as null,
   so `required=True` works. The field uses two columns, `<name>` (HTML) and `<name>_text` (the
   plain-text extract that search, filters and list cells use); it cannot be unique or indexed.
+- `Image()` holds one image, such as an item photo or a company logo. See [Image fields](#image-fields).
 - Omitted values use defaults; explicit `None` stays null unless required.
   Callable defaults run when a new record is constructed. A partial update keeps
   omitted values, including their original defaults.
@@ -311,6 +312,64 @@ every model for any other form such as `isnull`. Renaming a reference with `Rena
 renames both columns. `Database.related()` does not
 follow references; read the target with `get`.
 
+### Image fields
+
+```python
+from evlet import Image, Model, Text
+
+class Product(Model):
+    class Meta:
+        image = "photo"          # the record's avatar or thumbnail
+    product_code = Text(required=True)
+    photo = Image(label="Photo")
+    logo = Image()
+```
+
+An `Image` field holds one image. The image is a private attachment of the record, stored with
+the application's file storage like every other attachment (`evlet/images.py`, the same store as
+rich text images). The field's value is that attachment's id: an `int` in Python, text such as
+`"12"` in JSON. There is no parallel file store and no public URL.
+
+- **Types and size.** PNG, JPEG, GIF and WebP only, decided by the bytes, never by the file name or
+  a declared type. SVG is refused, because an SVG can carry script. The size limit is Controls,
+  `files.image_max_kb` (2 MiB by default, 64 KiB to 8 MiB), and a record holds at most
+  `files.images_per_record` images across its rich text and Image fields (50 by default).
+- **Setting an image.** Upload, then save the id. For a saved record,
+  `POST /api/{model}/{id}/attachments` with `{"name", "content" (base64), "purpose": "image"}`
+  answers `201 {"id", "type", "size", "held": false}`. For a new record, `POST /api/{model}/_images`
+  with the same body holds the image for the person for a day (`"held": true`); the person can
+  preview it at `GET /api/{model}/_images/{image id}`. Then create or update the record with
+  `{"photo": "<image id>"}`. Saving links a held image to the record in the save transaction.
+  Uploading needs write access to one of the model's Image or RichText fields; saving needs write
+  access to the field, like any value.
+- **Replacing and clearing.** Save another id, or `null`. The record's old image is deleted in
+  the same transaction. Images have no DELETE route of their own.
+- **Reading.** `GET /api/{model}/{id}/attachments/{image id}` serves the image inline, with its
+  sniffed type, `nosniff` and a sandboxing content security policy. It runs the record's account,
+  tenant and row checks, and a person who cannot read the Image field holding the image gets 404.
+  A role that cannot read the field gets no value in record payloads either.
+- **What is refused.** An id that is not a positive integer, an image of another record, a held
+  image of another person, an image that was purged, and the same image in two fields of one record,
+  each with a `ValidationError` on the field (422). A database without the application's file
+  storage (a bare `Database`) refuses any image value.
+- **Duplicate and revisions.** `copy=` is always `False`: the browser's Duplicate leaves the image
+  out, because an image belongs to one record. `copy=True` is refused with a `ValueError`. A revision
+  (`revise`) gets its own copy of each Image field's image.
+- **Journal and audit.** A change is journaled like any value, as the old and new ids.
+- **Deleting the record** deletes its images, from the HTTP route and from trusted Python
+  (`tx.delete`). Files on disk or in object storage are reclaimed by the storage's `collect()`.
+- **Trusted Python and the Connector.** A trusted session may save any held image's id (it has no
+  person); the other rules are the same. The Connector uses the HTTP routes above.
+- **Options.** `label`, `help_text`, `tooltip`, `required`, `hidden`, `read_only`, `panel` and the
+  rules (`required_when`, `locked_when`, `applies_when`). Images have no `default`, `compute`,
+  `query` or `fetch`, and cannot be unique or indexed.
+- **Migrations.** One nullable integer column, added with `AddField("product", "photo", Image())`.
+
+`Meta.image` names the Image field shown as the record's avatar or thumbnail. It is checked when
+the class is made: naming anything but an Image field of the model raises a `ValueError`. The model's
+`/api/schema` entry carries `"image": "photo"`, left out when unset or when the role cannot read
+that field. Each Image field's schema `type` is `"image"`.
+
 ### Where a Currency field's code comes from
 
 `currency=` on `Currency` says which currency code the forms and lists show beside the amount.
@@ -571,6 +630,7 @@ Each field kind takes these operators (the schema sends them as each field's `op
 | Tags, MultiSelect | `contains` `isnull` |
 | Reference | `eq` `isnull`, and `ne` with null |
 | RichText | `contains` `icontains` `nicontains` `isnull`, on its plain text |
+| Image | `isnull` |
 
 Any other operator for a field is refused with 422. `evlet.query.operators_for(model, name)`
 returns the same list.

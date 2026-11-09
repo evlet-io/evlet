@@ -957,3 +957,36 @@ class RichText(LongText):
 
     def from_columns(self, row, name):
         return self.from_storage(row[name])
+
+
+class Image(Field):
+    """One image per record, such as a photo or logo: a private image attachment of the record
+    (evlet/images.py), stored here as that attachment's id. PNG, JPEG, GIF and WebP only, decided by the
+    bytes; SVG is refused. JSON carries the id as text; the browser loads the image through the record's
+    permission-checked attachment route.
+
+    Duplicate never copies it (copy=False): an image belongs to one record."""
+    kind = "image"
+    sql_type = "INTEGER"
+
+    def __init__(self, **kwargs):
+        if kwargs.get("copy", False) is not False:
+            raise ValueError("Image fields are not copied by Duplicate; an image belongs to one record")
+        if kwargs.get("unique") or kwargs.get("index"):
+            raise ValueError("Image fields cannot be unique or indexed")
+        if kwargs.get("default", MISSING) is not MISSING or kwargs.get("compute") is not None or kwargs.get("query") is not None or kwargs.get("fetch") is not None:
+            raise ValueError("An Image field holds an uploaded image; it has no default, compute, query or fetch")
+        super().__init__(**{**kwargs, "copy": False})
+
+    def validate(self, value):
+        if isinstance(value, str) and re.fullmatch(r"[1-9][0-9]{0,18}", value):
+            value = int(value)
+        if type(value) is not int or not 1 <= value <= MAX_INTEGER:
+            raise ValueError("Use the id of an uploaded image")
+        return value
+
+    def from_storage(self, value):
+        return None if value is None else int(value)
+
+    def serialize(self, value):
+        return None if value is None else str(value)

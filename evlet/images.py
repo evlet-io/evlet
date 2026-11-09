@@ -1,13 +1,16 @@
-"""Images in rich text: private attachments that RichText values refer to (docs/internal/rich-text.md).
+"""Images in rich text and Image fields: private attachments that RichText values and Image fields refer to
+(docs/internal/rich-text.md, docs/model-engine.md).
 
 An image is a row of evlet_attachments with purpose 'image'. The HTML holds only its id
 (`<img data-attachment="12">`); the browser loads it through the record's permission-checked download
 route, so whoever cannot read the record cannot load its images.
 
-- Uploading needs write access to a RichText field of the model. A saved record's image is attached to it
+- An Image field holds the id of one such image; Meta.image names the one shown as the record's avatar.
+- Uploading needs write access to a RichText or Image field of the model. A saved record's image is attached to it
   at once; an unsaved record's image goes to a holding area (record_id 0) owned by the person.
-- Saving a record links each held image its rich text refers to, refuses an image of another record, and
-  deletes the record's images no rich text refers to any more, all in the save transaction.
+- Saving a record links each held image its rich text or Image fields refer to, refuses an image of another
+  record, and deletes the record's images nothing refers to any more (a replaced or cleared Image too), all in
+  the save transaction. Deleting a record deletes its images.
 - Held images nobody saved are purged after a day: on each upload, and by an hourly framework schedule
   when the application runs jobs.
 """
@@ -19,7 +22,7 @@ from contextvars import ContextVar
 import re
 import time
 
-from .fields import RichText
+from .fields import Image, RichText
 from .models import ValidationError
 
 HOLDING = 0
@@ -63,6 +66,26 @@ def rich_fields(model):
     return [name for name, field in model.__fields__.items() if isinstance(field, RichText) and field.stored]
 
 
+def image_fields(model):
+    """The model's stored Image fields."""
+    return [name for name, field in model.__fields__.items() if isinstance(field, Image) and field.stored]
+
+
+def holders(model):
+    """The fields whose values refer to images: RichText and Image fields."""
+    return rich_fields(model) + image_fields(model)
+
+
+def readable(business, user, model, record, image_id):
+    """Whether the person may see this image of the record: an image an Image field holds needs read access to
+    one such field. Rich text images follow the record (they are referred to inside the text)."""
+    holding = [name for name in image_fields(model) if record._values.get(name) == image_id]
+    if not holding:
+        return True
+    fields = business.policy.fields(user, model)
+    return any(name in fields for name in holding)
+
+
 def limits(business):
     """(bytes per image, images per record) from Controls (files.image_max_kb, files.images_per_record)."""
     try:
@@ -88,11 +111,11 @@ def initialize(database):
 
 def upload(business, tx, user, model, record_id, body):
     """Store one image for a record (or, with record_id None, in the person's holding area). Returns the reply."""
-    if not rich_fields(model):
-        raise ValidationError({'image': 'This record has no formatted text to put images in'})
+    if not holders(model):
+        raise ValidationError({'image': 'This record has no formatted text or image field to put images in'})
     writable = business.policy.fields(user, model, write=True)
-    if not any(name in writable for name in rich_fields(model)):
-        raise ValidationError({'image': 'You cannot change the formatted text of this record'})
+    if not any(name in writable for name in holders(model)):
+        raise ValidationError({'image': 'You cannot change the images of this record'})
     if set(body) - {'name', 'content', 'purpose'} or body.get('purpose') != 'image':
         raise ValidationError({'image': 'Send name, content and purpose "image"'})
     filename = body.get('name')
@@ -150,13 +173,19 @@ def settle(session, model, record_id, values):
     """In the save transaction: link held images the record's rich text refers to, refuse other records'
     images, and delete the record's images no rich text refers to any more."""
     fields = rich_fields(model)
-    if not fields:
+    pictures = image_fields(model)
+    if not fields and not pictures:
         return
     from .richtext import image_ids
     referenced = {}
     for name in fields:
         for image_id in image_ids(values.get(name)):
             referenced.setdefault(image_id, name)
+    for name in pictures:
+        if values.get(name) is not None:
+            if values[name] in referenced:
+                raise ValidationError({name: 'This image is already used elsewhere in the record. Upload it again.'})
+            referenced[values[name]] = name
     # A bare Database (no Application storage) has no attachments, and so no images.
     if not _attachments(session):
         if referenced:
@@ -177,13 +206,40 @@ def settle(session, model, record_id, values):
                                            (image_id, table)).fetchone()
         if found is None:
             # Purged: images of an unsaved record are held for a day (HOLD_SECONDS).
-            raise ValidationError({field: 'An image in this text is no longer available. Remove it and add it again.'})
+            raise ValidationError({field: 'This image is no longer available. Upload it again.' if field in pictures else
+                                   'An image in this text is no longer available. Remove it and add it again.'})
         # Trusted Python may link any held image; a person only their own. Never another record's image.
         if found[1] != HOLDING or (user_id is not None and found[0] != user_id):
-            raise ValidationError({field: 'An image in this text belongs to another record. Add it again.'})
+            raise ValidationError({field: 'This image belongs to another record. Upload it again.' if field in pictures else
+                                   'An image in this text belongs to another record. Add it again.'})
         session.connection.execute('UPDATE evlet_attachments SET record_id=? WHERE id=?', (record_id, image_id))
     for image_id in own - set(referenced):
         session.connection.execute('DELETE FROM evlet_attachments WHERE id=?', (image_id,))
+
+
+def clone(business, tx, user, model, values):
+    """For a copy of a record (a revision): each Image field's image becomes a new held image of the person,
+    which saving the copy links to it. A missing image leaves the field empty."""
+    name = business.registry.name_for(model)
+    for field in image_fields(model):
+        if values.get(field) is None:
+            continue
+        row = tx.connection.execute("SELECT * FROM evlet_attachments WHERE id=? AND purpose='image' AND model=?",
+                                    (values[field], name)).fetchone()
+        if row is None:
+            values[field] = None
+            continue
+        image_id = business.storage.add(tx, name, HOLDING, row['name'], business.storage.read(row))
+        tx.connection.execute('UPDATE evlet_attachments SET purpose=?, owner=?, created_at=? WHERE id=?',
+                              ('image', getattr(user, 'id', None), int(time.time()), image_id))
+        values[field] = image_id
+
+
+def remove(session, model, record_id):
+    """When a record is deleted: delete its images. Their files are reclaimed by the storage's collect()."""
+    if holders(model) and _attachments(session):
+        session.connection.execute("DELETE FROM evlet_attachments WHERE purpose='image' AND model=? AND record_id=?",
+                                   (session.registry.name_for(model), int(record_id)))
 
 
 def _attachments(session):
