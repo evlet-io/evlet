@@ -63,8 +63,10 @@ describe('generated record view', () => {
     const history = host.querySelector<HTMLElement>('.topbar > .top-actions > .rec-btn')!;
     expect(history).not.toBeNull();
     // The record page's small breadcrumb sits in its main column, directly above the record's header.
-    const crumbs = host.querySelector<HTMLElement>('.doc-main > .page-crumbs')!;
-    expect(crumbs.nextElementSibling!.classList.contains('doc-head')).toBe(true);
+    const crumbs = host.querySelector<HTMLElement>('.doc-main > .ev-crumb-row > .page-crumbs')!;
+    expect(crumbs.parentElement!.nextElementSibling!.classList.contains('doc-head')).toBe(true);
+    // The side column's drawer button ends the breadcrumb row (CSS shows it only on narrow windows).
+    expect(crumbs.nextElementSibling!.classList.contains('ev-side-toggle')).toBe(true);
     expect(host.querySelector('.topbar .crumbs')).toBeNull();
     click(history);
     const recent = document.querySelector('.rec-pop .rec-item');
@@ -413,29 +415,29 @@ describe('printing a record', () => {
   });
 });
 
-describe('Record info times', () => {
+describe('the record footer', () => {
   afterEach(() => { try { localStorage.clear(); } catch { /* no storage */ } });
-  const info = (host: Element) => byText(host, '.side-sec', /^Record info/)!;
-  const rows = (host: Element) => {
-    const block = info(host), terms = [...block.querySelectorAll('dt')].map(text);
-    return Object.fromEntries([...block.querySelectorAll('dd')].map((dd, index) => [terms[index], text(dd)]));
+  const foot = (host: Element) => host.querySelector<HTMLElement>('.doc-main > .ev-rec-foot')!;
+  const part = (host: Element, name: 'created' | 'modified') => {
+    const item = foot(host)?.querySelector(`[data-part="${name}"]`);
+    return item ? `${text(item.querySelector('.ev-rf-l'))} ${text(item.querySelector('.ev-rf-who'))} · ${text(item.querySelector('.ev-time'))}` : null;
   };
 
-  it('shows Created and Last modified relative to now, with who, and switches every time to exact on a click', async () => {
+  it('shows Created and Modified with who and when, and switches every time to exact on a click', async () => {
     // Recorded at 06:02 UTC; two hours later here.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-04T08:02:30Z'));
     const { host } = start([...orderRoutes(), ['GET', /\/api\/_settings\/me$/, screen.settings_me]], '/app/order/0000000000001', { storage: localStorage });
-    await until(() => expect(rows(host)['Created']).toBe('2 hours ago · admin'));
-    expect(rows(host)['Last modified']).toBe('2 hours ago · admin');
-    const times = [...info(host).querySelectorAll<HTMLButtonElement>('button.ev-time-toggle')];
+    await until(() => expect(part(host, 'created')).toBe('Created admin · 2 hours ago'));
+    expect(part(host, 'modified')).toBe('Modified admin · 2 hours ago');
+    const times = [...foot(host).querySelectorAll<HTMLButtonElement>('button.ev-time-toggle')];
     expect(times.map(button => button.querySelector('time')!.getAttribute('datetime'))).toEqual(['2026-11-04T06:02:00.000Z', '2026-11-04T06:02:00.000Z']);
     expect(times[0].getAttribute('aria-label')).toBe('2 hours ago, 04-11-2026 10:02 GST. Show exact times');
     // Who links to Controls Users for a person who may open Controls.
-    await until(() => expect(info(host).querySelectorAll('dd a.link-q[href="/controls/users"]').length).toBe(2));
+    await until(() => expect(foot(host).querySelectorAll('a.ev-rf-who[href="/controls/users"]').length).toBe(2));
     click(times[0]);
-    await until(() => expect(rows(host)['Created']).toBe('04-11-2026 10:02 GST · admin'));
-    expect(rows(host)['Last modified']).toBe('04-11-2026 10:02 GST · admin');
+    await until(() => expect(part(host, 'created')).toBe('Created admin · 04-11-2026 10:02 GST'));
+    expect(part(host, 'modified')).toBe('Modified admin · 04-11-2026 10:02 GST');
     expect(times.map(button => button.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
     expect(localStorage.getItem('evlet.admin.exactTimes')).toBe('true');
   });
@@ -443,9 +445,27 @@ describe('Record info times', () => {
   it('opens with exact times when the person chose them before', async () => {
     localStorage.setItem('evlet.admin.exactTimes', 'true');
     const { host } = start(orderRoutes(), '/app/order/0000000000001', { storage: localStorage });
-    await until(() => expect(rows(host)['Created']).toBe('04-11-2026 10:02 GST · admin'));
+    await until(() => expect(part(host, 'created')).toBe('Created admin · 04-11-2026 10:02 GST'));
     // Without Controls, who is plain text.
-    expect(info(host).querySelector('dd a.link-q[href="/controls/users"]')).toBeNull();
+    expect(foot(host).querySelector('a.ev-rf-who')).toBeNull();
+  });
+
+  it('holds only Created, Modified, the ID with Copy, and Copy link, which copies the record address', async () => {
+    const writes: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (value: string) => { writes.push(value); } }, configurable: true });
+    const { host } = start(orderRoutes(), '/app/order/0000000000001?tab=t-lines');
+    await until(() => expect(part(host, 'created')).not.toBeNull());
+    const footer = foot(host);
+    expect([...footer.querySelectorAll('.ev-rf-l')].map(text)).toEqual(['Created', 'Modified', 'ID']);
+    expect(text(footer.querySelector('.ev-rf-id .mono'))).toBe('0000000000001');
+    expect([...footer.querySelectorAll('button.icon-btn')].map(button => button.getAttribute('aria-label'))).toEqual(['Copy record ID', 'Copy link']);
+    click(footer.querySelector('button[aria-label="Copy record ID"]'));
+    await until(() => expect(writes).toEqual(['0000000000001']));
+    click(footer.querySelector('button[aria-label="Copy link"]'));
+    await until(() => expect(writes[1]).toBe(`${location.origin}/app/order/0000000000001`));
+    await until(() => expect(lastToast()).toBe('Copied the link'));
+    // Not in the side column: Record info is gone from there.
+    expect([...host.querySelectorAll('.side-sec h4')].map(text)).not.toContain('Record info');
   });
 });
 
@@ -473,13 +493,13 @@ describe('each fact shows once on the record page', () => {
     stopAll();
     const off = start(withOrder({ summary: false }), '/app/order/0000000000001');
     await until(() => expect(text(off.host.querySelector('.doc-head h1'))).toContain('Big order'));
-    await until(() => expect(blocks(off.host)).toContain('Record info'));
+    await until(() => expect(off.host.querySelector('.ev-rec-foot [data-part="created"]')).not.toBeNull());
     expect(off.host.querySelector('.sum')).toBeNull();
   });
 
   it('E2: the Key fields block shows only while another tab than Details is open', async () => {
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
-    await until(() => expect(blocks(host)).toContain('Record info'));
+    await until(() => expect(text(host.querySelector('.ev-rec-foot'))).toContain('Created'));
     expect(blocks(host)).not.toContain('Key fields');
     click(byText(host, '.doc-tabs [role="tab"]', /^Lines/));
     await until(() => expect(blocks(host)[0]).toBe('Key fields'));
@@ -499,14 +519,15 @@ describe('each fact shows once on the record page', () => {
     expect(created.host.querySelector('.fld[data-field="title"] input')).not.toBeNull();
   });
 
-  it('E4: Record info keeps the times, and More copies the record ID', async () => {
+  it('E4: the footer keeps the times, and More has Copy link and Copy record ID', async () => {
     const writes: string[] = [];
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (value: string) => { writes.push(value); } }, configurable: true });
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
-    await until(() => expect(text(byText(host, '.side-sec', /^Record info/))).toContain('Created'));
-    expect([...byText(host, '.side-sec', /^Record info/)!.querySelectorAll('dt')].map(text)).not.toContain('ID');
+    await until(() => expect(text(host.querySelector('.ev-rec-foot'))).toContain('Created'));
+    expect(blocks(host)).not.toContain('Record info');
     click(host.querySelector('.doc-head button[aria-label="More actions"]'));
     await until(() => expect(byText(document.body, '[role="menuitem"]', 'Copy record ID')).not.toBeNull());
+    expect(byText(document.body, '[role="menuitem"]', 'Copy link')).not.toBeNull();
     click(byText(document.body, '[role="menuitem"]', 'Copy record ID'));
     await until(() => expect(writes).toEqual(['0000000000001']));
     await until(() => expect(lastToast()).toBe('Copied the record ID'));
@@ -520,12 +541,13 @@ describe('each fact shows once on the record page', () => {
       ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders)], ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page(quotes)]];
   };
 
-  it('E4: Record info is left out while it has nothing to show', async () => {
+  it('E4: the footer leaves out the times it does not have', async () => {
     const detail = copy(recorded.detail);
     delete detail.body._audit;
     const { host } = start([...orderRoutes().filter(route => !String(route[1]).includes('order\\/0000000000001$')), ['GET', /\/api\/order\/0000000000001$/, detail]], '/app/order/0000000000001?tab=t-lines');
     await until(() => expect(blocks(host)).toContain('Key fields'));
-    expect(blocks(host)).not.toContain('Record info');
+    expect(host.querySelector('.ev-rec-foot [data-part="created"], .ev-rec-foot [data-part="modified"]')).toBeNull();
+    expect(text(host.querySelector('.ev-rec-foot .ev-rf-id .mono'))).toBe('0000000000001');
   });
 
   it('E5: the Related block lists only relations with records, and goes when none has any', async () => {
@@ -534,7 +556,7 @@ describe('each fact shows once on the record page', () => {
     expect(text(byText(host, '.side-sec', /^Related/))).not.toContain('Quotes');
     stopAll();
     const empty = start(customer(0, 0), '/app/customer/0000000000001');
-    await until(() => expect(blocks(empty.host)).toContain('Record info'));
+    await until(() => expect(empty.host.querySelector('.ev-rec-foot')).not.toBeNull());
     await until(() => expect(blocks(empty.host)).not.toContain('Related'));
     // The Related tab still lists both.
     click(byText(empty.host, '.doc-tabs [role="tab"]', 'Related'));
@@ -542,8 +564,9 @@ describe('each fact shows once on the record page', () => {
   });
 
   it('E6: Meta.side_blocks picks and orders the side blocks', async () => {
+    // 'info' still names a block, though Record info is the footer now; the side column keeps the rest in order.
     const { host } = start(customer(2, 0, { side_blocks: ['info', 'related'] }), '/app/customer/0000000000001');
-    await until(() => expect(blocks(host)).toEqual(['Record info', 'Related']));
+    await until(() => expect(blocks(host)).toEqual(['Related']));
     stopAll();
     const none = start(customer(2, 0, { side_blocks: [] }), '/app/customer/0000000000001');
     await until(() => expect(text(none.host.querySelector('.doc-head h1'))).not.toBe(''));

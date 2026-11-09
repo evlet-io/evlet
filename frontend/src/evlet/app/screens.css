@@ -71,13 +71,15 @@
 .ev-pager span{margin-right:6px}
 .ev-note{font-size:12.5px;margin:10px 2px}
 .ev-choices{display:flex;flex-wrap:wrap;gap:8px}
-.ev-list .sum{margin-top:4px}
+/* The measure cards: as far from the title above and the list card below as from each other. */
+.ev-list .sum{gap:var(--page-gap);margin:0 0 var(--page-gap)}
+.ev-list>.ph:has(+.sum){margin-bottom:var(--page-gap)}
 /* The list card: the tabs, the search row and the table in one white card on the grey main area. Scrolled up, it
    sticks --ev-card-top below the top of the list's scrolling area and fills the rest of its height, so its tabs,
    search row and table header stay in view; only the table scrolls, down and sideways, inside it. Its height is the
    area's content box plus the list's top padding, less the top offset; the bottom padding is the gap under it. */
 .ev-list{--ev-gut:16px;--ev-pad-top:20px;--ev-card-top:12px}
-.ev-list.page{max-width:none;padding:var(--ev-pad-top) 28px 16px}
+.ev-list.page{max-width:none;padding:var(--ev-pad-top) var(--page-gutter) 16px}
 .ev-list-card{position:sticky;top:var(--ev-card-top);z-index:2;display:flex;flex-direction:column;min-width:0;height:calc(100% + var(--ev-pad-top) - var(--ev-card-top));
   border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden}
 .ev-list-card > .tabs{flex:none;margin:0;padding:0 8px}
@@ -100,7 +102,7 @@
 /* Phones: the card scrolls with the page, and the table is as tall as its rows. */
 @media (max-width:760px){
   .ev-list{--ev-gut:12px;--ev-pad-top:18px}
-  .ev-list.page{padding:var(--ev-pad-top) max(12px,env(safe-area-inset-left,0px)) 64px max(12px,env(safe-area-inset-right,0px))}
+  .ev-list.page{padding:var(--ev-pad-top) max(var(--page-gutter),env(safe-area-inset-right,0px)) 64px max(var(--page-gutter),env(safe-area-inset-left,0px))}
   .ev-list-card{position:static;height:auto}
   .ev-list-body{overflow:visible}
 }
@@ -153,7 +155,32 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
    and scrolls on its own. Stacked under the main column (narrow windows, phones) it scrolls with it. */
 .view>.ev-record .doc:not(.no-side)>.doc-side{position:sticky;top:0;align-self:start;height:calc(100vh - var(--topbar-h));height:calc(100dvh - var(--topbar-h));
   overflow-y:auto;overscroll-behavior:contain}
-@media (max-width:1100px){.view>.ev-record .doc:not(.no-side)>.doc-side{position:static;height:auto;overflow:visible}}
+/* Step 2 of keeping the main column wide (980 px and under; step 1 is the sidebar drawer, ui/styles.css): the side
+   column leaves the page. The button at the end of the breadcrumb row opens it as a drawer on the right. */
+.ev-crumb-row{display:flex;align-items:center;gap:8px;min-width:0;margin:0 0 6px}
+.ev-crumb-row>.crumbs{flex:1;margin:0}
+.ev-crumb-row>.crumbs[hidden]{display:block;visibility:hidden}
+.ev-side-toggle{display:none;margin:-6px -6px -6px auto}
+.ev-side-drawer-scrim{display:none}
+@media (max-width:980px){
+  .ev-side-toggle{display:grid}
+  .ev-side-drawer-scrim{display:block}
+  .view>.ev-record .doc:not(.no-side)>.doc-side{position:fixed;top:0;right:0;bottom:0;left:auto;width:min(var(--doc-side-w),90vw);height:auto;align-self:stretch;z-index:52;
+    border-top:0;border-left:1px solid var(--border);overflow-y:auto;overscroll-behavior:contain;outline:none;
+    padding-top:max(16px,env(safe-area-inset-top,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+    transform:translateX(100%);visibility:hidden;transition:transform .22s ease,visibility 0s .22s}
+  .view>.ev-record .doc.side-open:not(.no-side)>.doc-side{transform:none;visibility:visible;box-shadow:var(--shadow-lg);transition:transform .22s ease}
+}
+/* The record footer, under the form: Created, Modified, the ID with Copy, and Copy link, on one quiet line. */
+.ev-rec-foot{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px;margin:12px 0 0;padding:0 2px;font-size:12.5px;line-height:24px;color:var(--fg-3)}
+.ev-rec-foot .grow{flex:1}
+.ev-rf-item{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap}
+.ev-rf-l{color:var(--fg-3)}
+.ev-rf-who{color:var(--fg-2)}
+.ev-rf-item .rel-time,.ev-rf-item time,.ev-rf-item button{color:var(--fg-2);font-size:inherit}
+.ev-rf-id .mono{color:var(--fg-2)}
+.ev-rec-foot .icon-btn.sm{margin:0 -2px}
+.doc-panel .ev-rec-foot{margin-top:16px}
 .ev-fact{display:inline-flex;align-items:center;gap:6px}
 .ev-savebar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:8px;margin:20px -4px 0;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-lg);
   background:var(--surface);box-shadow:var(--shadow-md);padding-bottom:max(10px,env(safe-area-inset-bottom,0px))}
@@ -476,6 +503,8 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-activity>.eff-note{display:none}
 .ev-cmp-activity .composer{margin-bottom:12px;box-shadow:none}
 .ev-cmp-activity .composer:not(:focus-within) .rt-toolbar{display:none}
+.rt-toolbar-compact{padding:2px 4px;gap:0}
+.rt-toolbar-compact .rt-tool{width:26px;height:26px}
 .ev-cmp-activity .composer:not(:focus-within) .rt-surface{min-height:38px}
 @media (max-width:1100px){.ev-cmp-grid .fs-g{grid-template-columns:repeat(3,minmax(0,1fr))}.ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:760px){

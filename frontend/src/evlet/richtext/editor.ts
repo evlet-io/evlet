@@ -44,6 +44,9 @@ export interface RichTextProps {
   images?: ImageSource;
   /** People to mention with @ (the activity composer). Without it, @ is just text. */
   mentions?: MentionSource;
+  /** Which formatting buttons show: 'full' (the default) or 'compact', a slim row of bold, italic, bulleted list,
+   * link and, with mentions, Mention. Keys and typed shortcuts work either way. */
+  toolbar?: 'full' | 'compact';
 }
 
 export interface Person { id: string; name: string; username: string; can_read: boolean }
@@ -667,19 +670,30 @@ export function RichTextEditor(props: RichTextProps): RichTextEditor {
   };
   const mod = isMac() ? '⌘' : 'Ctrl+';
   const linkButton = tool('link', 'Link', `${mod}K`, button => linkDialog(button), () => String(status.get().link));
-  const groups: HTMLElement[][] = [
+  const bulletSpec = BLOCK_NAMES.find(([spec]) => spec.type === 'item' && spec.list === 'bullet')!;
+  const blockTool = ([spec, label, icon]: [BlockSpec, string, string]) => tool(icon, label, spec.type === 'item' && spec.list === 'ordered' ? `${mod}Shift+7` : spec.type === 'item' && spec.list === 'bullet' ? `${mod}Shift+8` : '',
+    () => block(spec), () => String(JSON.stringify(status.get().block) === JSON.stringify(spec)));
+  // Mention types @ at the caret (a space first after a word), which opens the people picker.
+  const mentionTool = () => tool('at-sign', 'Mention', '', () => {
+    const range = state.selection, at = range.head, current = state.doc.blocks[at.block];
+    const before = current ? blockText(current).slice(0, at.offset) : '';
+    apply(insertText({ doc: state.doc, selection: range }, before && !/\s$/.test(before) ? ' @' : '@', { marks: [], href: null }));
+  });
+  const groups: HTMLElement[][] = props.toolbar === 'compact' ? [
+    [tool('bold', 'Bold', `${mod}B`, () => mark('strong'), pressedMark('strong')), tool('italic', 'Italic', `${mod}I`, () => mark('em'), pressedMark('em')),
+      blockTool(bulletSpec), linkButton, ...(props.mentions ? [mentionTool()] : [])],
+  ] : [
     [tool('bold', 'Bold', `${mod}B`, () => mark('strong'), pressedMark('strong')), tool('italic', 'Italic', `${mod}I`, () => mark('em'), pressedMark('em')),
       tool('underline', 'Underline', `${mod}U`, () => mark('u'), pressedMark('u')), tool('strikethrough', 'Strikethrough', '', () => mark('s'), pressedMark('s')),
       tool('code', 'Inline code', '', () => mark('code'), pressedMark('code')), linkButton],
-    BLOCK_NAMES.map(([spec, label, icon]) => tool(icon, label, spec.type === 'item' && spec.list === 'ordered' ? `${mod}Shift+7` : spec.type === 'item' && spec.list === 'bullet' ? `${mod}Shift+8` : '',
-      () => block(spec), () => String(JSON.stringify(status.get().block) === JSON.stringify(spec)))),
+    BLOCK_NAMES.map(blockTool),
     [...(props.images ? [tool('image', 'Image', '', () => picker.click())] : []), tool('minus', 'Divider', '', () => block('rule')),
       tool('undo-2', 'Undo', `${mod}Z`, () => undo(), undefined, () => status.get().undo), tool('redo-2', 'Redo', isMac() ? '⌘Shift+Z' : 'Ctrl+Y', () => redo(), undefined, () => status.get().redo)],
   ];
   const tools = groups.flat();
   tools[0].tabIndex = 0;
   // A toolbar is one Tab stop; the arrow keys move between its buttons (roving tabindex).
-  const toolbar = html`<div class="rt-toolbar" role="toolbar" aria-label="Formatting" aria-controls=${id}
+  const toolbar = html`<div class=${props.toolbar === 'compact' ? 'rt-toolbar rt-toolbar-compact' : 'rt-toolbar'} role="toolbar" aria-label="Formatting" aria-controls=${id}
     on:keydown=${(event: KeyboardEvent) => {
       // Disabled buttons (Undo with nothing to undo) are skipped.
       const usable = tools.filter(item => !(item as HTMLButtonElement).disabled);

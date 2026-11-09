@@ -55,10 +55,10 @@ describe('the Workspace switcher', () => {
     const { host } = start(routes(), '/app/customer');
     await until(() => expect(host.querySelector('.app-switch .as-text b')).not.toBeNull());
     const button = host.querySelector<HTMLElement>('.app-switch')!;
-    // In the top bar, after the brand and the pipe; not in the sidebar.
+    // In the top bar, after the brand and the pipe; the sidebar's copy is in its head, shown only as a drawer.
     expect(button.parentElement!.matches('.topbar > .top-left')).toBe(true);
     expect(button.previousElementSibling!.classList.contains('top-pipe')).toBe(true);
-    expect(host.querySelector('.sidebar .app-switch')).toBeNull();
+    expect(host.querySelector('.sidebar .app-switch')!.parentElement!.classList.contains('side-head')).toBe(true);
     expect(text(button.querySelector('.as-text b'))).toBe('Sales');
     expect(button.getAttribute('aria-label')).toBe('Workspace: Sales');
     expect(button.getAttribute('aria-haspopup')).toBe('menu');

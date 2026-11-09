@@ -45,7 +45,9 @@
   --font:"IBM Plex Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
   --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
   --r-sm:4px; --r:4px; --r-lg:4px;
-  --sidebar-w:248px; --topbar-h:52px;
+  --sidebar-w:248px; --topbar-h:52px; --doc-side-w:370px;
+  /* The list and record pages' side padding, and the gap above and below a list's measure cards (their own gap). */
+  --page-gutter:12px; --page-gap:8px;
   --accent-solid:#2f5be8; --accent-solid-hover:#244ed4; --on-tint:#ffffff; --knob:#ffffff;
   --inverse-bg:#151821; --inverse-fg:#ffffff; --inverse-ok:#4ade80; --inverse-hover:rgba(127,127,127,.25);
   /* The two themes' grounds, cards and lines in every theme, for the theme pictures in Settings. */
@@ -667,11 +669,11 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 }
 
 /* ---------- doc view ---------- */
-.doc{display:grid;grid-template-columns:minmax(0,1fr) 340px;min-height:100%}
+.doc{display:grid;grid-template-columns:minmax(0,1fr) var(--doc-side-w);min-height:100%}
 .doc.no-side{grid-template-columns:minmax(0,1fr)}
-.doc.side-left{grid-template-columns:340px minmax(0,1fr)}
+.doc.side-left{grid-template-columns:var(--doc-side-w) minmax(0,1fr)}
 .doc.side-left .doc-side{order:-1;border-left:0;border-right:1px solid var(--border)}
-.doc-main{padding:22px 28px 96px;min-width:0}
+.doc-main{padding:22px var(--page-gutter) 96px;min-width:0}
 .doc.no-side .doc-main{max-width:1120px;margin:0 auto;width:100%}
 .doc-side{border-left:1px solid var(--border);background:var(--bg-subtle);padding:20px 20px 96px;min-width:0}
 /* The record's title row: mark, title and status pills, the actions on the right centred on the row; the key facts
@@ -936,9 +938,9 @@ th:hover>.rz::after{background:var(--border-strong)}
 .dt .stk-last{box-shadow:inset -1px 0 0 var(--divider)}
 .table-wrap{max-height:calc(100vh - 230px)}
 
-@media (max-width:1100px){.doc,.doc.side-left{grid-template-columns:1fr}.doc .doc-side,.doc.side-left .doc-side{order:0;border-left:0;border-right:0;border-top:1px solid var(--border)}}
+@media (max-width:980px){.doc,.doc.side-left{grid-template-columns:1fr}.doc .doc-side,.doc.side-left .doc-side{order:0;border-left:0;border-right:0;border-top:1px solid var(--border)}}
 @media (max-width:760px){
-  .doc-main{padding:18px max(16px,env(safe-area-inset-left,0px)) 32px max(16px,env(safe-area-inset-right,0px))}
+  .doc-main{padding:18px max(var(--page-gutter),env(safe-area-inset-right,0px)) 32px max(var(--page-gutter),env(safe-area-inset-left,0px))}
   .doc-side{padding:18px max(16px,env(safe-area-inset-left,0px)) 96px max(16px,env(safe-area-inset-right,0px))}
   .sum{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
   .stat-card.has-ic .stat-ic{display:none}
@@ -1064,18 +1066,28 @@ th:hover>.rz::after{background:var(--border-strong)}
   .rec{grid-template-columns:1fr}
   .rec-side{border-left:0;border-top:1px solid var(--border)}
 }
-@media (max-width:760px){
+/* Step 1 of keeping the main column wide (1220 px and under): the sidebar and the Workspace switcher leave the
+   page. The menu button at the top bar's left opens them as a drawer over it: the brand as the top bar draws it,
+   the switcher, then the navigation. The collapsed rail is a wide-window choice only (app/shell.ts). */
+.nav-menu-btn{display:none}
+.side-head{display:none}
+@media (max-width:1220px){
   .app,.app.collapsed{grid-template-columns:minmax(0,1fr)}
-  .sidebar{position:fixed;top:0;bottom:0;left:0;width:min(280px,86vw);z-index:52;transform:translateX(-100%);transition:transform .22s ease;
+  .sidebar{position:fixed;top:0;bottom:0;left:0;width:min(280px,86vw);z-index:52;transform:translateX(-100%);transition:transform .22s ease,visibility 0s .22s;visibility:hidden;
     padding-top:env(safe-area-inset-top,0px);padding-left:env(safe-area-inset-left,0px)}
-  .app.mobile-open .sidebar{transform:none;box-shadow:var(--shadow-lg)}
+  .app.mobile-open .sidebar{transform:none;box-shadow:var(--shadow-lg);visibility:visible;transition:transform .22s ease}
+  .nav-menu-btn{display:grid;margin-left:-6px}
+  .side-edge{display:none}
+  .top-left,.top-pipe{display:none}
+  .side-head{display:flex;flex-direction:column;align-items:flex-start;gap:12px;padding:13px 12px 12px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .side-head .app-switch{width:100%;justify-content:space-between}
+  .side-head .brand .ev-lockup{display:block}
+  .side-head .brand .ev-logo{display:none}
+}
+@media (max-width:760px){
   .mobile-only{display:grid}
   .desktop-only{display:none!important}
   .topbar{padding-left:max(12px,env(safe-area-inset-left,0px));padding-right:max(12px,env(safe-area-inset-right,0px));gap:6px}
-  .top-left,.app.collapsed .top-left{width:auto;flex:0 1 auto;gap:8px;padding-right:0}
-  .brand .ev-lockup{display:none}
-  .brand .ev-logo{display:block}
-  .app-switch{max-width:34vw;padding:0 4px 0 7px}
   .page,.rec-main{padding:18px max(16px,env(safe-area-inset-left,0px)) 64px max(16px,env(safe-area-inset-right,0px))}
   .rec-side{padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
   .board-wrap{margin:0 -16px;padding:0 16px 8px}

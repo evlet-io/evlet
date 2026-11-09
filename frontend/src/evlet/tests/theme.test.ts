@@ -66,7 +66,7 @@ describe('theme tokens', () => {
     expect(block(STYLES, ':root{')).toContain('color-scheme:light');
     expect(block(STYLES, ':root[data-theme="dark"]{')).toContain('color-scheme:dark');
     // Fonts, sizes, radii and the theme pictures are the same in both themes.
-    const constant = /^--(font|mono|r|r-sm|r-lg|sidebar-w|topbar-h|swatch-.*)$/;
+    const constant = /^--(font|mono|r|r-sm|r-lg|sidebar-w|topbar-h|doc-side-w|page-gutter|page-gap|swatch-.*)$/;
     const colour = Object.keys(LIGHT).filter((name: string) => !constant.test(name));
     expect(colour.filter(name => !(name in DARK))).toEqual([]);
     expect(Object.keys(DARK).filter(name => !(name in LIGHT))).toEqual([]);

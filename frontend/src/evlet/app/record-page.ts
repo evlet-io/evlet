@@ -7,6 +7,7 @@
 import { html, match, when, type Child } from '../dom';
 import { ApiError, ValidationError, type RecordData } from '../api';
 import { legacyRecordId, recordId } from '../ids';
+import { uid } from '../ui/core';
 import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Readable } from '../reactive';
 import type { Route } from '../router';
 import { RecordStore, type Field, type Rules } from '../model/record';
@@ -27,7 +28,7 @@ import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage } from './client';
 import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, keyFields, listFields, measureLabel, measureView, numberField, orderTabs, screenModel, sections, sequenceField,
-  summaryFields, titleOf, LIST_KEYS, panelView, type PanelView, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
+  summaryFields, titleOf, LIST_KEYS, panelView, type PanelView, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { RelatedPanel } from './related-panel';
 import { blockFilters, declaresRelated, HtmlContent, layoutBlocks, layoutTabId, MeasureChart, placedTables, RelatedRecords, type BlockRecord } from './record-blocks';
@@ -974,7 +975,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- side panel ----------
 
-  const side = isNew || panel ? undefined : compact ? CompactSide(ctx, model, store, view, journal)
+  const side = isNew || panel ? undefined : compact ? CompactSide(ctx, model, store, journal)
     : SidePanel(ctx, model, store, view, relatedSide ? relations : [], related, active, null, formTabs);
 
   // A new record focuses its first editable field, in an open section of the tab it opens on (Details, or the first
@@ -987,13 +988,38 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const fields = section.fields.filter(meta => !isStateField(model, meta)).map(meta => view(meta.name)), fold = foldOf(section, index);
     return { fields, open: !fold.collapsible || untrack(() => folds.open(section.label, folds.start(fold.collapsed, index, fields)).get()) };
   })), before));
+  // Narrow windows fold the side column away (screens.css, under 980 px): a button at the end of the breadcrumb
+  // row opens it as a drawer on the right, over the page; Esc, a click outside or the button closes it.
+  const sideOpen = cell(false, { name: `${name} side drawer` });
+  const sideId = uid('ev-side');
+  const sideWhat = compact ? [model.attachments ? 'attachments' : null, journal ? 'activity' : null].filter(Boolean).join(' and ') || 'side panel' : 'side panel';
+  const sideToggle = side ? html`<span class="ev-side-toggle">${IconButton({ icon: 'panel-right', tip: () => `${sideOpen.get() ? 'Hide' : 'Show'} ${sideWhat}`,
+    active: sideOpen, onClick: () => sideOpen.set(!sideOpen.peek()) })}</span>` as HTMLElement : null;
+  sideToggle?.firstElementChild?.setAttribute('aria-controls', sideId);
+  const crumbRow = html`<div class="ev-crumb-row">${ctx.crumbBar?.() ?? null}${sideToggle}</div>`;
+  // The footer under the form: who made and changed it, the record ID and its link. A side panel shows it when its
+  // Record info block is on.
+  const footer = isNew ? null : panel ? (shows!.block('info') ? RecordFooter(ctx, model, String(store.id)) : null) : RecordFooter(ctx, model, String(store.id));
   const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
-    main: [panel ? html`<div class="ev-panel-head">${panelBar}${header}</div>` : [ctx.crumbBar?.() ?? null, header], UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
+    main: [panel ? html`<div class="ev-panel-head">${panelBar}${header}</div>` : [crumbRow, header], UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
       options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems),
-    ...(compact ? [compactContent()] : [lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels]), saveBar], side });
+    ...(compact ? [compactContent()] : [lifecycle ? live(lifecycle) : null, flow, summary, tabs, panels]), footer, saveBar], side });
   if (compact) frame.classList.add('doc-compact');
+  if (side) {
+    const aside = frame.querySelector<HTMLElement>(':scope > .doc-side');
+    if (aside) { aside.id = sideId; aside.tabIndex = -1; }
+    const scrim = html`<div class="scrim ev-side-drawer-scrim" class:show=${sideOpen} on:click=${() => sideOpen.set(false)}></div>` as HTMLElement;
+    frame.append(scrim);
+    effect(() => { frame.classList.toggle('side-open', sideOpen.get()); if (sideOpen.get()) untrack(() => aside?.focus({ preventScroll: true })); });
+    const escape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || !sideOpen.peek() || document.querySelector('.modal-wrap.show,.drawer.show,.pop.show:not([hidden]):not(.rt-mentions)')) return;
+      event.preventDefault(); sideOpen.set(false); (sideToggle?.firstElementChild as HTMLElement | null)?.focus();
+    };
+    document.addEventListener('keydown', escape);
+    onCleanup(() => document.removeEventListener('keydown', escape));
+  }
   // The person's "Enter moves to the next field" setting (Settings, Appearance).
   enterMovesToNextField(frame, () => Boolean(ctx.me.get()?.prefs.enter_next));
   if (isNew) focusFirst(options.focusedAtOpen);
@@ -1127,18 +1153,8 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
       return when(() => items.some(item => item.count.get() !== 0), () => SideBlock({ title: 'Related', body: panel }));
     },
     files: () => model.attachments ? SideBlock({ title: 'Files', body: Files(ctx, model, store) }) : null,
-    // Who made and changed it, and its revisions. The record's own id is in More > Copy record ID.
-    info: () => {
-      const revises = has('revises') ? view('revises') : null;
-      const extras = () => extrasOf(ctx.api.detail(model.name, store.id!).get());
-      // Left out while there is nothing to say (an older record with no times, say).
-      const audit = () => extras()._audit;
-      return when(() => Boolean(revises?.value.get() || extras().revised_by || audit()?.created_at || audit()?.modified_at), () => SideBlock({ title: 'Record info', body: html`<dl class="fields">
-    ${revises ? when(() => Boolean(revises.value.get()), () => html`<dt>Revises</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(revises.value.get()) })}>${() => `${model.label} ${revises.value.get()}`}</a></dd>`) : null}
-    ${when(() => Boolean(extras().revised_by), () => html`<dt>Revised by</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(extras().revised_by) })}>${() => `${model.label} ${extras().revised_by}`}</a></dd>`)}
-    ${RecordTimes(ctx, audit)}
-    </dl>` }));
-    },
+    // Record info is the footer under the form now (RecordFooter); 'info' stays a valid name for Meta.side_blocks.
+    info: () => null,
   };
   // Meta.side_blocks picks and orders them; without it, all four in this order.
   const listed = (model.side_blocks ?? SIDE_BLOCKS).filter((name): name is SideBlockName => name in build);
@@ -1146,45 +1162,34 @@ function SidePanel(ctx: AppContext, model: ScreenModel, store: RecordStore, view
   return names.map(name => build[name]()).filter(block => block !== null);
 }
 
-/** A compact page's side column: Attachments, Activity, and Record info with the key fields the header leaves out. */
-function CompactSide(ctx: AppContext, model: ScreenModel, store: RecordStore, view: (name: string) => FieldLike, journal: boolean): Child {
-  const has = (field: string) => store.root.fields.has(field);
-  const keys = keyFields(model).filter(meta => has(meta.name) && meta.name !== model.title_field && !isStateField(model, meta) && meta.name !== model.status);
-  const numbered = numberField(model);
-  // The record's number, unless a section shows it already (the breadcrumb ends with it too).
-  const placed = new Set(sections(model).flatMap(section => section.fields.map(meta => meta.name)));
-  const candidate = numbered && has(numbered.name) && numbered.name !== model.title_field ? numbered
-    : model.naming?.field === 'name' && model.title_field !== 'name' && has('name') ? fieldOf(model, 'name') ?? null : null;
-  const number = candidate && !placed.has(candidate.name) ? candidate : null;
-  const revises = has('revises') ? view('revises') : null;
-  const extras = () => extrasOf(ctx.api.detail(model.name, store.id!).get());
-  const audit = () => extras()._audit;
+/** A compact page's side column: Attachments and Activity (with the slim note editor). */
+function CompactSide(ctx: AppContext, model: ScreenModel, store: RecordStore, journal: boolean): Child {
   return [
     model.attachments ? SideBlock({ title: 'Attachments', body: Files(ctx, model, store) }) : null,
-    journal ? SideBlock({ title: 'Activity', body: html`<div class="ev-cmp-activity">${Activity(ctx, model, store)}</div>` }) : null,
-    SideBlock({ title: 'Record info', body: [
-      keys.length ? KeyValueList(keys.map(meta => view(meta.name)), { links: ctx.links }) : null,
-      html`<dl class="fields">
-        ${number ? html`<dt>${number.label}</dt><dd class="mono">${() => String(store.field(number.name).value.get() ?? '') || 'Not assigned yet'}</dd>` : null}
-        ${revises ? when(() => Boolean(revises.value.get()), () => html`<dt>Revises</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(revises.value.get()) })}>${() => `${model.label} ${revises.value.get()}`}</a></dd>`) : null}
-        ${when(() => Boolean(extras().revised_by), () => html`<dt>Revised by</dt><dd><a class="link-q" href=${() => ctx.router.href('record', { model: model.name, id: String(extras().revised_by) })}>${() => `${model.label} ${extras().revised_by}`}</a></dd>`)}
-        ${RecordTimes(ctx, audit)}</dl>`] }),
+    journal ? SideBlock({ title: 'Activity', body: html`<div class="ev-cmp-activity">${Activity(ctx, model, store, 'compact')}</div>` }) : null,
   ];
 }
 
-/** Created and Last modified in Record info: relative times that a click switches to exact ones (for every time
- * there, remembered per person), with who as a link to Controls Users for people who may open it. */
-function RecordTimes(ctx: AppContext, audit: () => RecordAudit | undefined): Child {
+/** The record page's footer, under the form: Created and Modified (who and when), the record ID with Copy, and
+ * Copy link (the record's own address). Nothing else goes here. */
+export function RecordFooter(ctx: AppContext, model: ScreenModel, id: string): HTMLElement {
+  const audit = () => extrasOf(ctx.api.detail(model.name, id).get())._audit;
   const exact = ctx.prefs.exactTimes;
   const toggle = () => exact.set(!exact.peek());
-  const who = (person: AuditPerson | null) => person === null ? null : ctx.me.get()?.controls
-    ? html`<a class="link-q" href="/controls/users" target="_blank" rel="noopener">${person.name}</a>` : html`<span>${person.name}</span>`;
-  const row = (label: string, at: 'created_at' | 'modified_at', by: 'created_by' | 'modified_by') => when(() => Boolean(audit()?.[at]),
-    () => html`<dt>${label}</dt><dd class="ev-record-time">${RelativeTime({ at: () => audit()?.[at], exact, onToggle: toggle })}${() => {
-      const person = who(audit()?.[by] ?? null);
-      return person ? [html`<span class="muted" aria-hidden="true"> · </span>`, person] : null;
-    }}</dd>`);
-  return [row('Created', 'created_at', 'created_by'), row('Last modified', 'modified_at', 'modified_by')];
+  const link = () => new URL(ctx.router.href('record', { model: model.name, id }), location.origin).href;
+  const item = (label: string, at: 'created_at' | 'modified_at', by: 'created_by' | 'modified_by') => when(() => Boolean(audit()?.[at]),
+    () => html`<span class="ev-rf-item" data-part=${at === 'created_at' ? 'created' : 'modified'}><span class="ev-rf-l">${label}</span>${() => {
+      const person = audit()?.[by] ?? null;
+      // Who links to Controls Users for people who may open Controls.
+      const who = person === null ? null : ctx.me.get()?.controls
+        ? html`<a class="ev-rf-who link-q" href="/controls/users" target="_blank" rel="noopener">${person.name}</a>` : html`<span class="ev-rf-who">${person.name}</span>`;
+      return who ? [who, html`<span class="ev-rf-dot" aria-hidden="true">·</span>`] : null;
+    }}${RelativeTime({ at: () => audit()?.[at], exact, onToggle: toggle })}</span>`);
+  return html`<footer class="ev-rec-foot" aria-label="Record details">
+    ${item('Created', 'created_at', 'created_by')}${item('Modified', 'modified_at', 'modified_by')}<span class="grow"></span>
+    <span class="ev-rf-item ev-rf-id"><span class="ev-rf-l">ID</span><span class="mono">${id}</span>
+      ${IconButton({ icon: 'copy', tip: 'Copy record ID', size: 'small', onClick: () => void copyText(id, 'the record ID') })}
+      ${IconButton({ icon: 'link', tip: 'Copy link', size: 'small', onClick: () => void copyText(link(), 'the link') })}</span></footer>` as HTMLElement;
 }
 
 /** The print preview: the PDF the server renders for this person, with Download and File a copy. */
@@ -1337,7 +1342,7 @@ const KINDS: Record<string, [string, any, string]> = {
 interface Change { old: unknown; new: unknown }
 interface RowChanges { added?: Array<{ id: string }>; updated?: Array<{ id: string }>; removed?: Array<{ id: string }>; reordered?: boolean }
 
-function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Child {
+function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolbar: 'full' | 'compact' = 'full'): Child {
   const page = cell<JournalPage | null>(null), problem = cell('');
   const load = () => void ctx.api.journal(model.name, store.id!, { limit: 50 }).then(result => page.set(result), error => problem.set(error instanceof ApiError ? error.message : 'The history could not be loaded.'));
   load();
@@ -1410,7 +1415,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore): Chil
   };
   return [
     InfoNote(model.journal?.tamper_evident ? 'Append-only history, chained so tampering shows. Entries are never edited or removed.' : 'Append-only history. Entries are never edited or removed.', 'lock'),
-    canNote ? NoteComposer({ api: ctx.api, model: model.name, id: store.id!, name: id => page.peek()?.users[id],
+    canNote ? NoteComposer({ api: ctx.api, model: model.name, id: store.id!, toolbar, name: id => page.peek()?.users[id],
       onAdded: () => { toast('Note added', { icon: 'sticky-note' }); load(); }, onError: message => toast(message, { icon: 'info' }) }) : null,
     live(() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : page.get() === null ? html`<p class="muted">Loading…</p>`
       : !page.get()!.items.length ? EmptyState({ icon: 'activity', tint: 'slate', title: 'No activity yet', text: 'Changes, moves and notes for this record land here.' })

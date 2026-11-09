@@ -18,13 +18,15 @@ export interface ComposerProps {
   onError: (message: string) => void;
   /** A user's current name, for mentions already in the text. */
   name?: (id: string) => string | undefined;
+  /** The editor's toolbar: 'compact' in the narrow side column, 'full' (the default) elsewhere. */
+  toolbar?: 'full' | 'compact';
 }
 
 export function NoteComposer(props: ComposerProps): HTMLElement {
   const value = cell<string | null>(null), busy = cell(false);
   const editor = RichTextEditor({
     value: () => value.get(), onChange: next => value.set(next), label: 'Note', placeholder: 'Write a note. Type @ to mention someone.',
-    maxLength: 10000,
+    maxLength: 10000, toolbar: props.toolbar,
     mentions: {
       search: async (query): Promise<Person[]> => (await props.api.mentionable(props.model, props.id, query))
         .map(person => ({ ...person, id: String(person.id) })),

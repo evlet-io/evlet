@@ -239,7 +239,7 @@ plain list of sections. Tab names are the record's own tabs and the model's chil
 Table the layout places has no tab of its own. Controls moves fields and sections; the layout's tabs and blocks stay
 as the app declares them, a section keeps its place by title, and a section Controls adds goes last on the first tab.
 **Side panel**: what a record shows when a list opens it in a side panel. Each section, field and tab (Details aside) has
-a panel button, pressed while it shows there; the Side panel card has the summary strip, Files and Record info. A layout
+a panel button, pressed while it shows there; the Side panel card has the summary strip, Files and Record info (the record footer). A layout
 that sets this is saved as `{"sections": [...], "panel": {"sections": [...], "fields": [...], "tabs": [...], "blocks": [...]}}`,
 each list naming what the panel hides (`blocks` from `summary`, `key_fields`, `files` and `info`). `panel` replaces the
 app's `panel=False` flags and `Meta.panel` for this instance, keeping the order `Meta.panel` gives; `{}` shows

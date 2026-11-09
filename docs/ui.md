@@ -81,9 +81,10 @@ the header doesn't show; with nothing left, there is no strip. The Details form 
 leaves out the title, name and State, because the header shows them and edits the title in place;
 a new record's form keeps them. The side column's Key fields block shows only while another tab
 is open (Activity, Related or a table), as a way back to the fields. Its Related block lists only
-relations that have records; the Related tab lists every one. Record info has Created and Last
-modified; More > Copy record ID copies the id, and More > Duplicate starts a copy
-([below](#duplicate)).
+relations that have records; the Related tab lists every one. A slim footer under the form has
+Created and Modified (who and when), the record ID with a copy button, and a Copy link button for the
+record's address; More has Copy link and Copy record ID too, and More > Duplicate starts a copy
+([below](#duplicate)). The side column is 370 px wide.
 
 ### Duplicate
 
@@ -328,9 +329,8 @@ class Shipment(Model):
 - **More information.** Every `Section`, `Table`, `Related`, `Html` and `Chart` after `Main` shows
   as a row that opens and closes, with a one-line summary while it is closed.
 - **Header and side column.** The header has the title, the status badge (`Meta.status`) and the
-  actions. `Meta.key_fields` keep every other use (search, reference labels, lists, connectors), but
-  on a compact page their facts move to the side column's Record info, next to Attachments and
-  Activity.
+  actions. `Meta.key_fields` keep every other use (search, reference labels, lists, board cards,
+  connectors); on a compact page their values show in the form itself, not in the header or the side column.
 
 `/api/schema` sends `record_layout` as `{"compact": true, "blocks": [...]}`. The Main fields are a
 `section` block named by the model's label and the Main tables are `table` blocks, each with
@@ -351,7 +351,8 @@ The record page draws it on a record's full page (a list's side panel keeps the 
   cut with an ellipsis), a Table its row count and a Related block its record count. Sections start as
   `collapsed` says and the person's choice is kept, as for any Section. Related records the layout does not list,
   Revisions and Postings, which would be tabs, are rows here too.
-- **The side column** has Attachments, Activity and Record info, which holds the key fields.
+- **The side column** has Attachments and Activity. Its note box has a slim toolbar: bold, italic, bulleted
+  list, link and Mention. The record footer sits under the card.
 
 ### List tabs
 
@@ -747,15 +748,20 @@ above each page's title ([Breadcrumb](#breadcrumb)).
 
 - **Brand.** The Evlet logo, the same artwork and size as on the sign-in page and before: the
   horizontal evlet.io lockup, 26 px tall (`evlet-logo-primary.svg`, and `evlet-logo-white.svg` in dark
-  themes). The brand is shown once, here; the sidebar has none.
+  themes). The brand is shown here; the sidebar shows it only as a drawer on narrow windows.
 - **Pipe.** A 1 px line, 16 px tall, in the strong border colour, with space on both sides.
 - **Switcher.** The compact Workspace button ([Sidebar and workspaces](#sidebar-and-workspaces)).
 - **Width.** With the sidebar expanded, the brand, pipe and switcher take the sidebar's width (a long
   workspace name is cut with an ellipsis). With the sidebar collapsed they take only the room they need:
   the Evlet mark alone (`evlet-icon-blue.svg`, 26 px), the pipe and the switcher.
-- **Phones** (under 760 px): the menu button, the Evlet mark alone, the pipe and the switcher with its name
-  cut to about a third of the width, then on the right the search icon, history and notifications. The
-  page never scrolls sideways.
+- **Narrow windows** keep the main column at least about 600 px wide, in two steps. At 1220 px and
+  under, the sidebar and the switcher leave the page: a menu button at the top bar's left opens them as a
+  drawer over the page, with the brand at its top (the same lockup and size as the top bar), the
+  switcher, then the navigation. Esc, a click outside or opening a page closes it. The collapsed rail
+  is for wider windows only. At 980 px and under, a record's side column leaves the page too: a button
+  at the end of the breadcrumb row (the `panel-right` icon) opens it as a drawer on the right.
+- **Phones** (under 760 px): the menu button, then on the right the search icon, history and
+  notifications. The page never scrolls sideways.
 
 - **History** (`history` icon, tooltip "Recent records") sits on the right, after the search button and
   directly left of the notification bell. A click or Arrow Down opens this session's recent records, as
@@ -1021,8 +1027,8 @@ show titles; the schema's `title_field` is `title` for every record model
 
 ### Created and last modified
 
-The Record info block of every record page shows when the record was created and last changed, and
-by whom: `Created 2 hours ago · Aslam`. Hover or focus a time for the exact time in your zone
+The footer of every record page shows when the record was created and last changed, and
+by whom: `Created Aslam · 2 hours ago`. Hover or focus a time for the exact time in your zone
 (`04-11-2026 12:05 GST`); click it to show every time there exactly, which is remembered for you. The
 times move on by themselves while the page is open. Who links to Controls Users for people who may
 open Controls. Portal users see the times only. See

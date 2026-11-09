@@ -2,8 +2,9 @@
 // a pipe and the Workspace switcher at its left (as wide as the sidebar), then at its right the search button (its
 // palette holds the Explorer button, docs/ui.md#top-bar-search-and-explorer), recent records, notifications and
 // shortcuts; the breadcrumb is a small line above each page's title (ctx.crumbBar); under it the sidebar with the workspace's collapsible sections of shortcuts (app/workspaces.ts),
-// the account area and an edge button that collapses it, beside one scrolling view. Under 760 px the
-// sidebar is a drawer opened from the top bar.
+// the account area and an edge button that collapses it, beside one scrolling view. At 1220 px and under, the
+// sidebar and the switcher leave the page so the main column keeps its width: a menu button at the top bar's left
+// opens them as a drawer, the Evlet brand at its top, then the switcher, then the navigation.
 
 import { html, listen, when, type Child } from '../dom';
 import { cell, derive, effect } from '../reactive';
@@ -26,13 +27,18 @@ import { SHELL_ICONS } from './nav-icons';
 import { openShortcutSheet } from './shortcuts';
 import { formatKeys, withShortcut } from '../ui/shortcuts';
 
-const PHONE = '(max-width: 760px)';
-const isPhone = () => { try { return Boolean(window.matchMedia?.(PHONE)?.matches); } catch { return false; } };
+/** At this width and under the sidebar is a drawer (ui/styles.css has the same breakpoint). */
+export const NAV_DRAWER = '(max-width: 1220px)';
+const navMedia = () => { try { return window.matchMedia?.(NAV_DRAWER) ?? null; } catch { return null; } };
 
 export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   const { prefs, router } = ctx;
-  const collapsed = prefs.collapsed;
   const mobileOpen = cell(false, { name: 'shell.mobileOpen' });
+  // The window is narrow enough for the drawer: the collapsed rail is a wide-window choice only.
+  const media = navMedia();
+  const narrow = cell(Boolean(media?.matches), { name: 'shell.narrow' });
+  media?.addEventListener?.('change', event => { narrow.set(event.matches); if (!event.matches) mobileOpen.set(false); });
+  const collapsed = derive(() => prefs.collapsed.get() && !narrow.get());
   const route = router.route;
   const models = rootModels(ctx.schema);
   const application = ctx.session.application ?? {};
@@ -46,7 +52,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   // Remember the page, so Back to app in Controls returns to it.
   effect(() => { route.get(); rememberAppPage(ctx.user.username, window.location.pathname + window.location.search, appName); });
 
-  ctx.toggleSidebar = () => { if (isPhone()) mobileOpen.set(!mobileOpen.peek()); else collapsed.set(!collapsed.peek()); };
+  ctx.toggleSidebar = () => { if (narrow.peek()) mobileOpen.set(!mobileOpen.peek()); else prefs.collapsed.set(!prefs.collapsed.peek()); };
 
   const navItem = (props: { href: string; icon: string; tint?: any; label: string; active: () => boolean; count?: Child }) => {
     const item = html`<a class="nav-item" class:active=${props.active} aria-current=${() => props.active() ? 'page' : null} href=${props.href}>
@@ -162,14 +168,17 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   }, { label: 'Workspace', role: 'menu', className: 'ws-pop', align: 'left' });
   const wsLabel = () => current.get()?.label ?? appName;
   const wsTip = () => `Workspace: ${wsLabel()}`;
-  const appSwitch = html`<button type="button" class="app-switch" aria-haspopup="menu" aria-expanded="false" aria-label=${wsTip}
+  const workspaceSwitch = () => html`<button type="button" class="app-switch" aria-haspopup="menu" aria-expanded="false" aria-label=${wsTip}
     on:click=${(event: MouseEvent) => workspaceMenu(event.currentTarget as HTMLElement)}
     ref=${(el: HTMLElement) => tooltip(el, wsTip)}><span class="as-text"><b>${wsLabel}</b></span>${Icon('chevrons-up-down', { size: 'xs', className: 'as-chev' })}</button>` as HTMLElement;
+  const appSwitch = workspaceSwitch();
   // The brand at the top bar's left, as on the sign-in page: the evlet.io lockup (its white-wordmark file in
-  // dark themes); the collapsed sidebar and phones show the mark alone.
-  const brand = html`<div class="brand">${Lockup()}${Logo('Evlet')}</div>`;
+  // dark themes); the collapsed sidebar shows the mark alone. The drawer's head draws the same brand.
+  const brandMark = () => html`<div class="brand">${Lockup()}${Logo('Evlet')}</div>`;
+  const brand = brandMark();
 
   const sidebar = html`<aside class="sidebar" id="ev-sidebar" aria-label="Main navigation">
+    <div class="side-head">${brandMark()}${workspaceSwitch()}</div>
     <div class="side-body">
       <nav class="nav">
         ${docsOn(ctx.session) ? navItem({ href: router.href('docs', {}), icon: SHELL_ICONS.docs, tint: 'slate', label: 'Docs', active: () => ['docs', 'topic'].includes(route.get()?.name ?? '') }) : null}
@@ -219,7 +228,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     ref=${(el: HTMLElement) => tooltip(el, withShortcut('Search', 'Mod+K'))}>${Icon(SHELL_ICONS.search, { size: 'sm' })}<span class="ts-text">Search</span>${Key(formatKeys('Mod+K'))}</button>` as HTMLElement;
   const searchBox = html`<div class="top-search">${searchPart}</div>`;
   const topbar = html`<header class="topbar">
-    <span class="mobile-only">${IconButton({ icon: SHELL_ICONS.menu, tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
+    <span class="nav-menu-btn">${IconButton({ icon: SHELL_ICONS.menu, tip: 'Menu', onClick: () => ctx.toggleSidebar() })}</span>
     <div class="top-left">${brand}<span class="top-pipe" aria-hidden="true"></span>${appSwitch}</div>
     <div class="top-actions">
       ${searchBox}
@@ -237,6 +246,14 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     class:large=${() => ctx.me.get()?.prefs.text === 'large'}>
     ${topbar}${sidebar}${edge}<div class="main"><main class="view" id="ev-view" tabindex="-1">${view}</main></div>
     <div class="scrim ev-side-scrim" class:show=${mobileOpen} on:click=${() => mobileOpen.set(false)}></div></div>` as HTMLElement;
+  const menuButton = topbar.querySelector<HTMLButtonElement>('.nav-menu-btn button');
+  menuButton?.setAttribute('aria-controls', 'ev-sidebar');
+  effect(() => menuButton?.setAttribute('aria-expanded', String(mobileOpen.get())));
+  // Esc closes the drawer (after any menu or dialog over it).
+  listen(document, 'keydown', event => {
+    if ((event as KeyboardEvent).key !== 'Escape' || !mobileOpen.peek() || document.querySelector('.modal-wrap.show,.drawer.show,.pop.show:not([hidden]):not(.rt-mentions)')) return;
+    event.preventDefault(); mobileOpen.set(false); menuButton?.focus();
+  });
   listen(document, 'keydown', event => keys(ctx, event as KeyboardEvent));
   mountToasts();
   return shell;

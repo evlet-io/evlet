@@ -36,7 +36,7 @@ export const SHELL_ICONS = {
   account: 'user',
   workspace: 'layers',
   customize: 'pencil',
-  menu: 'panel-left',
+  menu: 'menu',
 } as const;
 
 /** The Explorer's views. */

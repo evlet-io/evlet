@@ -71,7 +71,10 @@ describe('records in a side panel beside the list', () => {
     expect([...panel(host)!.querySelectorAll('.doc-tabs [role="tab"]')].map(text)).toEqual(['Activity', 'Details', 'Lines2', 'Related', 'Postings']);
     expect(panel(host)!.querySelector('.doc-side')).toBeNull();
     click(byText(panel(host)!, '[role="tab"]', 'Details'));
-    await until(() => expect(byText(panel(host)!, '.side-sec h4', /^Record info/)).not.toBeNull());
+    await until(() => expect(byText(panel(host)!, '.side-sec h4', /^Files/)).not.toBeNull());
+    // Record info is the footer row under the fields.
+    await until(() => expect(panel(host)!.querySelector('.ev-rec-foot [data-part="created"]')).not.toBeNull());
+    expect(byText(panel(host)!, '.side-sec h4', /^Record info/)).toBeNull();
     expect(byText(panel(host)!, '.side-sec h4', /^Key fields/)).toBeNull();
     // The draft's files in the panel offer the same remove as the full page.
     await until(() => expect(panel(host)!.querySelector('.ev-file-remove')).not.toBeNull());

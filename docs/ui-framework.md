@@ -344,6 +344,10 @@ document.body.append(editor.element);
   Styles, classes, scripts, frames, images and unsafe links never survive. Plain text keeps
   paragraphs and lines, and web addresses become links. A web address pasted over selected text
   links it. Copy writes canonical HTML and plain text.
+- `toolbar: 'compact'` shows a slim row instead of the full toolbar: bold, italic, bulleted list,
+  link and, when the editor has `mentions`, Mention (it types `@` and opens the people picker). The
+  default is `'full'`. Keys and typed shortcuts work either way. The activity composer in a compact
+  record's side column uses it (`NoteComposer({ toolbar: 'compact' })`).
 - The toolbar is one Tab stop (arrow keys, Home and End move; disabled buttons are skipped) and
   shows what is on with `aria-pressed`. On desktop a small toolbar floats over selected text; on a
   phone the toolbar sits above the on-screen keyboard. Formatting changes are announced in a polite
@@ -386,10 +390,11 @@ none while the tab is hidden, and a catch-up the moment it shows again, so "just
 ago" by itself. With `exact` the element shows the exact time and the tooltip the words; with
 `onToggle` it is a button (`aria-pressed`) that switches them.
 
-The record page's Record info block shows **Created** and **Last modified** (and Revises and Revised by
-when they apply); the record's own id is copied from More > Copy record ID. It shows the times from the detail's
-`_audit` ([model-engine.md](model-engine.md#record-times)): `2 hours ago · Aslam`. Clicking a
-time switches every time in Record info between relative and exact, remembered per person
+The record page's footer (`RecordFooter` in `app/record-page.ts`, under the form) shows **Created** and
+**Modified**, the record ID with a copy button, and a Copy link button that copies the record's own address;
+nothing else. More has Copy link and Copy record ID too. It shows the times from the detail's
+`_audit` ([model-engine.md](model-engine.md#record-times)): `Aslam · 2 hours ago`. Clicking a
+time switches every time in the footer between relative and exact, remembered per person
 (`prefs.exactTimes`). Who is the person's display name, a link to Controls Users for people who may
 open Controls and plain text otherwise; it is absent for engine writes and for portal roles. The
 Activity tab's entry times use RelativeTime too, without the toggle.
@@ -847,7 +852,7 @@ page in a new browser tab.
   row. The divider resizes the panel, and the width is kept per list.
 - The panel is the record view with `DocFrame`'s panel variant: the same sections in one column.
   The header keeps the split move button and one outline button and puts the rest in More; key facts sit under the title; the side
-  column's Files and Record info close the Details tab and Related is a tab; sections close from
+  column's Files close the Details tab, followed by the record footer when the panel shows Record info, and Related is a tab; sections close from
   their heading with the same FoldSection and saved state as the record page (`form.<model>.open`, by
   section title; [collapsible sections](ui.md#collapsible-sections)), and in the panel every section can close; child tables are ChildRows with Open full table; the save
   bar is pinned to the bottom of the panel. Tabs that do not fit scroll sideways.
@@ -892,7 +897,7 @@ page in a new browser tab.
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
 | `Meta.measures` (Phase 9) | Model-level measures as stat cards over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
-| `Meta.key_fields` (Phase 10) | The header facts (the first three), and the Key fields side block while a tab other than Details is open (without it: the first fields). Never the summary strip. On a compact page (`Main`), the facts belong in the side column's Record info |
+| `Meta.key_fields` (Phase 10) | The header facts (the first three), and the Key fields side block while a tab other than Details is open (without it: the first fields). Never the summary strip. On a compact page (`Main`), the header has no facts and the key fields show in the form |
 | `Meta.cards`, `Main`, `Section(description=...)` | Sent in the schema for the compact record page (cards, a primary area without a heading, collapsible "more information" rows). The record page shows the blocks in order until it draws that design ([ui.md](ui.md#compact-record-page)) |
 | Calculated fields, per-record measures | The summary strip, at most four: calculated values the header facts don't show, then per-record measures. No strip when nothing is left; `Meta.summary = False` turns it off |
 | `Meta.relations` (Phase 10) | The Related tab and side block. The side block lists only relations with records, and goes when none has any; the tab lists them all. A relation named after its model counts in that model's words ("Payments, 1 payment"), any other name counts records; an empty relation is one line in the tab, with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
@@ -902,7 +907,7 @@ page in a new browser tab.
 | `attachments` | The Files side block, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
 | Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
-| Every record (`_audit`) | Created and Last modified in the Record info side block, as relative times with who ([Relative times](#relative-times)). The record's id is in More > Copy record ID |
+| Every record (`_audit`) | Created and Modified in the record footer, as relative times with who ([Relative times](#relative-times)), with the record ID and Copy link. More has Copy record ID and Copy link |
 | Title, name and State | Shown in the header, so a saved record's Details form leaves them out: the title is edited in place in the header, the State by its badge or bar. A field the header shows but can't edit (a name typed by hand, a State with `show="none"`) stays in the form. A new record's form keeps them all |
 
 A section appears only when the schema or the detail carries its key. The screen tests replay

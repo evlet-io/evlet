@@ -44,15 +44,48 @@ describe('a compact record page', () => {
     expect(text(host.querySelectorAll('.ev-cards .ev-kc')[2])).toContain('11.5');
   });
 
-  it('has no tabs, keeps the header to the title and badges, and puts key fields in Record info', async () => {
+  it('has no tabs, keeps the header to the title and badges, and the side column to Attachments and Activity', async () => {
     const { host } = await start(routes, `/app/shipment/${shipment}`);
     await until(() => expect(host.querySelector('.ev-cmp-main')).not.toBeNull());
     expect(host.querySelector('[role="tablist"]')).toBeNull();
     expect(host.querySelector('.doc-head .rec-meta')).toBeNull();
     // The Main fields have no heading; the state of the record is not a tab or section title.
     expect(host.querySelector('.ev-cmp-main h3:not(.ev-cmp-th h3)')).toBeNull();
-    const info = [...host.querySelectorAll('.side-sec')].find(block => text(block.querySelector('h4')) === 'Record info');
-    expect(info?.querySelector('[data-field="carrier"]')).not.toBeNull();
+    // No Record info block: key fields stay in the form (carrier is a Main field), the times are in the footer.
+    const blocks = [...host.querySelectorAll('.doc-side .side-sec h4')].map(text);
+    expect(blocks.every(title => ['Attachments', 'Activity'].includes(title))).toBe(true);
+    expect(blocks).not.toContain('Record info');
+    expect(host.querySelector('.doc-side [data-field]')).toBeNull();
+    expect(host.querySelector('.ev-cmp-main [data-field="carrier"]')).not.toBeNull();
+    // The footer row sits under the card: the ID with Copy, and Copy link.
+    const footer = host.querySelector('.ev-cmp-card + .ev-rec-foot')!;
+    expect(text(footer.querySelector('.ev-rf-id .mono'))).toBe(shipment);
+    expect([...footer.querySelectorAll('button')].map(button => button.getAttribute('aria-label')).slice(-2)).toEqual(['Copy record ID', 'Copy link']);
+  });
+
+  it('ends the breadcrumb row with the side column drawer button, which opens and closes it', async () => {
+    const { host } = await start(routes, `/app/shipment/${shipment}`);
+    await until(() => expect(host.querySelector('.ev-crumb-row .ev-side-toggle button')).not.toBeNull());
+    const row = host.querySelector('.ev-crumb-row')!;
+    expect(row.lastElementChild!.classList.contains('ev-side-toggle')).toBe(true);
+    const button = row.querySelector<HTMLButtonElement>('.ev-side-toggle button')!;
+    // The panel-right icon: the shell's sidebar toggle mirrored, for the column on the right.
+    expect(button.innerHTML).toBe((await import('../ui/base')).Icon('panel-right', { size: 'sm' }).outerHTML);
+    const aside = host.querySelector<HTMLElement>('.doc-side')!;
+    expect(button.getAttribute('aria-controls')).toBe(aside.id);
+    expect(button.getAttribute('aria-pressed')).toBe('false');
+    const doc = host.querySelector('.doc')!;
+    button.click();
+    await until(() => expect(doc.classList.contains('side-open')).toBe(true));
+    expect(button.getAttribute('aria-pressed')).toBe('true');
+    expect(host.querySelector('.ev-side-drawer-scrim')!.classList.contains('show')).toBe(true);
+    // Esc closes it, and so does a click on the scrim.
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+    await until(() => expect(doc.classList.contains('side-open')).toBe(false));
+    button.click();
+    await until(() => expect(doc.classList.contains('side-open')).toBe(true));
+    (host.querySelector('.ev-side-drawer-scrim') as HTMLElement).click();
+    await until(() => expect(doc.classList.contains('side-open')).toBe(false));
   });
 
   it('shows a Main table compactly with its row count and Add, and lists the rest as more information', async () => {

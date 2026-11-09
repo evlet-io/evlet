@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
 import { copy } from './server';
 import { closeDialogs } from '../ui/layers';
+import { Icon } from '../ui/base';
 
 afterEach(stopAll);
 
@@ -130,9 +131,9 @@ describe('app shell', () => {
     const { host } = start([...adminRoutes()]);
     await until(() => expect(host.querySelector('.app')).not.toBeNull());
     const app = host.querySelector('.app')!;
-    // Left to right: the phone's menu button, then the brand, a pipe and the switcher, then the actions on the right.
+    // Left to right: the menu button (narrow windows), then the brand, a pipe and the switcher, then the actions on the right.
     const left = host.querySelector<HTMLElement>('.topbar > .top-left')!;
-    expect(left.previousElementSibling!.classList.contains('mobile-only')).toBe(true);
+    expect(left.previousElementSibling!.classList.contains('nav-menu-btn')).toBe(true);
     expect(left.nextElementSibling!.classList.contains('top-actions')).toBe(true);
     expect([...left.children].map(child => child.className)).toEqual(['brand', 'top-pipe', 'app-switch']);
     // The evlet.io lockup for light and dark themes, and the mark for the collapsed sidebar, as on main.
@@ -140,10 +141,15 @@ describe('app shell', () => {
     expect(brand).toEqual([['ev-lockup-light', '/assets/evlet-logo-primary.svg', 'Evlet'],
       ['ev-lockup-dark', '/assets/evlet-logo-white.svg', 'Evlet'], ['ev-logo', '/assets/evlet-icon-blue.svg', 'Evlet']]);
     expect(left.querySelector('.top-pipe')!.getAttribute('aria-hidden')).toBe('true');
-    // The brand shows once: nothing of it is left in the sidebar, which starts with its navigation.
+    // The sidebar's head holds the same brand and a second switcher, shown only when the sidebar is a drawer
+    // (ui/styles.css); its body starts with the navigation.
     const sidebar = host.querySelector('.sidebar')!;
-    expect(sidebar.querySelector('.brand, .ev-lockup, .ev-logo, img, .app-switch')).toBeNull();
-    expect(host.querySelectorAll('.ev-logo')).toHaveLength(1);
+    const head = sidebar.querySelector('.side-head')!;
+    expect(sidebar.firstElementChild).toBe(head);
+    expect([...head.children].map(child => child.className)).toEqual(['brand', 'app-switch']);
+    expect(head.querySelector('.brand')!.innerHTML).toBe(left.querySelector('.brand')!.innerHTML);
+    expect(sidebar.querySelector('.side-body .brand, .side-body img, .side-body .app-switch')).toBeNull();
+    expect(host.querySelectorAll('.ev-logo')).toHaveLength(2);
     expect(sidebar.querySelector('.side-body')!.firstElementChild!.classList.contains('nav')).toBe(true);
     // The switcher: the workspace name and a small chevron, and no site name after it.
     const appSwitch = left.querySelector<HTMLElement>('.app-switch')!;
@@ -173,7 +179,43 @@ describe('app shell', () => {
     expect(host.querySelector('.topbar > .top-left .app-switch')).toBe(appSwitch);
     click(edge);
     expect(app.classList.contains('collapsed')).toBe(false);
-    expect(host.querySelector('.topbar > .mobile-only .icon-btn, .topbar > .mobile-only button')).not.toBeNull();
+    expect(host.querySelector('.topbar > .nav-menu-btn button')).not.toBeNull();
+  });
+
+  it('turns the sidebar and switcher into a drawer from the menu button on narrow windows', async () => {
+    const media = window.matchMedia;
+    window.matchMedia = ((query: string) => ({ matches: query.includes('max-width: 1220px'), media: query, addEventListener() {}, removeEventListener() {} })) as any;
+    try {
+      const { host } = start([...adminRoutes()], '/app/customer', { storage: localStorage });
+      await until(() => expect(host.querySelector('.app')).not.toBeNull());
+      const app = host.querySelector('.app')!;
+      const button = host.querySelector<HTMLButtonElement>('.topbar > .nav-menu-btn button')!;
+      expect(button.getAttribute('aria-label')).toBe('Menu');
+      expect(button.getAttribute('aria-controls')).toBe('ev-sidebar');
+      expect(button.getAttribute('aria-expanded')).toBe('false');
+      // The menu icon (three lines), not the sidebar panel icon the record's side drawer button uses.
+      expect(button.innerHTML).toBe(Icon('menu', { size: 'sm' }).outerHTML);
+      click(button);
+      expect(app.classList.contains('mobile-open')).toBe(true);
+      expect(button.getAttribute('aria-expanded')).toBe('true');
+      // The drawer: the brand at its top, the switcher, then the navigation.
+      const sidebar = host.querySelector('.sidebar')!;
+      expect([...sidebar.querySelector('.side-head')!.children].map(child => child.className)).toEqual(['brand', 'app-switch']);
+      expect(sidebar.querySelector('.side-body .nav .nav-item')).not.toBeNull();
+      // Esc closes it; so do the scrim and opening a page.
+      press(document.body, 'Escape');
+      expect(app.classList.contains('mobile-open')).toBe(false);
+      click(button);
+      click(host.querySelector('.ev-side-scrim'));
+      expect(app.classList.contains('mobile-open')).toBe(false);
+      click(button);
+      click(byText(host, '.nav-item', 'Docs'));
+      await until(() => expect(app.classList.contains('mobile-open')).toBe(false));
+      // [ and the menu open the drawer; the collapsed rail is for wide windows only.
+      press(document.body, '[');
+      expect(app.classList.contains('mobile-open')).toBe(true);
+      expect(app.classList.contains('collapsed')).toBe(false);
+    } finally { window.matchMedia = media; }
   });
 
   it('styles the top bar left: brand, pipe and a compact switcher, collapsed and on phones', () => {
@@ -203,12 +245,27 @@ describe('app shell', () => {
     // Collapsed: the mark alone, the switcher compact.
     expect(rule(styles, '.app.collapsed .brand .ev-lockup')).toContain('display:none');
     expect(rule(styles, '.app.collapsed .brand .ev-logo')).toContain('display:block');
-    // Phones: the mark alone and a truncated switcher, in one column that never scrolls sideways.
-    const phone = styles.slice(styles.indexOf('@media (max-width:760px){\n  .app,.app.collapsed'));
-    expect(phone).toContain('.app,.app.collapsed{grid-template-columns:minmax(0,1fr)}');
-    expect(phone).toContain('.brand .ev-lockup{display:none}');
-    expect(phone).toContain('.brand .ev-logo{display:block}');
-    expect(phone).toMatch(/\.app-switch\{max-width:34vw/);
+    // 1220 px and under: one column that never scrolls sideways; the top bar's brand and switcher give way to the
+    // menu button, and the drawer's head shows the lockup as the top bar does at full width.
+    expect(rule(styles, '.nav-menu-btn')).toContain('display:none');
+    expect(rule(styles, '.side-head')).toContain('display:none');
+    const narrow = styles.slice(styles.indexOf('@media (max-width:1220px){\n  .app,.app.collapsed'));
+    expect(narrow).toContain('.app,.app.collapsed{grid-template-columns:minmax(0,1fr)}');
+    expect(narrow).toContain('.nav-menu-btn{display:grid');
+    expect(narrow).toContain('.top-left,.top-pipe{display:none}');
+    expect(narrow).toContain('.side-edge{display:none}');
+    expect(narrow).toContain('.side-head .brand .ev-lockup{display:block}');
+    expect(narrow).toContain('.side-head .brand .ev-logo{display:none}');
+    // The record's side column is 370 px; list and record pages share one side gutter, and a list's measure cards
+    // are as far from the title and the list card as from each other.
+    const screens = css('app/screens.css');
+    expect(styles).toContain('--doc-side-w:370px;');
+    expect(styles).toMatch(/--page-gutter:12px; --page-gap:8px;/);
+    expect(rule(styles, '.doc')).toContain('grid-template-columns:minmax(0,1fr) var(--doc-side-w)');
+    expect(rule(styles, '.doc-main')).toContain('padding:22px var(--page-gutter) 96px');
+    expect(rule(screens, '.ev-list.page')).toContain('padding:var(--ev-pad-top) var(--page-gutter) 16px');
+    expect(rule(screens, '.ev-list .sum')).toBe('gap:var(--page-gap);margin:0 0 var(--page-gap)');
+    expect(rule(screens, '.ev-list>.ph:has(+.sum)')).toBe('margin-bottom:var(--page-gap)');
   });
 
   it('toggles the sidebar with [ and signs out from the account menu', async () => {
