@@ -216,18 +216,15 @@ describe('ChildTable over a record store', () => {
     expect(prefs.peek()).toMatchObject({ order: ['amount', 'product', 'qty', 'rate'], pinned: 1 });
   });
 
-  it('opens a row in place with every field and closes it with Done', async () => {
+  it('opens a row in the row editor with every field and closes it with Done', async () => {
     const { store } = await bigOrder(2);
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'] }));
-    const toggle = rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!;
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    toggle.click();
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    const panel = host.querySelector('.g-x')!;
-    expect(panel.textContent).toContain('Row 1 of 2');
+    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    const panel = host.querySelector('.g-ed-main')!;
+    expect(panel.querySelector('.g-ed-pos')!.textContent).toBe('1 of 2');
     expect([...panel.querySelectorAll('.fld label')].map(label => label.firstChild!.textContent)).toEqual(['Qty', 'Amount']);
     [...panel.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Done')!.click();
-    expect(host.querySelector('.g-x')).toBeNull();
+    expect(host.querySelector('.g-ed')).toBeNull();
   });
 
   it('keeps editing out until every row is loaded', async () => {
@@ -606,16 +603,16 @@ describe('Columns menu', () => {
     const prefs = cell<TablePrefs>({ ...emptyPrefs(), widths: { product: 150, qty: 80 }, pinned: 2 });
     const { host } = await open(prefs);
     const left = (selector: string) => host.querySelector<HTMLElement>(selector)!.style.left;
-    // The row control column is 84 px wide.
-    expect(left('th[data-key="product"]')).toBe('84px');
-    expect(left('th[data-key="qty"]')).toBe('234px');
-    expect(left('tbody tr[data-key] td[data-col="qty"]')).toBe('234px');
+    // The row control column (checkbox, drag handle, number and Edit) is 104 px wide.
+    expect(left('th[data-key="product"]')).toBe('104px');
+    expect(left('th[data-key="qty"]')).toBe('254px');
+    expect(left('tbody tr[data-key] td[data-col="qty"]')).toBe('254px');
     expect(host.querySelector('tbody tr[data-key] td[data-col="qty"]')!.classList.contains('s2')).toBe(true);
     expect(host.querySelectorAll('tfoot td.stk').length).toBe(3);
     expect(left('th[data-key="rate"]')).toBe('');
     prefs.set({ ...prefs.peek(), pinned: 3 });
-    expect(left('th[data-key="rate"]')).toBe('314px');
-    expect(left('tbody tr[data-key] td[data-col="rate"]')).toBe('314px');
+    expect(left('th[data-key="rate"]')).toBe('334px');
+    expect(left('tbody tr[data-key] td[data-col="rate"]')).toBe('334px');
     expect(host.querySelector('th[data-key="qty"]')!.classList.contains('s2')).toBe(false);
     expect(host.querySelector('th[data-key="rate"]')!.classList.contains('s2')).toBe(true);
     // Editing a pinned cell keeps it pinned.

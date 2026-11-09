@@ -632,8 +632,23 @@ mount(document.querySelector('#app')!, () => DocFrame({
   arrow moves a row. Rows can be added, duplicated
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the
-  record saves or the lines are locked), opened in place with every field and their nested
-  tables, and the table can take over the view (focus view). With `heading` (the record's type,
+  record saves or the lines are locked), moved by their drag handle (mouse, touch, or Space and
+  the arrow keys), and the table can take over the view (focus view). A row's **Edit** (the pencil
+  by its number) opens the **row editor** in focus view: the rows as a narrow list on the left (click
+  or the arrow keys switch row) and the row's fields as one form on the right, in the table's frame,
+  with the row's number, title and a one-line summary ("4 × 2,228.26 = 8,913.04": two values typed in
+  and a calculated one, else the first values set), "1 of 3" with previous and next (also Alt and an
+  arrow), Close, then Delete line, Insert below and Done; nested tables follow the form. Esc closes
+  the editor, then focus view. A narrow window shows the form alone. `rowForm(row, field)` draws the
+  form instead of the default grid of fields, and `controls(api)` hands the caller the table's
+  `focused`, `toggleFocus()`, `columns(anchor)`, `sectioned` and `addSection()` for buttons of its own.
+  A Table whose schema has `"sections": true` takes **section rows** (`{"id", "section": "<label>"}`
+  among its rows in a payload, `Table.sections` in the store): each is a full-width heading with a
+  drag handle, a chevron that hides its lines, its label (renamed in place), "N lines", and the sums of
+  its own lines in the columns the total line sums. The add row offers "or add a section"; deleting a
+  section keeps its lines. A save sends sections as `{_key, section}` to create, `{id, section}` to
+  rename, their ids to delete, and `order` with rows and sections whenever a section changed. Without
+  the key the table is as before. With `heading` (the record's type,
   icon, mark, title, number and a `footer` such as the form's save bar), focus view keeps a compact
   record header above the table and the save bar below it, outside the rows that scroll; on a phone
   the header is one line. Esc or Back to form returns to the form. Under 480 px the control column

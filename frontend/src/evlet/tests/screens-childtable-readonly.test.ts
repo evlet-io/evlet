@@ -32,7 +32,7 @@ const enterFocus = (host: Element) => {
 };
 const openRow = (host: Element) => {
   click(grid(host).querySelector('tbody tr[data-key] .g-exp')!);
-  const panel = grid(host).querySelector<HTMLElement>('.g-x');
+  const panel = grid(host).querySelector<HTMLElement>('.g-ed-main');
   expect(panel).not.toBeNull();
   return panel!;
 };
@@ -52,8 +52,8 @@ function expectReadOnly(host: Element) {
     expect(grid(host).querySelector('td.editing')).toBeNull();
     // Rows still open, to read them.
     const panel = openRow(host);
-    expect(text(panel)).toContain('Row 1 of 2');
-    for (const label of ['Move up', 'Move down', 'Duplicate', 'Delete']) expect(buttons(panel)).not.toContain(label);
+    expect(text(panel.querySelector('.g-ed-pos'))).toBe('1 of 2');
+    for (const label of ['Delete line', 'Insert below']) expect(buttons(panel)).not.toContain(label);
     for (const field of ['item', 'qty', 'rate']) {
       expect(controls(panel, field).length).toBeGreaterThan(0);
       expect(controls(panel, field).every(control => control.disabled)).toBe(true);
@@ -95,7 +95,7 @@ describe('a read-only child table, expanded', () => {
     const panel = openRow(host);
     expect(controls(panel, 'qty').every(control => control.disabled)).toBe(true);
     expect(controls(panel, 'rate').every(control => !control.disabled)).toBe(true);
-    expect(buttons(panel)).toEqual(expect.arrayContaining(['Move down', 'Delete']));
+    expect(buttons(panel)).toEqual(expect.arrayContaining(['Delete line', 'Insert below']));
   });
 
   it('stays editable in focus view and the row editor when the record is editable', async () => {
@@ -103,7 +103,7 @@ describe('a read-only child table, expanded', () => {
     enterFocus(host);
     expect(grid(host).querySelector('.g-add')).not.toBeNull();
     const panel = openRow(host);
-    expect(buttons(panel)).toEqual(expect.arrayContaining(['Move up', 'Move down', 'Duplicate', 'Delete']));
+    expect(buttons(panel)).toEqual(expect.arrayContaining(['Delete line', 'Insert below', 'Done']));
     for (const field of ['item', 'qty', 'rate']) expect(controls(panel, field).every(control => !control.disabled)).toBe(true);
     const qty = controls(panel, 'qty')[0] as HTMLInputElement;
     qty.value = '5';

@@ -152,12 +152,12 @@ describe('ChildTable undo, duplicate and nested rows', () => {
     expect(copy.table('parts').rows.peek().map(row => [row.isNew, row.field('hours').value.peek()])).toEqual([[true, '1.5000'], [true, '2.0000']]);
   });
 
-  it('an opened row shows its nested tables', async () => {
+  it('a row in the row editor shows its nested tables', async () => {
     const { store } = backend();
     await store.open(id(1));
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'] }));
     rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
-    const nested = host.querySelector('.g-x .grid[data-table="parts"]')!;
+    const nested = host.querySelector('.g-ed-body .grid[data-table="parts"]')!;
     expect(nested).not.toBeNull();
     expect(nested.querySelectorAll('tbody tr[data-key]')).toHaveLength(2);
   });

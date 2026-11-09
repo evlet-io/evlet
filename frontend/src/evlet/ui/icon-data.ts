@@ -21,6 +21,7 @@ export const ICONS: Record<string, Shape[]> = {
   "chart-column": [["path",{"d":"M3 3v16a2 2 0 0 0 2 2h16"}],["path",{"d":"M18 17V9"}],["path",{"d":"M13 17V5"}],["path",{"d":"M8 17v-3"}]],
   "check": [["path",{"d":"M20 6 9 17l-5-5"}]],
   "chevron-down": [["path",{"d":"m6 9 6 6 6-6"}]],
+  "chevron-up": [["path",{"d":"m18 15-6-6-6 6"}]],
   "chevron-left": [["path",{"d":"m15 18-6-6 6-6"}]],
   "chevron-right": [["path",{"d":"m9 18 6-6-6-6"}]],
   "chevrons-up-down": [["path",{"d":"m7 15 5 5 5-5"}],["path",{"d":"m7 9 5-5 5 5"}]],

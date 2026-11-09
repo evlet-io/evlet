@@ -22,6 +22,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Child table tools, row editor and section rows.** A compact record's table has Focus and Columns buttons by
+  its title. A row's Edit (a pencil by its number, beside a new drag handle) opens the row editor in focus view: the
+  rows as a list beside one form for the row, with a summary line, previous and next, Delete line, Insert below and
+  Done; a row model's Sections show as "more information" rows there. A Table whose schema has `"sections": true`
+  draws section rows as headings with their own sums, closes, renames, moves and deletes them, and saves them in
+  the change set. Rows no longer open in place.
+
 - **Lifecycle on lists and records.** Cancelled records (a red `final` state, or `void`) are struck through and
   greyed in lists and boards, and show red "Cancelled" text and a soft red strip with when, who and why on the record.
   Locked or final states read as a lock and grey text, the starting state as a dashed Draft pill. Read from the

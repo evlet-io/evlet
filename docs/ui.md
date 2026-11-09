@@ -389,8 +389,10 @@ The record page draws it on a record's full page and in a list's side panel (the
   keeps the summary strip. `Meta.panel_summary = False` hides them in a side panel.
 - **One white card** holds the rest of the record: the state banner strip at its top, the Main area and more
   information, separated by thin lines.
-- **The Main area** has the Main fields in a grid of four columns (three, two, then one as the record's own width narrows), edited in place, then its Tables: each with its title, a muted row count and Add on the right, and a light dashed box
-  while it has no rows.
+- **The Main area** has the Main fields in a grid of four columns (three, two, then one as the record's own width narrows), edited in place, then its Tables: each with its title, a muted row count, Add on the right and two small buttons, Focus (the table takes the content area; Esc leaves it) and Columns, and a light dashed box
+  while it has no rows. A row's Edit opens the row editor in focus view: the rows as a list beside one form for the
+  row, which shows the row model's first section as a grid and its other sections as "more information" rows. A
+  table that takes section rows groups its lines under them, each with its own sums ([ui-framework.md](ui-framework.md)).
 - **More information** lists every later block as a row: the title, the section description and a chevron on the
   left, the content on the right. Closed, a Section shows its values on one line ("Label: value · Label: Not set · ...",
   cut with an ellipsis), a Table its row count and a Related block its record count. Sections start as

@@ -11,10 +11,10 @@ import { legacyRecordId, recordId } from '../ids';
 import { uid } from '../ui/core';
 import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Readable } from '../reactive';
 import type { Route } from '../router';
-import { RecordStore, type Field, type Rules } from '../model/record';
+import { RecordStore, type Field, type Row, type Rules } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
-import { ChildTable } from '../ui/childtable';
+import { ChildTable, type ChildTableControls } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow } from '../ui/doc';
 import { currencyFor, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
 import { autofocusForm, initialFocusField, layoutFocusOrder } from '../ui/autofocus';
@@ -790,7 +790,30 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
   const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
   // A Table's grid. Focus view keeps a compact copy of this header, and the save bar, above and below the lines.
-  const tablePanel = (child: { name: string; label: string }) => ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
+  /** A Table's row editor form: the row model's first section as a grid, the rest as "more information" rows, as
+   * on the record itself; fields are inputs, since a row is saved with the record. */
+  const rowForm = (child: { name: string; model?: string }) => {
+    let groups: ReturnType<typeof sections> = [];
+    try { groups = child.model ? sections(screenModel(ctx.schema, child.model)) : []; } catch { groups = []; }
+    const rowFolds = new Folds(prefs.formSections(child.model ?? child.name), false);
+    return (row: Row, field: (name: string) => FieldLike): Child => {
+      const shown = groups.map(group => ({ ...group, fields: group.fields.filter(meta => row.fields.has(meta.name)) })).filter(group => group.fields.length);
+      const gridOf = (names: string[], flow?: 'rows' | 'columns') => flowGrid(names.map(name => field(name))
+        .map(item => ({ node: fieldFor({ field: item, links: ctx.links }), wide: Boolean(item.meta.wide ?? item.meta.type === 'longtext') })), flow);
+      if (shown.length < 2) return html`<div class="ev-row-form">${gridOf([...row.fields.keys()].filter(name => !row.field(name).meta.hidden))}</div>`;
+      const [first, ...rest] = shown;
+      return html`<div class="ev-row-form"><div class="ev-cmp-grid">${gridOf(first.fields.map(meta => meta.name), first.flow)}</div>
+        <div class="ev-more">${rest.map((section, position) => {
+          const fields = section.fields.map(meta => field(meta.name));
+          return MoreRow({ title: section.label, description: section.description, folds: rowFolds, eager: true, fields,
+            start: rowFolds.start(section.collapsible ? section.collapsed ?? false : false, position + 1, fields),
+            summary: () => fieldsSummary(fields, ctx.links), body: () => gridOf(section.fields.map(meta => meta.name), section.flow) });
+        })}</div></div>`;
+    };
+  };
+  const tableControls = new Map<string, ChildTableControls>();
+  const tablePanel = (child: { name: string; label: string; model?: string }) => ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
+    rowForm: rowForm(child), controls: controls => tableControls.set(child.name, controls),
     locked: () => locked.get() || !canWrite, lockedText, links: ctx.links, crumb: () => titleText.get(),
     heading: { type: model.label, icon: look.icon, title: () => titleText.get(),
       number: numberText ?? (naming ? () => { const value = store.field('name').value.get(); return value && String(value) !== titleText.get() ? String(value) : ''; } : null),
@@ -801,7 +824,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   /** A Table on a compact page: its title, a muted row count and Add on the right (in Main), the grid, and a light
    * dashed box while it has no rows. Add uses the grid's own Add row, so the new row's first cell starts editing. */
-  const compactTable = (child: { name: string; label: string }, withTitle: boolean) => {
+  const compactTable = (child: { name: string; label: string; model?: string }, withTitle: boolean) => {
     const table = store.table(child.name);
     const count = () => table.rows.get().length;
     const canAdd = () => canWrite && !locked.get();
@@ -812,11 +835,25 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       if (button) { button.click(); return; }
       try { table.add(); } catch (error) { toast((error as Error).message, { icon: 'info' }); }
     };
-    const addLink = () => when(canAdd, () => html`<button type="button" class="link-q ev-cmp-add" on:click=${add}>${Icon('plus', { size: 'xs' })}Add ${noun}</button>`);
+    const addLink = () => when(canAdd, () => html`<button type="button" class="link-q ev-cmp-add" on:click=${add}>${Icon('plus', { size: 'xs' })}Add ${noun}</button>${
+      tableControls.get(child.name)?.sectioned ? html`<span class="ev-cmp-or muted">or <button type="button" class="link-q ev-cmp-add" on:click=${() => tableControls.get(child.name)?.addSection()}>add a section</button></span>` : null}`);
+    const grid = tablePanel(child), controls = tableControls.get(child.name);
+    // Focus (the table takes the content area; Esc leaves it) and Columns, as subtle square buttons by the title.
+    const focusButton = controls ? (() => {
+      const button = IconButton({ icon: 'maximize-2', tip: () => controls.focused.get() ? 'Leave focus (Esc)' : 'Focus', size: 'small', active: controls.focused, onClick: () => controls.toggleFocus() });
+      effect(() => { const icon = Icon(controls.focused.get() ? 'minimize-2' : 'maximize-2', { size: 'sm' }); untrack(() => button.replaceChildren(icon)); });
+      return button;
+    })() : null;
+    const tools = controls ? html`<span class="ev-cmp-tools">${focusButton}${(() => {
+      const button = IconButton({ icon: 'columns-3', tip: 'Columns', size: 'small', onClick: () => controls.columns(button) });
+      button.setAttribute('aria-haspopup', 'dialog');
+      return button;
+    })()}</span>` : null;
     host = html`<div class="ev-cmp-table" class:is-empty=${() => count() === 0} data-table-block=${child.name}>
-      ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span><span class="grow"></span>${addLink()}</div>` : null}
+      ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span><span class="grow"></span>${addLink()}${tools}</div>`
+        : html`<div class="ev-cmp-th ev-cmp-th-tools"><span class="grow"></span>${tools}</div>`}
       ${when(() => count() === 0, () => html`<div class="ev-cmp-empty"><span>${canAdd() ? `No ${child.label.toLowerCase()} yet. Add the first one.` : `No ${child.label.toLowerCase()} yet.`}</span>${withTitle ? null : addLink()}</div>`)}
-      ${tablePanel(child)}</div>` as HTMLElement;
+      ${grid}</div>` as HTMLElement;
     return host;
   };
   /** Where a "more information" row that is not a section starts: open, except on a phone after the first. */

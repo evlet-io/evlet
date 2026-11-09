@@ -471,6 +471,14 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-add:hover{color:var(--accent-hover)}
 .ev-cmp-add svg{display:none}
 .ev-cmp-table .g-bar,.ev-cmp-table .g-under .g-add,.ev-cmp-table .g-under .g-add~.muted{display:none}
+/* In focus view the table shows its own bar again (title, Columns, Exit focus) and its Add row. */
+.ev-cmp-table .grid.max .g-bar{display:flex}
+.ev-cmp-table .grid.max .g-under .g-add,.ev-cmp-table .grid.max .g-under .g-add~.muted{display:inline-flex}
+.ev-cmp-table .grid:not(.max) .g-add-sec{display:none}
+.ev-cmp-or{display:inline-flex;align-items:center;gap:4px;font-size:13.5px;margin-left:6px}
+/* The table title's tools: Focus and Columns, subtle square icon buttons. */
+.ev-cmp-tools{display:inline-flex;gap:2px;margin-left:4px}
+.ev-cmp-th{align-items:center}
 .ev-cmp-table .g-under:not(:has(.g-sum)):not(:has(.g-lock)){display:none}
 .ev-cmp-table.is-empty>.grid{display:none}
 .ev-cmp-table .grid{box-shadow:none}

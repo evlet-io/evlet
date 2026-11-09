@@ -1,0 +1,213 @@
+// A child table's row editor (a row's Edit opens the table in focus view with the rows as a list beside one form) and
+// its section rows (a Table whose schema has "sections": true): headings with their own sums, closing, renaming,
+// moving and deleting, read from and saved to the record's change set.
+import { afterEach, describe, expect, it } from 'vitest';
+import { ChildTable, rowSummary, type ChildTableControls } from '../ui/childtable';
+import { RecordStore } from '../model/record';
+import { tableChanges } from '../model/changes';
+import type { AppSchema } from '../model/schema';
+import { backend, bigOrder, cleanup, id, render, schema } from './ui-helpers';
+import { copy } from './server';
+import responses from './api-fixture.json';
+
+afterEach(cleanup);
+
+const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('tbody tr[data-key]:not(.g-sec)')];
+const press = (target: Element, key: string, options: KeyboardEventInit = {}) => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...options }));
+const buttonIn = (root: Element, label: string) => [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === label || button.getAttribute('aria-label') === label)!;
+const position = (host: Element) => host.querySelector('.g-ed-pos')!.textContent;
+
+describe('the row editor', () => {
+  it('opens from a row\'s Edit in focus view, with the rows as a list beside the row\'s form, and Esc closes both', async () => {
+    const { store } = await bigOrder(3);
+    let controls: ChildTableControls | null = null;
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], controls: value => { controls = value; } }));
+    const edit = rowsIn(host)[1].querySelector<HTMLButtonElement>('.g-exp')!;
+    expect(edit.getAttribute('aria-label')).toBe('Edit row 2');
+    expect(edit.querySelector('svg')).not.toBeNull();
+    edit.click();
+    const grid = host.querySelector('.grid')!;
+    expect(grid.classList.contains('max')).toBe(true);
+    expect(controls!.focused.peek()).toBe(true);
+    expect(host.querySelectorAll('.g-ed-list [role="option"]')).toHaveLength(3);
+    expect(host.querySelector('.g-ed-list [aria-selected="true"]')!.getAttribute('data-key')).toBe(rowsIn(host)[1].dataset.key);
+    expect(position(host)).toBe('2 of 3');
+    expect(host.querySelector('.g-ed-badge')!.textContent).toBe('2');
+    // The summary: the two values typed in times each other, and the calculated one.
+    expect(host.querySelector('.g-ed-sum')!.textContent).toBe('2.0000 × AED 2.50 = AED 5.00');
+    // Every field of the row, as inputs (a row is saved with the record).
+    expect([...host.querySelectorAll('.g-ed-body .fld')].length).toBeGreaterThanOrEqual(4);
+    press(host.querySelector('.g-ed-main')!, 'Escape');
+    expect(host.querySelector('.g-ed')).toBeNull();
+    // Opened by Edit, focus view closes with the editor.
+    expect(grid.classList.contains('max')).toBe(false);
+  });
+
+  it('steps with previous and next, Alt and an arrow, and a click in the list; Done closes it', async () => {
+    const { store } = await bigOrder(3);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'amount'] }));
+    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    expect(buttonIn(host.querySelector('.g-ed-h')!, 'Previous row').disabled).toBe(true);
+    buttonIn(host.querySelector('.g-ed-h')!, 'Next row').click();
+    expect(position(host)).toBe('2 of 3');
+    press(host.querySelector('.g-ed-body input')!, 'ArrowDown', { altKey: true });
+    expect(position(host)).toBe('3 of 3');
+    expect(buttonIn(host.querySelector('.g-ed-h')!, 'Next row').disabled).toBe(true);
+    host.querySelectorAll<HTMLElement>('.g-ed-list [role="option"]')[0].click();
+    expect(position(host)).toBe('1 of 3');
+    // The list moves with the arrow keys too.
+    press(host.querySelector('.g-ed-list')!, 'ArrowDown');
+    expect(position(host)).toBe('2 of 3');
+    buttonIn(host.querySelector('.g-ed-f')!, 'Done').click();
+    expect(host.querySelector('.g-ed')).toBeNull();
+  });
+
+  it('inserts a row below and deletes a line, moving to the next one', async () => {
+    const { store } = await bigOrder(3);
+    const table = store.table('lines');
+    const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'] }));
+    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    buttonIn(host.querySelector('.g-ed-f')!, 'Insert below').click();
+    expect(table.rows.peek()).toHaveLength(4);
+    expect(position(host)).toBe('2 of 4');
+    expect(table.rows.peek()[1].isNew).toBe(true);
+    const second = table.rows.peek()[2].key;
+    buttonIn(host.querySelector('.g-ed-f')!, 'Delete line').click();
+    expect(table.rows.peek()).toHaveLength(3);
+    expect(host.querySelector('.g-ed-list [aria-selected="true"]')!.getAttribute('data-key')).toBe(second);
+  });
+
+  it('draws the caller\'s form for the row, and offers no Delete or Insert while locked', async () => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty'], locked: true,
+      rowForm: (row, field) => { const qty = field('qty'); return Object.assign(document.createElement('p'), { className: 'mine', textContent: `${row.key}:${qty.editable.peek()}` }); } }));
+    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    expect(host.querySelector('.g-ed-body .mine')!.textContent).toBe(`${store.table('lines').rows.peek()[0].key}:false`);
+    expect(buttonIn(host.querySelector('.g-ed-f')!, 'Delete line')).toBeUndefined();
+    expect(buttonIn(host.querySelector('.g-ed-f')!, 'Done')).not.toBeUndefined();
+  });
+
+  it('sums a row up from its values when there is nothing to multiply', async () => {
+    const { store } = await bigOrder(1);
+    const row = store.table('lines').rows.peek()[0];
+    const columns = ['qty', 'rate'].map(name => { const meta = row.field(name).meta; return { key: name, label: meta.label, width: 100, meta, calculated: false, align: 'right' as const }; });
+    expect(rowSummary(row, columns)).toBe('AED 2.50');
+  });
+});
+
+describe('Focus and Columns from outside the table', () => {
+  it('hands its Focus and Columns to the caller; Esc leaves focus view', async () => {
+    const { store } = await bigOrder(2);
+    let controls: ChildTableControls | null = null;
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty'], controls: value => { controls = value; } }));
+    expect(controls!.sectioned).toBe(false);
+    controls!.toggleFocus();
+    const grid = host.querySelector('.grid')!;
+    expect(grid.classList.contains('max')).toBe(true);
+    press(grid, 'Escape');
+    expect(grid.classList.contains('max')).toBe(false);
+    const anchor = document.createElement('button');
+    document.body.append(anchor);
+    controls!.columns(anchor);
+    expect(document.querySelector('.cols-pop')).not.toBeNull();
+  });
+});
+
+/** The recorded order with its lines able to take sections, and two section rows among them. */
+async function sectionedOrder() {
+  const sectioned = structuredClone(schema) as AppSchema;
+  sectioned.models.find(model => model.name === 'order')!.children![0].sections = true;
+  const detail = copy(responses.detail);
+  const lines: Array<Record<string, unknown>> = detail.body.children.lines;
+  lines.splice(2, 0, { id: 's2', section: 'Services' });
+  lines.splice(0, 0, { id: 's1', section: 'Hardware' });
+  const { api } = backend([['GET', /\/api\/order\/0000000000001$/, detail]]);
+  const store = new RecordStore({ api, schema: sectioned, model: 'order', today: () => '2026-11-01' });
+  await store.open(id(1));
+  return store;
+}
+
+describe('section rows', () => {
+  it('reads section rows from the payload, apart from the lines, each before the line that follows it', async () => {
+    const store = await sectionedOrder();
+    const table = store.table('lines');
+    expect(table.rows.peek()).toHaveLength(120);
+    expect(table.sections.peek().map(section => [section.label, section.before])).toEqual([['Hardware', table.rows.peek()[0].key], ['Services', table.rows.peek()[2].key]]);
+    expect(table.changed.peek()).toBe(false);
+  });
+
+  it('draws a section row as a heading with its lines count and its own sums, and closes it', async () => {
+    const store = await sectionedOrder();
+    const table = store.table('lines');
+    const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'] }));
+    const sections = () => [...host.querySelectorAll<HTMLElement>('tr.g-sec')];
+    expect(sections().map(row => row.querySelector('.g-sec-name')!.textContent)).toEqual(['Hardware', 'Services']);
+    expect(sections()[0].querySelector('.g-sec-n')!.textContent).toBe('2 lines');
+    expect(sections()[1].querySelector('.g-sec-n')!.textContent).toBe('118 lines');
+    // Hardware sums the amounts of its two lines, in the Amount column (the column the total line sums).
+    const amounts = table.rows.peek().slice(0, 2).map(row => Number(row.field('amount').value.peek()));
+    // The cells after the control column: Product, Qty, Amount.
+    const cells = sections()[0].querySelectorAll('td');
+    expect(cells[2].textContent).toBe('');
+    expect(cells[3].textContent!.replace(/[^\d.]/g, '')).toBe((amounts[0] + amounts[1]).toFixed(2));
+    // Every line is drawn once there are sections, numbered across the sections.
+    expect(rowsIn(host)).toHaveLength(120);
+    expect(rowsIn(host)[2].querySelector('.g-exp')!.getAttribute('aria-label')).toBe('Edit row 3');
+    sections()[0].querySelector<HTMLButtonElement>('.g-sec-tog')!.click();
+    expect(rowsIn(host)).toHaveLength(118);
+    expect(sections()[0].querySelector('.g-sec-tog')!.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('renames, adds and deletes sections, keeping their lines, and saves them in the change set', async () => {
+    const store = await sectionedOrder();
+    const table = store.table('lines');
+    let controls: ChildTableControls | null = null;
+    const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'], controls: value => { controls = value; } }));
+    expect(controls!.sectioned).toBe(true);
+    host.querySelector<HTMLButtonElement>('tr.g-sec .g-sec-name')!.click();
+    const input = host.querySelector<HTMLInputElement>('tr.g-sec .g-sec-input')!;
+    input.value = 'Equipment';
+    press(input, 'Enter');
+    expect(table.sections.peek()[0].label).toBe('Equipment');
+    // The add row offers a section too; a new one starts being renamed.
+    expect(host.querySelector('.g-add-sec')!.textContent).toContain('add a section');
+    controls!.addSection();
+    expect(table.sections.peek().map(section => section.label)).toEqual(['Equipment', 'Services', 'New section']);
+    await Promise.resolve();
+    expect(host.querySelector('tr.g-sec .g-sec-input')).not.toBeNull();
+    press(host.querySelector('tr.g-sec .g-sec-input')!, 'Escape');
+    // Deleting Services keeps its 118 lines.
+    buttonIn(host.querySelectorAll('tr.g-sec')[1], 'Delete section Services (its lines stay)').click();
+    expect(table.rows.peek()).toHaveLength(120);
+    const changes = tableChanges(table)!;
+    expect(changes.create).toEqual([{ _key: table.sections.peek()[1].key, section: 'New section' }]);
+    expect(changes.update).toEqual([{ id: 's1', section: 'Equipment' }]);
+    expect(changes.delete).toEqual(['s2']);
+    const order = changes.order as string[];
+    expect(order[0]).toBe('s1');
+    expect(order.at(-1)).toBe(table.sections.peek()[1].key);
+    expect(order).toHaveLength(122);
+  });
+
+  it('moves a section to the line it is dropped before, and a line dropped on a section\'s first line joins it', async () => {
+    const store = await sectionedOrder();
+    const table = store.table('lines');
+    render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'] }));
+    const [first, second, third] = table.rows.peek();
+    // Services moves up to start at the second line.
+    table.moveSection(table.sections.peek()[1].key, second.key);
+    expect(table.sections.peek()[1].before).toBe(second.key);
+    // Removing the line a section starts at moves the section to the next line.
+    table.remove(second);
+    expect(table.sections.peek()[1].before).toBe(third.key);
+    expect(first.key).toBe(table.sections.peek()[0].before);
+  });
+
+  it('works as before when the schema has no sections', async () => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty'] }));
+    expect(host.querySelector('tr.g-sec')).toBeNull();
+    expect(host.querySelector('.g-add-sec')).toBeNull();
+    expect(tableChanges(store.table('lines'))).not.toHaveProperty('order');
+  });
+});

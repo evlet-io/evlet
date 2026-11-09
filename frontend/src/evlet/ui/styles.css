@@ -866,6 +866,30 @@ body.has-fab .toasts{right:auto;left:50%;transform:translateX(-50%);align-items:
 .g-selinfo{color:var(--accent);margin-left:6px;font-size:12.5px}
 .g-scroll{overflow:auto;max-height:min(62vh,560px);position:relative;overscroll-behavior-x:contain}
 .grid.max .g-scroll{max-height:none;flex:1}
+/* The row editor (a row's Edit, in focus view): the rows as a narrow list on the left, the row's fields as one form on
+   the right, in the table's own frame. A narrow window shows the form alone. */
+.grid.g-editing .g-scroll{display:none}
+.g-ed{display:grid;grid-template-columns:minmax(180px,260px) minmax(0,1fr);flex:1;min-height:0;border-top:1px solid var(--border);background:var(--surface)}
+.g-ed-list{border-right:1px solid var(--border);overflow:auto;min-height:0}
+.g-ed-item{display:flex;align-items:center;gap:8px;height:38px;padding:0 10px;border-bottom:1px solid var(--divider);cursor:pointer;font-size:13px;outline:none}
+.g-ed-item:hover{background:var(--bg-subtle)}
+.g-ed-item[aria-selected="true"]{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
+.g-ed-item:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
+.g-ed-item .check{width:16px;height:16px;margin:0;flex:none}
+.g-ed-no{color:var(--fg-3);font-size:12px;min-width:18px;text-align:right;flex:none}
+.g-ed-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-ed-main{display:flex;flex-direction:column;min-width:0;min-height:0}
+.g-ed-h{display:flex;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid var(--border);flex:none}
+.g-ed-badge{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:var(--r);background:var(--bg-muted);color:var(--fg-2);font-size:12px;font-weight:600;flex:none}
+.g-ed-ttl{display:flex;flex-direction:column;min-width:0;flex:1;margin-left:4px}
+.g-ed-ttl b{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-ed-sum{font-size:12.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-ed-pos{font-size:12px;color:var(--fg-3);white-space:nowrap;margin:0 4px}
+.g-ed-body{flex:1;min-height:0;overflow:auto;padding:14px 16px}
+.g-ed-f{display:flex;align-items:center;gap:6px;padding:10px 16px;border-top:1px solid var(--border);flex:none}
+.g-ed-f .grow{flex:1}
+.btn.g-ed-del{color:var(--t-rose)}
+@media (max-width:760px){.g-ed{grid-template-columns:minmax(0,1fr)}.g-ed-list{display:none}.g-ed-h,.g-ed-body,.g-ed-f{padding-left:12px;padding-right:12px}}
 table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:13px}
 .g th{position:sticky;top:0;z-index:2;background:var(--bg-subtle);height:36px;padding:0 10px;text-align:left;font-weight:550;font-size:12px;color:var(--fg-3);border-bottom:1px solid var(--border);border-right:1px solid var(--divider);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:none}
 .g th.r{text-align:right}
@@ -886,6 +910,25 @@ table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:1
 .grid.scrolled .g .s2{--edge:inset -1px 0 0 var(--border),var(--pin-shade);box-shadow:var(--edge)}
 .g-ctl{padding:0 6px!important}
 .g-ci{display:flex;align-items:center;gap:4px}
+.g-drag{display:inline-grid;place-items:center;width:16px;height:24px;border-radius:var(--r-sm);color:var(--fg-4);cursor:grab;flex:none}
+.g-drag:hover:not(:disabled){color:var(--fg-2);background:var(--bg-muted)}
+.g-drag:disabled{cursor:default;opacity:.4}
+.g [data-drag-item].dragging{opacity:.5}
+/* A section row: a full-width group heading with its own sums under the total line's columns. */
+.g tr.g-sec td{background:var(--bg-subtle);font-weight:600;border-bottom:1px solid var(--border)}
+.g tr.g-sec td.r{font-weight:600}
+.g-sec-tog{display:inline-grid;place-items:center;width:22px;height:22px;border-radius:var(--r-sm);color:var(--fg-3)}
+.g-sec-tog:hover{background:var(--bg-muted);color:var(--fg)}
+.g-sec-tog svg{transition:transform .15s}
+.g-sec-tog[aria-expanded="false"] svg{transform:rotate(-90deg)}
+.g-sec-l{display:inline-flex;align-items:center;gap:8px;min-width:0;max-width:100%;overflow:visible}
+.g-sec-name{font:inherit;color:var(--fg);padding:0 2px;border-radius:var(--r-sm);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.g-sec-name:hover:not(:disabled){background:var(--bg-muted)}
+.g-sec-input{height:26px;font-weight:600;max-width:240px}
+.g-sec-n{font-weight:400;font-size:12px;white-space:nowrap}
+.g-sec-l .icon-btn{opacity:0}
+.g tr.g-sec:hover .g-sec-l .icon-btn,.g-sec-l .icon-btn:focus-visible{opacity:1}
+.g-add-sec{font-size:13px;color:var(--fg-3);display:inline-flex;align-items:center;gap:4px}
 .g-ci .check,.g th .check{width:16px;height:16px;margin:0}
 .g-exp{display:inline-flex;align-items:center;justify-content:space-between;gap:2px;height:24px;padding:0 3px 0 6px;border-radius:var(--r-sm);color:var(--fg-3);font-size:12px;min-width:40px}
 .g-exp:hover{background:var(--bg-muted);color:var(--fg)}
@@ -1202,7 +1245,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .lib-bulk{width:100%;display:flex;justify-content:center}
 .lib-bulk .bulk{position:static;transform:none}
 .lib-bulk .bulk:not(.show){opacity:.5}
-@media (max-width:480px){.g-exp{min-width:24px}.g-exp .num{display:none}}
+@media (max-width:480px){.g-exp{min-width:24px}.g-exp .num{display:none}.g-drag{display:none}}
 @media (max-width:760px){.lib-app .sidebar{display:none}.g-x-f>div.wide{grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 /* select, pickers and side boxes (pickers.ts) */
