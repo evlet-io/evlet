@@ -444,3 +444,21 @@ def test_turning_sections_on_and_off_needs_no_migration(tmp_path):
     app = build(False)
     call = client(app)
     assert [row['note'] for row in call('GET', url)[1]['children']['rows']] == ['a', 'b']
+
+
+def test_print_html_shows_section_heading_rows(app):
+    pytest.importorskip('jinja2')
+    import re
+    from evlet.printing import Compiler
+    from test_printing import user
+    data = create(client(app))
+    admin = user(app)
+    with app.database.transaction() as tx:
+        context = document_context(app.business, tx, admin, Quote, app.business.policy.record(tx, admin, Quote, data['id']))
+    html = Compiler(QuotePrint, context, app.business).html()
+    body = re.search(r'<tbody>(.*?)</tbody>', html, re.S).group(1)
+    headings = re.findall(r'<tr class="evlet-section">(.*?)</tr>', body, re.S)
+    cells = [[re.sub('<[^>]+>', '', cell) for cell in re.findall(r'<td[^>]*>(.*?)</td>', row)] for row in headings]
+    assert [row[0] for row in cells] == ['Goods', 'Services', 'Later']
+    assert cells[1][1] == '2' and cells[1][2] == '7,291.80'
+    assert body.count('<tr>') == 3
