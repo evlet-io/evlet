@@ -451,7 +451,9 @@ class Business:
                                   'row_changes': bool(getattr(model, '__declaration_mode__', False)),
                                   # Whether list filters may match the parent on these rows (no row scope of their own).
                                   'filterable': self.policy.rule(user, child.model).scope is None,
-                                  **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child)))}
+                                  **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child))),
+                                  # Table(copy=False): Duplicate leaves these rows out of the new record (display only).
+                                  **({'copy': False} if getattr(getattr(model, '__tables__', {}).get(child.name), 'copy', True) is False else {})}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
             # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
             # unknown when the model was defined) stays out of the side panel too.

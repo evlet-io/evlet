@@ -444,6 +444,7 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "copy": false,
           "default_kind": "none",
           "stored": true,
           "operators": [

@@ -137,6 +137,13 @@ input and after the value at rest, such as `"%"` or `"days"`. It is display meta
 `prefix` on a UI control. `Percent` fields always show `%`; a `Decimal` with `suffix="%"` looks
 the same and keeps its own scale.
 
+Every field, and a `Table`, takes `copy=` (default `True`). `copy=False` means the browser's
+Duplicate action never copies this value or these rows into the new record, for example a unique
+customer reference. It must be `True` or `False` (a `ValueError` otherwise). It is display
+metadata only: the field's stored definition, migrations and their checksums ignore it, frozen
+migration copies leave it out, and the Controls code export keeps it as written
+([ui.md](ui.md#duplicate)).
+
 Any editable field may declare `editable_when_locked=True` so that ordinary writes can still
 change it while its document is in a locked State (for example remarks).
 

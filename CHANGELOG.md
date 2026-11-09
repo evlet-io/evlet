@@ -8,6 +8,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Duplicate options.** `Meta.duplicate = False` hides a model's record Duplicate action, and
+  `copy=False` on any field or `Table` keeps that value or those rows out of a duplicate. Both
+  default to `True`, must be booleans (`ValueError`), and show in `/api/schema` only when off
+  (`duplicate: false` on the model, `copy: false` on the field or `children` entry). They are
+  display only: the stored schema, migrations and their checksums are unchanged, so no migration
+  is needed. The Playground's Invoice `reference` uses `copy=False`
+  ([docs/ui.md](docs/ui.md#duplicate)).
+
 - **Only Evlet makes record ids, and ids never change.** A caller-supplied `id` is refused on every
   create and update path with one message, `ValidationError({'id': 'The id is assigned by Evlet when
   the record is created and never changes; leave it out'})`: `database`/`tx.create` and `update`
