@@ -104,6 +104,15 @@ production ready, but the rules below hold from 0.3 on.
   (`field`, `grain`, `points`) and `color` keys in a schema measure entry, present only when declared
   ([measures.md](measures.md#trends-and-colours)).
 
+- **Image fields.** `Image()` and `Meta.image`
+  ([model-engine.md](model-engine.md#image-fields)): the field type `"image"` in `/api/schema`, its
+  value as the text id of a private image attachment in JSON (`int` in Python), the model-level
+  `image` key (left out when unset or unreadable for the role), the upload body
+  `{"name", "content", "purpose": "image"}` on `/api/{model}/{id}/attachments` and
+  `/api/{model}/_images`, the image routes `GET /api/{model}/{id}/attachments/{image id}` and
+  `GET /api/{model}/_images/{image id}`, PNG, JPEG, GIF and WebP only, `copy=` fixed at `False`, and the
+  `ValueError` for a `Meta.image` that names no Image field.
+
 - **Form focus.** `Meta.focus` on a model and the `focus` option on a `Slip`: one visible, writable,
   stored field (not calculated, hidden, read only, a `Table` or a `Sequence`), checked with a
   `ValueError` at registration or application start. The `focus` key on a model's `/api/schema` entry

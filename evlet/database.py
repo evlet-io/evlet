@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import sqlite3
 
-from .fields import ACTIVE, EMPTY_LAYER, Link, MISSING, Reference, RichText
+from .fields import ACTIVE, EMPTY_LAYER, Image, Link, MISSING, Reference, RichText
 from . import audit
 from .identity import FIXED_ID, RecordId, new_id, sequential
 from .models import ValidationError, identifier
@@ -449,7 +449,7 @@ class Session:
             names, stored = [*names, *stamp_names], [*stored, *stamp_values]
             assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
             self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', stored + [current.id])
-            if any(isinstance(model.__fields__.get(name), RichText) for name in changes):
+            if any(isinstance(model.__fields__.get(name), (RichText, Image)) for name in changes):
                 images.settle(self, model, current.id, record._values)
         return self.get(model, current.id)
 
@@ -545,6 +545,8 @@ class Session:
         record_id = current.id
         table = identifier(self.registry.name_for(model))
         self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))
+        # The record's images (rich text and Image fields) go with it.
+        images.remove(self, model, record_id)
 
     # Ledger models (evlet/ledger.py)
 

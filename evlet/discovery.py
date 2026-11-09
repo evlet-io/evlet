@@ -43,6 +43,10 @@ def value_schema(field, *, read=False):
         value = {'anyOf': [{'type': 'string', 'pattern': r'^P(?:[0-9]+D)?(?:T(?:[0-9]+H)?(?:[0-9]+M)?(?:[0-9]+S)?)?$'},
                            {'type': 'integer', 'minimum': 0, 'maximum': 2**63 - 1}],
                  'description': 'An ISO 8601 duration such as PT1H30M, or whole seconds.'}
+    elif kind == 'image':
+        # Upload with POST /api/{model}/{id}/attachments {"name", "content", "purpose": "image"}, then save the id.
+        value = {'type': 'string', 'pattern': '^[1-9][0-9]{0,18}$',
+                 'description': 'The id of an uploaded PNG, JPEG, GIF or WebP image: one of this record, or one you uploaded for a new record.'}
     elif kind == 'richtext':
         # The editor's HTML subset; the server sanitises every write (docs/internal/rich-text.md).
         value = {'type': 'string', 'contentMediaType': 'text/html', 'maxLength': max(4096, field['max_length'] * 10),

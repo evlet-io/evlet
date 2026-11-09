@@ -32,6 +32,8 @@ KIND_OPERATORS = {
     'reference': ('eq', 'ne', 'isnull'),
     # Rich text filters and searches its plain-text extract (the <name>_text column).
     'richtext': ('contains', 'icontains', 'nicontains', 'isnull'),
+    # An image is there or not.
+    'image': ('isnull',),
 }
 
 

@@ -132,7 +132,7 @@ const visible = (model: ScreenModel) => model.fields.filter(field => !field.hidd
 /** List columns: Meta.list_fields (without id) or the first eight visible fields; the title first. */
 export function listFields(model: ScreenModel): FieldSchema[] {
   const named = (model.list_fields ?? []).filter(name => name !== 'id').map(name => fieldOf(model, name)).filter((field): field is FieldSchema => Boolean(field && !field.hidden));
-  let fields = named.length ? named : visible(model).filter(field => field.type !== 'longtext' && field.type !== 'richtext');
+  let fields = named.length ? named : visible(model).filter(field => field.type !== 'longtext' && field.type !== 'richtext' && field.type !== 'image');
   const title = fieldOf(model, model.title_field);
   if (title && !title.hidden && !fields.includes(title)) fields = [title, ...fields];
   return fields.slice(0, 8);
@@ -142,7 +142,7 @@ export function listFields(model: ScreenModel): FieldSchema[] {
 export function keyFields(model: ScreenModel): FieldSchema[] {
   const named = (model.key_fields ?? []).map(name => fieldOf(model, name)).filter((field): field is FieldSchema => Boolean(field));
   if (named.length) return named;
-  return visible(model).filter(field => field.name !== model.title_field && field.type !== 'longtext' && field.type !== 'richtext').slice(0, 6);
+  return visible(model).filter(field => field.name !== model.title_field && field.type !== 'longtext' && field.type !== 'richtext' && field.type !== 'image').slice(0, 6);
 }
 
 /** Details sections: Meta.layout, or one section with every visible field. Unknown names (not readable) drop out. */
@@ -166,7 +166,7 @@ export function headerFacts(model: ScreenModel, has: (name: string) => boolean =
  * header; per-record measures follow these on the page. Meta.summary = False leaves the strip out. */
 export function summaryFields(model: ScreenModel, shown: ReadonlySet<string> = new Set(headerFacts(model).map(meta => meta.name))): FieldSchema[] {
   if (model.summary === false) return [];
-  return model.fields.filter(field => field.compute && !field.hidden && !shown.has(field.name) && field.type !== 'longtext' && field.type !== 'richtext').slice(0, 4);
+  return model.fields.filter(field => field.compute && !field.hidden && !shown.has(field.name) && field.type !== 'longtext' && field.type !== 'richtext' && field.type !== 'image').slice(0, 4);
 }
 
 // ---------- values ----------

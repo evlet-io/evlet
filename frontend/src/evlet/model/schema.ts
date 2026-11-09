@@ -117,6 +117,8 @@ export interface ModelSchema {
   /** Meta.focus: the field a new record's form puts the cursor in. Absent, or a field this role cannot edit: the
    * first editable field. Display only. */
   focus?: string;
+  /** Meta.image: the Image field shown as the record's avatar or thumbnail. Absent when none, or the role cannot read it. */
+  image?: string;
   /** Meta.duplicate: false hides the record's Duplicate action. Absent means Duplicate shows to roles that may create. */
   duplicate?: boolean;
   /** What a record opened in a list's side panel leaves out, by kind: panel=False flags, Meta.panel or the Controls
