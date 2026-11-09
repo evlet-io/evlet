@@ -126,6 +126,12 @@ them, each is the record's id. On a report design it sees
 Rows come from the report's own `run()`, page by page, up to 5000; a note says when more were left
 out.
 
+A Table with section rows ([model-engine.md](model-engine.md#section-rows)) prints them as heading
+rows, each with the sums of its rows under the columns the total line sums. `doc.lines` still holds
+the real rows only. Templates also get `sections`: for each such Table of the document, a list of
+`{"label", "rows", "sums"}` in order (`sections.lines`), where rows above the first section come
+first with the label `None`. A sum covers only fields the person printing can read on every row.
+
 Helpers: `money(value, currency=None)` gives `AED 5,616.35`, or the symbol and position the site
 set in Controls, Currencies, with an image symbol embedded in the PDF ([controls.md](controls.md#currencies)); `date(value)` gives `03-11-2026`,
 `number(value, places=None)` and `ar(text)` (marks Arabic text right to left). They isolate text

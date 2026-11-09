@@ -9745,7 +9745,9 @@
           "row_changes": true,
           "filterable": true,
           "min_rows": 0,
-          "max_rows": 100
+          "max_rows": 100,
+          "sections": true,
+          "section_sums": []
         },
         {
           "name": "skill_levels",

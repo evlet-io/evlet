@@ -544,6 +544,8 @@ class Session:
         periods.check(self, model, before=current._values)
         record_id = current.id
         table = identifier(self.registry.name_for(model))
+        from .sections import forget
+        forget(self.connection, self.registry, model, [record_id])
         self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))
         # The record's images (rich text and Image fields) go with it.
         images.remove(self, model, record_id)

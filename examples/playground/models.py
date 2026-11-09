@@ -229,7 +229,10 @@ class Employee(Model):
     email = Text(max_length=254)
     department = Select(DEPARTMENTS)
     reports_to = Link('employee', index=True, label='Reports to')
-    skills = Table(Skill)
+    # Section rows group skills under headings such as "Languages" or "Tools" (docs/model-engine.md#section-rows).
+    # They are stored apart from the rows, so turning this on needed no migration, and derive() below still
+    # counts real skills only.
+    skills = Table(Skill, sections=True)
     skill_count = Integer(label='Skills')
     skill_levels = Table(SkillLevel, label='Skill levels')
 

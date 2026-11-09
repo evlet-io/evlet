@@ -151,6 +151,19 @@ field or `Table` is defined, for `Meta.duplicate` when the registry is built. Du
 to roles that may create the model (the schema's `permissions.create`). Both options are display
 only: they never change storage, migrations or permissions.
 
+### Section rows
+
+A `Table(..., sections=True)` may hold section rows, headings that group the rows below them
+([model-engine.md](model-engine.md#section-rows)). The schema's `children` entry carries
+`"sections": true` and `"section_sums"`: the row fields each section row sums over its rows, which
+are the fields the table's total line sums. The record's `children` list the section rows in place
+as `{"id", "section"}`; the browser computes the sums from the rows, and nothing is stored.
+
+The table editor does not draw them yet: it leaves section rows out of the grid, and its change
+sets keep them where they are. Paging (`lines/`) counts real rows only. Duplicate copies only the
+rows, so a duplicate starts without the sections. A child row model's own `Meta.layout` (`Section`
+blocks with titles and descriptions) groups the fields of its row editor.
+
 ### Record layouts
 
 `Meta.layout` can declare the whole record page instead of sections only. It is a list of `Tab`s,

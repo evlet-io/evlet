@@ -8,6 +8,20 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Section rows in Tables: `Table(..., sections=True)`.** A Table may hold section rows,
+  headings such as "Goods" that group the rows below them, like the sections of a quotation.
+  A section row has an id, a label and a place, and none of the row's fields. Iterating
+  `self.lines` still yields only real rows, so `derive()`, postings, validation, sums and existing
+  app code are unchanged; `self.lines.sections()` gives `(label, rows)` pairs. Records list them
+  in `children` as `{"id", "section"}`, and the existing routes create, rename, move and delete
+  them with the same checks as rows (`create`, `update`, `delete` on the row model; locked
+  records refuse them). `/api/schema` marks the Table `"sections": true` and names
+  `section_sums`, the fields the total line sums, which each section shows for its rows (computed,
+  never stored). Print shows them as heading rows with their sums, the Journal records them, and
+  a revise copies them. They are stored in the framework table `evlet_sections`, so turning
+  `sections=True` on needs no migration. The table editor does not draw them yet and leaves them
+  in place. The Playground's Employee groups Skills this way, with no migration
+  ([docs/model-engine.md](docs/model-engine.md#section-rows)).
 - **Cancelled states: `State(..., cancelled=...)`.** Names the final states that mean a record
   was called off, such as cancelled or lost, so the browser can show them as cancelled instead of
   guessing. Each must be a final state, checked when the class is created. On a voidable State,
