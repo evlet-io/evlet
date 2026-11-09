@@ -889,3 +889,77 @@ def test_guards_over_rows_reuse_the_rows_the_detail_loaded(tmp_path):
     assert body['_moves'] == [{'to': 'issued', 'label': 'Issue', 'allowed': True}] and body['_actions'][0]['allowed'] is True
     # The second extra statement is the journal summary (`_journal`) of a model with a State.
     assert counts['bigrowguard'] <= counts['bigplain'] + 2, counts
+
+
+# Cancelled states
+
+class Order(Model):
+    permissions = ALL
+    title = Text(default='')
+    status = State(('open', 'done', 'cancelled', 'lost'), moves=(
+        Move('open', 'done', 'Done'), Move('open', 'cancelled', 'Cancel'), Move('open', 'lost', 'Mark lost'),
+    ), locked=('done', 'cancelled', 'lost'), final=('done', 'cancelled', 'lost'), cancelled=('cancelled', 'lost'))
+
+
+class Bill(Model):
+    permissions = ALL
+    title = Text(default='')
+    status = State(('draft', 'issued', 'paid', 'void'), moves=(Move('draft', 'issued', 'Issue'), Move('issued', 'paid', 'Pay')),
+                   locked=('issued', 'paid', 'void'), final=('paid', 'void'), voidable=('issued',))
+
+
+class Receipt(Model):
+    permissions = ALL
+    title = Text(default='')
+    status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),),
+                   locked=('issued', 'void'), final=('void',), voidable=('issued',), cancelled=('void',))
+
+
+def test_cancelled_states_must_be_declared_final_states():
+    with pytest.raises(ValueError, match='cancelled names an unknown state: gone'):
+        State(('a', 'b'), final=('b',), cancelled=('gone',))
+    with pytest.raises(ValueError, match='cancelled names a state that is not final: b; cancelled states must be final'):
+        State(('a', 'b', 'c'), final=('c',), cancelled=('b', 'c'))
+    for value in ('b', ('b', 'b'), None):
+        with pytest.raises(ValueError, match='distinct state names'):
+            State(('a', 'b'), final=('b',), cancelled=value)
+    # Checked when the class is created, not on first use.
+    with pytest.raises(ValueError, match='not final'):
+        type('Broken', (Model,), {'status': State(('open', 'lost'), moves=(Move('open', 'lost', 'Lose'), Move('lost', 'open', 'Reopen')),
+                                                  cancelled=('lost',))})
+    assert State(('a', 'b')).cancelled == () and State(('a', 'b')).cancelled_states == ()
+    assert State(('a', 'b'), final=('b',), cancelled=['b']).cancelled == ('b',)
+
+
+@pytest.fixture
+def orders(tmp_path):
+    app = start(Database(tmp_path / 'db.sqlite3', Registry(Order, Bill, Receipt)))
+    return app, client(app)
+
+
+def test_schema_lists_cancelled_states_and_the_void_state(orders):
+    app, c = orders
+    entries = {model['name']: model for model in c('GET', '/api/schema')[1]['models']}
+    assert entries['order']['state']['cancelled'] == ['cancelled', 'lost']
+    # A voidable State's void counts as cancelled without being listed, and is not listed twice when it is.
+    assert entries['bill']['state']['cancelled'] == ['void']
+    assert entries['receipt']['state']['cancelled'] == ['void']
+    assert Bill.__declared_fields__['status'].cancelled == ()
+    # Unchanged: final, locked and voidable still say what they said.
+    assert entries['order']['state']['final'] == ['done', 'cancelled', 'lost'] and entries['bill']['state']['voidable'] == ['issued']
+
+
+def test_cancelled_changes_no_moves_or_locks(orders):
+    app, c = orders
+    record = c('POST', '/api/order', {'title': 'One'})[1]
+    url = f"/api/order/{record['id']}"
+    assert {item['to']: item['allowed'] for item in c('GET', url)[1]['_moves']} == {'done': True, 'cancelled': True, 'lost': True}
+    assert move(c, url, 'cancelled')[0] == 200
+    assert c('GET', url)[1]['status'] == 'cancelled'
+    assert move(c, url, 'open')[0] == 409
+    assert c('PATCH', url, {'title': 'Two'}, headers=etag(c, url))[0] == 422
+    bill = c('POST', '/api/bill', {'title': 'Bill'})[1]
+    bill_url = f"/api/bill/{bill['id']}"
+    assert move(c, bill_url, 'issued')[0] == 200
+    assert c('POST', f'{bill_url}/void', {'reason': 'Wrong customer'}, headers=etag(c, bill_url))[0] == 200
+    assert c('GET', bill_url)[1]['status'] == 'void'

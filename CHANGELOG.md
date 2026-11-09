@@ -22,6 +22,23 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `sections=True` on needs no migration. The table editor does not draw them yet and leaves them
   in place. The Playground's Employee groups Skills this way, with no migration
   ([docs/model-engine.md](docs/model-engine.md#section-rows)).
+- **Cancelled states: `State(..., cancelled=...)`.** Names the final states that mean a record
+  was called off, such as cancelled or lost, so the browser can show them as cancelled instead of
+  guessing. Each must be a final state, checked when the class is created. On a voidable State,
+  `"void"` counts as cancelled without being listed. `/api/schema` carries the list as
+  `state.cancelled`. It changes no moves, locks or permissions
+  ([docs/states-actions.md](docs/states-actions.md#cancelled-states)).
+- **Image fields: `Image()` and `Meta.image`.** A model can hold an image per field, such as an
+  item photo or a logo. The image is a private attachment of the record, stored and checked like
+  rich text images: PNG, JPEG, GIF or WebP by their bytes (SVG refused), up to Controls
+  `files.image_max_kb`. Upload to `/api/{model}/{id}/attachments` (or `/api/{model}/_images` before
+  the record is saved) with `"purpose": "image"`, then save the returned id in the field. Replacing
+  or clearing deletes the old image; deleting the record deletes its images; Duplicate leaves the
+  image out and a revision copies it. A person who cannot read the field cannot load the image.
+  `Meta.image` names the field used as the record's avatar and adds `"image"` to the model's
+  `/api/schema` entry. Forms show a preview with Upload, Replace and Remove. Add a field with
+  `AddField(model, name, Image())`. The Playground's items have a Photo (migration `0018_item_photo`)
+  ([docs/model-engine.md](docs/model-engine.md#image-fields)).
 
 - **Derived values: `derive()` and `Meta.derives`.** A document builds stored values formulas
   cannot express in `derive(self)`, such as one row per distinct value of another Table or rows
@@ -190,6 +207,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".
 
 ### Fixed
+
+- **Rich text images in documents.** Saving a document (a model with a State, `Meta.journal` or other
+  declarations) now links the held images its rich text refers to and deletes the ones it no longer
+  uses, as plain models always did. Before, a document's new images stayed in the holding area and
+  were purged after a day.
 
 - A `Workspace` is registered once: listing the same one twice no longer fails as a key clash with
   itself, and a workspace another app's `workspaces.py` imports stays with the app that declares it.

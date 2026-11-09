@@ -25,7 +25,7 @@ import { tooltip } from './tooltip';
 import { RichTextEditor } from '../richtext/editor';
 import { parseHTML } from '../richtext/html';
 import { renderView } from '../richtext/render';
-import { recordImages, type ImageSource } from '../richtext/images';
+import { prepareImage, recordImages, ACCEPT, ImageError, type ImageSource } from '../richtext/images';
 
 // ---------- the field contract ----------
 
@@ -254,6 +254,10 @@ export function displayValue(field: FieldLike, options: { links?: LinkSource | n
     case 'richtext':
       return when(() => !isEmpty(value()), () => html`<div class="rt-holder" ref=${(holder: HTMLElement) =>
         effect(() => { holder.replaceChildren(RichTextView(String(value()), { links: !options.plainLinks, images: imagesFor(field) })); })}></div>`, blank);
+    case 'image': {
+      const source = imagesFor(field);
+      return when(() => !isEmpty(value()) && Boolean(source), () => ImageThumb(source!, String(value()), meta.label), blank);
+    }
     case 'sequence':
       return when(() => !isEmpty(value()), () => html`<span class="tx mono">${() => String(value())}</span>`, () => html`<span class="muted">${meta.placeholder || 'Not assigned yet'}</span>`);
     case 'link':
@@ -387,6 +391,7 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
   if (kind.control === 'tags') return TagsControl(field, id, options);
   if (kind.control === 'multiselect') return MultiSelectControl(field, id, options);
   if (kind.control === 'richtext') return RichTextControl(field, id, options);
+  if (kind.control === 'image') return ImageControl(field, id, options);
 
   // Text-like inputs: text, numbers, money, dates, times, durations, email, url, phone, long text.
   const textarea = kind.control === 'textarea';
@@ -667,6 +672,44 @@ function RichTextControl(field: FieldLike, id: string, options: ControlOptions):
   return { element: editor.element, commit, focus: () => editor.focus() };
 }
 
+// Image: a preview with Upload (or Replace) and Remove. The file is prepared and checked like a rich text
+// image, uploaded to the record (or the person's holding area before it is saved), and its id written to
+// the field; saving the record links it. Display only: the server checks the type, size and access again.
+function ImageThumb(source: ImageSource, attachment: string, label: string): HTMLElement {
+  return html`<img class="img-thumb" src=${source.url(attachment)} alt=${label} loading="lazy">` as HTMLElement;
+}
+
+/** The Image field's control. `source` defaults to the record's images; a test or a custom screen may pass its own. */
+export function ImageControl(field: FieldLike, id: string, options: ControlOptions, source: ImageSource | undefined = imagesFor(field)): Control {
+  const busy = cell(false);
+  const current = () => field.value.get() as string | null;
+  const write = (value: string | null) => { if (writeValue(field, value)) options.onCommit?.(); };
+  const pick = async (input: HTMLInputElement) => {
+    const file = input.files?.[0];
+    input.value = '';
+    if (!file || !source) return;
+    busy.set(true);
+    try {
+      const prepared = await prepareImage(file);
+      write(await source.upload(prepared.blob, prepared.name, () => {}));
+    } catch (error) {
+      field.error.set(error instanceof ImageError ? error.message : 'The image could not be uploaded. Try again.');
+    } finally { busy.set(false); }
+  };
+  const input = html`<input type="file" hidden accept=${ACCEPT.join(',')} on:change=${(event: Event) => void pick(event.target as HTMLInputElement)}>` as HTMLInputElement;
+  const locked = () => !field.editable.get() || busy.get() || !source;
+  const upload = html`<button type="button" class="btn sm" id=${id} aria-label=${() => `${current() ? 'Replace' : 'Upload'} ${(options.label ?? field.meta.label).toLowerCase()}`}
+    aria-describedby=${options.describedBy ?? null} disabled=${locked} on:click=${() => input.click()}>${() => busy.get() ? 'Uploading' : current() ? 'Replace' : 'Upload'}</button>` as HTMLButtonElement;
+  const element = html`<div class="in-image" aria-invalid=${() => field.error.get() ? 'true' : null}>${() => current() && source ? ImageThumb(source, current()!, field.meta.label)
+    : html`<span class="img-thumb img-empty" aria-hidden="true">${Icon('image', { size: 'sm' })}</span>`}${upload}${when(() => Boolean(current()), () =>
+    html`<button type="button" class="btn sm ghost" disabled=${locked} on:click=${() => write(null)}>Remove</button>`)}${input}${source ? null
+    : html`<span class="muted">Images can be added on the record itself</span>`}</div>` as HTMLElement;
+  return { element, commit: () => {
+    if (untrack(() => field.rules.get().required) && isEmpty(untrack(current))) { field.error.set(`${field.meta.label} is required`); return false; }
+    return true;
+  }, focus: () => upload.focus() };
+}
+
 /** Stored rich text as formatted, read-only DOM. Links stay links; nothing is parsed as markup. */
 export function RichTextView(value: string, options: { links?: boolean; images?: ImageSource;
   /** Show mentions (the activity journal), each with the person's current name where known. */
@@ -746,6 +789,7 @@ const typed = (type: string) => (props: FieldProps) => {
 export const TextField = typed('text');
 export const LongTextField = typed('longtext');
 export const RichTextField = typed('richtext');
+export const ImageField = typed('image');
 export const IntegerField = typed('integer');
 export const DecimalField = typed('decimal');
 export const CurrencyField = typed('currency');

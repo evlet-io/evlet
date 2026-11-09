@@ -339,7 +339,9 @@ A record's State shows as a coloured badge in the header by default, with its mo
 buttons; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
 draws neither. `Meta.status` adds a status badge for a Select the system sets, such as a
 payment status, coloured by `Select(..., colors={...})`. Badges and bar steps offer only the
-moves this person may take now; everything else is plain text. Lists draw the same badges. The
+moves this person may take now; everything else is plain text. Lists draw the same badges.
+`State(..., cancelled=(...))` marks final states that mean the record was called off; the
+schema's `state.cancelled` lists them, with `"void"` on a voidable State. The
 badge wraps with the key facts in the side panel and on a phone; the bar scrolls sideways there.
 See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
 
@@ -584,6 +586,11 @@ Selects, dates, date-times, times and durations open Evlet's own pickers ([ui-fr
 A `RichText` field edits in Evlet's own rich text editor ([ui-framework.md](ui-framework.md#rich-text)):
 at rest the record shows the formatted text (read only when the record is locked), and list cells
 show its plain text. The Playground's projects have one, Brief.
+An `Image` field ([model-engine.md](model-engine.md#image-fields)) shows a small preview with
+Upload (Replace once set) and Remove. The browser shrinks a large image and checks its type before
+upload; the server checks both again. A new record's image is held until the record is saved.
+List cells read "Image". `Meta.image` puts the model's `image` key in `/api/schema`, which the record
+header and side panel use for the record's avatar. The Playground's items have a Photo.
 A record's Activity tab writes notes with the same editor; typing `@` mentions a person, with a
 warning when they can't open the record. The bell in the top bar opens the notification centre,
 with the unread count kept live by the event stream ([journal.md](journal.md#mentions)). It is a

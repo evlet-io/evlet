@@ -1709,6 +1709,11 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
         stamp_names, stamp_values = modified(tx.actor)
         names, values = [*names, *stamp_names], [*values, *stamp_values]
         tx.connection.execute(f'UPDATE {table} SET {", ".join(identifier(name) + "=?" for name in names)} WHERE id=?', [*values, draft.id])
+    # Rich text and Image fields: link held images, refuse other records' and delete the ones no longer used.
+    from . import images
+    holders = images.holders(model)
+    if holders and (before is None or any(before._values.get(name) != draft._values.get(name) for name in holders)):
+        images.settle(tx, model, draft.id, draft._values)
     return tx.get(model, draft.id) if reload else None
 
 

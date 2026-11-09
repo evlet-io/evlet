@@ -206,6 +206,9 @@ def revise(context, model, record_id, reason):
     if name:
         copy._values[business.registry.naming[model].field] = name
     periods.check(tx, model, after=copy._values)
+    # The copy gets its own copy of each Image field's image (an image belongs to one record).
+    from .images import clone
+    clone(business, tx, user, model, copy._values)
     saved = write_snapshot(tx, copy)
     plan = business.registry.plan_for(model)
     if plan is not None:

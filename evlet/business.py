@@ -426,6 +426,9 @@ class Business:
             # Meta.focus is display only; like key_fields it is left out for a role that cannot read the field.
             if 'focus' in entry and entry['focus'] not in readable:
                 del entry['focus']
+            # The record's image field, likewise only for a role that can read it.
+            if 'image' in entry and entry['image'] not in readable:
+                del entry['image']
             # The field naming fills: the record page shows it as the document number, and until it has one,
             # when it will ("Assigned on save", "Assigned on confirm").
             naming = self.registry.naming.get(model)
@@ -1414,7 +1417,7 @@ class Business:
         """Held rich text images are purged on each upload; with jobs, also hourly by a framework schedule."""
         from . import images
         from .jobs import Task
-        if self.jobs is None or not any(images.rich_fields(model) for model in self.registry.models.values()):
+        if self.jobs is None or not any(images.holders(model) for model in self.registry.models.values()):
             return
         self.jobs.tasks.setdefault(images.PURGE_TASK, Task(images.PURGE_TASK, images.purge_job(self), max_attempts=1))
         try:
@@ -1440,7 +1443,7 @@ class Business:
 
     def files(self, user, model, record_id, tail, method, body):
         from . import images
-        image_route = bool(images.rich_fields(model))
+        image_route = bool(images.holders(model))
         if (model not in self.attachments and not image_route) or len(tail) > 1:
             raise AccessError(404, 'Attachments unavailable')
         file_id = None
@@ -1489,10 +1492,12 @@ class Business:
             if row is None or (model not in self.attachments and row['purpose'] != 'image'):
                 raise AccessError(404, 'Attachment not found')
             if method == 'GET' and row['purpose'] == 'image':
+                if not images.readable(self, user, model, record, file_id):
+                    raise AccessError(404, 'Attachment not found')
                 return images.response(self, row)
             if method == 'DELETE' and row['purpose'] == 'image':
-                # A record's images go when its rich text no longer refers to them (on save).
-                raise AccessError(405, 'Remove the image from the text and save instead')
+                # A record's images go when its rich text or Image fields no longer refer to them (on save).
+                raise AccessError(405, 'Remove the image from the record and save instead')
             if method == 'GET':
                 return 200, Download(self.storage.read(row)), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
             if method == 'DELETE':

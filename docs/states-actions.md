@@ -48,18 +48,20 @@ class Invoice(Model):
         self.remarks = f"Paid {amount} on {paid_on}"
 ```
 
-`State(choices, default=..., moves=..., locked=..., final=..., voidable=...)`:
+`State(choices, default=..., moves=..., locked=..., final=..., voidable=..., cancelled=...)`:
 
 * It is a `Select`. Its schema type is `select`, it is read only in forms, and finite
   expressions read it like any other Select (`F("status") == "issued"`).
 * `default` is the first state when left out. A new record always starts in it.
 * A model has at most one State, and only root documents have one (not `Table` rows).
-* Every state named in a move, `locked`, `final` or `voidable` must be one of the
+* Every state named in a move, `locked`, `final`, `voidable` or `cancelled` must be one of the
   choices. A final state has no moves out. Voidable states must be locked and not final.
 * A State with `voidable` states must also have a state named `void` that is locked and
   final. Void and revise (below) start only from a voidable state and end in `void`. No
   declared Move may then go to `void`: a record is voided only through void, with a reason,
   so later phases can always reverse its effects and record it.
+* `cancelled` names the final states that mean the record was called off, such as cancelled
+  or lost. See [Cancelled states](#cancelled-states).
 * State also takes `label`, `help_text`, `placeholder`, `hidden`, `index`, `max_length` and
   `colors` (as on a Select, below). It takes no rules, calculations or validators.
 * `show` says how the record page draws the State: `"badge"` (the default), `"bar"` or
@@ -119,6 +121,32 @@ Display never implies that a person can change the state:
 * The badge's accessible name is `Status: Active` (and `Status: Draft. Change status` while it
   offers moves). The bar is a list named after the model (`Invoice status`); the current step
   has `aria-current="step"`.
+
+### Cancelled states
+
+A final state can mean the work was done (paid, closed, won) or that it was called off
+(cancelled, lost). `cancelled` names the second kind, so the browser can tell them apart
+without guessing from names or colours:
+
+```python
+class Order(Model):
+    status = State(("open", "done", "cancelled", "lost"),
+                   moves=(Move("open", "done", "Done"), Move("open", "cancelled", "Cancel"),
+                          Move("open", "lost", "Mark lost")),
+                   locked=("done", "cancelled", "lost"), final=("done", "cancelled", "lost"),
+                   cancelled=("cancelled", "lost"))
+```
+
+* It is a list of distinct state names, empty by default. Each must be a state and must be
+  in `final`. Anything else fails when the class is created, for example
+  `State cancelled names a state that is not final: lost; cancelled states must be final`. A
+  state people can reopen is not final, so it cannot be marked cancelled.
+* On a State with `voidable` states, `"void"` counts as cancelled without being listed. Listing
+  it as well is allowed and changes nothing.
+* It is purely descriptive. It changes no moves, locks, permissions, voids or closing checks:
+  a cancelled state behaves exactly as the same final state without the marker.
+* The schema's `state` entry carries it as `cancelled`, the declared states plus `"void"` when
+  it applies, in declaration order, for the browser to show such records as cancelled.
 
 ### Meta.status
 
@@ -673,7 +701,8 @@ refused with the names of the records that depend on it.
   gain `void` (and `revise` when revisable), for roles that can read the State. Entries of
   models that can unpost gain `unpostable: true` and `unpost` and `repost` in `permissions`.
   Other entries are unchanged. The `revises` field is listed with the other fields (type `link`, read only).
-* `state`: `field`, `states`, `default`, `locked`, `final`, `voidable` and `moves`, each
+* `state`: `field`, `states`, `default`, `locked`, `final`, `voidable`, `cancelled` (the
+  declared cancelled states plus `"void"` on a voidable State), `show` and `moves`, each
   with `from`, `to`, `label`, `roles`, `guarded`, `when` and, when the move asks for values,
   `asks`. `when` is the serialized
   finite-v1 expression when the role can read every value it reads, otherwise `null`.

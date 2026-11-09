@@ -641,7 +641,8 @@ def state_schema(business, user, model):
                       'when': guards[move].ir if move in guards and readable(business.policy, user, guards[move]) else None,
                       **({'asks': asks} if asks else {})})
     return {'field': name, 'states': list(field.choices), 'default': field.default, 'moves': moves,
-            'locked': list(field.locked), 'final': list(field.final), 'voidable': list(field.voidable), 'show': field.show}
+            'locked': list(field.locked), 'final': list(field.final), 'voidable': list(field.voidable),
+            'cancelled': list(field.cancelled_states), 'show': field.show}
 
 
 def action_schema(business, user, model, name):

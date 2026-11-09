@@ -33,7 +33,7 @@ export interface Kind {
   inputMode?: string;
   placeholder?: string;
   /** How the control is built: a text input (default) or a dedicated control. */
-  control?: 'textarea' | 'richtext' | 'switch' | 'select' | 'link' | 'tags' | 'multiselect' | 'readonly';
+  control?: 'textarea' | 'richtext' | 'image' | 'switch' | 'select' | 'link' | 'tags' | 'multiselect' | 'readonly';
   /** A picker next to the text input (pickers.ts). */
   picker?: 'date' | 'datetime' | 'time' | 'duration';
 }
@@ -167,6 +167,8 @@ export const KINDS: Record<string, Kind> = {
   longtext: { ...text, control: 'textarea', parse: (input, meta) => text.parse!(input.replace(/\s+$/, ''), meta) },
   // Formatted text (richtext/): stored as sanitised HTML; tables and lists show its plain text.
   richtext: { format: value => empty(value) ? '' : plainOf(String(value)), control: 'richtext' },
+  // An Image field holds the id of a private image attachment; forms show it with ImageControl (fields.ts).
+  image: { format: value => empty(value) ? '' : 'Image', control: 'image' },
   integer: {
     format: value => empty(value) ? '' : formatNumber(String(value), 0),
     edit: value => empty(value) ? '' : String(value),
