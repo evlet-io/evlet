@@ -236,7 +236,9 @@ class PostgreSQLDatabase(Database):
                 if timeout is not None:
                     connection.execute("SELECT set_config('statement_timeout', ?, true), set_config('lock_timeout', ?, true), set_config('idle_in_transaction_session_timeout', ?, true)", (str(timeout * 1000),) * 3)
                 connection.execute('SELECT pg_advisory_xact_lock(1163283540)')
-                yield Session(connection, self.registry, self.timezone)
+                session = Session(connection, self.registry, self.timezone)
+                session._business = self.business
+                yield session
                 connection.commit()
             except BaseException:
                 connection.rollback()

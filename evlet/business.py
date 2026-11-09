@@ -107,6 +107,8 @@ class Gate:
 class Business:
     def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None):
         self.database, self.registry, self.auth = database, database.registry, auth
+        # Sessions of this database settle writes to models that declare derive() (Session.create/update).
+        database.business = self
         self.tenant = None
         self.gate = Gate()
         self.application = None

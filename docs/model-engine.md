@@ -156,7 +156,32 @@ class Visit(Model):
 * **Trusted and read only.** `derive()` is app code. `self.context` is a read-only context
   whose `session` is the write's transaction, read only (`get`, `list`, `count`, `related` and
   `aggregate`; no write methods), for looking up linked records. Reads through it bypass
-  permissions, as in any Python session.
+  permissions, as in any Python session. Because it cannot write, a lookup never starts
+  another settlement.
+* **Its model.** `self.model` is the model class on every draft `derive()` and `before_close()`
+  see, and on each row (`line.model` is the row model). Use it for class attributes and shared
+  helpers instead of a registry of subclasses. A field, Table or class attribute named `model`
+  takes its place.
+* **Trusted session writes.** App code that writes through the transaction session (an
+  action's or move run's `self.context.session`, a job's `tx`, `database.transaction()` of an
+  application) gets the same derived values. `session.create`, `session.update` and
+  `session.delete` of a model that declares `derive()`, or of one of its Table rows, write the
+  record and then settle the saved document like any other write: `derive()`, cleaning and
+  validation (`validate()`), then store what changed, and return the settled record. It runs as
+  the engine, without roles or row scopes, like the session write itself. A failure raises and
+  undoes that write even when the calling code catches it, and the rest of the transaction
+  goes on. The rules:
+  * A document with calculations is a finite-v1 document, which the session already refuses to
+    write: app code writes it through `Context.create`/`update` (or an action or move), and
+    `derive()` runs there.
+  * A record with posted effects keeps its stored values, as on every other write.
+  * `session.maintenance()` stays a raw repair: `derive()` does not run, so the repair must
+    leave the derived values consistent (or the next save restores them).
+  * A session with no application behind it (a bare `Database`, or a migration step) refuses
+    these writes with `ValueError`, since settling needs the application's Tables and Links. Use
+    `maintenance()` there.
+  * Ledger models cannot declare `derive()`, so `insert_many` and the other ledger writes do not
+    run it.
 * `Meta.derives` without `derive()`, `derive()` without `Meta.derives`, a name that is not a
   field or Table of the model (or `"table.field"` of one of its Tables, one level deep), a Table
   named with one of its fields, or a calculated, State, Sequence or standard field is a

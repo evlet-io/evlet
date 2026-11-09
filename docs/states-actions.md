@@ -360,6 +360,9 @@ class Transfer(Model):
   change the State either, outside `tx.maintenance()` for audited repairs.
 * `derive()` and `before_close()` get the session read only, for lookups
   ([model-engine.md](model-engine.md#derived-values), [Before a record closes](#before-a-record-closes)).
+* A session write to another record whose model declares `derive()`, or to one of its rows, settles
+  that record too, so its derived values are stored with it
+  ([model-engine.md](model-engine.md#derived-values)).
 
 ## What the caller may do now
 
