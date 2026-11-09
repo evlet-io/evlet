@@ -421,6 +421,9 @@ and the section. The group rules above apply to sections too, and Other always s
 `collapsible` and `collapsed` (`false` for plain groups). Controls can change both per
 section ([controls.md](controls.md)). `Section(..., panel=False)` leaves the section out when a
 list opens the record in its side panel ([ui.md](ui.md#what-a-side-panel-shows)).
+`Section(..., description="...")` adds a line of text under the title, sent as `description` on the
+layout entry; it must be nonempty text. A layout can also start with `Main(fields, *tables)` for a
+compact record page ([ui.md](ui.md#compact-record-page)).
 
 ### Field order and record tabs
 

@@ -37,6 +37,13 @@ are listed under `children` in the schema.
 The schema entry has `key_fields` only when the model declares them, and lists only
 the fields the caller may read.
 
+## Cards
+
+`Meta.cards` names up to five derived values shown as cards at the top of a compact record
+page: fields with `compute=`, `fetch=` or `query=`, and per-record measures. Like key fields,
+the schema lists only the cards the caller may read. See
+[ui.md](ui.md#compact-record-page).
+
 ## Status
 
 `Meta.status` names a visible Select or State of the model shown as its status badge in the

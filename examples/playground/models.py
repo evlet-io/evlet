@@ -2,8 +2,9 @@
 
 from datetime import date
 
-from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Model, Naming, Ref,
-                   Registry, Related, RichText, Rule, Section, Select, Series, Sum, Tab, Table, Text, ValidationError, action)
+from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Main, Model, Naming,
+                   Ref, Registry, Related, RichText, Rule, Section, Select, Series, Sum, Tab, Table, Text, ValidationError, action)
+from evlet.calc import F
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
 CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
@@ -110,29 +111,36 @@ class Project(Model):
     class Meta:
         description = "Track a small project and its customer."
         list_fields = ('title', 'customer', 'status', 'budget')
-        # A plain ('Title', fields) group always shows; a Section can be opened and closed. Planning
-        # starts open, Schedule starts closed and Notes starts closed when it is empty.
-        layout = (('Project', ('title', 'customer', 'status')),
-                  Section('Planning', ('budget', 'progress')),
-                  Section('Schedule', ('starts_on',), collapsed=True),
-                  Section('Notes', ('brief', 'notes'), collapsed='empty'))
-        # The record page's tabs: Details first, then the project's tasks (Related) and its history.
-        tabs = ('details', 'related', 'activity')
-        default_tab = 'details'
-        # The full page's side column: related tasks first, then the record's times, then key fields
-        # (shown away from Details).
+        # A compact record page: Main is the primary area, with no heading; every Section after it is
+        # "more information", which a person can open and close. Budget starts open, Schedule starts
+        # closed and Notes starts closed when it is empty. A layout with Main has no record tabs.
+        layout = (Main(('title', 'customer', 'status')),
+                  Section('Budget', ('budget', 'progress'), description='What the project may spend and how far the work has come.'),
+                  Section('Schedule', ('starts_on',), collapsed=True, description='When the work starts.'),
+                  Section('Notes', ('brief', 'notes'), collapsed='empty', description='Goals, scope and anything else worth keeping.'))
+        # Cards at the top of the record page, up to five: derived values only. Here they are per-record
+        # measures (below): what the project's invoices total and have been paid, and its tasks. A field
+        # with compute=, fetch= or query= can be a card too.
+        cards = ('invoiced', 'paid', 'tasks', 'open_tasks')
+        # The full page's side column: related tasks first, then the record's times, then key fields.
         side_blocks = ('related', 'info', 'key_fields')
         open_in = 'panel'
-        # What the list's side panel shows, in this order: the Project and Planning sections, then the
-        # Related tab and Record info. Schedule, Notes, Activity and the summary stay on the full page,
-        # one click away (Open full page). Controls, Models, Form layout can change it per instance.
-        panel = ('Project', 'Planning', 'related', 'info')
+        # What the list's side panel shows, in this order: the Main fields (named by the model's label,
+        # Project) and Budget, then the Related tab and Record info. Schedule, Notes, Activity and the
+        # summary stay on the full page, one click away (Open full page). Controls, Models, Form layout
+        # can change it per instance.
+        panel = ('Project', 'Budget', 'related', 'info')
         # The list's tabs: All, Planned, Active and Done, with counts. It opens on Active.
         list_tabs = 'status'
         list_tab = 'active'
         # Totals over the listed projects. trend= lets the browser chart the budget by start month (the last
         # 6 months), read from GET /api/project/aggregate with the list's filters; color= picks its colour.
-        measures = {'budget': Sum('budget', trend='starts_on', color='teal'), 'projects': Count()}
+        # Per record (model= and link=): the project's invoices, its tasks and those not done yet.
+        measures = {'budget': Sum('budget', trend='starts_on', color='teal'), 'projects': Count(),
+                    'invoiced': Sum('total', model='invoice', link='project'),
+                    'paid': Sum('amount_paid', model='invoice', link='project'),
+                    'tasks': Count('projecttask', link='project'),
+                    'open_tasks': Count('projecttask', link='project', where=~F('done'))}
 
     # A declared title is the record title itself.
     title = Text(required=True, max_length=120, label='Project')

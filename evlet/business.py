@@ -487,6 +487,13 @@ class Business:
             meaning = self.registry.meaning[model]
             if meaning.key_fields:
                 entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
+            # Meta.cards, like key_fields, only what this role may read: a field it can read, or a per-record
+            # measure whose fields it can read.
+            cards = getattr(self.registry, 'cards', {}).get(model)
+            if cards:
+                from .measures import available
+                measured = {item.name for item in available(self, user, model, True)}
+                entry['cards'] = [name for name in cards if name in readable or name in measured]
             # The status badge (Meta.status), only for roles that can read its field.
             if meaning.status is not None and meaning.status in readable:
                 entry['status'] = meaning.status

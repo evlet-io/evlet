@@ -16,7 +16,7 @@ from tempfile import TemporaryDirectory
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
                    Move, MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome,
-                   Report, Column, Chart, Count, Html, Ref, Section, Tab)
+                   Report, Column, Chart, Count, Html, Main, Ref, Section, Tab)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
 from evlet.audit import fixed_times
@@ -690,11 +690,77 @@ def record_layouts(folder):
     return out
 
 
+class Shipment(Model):
+    """For the screens: a compact record page (Main, Sections with descriptions, Meta.cards)."""
+    permissions = ALL
+    title = Text(required=True, label='Shipment')
+    carrier = Text(default='')
+    status = Select(('booked', 'sent'), default='booked')
+    declared = Decimal(default=0, minimum='0', label='Declared value')
+    fee = Decimal(default=0, minimum='0')
+    # A derived field: a card may show it.
+    total = Decimal(compute='declared + fee', label='Total')
+    notes = LongText()
+
+    class Stop(Child):
+        place = Text(default='')
+
+    stops = Table(Stop)
+
+    class Meta:
+        status = 'status'
+        key_fields = ('carrier', 'status')
+        measures = {'parcels': Count('parcel', link='shipment'), 'weight': Sum('weight', model='parcel', link='shipment')}
+        cards = ('total', 'parcels', 'weight')
+        layout = (
+            Main(('title', 'carrier', 'status'), 'stops'),
+            Section('Charges', ('declared', 'fee', 'total'), description='What the shipment is worth and what it costs.'),
+            Section('Notes', ('notes',), collapsed='empty'),
+            Related('parcel', label='Parcels', fields=('label', 'weight')),
+        )
+
+
+class Parcel(Model):
+    permissions = ALL
+    shipment = Link(Shipment, required=True)
+    label = Text(required=True)
+    weight = Decimal(default=0, minimum='0')
+
+
+def record_compact(folder):
+    """Responses a compact record page reads: the schema, a record, its per-record measures and related parcels."""
+    database = Database(folder / 'compact.sqlite3', Registry(Shipment, Parcel))
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    app = Application(database, auth=auth)
+    app.initialize()
+    http(app, 'POST', '/api/auth/setup', {'username': 'owner', 'password': PASSWORD})
+    status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
+    cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
+    admin = lambda method, path, body=None: http(app, method, path, body, cookie=cookie, csrf=csrf)  # noqa: E731
+    out = {}
+
+    def keep(name, response):
+        status, payload, headers = response
+        out[name] = {'status': status, 'body': payload, 'etag': headers.get(b'etag', b'').decode() or None}
+        return payload
+
+    keep('compact_schema', admin('GET', '/api/schema'))
+    shipment = admin('POST', '/api/shipment', {'title': 'Spring order', 'carrier': 'Falcon Freight', 'declared': '1200', 'fee': '35.5',
+                                               'children': {'stops': [{'_key': 'stop-1', 'place': 'Jebel Ali'}]}})[1]
+    for label, weight in (('Box A', '4.5'), ('Box B', '7')):
+        assert admin('POST', '/api/parcel', {'shipment': shipment['id'], 'label': label, 'weight': weight})[0] == 201
+    keep('compact_shipment_detail', admin('GET', f"/api/shipment/{shipment['id']}"))
+    keep('compact_measures', admin('GET', f"/api/shipment/{shipment['id']}/measures"))
+    keep('compact_parcels', admin('GET', f"/api/parcel?limit=5&offset=0&filters={quote(json.dumps([['shipment', 'eq', shipment['id']]]))}"))
+    database.close()
+    return out
+
+
 def generate():
     """Both fixtures, recorded from fresh databases. Ids count up per table so the recording is stable."""
     with TemporaryDirectory() as directory, sequential_ids(), fixed_times():
         return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory)), **record_reports(Path(directory)),
-                                                                          **record_layouts(Path(directory))}}
+                                                                          **record_layouts(Path(directory)), **record_compact(Path(directory))}}
 
 
 def main():

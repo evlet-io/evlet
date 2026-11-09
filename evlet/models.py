@@ -409,6 +409,9 @@ class Registry:
         configure(self, child_models)
         from .measures import compile_declared
         self.measures = MappingProxyType(compile_declared(self, models))
+        # Cards at the top of a compact record page: derived fields and per-record measures (evlet/meaning.py).
+        from .meaning import cards_for
+        self.cards = MappingProxyType(cards_for(self, models, child_models))
         # Record layouts with Tabs, Related, Html, Chart or Table blocks (Meta.layout, evlet/ui/metadata.py).
         from .ui.metadata import compile_layouts
         self.layouts = MappingProxyType(compile_layouts(self))

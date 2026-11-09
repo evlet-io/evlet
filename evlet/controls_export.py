@@ -41,17 +41,25 @@ def call(name, args=(), kwargs=None):
     return f"{name}({', '.join([*map(literal, args), *(f'{key}={literal(value)}' for key, value in (kwargs or {}).items())])})"
 
 
-def block_code(block, sections):
-    """Python source for one Meta.layout block; a section as `sections` (a Controls layout, by title) has it."""
+def block_code(block, sections, main=None):
+    """Python source for one Meta.layout block; a section as `sections` (a Controls layout, by title) has it.
+    `main` is the title that names the Main block's fields (the model's label)."""
     from .forms import Chart
     from .meaning import Related
-    from .ui.metadata import Html, Section
+    from .ui.metadata import Html, Main, Section
+    if isinstance(block, Main):
+        section = sections.get(main)
+        fields = tuple(item['name'] for item in section['fields']) if section is not None else ()
+        if not fields and not block.tables:
+            return None
+        return call('Main', (fields, *block.tables))
     if isinstance(block, (Section, tuple, list)):
         section = sections.get(block.title if isinstance(block, Section) else block[0])
         if section is None:
             return None
         options = {**({'collapsed': section.get('collapsed', False)} if section.get('collapsible') and section.get('collapsed') else {}),
-                   **({} if section.get('collapsible') else {'collapsible': False}), **({'flow': 'columns'} if section.get('flow') == 'columns' else {})}
+                   **({} if section.get('collapsible') else {'collapsible': False}), **({'flow': 'columns'} if section.get('flow') == 'columns' else {}),
+                   **({'description': block.description} if isinstance(block, Section) and block.description is not None else {})}
         return call('Section', (section['title'], tuple(item['name'] for item in section['fields'])), options)
     if isinstance(block, str):
         return repr(block)
@@ -73,17 +81,20 @@ def layout_code(model, sections):
 
     A section the app places keeps its place; one the app does not place (added or renamed in Controls) goes last
     on the first Tab, or last without Tabs. A section Controls removed is left out."""
-    from .ui.metadata import Section, Tab
+    from .ui.metadata import Main, Section, Tab, view_for
     layout = model.Meta.layout
     by_title = {section['title']: section for section in sections}
     placed = set()
+    main = view_for(model)['label']
 
     def blocks(items, indent):
         lines = []
         for block in items:
             if isinstance(block, (Section, tuple, list)):
                 placed.add(block.title if isinstance(block, Section) else block[0])
-            text = block_code(block, by_title)
+            if isinstance(block, Main):
+                placed.add(main)
+            text = block_code(block, by_title, main)
             if text is not None:
                 lines.append(f'{indent}{text},')
         return lines

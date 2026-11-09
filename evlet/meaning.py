@@ -9,6 +9,8 @@ Declared on `Model.Meta`:
         status = "payment_status"
 
 `status` names a Select or State shown as the record's status badge (and as a badge in lists).
+`cards` (up to five) names derived values shown as cards at the top of a compact record page: fields
+with compute=, fetch= or query= (stored or not) and per-record measures (Meta.measures with model= and link=).
 Relations are reverse Links: every Link on a root model to another root model is discovered
 automatically. `Related` names, orders, limits or hides one of them.
 """
@@ -22,6 +24,7 @@ from .fields import Link, Reference, Select
 from .models import storage_name
 
 KEY_FIELDS = 8
+CARDS = 5
 MAX_FILES = 10
 MAX_SIZE = 1024 * 1024
 RELATION_ROWS = 10
@@ -138,6 +141,48 @@ def key_fields(model, names):
         raise ValueError(f'{model.__name__}: Meta.key_fields are at most {KEY_FIELDS} distinct visible fields '
                          '(Tables are listed as children, not key fields)')
     return tuple(names)
+
+
+def cards_for(registry, models, children):
+    """{model: names} for every model with Meta.cards, checked once its measures are compiled.
+
+    Each card is a visible field with compute=, fetch= or query= (stored or not), or a per-record measure of
+    the model (Meta.measures with model= and link=). A model-level measure totals many records, so it is not
+    a card on one record."""
+    result = {}
+    for model in models:
+        names = getattr(getattr(model, 'Meta', None), 'cards', None)
+        if names is None:
+            continue
+        where = f'{model.__name__}.Meta.cards'
+        if model in children:
+            raise ValueError(f'{where}: cards are for root models, not Table rows')
+        if (not isinstance(names, (tuple, list)) or any(type(name) is not str or not name for name in names)
+                or len(names) > CARDS):
+            raise ValueError(f'{where}: name up to {CARDS} derived fields or per-record measures, such as ("total", "paid")')
+        repeated = [name for index, name in enumerate(names) if name in names[:index]]
+        if repeated:
+            raise ValueError(f'{where}: {", ".join(dict.fromkeys(repeated))} is named more than once')
+        measures = getattr(registry, 'measures', {}).get(model, {})
+        for name in names:
+            field = model.__declared_fields__.get(name)
+            measure = measures.get(name)
+            if field is not None and measure is not None:
+                raise ValueError(f'{where}: {name} is both a field and a measure; rename the measure')
+            if field is not None:
+                if field.hidden:
+                    raise ValueError(f'{where}: {name} is hidden')
+                if field.compute is None and field.fetch is None and field.query is None:
+                    raise ValueError(f'{where}: {name} is not derived; a card shows a field with compute=, fetch= or '
+                                     'query=, or a per-record measure')
+            elif measure is not None:
+                if measure.link is None:
+                    raise ValueError(f'{where}: {name} is a model-level measure; a card shows a per-record measure '
+                                     '(Meta.measures with model= and link=)')
+            else:
+                raise ValueError(f'{where}: {model.__name__} has no field or measure {name!r}')
+        result[model] = tuple(names)
+    return result
 
 
 def status(model, name):
