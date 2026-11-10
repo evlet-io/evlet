@@ -3,52 +3,116 @@
 // and ChildTable into the one layout every record uses.
 
 import { html, when, type Child } from '../dom';
-import { effect, type Cell } from '../reactive';
+import { effect, onCleanup, untrack, type Cell, type Readable } from '../reactive';
 import type { StateSchema } from '../model/schema';
-import { Button, Icon, StateBanner, type ButtonProps } from './base';
+import { Button, Icon, IconTile, StateBanner, type ButtonProps } from './base';
 import { read, tint, uid, type Prop, type Tint } from './core';
 import { type FieldLike } from './fields';
 import { InlineValue } from './inline';
 import { humanize } from './kinds';
 import { Menu, openPopover, toast } from './layers';
 
+/** Below this width of the frame the side column leaves it (a drawer, or stacked under the main column). */
+export const DOC_NARROW = 960;
+/** Main column widths that step the layout down: fewer field columns, then the phone layout, then one column. */
+export const DOC_MAIN_STEPS = { m: 640, s: 520, xs: 360 } as const;
+
+/** The width classes a frame of `frame` px with a main column of `main` px gets (0: not measured yet). */
+export function docWidthClasses(frame: number, main: number): string[] {
+  return [frame > 0 && frame < DOC_NARROW ? 'doc-narrow' : '',
+    ...(main > 0 ? (Object.entries(DOC_MAIN_STEPS) as Array<[string, number]>).filter(([, width]) => main < width).map(([step]) => `doc-${step}`) : [])].filter(Boolean);
+}
+
 /**
- * The record layout: main column and side panel (right, left or off), comfortable or compact.
- * The panel variant is the narrow layout of a record opened beside a list: one column, no side panel.
+ * The record layout: main column and side column (right, left or off), comfortable or compact.
+ * It is responsive to its own width, not the window's: a frame narrower than DOC_NARROW gets `doc-narrow`
+ * (the side column leaves the grid), and its main column's width steps `doc-m`, `doc-s` and `doc-xs`; `doc-sized`
+ * follows the first measure. A record
+ * page and a list's side panel use the same frame; the panel variant only changes its padding and title size.
  */
 export function DocFrame(props: { tint: Tint; main: Child; side?: Child; sidePosition?: Prop<'left' | 'right' | 'off'>; density?: Prop<'comfortable' | 'compact'>; variant?: 'page' | 'panel' }): HTMLElement {
-  const position = () => props.variant === 'panel' ? 'off' : read(props.sidePosition ?? 'right');
+  const position = () => read(props.sidePosition ?? 'right');
   const accent = tint(props.tint);
-  return html`<div class="doc" class:doc-panel=${props.variant === 'panel'} class:no-side=${() => position() === 'off' || !props.side} class:side-left=${() => position() === 'left'}
+  const frame = html`<div class="doc" class:doc-panel=${props.variant === 'panel'} class:no-side=${() => position() === 'off' || !props.side} class:side-left=${() => position() === 'left'}
     class:compact=${() => read(props.density ?? 'comfortable') === 'compact'} style:--acc=${`var(--t-${accent})`} style:--acc-bg=${`var(--t-${accent}-bg)`}>
     <div class="doc-main">${props.main}</div>${props.side ? when(() => position() !== 'off', () => html`<aside class="doc-side" aria-label="Side panel">${props.side}</aside>`) : null}</div>` as HTMLElement;
+  // Measure the frame and its main column; without ResizeObserver (old browsers) it keeps the wide layout.
+  if (typeof ResizeObserver !== 'undefined') {
+    const main = frame.firstElementChild as HTMLElement;
+    const widths = { frame: 0, main: 0 };
+    let applied: string[] = [];
+    const observer = new ResizeObserver(entries => {
+      for (const entry of entries) widths[entry.target === frame ? 'frame' : 'main'] = Math.round(entry.contentRect.width);
+      const next = docWidthClasses(widths.frame, widths.main);
+      // After the first width, changes may animate (a drawer sliding out, say), not the first layout itself.
+      if (widths.frame > 0 && !frame.classList.contains('doc-sized')) requestAnimationFrame(() => frame.classList.add('doc-sized'));
+      if (next.join() === applied.join()) return;
+      frame.classList.remove(...applied);
+      frame.classList.add(...next);
+      applied = next;
+    });
+    observer.observe(frame);
+    observer.observe(main);
+    onCleanup(() => observer.disconnect());
+  }
+  return frame;
 }
 
 export interface DocHeaderProps {
-  /** Record type, shown as the eyebrow: "Invoice". */
+  /** Record type ("Invoice"): the accessible name of the default mark. The breadcrumb above names it on screen. */
   type: string;
+  /** The record type's icon, on the default mark: a tinted square tile, as on the list page. */
   icon: string;
-  mark: Node;
+  /** The mark at the start of the title row; defaults to the type's icon tile. */
+  mark?: Node;
+  /** Tint of the default icon tile. */
+  tint?: Tint;
   /** Plain title, or a field edited in place (never a sequence number). */
   title: Prop<string> | FieldLike;
   /** Shown in mono (document numbers). */
   mono?: Prop<boolean>;
-  /** Key facts: money, linked record, dates, owner. */
+  /** Status pills, on the title's line after the title. */
+  status?: Child[];
+  /** Key facts: money, linked record, dates, owner. One small line under the title row. */
   meta?: Child[];
+  /** Outline buttons, then the main move (a SplitButton), then More: right of the title, centred on its row. */
   actions?: Child[];
+  /** One muted line under the title ("Desert Rose Retail · 08-11-2026"); nothing shows while it is empty. */
+  subtitle?: Prop<string>;
+  /** A record image (a round avatar or a square thumbnail) left of the title, in place of the mark. Takes no space
+   * while it renders nothing. */
+  image?: Child;
+  /** Small buttons at the end of the title row, after the actions (a side panel's Expand and Close). */
+  tools?: Child[];
 }
 
-/** Record mark, record type, title, key facts and the main actions. */
+/**
+ * The title row: mark, title and status pills, the main actions on the right; key facts on a small line
+ * under it. A narrow header (a side panel, a phone) puts the actions on their own line under the title.
+ */
 export function DocHeader(props: DocHeaderProps): HTMLElement {
   const field = typeof props.title === 'object' && props.title !== null && 'meta' in props.title ? props.title as FieldLike : null;
   const titleId = uid('doc');
   const title = field && field.meta.type !== 'sequence'
     ? html`<h1 id=${titleId} class="doc-title">${InlineValue({ field, labelledBy: titleId })}</h1>`
     : html`<h1 id=${titleId} class:mono=${props.mono ?? false}>${field ? () => String(field.value.get() ?? '') : props.title as Prop<string>}</h1>`;
-  return html`<header class="doc-head">
-    <div class="doc-mark">${props.mark}</div>
-    <div class="ttl"><div class="eyebrow">${Icon(props.icon, { size: 'xs' })}${props.type}</div>${title}${props.meta?.length ? html`<div class="rec-meta">${props.meta.map(item => html`<span>${item}</span>`)}</div>` : null}</div>
-    ${props.actions?.length ? html`<div class="ph-actions">${props.actions}</div>` : null}</header>` as HTMLElement;
+  let mark = props.mark;
+  if (!mark) {
+    const tile = IconTile(props.icon, { tint: props.tint, size: 36 });
+    tile.classList.add('doc-tile');
+    tile.setAttribute('role', 'img');
+    tile.setAttribute('aria-label', props.type);
+    mark = tile;
+  }
+  const status = props.status?.filter(Boolean) ?? [];
+  const subtitle = props.subtitle;
+  return html`<header class="doc-head"><div class="doc-row">
+    <div class="doc-mark">${props.image === undefined ? null : html`<span class="doc-img">${props.image}</span>`}${mark}</div>
+    <div class="ttl"><div class="doc-title-line">${title}${status.length ? html`<span class="doc-status">${status.map(item => html`${item}`)}</span>` : null}</div>${
+      subtitle === undefined ? null : html`<p class="doc-sub" hidden=${() => !read(subtitle)} title=${() => read(subtitle) || null}>${subtitle}</p>`}</div>
+    ${props.actions?.length ? html`<div class="ph-actions">${props.actions}</div>` : null}
+    ${props.tools?.length ? html`<div class="doc-tools">${props.tools}</div>` : null}
+    ${props.meta?.length ? html`<div class="rec-meta">${props.meta.map(item => html`<span>${item}</span>`)}</div>` : null}</div></header>` as HTMLElement;
 }
 
 /**
@@ -102,6 +166,11 @@ export function StatusFlow(props: {
 
 export interface BadgeMove { to: string; label: string }
 
+/** How a status badge is drawn: the coloured pill; red text with a ban icon (cancelled); a lock and grey text
+ * (locked or final); a dashed pill with a pencil (draft). */
+export type BadgeLook = 'pill' | 'cancelled' | 'locked' | 'draft';
+const LOOK_ICON: Record<Exclude<BadgeLook, 'pill'>, string> = { cancelled: 'ban', locked: 'lock', draft: 'pencil' };
+
 /**
  * A record's status as a coloured badge, named "Status: Active" for screen readers. With moves this
  * person may take, it opens a menu of them; without, it is plain text with no pointer or hover.
@@ -116,6 +185,8 @@ export function StatusBadge(props: {
   /** Why a move cannot run right now (unsaved changes, say), or null. */
   blocked?: (to: string) => string | null;
   onMove?: (to: string) => void;
+  /** How the value is drawn (BadgeLook); the pill when absent. */
+  look?: (value: string) => BadgeLook;
 }): Child {
   const label = (value: string) => props.label ? props.label(value) : humanize(value);
   const name = props.name ?? 'Status';
@@ -124,9 +195,11 @@ export function StatusBadge(props: {
     if (value === null || value === undefined || value === '') return null;
     const text = label(String(value)), color = tint(props.tint(String(value)));
     const moves = props.onMove ? props.moves?.() ?? [] : [];
-    const inner = [html`<span class="d" aria-hidden="true"></span>`, text];
-    if (!moves.length) return html`<span class=${`pill ev-status b-${color}`} role="img" aria-label=${`${name}: ${text}`}>${inner}</span>`;
-    const button = html`<button type="button" class=${`pill ev-status ev-status-go b-${color}`} aria-haspopup="menu" aria-expanded="false"
+    const look = props.look?.(String(value)) ?? 'pill';
+    const inner = look === 'pill' ? [html`<span class="d" aria-hidden="true"></span>`, text] : [Icon(LOOK_ICON[look], { size: 'xs', className: 'ev-status-ic' }), text];
+    const kind = look === 'pill' ? `pill ev-status b-${color}` : `ev-status ev-status-${look}${look === 'draft' ? ' pill' : ''}`;
+    if (!moves.length) return html`<span class=${kind} role="img" aria-label=${`${name}: ${text}`}>${inner}</span>`;
+    const button = html`<button type="button" class=${`${kind} ev-status-go`} aria-haspopup="menu" aria-expanded="false"
       aria-label=${`${name}: ${text}. Change ${name.toLowerCase()}`}>${inner}${Icon('chevron-down', { size: 'xs', className: 'chev' })}</button>` as HTMLButtonElement;
     button.addEventListener('click', () => openPopover(button, close => Menu(moves.map(move => ({ label: move.label, icon: 'arrow-right', onSelect: () => {
       const why = props.blocked?.(move.to) ?? null;
@@ -152,7 +225,7 @@ export function Tabs(props: { tabs: TabItem[]; active: Cell<string>; label: stri
     class:on=${() => props.active.get() === tab.id} aria-selected=${() => String(props.active.get() === tab.id)} tabindex=${() => props.active.get() === tab.id ? '0' : '-1'}
     on:click=${() => props.active.set(tab.id)}>${tab.label}${tab.count === undefined ? null : when(() => read(tab.count!) !== null && read(tab.count!) !== undefined,
       () => html`<span class="n num">${() => String(read(tab.count!))}</span>`)}</button>` as HTMLButtonElement);
-  const list = html`<div class=${props.doc ? 'tabs doc-tabs' : 'tabs'} role="tablist" aria-label=${props.label}>${buttons}</div>` as HTMLElement;
+  const list = html`<div class=${`tabs${props.doc ? ' doc-tabs' : ''}`} role="tablist" aria-label=${props.label}>${buttons}</div>` as HTMLElement;
   list.addEventListener('keydown', event => {
     const at = props.tabs.findIndex(tab => tab.id === props.active.peek());
     const next = { ArrowRight: at + 1, ArrowLeft: at - 1, Home: 0, End: props.tabs.length - 1 }[event.key];

@@ -3,7 +3,7 @@
 from datetime import date
 
 from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Main, Model, Naming,
-                   Ref, Registry, Related, RichText, Rule, Section, Select, Series, Sum, Tab, Table, Text, ValidationError, action)
+                   Ref, Registry, Related, RichText, Rule, Section, Select, Series, Sum, Table, Text, ValidationError, action)
 from evlet.calc import F
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
@@ -18,8 +18,9 @@ class Customer(Model):
         title_field = 'customer_name'
         list_fields = ('customer_name', 'email', 'active')
         search_fields = ('customer_name', 'email')
-        # flow='columns': down the left column (name, email, active), then the right (currency); Tab goes the
-        # same way, and notes, full width, sits below both columns.
+        # flow='columns': down the left column (name, email, active), then the right (currency); the Tab key goes
+        # the same way, and notes, full width, sits below both columns. A layout of sections only: the first one is
+        # the record page's primary area.
         layout = (Section('Details', ('customer_name', 'email', 'active', 'currency', 'notes'), collapsible=False, flow='columns'),)
 
     customer_name = Text(required=True, max_length=120, label='Customer name')
@@ -195,27 +196,19 @@ class Employee(Model):
         title_field = 'full_name'
         list_fields = ('full_name', 'email', 'department', 'reports_to')
         search_fields = ('full_name', 'email')
-        # The record page, declared block by block (docs/ui.md, Record layouts): two tabs instead of Details,
-        # the Skills table inside the Profile tab, text from the app, charts over the measure below, and two
-        # lists of direct reports, one narrowed to this employee's department. Listing related records here
-        # turns the automatic Related tab and side block off for employees.
+        # The record page, declared block by block (docs/ui.md, Compact record page): the fields and the Skills
+        # table in the primary area, then as "more information" text from the app, charts over the measure below,
+        # and two lists of direct reports, one narrowed to this employee's department. Listing related records
+        # here turns the automatic Related rows off for employees.
         layout = (
-            Tab('Profile', (
-                Section('Employee', ('full_name', 'email', 'department', 'reports_to', 'skill_count'), collapsible=False),
-                Html('<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is on the Team tab.</p>'),
-                'skills',
-                'skill_levels',
-            )),
-            Tab('Team', (
-                Chart('stat', y='people', model='employee', link='reports_to', label='Direct reports'),
-                Chart('bar', x='department', y='people', model='employee', link='reports_to', label='Direct reports by department'),
-                Related('employee', 'reports_to', label='Direct reports', fields=('full_name', 'email', 'department'), order='full_name'),
-                Related('employee', 'reports_to', label='Reports in the same department', filters={'department': Ref('department')},
-                        fields=('full_name', 'email')),
-            )),
+            Main(('full_name', 'email', 'department', 'reports_to', 'skill_count'), 'skills', 'skill_levels'),
+            Html('<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is listed below.</p>'),
+            Chart('stat', y='people', model='employee', link='reports_to', label='Direct reports'),
+            Chart('bar', x='department', y='people', model='employee', link='reports_to', label='Direct reports by department'),
+            Related('employee', 'reports_to', label='Direct reports', fields=('full_name', 'email', 'department'), order='full_name'),
+            Related('employee', 'reports_to', label='Reports in the same department', filters={'department': Ref('department')},
+                    fields=('full_name', 'email')),
         )
-        # A Tab of the layout can be where records open, as any record tab can.
-        default_tab = 'profile'
         # People counted by the charts above; the list shows the count too.
         measures = {'people': Count()}
         # derive() below sets these on every save and preview; nobody writes them, and the Skill levels

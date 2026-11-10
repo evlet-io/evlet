@@ -114,8 +114,8 @@ const TOPICS: Topic[] = [
     ${section('4. Keep control of the details', p('Use Application with your existing database, registry, policy, actions and storage when you need explicit configuration. The screens use the same query and mutation endpoints.'))}
   </article>` },
   { id: 'screens', title: 'Screens and routes', render: () => html`<article class="ev-doc-article">
-    ${section('The application shell', p('The sidebar lists your models, grouped into documents and records. The top bar shows where you are, your recent records (the clock button left of search), search (Ctrl K or Cmd K) and the New menu. Only the view scrolls.'),
-      table([['Sidebar', 'Workspace, app bar, models, and your account at the bottom.'], ['Top bar', 'Sidebar toggle, breadcrumbs, recent records, search, shortcuts, New.'],
+    ${section('The application shell', p('The sidebar lists your models, grouped into documents and records. The top bar shows where you are, your recent records (the clock button left of search), search (Ctrl K or Cmd K), notifications and shortcuts. New records start from the New button on a list or from search. Only the view scrolls.'),
+      table([['Sidebar', 'Workspace, app bar, models, and your account at the bottom.'], ['Top bar', 'Workspace switcher, search, recent records, notifications and shortcuts. The breadcrumb sits above each page title.'],
         ['View', 'The page: a list, a board, a record or these docs.'], ['Layers', 'Menus, dialogs, drawers, toasts and the search palette.']]))}
     ${section('From a model to its screens', p('Lists show Meta.list_fields (up to eight), with the title pinned. A model with a State also gets a board and saved views per state. A record shows the title, the State as steps with its moves, a summary strip, a Details tab built from Meta.layout, one tab per Table and the side panel.'), code(screensCode))}
     ${section('Routes', p('Every model has /app/model, /app/model/new and /app/model/123. Lists keep their search, sort, page and view in the address, so a link opens the same list. A record keeps its tab: /app/invoice/42?tab=lines.'),
@@ -125,7 +125,7 @@ const TOPICS: Topic[] = [
     ${section('The model decides; the screen explains', p('Calculated values show their rule. Rules hide and clear fields, make them required, or lock them, and say why in place. The browser evaluates the same finite rules as the server, and the server checks every write again.'), code(rulesCode))}
     ${section('Moves and actions', p('A State changes only through its moves. A move that is not allowed stays visible, dims and says why. Actions with inputs open a small dialog that checks its values before it runs. Server actions keep their normal role, record and field checks.'))}
     ${section('Saving', p('Values save one at a time when you leave them, with Undo. Lines are saved together with Save. If the record changed since you opened it, your draft stays and you can reload. Leaving a record before Save never saves it: your unsaved changes are kept for you to restore or discard when you come back, and a new record waits in this browser.'))}
-    ${section('Slips', p('A slip is a form with the fields of a model that saves nothing by itself. It opens from a record, the New menu, an action or browser code. The server checks every change. When it is handed in, its values go to the slip\'s hand_in() method, or become a record through the normal create path. See docs/slips.md.'), code(slipCode))}
+    ${section('Slips', p('A slip is a form with the fields of a model that saves nothing by itself. It opens from a record, an action, another slip or browser code. The server checks every change. When it is handed in, its values go to the slip\'s hand_in() method, or become a record through the normal create path. See docs/slips.md.'), code(slipCode))}
   </article>` },
   { id: 'extensions', title: 'Customization', render: ctx => html`<article class="ev-doc-article">
     ${section('Change a screen through the model', table([['Meta.list_fields', 'List columns, up to eight.'], ['Meta.layout', 'Sections of the Details tab.'],
@@ -154,7 +154,7 @@ export function DocsPage(ctx: AppContext, topicId = 'overview'): HTMLElement {
   const topic = TOPICS.find(item => item.id === topicId) ?? TOPICS[0];
   ctx.crumbs.set(topic.id === 'overview' ? [{ label: 'Docs' }] : [{ label: 'Docs', href: ctx.router.href('docs', {}) }, { label: topic.title }]);
   return html`<div class="page ev-docs">
-    ${PageHeader({ icon: 'file-text', tint: 'slate', title: topic.title })}
+    ${ctx.crumbBar?.()}${PageHeader({ icon: 'file-text', tint: 'slate', title: topic.title })}
     <p class="ev-docs-sub">${topic.id === 'overview' ? 'The practical guide to building your application.' : 'Developer documentation'}</p>
     <nav class="tabs" aria-label="Docs topics">${TOPICS.map(item => html`<a class:on=${item.id === topic.id} aria-current=${item.id === topic.id ? 'page' : null}
       href=${item.id === 'overview' ? ctx.router.href('docs', {}) : ctx.router.href('topic', { topic: item.id })}>${item.title}</a>`)}</nav>

@@ -11,6 +11,7 @@ import { tooltip } from '../ui/tooltip';
 import { exactTime, minuteClock, relativeTime } from '../ui/time';
 import type { AppContext } from './context';
 import type { InboxItem } from './client';
+import { SHELL_ICONS } from './nav-icons';
 
 const POLL_MS = 60000;
 const POPUP_MS = 6000;
@@ -199,7 +200,7 @@ export function InboxButton(ctx: AppContext): HTMLElement {
   const button = html`<button type="button" class="icon-btn inbox-btn" aria-haspopup="dialog" aria-controls="ev-notifications"
     aria-expanded=${() => String(open.get())}
     aria-label=${() => unread.get() ? `Notifications, ${unread.get()} unread` : 'Notifications'}
-    on:click=${() => panel ? close(true) : show()}>${Icon('bell')}${when(() => unread.get() > 0,
+    on:click=${() => panel ? close(true) : show()}>${Icon(SHELL_ICONS.notifications)}${when(() => unread.get() > 0,
       () => html`<span class="inbox-count" aria-hidden="true">${() => unread.get() > 99 ? '99+' : String(unread.get())}</span>`)}</button>` as HTMLElement;
   tooltip(button, 'Notifications');
   return button;

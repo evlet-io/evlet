@@ -1,8 +1,8 @@
-// Related records on a record page: nothing is asked for until the Related block or a Related tab
-// section shows, one page of five per relation serves both, a small pager steps through the rest,
-// and View all opens the related list filtered to this record.
+// Related records on a record page: nothing is asked for until the Related row of "more information" shows, one page
+// of five per relation serves its counts and its lists, a small pager steps through the rest, and View all opens the
+// related list filtered to this record.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { adminRoutes, byText, click, recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
+import { adminRoutes, click, recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import type { Sent } from './server';
 import { cell } from '../reactive';
 import { relatedPages } from '../app/related-data';
@@ -34,27 +34,34 @@ const routes = (count = 12): Route[] => [...adminRoutes(), ['GET', /\/api\/custo
 const related = (sent: Sent[]) => requests(sent, 'GET', /\/related\//).map(item => item.url.replace(/^.*\/related\//, ''));
 const section = (host: Element) => host.querySelector('.ev-related[aria-label="Orders"]')!;
 const titles = (host: Element) => [...section(host).querySelectorAll('.ev-row-link')].map(text);
+const relatedRow = (host: Element) => host.querySelector<HTMLElement>('.ev-more-row[data-section="Related"]');
+/** Open the Related row (it starts closed). */
+async function openRelated(host: Element) {
+  await until(() => expect(relatedRow(host)).not.toBeNull());
+  click(relatedRow(host)!.querySelector('.ev-more-toggle'));
+}
 
 describe('related records on a record page', () => {
-  it('asks for nothing until the Related block shows, then one page of five per relation, kept across tabs', async () => {
+  it('asks for nothing until the Related row shows, then one page of five per relation, kept when it opens', async () => {
     vi.stubGlobal('IntersectionObserver', FakeObserver);
     const { host, sent } = start(routes(), '/app/customer/0000000000001');
-    await until(() => expect(byText(host, '.doc-tabs [role="tab"]', 'Related')).not.toBeNull());
-    await until(() => expect(host.querySelector('.rel')).not.toBeNull());
+    await until(() => expect(relatedRow(host)).not.toBeNull());
     expect(related(sent)).toEqual([]);
     scrollIntoView();
-    await until(() => expect(host.querySelector('.rel-row')?.getAttribute('aria-label')).toBe('Orders, 12 orders'));
+    // Closed, the row counts what each relation holds.
+    await until(() => expect(text(relatedRow(host)!.querySelector('.ev-more-sum'))).toBe('Orders: 12 · Quotes: 0'));
     expect(related(sent).sort()).toEqual(['order.customer?limit=5&offset=0', 'quote.customer?limit=5&offset=0']);
-    // The Related tab shows the pages already loaded: no request when it opens or scrolls into view.
-    click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
+    // Opened, it shows the pages already loaded: no request when it opens or scrolls into view.
+    click(relatedRow(host)!.querySelector('.ev-more-toggle'));
     scrollIntoView();
     await until(() => expect(titles(host)).toEqual(['Order 1', 'Order 2', 'Order 3', 'Order 4', 'Order 5']));
     expect(related(sent)).toHaveLength(2);
   });
 
-  it('loads a Related tab section only once it scrolls into view', async () => {
+  it('loads a Related section only once it scrolls into view', async () => {
     vi.stubGlobal('IntersectionObserver', FakeObserver);
-    const { host, sent } = start(routes(), '/app/customer/0000000000001?tab=related');
+    const { host, sent } = start(routes(), '/app/customer/0000000000001');
+    await openRelated(host);
     await until(() => expect(section(host)).not.toBeNull());
     expect(related(sent)).toEqual([]);
     scrollIntoView();
@@ -62,7 +69,8 @@ describe('related records on a record page', () => {
   });
 
   it('shows five rows with a pager that steps through the rest by server pages', async () => {
-    const { host, sent } = start(routes(), '/app/customer/0000000000001?tab=related');
+    const { host, sent } = start(routes(), '/app/customer/0000000000001');
+    await openRelated(host);
     await until(() => expect(titles(host)).toEqual(['Order 1', 'Order 2', 'Order 3', 'Order 4', 'Order 5']));
     const pager = () => section(host).querySelector('.ev-pager')!;
     const [previous, next] = [...pager().querySelectorAll<HTMLButtonElement>('button')];
@@ -80,7 +88,8 @@ describe('related records on a record page', () => {
   });
 
   it('has no pager for five rows or fewer, and keeps the empty line', async () => {
-    const { host } = start(routes(5), '/app/customer/0000000000001?tab=related');
+    const { host } = start(routes(5), '/app/customer/0000000000001');
+    await openRelated(host);
     await until(() => expect(titles(host)).toHaveLength(5));
     expect(section(host).querySelector('.ev-pager')).toBeNull();
     const quotes = host.querySelector('.ev-related[aria-label="Quotes"]')!;
@@ -89,7 +98,8 @@ describe('related records on a record page', () => {
   });
 
   it('View all opens the related list filtered to this record, as a filter that can be removed', async () => {
-    const { host, sent } = start(routes(), '/app/customer/0000000000001?tab=related');
+    const { host, sent } = start(routes(), '/app/customer/0000000000001');
+    await openRelated(host);
     await until(() => expect(section(host).querySelector('.ev-view-all')).not.toBeNull());
     const link = section(host).querySelector<HTMLAnchorElement>('.ev-view-all')!;
     const href = new URL(link.href, 'http://127.0.0.1');

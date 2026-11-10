@@ -1,8 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { html } from '../dom';
 import { cell } from '../reactive';
-import { RecordMark } from '../ui/base';
-import { DocFrame, DocHeader, flowFromState, LockBanner, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type Lifecycle } from '../ui/doc';
+import { Button, RecordMark } from '../ui/base';
+import { SplitButton } from '../ui/layers';
+import { DOC_NARROW, DocFrame, DocHeader, docWidthClasses, flowFromState, LockBanner, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type Lifecycle } from '../ui/doc';
 import { ENTRIES, LibraryPage, builtIds } from '../ui/library';
 import { Board, BoardCard, BulkBar, Filters, PageHeader, type ActiveFilter } from '../ui/list';
 import { tipText } from '../ui/tooltip';
@@ -143,14 +144,54 @@ describe('doc view blocks', () => {
       side: SideBlock({ title: 'Tags', body: 'None yet' }) }));
     const frame = host.querySelector<HTMLElement>('.doc')!;
     expect(frame.style.getPropertyValue('--acc')).toBe('var(--t-teal)');
-    expect(host.querySelector('.eyebrow')!.textContent).toBe('Order');
-    expect(host.querySelector('h1 button.fval')!.textContent).toContain('Big order');
+    // No type eyebrow above the title (the breadcrumb names the type); the given mark starts the row.
+    expect(host.querySelector('.doc-head .eyebrow')).toBeNull();
+    expect(host.querySelector('.doc-row > .doc-mark .org-mark')).not.toBeNull();
+    expect(host.querySelector('.doc-title-line h1 button.fval')!.textContent).toContain('Big order');
+    expect(host.querySelector('.doc-row > .rec-meta')!.textContent).toBe('AED 300.00');
     expect(host.querySelector('.side-sec h4')!.textContent).toBe('Tags');
     side.set('left');
     expect(frame.classList.contains('side-left')).toBe(true);
     side.set('off');
     expect(host.querySelector('.doc-side')).toBeNull();
     expect(frame.classList.contains('no-side')).toBe(true);
+  });
+
+  it('DocFrame is responsive to its own width: the side column leaves a narrow frame, the main column steps down', () => {
+    // Not the window's width: a record page and a list's side panel use the same frame and the same rules.
+    expect(docWidthClasses(0, 0)).toEqual([]);
+    expect(docWidthClasses(1200, 780)).toEqual([]);
+    expect(docWidthClasses(DOC_NARROW - 1, DOC_NARROW - 37)).toEqual(['doc-narrow']);
+    expect(docWidthClasses(1000, 590)).toEqual(['doc-m']);
+    expect(docWidthClasses(480, 444)).toEqual(['doc-narrow', 'doc-m', 'doc-s']);
+    expect(docWidthClasses(375, 343)).toEqual(['doc-narrow', 'doc-m', 'doc-s', 'doc-xs']);
+  });
+
+  it('DocHeader puts the status on the title line, the actions on its row and, without a mark, the type icon tile', () => {
+    const host = render(() => DocHeader({ type: 'Project', icon: 'kanban', tint: 'blue', title: 'Website rebuild', status: [html`<span class="pill ev-status">On hold</span>`],
+      meta: ['Acme'], actions: [Button({ label: 'Log hours', icon: 'clock' }),
+        SplitButton({ main: Button({ label: 'Resume', variant: 'primary' }), items: [{ label: 'Complete', onSelect: () => {} }, { label: 'Cancel', onSelect: () => {} }], menuLabel: 'Other moves' })] }));
+    const tile = host.querySelector<HTMLElement>('.doc-mark .ph-icon')!;
+    expect(tile.classList.contains('b-blue')).toBe(true);
+    expect(tile.getAttribute('aria-label')).toBe('Project');
+    expect(tile.querySelector('svg')).not.toBeNull();
+    expect(tile.style.borderRadius).toBe('');
+    const line = host.querySelector('.doc-title-line')!;
+    expect(line.querySelector('h1')!.textContent).toBe('Website rebuild');
+    expect(line.querySelector('.ev-status')!.textContent).toBe('On hold');
+    expect(host.querySelector('.rec-meta')!.textContent).toBe('Acme');
+    const row = host.querySelector('.doc-row')!;
+    expect([...row.children].map(child => child.className)).toEqual(['doc-mark', 'ttl', 'ph-actions', 'rec-meta']);
+    const split = row.querySelector('.ph-actions .btn-split')!;
+    expect(split.querySelector('.split-main')!.textContent).toBe('Resume');
+    split.querySelector<HTMLButtonElement>('.split-more')!.click();
+    expect([...document.querySelectorAll('[role="menuitem"]')].map(item => item.textContent)).toEqual(['Complete', 'Cancel']);
+  });
+
+  it('SplitButton has no chevron without alternatives', () => {
+    const host = render(() => SplitButton({ main: Button({ label: 'Issue', variant: 'primary' }), items: [], menuLabel: 'Other moves' }));
+    expect(host.querySelector('.btn-split.solo .split-main')!.textContent).toBe('Issue');
+    expect(host.querySelector('.split-more')).toBeNull();
   });
 });
 

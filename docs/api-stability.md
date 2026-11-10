@@ -8,7 +8,7 @@ production ready, but the rules below hold from 0.3 on.
 
 - **Root exports.** Every name in `evlet.__all__`: fields, `Model`, `Child`, `Registry`,
   migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), lifecycle
-  (`State`, `Move`, `action`, `validate`), form sections and record layouts (`Section`, `Tab`,
+  (`State`, `Move`, `action`, `validate`), form sections and record layouts (`Section`,
   `Main`, `Html`, and `Related` and `Chart` as layout blocks), slips, measures, settings, connectors,
   storage, jobs, routing and the application classes. Import them from `evlet`, not from the
   module that defines them. `AppDefinition(views=())` stays accepted for apps scaffolded

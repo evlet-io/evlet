@@ -98,3 +98,58 @@ describe('showing mentions', () => {
     expect(RichTextView('<p><span data-mention="3">Omar</span></p>').querySelector('.rt-mention')).toBeNull();
   });
 });
+
+describe('the compact toolbar', () => {
+  const labels = (editor: Editor) => Array.from(editor.element.querySelectorAll('.rt-toolbar .rt-tool')).map(tool => tool.getAttribute('aria-label')!.replace(/ \(.*\)$/, ''));
+
+  it('shows bold, italic, bulleted list, link and, with mentions, Mention; full stays the default', () => {
+    const value = cell<string | null>(null);
+    let compact!: Editor, plain!: Editor, full!: Editor;
+    render(() => {
+      compact = RichTextEditor({ value: () => value.get(), onChange: () => {}, label: 'Note', toolbar: 'compact', mentions: { search: async () => PEOPLE } });
+      plain = RichTextEditor({ value: () => null, onChange: () => {}, label: 'Brief', toolbar: 'compact' });
+      full = RichTextEditor({ value: () => null, onChange: () => {}, label: 'Body' });
+      return [compact.element, plain.element, full.element];
+    });
+    expect(labels(compact)).toEqual(['Bold', 'Italic', 'Bulleted list', 'Link', 'Mention']);
+    expect(compact.element.querySelector('.rt-toolbar')!.classList.contains('rt-toolbar-compact')).toBe(true);
+    expect(compact.element.querySelectorAll('.rt-toolbar .rt-sep')).toHaveLength(0);
+    expect(labels(plain)).toEqual(['Bold', 'Italic', 'Bulleted list', 'Link']);
+    expect(labels(full)).toEqual(expect.arrayContaining(['Underline', 'Heading', 'Numbered list', 'Quote', 'Undo', 'Redo']));
+    expect(full.element.querySelector('.rt-toolbar')!.classList.contains('rt-toolbar-compact')).toBe(false);
+  });
+
+  it('Mention types @ (after a space) and opens the people picker; keys still format', async () => {
+    vi.useFakeTimers();
+    const value = cell<string | null>(null);
+    const changes: Array<string | null> = [];
+    let editor!: Editor;
+    render(() => {
+      editor = RichTextEditor({ value: () => value.get(), onChange: next => { changes.push(next); value.set(next); }, label: 'Note', toolbar: 'compact', mentions: { search: async () => PEOPLE } });
+      return editor.element;
+    });
+    editor.focus();
+    type(editor, 'Ask');
+    (Array.from(editor.element.querySelectorAll<HTMLButtonElement>('.rt-tool')).find(tool => tool.getAttribute('aria-label') === 'Mention'))!.click();
+    expect(changes.at(-1)).toBe('<p>Ask @</p>');
+    await settle();
+    expect(options(editor)).toHaveLength(2);
+    key(editor, 'Enter');
+    expect(changes.at(-1)).toBe('<p>Ask <span data-mention="2">Priya Nair</span>&nbsp;</p>');
+  });
+});
+
+describe('the activity composer', () => {
+  it('passes its toolbar choice to the editor', async () => {
+    const { NoteComposer } = await import('../app/composer');
+    let slim!: HTMLElement, wide!: HTMLElement;
+    render(() => {
+      const api = { mentionable: async () => [], addRichNote: async () => {} } as any;
+      slim = NoteComposer({ api, model: 'project', id: '1', toolbar: 'compact', onAdded: () => {}, onError: () => {} });
+      wide = NoteComposer({ api, model: 'project', id: '1', onAdded: () => {}, onError: () => {} });
+      return [slim, wide];
+    });
+    expect(slim.querySelector('.rt-toolbar-compact')).not.toBeNull();
+    expect(wide.querySelector('.rt-toolbar-compact')).toBeNull();
+  });
+});

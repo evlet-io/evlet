@@ -4,6 +4,8 @@
 // changed values, and each Table as a change set:
 //   children: {lines: {create: [{_key, ...}], update: [{id, ...}], delete: [ids], order: [ids and _keys]}}
 // `order` is sent only when saved rows changed places or a new row is not at the end.
+// A table with sections (schema "sections": true) sends its section rows the same way, as {_key, section}
+// to create, {id, section} to rename and ids to delete, and `order` (rows and sections) whenever a section changed.
 // A table whose schema says row_changes: false (a ChildTable on a plain model) takes only a full
 // list: saved rows as {id, ...changed values}, new rows without _key, rows left out are deleted.
 // A read-only Table (one the record fills itself, Meta.derives) is never sent.
@@ -27,8 +29,13 @@ function fullRow(row: Row, withKey: boolean): Body {
   const children: Body = {};
   for (const [name, table] of row.tables) {
     if (table.meta.read_only) continue;
-    const rows = table.rows.peek();
-    if (rows.length) children[name] = rows.map(item => fullRow(item, table.meta.row_changes !== false));
+    const rows = table.rows.peek(), keyed = table.meta.row_changes !== false;
+    // Section rows go in their places among the lines, as {_key, section}.
+    const sections = new Map(table.sections.peek().map(section => [section.key, section]));
+    if (rows.length || sections.size) children[name] = withSections(table).map(item => {
+      const section = sections.get(item.key);
+      return section ? { ...(keyed ? { _key: section.key } : {}), section: section.label } : fullRow(rows.find(line => line.key === item.key)!, keyed);
+    });
   }
   if (Object.keys(children).length) body.children = children;
   return body;
@@ -56,7 +63,7 @@ function fullList(table: Table): Body[] | null {
 /** The change set for one Table, or null when it did not change. */
 export function tableChanges(table: Table): Body | null {
   const rows = table.rows.peek();
-  const create = rows.filter(row => row.isNew).map(row => fullRow(row, true));
+  const create: Body[] = rows.filter(row => row.isNew).map(row => fullRow(row, true));
   const update: Body[] = [];
   for (const row of rows) {
     if (row.isNew) continue;
@@ -67,12 +74,30 @@ export function tableChanges(table: Table): Body | null {
   const kept = rows.filter(row => !row.isNew), before = table.saved.filter(row => kept.includes(row));
   const newAtEnd = rows.slice(rows.length - create.length).every(row => row.isNew);
   const moved = !newAtEnd || kept.some((row, index) => row !== before[index]);
+  const sections = table.sections.peek(), saved = table.savedSections;
+  const sectionsChanged = JSON.stringify(sections) !== JSON.stringify(saved) || table.removedSections.peek().length > 0;
+  for (const section of sections) {
+    if (!section.id) create.push({ _key: section.key, section: section.label });
+    else if (saved.find(item => item.id === section.id)?.label !== section.label) update.push({ id: section.id, section: section.label });
+  }
+  remove.push(...table.removedSections.peek());
   const changes: Body = {};
   if (create.length) changes.create = create;
   if (update.length) changes.update = update;
   if (remove.length) changes.delete = remove;
-  if (moved) changes.order = rows.map(row => row.isNew ? row.key : row.id);
+  if (moved || sectionsChanged) changes.order = withSections(table).map(item => item.id ?? item.key);
   return Object.keys(changes).length ? changes : null;
+}
+
+/** Rows and section rows in their order: each section just before the line it starts at. */
+export function withSections(table: Table): Array<{ key: string; id: string | null }> {
+  const sections = table.sections.peek(), out: Array<{ key: string; id: string | null }> = [];
+  for (const row of table.rows.peek()) {
+    out.push(...sections.filter(section => section.before === row.key));
+    out.push({ key: row.key, id: row.isNew ? null : row.id });
+  }
+  out.push(...sections.filter(section => section.before === null || !table.rows.peek().some(row => row.key === section.before)));
+  return out;
 }
 
 /** The request body for saving this record: everything for a new record, changes for a saved one. */

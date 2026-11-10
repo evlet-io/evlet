@@ -1,5 +1,5 @@
-// The blocks of a declared record layout (Meta.layout with evlet.Tab, Related, Html, Chart and Table field
-// names; docs/ui.md, Record layouts). Sections and tables are drawn by the record page; this file draws the
+// The blocks of a declared record layout (Meta.layout with evlet.Main, Related, Html, Chart and Table field
+// names; docs/ui.md, Compact record page). Sections and tables are drawn by the record page; this file draws the
 // rest. Related rows come from the list route and charts from the aggregate route, with the block's filters
 // and this record's id, so the server applies the role's row scope and field permissions as for any list.
 // Nothing is asked for until a block scrolls into view, and a save of the record loads shown blocks again.
@@ -7,8 +7,8 @@
 import { html, when, type Child } from '../dom';
 import { ApiError, type RecordData } from '../api';
 import { batch, cell, effect, untrack, type Readable } from '../reactive';
-import type { FieldSchema, LayoutBlock, LayoutCondition, LayoutTab, RecordLayout } from '../model/schema';
-import { IconButton } from '../ui/base';
+import type { FieldSchema, LayoutBlock, LayoutCondition, RecordLayout } from '../model/schema';
+import { IconButton, StatCard } from '../ui/base';
 import { plotChart } from '../ui/chart';
 import { RichTextView } from '../ui/fields';
 import { humanize } from '../ui/kinds';
@@ -36,18 +36,9 @@ export interface BlockRecord {
 
 // ---------- the layout ----------
 
-/** The record page tab id of a layout Tab: Details keeps its id, any other is t-<name> like a Table's. */
-export const layoutTabId = (tab: Pick<LayoutTab, 'name'>) => tab.name === 'details' ? 'details' : `t-${tab.name}`;
-
-/** Every block of a layout, in order, across its Tabs. */
-export const layoutBlocks = (layout: RecordLayout): LayoutBlock[] => layout.tabs ? layout.tabs.flatMap(tab => tab.blocks) : layout.blocks ?? [];
-
-/** Table field names a layout places as blocks: they get no tab of their own. */
-export const placedTables = (layout: RecordLayout | undefined) => new Set(layout ? layoutBlocks(layout).flatMap(block => block.kind === 'table' ? [block.name] : []) : []);
-
-/** Whether a layout lists related records itself: then the automatic Related tab and side block are off, unless
- * Meta.tabs or Meta.side_blocks names 'related'. */
-export const declaresRelated = (layout: RecordLayout | undefined) => Boolean(layout && layoutBlocks(layout).some(block => block.kind === 'related'));
+/** Whether a layout lists related records itself: then the automatic Related row is off, unless Meta.side_blocks
+ * names 'related'. */
+export const declaresRelated = (layout: RecordLayout | undefined) => Boolean(layout?.blocks?.some(block => block.kind === 'related'));
 
 // ---------- filters ----------
 
@@ -229,7 +220,7 @@ export function MeasureChart(ctx: AppContext, block: ChartBlock, record: BlockRe
     if (rows === null) return html`<p class="muted ev-block-note" role="status">Loading…</p>`;
     if (block.type === 'stat') {
       const row = rows[0] ?? {};
-      return html`<dl class="ev-stats">${measures.map(item => html`<div class="ev-stat"><dt>${measureLabel(item)}</dt><dd class="num">${measureView(ctx.schema, model, item, row[item.name], currencies.get())}</dd></div>`)}</dl>`;
+      return html`<div class="sum">${measures.map(item => StatCard({ label: measureLabel(item), value: measureView(ctx.schema, model, item, row[item.name], currencies.get()) }))}</div>`;
     }
     if (!rows.length) return html`<p class="ev-related-empty">Nothing to chart yet.</p>`;
     const host = html`<div class="ev-report-chart-plot"></div>` as HTMLElement;

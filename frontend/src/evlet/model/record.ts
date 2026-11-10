@@ -129,10 +129,23 @@ export class Row {
     for (const child of model.children ?? []) {
       const table = new Table(this, child, record.index.model(child.model));
       this.tables.set(child.name, table);
-      // Section rows ({id, section}) are not rows: this editor leaves them out, and change sets keep them in place.
-      const items: Array<Record<string, any>> = (data.children?.[child.name] ?? []).filter((item: Record<string, any>) => !(child.sections && isSectionRow(item)));
+      // Section rows ({id, section}, or {section} as Duplicate sends them) are not rows: the table keeps them apart as
+      // its sections, each before the row that follows it (Table.takeSections for saved records).
+      const items: Array<Record<string, any>> = data.children?.[child.name] ?? [];
       // A new record may start with new rows; their _key is kept when it is valid.
-      if (isNew) table.rows.set(items.map(item => new Row(record, table.model, this, child.name, record.claimKey(item._key), null, true, item)));
+      if (isNew) {
+        const lines: Row[] = [], sections: TableSection[] = [];
+        let pending: TableSection[] = [];
+        for (const item of items) {
+          if (child.sections && isSectionRow(item)) { pending.push({ key: record.claimKey(item._key), id: null, label: String(item.section), before: null }); continue; }
+          const line = new Row(record, table.model, this, child.name, record.claimKey(item._key), null, true, item);
+          for (const section of pending) sections.push({ ...section, before: line.key });
+          pending = [];
+          lines.push(line);
+        }
+        table.rows.set(lines);
+        table.sections.set([...sections, ...pending]);
+      }
       else table.replace(items as RecordData[], data.children_pages?.[child.name], {});
     }
   }
@@ -176,7 +189,7 @@ export class Row {
     }
     for (const [name, table] of this.tables) {
       if (data.children && Object.prototype.hasOwnProperty.call(data.children, name))
-        table.replace(data.children[name].filter((item: Record<string, any>) => !(table.meta.sections && isSectionRow(item))), data.children_pages?.[name], rowIds);
+        table.replace(data.children[name], data.children_pages?.[name], rowIds);
       else table.revert();
     }
   }
@@ -187,9 +200,19 @@ export class Row {
   }
 }
 
+/** A section row of a Table whose schema has sections: a heading over the lines that follow it, up to the next one.
+ * `before` is the key of the first line after it (null: after the last line). */
+export interface TableSection { key: string; id: string | null; label: string; before: string | null }
+
+
 export class Table {
   /** The rows in their current order. Key a list by row.key. */
   readonly rows: Cell<Row[]>;
+  /** Section rows, in order, for a table whose schema has sections (else always empty). */
+  readonly sections = cell<TableSection[]>([]);
+  /** Section rows as saved, and saved ones removed in the draft (sent as delete on save). */
+  savedSections: TableSection[] = [];
+  readonly removedSections = cell<string[]>([]);
   /** Saved rows removed in the draft; sent as delete on save. */
   readonly removed = cell<Row[]>([]);
   /** Rows the server holds, and whether only some of them are loaded yet. */
@@ -215,7 +238,8 @@ export class Table {
   get changed(): Derive<boolean> {
     return this.touched ??= runWithOwner(this.owner.owner, () => derive(() => {
       const rows = this.rows.get();
-      if (this.removed.get().length) return true;
+      if (this.removed.get().length || this.removedSections.get().length) return true;
+      if (JSON.stringify(this.sections.get()) !== JSON.stringify(this.savedSections)) return true;
       const kept = this.saved.filter(row => rows.includes(row));
       let saved = 0;
       for (const row of rows) {
@@ -255,7 +279,10 @@ export class Table {
     this.record.assertEditable();
     batch(() => {
       this.record.session?.remove(row);
-      this.rows.set(this.rows.peek().filter(item => item !== row));
+      const rows = this.rows.peek(), next = rows[rows.indexOf(row) + 1]?.key ?? null;
+      // A section that started at this line now starts at the next one.
+      if (this.sections.peek().some(section => section.before === row.key)) this.sections.set(this.sections.peek().map(section => section.before === row.key ? { ...section, before: next } : section));
+      this.rows.set(rows.filter(item => item !== row));
       if (row.isNew) this.dropped.push(row); else this.removed.set([...this.removed.peek(), row]);
     });
   }
@@ -295,9 +322,75 @@ export class Table {
     });
   }
 
+  // ---------- section rows ----------
+
+  /** Add a section row before line `before` (null: after the last line). */
+  addSection(label: string, before: string | null): TableSection {
+    this.record.assertEditable();
+    const section = { key: this.record.claimKey(), id: null, label, before };
+    const list = this.sections.peek().slice(), at = before === null ? list.length : list.findIndex(item => item.before === before);
+    list.splice(at < 0 ? list.length : at, 0, section);
+    this.sections.set(list);
+    return section;
+  }
+
+  renameSection(key: string, label: string) {
+    this.record.assertEditable();
+    this.sections.set(this.sections.peek().map(section => section.key === key ? { ...section, label } : section));
+  }
+
+  /** Remove a section row; its lines stay, under the section before it. */
+  removeSection(key: string) {
+    this.record.assertEditable();
+    const section = this.sections.peek().find(item => item.key === key);
+    if (!section) return;
+    batch(() => {
+      this.sections.set(this.sections.peek().filter(item => item !== section));
+      if (section.id) this.removedSections.set([...this.removedSections.peek(), section.id]);
+    });
+  }
+
+  /** Put a section row before line `before` (null: after the last line), after any section already there, or just
+   * before section `ahead` when it is given (a section dropped on another one lands above it). */
+  moveSection(key: string, before: string | null, ahead?: string) {
+    this.record.assertEditable();
+    const section = this.sections.peek().find(item => item.key === key);
+    if (!section) return;
+    const rest = this.sections.peek().filter(item => item !== section), order = this.rows.peek().map(row => row.key);
+    const rank = (item: TableSection) => item.before === null ? order.length : order.indexOf(item.before);
+    const moved = { ...section, before };
+    const at = ahead ? rest.findIndex(item => item.key === ahead) : -1;
+    const list = (at >= 0 ? [...rest.slice(0, at), moved, ...rest.slice(at)] : [...rest, moved]).map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map(entry => entry.item);
+    this.sections.set(list);
+  }
+
+  /** The saved state of the section rows of a payload: each anchored before the line that follows it. */
+  private takeSections(items: RecordData[], keyOf: (item: RecordData) => string, appended = false): RecordData[] {
+    if (!this.meta.sections) return items;
+    const lines: RecordData[] = [], found: TableSection[] = [];
+    let pending: TableSection[] = [];
+    for (const item of items) {
+      if (isSectionRow(item)) { pending.push({ key: String(item.id), id: String(item.id), label: String(item.section), before: null }); continue; }
+      for (const section of pending) found.push({ ...section, before: keyOf(item) });
+      pending = [];
+      lines.push(item);
+    }
+    found.push(...pending);
+    // A later page's section rows join those already read; one at the end of the previous page now has its line.
+    const sections = appended ? [...this.savedSections, ...found] : found;
+    this.savedSections = sections;
+    this.sections.set(sections.slice());
+    if (!appended) this.removedSections.set([]);
+    return lines;
+  }
+
   /** Server rows replace this table's draft; rows keep their objects by id or by the _key they were created with. */
   replace(items: RecordData[], page: { total: number; partial: boolean } | undefined, rowIds: Record<string, string>) {
     const byId = new Map<string, Row>(), current = [...this.rows.peek(), ...this.removed.peek(), ...this.parked.values()];
+    // A line keeps its key across a save (a new row's _key), so a section anchors to the key the line will have.
+    const keyByRowId = new Map<string, string>();
+    for (const row of current) { const id = row.isNew ? rowIds[row.key] : row.id; if (id !== undefined && id !== null) keyByRowId.set(id, row.key); }
+    items = this.takeSections(items, item => keyByRowId.get(item.id as string) ?? String(item.id));
     this.parked = new Map();
     this.forgetDropped();
     for (const row of current) {
@@ -322,6 +415,7 @@ export class Table {
 
   /** Append a page of saved rows read from the lines endpoint. */
   appendSaved(items: RecordData[]) {
+    items = this.takeSections(items, item => String(item.id), true);
     // Rows that shifted onto this page because others were added meanwhile are already here.
     const known = new Set(this.rows.peek().map(row => row.id));
     const rows = items.filter(item => !known.has(item.id)).map(item => {
@@ -348,6 +442,8 @@ export class Table {
     for (const row of this.saved) row.revert();
     this.rows.set(this.saved.slice());
     this.removed.set([]);
+    this.sections.set(this.savedSections.slice());
+    this.removedSections.set([]);
     this.error.set(null);
   }
 }
@@ -486,11 +582,12 @@ export class RecordStore {
         while (offset < table.total.peek()) {
           const page = await this.api.lines(this.meta.name, this.root.id!, table.apiPath(), { limit: PAGE, offset });
           // A page of a Table with sections also carries its section rows; offsets count real rows only.
-          const items = page.items.filter(item => !(table.meta.sections && isSectionRow(item as Record<string, unknown>)));
-          if (!items.length) break;
-          table.appendSaved(items);
+          // A page of a Table with sections also carries the section rows before its first row.
+          if (!page.items.length) break;
+          table.appendSaved(page.items);
           table.total.set(page.total);
-          offset += items.length;
+          // Pages count real rows only; section rows ride along with the rows that follow them.
+          offset += page.items.filter(item => !(table.meta.sections && isSectionRow(item as Record<string, unknown>))).length;
         }
         table.complete();
       }

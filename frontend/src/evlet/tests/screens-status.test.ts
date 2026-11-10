@@ -56,8 +56,9 @@ describe('record status display', () => {
     expect(text(badge)).toBe('Draft');
     expect(badge.tagName).toBe('BUTTON');
     expect(badge.getAttribute('aria-label')).toBe('Status: Draft. Change status');
-    // The badge sits with the key facts, before them.
-    expect(badge.closest('.rec-meta')).not.toBeNull();
+    // The badge sits on the title's line, after the title.
+    expect(badge.closest('.doc-title-line')).not.toBeNull();
+    expect(badge.closest('.rec-meta')).toBeNull();
     // The moves stay as header buttons too.
     expect(byText(host, '.doc-head .ph-actions button', 'Issue')).not.toBeNull();
     click(badge);
@@ -114,6 +115,20 @@ describe('record status display', () => {
     expect(steps.map(step => step.classList.contains('plain'))).toEqual([true, false, true, true]);
     expect(steps[1].querySelector('button')!.getAttribute('aria-label')).toBe('Issued. Move to Issued');
     expect(host.querySelector('.stepper')!.getAttribute('aria-label')).toBe('Invoice status');
+  });
+
+  it('puts the stage bar above the key cards and the white card, and a badge instead in a side panel', async () => {
+    const { host } = start(routes(schema(invoice.schema, { show: 'bar' })), `/app/invoice/${draft}`);
+    await until(() => expect(host.querySelector('.stepper')).not.toBeNull());
+    const stepper = host.querySelector('.stepper')!;
+    expect(stepper.compareDocumentPosition(host.querySelector('.ev-cmp-card')!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    stopAll();
+    const panelSchema = schema(invoice.schema, { show: 'bar' });
+    panelSchema.body.models.find((item: any) => item.name === 'invoice').open_in = 'panel';
+    const inPanel = start([...routes(panelSchema), ['GET', /\/api\/invoice\?/, invoice.invoices], ['GET', /\/api\/invoice\/(measures|aggregate)/, invoice.invoice_measures]],
+      `/app/invoice?open=${draft}`);
+    await until(() => expect(inPanel.host.querySelector('.ev-panel .doc-head .ev-status')).not.toBeNull());
+    expect(inPanel.host.querySelector('.ev-panel .stepper')).toBeNull();
   });
 
   it('a guarded move that is not met leaves every step of the bar plain', async () => {

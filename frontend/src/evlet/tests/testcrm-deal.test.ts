@@ -10,14 +10,23 @@ afterEach(stopAll);
 const rows = (host: Element) => [...host.querySelectorAll<HTMLElement>('.doc-main tbody tr[data-key]')];
 const cellOf = (row: Element, col: string) => row.querySelector<HTMLElement>(`td[data-col="${col}"]`)!;
 const sums = (host: Element) => text(host.querySelector('.g-sum'));
-const button = (host: Element, label: string) => byText<HTMLButtonElement>(host, '.doc-head button', label)!;
+// A header button, or a move behind the split button's chevron (the main move is the button itself).
+const button = (host: Element, label: string): HTMLButtonElement => {
+  const shown = byText<HTMLButtonElement>(host, '.doc-head button', label);
+  if (shown || !host.querySelector('.doc-head .split-more')) return shown!;
+  const open = byText<HTMLButtonElement>(document, '[role="menuitem"]', label);
+  if (open) return open;
+  click(host.querySelector('.doc-head .split-more'));
+  return byText<HTMLButtonElement>(document, '[role="menuitem"]', label)!;
+};
 const current = (host: Element) => text(host.querySelector('.stepper .step.cur'));
 // A lead's status is not a pipeline: it shows as the header badge.
 const badge = (host: Element) => text(host.querySelector('.doc-head .ev-status'));
 const field = (host: Element, name: string) => host.querySelector<HTMLElement>(`.ff[data-field="${name}"]`);
 // A saved record's title is edited in the header, not in the Details form.
 const heading = (host: Element) => host.querySelector<HTMLElement>('.doc-head .doc-title');
-const tab = (host: Element, label: RegExp) => click(byText(host, '.doc-tabs [role="tab"]', label));
+/** Open a "more information" row by its title. */
+const openRow = (host: Element, title: string) => click(host.querySelector(`.ev-more-row[data-section="${title}"] .ev-more-toggle`));
 
 function edit(cell: HTMLElement, value: string) {
   click(cell);
@@ -30,16 +39,16 @@ describe('testCRM: a deal and its lines', () => {
   it('edits, adds, reorders and removes lines; totals follow at once and after the save', async () => {
     const run = scenario('sara_win');
     const id = idOf('sara_win', 'deal', 'Production planning module');
-    const { host } = run.start(`/app/deal/${id}?tab=t-lines`);
+    const { host } = run.start(`/app/deal/${id}`);
     await until(() => expect(rows(host)).toHaveLength(2));
     expect(text(host.querySelector('.doc-head h1'))).toBe('Production planning module');
-    expect(sums(host)).toBe('SubtotalAED 83,400.00Vat totalAED 4,170.00TotalAED 87,570.00');
+    expect(sums(host)).toBe('TotalAED 87,570.00');
     // The footer totals each column by its plain sum, not the recurring (filtered) one.
     expect([...host.querySelectorAll('.doc-main tfoot td')].map(text).slice(-2)).toEqual(['AED 83,400.00', 'AED 4,170.00']);
 
     edit(cellOf(rows(host)[1], 'qty'), '15');
     expect(cellOf(rows(host)[1], 'amount').textContent!.trim()).toBe('AED 48,000.00');
-    expect(sums(host)).toBe('SubtotalAED 93,000.00Vat totalAED 4,650.00TotalAED 97,650.00');
+    expect(sums(host)).toBe('TotalAED 97,650.00');
     press(document.activeElement!, 'Escape');
 
     // A new line from a product: description, rate and taxable come from the product.
@@ -53,7 +62,7 @@ describe('testCRM: a deal and its lines', () => {
     click(byText(document.body, '.pop [role="option"]', /Training day/));
     await until(() => expect(cellOf(rows(host)[2], 'rate').textContent!.trim()).toBe('AED 2,400.00'));
     expect(cellOf(rows(host)[2], 'description').textContent!.trim()).toBe('Training day');
-    expect(sums(host)).toBe('SubtotalAED 95,400.00Vat totalAED 4,770.00TotalAED 100,170.00');
+    expect(sums(host)).toBe('TotalAED 100,170.00');
 
     // Alt and an arrow moves a line; it goes to the top.
     press(cellOf(rows(host)[2], 'qty'), 'ArrowUp', { altKey: true });
@@ -70,7 +79,7 @@ describe('testCRM: a deal and its lines', () => {
     expect(lines.create).toEqual([expect.objectContaining({ product: expect.stringMatching(/^[0-9a-z]{13}$/) })]);
     expect(lines.order).toHaveLength(3);
     expect(saved.body.subtotal).toBeUndefined();
-    await until(() => expect(sums(host)).toBe('SubtotalAED 95,400.00Vat totalAED 4,770.00TotalAED 100,170.00'));
+    await until(() => expect(sums(host)).toBe('TotalAED 100,170.00'));
     expect(rows(host).map(row => text(cellOf(row, 'description')))).toEqual(['Training day', 'ERP core licence', 'Implementation day']);
 
     // Remove a line with its checkbox; Undo is offered.
@@ -78,7 +87,7 @@ describe('testCRM: a deal and its lines', () => {
     click(byText(host, '.doc-main button', 'Delete'));
     expect(rows(host)).toHaveLength(2);
     expect(lastToast()).toContain('Deleted 1 row');
-    expect(sums(host)).toBe('SubtotalAED 93,000.00Vat totalAED 4,650.00TotalAED 97,650.00');
+    expect(sums(host)).toBe('TotalAED 97,650.00');
     expect(run.misses).toEqual([]);
   });
 
@@ -98,14 +107,13 @@ describe('testCRM: a deal and its lines', () => {
     expect(text(host.querySelector('.inv-banner > div'))).toBe('Won and locked. Only lost reason and next step can change.');
     expect(run.writes.map(write => `${write.method} ${new URL(write.url, 'http://x').pathname}`)).toEqual([`POST /api/deal/${id}/moves/negotiation`, `POST /api/deal/${id}/moves/won`]);
     expect(run.writes.every(write => write.headers['if-match'] && JSON.stringify(write.body) === '{}')).toBe(true);
-    // The win created a kick-off task: the Related block counts it again after the move.
-    await until(() => expect(text(byText(host, '.side-sec', /^Related/))).toContain('Tasks2'));
-    tab(host, /^Lines/);
-    expect(text(host.querySelector('.g-lock'))).toBe('Locked. Lines can’t change while it is won.');
+    // The win created a kick-off task: the Related row counts it again after the move.
+    await until(() => expect(text(host.querySelector('.ev-more-row[data-section="Related"] .ev-more-sum'))).toContain('Tasks: 2'));
+    expect(text(host.querySelector('.ev-cmp-main .g-lock'))).toBe('Locked. Lines can’t change while it is won.');
     expect(host.querySelector('.doc-main [aria-label="Add row"], .doc-main .g-add')).toBeNull();
-    tab(host, /^Postings/);
-    expect(text(host.querySelector('.doc-main'))).toContain('Bookings');
-    tab(host, /^Related/);
+    openRow(host, 'Postings');
+    await until(() => expect(text(host.querySelector('.ev-more-row[data-section="Postings"] .ev-more-body'))).toContain('Bookings'));
+    openRow(host, 'Related');
     await until(() => expect(text(host.querySelector('.ev-related'))).toContain('Kick-off: Production planning module'));
     // Schedule follow up is listed but not available on a won deal.
     expect(button(host, 'Schedule follow up').getAttribute('aria-disabled')).toBe('true');
@@ -116,11 +124,22 @@ describe('testCRM: a deal and its lines', () => {
     const run = scenario('omar_lost');
     const id = idOf('omar_lost', 'deal', 'Shipment tracking integration');
     run.skip(1);
-    const { host } = run.start(`/app/deal/${id}?tab=details`);
+    const { host } = run.start(`/app/deal/${id}`);
     await until(() => expect(current(host)).toBe('Qualified'));
-    const proposal = button(host, 'Send proposal');
-    expect(proposal.getAttribute('aria-disabled')).toBe('true');
-    click(proposal);
+    // Its guard is not met, so Mark lost is the split button and Send proposal waits behind the chevron.
+    expect(text(host.querySelector('.doc-head .split-main'))).toBe('Mark lost');
+    expect(host.querySelector('.doc-head .split-main')!.classList.contains('primary')).toBe(true);
+    // The title row: the model's icon tile (no letter mark), the title with the status pill on its line.
+    expect(host.querySelector('.doc-head .doc-mark .ph-icon svg')).not.toBeNull();
+    expect(host.querySelector('.doc-head .doc-mark .org-mark')).toBeNull();
+    expect(text(host.querySelector('.doc-title-line h1'))).toBe('Shipment tracking integration');
+    // The breadcrumb ends with the deal's number, not its title again.
+    expect(text(host.querySelector('.crumbs .cur'))).toMatch(/^DL-\d{4}-\d{4}$/);
+    click(host.querySelector('.doc-head .split-more'));
+    const others = [...document.querySelectorAll('[role="menuitem"]')].map(text);
+    expect(others).toContain('Send proposal');
+    expect(others).not.toContain('Mark lost');
+    click(button(host, 'Send proposal'));
     expect(lastToast()).toBe('The condition for this move is not met');
     expect(run.writes).toHaveLength(0);
     // The lost reason applies only once the deal is lost.
@@ -139,7 +158,7 @@ describe('testCRM: a deal and its lines', () => {
     expect(document.querySelector('.modal')).toBeNull();
     expect(field(host, 'lost_reason')!.hidden).toBe(false);
     // Locked, but the reason stays editable in place.
-    expect([...host.querySelectorAll('.fs .ff')].filter(item => item.querySelector('button.fval, .fval:not(.ro)')).map(item => item.getAttribute('data-field')))
+    expect([...host.querySelectorAll('.ev-cmp-card .ff')].filter(item => item.querySelector('button.fval, .fval:not(.ro)')).map(item => item.getAttribute('data-field')))
       .toEqual(expect.arrayContaining(['lost_reason', 'next_step']));
     const value = field(host, 'lost_reason')!.querySelector<HTMLElement>('.fval')!;
     click(value);
@@ -158,7 +177,7 @@ describe('testCRM: a deal and its lines', () => {
   it('asks for the lead reason before Mark lost and shows the server check in the dialog', async () => {
     const run = scenario('sara_lead_lost');
     const id = idOf('sara_lead_lost', 'lead', 'Majid Obaid');
-    const { host } = run.start(`/app/lead/${id}?tab=details`);
+    const { host } = run.start(`/app/lead/${id}`);
     await until(() => expect(button(host, 'Mark lost')).not.toBeNull());
     click(button(host, 'Mark lost'));
     const dialog = document.querySelector('.modal')!;
@@ -186,7 +205,7 @@ describe('testCRM: lead actions', () => {
   it('Convert to deal sends the typed date even when the field was not left before submitting', async () => {
     const run = scenario('sara_convert');
     const id = idOf('sara_convert', 'lead', 'Anjali Varma');
-    const { host } = run.start(`/app/lead/${id}?tab=details`);
+    const { host } = run.start(`/app/lead/${id}`);
     await until(() => expect(button(host, 'Convert to deal')).not.toBeNull());
     click(button(host, 'Convert to deal'));
     const dialog = document.querySelector('.modal')!;
@@ -208,8 +227,8 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
   it('pages in 150 lines, edits the last one and saves only that change', async () => {
     const run = scenario('sara_big');
     const id = idOf('sara_big', 'deal', 'Group rollout, 150 sites');
-    const { host } = run.start(`/app/deal/${id}?tab=t-lines`);
-    await until(() => expect(text(host.querySelector('.doc-tabs'))).toContain('Lines150'));
+    const { host } = run.start(`/app/deal/${id}`);
+    await until(() => expect(text(host.querySelector('.ev-cmp-main .ev-cmp-count'))).toBe('150'));
     await until(() => expect(text(host.querySelector('.g-t .n'))).toBe('150'));
     // Only the rows in view are in the DOM.
     expect(rows(host).length).toBeLessThan(60);
@@ -236,7 +255,7 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
   it('two sessions: the later save is a conflict; Reload keeps the typed title to save again', async () => {
     const run = scenario('sara_conflict');
     const id = idOf('sara_conflict', 'deal', 'ERP rollout, 3 entities');
-    const { host } = run.start(`/app/deal/${id}?tab=details`);
+    const { host } = run.start(`/app/deal/${id}`);
     await until(() => expect(heading(host)).not.toBeNull());
     click(heading(host)!.querySelector('.fval'));
     const input = heading(host)!.querySelector<HTMLInputElement>('input')!;
@@ -250,7 +269,9 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
     expect(run.writes[1].body).toMatchObject({ title: 'ERP rollout, 3 entities and Oman' });
     expect(Object.keys(run.writes[1].body).filter(name => !name.startsWith('_'))).toEqual(['title']);
     expect(run.writes[1].headers['if-match']).not.toBe(run.writes[0].headers['if-match']);
-    await until(() => expect(text(host.querySelector('.crumbs .cur'))).toBe('ERP rollout, 3 entities and Oman'));
+    await until(() => expect(heading(host)!.querySelector('input')?.value ?? text(heading(host))).toBe('ERP rollout, 3 entities and Oman'));
+    // The breadcrumb ends with the deal's number.
+    expect(text(host.querySelector('.crumbs .cur'))).toBe('DL-2026-0001');
     expect(run.misses).toEqual([]);
   });
 
@@ -260,27 +281,27 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
     await until(() => expect(text(theirs.host.querySelector('main'))).toContain('Deal not found'));
     stopAll();
     const id = ids.deal;
-    const viewer = scenario('vera_deal').start(`/app/deal/${id}?tab=details`);
+    const viewer = scenario('vera_deal').start(`/app/deal/${id}`);
     await until(() => expect(heading(viewer.host)).not.toBeNull());
     expect(field(viewer.host, 'internal_notes')).toBeNull();
     expect(text(viewer.host.querySelector('.doc-main'))).not.toContain('Partner sign-off');
     // Nothing is editable for a viewer.
     expect(viewer.host.querySelector('.fs .fval:not(.ro)')).toBeNull();
     stopAll();
-    const admin = scenario('admin_deal').start(`/app/deal/${id}?tab=details`);
+    const admin = scenario('admin_deal').start(`/app/deal/${id}`);
     await until(() => expect(field(admin.host, 'internal_notes')).not.toBeNull());
     expect(text(field(admin.host, 'internal_notes'))).toContain('Partner sign-off needed');
   });
 });
 
 describe('testCRM: activity', () => {
-  it('opens on the Activity tab with the moves, the win, its Booking posting and the follow up', async () => {
+  it('shows Activity in the side column with the moves, the win, its Booking posting and the follow up', async () => {
     const run = scenario('sara_win');
     const id = idOf('sara_win', 'deal', 'Production planning module');
     // After the line save, Negotiate and Mark won.
     run.skip(3);
     const { host } = run.start(`/app/deal/${id}`);
-    await until(() => expect(text(host.querySelector('.doc-tabs [role="tab"]'))).toBe('Activity'));
+    await until(() => expect([...host.querySelectorAll('.doc-side .side-sec h4')].map(text)).toContain('Activity'));
     await until(() => expect(host.querySelectorAll('.tl-item').length).toBeGreaterThan(6));
     const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
     expect(heads.slice(0, 5)).toEqual([

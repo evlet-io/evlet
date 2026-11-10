@@ -952,8 +952,39 @@
     "popover"
    ],
    "used": [
-    "New",
     "More actions"
+   ],
+   "variants": []
+  },
+  {
+   "cat": "buttons",
+   "id": "split-button",
+   "name": "SplitButton",
+   "level": "Composite",
+   "desc": "A main button with a chevron that opens a menu of the alternatives: the record's main move, its other moves behind the chevron.",
+   "props": [
+    [
+     "main",
+     "button",
+     ""
+    ],
+    [
+     "items",
+     "list of MenuItem",
+     "No chevron when empty"
+    ],
+    [
+     "menuLabel",
+     "text",
+     ""
+    ]
+   ],
+   "from": [
+    "button",
+    "menu-button"
+   ],
+   "used": [
+    "Doc header"
    ],
    "variants": []
   },
@@ -1510,7 +1541,7 @@
    "id": "sparkline",
    "name": "Sparkline",
    "level": "Element",
-   "desc": "Small trend line with an area and a marked last point.",
+   "desc": "Small trend line with an area and a marked last point. No axes; draws nothing under two numbers.",
    "props": [
     [
      "values",
@@ -1518,13 +1549,19 @@
      ""
     ],
     [
-     "tint",
+     "tone",
      "tint",
      ""
+    ],
+    [
+     "label",
+     "text",
+     "Spoken with a summary"
     ]
    ],
    "from": [],
    "used": [
+    "Stat cards",
     "KPI tiles"
    ],
    "variants": []
@@ -1591,9 +1628,9 @@
   {
    "cat": "display",
    "id": "stat",
-   "name": "Stat",
+   "name": "StatCard",
    "level": "Element",
-   "desc": "Label, value and a short note. The unit of the summary strip.",
+   "desc": "A number card: a muted label, a large value, an optional caption, icon, accent and trend line. The unit of the summary strip.",
    "props": [
     [
      "label",
@@ -1608,10 +1645,27 @@
     [
      "note",
      "text",
-     ""
+     "Caption under the value"
+    ],
+    [
+     "icon",
+     "icon name",
+     "On a tinted chip"
+    ],
+    [
+     "tone",
+     "tint or neutral",
+     "Neutral by default"
+    ],
+    [
+     "trend",
+     "list of numbers",
+     "Sparkline; none under two"
     ]
    ],
-   "from": [],
+   "from": [
+    "sparkline"
+   ],
    "used": [
     "Summary strip"
    ],
@@ -1622,7 +1676,7 @@
    "id": "summary-strip",
    "name": "SummaryStrip",
    "level": "Composite",
-   "desc": "Four stats in one bordered row. Values come from the model's measures.",
+   "desc": "Up to four stat cards in a row that wraps on narrow screens. Values come from the model's measures or the record's calculated fields.",
    "props": [
     [
      "stats",
@@ -2332,7 +2386,7 @@
    "id": "top-bar",
    "name": "TopBar",
    "level": "Composite",
-   "desc": "Sidebar toggle, breadcrumbs, search, notifications and the New menu.",
+   "desc": "Sidebar toggle, breadcrumbs, recent records, search, notifications and shortcuts.",
    "props": [
     [
      "crumbs",
@@ -2343,8 +2397,7 @@
    "from": [
     "icon-button",
     "breadcrumbs",
-    "search-input",
-    "menu-button"
+    "search-input"
    ],
    "used": [
     "App shell"
@@ -2495,7 +2548,7 @@
    "id": "doc-frame",
    "name": "DocFrame",
    "level": "Section",
-   "desc": "The record layout: main column on the left, side panel on the right (or left). Side panel drops below on narrow screens. The panel variant is one narrow column for a record opened beside a list.",
+   "desc": "The record layout: main column on the left, side panel on the right (or left). Responsive to its own width, not the window: a narrow frame (doc-narrow) drops the side panel below (records open it as a drawer) and the main column steps down (doc-m, doc-s, doc-xs). The panel variant is the same frame beside a list, with tighter padding.",
    "props": [
     [
      "side",
@@ -2742,7 +2795,7 @@
    "id": "doc-header",
    "name": "DocHeader",
    "level": "Section",
-   "desc": "Record mark, record type, title, key facts and the main actions. Moves and actions come from the model.",
+   "desc": "The record's title row: the type's icon tile, the title with its status, the main actions on the right and key facts under it. Moves and actions come from the model.",
    "props": [
     [
      "record",
@@ -2765,7 +2818,8 @@
     "pill",
     "move-button",
     "button",
-    "menu-button"
+    "menu-button",
+    "split-button"
    ],
    "used": [
     "Every record"
@@ -2920,38 +2974,6 @@
    ],
    "variants": [],
    "live": 1
-  },
-  {
-   "cat": "sections",
-   "id": "child-rows",
-   "name": "ChildRows",
-   "level": "Section",
-   "desc": "Lines of a record in a narrow column: one line per row with its amount, opened in place to edit, totals below and Open full table for the grid. Locks with the record.",
-   "props": [
-    [
-     "lines",
-     "Lines field",
-     ""
-    ],
-    [
-     "totals",
-     "list",
-     ""
-    ],
-    [
-     "locked",
-     "rule",
-     ""
-    ]
-   ],
-   "from": [
-    "base-field",
-    "button"
-   ],
-   "used": [
-    "Side panel"
-   ],
-   "variants": []
   },
   {
    "cat": "sections",
@@ -3173,7 +3195,7 @@
     "button"
    ],
    "used": [
-    "New menu"
+    "List pages"
    ],
    "variants": []
   },

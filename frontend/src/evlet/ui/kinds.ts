@@ -184,7 +184,8 @@ export const KINDS: Record<string, Kind> = {
   // An Image field holds the id of a private image attachment; forms show it with ImageControl (fields.ts).
   image: { format: value => empty(value) ? '' : 'Image', control: 'image' },
   integer: {
-    format: value => empty(value) ? '' : formatNumber(String(value), 0),
+    // Integer(grouping=False), such as a year, shows without thousands separators.
+    format: (value, meta) => empty(value) ? '' : meta?.grouping === false ? String(value) : formatNumber(String(value), 0),
     edit: value => empty(value) ? '' : String(value),
     parse: (input, meta) => {
       const clean = plainNumber(input);

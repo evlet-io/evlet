@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cell } from '../reactive';
-import { ChildRows, ChildTable } from '../ui/childtable';
+import { ChildTable } from '../ui/childtable';
 import { emptyPrefs, type TablePrefs } from '../ui/table';
 import { RecordStore } from '../model/record';
 import { backend, id, bigOrder, change, cleanup, key, pick, render, schema, watch } from './ui-helpers';
@@ -22,9 +22,19 @@ describe('ChildTable over a record store', () => {
     expect(cellOf(rowsIn(host)[1], 'amount').textContent!.trim()).toBe('AED 5.00');
     expect(cellOf(rowsIn(host)[1], 'amount').classList.contains('calc')).toBe(true);
     expect(footer(host)).toEqual(['', 'Total · 3 lines', '', '', 'AED 15.00']);
-    expect(host.querySelector('.g-sum')!.textContent).toContain('AED 15.00');
+    // Each sum shows once, in the total line; nothing repeats it under the table.
+    expect(host.querySelector('.g-sum')).toBeNull();
     expect(host.querySelector('table')!.getAttribute('role')).toBe('grid');
     expect(host.querySelector('.g-t .n')!.textContent).toBe('3');
+  });
+
+  it('shows a sum under the table only while its column is hidden', async () => {
+    const { store } = await bigOrder(3);
+    const prefs = cell({ ...emptyPrefs(), hidden: ['amount'] });
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], prefs }));
+    expect(host.querySelector('.g-sum')!.textContent).toContain('AED 15.00');
+    prefs.set(emptyPrefs());
+    expect(host.querySelector('.g-sum')).toBeNull();
   });
 
   it('starts the Link search when the user types in a Link cell', async () => {
@@ -42,8 +52,14 @@ describe('ChildTable over a record store', () => {
     key(input, 'Enter');
     expect(store.table('lines').rows.peek()[0].field('product').value.peek()).toBe(id(2));
     expect(document.querySelector('.link-search')).toBeNull();
-    // Typing on the cell's open control does the same.
+    // One click edits the cell and opens its search; Esc closes the search and keeps the cell editing.
     cellOf(rowsIn(host)[1], 'product').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(document.querySelectorAll('.link-search input')).toHaveLength(1);
+    key(document.querySelector('.link-search input')!, 'Escape');
+    expect(document.querySelector('.link-search')).toBeNull();
+    expect(cellOf(rowsIn(host)[1], 'product').classList.contains('editing')).toBe(true);
+    // Typing on the cell's open control starts the search with it.
     key(cellOf(rowsIn(host)[1], 'product').querySelector('button')!, 'l');
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(document.querySelector<HTMLInputElement>('.link-search input')!.value).toBe('l');
@@ -131,7 +147,7 @@ describe('ChildTable over a record store', () => {
       const { store } = await bigOrder(2);
       const lines = store.table('lines');
       const host = render(() => ChildTable({ table: lines, columns: ['qty', 'rate', 'amount'] }));
-      [...host.querySelectorAll<HTMLButtonElement>('.g-under button')].find(button => button.textContent!.includes('Add row'))!.click();
+      host.querySelector<HTMLButtonElement>('tbody tr.g-addrow .g-add')!.click();
       expect(rowsIn(host)).toHaveLength(3);
       expect(cellOf(rowsIn(host)[2], 'qty').classList.contains('editing')).toBe(true);
       key(host.querySelector('td.editing input')!, 'Escape');
@@ -216,18 +232,15 @@ describe('ChildTable over a record store', () => {
     expect(prefs.peek()).toMatchObject({ order: ['amount', 'product', 'qty', 'rate'], pinned: 1 });
   });
 
-  it('opens a row in place with every field and closes it with Done', async () => {
+  it('opens a row in the row editor with every field and closes it with Done', async () => {
     const { store } = await bigOrder(2);
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'] }));
-    const toggle = rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!;
-    expect(toggle.getAttribute('aria-expanded')).toBe('false');
-    toggle.click();
-    expect(toggle.getAttribute('aria-expanded')).toBe('true');
-    const panel = host.querySelector('.g-x')!;
-    expect(panel.textContent).toContain('Row 1 of 2');
+    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    const panel = host.querySelector('.g-ed-main')!;
+    expect(panel.querySelector('.g-ed-pos')!.textContent).toBe('1 of 2');
     expect([...panel.querySelectorAll('.fld label')].map(label => label.firstChild!.textContent)).toEqual(['Qty', 'Amount']);
     [...panel.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent === 'Done')!.click();
-    expect(host.querySelector('.g-x')).toBeNull();
+    expect(host.querySelector('.g-ed')).toBeNull();
   });
 
   it('keeps editing out until every row is loaded', async () => {
@@ -239,41 +252,6 @@ describe('ChildTable over a record store', () => {
     await store.loadAll();
     cellOf(rowsIn(host)[0], 'qty').click();
     expect(host.querySelector('td.editing')).not.toBeNull();
-  });
-});
-
-describe('ChildRows: a child table in a narrow column', () => {
-  it('shows a line per row with its amount, edits a row in place, adds rows and opens the full table', async () => {
-    const { store } = await bigOrder(3);
-    const full = vi.fn();
-    const host = render(() => ChildRows({ table: store.table('lines'), title: 'Lines', onOpenFull: full, totals: [{ label: 'Total', value: 'AED 15.00' }] }));
-    const lines = () => [...host.querySelectorAll<HTMLElement>('.crow')];
-    expect(lines()).toHaveLength(3);
-    expect(host.querySelector('.crows-h h3')!.textContent).toBe('3 rows');
-    expect(lines()[1].querySelector('.crow-amt')!.textContent!.trim()).toBe('AED 5.00');
-    expect(lines()[1].querySelector('.crow-sub')!.textContent).toContain('Qty');
-    const head = lines()[0].querySelector<HTMLButtonElement>('.crow-h')!;
-    expect(head.getAttribute('aria-expanded')).toBe('false');
-    head.click();
-    expect(head.getAttribute('aria-expanded')).toBe('true');
-    expect(lines()[0].querySelectorAll('.crow-ed .ff, .crow-ed .field, .crow-ed input').length).toBeGreaterThan(0);
-    [...host.querySelectorAll<HTMLButtonElement>('.crows-h button')].find(button => button.textContent!.includes('Add row'))!.click();
-    expect(lines()).toHaveLength(4);
-    expect(lines()[3].classList.contains('open')).toBe(true);
-    expect(store.dirty.peek()).toBe(true);
-    [...host.querySelectorAll<HTMLButtonElement>('.crows-h button')].find(button => button.textContent!.includes('Open full table'))!.click();
-    expect(full).toHaveBeenCalledOnce();
-    expect(host.querySelector('.crows-t')!.textContent).toBe('TotalAED 15.00');
-  });
-
-  it('shows values without inputs or Add row while locked', async () => {
-    const { store } = await bigOrder(2);
-    const host = render(() => ChildRows({ table: store.table('lines'), title: 'Lines', locked: true, lockedText: 'Locked. Lines can’t change now.' }));
-    expect([...host.querySelectorAll('.crows-h button')].some(button => button.textContent!.includes('Add row'))).toBe(false);
-    expect(host.querySelector('.crows-lock')!.textContent).toBe('Locked. Lines can’t change now.');
-    host.querySelector<HTMLButtonElement>('.crow-h')!.click();
-    expect(host.querySelector('.crow-ed dl.fields')).not.toBeNull();
-    expect(host.querySelector('.crow-ed input')).toBeNull();
   });
 });
 
@@ -432,8 +410,8 @@ describe('ChildTable focus, click and Tab', () => {
     const store = await entryLines();
     const links = { search: async () => [{ id: id(2), title: 'Licence' }], title: () => cell<string | null>('Licence') };
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['note', 'product', 'phone'], links }));
+    // The click that edits the cell opens its search.
     await press(cellOf(rowsIn(host)[0], 'product'));
-    key(cellOf(rowsIn(host)[0], 'product').querySelector('button')!, 'L');
     await tick();
     key(document.querySelector<HTMLInputElement>('.link-search input')!, 'Enter');
     await tick();
@@ -641,16 +619,16 @@ describe('Columns menu', () => {
     const prefs = cell<TablePrefs>({ ...emptyPrefs(), widths: { product: 150, qty: 80 }, pinned: 2 });
     const { host } = await open(prefs);
     const left = (selector: string) => host.querySelector<HTMLElement>(selector)!.style.left;
-    // The row control column is 84 px wide.
-    expect(left('th[data-key="product"]')).toBe('84px');
-    expect(left('th[data-key="qty"]')).toBe('234px');
-    expect(left('tbody tr[data-key] td[data-col="qty"]')).toBe('234px');
+    // The row control column (checkbox, drag handle, number and Edit) is 104 px wide.
+    expect(left('th[data-key="product"]')).toBe('104px');
+    expect(left('th[data-key="qty"]')).toBe('254px');
+    expect(left('tbody tr[data-key] td[data-col="qty"]')).toBe('254px');
     expect(host.querySelector('tbody tr[data-key] td[data-col="qty"]')!.classList.contains('s2')).toBe(true);
     expect(host.querySelectorAll('tfoot td.stk').length).toBe(3);
     expect(left('th[data-key="rate"]')).toBe('');
     prefs.set({ ...prefs.peek(), pinned: 3 });
-    expect(left('th[data-key="rate"]')).toBe('314px');
-    expect(left('tbody tr[data-key] td[data-col="rate"]')).toBe('314px');
+    expect(left('th[data-key="rate"]')).toBe('334px');
+    expect(left('tbody tr[data-key] td[data-col="rate"]')).toBe('334px');
     expect(host.querySelector('th[data-key="qty"]')!.classList.contains('s2')).toBe(false);
     expect(host.querySelector('th[data-key="rate"]')!.classList.contains('s2')).toBe(true);
     // Editing a pinned cell keeps it pinned.

@@ -6,7 +6,54 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Breaking
+
+- **Record pages have no tabs: every record uses the compact record page.** `Tab`, `Meta.tabs` and
+  `Meta.default_tab` are removed; using them fails when the model is defined, with a message pointing to
+  `Main` and `Section`. A model without `Meta.layout` puts every field in the primary area, in
+  declaration order, followed by its Tables; a layout of sections only uses its first section as the
+  primary area and the others as "more information". Activity moves to the side column (a drawer in a
+  narrow window, so the record comes first); Revisions, Related and Postings are rows of more
+  information. The record address no longer takes `?tab=`, and a list's side panel no longer writes
+  `?rtab=`. `record_layout` loses its `compact` key and is `{"blocks": [...]}` only. Controls layouts no
+  longer take a record tab order (`tabs`, `default_tab`); one saved before keeps its sections and panel.
+  The side panel's narrow child rows (`ChildRows`), the Key fields and Related side blocks, sticky record
+  tabs and `keepTabPlace` are gone ([docs/app-upgrades.md](docs/app-upgrades.md)).
+
 ### Added
+
+- **`Integer(grouping=False)`.** Shows a number without thousands separators, such as a year (`2023`). Display
+  only; `/api/schema` sends `"grouping": false` ([docs/model-engine.md](docs/model-engine.md)).
+
+- **Child table tools, row editor and section rows.** A compact record's table has Focus and Columns buttons by
+  its title. A row's Edit (a pencil by its number, beside a new drag handle) opens the row editor in focus view: the
+  rows as a list beside one form for the row, with a summary line, previous and next, Delete line, Insert below and
+  Done; a row model's Sections show as "more information" rows there. A Table whose schema has `"sections": true`
+  draws section rows as headings with their own sums, closes, renames, moves and deletes them, and saves them in
+  the change set. Rows no longer open in place.
+
+- **Lifecycle on lists and records.** Cancelled records (a red `final` state, or `void`) are struck through and
+  greyed in lists and boards, and show red "Cancelled" text and a soft red strip with when, who and why on the record.
+  Locked or final states read as a lock and grey text, the starting state as a dashed Draft pill. Read from the
+  state field's `cancelled` list when the schema sends one, else from the State's `final`, `voidable` and colours,
+  with `locked` and `default` ([docs/ui.md](docs/ui.md#how-a-records-lifecycle-reads)).
+
+- **The side panel reads as one white section.** A compact record in a list's side panel has its header (record
+  image slot, title, status badge, a lock while it can't be changed, then the drawer button, Expand and Close), a
+  muted subtitle of its number and first key fields, a thin line, the key cards as plain pairs, then the fields two
+  to a row and the tables. The panel shows no stage bar. `DocHeader` takes `subtitle`, `image` and `tools`, and
+  the record page shows a schema's `image` field left of the title when the schema names one
+  ([docs/ui.md](docs/ui.md#what-a-side-panel-shows)).
+
+- **Key cards as number cards, and `Meta.panel_summary`.** A compact record page draws `Meta.cards` as the
+  list page's number cards above the white card, two or three to a row in a side panel or on a phone.
+  `Meta.panel_summary = False` leaves the summary strip or the key cards out of a list's side panel; the full page
+  keeps them ([docs/ui.md](docs/ui.md#what-a-side-panel-shows)).
+
+- **The compact record page is drawn.** A layout that starts with `Main` shows its cards, the Main card with
+  the state banner inside it, "more information" rows with one-line summaries while closed, and a side column
+  with Attachments, Activity and Record info. It has no tabs. Section descriptions show under section titles
+  on every record layout ([docs/ui.md](docs/ui.md#compact-record-page)).
 
 - **Decimal places per currency.** Each currency code has 0 to 6 places: ISO 4217 by default (AED 2,
   KWD 3, JPY 0), changed or added by an admin in Controls, Currencies (`decimals` in
@@ -32,8 +79,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `section_sums`, the fields the total line sums, which each section shows for its rows (computed,
   never stored). Print shows them as heading rows with their sums, the Journal records them, and
   a revise copies them. They are stored in the framework table `evlet_sections`, so turning
-  `sections=True` on needs no migration. The table editor does not draw them yet and leaves them
-  in place. The Playground's Employee groups Skills this way, with no migration
+  `sections=True` on needs no migration. The record page's table draws them (see Child table tools above). The Playground's Employee groups Skills this way, with no migration
   ([docs/model-engine.md](docs/model-engine.md#section-rows)).
 - **Cancelled states: `State(..., cancelled=...)`.** Names the final states that mean a record
   was called off, such as cancelled or lost, so the browser can show them as cancelled instead of
@@ -80,8 +126,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   field. `Section(..., description=...)` adds a line under a section's title. All of it is checked
   when the registry is built, and `/api/schema` sends `cards` (cut per role, like `key_fields`),
   `"compact": true` and `"main": true` on the record layout, and `description` on sections. Models
-  without them are unchanged. The record page draws the compact design in a later release; until
-  then it shows the blocks in order. The Playground's Project uses it, so its record tabs are gone
+  without them are unchanged. The Playground's Project uses it, so its record tabs are gone
   and its Planning section is now Budget ([docs/ui.md](docs/ui.md#compact-record-page)).
 
 - **Duplicate options.** `Meta.duplicate = False` hides a model's record Duplicate action, and

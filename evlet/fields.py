@@ -288,9 +288,14 @@ class Integer(Field):
     sql_type = "INTEGER"
     default_rounding = "half_up"
 
-    def __init__(self, *, minimum=None, maximum=None, rounding=None, **kwargs):
+    def __init__(self, *, minimum=None, maximum=None, rounding=None, grouping=True, **kwargs):
         super().__init__(**kwargs)
         self.rounding = rounding_mode(rounding, self.default_rounding)
+        # grouping=False shows the number without thousands separators, such as a year (2023, not 2,023).
+        # Display only: it never changes storage or migrations.
+        if type(grouping) is not bool:
+            raise ValueError("Integer grouping must be True or False")
+        self.grouping = grouping
         for bound in (minimum, maximum):
             if bound is not None and type(bound) is not int:
                 raise ValueError("Integer bounds must be integers")

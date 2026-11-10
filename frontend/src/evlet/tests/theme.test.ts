@@ -46,7 +46,7 @@ export function contrast(a: string, b: string) {
   return (high + 0.05) / (low + 0.05);
 }
 
-const GROUNDS = ['--bg', '--bg-subtle', '--bg-muted', '--side-bg', '--surface'];
+const GROUNDS = ['--bg', '--bg-subtle', '--bg-muted', '--side-bg', '--page-bg', '--surface'];
 const TINTS = ['blue', 'green', 'amber', 'rose', 'violet', 'teal', 'slate'];
 // [text or mark, background, minimum ratio]: 4.5:1 for text, 3:1 for icons, focus rings and borders that carry meaning.
 const PAIRS: Array<[string, string, number]> = [
@@ -66,7 +66,7 @@ describe('theme tokens', () => {
     expect(block(STYLES, ':root{')).toContain('color-scheme:light');
     expect(block(STYLES, ':root[data-theme="dark"]{')).toContain('color-scheme:dark');
     // Fonts, sizes, radii and the theme pictures are the same in both themes.
-    const constant = /^--(font|mono|r|r-sm|r-lg|sidebar-w|topbar-h|swatch-.*)$/;
+    const constant = /^--(font|mono|r|r-sm|r-lg|sidebar-w|topbar-h|doc-side-w|page-gutter|page-gap|swatch-.*)$/;
     const colour = Object.keys(LIGHT).filter((name: string) => !constant.test(name));
     expect(colour.filter(name => !(name in DARK))).toEqual([]);
     expect(Object.keys(DARK).filter(name => !(name in LIGHT))).toEqual([]);
@@ -242,7 +242,7 @@ describe('choosing a theme', () => {
   it('switches from the command palette', async () => {
     const { host, sent } = start(routes('light'), '/docs');
     await until(() => expect(host.querySelector('.side-foot .theme-btn')).not.toBeNull());
-    host.querySelector<HTMLButtonElement>('.top-search')!.click();
+    host.querySelector<HTMLButtonElement>('.top-search .ts-search')!.click();
     const input = document.querySelector<HTMLInputElement>('.modal input')!;
     input.value = 'dark theme';
     input.dispatchEvent(new Event('input', { bubbles: true }));

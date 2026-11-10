@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cell } from '../reactive';
-import { Avatar, Button, Checkbox, Chip, EmptyState, Icon, IconButton, ProgressBar, SegmentedControl, StateBanner, StatusPill, Switch } from '../ui/base';
+import { Avatar, Button, Checkbox, Chip, EmptyState, Icon, IconButton, ProgressBar, SegmentedControl, Sparkline, StatCard, StateBanner, StatusPill, SummaryStrip, Switch, spokenText, trendSummary } from '../ui/base';
 import { Menu, MenuButton, openDrawer, openModal, openPopover, toast } from '../ui/layers';
 import { tipText, tooltip } from '../ui/tooltip';
 import { cleanup, key, render, watch } from './ui-helpers';
@@ -223,5 +223,90 @@ describe('Modal, Drawer and Toast', () => {
       vi.advanceTimersByTime(200);
       expect(document.querySelectorAll('.toast')).toHaveLength(0);
     } finally { vi.useRealTimers(); }
+  });
+});
+
+describe('StatCard, Sparkline and SummaryStrip', () => {
+  it('shows a muted label, the value, a caption beside the label, and an icon chip in its tone', () => {
+    const value = cell('AED 508,000.00');
+    const card = render(() => StatCard({ label: 'Budget', value, note: 'Filtered by a rule', icon: 'wallet', tone: 'teal' })).firstElementChild!;
+    expect(card.className).toBe('sum-t stat-card tone-teal has-ic');
+    expect(card.querySelector(':scope > span')!.textContent).toBe('Budget');
+    expect(card.querySelector('b')!.textContent).toBe('AED 508,000.00');
+    expect(card.querySelector('em')!.textContent).toBe('Filtered by a rule');
+    expect(card.querySelector('.stat-ic svg')!.getAttribute('aria-hidden')).toBe('true');
+    // The dot stands in for the chip on a phone, where the chip hides; the label text stays the label.
+    expect(card.querySelector('span > .stat-dot')).not.toBeNull();
+    value.set('AED 1.00');
+    expect(card.querySelector('b')!.textContent).toBe('AED 1.00');
+    expect(card.querySelector('b')!.getAttribute('title')).toBe('AED 1.00');
+  });
+
+  it('is neutral by default, keeps class names safe, and marks a tone with a dot', () => {
+    const plain = StatCard({ label: 'Projects', value: '7' });
+    expect(plain.className).toBe('sum-t stat-card');
+    expect(plain.querySelector('.stat-ic, .stat-dot, em, .stat-tr')).toBeNull();
+    expect(StatCard({ label: 'X', value: '1', tone: 'red<b>' as never }).className).toBe('sum-t stat-card tone-slate');
+    const dotted = StatCard({ label: 'Won', value: '3', tone: 'green' });
+    expect(dotted.querySelector('span > .stat-dot')).not.toBeNull();
+    expect(dotted.querySelector('span')!.textContent).toBe('Won');
+  });
+
+  it('draws a trend line from numbers, labelled with a summary, and nothing without data', () => {
+    const trend = cell<number[] | null>([3, 5, 4, 9]);
+    const card = render(() => StatCard({ label: 'Budget', value: '9', tone: 'blue', trend, trendLabel: 'last 4 months' })).firstElementChild!;
+    const svg = card.querySelector('.stat-tr svg.ev-spark')!;
+    // Small and inline at the right of the thin card.
+    expect([svg.getAttribute('width'), svg.getAttribute('height')]).toEqual(['64', '24']);
+    expect(svg.namespaceURI).toBe('http://www.w3.org/2000/svg');
+    expect(svg.getAttribute('role')).toBe('img');
+    expect(svg.getAttribute('aria-label')).toBe('Budget trend, last 4 months: 4 points, from 3 to 9, low 3, high 9');
+    expect(svg.querySelectorAll('path')).toHaveLength(2);
+    expect(svg.querySelector('path.l')!.getAttribute('d')).toBe('M2 22 L22 15.33 L42 18.67 L62 2');
+    expect(svg.querySelector('path.a')!.getAttribute('d')).toMatch(/ L62 24 L2 24 Z$/);
+    expect(svg.querySelector('circle.p')!.getAttribute('cx')).toBe('62');
+    trend.set([7]);
+    expect(card.querySelector('svg.ev-spark')).toBeNull();
+    trend.set(null);
+    expect(card.querySelector('svg.ev-spark')).toBeNull();
+    trend.set([1, 2]);
+    expect(card.querySelector('svg.ev-spark')).not.toBeNull();
+  });
+
+  it('skips values that are not numbers, centres a flat line, and tints a standalone line', () => {
+    expect(Sparkline({ values: [] })).toBeNull();
+    expect(Sparkline({ values: [Number.NaN, 4] })).toBeNull();
+    const flat = Sparkline({ values: [4, Number.POSITIVE_INFINITY, 4, 4], tone: 'rose', width: 50, height: 20 })!;
+    expect(flat.getAttribute('class')).toBe('ev-spark c-rose');
+    expect(flat.getAttribute('viewBox')).toBe('0 0 50 20');
+    expect(flat.querySelector('path.l')!.getAttribute('d')).toBe('M2 10 L25 10 L48 10');
+    expect(flat.getAttribute('aria-label')).toBe('Trend: 3 points, from 4 to 4, low 4, high 4');
+    expect(trendSummary([1250.5, -3, 10])).toBe('3 points, from 1,250.5 to 10, low -3, high 1,250.5');
+  });
+
+  it('takes a string or a node as the value, and names the card from its text or image alt', () => {
+    const text = StatCard({ label: 'Budget', value: 'AED 508,000.00', note: 'Filtered by a rule' });
+    expect(text.querySelector('b')!.textContent).toBe('AED 508,000.00');
+    expect(text.getAttribute('role')).toBe('group');
+    expect(text.getAttribute('aria-label')).toBe('Budget, AED 508,000.00, Filtered by a rule');
+
+    const amount = document.createElement('span');
+    const symbol = document.createElement('img');
+    symbol.src = 'data:image/png;base64,'; symbol.alt = 'AED';
+    amount.append(symbol, '508,000.00');
+    const card = StatCard({ label: 'Budget', value: () => amount });
+    const value = card.querySelector('b')!;
+    expect(value.firstElementChild).toBe(amount);
+    expect(value.querySelector('img[alt="AED"]')).not.toBeNull();
+    expect(card.getAttribute('aria-label')).toContain('AED');
+    expect(card.getAttribute('aria-label')).toBe('Budget, AED 508,000.00');
+    expect(value.getAttribute('title')).toBe('AED 508,000.00');
+    expect(spokenText(amount)).toBe('AED 508,000.00');
+  });
+
+  it('puts up to four cards in the summary strip', () => {
+    const strip = SummaryStrip([1, 2, 3, 4, 5].map(n => ({ label: `L${n}`, value: String(n) })));
+    expect(strip.className).toBe('sum');
+    expect(strip.querySelectorAll(':scope > .stat-card')).toHaveLength(4);
   });
 });

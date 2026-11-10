@@ -53,6 +53,9 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   /** Meta.cards: up to five derived values for the top of a compact record page, each a field (compute, fetch or
    * query) or a per-record measure, cut to what this role may read. Absent: the automatic summary strip. */
   cards?: string[];
+  /** The field (type "image") whose picture shows left of the record's title. Read defensively: absent, or naming a
+   * field this role does not read, shows nothing. */
+  image?: string;
   relations?: RelationSchema[];
   attachments?: boolean;
   attachment_limits?: { max_files: number; max_size: number };
@@ -99,8 +102,40 @@ export const rootModels = (index: SchemaIndex): ScreenModel[] => index.schema.mo
 
 export const fieldOf = (model: ScreenModel, name: string): FieldSchema | undefined => model.fields.find(field => field.name === name);
 export const isStateField = (model: ScreenModel, field: FieldSchema) => model.state?.field === field.name || (field as any).state === true;
+
+/**
+ * How a record's State reads in lists and headers, from the schema alone (never from state names):
+ * - `cancelled`: a state the State lists in `cancelled` (State(cancelled=(...)), the void state included). Without
+ *   that key (older schemas): a `final` state declared in red (`colors={...: 'rose'}`), or the framework's "void"
+ *   state of a voidable State. Struck-through title, red "Cancelled" text, a soft red banner.
+ * - `locked`: any other `locked` or `final` state, such as Confirmed or Done: a lock and the state name in grey.
+ * - `draft`: the state a record starts in (the State's default, else its first state) while it is not locked:
+ *   a dashed pill with a pencil.
+ * - `open`: everything else, the coloured badge as before. Null without a State or a value.
+ */
+export type StateLook = 'cancelled' | 'locked' | 'draft' | 'open';
+export function stateLook(model: ScreenModel, value: unknown): StateLook | null {
+  const state = model.state;
+  if (!state || value === null || value === undefined || value === '') return null;
+  const name = String(value), meta = model.fields.find(field => field.name === state.field);
+  const final = (state.final ?? []).includes(name), locked = (state.locked ?? []).includes(name);
+  const colors = (meta as { colors?: Record<string, string> } | undefined)?.colors;
+  // State(cancelled=(...)): the schema's own list of cancelled states (the void state included), on the state field
+  // or the State. Older schemas without it: a final state in red, or the framework's void state of a voidable State.
+  const marked = (meta as { cancelled?: unknown } | undefined)?.cancelled ?? (state as { cancelled?: unknown }).cancelled;
+  if (Array.isArray(marked)) {
+    if (marked.map(String).includes(name)) return 'cancelled';
+  } else {
+    const voids = Boolean((state as { voidable?: string[] }).voidable?.length) && name === 'void';
+    if (final && (voids || colors?.[name] === 'rose')) return 'cancelled';
+  }
+  if (final || locked) return 'locked';
+  const declared = (state as { default?: unknown }).default ?? meta?.default;
+  const start = declared !== undefined && declared !== null ? String(declared) : state.states[0];
+  return name === start ? 'draft' : 'open';
+}
 /** Query keys of a list's address: search, sort, page, view, saved view, filters, and the side panel's record and tab. */
-export const LIST_KEYS = ['q', 'sort', 'page', 'view', 'tab', 'f', 'open', 'rtab'];
+export const LIST_KEYS = ['q', 'sort', 'page', 'view', 'tab', 'f', 'open'];
 
 export const sequenceField = (model: ScreenModel): FieldSchema | undefined => model.fields.find(field => field.type === 'sequence');
 /** The document number the server assigns: a Sequence field, or the field a naming series fills. */
@@ -147,14 +182,16 @@ export function keyFields(model: ScreenModel): FieldSchema[] {
 }
 
 /** Details sections: Meta.layout, or one section with every visible field. Unknown names (not readable) drop out. */
-export function sections(model: ScreenModel): Array<{ label: string; fields: FieldSchema[]; collapsible?: boolean; collapsed?: boolean | 'empty'; flow?: 'rows' | 'columns' }> {
+export function sections(model: ScreenModel): Array<{ label: string; fields: FieldSchema[]; collapsible?: boolean; collapsed?: boolean | 'empty'; flow?: 'rows' | 'columns';
+  /** Section(description=...). */ description?: string; /** The compact page's Main area. */ main?: boolean }> {
   const layout = model.layout?.length ? model.layout : [{ label: 'Details', fields: visible(model).map(field => field.name) }];
   const seen = new Set<string>();
-  const result = layout.map(section => ({ label: section.label, collapsible: section.collapsible, collapsed: section.collapsed, flow: section.flow, fields: section.fields.map(name => fieldOf(model, name))
+  const result = layout.map(section => ({ label: section.label, collapsible: section.collapsible, collapsed: section.collapsed, flow: section.flow,
+    description: 'description' in section ? section.description : undefined, main: 'main' in section ? section.main : undefined, fields: section.fields.map(name => fieldOf(model, name))
     .filter((field): field is FieldSchema => Boolean(field && !field.hidden && !seen.has(field.name) && seen.add(field.name))) }));
   // Readable fields the layout leaves out still show, last.
   const rest = visible(model).filter(field => !seen.has(field.name));
-  if (rest.length) result.push({ label: 'Other', collapsible: false, collapsed: false, flow: 'rows', fields: rest });
+  if (rest.length) result.push({ label: 'Other', collapsible: false, collapsed: false, flow: 'rows', description: undefined, main: undefined, fields: rest });
   return result.filter(section => section.fields.length);
 }
 
@@ -205,18 +242,23 @@ export function measureText(index: SchemaIndex, model: ScreenModel, measure: Mea
   currencies?: Record<string, string>): string {
   const field = measureField(index, model, measure, value);
   if (!field) return plainMeasure(measure, value);
-  const money = moneyField(field, measure, currencies);
-  return money ? formatOf(money, value) : formatOf(field, value);
+  return formatOf(moneyField(field, measure, value, currencies) ?? field, value);
 }
 
 /**
  * A Currency field whose code comes from each record (currency_source), as a measure's money result shows it: with
- * the route's code, or as a plain amount without one. A field with a fixed or default currency keeps it (null).
+ * the route's code (a SAR record's sum shows SAR), else as a plain amount without a symbol, since no one code covers
+ * rows in several currencies. Without the route's `currencies`, a field with a fallback code keeps it (null).
+ * The plain amount keeps the places the server sent ("0.00"), never the schema scale, which is the storage scale
+ * (6): 2 when the value carries none. A field with no currency source keeps its own code (null).
  */
-function moneyField(field: FieldSchema, measure: MeasureSchema, currencies?: Record<string, string>): FieldSchema | null {
-  if (field.type !== 'currency' || !currencies || !field.currency_source) return null;
-  const code = currencies[measure.name];
-  return code ? { ...field, currency: code } : { ...field, type: 'decimal', scale: field.scale ?? 2 };
+function moneyField(field: FieldSchema, measure: MeasureSchema, value: unknown, currencies?: Record<string, string>): FieldSchema | null {
+  if (field.type !== 'currency' || !field.currency_source) return null;
+  const code = currencies?.[measure.name];
+  if (code) return { ...field, currency: code, currency_source: undefined };
+  if (!currencies && field.currency) return null;
+  const sent = typeof value === 'string' ? /\.(\d+)$/.exec(value.trim())?.[1].length : undefined;
+  return { ...field, type: 'decimal', scale: sent ?? 2 };
 }
 
 /**
@@ -229,9 +271,10 @@ export function measureView(index: SchemaIndex, model: ScreenModel, measure: Mea
   currencies?: Record<string, string>): Child {
   const field = measureField(index, model, measure, value);
   if (!field) return plainMeasure(measure, value);
-  return displayOf(moneyField(field, measure, currencies) ?? field, value);
+  return displayOf(moneyField(field, measure, value, currencies) ?? field, value);
 }
 
+// A count is a plain number, never money, whatever field it counts (moneyField says how money shows).
 function measureField(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): FieldSchema | undefined {
   if (value === null || value === undefined || measure.function === 'count' || measure.function === 'count_distinct') return undefined;
   const target = measure.model ? (index.schema.models.find(item => item.name === measure.model) as unknown as ScreenModel | undefined) : model;
@@ -244,57 +287,82 @@ function plainMeasure(measure: MeasureSchema, value: unknown): string {
   return String(value);
 }
 
-export const measureLabel = (measure: MeasureSchema) => measure.name.replace(/_/g, ' ').replace(/^./, char => char.toUpperCase());
+/** The period before a trend bucket ("2026-06" -> "2026-05", "2026" -> "2025", "2026-03-01" -> "2026-02-28"). */
+function previousBucket(bucket: string, grain: MeasureTrend['grain']): string {
+  if (grain === 'year') return String(Number(bucket) - 1);
+  if (grain === 'month') {
+    const [year, month] = bucket.split('-').map(Number);
+    return month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, '0')}`;
+  }
+  const date = new Date(`${bucket}T00:00:00Z`);
+  date.setUTCDate(date.getUTCDate() - 1);
+  return date.toISOString().slice(0, 10);
+}
 
-/** The record page tab id of a Meta.tabs name: a record tab keeps its name, a Table field's tab is t-<name>. */
-const tabId = (name: string) => ['activity', 'details', 'revisions', 'related', 'postings'].includes(name) ? name : `t-${name}`;
+/**
+ * A measure's trend line from an aggregate grouped by its trend field and grain: the last `points` periods up to
+ * the latest one with records, in date order. Periods without records count 0 for a count or a sum, and are
+ * left as gaps (NaN) for a lowest, highest or average value. Records without a date are left out. Null when no
+ * period has records.
+ */
+export function trendValues(items: Array<Record<string, unknown>>, key: string, measure: Pick<MeasureSchema, 'name' | 'function'>, trend: MeasureTrend): number[] | null {
+  const byBucket = new Map<string, number>();
+  for (const item of items) {
+    const bucket = item[key];
+    if (bucket === null || bucket === undefined || bucket === '') continue;
+    byBucket.set(String(bucket), Number(item[measure.name] ?? 0));
+  }
+  if (!byBucket.size) return null;
+  const zero = ['count', 'count_distinct', 'sum'].includes(measure.function) ? 0 : Number.NaN;
+  let bucket = [...byBucket.keys()].sort().pop()!;
+  const values: number[] = [];
+  for (let index = 0; index < trend.points; index++) {
+    values.unshift(byBucket.get(bucket) ?? zero);
+    bucket = previousBucket(bucket, trend.grain);
+  }
+  return values;
+}
+
+/** The accents a list's measure cards take in turn when a measure declares no color=. */
+export const MEASURE_TONES: Tint[] = ['blue', 'teal', 'violet', 'amber'];
+
+/** A measure card's icon by its function: a count, a sum of money or of numbers, a lowest or highest value. */
+export function measureIcon(model: ScreenModel, measure: MeasureSchema): string {
+  if (measure.function === 'count' || measure.function === 'count_distinct') return 'hash';
+  if (measure.function === 'min') return 'arrow-down';
+  if (measure.function === 'max') return 'arrow-up';
+  const field = !measure.model && measure.field ? fieldOf(model, measure.field) : undefined;
+  return field?.type === 'currency' ? 'wallet' : 'chart-column';
+}
+
+export const measureLabel = (measure: MeasureSchema) => measure.name.replace(/_/g, ' ').replace(/^./, char => char.toUpperCase());
 
 /**
  * What a record opened in a list's side panel shows (model.panel: panel=False flags, Meta.panel or the Controls
- * toggles). Tabs and blocks follow the order Meta.panel names them in. The full page ignores it.
+ * toggles). The full page ignores it.
  */
 export interface PanelView {
   /** True when the panel leaves anything out: it then offers the full page. */
   hides: boolean;
   section(label: string): boolean;
   field(name: string): boolean;
-  /** A record page tab id: activity, details, revisions, related, postings or t-<table>. */
-  tab(id: string): boolean;
+  /** A part of the record (the schema's panel "tabs"): activity, details, revisions, related, postings or a Table field. */
+  tab(name: string): boolean;
   /** summary, key_fields, related, files or info. */
   block(name: string): boolean;
-  /** Items in the order Meta.panel names them (by tab id or block name), the rest after them as they were. */
-  order<T>(items: T[], id: (item: T) => string): T[];
 }
 
 export function panelView(model: ScreenModel): PanelView {
   const panel = model.panel ?? {};
   const hidden = (names?: string[]) => new Set(names ?? []);
-  const sections = hidden(panel.sections), fields = hidden(panel.fields), blocks = hidden(panel.blocks);
-  const tabs = new Set((panel.tabs ?? []).map(tabId));
-  const ranks = (panel.order ?? []).map(name => SIDE_BLOCK_NAMES.includes(name) || name === 'summary' ? name : tabId(name));
-  const rank = (key: string) => { const at = ranks.indexOf(key); return at < 0 ? ranks.length : at; };
+  const sections = hidden(panel.sections), fields = hidden(panel.fields), tabs = hidden(panel.tabs), blocks = hidden(panel.blocks);
   return {
     hides: Boolean(sections.size || fields.size || tabs.size || blocks.size),
     section: label => !sections.has(label),
     field: name => !fields.has(name),
-    tab: id => !tabs.has(id),
+    tab: name => !tabs.has(name),
     block: name => !blocks.has(name),
-    order: (items, id) => items.map((item, index) => ({ item, index })).sort((a, b) => rank(id(a.item)) - rank(id(b.item)) || a.index - b.index).map(entry => entry.item),
   };
 }
 
-/** The record page's side blocks (Meta.side_blocks in evlet/ui/metadata.py). */
-const SIDE_BLOCK_NAMES = ['key_fields', 'related', 'files', 'info'];
 
-/**
- * Record page tabs in the model's order (Meta.tabs or the Controls tab order): the tabs it names first,
- * the rest after them in their usual order. Also the tab a record opens on: its default_tab when the
- * record has that tab, else the first.
- */
-export function orderTabs<T extends { id: string }>(model: ScreenModel, items: T[]): { tabs: T[]; home: string } {
-  const order = (model.tabs ?? []).map(tabId);
-  const rank = (item: T) => { const at = order.indexOf(item.id); return at < 0 ? order.length : at; };
-  const tabs = items.map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map(entry => entry.item);
-  const wanted = model.default_tab ? tabId(model.default_tab) : null;
-  return { tabs, home: tabs.some(tab => tab.id === wanted) ? wanted! : tabs[0]?.id ?? 'details' };
-}

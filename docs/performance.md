@@ -389,8 +389,7 @@ Measured with `npm run bench:ui` on the same machine, before and after:
 | 1,000-line `order`: edit one quantity | 4.3 ms | 2.0 ms | 16 ms |
 | ChildTable, 1,000 rows: commit one cell | 4.3 ms | 2.4 ms | 16 ms |
 
-Only the active tab's panel is rendered, so the Details tab costs nothing while the lines tab is
-open. The rest of the first screen is the engine's first settle of every line and the 21 grid
+The numbers were measured when the record page had tabs (before 0.4). The rest of the first screen is the engine's first settle of every line and the 21 grid
 rows in view.
 
 In a real browser (Chromium in an embedded browser pane, 1280 x 800, development build

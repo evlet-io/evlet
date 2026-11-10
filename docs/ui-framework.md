@@ -148,7 +148,7 @@ router.confirmLeave(() => record.dirty.get(), () => confirmDialog('Discard your 
   not know (such as `/api/...`), stay ordinary links.
 - `guard(fn)` can stop any navigation (sync or async). `confirmLeave` asks only while its
   condition is true and also asks before the tab closes. A navigation that changes only the
-  query, such as switching record tabs (`?tab=`), stays on the page and never asks. A refused back or forward step
+  query, such as a list's search or tab, stays on the page and never asks. A refused back or forward step
   returns to the page the user was on. The latest of two concurrent navigations wins.
 - `router.signal` is aborted when the route changes. Pass `() => router.signal` to the API
   client so requests of the old page stop.
@@ -255,15 +255,18 @@ plain value is set once, a reactive one updates only the node bound to it. Impor
 class names.
 
 The fonts are bundled, so pages load nothing from another host and the CSP stays
-`default-src 'self'`. `frontend/fonts` holds Inter 4.1 (`InterVariable.woff2` and
-`InterVariable-Italic.woff2`, weights 100 to 900) and JetBrains Mono 2.304
-(`JetBrainsMono-Regular.woff2` and `-Medium.woff2`), taken from the official GitHub releases
-(`rsms/inter`, `JetBrains/JetBrainsMono`), with their SIL Open Font License 1.1 files beside them.
-The Inter files are byte for byte the ones evlet.io serves, and the family name
-(`"Inter Variable"`) and fallback stack match the site's brand tokens. The build copies them to
-`/assets` with a content hash (926,204 bytes of woff2 in all); the server sends them as
-`font/woff2`. `font-display: swap` shows the system fonts (`system-ui`, `ui-monospace` and the
-rest of the stack) until they load. The italic file downloads only when italic text shows.
+`default-src 'self'`. The UI font is IBM Plex Sans: `frontend/fonts` holds its regular 400, 500, 600
+and 700 and italic 400, in the Latin and Latin Extended subsets (`ibm-plex-sans-<subset>-<weight>-<style>.woff2`,
+200,292 bytes in all), copied from the `@fontsource/ibm-plex-sans` 5.2.8 package (IBM's
+[IBM/plex](https://github.com/IBM/plex) release; the package is not a dependency), and JetBrains Mono
+2.304 (`JetBrainsMono-Regular.woff2` and `-Medium.woff2`) from the official `JetBrains/JetBrainsMono`
+release, with their SIL Open Font License 1.1 files beside them (`IBMPlexSans-OFL.txt`,
+`JetBrainsMono-OFL.txt`). Each subset's `@font-face` names its `unicode-range`, so the Latin Extended
+file and the italic download only when the page shows those characters or italic text. The styles'
+in-between weights (450, 550, 650) take the nearest face the browser picks (500, 600, 700). The build
+copies the files to `/assets` with a content hash and the licences beside them; the server sends them
+as `font/woff2`. `font-display: swap` shows the system fonts (`system-ui`, `ui-monospace` and the rest
+of the stack) until they load.
 
 The Evlet logo is the evlet.io artwork as the site serves it, in `frontend/public/assets`:
 `evlet-logo-primary.svg` (the horizontal logo), `evlet-icon-blue.svg` (the folded leaf mark, also
@@ -274,18 +277,22 @@ mark only.
 
 | Module | Components |
 |---|---|
-| `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, Stat, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
+| `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, StatCard (also exported as Stat), Sparkline, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
-| `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `openModal`, `openDrawer`, `toast` (with Undo), `copyText` |
+| `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `SplitButton` (a main button with a chevron for the alternatives), `openModal`, `openDrawer`, `toast` (with Undo), `copyText`, `DialogFooter`, `primaryAction(panel)`: the footer's main action, which a dialog without a field focuses and Mod+S presses; the arrow keys move between footer actions and Mod+Shift+D cancels |
+| `shortcuts.ts` | `isMac`, `keyMatches(event, 'Mod+S')`, `formatKeys(combo)` (⌘S or Ctrl+S), `withShortcut(label, combo)` for tooltips, `ariaKeys(combo)` for `aria-keyshortcuts`, `isTyping`, `commitTyped` ([keyboard shortcuts](ui.md#keyboard-shortcuts)) |
+| `../app/shortcuts.ts` | `useShortcuts({ root, inner, area, actions, help })`: a screen binds Save, Delete, New and Duplicate; one document listener runs the action of the screen holding the focus. `openShortcutSheet(everywhere)` is the ? sheet |
+| `../app/duplicate.ts` | `duplicateOf(model, row, from)`: what More > Duplicate copies of a saved record (writable, visible, stored fields and every table's rows without ids; not the name, number, State, calculated or unique fields, nor fields and tables with `copy: false`); `duplicateAllowed(model)` reads `duplicate: false`; `holdDuplicate` and `takeDuplicate` hand it in memory to the next new record of the model ([Duplicate](ui.md#duplicate)) |
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type (RichTextField and RichTextView for rich text), `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
 | `pickers.ts` | Dropdown, ChoiceList, Calendar, Stepper, TimeSteppers, DatePanel, DateTimePanel, TimePanel, DurationPanel, DateRangePanel, `rangePresets`, `rangeText` |
 | `inline.ts` | InlineValue, KeyValueList, FormSection |
+| `autofocus.ts` | `initialFocusField`, `layoutFocusOrder`, `autofocusForm` ([focus on new forms](ui.md#focus-on-new-forms)) |
 | `fold.ts` | FoldSection, Folds, `foldSummary`, `revealField`, `revealFirstError` ([collapsible sections](ui.md#collapsible-sections)), `flowGrid` (rows or columns) |
 | `draglist.ts` | `dragList(root, { kind, move, label, zoneLabel })`: reorder by mouse, touch or keyboard, with announcements |
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
-| `childtable.ts` | ChildTable over a record store `Table`, and ChildRows for a narrow column |
+| `childtable.ts` | ChildTable over a record store `Table` |
 | `split.ts` | SplitView: a main area and a resizable side panel |
-| `doc.ts` | DocFrame (page or panel variant), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
+| `doc.ts` | DocFrame (page or panel variant, responsive to its own width: DOC_NARROW, docWidthClasses), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
 | `time.ts` | `RelativeTime`, `relativeTime`, `exactTime`, `zoneLabel`, `RELATIVE_STEPS`, `minuteClock` ([Relative times](#relative-times)) |
@@ -337,6 +344,10 @@ document.body.append(editor.element);
   Styles, classes, scripts, frames, images and unsafe links never survive. Plain text keeps
   paragraphs and lines, and web addresses become links. A web address pasted over selected text
   links it. Copy writes canonical HTML and plain text.
+- `toolbar: 'compact'` shows a slim row instead of the full toolbar: bold, italic, bulleted list,
+  link and, when the editor has `mentions`, Mention (it types `@` and opens the people picker). The
+  default is `'full'`. Keys and typed shortcuts work either way. The activity composer in a compact
+  record's side column uses it (`NoteComposer({ toolbar: 'compact' })`).
 - The toolbar is one Tab stop (arrow keys, Home and End move; disabled buttons are skipped) and
   shows what is on with `aria-pressed`. On desktop a small toolbar floats over selected text; on a
   phone the toolbar sits above the on-screen keyboard. Formatting changes are announced in a polite
@@ -379,13 +390,14 @@ none while the tab is hidden, and a catch-up the moment it shows again, so "just
 ago" by itself. With `exact` the element shows the exact time and the tooltip the words; with
 `onToggle` it is a button (`aria-pressed`) that switches them.
 
-The record page's Record info block shows **Created** and **Last modified** (and Revises and Revised by
-when they apply); the record's own id is copied from More > Copy record ID. It shows the times from the detail's
-`_audit` ([model-engine.md](model-engine.md#record-times)): `2 hours ago · Aslam`. Clicking a
-time switches every time in Record info between relative and exact, remembered per person
+The record page's footer (`RecordFooter` in `app/record-page.ts`, under the form) shows **Created** and
+**Modified**, the record ID with a copy button, and a Copy link button that copies the record's own address;
+nothing else. More has Copy link and Copy record ID too. It shows the times from the detail's
+`_audit` ([model-engine.md](model-engine.md#record-times)): `Aslam · 2 hours ago`. Clicking a
+time switches every time in the footer between relative and exact, remembered per person
 (`prefs.exactTimes`). Who is the person's display name, a link to Controls Users for people who may
 open Controls and plain text otherwise; it is absent for engine writes and for portal roles. The
-Activity tab's entry times use RelativeTime too, without the toggle.
+Activity's entry times use RelativeTime too, without the toggle.
 
 ### Typing dates and times
 
@@ -437,13 +449,16 @@ The date range filter's From and To boxes read days the same way.
 BaseField follows the Untitled UI input structure in Evlet's colours. Inputs, Link and Select
 buttons, unit boxes and tag fields are 40 px tall with 14 px text and 14 px side padding, so a
 form row lines up. At rest an input has a 1 px light grey border and a faint shadow; on focus
-a lighter blue border and a soft 4 px blue ring; with an error the same in rose. The label is
+the border turns the accent blue, with no glow or ring, so nothing moves; with an error the border
+stays rose on focus. The rich text frame, link pickers, selects, tags, date and time inputs and the
+search boxes focus the same way; child table cells show the active cell's 2 px accent outline.
+Buttons and other controls keep the page-wide `:focus-visible` outline, a solid 2 px accent line. The label is
 14 px, weight 500, 6 px above the input, and the required `*` is the accent blue (its
 `required_when` tooltip stays). `help_text` reads under the input in grey and is linked with
 `aria-describedby`; an error replaces it while there is one. A field with `tooltip` gets a ? icon
 at the right end of the input (before a Select's or Link's chevron, between the input and a unit
 box) that shows the text on hover and focus. Compact places keep their sizes: the record side
-panel (`.fields`), child table cells, list filters and quick add. Inter is the font, as before.
+panel (`.fields`), child table cells, list filters and quick add. IBM Plex Sans is the font everywhere.
 
 ### Pickers
 
@@ -502,12 +517,72 @@ uses it, before the input for a prefix and after it for a suffix. Number formatt
 
 The Link field's record mark is the 20 px `org-mark`; it never stretches.
 
+### Stat cards
+
+`StatCard` shows one number in a thin card, about 60 px high: a small muted label over the value
+(18 px), and optionally a caption beside the label, an icon chip on the left, an accent and a trend
+line on the right. Nothing adds a row, so every card in a strip has the same height.
+`SummaryStrip(stats)` puts up to four of them in a row that wraps: four across when there is room,
+never narrower than 180 px a card, two across on a phone. The list's measures and the record's
+summary strip both use it.
+
+```ts
+import { Sparkline, StatCard, SummaryStrip } from './evlet/ui';
+
+StatCard({
+  label: 'Budget',                   // small and muted
+  value: () => formatMoney(total.get()), // a string or a node, plain or as an accessor or cell
+  note: 'Filtered by a rule',         // optional caption beside the label, after a dot
+  empty: 'None',                      // optional muted text for an empty value
+  icon: 'wallet',                     // optional, on a 24 px tinted chip at the left
+  tone: 'teal',                       // 'neutral' (the default) or a tint
+  trend: () => monthly.get(),         // optional numbers for a 64 x 24 sparkline at the right
+  trendLabel: 'last 6 months',        // optional, for the sparkline's spoken summary
+});
+SummaryStrip([{ label: 'Total', value: 'AED 25,200.00' }, { label: 'Lines', value: '4' }]);
+Sparkline({ values: [3, 5, 4, 9], tone: 'blue', label: 'Deals' }); // an SVG element, or null
+```
+
+- **Look.** The card uses the theme's surface, border and card radius (`--r-lg`), so it follows
+  light and dark themes. Colour stays small: the tone tints the icon chip and the trend line, or
+  draws a small dot before the label when there is no icon. On a phone, or when the card has a
+  trend line, the chip hides and the dot shows instead, so the value keeps its room. The background never fills with colour. The caption is visible text, cut short
+  with an ellipsis when the card is narrow (its full text stays in the page for screen readers and
+  in a tooltip), never only a tooltip. The value shrinks a little in a
+  narrow card before it is cut short.
+- **Value.** A string, or a node shown as is, such as a currency symbol image followed by the
+  amount; an image in the value scales with the text. The card is a named group whose name joins
+  the label, the value's text (an image counts as its alt text) and the caption, so
+  `<img alt="AED">508,000.00` reads as "Budget, AED 508,000.00". `spokenText(value)` builds that
+  text.
+- **Tones.** `neutral`, `blue`, `green`, `amber`, `rose`, `violet`, `teal` and `slate`, the
+  names Select colours use. A tone sets `--stat-c` (the accent) and `--stat-bg` (the chip) on the
+  card; a stylesheet can set those two on `.stat-card` for its own accent. An unknown tone becomes
+  slate, so a class name is always safe.
+- **Trend.** `trend` takes numbers in order, oldest first. `Sparkline` draws a thin line with a
+  light area under it and a dot on the last point, with no axes. Values that are not finite numbers
+  are skipped, and with fewer than two left nothing is drawn. The line is an image with a spoken
+  summary, such as "Budget trend, last 6 months: 6 points, from 3 to 9, low 2, high 10"
+  (`trendSummary(values)` builds it). A reactive `trend` redraws when it changes.
+- **Measures on a list.** Each declared measure is a card with an icon for its function (`hash`
+  for a count, `wallet` for a sum of money, `chart-column` for another sum, `arrow-down` and
+  `arrow-up` for a lowest and a highest value). A measure's `color=` is its accent; the others take
+  blue, teal, violet and amber in turn. A measure with a `where` has the caption "Filtered by a
+  rule". A measure with `trend=` gets a trend line: the list asks
+  `GET /api/{model}/aggregate?measures=<name>&group_by=<field>:<grain>` with the list's filters and
+  search, a moment after they settle (with the strip's refresh), and `trendValues()` in `app/meta.ts`
+  takes the last `points` periods up to the latest one with records, in date order, counting a period
+  without records as 0 for a count or sum (a gap for a lowest, highest or average). A failed request
+  hides the line.
+- **The record's summary strip** uses neutral cards with no icon, so the record header stays the
+  coloured part of the page.
+
 A screen composed by hand from a record store:
 
 ```ts
 import './evlet/ui/styles.css';
 import { mount } from './evlet/dom';
-import { ChildTable, DocFrame, DocHeader, FormSection, LockBanner, RecordMark, SideBlock,
+import { ChildTable, DocFrame, DocHeader, FormSection, LockBanner, SideBlock,
   KeyValueList, SummaryStrip, TabPanel, Tabs } from './evlet/ui';
 import { cell } from './evlet/reactive';
 import { formatMoney } from './evlet/model/format';
@@ -522,7 +597,10 @@ const tabs = Tabs({ tabs: [{ id: 'details', label: 'Details' }, { id: 'lines', l
 mount(document.querySelector('#app')!, () => DocFrame({
   tint: 'blue',
   main: [
-    DocHeader({ type: 'Order', icon: 'receipt', mark: RecordMark({ name: 'Big order', size: 'lg' }), title: record.field('title') }),
+    // The title row: the type's icon tile, the title and its status, actions on the right, key facts under it.
+    // subtitle: one muted line under the title; image: a picture left of the title in place of the tile; tools:
+    // small buttons at the end of the title row.
+    DocHeader({ type: 'Order', icon: 'receipt', tint: 'blue', title: record.field('title'), subtitle: () => 'Desert Rose Retail' }),
     LockBanner({ lifecycle: () => record.field('stage').value.get() === 'won' ? 'locked' : 'draft', state: 'Won' }),
     SummaryStrip([{ label: 'Total', value: () => formatMoney(record.field('total').value.get() as string) }]),
     tabs,
@@ -533,7 +611,12 @@ mount(document.querySelector('#app')!, () => DocFrame({
 }));
 ```
 
+- **Tabs** and **TabPanel** are for screens of your own (a list's tabs use Tabs); the record page has no
+  tabs since 0.4, and `sticky` and `keepTabPlace` went with them.
 - **InlineValue** reads first and edits in place: click or Enter opens the field's input,
+  and for a Link, Select, date, date-time or time field its picker too, in one step (a `Control`'s
+  `open()`; Tab onto the value opens nothing, and Esc in the picker closes it and keeps editing).
+  Table cells do the same on a click, Enter or F2, but not when typing starts the edit.
   Enter saves (one field, through `record.save()`, no Save button), Esc cancels, leaving the
   field saves. Focus returns to the value after Enter or Esc; after Tab or a click elsewhere
   it stays where the user went. Text the user did not change is never written, so a
@@ -543,22 +626,67 @@ mount(document.querySelector('#app')!, () => DocFrame({
   confirms with a toast that has Undo.
 - **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
   across editable cells and wrap rows (from a cell being edited or not; past the last cell Tab
-  goes on to Add row), Enter moves down, Esc cancels, arrow keys move between cells. One cell is
+  goes on to the Add row placeholder), Enter moves down (in a new last row, after typing, Enter adds the next row), Esc cancels, arrow keys move between cells. One cell is
   active at a time and it holds the focus (a roving `tabindex` in a `role="grid"`): a click or tap
   focuses the clicked cell, a cell that can't be committed keeps the focus, and an unchanged cell
   never blocks moving on. A choice from a dropdown, Link search or picker commits the cell and
   returns the focus to it, so Tab goes to the next cell and Enter to the cell below. Typing starts
   editing (on a Link cell it opens the search with what was typed), Alt and an
-  arrow moves a row. Rows can be added, duplicated
+  arrow moves a row. The table's last row is a quiet **Add row placeholder** (a muted plus, "Add row", and "or add a
+  section" when the schema has sections), above the total line: a click or Enter on it adds a row there and puts the
+  cursor in its first editable cell. It is hidden while the lines are locked or read only and at `max_rows`. With rows
+  selected (a section row's checkbox selects the section alone), the title bar shows "N selected", **Duplicate** (copies
+  without ids, directly after the last selected row; a selected section with its lines) and **Delete** (a deleted
+  section keeps its lines), none of it on a locked table. Rows can be added, duplicated
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the
-  record saves or the lines are locked), opened in place with every field and their nested
-  tables, and the table can take over the view (focus view). With `heading` (the record's type,
+  record saves or the lines are locked), moved by their drag handle (mouse, touch, or Space and
+  the arrow keys), and the table can take over the view (focus view). Columns fit the table's width
+  before it scrolls sideways (`fitColumns`): each column shrinks toward a minimum for its type, then
+  low-priority columns hide (long text and lists first, then calculated values, then from the right;
+  never the first, a pinned, a required or a summed column), and "2 more columns" in the toolbar opens
+  the row editor, which shows every field. Only when the kept columns at their minimum still don't
+  fit does the table scroll sideways. A column the person resized keeps its width. A row's **Edit** (the pencil
+  by its number) opens the **row editor** in focus view. The table's bar becomes a plain title line ("Items 4",
+  then the focus and Columns buttons as small square icons, no record strip). On the left, about a quarter of the
+  width, the table stays, cut down to its control column and first column: its section rows, each row by its title
+  (a Link as the linked record's title, never its id; an empty one shows the field's placeholder, muted) and the
+  total line. The open row is marked and its pencil ringed. The first column is not edited inline while the
+  editor is open: a click or Enter on a row's title opens that row, and on the open row closes the editor. On the
+  right, a card with the row's number, title and a one-line summary ("4 × 2,228.26 = 8,913.04": two values typed
+  in and a calculated one, else the first values set), previous, "1 of 3" and next (also Alt and an arrow) and
+  Close; then the row's form (empty inputs say "Not set"), nested tables after it, and Delete line, Insert below
+  and Done. Esc closes the editor, then focus view. A narrow window shows the card alone. A click on a section's
+  title shows or hides its lines, with the editor open or not; a double click (or F2) renames it. `rowForm(row, field)` draws the
+  form instead of the default grid of fields, and `controls(api)` hands the caller the table's
+  `focused`, `toggleFocus()`, `columns(anchor)`, `sectioned`, `addSection()`, `add()`, `selected`, `editable`,
+  `duplicateSelected()` and `deleteSelected()` for buttons of its own (the compact record page puts the selection
+  on the table's title line: "Items 4", "2 selected", Duplicate, Delete).
+  A Table whose schema has `"sections": true` takes **section rows** (`{"id", "section": "<label>"}`
+  among its rows in a payload, `Table.sections` in the store): each is a full-width heading with a
+  drag handle, a chevron that hides its lines, its label (renamed in place), "N lines", and the sums of
+  its own lines in the fields the schema's `section_sums` names (none without it). Each open section but the last
+  ends with its own Add row placeholder, which adds at the end of that section's lines; the table's last one adds
+  at the end of the last section and offers "or add a section" (a new section starts with its label in edit). A
+  closed section shows none, and adding into it opens it. New rows keep their place through the change set's
+  `order`, so a save and reload shows them where they were added. Deleting a section keeps its lines; a locked or confirmed record offers no section edits.
+  A section dropped on another section lands above it (`Table.moveSection(key, before, ahead)`).
+  Line pages count lines only, each page bringing the section rows before its first line. Once a table
+  has a section row it draws every loaded line instead of only the rows in view: section rows differ in
+  height and a closed section hides its lines, which the fixed-height window can't place. Lines still load
+  a page (100) at a time, so the DOM grows only as far as the person scrolls in more. A table without
+  section rows stays virtualized. A save sends
+  sections as `{_key, section}` to create (`_row_ids` maps the key back), `{id, section}` to rename, their
+  ids to delete, and `order` with rows and sections whenever a section changed; Duplicate copies them as
+  `{section}` entries in their places. Without the key the table is as before. With `heading` (the record's type,
   icon, mark, title, number and a `footer` such as the form's save bar), focus view keeps a compact
   record header above the table and the save bar below it, outside the rows that scroll; on a phone
   the header is one line. Esc or Back to form returns to the form. Under 480 px the control column
-  and the first column get narrower. The footer and the totals under it come from the parent's calculated
-  sums over the table (`total = lines.sum("amount")`). Only rows in view are in the DOM.
+  and the first column get narrower; the control column drops the row number but keeps a narrow drag
+  handle, so rows and sections still reorder by touch. The footer and the totals under it come from the parent's calculated
+  sums over the table (`total = lines.sum("amount")`). A column's sum shows once: in the total line while
+  the column shows, and under the table only while it is hidden; totals built from those sums (a grand
+  total) stay under the table. Only rows in view are in the DOM.
 - **DataTable** sorts (exact for decimals), resizes (double click resets), reorders columns
   (drag a header, or Alt and an arrow, within the pinned or the scrolling range), pins columns on
   the left (`pinned`, default 1, or the saved range), selects rows, moves with the arrow keys and
@@ -581,13 +709,11 @@ mount(document.querySelector('#app')!, () => DocFrame({
   width is a cell the caller keeps; the panel takes at least `minSide` (380 px) and at most 70
   percent, leaving `minMain` (320 px). Below `breakpoint` (900 px) the panel covers the main area
   and `overlay` says so.
-- **ChildRows** shows a record `Table` in a narrow column: one line per row with its first value
-  and its last amount, the other numbers under it; a row opens in place with its fields, and Add
-  row, Remove row and Open full table sit around it. Locked lines show values only.
 - **FormSection** with `fold` is a **FoldSection**: a heading button with `aria-expanded`, `aria-controls` and a chevron, a summary and an error
   count while closed, and `hidden` on the closed body so Tab skips it. A `Folds` holds one form's state: the
   person's choices (a preferences cell of title to open) over each section's start (`collapsed`, the phone rule,
-  `'empty'`); `reveal(title)` opens one for now and `reset()` forgets the choices. `revealField(root, name)`
+  `'empty'`). A number still at a zero default (0, 0.00 that nobody typed) counts as empty for the summary and
+  for `'empty'` (`isBlank(field)`); `reveal(title)` opens one for now and `reset()` forgets the choices. `revealField(root, name)`
   opens the section holding a field and focuses it. `flowGrid(cells, flow)` lays a section's fields out
   across then down, or down each column with full-width fields as breaks, in DOM order.
 - **dragList** reorders items in one or more lists. Mark items `data-drag-item="<kind>"` with
@@ -598,15 +724,27 @@ mount(document.querySelector('#app')!, () => DocFrame({
   live region. Listeners sit on `root`, so the lists may be redrawn after each `move`.
 - **enterMovesToNextField(root, on)** makes Enter and Shift+Enter move between the `[data-field]` blocks
   under `root` while `on()` is true.
-- Popovers anchor to their button and close on Esc or an outside click; dialogs focus their
-  first field, keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
+- **initialFocusField(model, layout)** names the field a new form focuses first: `model.focus`
+  (`Meta.focus`, or a slip's `focus`) when that field is in an open section of `layout` and can be
+  edited, else the first field of an open section that shows and can be edited (not read only,
+  calculated, hidden or locked). **autofocusForm(root, choose,
+  before)** focuses that field's control once `root` is on the page, except on a touch device
+  (`keyboardFirst()` in `core.ts`) or when the focus moved away from `before` while the form loaded.
+  **layoutFocusOrder(sections, shown)** puts a form's sections in the order the record page shows them
+  (`shown` is their labels, the primary area first).
+  The record page uses all three for new records and slips use the first two on open ([focus on new forms](ui.md#focus-on-new-forms)).
+- Popovers anchor to their button and close on Esc or an outside click. `openPopover(anchor, render,
+  { align: 'side' })` places the panel beside the anchor on its right, top edges level (the Workspace
+  card), and below it when there is no room; `'left'` lines up the left edges and `'auto'` (the
+  default) picks the side that fits. Dialogs focus their
+  first field (the dialog itself on a touch device), keep Tab inside, save on Cmd Enter and return focus on close; toasts sit in a
   polite live region that the app creates at mount with `mountToasts()`. A popover stays open
   when a phone keyboard resizes the window while the user types in it. `apiLinks()` reads
   link titles in batches (one list request per target model with `id__in` for the titles a page
   asks for in one turn, none for a record already read or being read), keeps them for the session
   and forgets them when it ends; `recordOf(field)` gives a field's record store. Data is always text: nothing a record holds is parsed as markup.
 
-The Library page (`ui/library.ts`) lists all 117 components of the design catalog with their
+The Library page (`ui/library.ts`) lists all 118 components of the design catalog with their
 details and a live demo for each one built here; the rest are marked for the screens phase.
 The development entry (`frontend/evlet.html`, `src/evlet/dev.ts`) runs it against a sample
 order replayed from `api-fixture.json`, so record-bound components work without a server. It
@@ -654,12 +792,12 @@ no script. Each block also sets `color-scheme`, so scrollbars and native control
 | `--bg`, `--bg-subtle`, `--bg-muted`, `--side-bg`, `--surface`, `--overlay` | Grounds, cards, popovers and the dialog scrim |
 | `--border`, `--border-strong`, `--divider` | Lines |
 | `--fg`, `--fg-2`, `--fg-3`, `--fg-4` | Text from strongest to faint; `--fg-4` is for icons and marks only |
-| `--accent`, `--accent-hover`, `--accent-soft`, `--accent-ring` | Links, active marks, selected rows, focus rings |
+| `--accent`, `--accent-hover`, `--accent-soft`, `--accent-ring` | Links, active marks, selected rows and focus borders (`--accent`); `--accent-ring` is a light tint for selected tiles, never focus |
 | `--accent-solid`, `--accent-solid-hover`, `--accent-fg` | A filled accent surface and the text on it |
 | `--t-{blue,green,amber,rose,violet,teal,slate}` and `-bg` | Tints: icons, pills, charts, validation (`--t-rose`) |
 | `--on-tint` | Text on a solid `--t-*` fill |
 | `--inverse-bg`, `--inverse-fg`, `--inverse-ok`, `--inverse-hover` | Toasts, tooltips, the bulk bar and the Settings save bar (dark in light, light in dark) |
-| `--focus-border`, `--focus-ring`, `--error-ring`, `--knob`, `--shadow-*` | Focus, the switch knob, shadows, sticky column edges |
+| `--knob`, `--shadow-*` | The switch knob, shadows, sticky column edges |
 | `--swatch-*` | The theme pictures in Settings (the same in both themes) |
 
 Components and screens use tokens only; `color-mix()` over a token is fine for a translucent
@@ -702,14 +840,18 @@ not part of the build.
 | Module | What it does |
 |---|---|
 | `app.ts` | Session, sign in and first-run setup, the shell and the route table |
-| `shell.ts` | Sidebar (models grouped, Library in development, the account and the theme button), top bar, keyboard |
-| `recents.ts` | The history button left of search in the top bar: this session's recent records, newest first, with the model and when each was opened |
+| `shell.ts` | Top bar across the window (the Evlet brand, a pipe, the Workspace switcher; on the right search, history, notifications), the breadcrumb line pages place above their title (`ctx.crumbBar()`), sidebar under it (the workspace's sections and shortcuts, Library in development, the account and the theme button), keyboard |
+| `nav-icons.ts` | The navigation icons ([ui.md](ui.md#navigation-icons)): one icon per shortcut kind, per shell element and per Explorer view |
+| `workspaces.ts` | `workspaceNav(schema, links, fallback)`: the sidebar's workspaces, sections and shortcuts from the schema's `workspaces` (the per-app fallback for an older server), `listQuery`, `activeShortcut(nav, path, prefer)`, `replaceWorkspaces` after a save, and the app each model and report belongs to |
+| `workspace-editor.ts` | The workspace editor ([ui.md](ui.md#customizing-workspaces)) over the Controls workspace routes, and `customizeAccess` for the switcher's Customize button |
+| `explorer.ts` | The Explorer ([ui.md](ui.md#explorer)): Reports, Ledger reports (when there are any), Data and Dashboards at `/?explorer=<view>`, and `openExplorer` on the last view used |
+| `recents.ts` | The history button on the right of the top bar, left of notifications: this session's recent records, newest first, with the model and when each was opened |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
 | `slips.ts` | Slips ([slips.md](slips.md)): `presentSlip()`, the slip modal and what follows a hand-in |
 | `report-page.ts` | Reports ([reports.md](reports.md)): the index, one report's filters, rows, totals, chart, Export and Print |
-| `palette.ts` | Command palette (Cmd or Ctrl K) |
+| `palette.ts` | Command palette (Cmd or Ctrl K), with the Explorer button at the end of its field |
 | `client.ts` | The API client plus the routes the screens use, and the last detail per record |
 | `meta.ts` | What the screens read from the schema, with the optional keys of later phases |
 | `prefs.ts` | Per-user preferences |
@@ -724,9 +866,9 @@ values.
 
 Routes are the paths the Python server serves (`evlet/ui/routes.py`): `/docs` and
 `/docs/:topic`, `/app/:model` (list), `/app/:model/new` (a new record; field values in the query
-fill it, `?customer=4`), `/app/:model/:id` (a record; `?tab=` keeps the tab) and the older
+fill it, `?customer=4`), `/app/:model/:id` (a record) and the older
 `/app/:model/:id/view`, which opens the record. A list with a record in its side panel keeps
-it in `?open=` (the id, or `new`) and the record's tab in `?rtab=`. `/reports` and `/reports/:report` are reports
+it in `?open=` (the id, or `new`). `/reports` and `/reports/:report` are reports
 ([reports.md](reports.md)); `/controls` loads Controls as its own chunk (`frontend/src/evlet/controls/`,
 see [controls.md](controls.md)); any other address opens Docs. The earlier
 development paths `/ui/...` and `/m/:model` are gone. A list keeps its search, sort, page, view, tab and filters in the query, so
@@ -737,11 +879,13 @@ tab closes. Signing in keeps the address the user opened.
 ### Side panel
 
 A list opens a record on its own page or in a side panel beside it. `Meta.open_in = "panel"`
-sets the app's default, the Controls list view ("Open records in") changes it for an instance,
-and each person can choose in the list's layout menu (the panel icon next to Filter). The
-person's choice wins, then the instance's, then the app's. It is a layout preference, not a
-permission. A link with `?open=` opens the panel whatever the setting, and Ctrl or Cmd click on
-a title opens the full page in a new browser tab.
+sets the app's default and the Controls list view ("Open records in") changes it for an
+instance; the instance's setting wins. There is no per-person choice in the list. It is a layout
+setting, not a permission. The record panel and the docked filter panel are never open together:
+opening a record closes the filters (they stay applied), Filter closes the record (asking about
+unsaved changes), and closing a record that closed the filters opens them again. A link with
+`?open=` opens the panel whatever the setting, and Ctrl or Cmd click on a title opens the full
+page in a new browser tab.
 
 - The list narrows: it keeps the title (with the document number under it when the title is
   something else), the State and the first amount, and hides the measures and the bulk bar. When
@@ -750,16 +894,18 @@ a title opens the full page in a new browser tab.
 - Up and Down move along the list and the panel follows; switching rows replaces the history
   entry, so Back closes the panel. Escape and the close button close it and return focus to the
   row. The divider resizes the panel, and the width is kept per list.
-- The panel is the record view with `DocFrame`'s panel variant: the same sections in one column.
-  The header keeps two buttons and puts the rest in More; key facts sit under the title; the side
-  column's Files and Record info close the Details tab and Related is a tab; sections close from
-  their heading with the same FoldSection and saved state as the record page (`form.<model>.open`, by
-  section title; [collapsible sections](ui.md#collapsible-sections)), and in the panel every section can close; child tables are ChildRows with Open full table; the save
-  bar is pinned to the bottom of the panel. Tabs that do not fit scroll sideways.
-- Unsaved changes follow the record page: another tab of the record does not ask; another row,
-  Close, Escape, Back or leaving the list does (`confirmLeave` with `stays`). Expand opens the
-  record page at the same tab with the same record store, so unsaved edits come along without a
-  prompt.
+- The panel is the record page's own view (`RecordView`, with `DocFrame`'s panel variant), not a copy: the same
+  title row, banners, compact card, side column and record footer, less what `Meta.panel` hides. The frame is
+  responsive to its own width, so a panel of the default width has one column and its side column (Files, or
+  Attachments and Activity) opens as a drawer from a button at the end of the panel's top line, and a wide panel
+  shows it beside the main column, as the page does.
+  The header keeps the split move button and one outline button and puts the rest in More; key facts are the
+  subtitle; "more information" rows open and close with the same saved state as the record page
+  (`form.<model>.open`, by title; [collapsible sections](ui.md#collapsible-sections)); child tables are the
+  same ChildTable grids; the save bar is pinned to the bottom of the panel.
+- Unsaved changes follow the record page: another row, Close, Escape, Back or leaving the list asks
+  (`confirmLeave` with `stays`). Expand opens the record page with the same record store, so unsaved
+  edits come along without a prompt.
 - New opens `?open=new`; values in the link fill the new record as on `/app/:model/new`. Create
   shows the new record in the panel and its row in the list. Slips, moves and actions work as on
   the page; a saved or moved record updates its row.
@@ -781,7 +927,7 @@ a title opens the full page in a new browser tab.
 | `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields |
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |
 | `Meta.search_fields` | The list search box and record search in the palette |
-| `Meta.layout` | Sections of the Details tab; readable fields it leaves out follow under Other. With `Tab`s or blocks (`record_layout` in the schema), the record page's tabs and their sections, tables, Related lists, Html and charts, in order ([ui.md](ui.md#record-layouts)) |
+| `Meta.layout` | The record page's sections, the first one its primary area; readable fields it leaves out follow under Other. With `Main` or blocks (`record_layout` in the schema), the primary area and then its sections, tables, Related lists, Html and charts as "more information", in order ([ui.md](ui.md#record-layouts)) |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
 | `Meta.list_tabs`, `Meta.list_tab` | The list's tabs: All and one per value of a State, Select or Link field (the State without `list_tabs`, none with `list_tabs = None`), with counts from `GET /api/{model}/list_tabs`, and the tab the list opens on (`"all"` by default). A Link shows its 8 most used values, labelled by title ([ui.md](ui.md#list-tabs)) |
 | `Meta.board` | Names the model's State field, such as `"stage"`, to offer a List and Board switch on its list; the board has one column per state. Without it the list has no board, and `?view=board` opens the table. Any other field fails registration |
@@ -789,46 +935,47 @@ a title opens the full page in a new browser tab.
 | `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details, unless `Meta.layout` places it as a block |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
-| `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records, or an entry in New; `?slip=name` on a record opens it. A slip that becomes a record for review opens New filled in, with a note |
+| `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records; `?slip=name` on a record opens it. A `menu` slip is listed at the top level of the schema; the shell shows no entry for it, so browser code presents it with `presentSlip()`. A slip that becomes a record for review opens New filled in, with a note |
 | `State` with moves (Phase 4) | List tabs per state unless `Meta.list_tabs` names another field (counts from `GET /api/{model}/list_tabs`), a board when `Meta.board` names the State, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column; tabs by another field narrow the cards and keep every column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
 | Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
 | Unpost and repost | Offered from `_unpost` and `_repost` in the locked banner, the More menu and the unposted banner; Unpost asks for a reason, Repost takes an optional one |
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
-| `Meta.measures` (Phase 9) | Model-level measures in a strip over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
+| `Meta.measures` (Phase 9) | Model-level measures as stat cards over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
-| `Meta.key_fields` (Phase 10) | The header facts (the first three), and the Key fields side block while a tab other than Details is open (without it: the first fields). Never the summary strip. On a compact page (`Main`), the facts belong in the side column's Record info |
-| `Meta.cards`, `Main`, `Section(description=...)` | Sent in the schema for the compact record page (cards, a primary area without a heading, collapsible "more information" rows). The record page shows the blocks in order until it draws that design ([ui.md](ui.md#compact-record-page)) |
+| `Meta.key_fields` (Phase 10) | The header's subtitle (the first two with a value); the fields themselves show in the form. Never the summary strip |
+| `Meta.cards`, `Main`, `Section(description=...)` | The compact record page: key cards, a primary area without a heading, collapsible "more information" rows ([ui.md](ui.md#compact-record-page)) |
 | Calculated fields, per-record measures | The summary strip, at most four: calculated values the header facts don't show, then per-record measures. No strip when nothing is left; `Meta.summary = False` turns it off |
-| `Meta.relations` (Phase 10) | The Related tab and side block. The side block lists only relations with records, and goes when none has any; the tab lists them all. A relation named after its model counts in that model's words ("Payments, 1 payment"), any other name counts records; an empty relation is one line in the tab, with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
-| `Meta.side_blocks` | Which side blocks show, in order, from `key_fields`, `related`, `files` and `info`. Without it, all four in that order; `()` shows none |
-| `panel=False` on a field, `Section` or `Table`; `Meta.panel` | What a record opened in a list's side panel leaves out, or (`Meta.panel`) the only parts it keeps, in order. The schema carries `panel` only when something is hidden; the full page ignores it ([Side panel](#side-panel)) |
+| `Meta.relations` (Phase 10) | The Related row of "more information": closed, a count per relation; open, every relation, an empty one as one line with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
+| `Meta.side_blocks` | `files` keeps the attachments in the side column (without it they go); `related` keeps the automatic Related row when the layout lists related records itself. `key_fields` and `info` are accepted and change nothing |
+| `panel=False` on a field, `Section` or `Table`; `Meta.panel_summary = False`; `Meta.panel` | What a record opened in a list's side panel leaves out, or (`Meta.panel`) the only parts it keeps, in order. The schema carries `panel` only when something is hidden; the full page ignores it ([Side panel](#side-panel)) |
 | `copy=False` on a field or `Table`; `Meta.duplicate = False` | What a record's Duplicate leaves out of the new record, or (`Meta.duplicate`) no Duplicate action at all. Duplicate shows only with `permissions.create`; the schema carries `copy` and `duplicate` only when off ([ui.md](ui.md#duplicate)) |
-| `attachments` | The Files side block, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
-| `Effects` (Phase 6) | The Postings tab: what was posted, reversals and the balance check |
-| Journal (Phase 8) | The Activity tab, first: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
-| Every record (`_audit`) | Created and Last modified in the Record info side block, as relative times with who ([Relative times](#relative-times)). The record's id is in More > Copy record ID |
+| `attachments` | The Attachments block of the side column, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
+| `Effects` (Phase 6) | The Postings row: what was posted, reversals and the balance check |
+| Journal (Phase 8) | Activity in the side column: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
+| Every record (`_audit`) | Created and Modified in the record footer, as relative times with who ([Relative times](#relative-times)), with the record ID and Copy link. More has Copy record ID and Copy link |
 | Title, name and State | Shown in the header, so a saved record's Details form leaves them out: the title is edited in place in the header, the State by its badge or bar. A field the header shows but can't edit (a name typed by hand, a State with `show="none"`) stays in the form. A new record's form keeps them all |
 
 A section appears only when the schema or the detail carries its key. The screen tests replay
 these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,
 measures, key fields, relations, files and a journal (engine and user entries, follow ups, and a
 viewer who sees the posting entry only in part). A record that has posted nothing yet still lists each
-effect target with zero rows; the Postings tab treats that as nothing posted. The files of a
+effect target with zero rows; the Postings row treats that as nothing posted. The files of a
 locked record cannot change, so the upload control hides while `_locked` is true. Every response
 is recorded by `scripts/generate_ui_framework_fixtures.py`; none is written by hand.
 
 Model icons and accents come from the model name (invoice: receipt, blue; contact: people,
-violet), since the schema has no presentation keys. Models with a State or a Table are listed as
-Documents in the sidebar, the others as Records.
+violet), since the schema has no presentation keys. Until apps declare workspaces, models with a State
+or a Table are listed in the Documents section of their app's workspace, the others in Records
+([ui.md](ui.md#sidebar-and-workspaces)).
 
 Appearance, region, start page and sidebar counts are the person's Settings, kept on the server
 ([settings.md](settings.md)), and so is the theme ([Themes](#themes)). Layout preferences (sidebar, list column
-widths, child table columns, quick access, how each list opens records, the side panel's width and
-which form sections a person opened or closed) are kept in browser storage under `evlet.<username>.`.
+widths, child table columns, quick access, how each list opens records, the side panel's width,
+which form sections a person opened or closed, the chosen workspace and its closed sidebar sections) are kept in browser storage under `evlet.<username>.`.
 They never hold record data: recent records and recent searches stay in memory for the signed-in
-session and go on sign-out. Each recent record keeps when it was last opened; the history button left
-of search lists them with the relative time and the exact time on hover. The account area is at the
+session and go on sign-out. Each recent record keeps when it was last opened; the history button beside
+the notification bell lists them with the relative time and the exact time on hover. The account area is at the
 bottom of the sidebar; the top bar keeps recent records, search and notifications.
 
 Signing out ends the local session only after the server confirms it (or answers that the

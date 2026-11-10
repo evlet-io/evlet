@@ -156,7 +156,6 @@
        "row_changes": true
       }
      ],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -543,8 +542,7 @@
          "-id"
         ]
        }
-      ],
-      "compact": true
+      ]
      },
      "relations": [
       {
@@ -567,7 +565,6 @@
      ],
      "sources": {},
      "status": "status",
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -583,7 +580,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -787,7 +783,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -796,7 +791,6 @@
      "autosave": true,
      "child_only": true,
      "children": [],
-     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -859,7 +853,6 @@
      "search_fields": [
       "place"
      ],
-     "tabs": [],
      "title_field": "place"
     }
    ],
@@ -1948,7 +1941,6 @@
        "row_changes": true
       }
      ],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -2082,13 +2074,14 @@
      "layout": [
       {
        "collapsed": false,
-       "collapsible": true,
+       "collapsible": false,
        "fields": [
         "title",
         "region"
        ],
        "flow": "rows",
-       "label": "Site"
+       "label": "Site",
+       "main": true
       },
       {
        "collapsed": false,
@@ -2122,104 +2115,94 @@
      },
      "plural": "Sites",
      "record_layout": {
-      "tabs": [
+      "blocks": [
        {
-        "blocks": [
-         {
-          "kind": "section",
-          "label": "Site"
-         },
-         {
-          "html": "<p>Work at <strong>{title}</strong> in {region}. Write {{braces}} as they are.</p>",
-          "kind": "html"
-         },
-         {
-          "filters": [],
-          "kind": "chart",
-          "label": "Totals",
-          "link": "site",
-          "model": "job",
-          "type": "stat",
-          "x": null,
-          "y": [
-           "hours",
-           "jobs"
-          ]
-         },
-         {
-          "filters": [],
-          "kind": "chart",
-          "label": "Hours by status",
-          "link": "site",
-          "model": "job",
-          "type": "bar",
-          "x": "status",
-          "y": [
-           "hours"
-          ]
-         },
-         {
-          "kind": "section",
-          "label": "Other"
-         }
-        ],
-        "label": "Overview",
-        "name": "overview"
+        "kind": "section",
+        "label": "Site",
+        "main": true
        },
        {
-        "blocks": [
-         {
-          "fields": [
-           "title",
-           "status",
-           "hours"
-          ],
-          "filters": [
-           [
-            "status",
-            "ne",
-            "done"
-           ]
-          ],
-          "kind": "related",
-          "label": "Open jobs",
-          "limit": 2,
-          "link": "site",
-          "model": "job",
-          "order": [
-           "-hours"
-          ]
-         },
-         {
-          "fields": [],
-          "filters": [
-           [
-            "region",
-            "eq",
-            {
-             "$expr": "ref",
-             "args": [
-              "region"
-             ]
-            }
-           ]
-          ],
-          "kind": "related",
-          "label": "Same region",
-          "limit": 5,
-          "link": "site",
-          "model": "job",
-          "order": [
-           "-id"
-          ]
-         },
-         {
-          "kind": "table",
-          "name": "visits"
-         }
+        "kind": "table",
+        "main": true,
+        "name": "visits"
+       },
+       {
+        "html": "<p>Work at <strong>{title}</strong> in {region}. Write {{braces}} as they are.</p>",
+        "kind": "html"
+       },
+       {
+        "filters": [],
+        "kind": "chart",
+        "label": "Totals",
+        "link": "site",
+        "model": "job",
+        "type": "stat",
+        "x": null,
+        "y": [
+         "hours",
+         "jobs"
+        ]
+       },
+       {
+        "filters": [],
+        "kind": "chart",
+        "label": "Hours by status",
+        "link": "site",
+        "model": "job",
+        "type": "bar",
+        "x": "status",
+        "y": [
+         "hours"
+        ]
+       },
+       {
+        "fields": [
+         "title",
+         "status",
+         "hours"
         ],
-        "label": "Work",
-        "name": "work"
+        "filters": [
+         [
+          "status",
+          "ne",
+          "done"
+         ]
+        ],
+        "kind": "related",
+        "label": "Open jobs",
+        "limit": 2,
+        "link": "site",
+        "model": "job",
+        "order": [
+         "-hours"
+        ]
+       },
+       {
+        "fields": [],
+        "filters": [
+         [
+          "region",
+          "eq",
+          {
+           "$expr": "ref",
+           "args": [
+            "region"
+           ]
+          }
+         ]
+        ],
+        "kind": "related",
+        "label": "Same region",
+        "limit": 5,
+        "link": "site",
+        "model": "job",
+        "order": [
+         "-id"
+        ]
+       },
+       {
+        "kind": "section",
+        "label": "Other"
        }
       ]
      },
@@ -2242,7 +2225,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -2259,7 +2241,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -2521,7 +2502,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -2530,7 +2510,6 @@
      "autosave": true,
      "child_only": true,
      "children": [],
-     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -2630,7 +2609,6 @@
      "search_fields": [
       "note"
      ],
-     "tabs": [],
      "title_field": "note"
     }
    ],
@@ -3077,7 +3055,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -3254,7 +3231,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     }
    ],
@@ -3547,7 +3523,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -3746,7 +3721,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -3760,7 +3734,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -3900,7 +3873,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -4502,7 +4474,6 @@
        "row_changes": true
       }
      ],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -4953,7 +4924,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -4993,7 +4963,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5197,7 +5166,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -5213,7 +5181,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5417,7 +5384,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "number"
     },
     {
@@ -5445,7 +5411,6 @@
        "row_changes": true
       }
      ],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -5650,7 +5615,6 @@
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
-     "tabs": [],
      "title_field": "id"
     },
     {
@@ -5659,7 +5623,6 @@
      "autosave": true,
      "child_only": true,
      "children": [],
-     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -5723,7 +5686,6 @@
      },
      "plural": "Parts",
      "search_fields": [],
-     "tabs": [],
      "title_field": "id"
     }
    ],
@@ -7229,7 +7191,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7413,7 +7374,6 @@
       }
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -7427,7 +7387,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7567,7 +7526,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     }
    ],
@@ -7715,7 +7673,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -7914,7 +7871,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -7928,7 +7884,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -8068,7 +8023,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -8650,7 +8604,6 @@
        "row_changes": true
       }
      ],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -9101,7 +9054,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -9118,7 +9070,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -9221,7 +9172,6 @@
       "email"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "title"
     },
     {
@@ -9237,7 +9187,6 @@
      },
      "child_only": false,
      "children": [],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -9441,7 +9390,6 @@
       "name"
      ],
      "sources": {},
-     "tabs": [],
      "title_field": "number"
     },
     {
@@ -9469,7 +9417,6 @@
        "row_changes": true
       }
      ],
-     "default_tab": null,
      "description": "",
      "document_version": 1,
      "fields": [
@@ -9674,7 +9621,6 @@
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
-     "tabs": [],
      "title_field": "id"
     },
     {
@@ -9683,7 +9629,6 @@
      "autosave": true,
      "child_only": true,
      "children": [],
-     "default_tab": null,
      "description": "",
      "fields": [
       {
@@ -9747,7 +9692,6 @@
      },
      "plural": "Parts",
      "search_fields": [],
-     "tabs": [],
      "title_field": "id"
     }
    ],

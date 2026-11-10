@@ -33,7 +33,7 @@ describe('command palette', () => {
   it('searches records through each model’s list search, remembers the search and opens the record', async () => {
     const { sent } = start(routes());
     await until(() => expect(document.querySelector('.app')).not.toBeNull());
-    click(document.querySelector('.top-search'));
+    click(document.querySelector('.top-search .ts-search'));
     typeInto(input(), 'medical');
     await until(() => expect([...palette()!.querySelectorAll('.pal-sec[aria-label="Records"] .pal-it .lbl')].map(text)).toEqual(['Zayed Medical Supplies', 'Bayan Medical']));
     // Only models with search fields are searched, five results each.

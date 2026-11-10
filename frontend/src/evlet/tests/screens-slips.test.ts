@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, lastToast, press, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import { copy, id } from './server';
+import { presentSlip } from '../app/slips';
 import { choose } from './ui-helpers';
 
 afterEach(() => stopAll());
@@ -104,12 +105,10 @@ describe('slips', () => {
     expect(requests(sent, 'POST', /plan_visit\/present$/)[0].body).toEqual({ source: { model: 'customer', id: id(1) }, values: { kind: 'install' } });
   });
 
-  it('opens a New menu slip and turns it into a new record to review, saving nothing', async () => {
+  it('presents a menu slip from browser code and turns it into a new record to review, saving nothing', async () => {
     const { host, router, sent } = start(routes(), '/app/customer/0000000000001');
-    await until(() => expect(byText(host, '.top-actions button', 'New')).not.toBeNull());
-    click(byText(host, '.top-actions button', 'New'));
-    await until(() => expect(byText(document.body, '[role="menuitem"]', 'Quick customer')).not.toBeNull());
-    click(byText(document.body, '[role="menuitem"]', 'Quick customer'));
+    await until(() => expect(byText(host, '.doc-head button', 'Plan a visit')).not.toBeNull());
+    void presentSlip('quick_customer');
     await until(() => expect(sheet()).not.toBeNull());
     click(byText(sheet()!, '.modal-f button', 'Quick customer'));
     await until(() => expect(requests(sent, 'POST', /quick_customer\/hand-in$/)).toHaveLength(1));

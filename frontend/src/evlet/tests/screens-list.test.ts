@@ -136,6 +136,10 @@ describe('board and saved views (recorded State fixtures)', () => {
     const { host, sent } = start(routes(), '/app/invoice');
     await until(() => expect([...host.querySelectorAll('.ev-list [role="tab"]')].map(text)).toEqual(['All invoices3', 'Draft1', 'Issued1', 'Paid0', 'Void1']));
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => text(item.querySelector('span')) + '=' + text(item.querySelector('b')))).toEqual(['Outstanding=AED 2,680.00', 'Count=3']));
+    // Each measure is its own card: an icon by function, the accents in turn, no trend line (none is declared).
+    expect([...host.querySelectorAll('.sum > .stat-card')].map(card => card.className)).toEqual(['sum-t stat-card tone-blue has-ic', 'sum-t stat-card tone-teal has-ic']);
+    expect([...host.querySelectorAll('.stat-card .stat-ic')]).toHaveLength(2);
+    expect(host.querySelector('.stat-card .ev-spark')).toBeNull();
     // The counts come from the list tabs route; the board's aggregate is not needed for the list.
     expect(requests(sent, 'GET', /list_tabs/)).not.toHaveLength(0);
     expect(requests(sent, 'GET', /aggregate/)).toHaveLength(0);
@@ -229,6 +233,17 @@ describe('list tabs by a chosen field, opening on the model default (Meta.list_t
     await until(() => expect(location.search).toBe('?tab=all'));
     expect(filtersOf(listCalls(sent, 'invoice').pop()!)).toBeUndefined();
     // Back on the default tab, the address drops it again.
+    click(byText(host, '.ev-list [role="tab"]', /^Issued/));
+    await until(() => expect(location.search).toBe(''));
+  });
+
+  it('keeps a tab the address names on arrival, the default one too, until another is chosen', async () => {
+    const { host } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'issued' })), '/app/invoice?tab=issued');
+    await until(() => expect(selected(host)).toBe('Issued1'));
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(location.search).toBe('?tab=issued');
+    click(byText(host, '.ev-list [role="tab"]', /^All invoices/));
+    await until(() => expect(location.search).toBe('?tab=all'));
     click(byText(host, '.ev-list [role="tab"]', /^Issued/));
     await until(() => expect(location.search).toBe(''));
   });

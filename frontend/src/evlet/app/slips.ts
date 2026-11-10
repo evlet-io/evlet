@@ -1,5 +1,5 @@
 // Slips: controlled forms an application declares in Python (evlet.Slip) and presents from a record,
-// the New menu, an action's outcome or browser code (presentSlip). Every change is checked by the
+// an action's outcome, another slip or browser code (presentSlip). Every change is checked by the
 // server; nothing is saved until the slip is handed in, and then only by its outcome: the slip's
 // handler, or a document of another model. See docs/slips.md.
 
@@ -8,6 +8,7 @@ import { cell, type Cell } from '../reactive';
 import { ApiError, type FieldErrors } from '../api';
 import type { FieldSchema } from '../model/schema';
 import { Button, IconButton } from '../ui/base';
+import { autofocusForm, initialFocusField } from '../ui/autofocus';
 import { FieldControl, fieldFor, localField } from '../ui/fields';
 import { humanize } from '../ui/kinds';
 import { DialogFooter, openModal, toast } from '../ui/layers';
@@ -262,5 +263,9 @@ export function SlipSheet(ctx: AppContext, surface: SlipSurface, source: SlipSou
       body: () => [body(), html`<p class="ev-error full" role="alert" hidden=${() => !note.get()}>${() => note.get()}</p>`],
       footer: close => DialogFooter({ note: () => tried.get() ? '' : 'Nothing is saved until you hand this in.',
         cancel: () => { if (confirmClose()) close(); }, submit: { label: surface.hand_in_label, onClick: () => void handIn(close) } }) });
+    // The first field that can be filled in takes the focus (on a device with a mouse), not whatever input comes first.
+    const sheet = [...document.querySelectorAll<HTMLElement>('.modal.slip')].pop();
+    if (sheet) autofocusForm(sheet, () => initialFocusField({ name: surface.slip, focus: surface.focus },
+      groups.map(group => ({ fields: group.names.flatMap(name => fields.get(name) ?? []) }))));
   });
 }

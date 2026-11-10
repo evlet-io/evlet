@@ -1,4 +1,4 @@
-// Recent records in the top bar: a small history button left of search that opens this session's
+// Recent records in the top bar: a small history button on the right, left of the notification bell, that opens this session's
 // recently opened records, newest first, each with its model and when it was last opened.
 // The list lives in memory only (Prefs.recentRecords) and is dropped on sign-out.
 
@@ -10,6 +10,7 @@ import { exactTime, minuteClock, relativeTime } from '../ui/time';
 import type { AppContext } from './context';
 import { identity, type ScreenModel } from './meta';
 import type { RecentRecord } from './prefs';
+import { SHELL_ICONS } from './nav-icons';
 
 export function RecentsButton(ctx: AppContext, models: ScreenModel[]): HTMLElement {
   const { prefs, router } = ctx;
@@ -47,7 +48,7 @@ export function RecentsButton(ctx: AppContext, models: ScreenModel[]): HTMLEleme
 
   const button = html`<button type="button" class="icon-btn rec-btn" aria-label="Recent records" aria-haspopup="dialog" aria-expanded="false"
     on:click=${(event: MouseEvent) => open(event.currentTarget as HTMLElement)}
-    on:keydown=${(event: KeyboardEvent) => { if (event.key === 'ArrowDown' && button.getAttribute('aria-expanded') !== 'true') { event.preventDefault(); open(button); } }}>${Icon('history', { size: 'sm' })}</button>` as HTMLElement;
+    on:keydown=${(event: KeyboardEvent) => { if (event.key === 'ArrowDown' && button.getAttribute('aria-expanded') !== 'true') { event.preventDefault(); open(button); } }}>${Icon(SHELL_ICONS.history, { size: 'sm' })}</button>` as HTMLElement;
   tooltip(button, 'Recent records');
   return button;
 }

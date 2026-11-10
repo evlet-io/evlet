@@ -29,11 +29,22 @@ export function isEmpty(value: unknown): boolean {
   return value === null || value === undefined || (typeof value === 'string' && value.trim() === '') || (Array.isArray(value) && value.length === 0);
 }
 
+const NUMERIC = new Set(['integer', 'decimal', 'currency', 'percent', 'duration']);
+const isZero = (value: unknown) => value !== null && value !== undefined && value !== '' && Number(value) === 0;
+
+/** Empty as a section's summary and `collapsed='empty'` count it: no value, or a number still at a zero default (a
+ * fee of 0.00 nobody typed is not something filled in). */
+export function isBlank(field: FieldLike): boolean {
+  const value = field.value.get();
+  if (isEmpty(value)) return true;
+  return NUMERIC.has(field.meta.type) && isZero(value) && (field.calculated || isZero(field.meta.default ?? null) || field.meta.default === null || field.meta.default === undefined);
+}
+
 /** "3 of 5 filled", or "Required missing" when a required field that applies is empty. */
 export function foldSummary(fields: FieldLike[]): string {
   const shown = fields.filter(field => field.rules.get().applies);
   if (shown.some(field => field.rules.get().required && !field.calculated && isEmpty(field.value.get()))) return 'Required missing';
-  return `${shown.filter(field => !isEmpty(field.value.get())).length} of ${shown.length} filled`;
+  return `${shown.filter(field => !isBlank(field)).length} of ${shown.length} filled`;
 }
 
 /** Open and closed state of one form's sections. */
@@ -53,7 +64,7 @@ export class Folds {
   start(collapsed: FoldStart, index: number, fields: FieldLike[]): boolean {
     if (collapsed === true) return false;
     if (this.phone && index > 0) return false;
-    if (collapsed === 'empty') return this.isNew || !untrack(() => fields.every(field => isEmpty(field.value.get())));
+    if (collapsed === 'empty') return this.isNew || !untrack(() => fields.every(isBlank));
     return true;
   }
 

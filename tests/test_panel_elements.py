@@ -80,6 +80,33 @@ def test_meta_panel_details_keeps_every_section():
                                          'blocks': ['files', 'info', 'key_fields', 'summary'], 'order': ['details']}
 
 
+def test_meta_panel_summary_false_hides_the_summary_strip_or_key_cards_only():
+    class Ticket(Model):
+        subject = Text()
+        notes = LongText(panel=False)
+
+        class Meta:
+            panel_summary = False
+    assert view_for(Ticket)['panel'] == {'fields': ['notes'], 'blocks': ['summary']}
+
+    class Shown(Model):
+        subject = Text()
+
+        class Meta:
+            panel_summary = True
+    assert 'panel' not in view_for(Shown)
+
+
+def test_meta_panel_summary_must_be_a_boolean():
+    class Ticket(Model):
+        subject = Text()
+
+        class Meta:
+            panel_summary = 'no'
+    with pytest.raises(ValueError, match='Meta.panel_summary must be True or False'):
+        Registry(Ticket)
+
+
 @pytest.mark.parametrize('value, message', [
     (('nothing',), 'names unknown elements: nothing'),
     ('owner', 'list what the side panel shows once each'),

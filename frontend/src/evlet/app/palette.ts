@@ -1,16 +1,22 @@
 // The command palette (Cmd or Ctrl K): recent searches and a quick access grid when empty;
 // records (through each model's list search), pages and actions, and preferences as you type.
 // Arrow keys move through rows and the grid, Enter opens. Quick access is chosen per user.
+// The Explorer and each of its views are pages here, and typing offers "Search all reports for ..." and
+// "Search all data for ...", which open the Explorer with its search box filled. The Explorer button at the
+// end of the search field opens the Explorer on its last view, carrying what was typed.
 
 import { html } from '../dom';
 import { cell, derive, effect, untrack } from '../reactive';
 import { Icon, SegmentedControl, Button } from '../ui/base';
 import { tint as safeTint, type Tint } from '../ui/core';
 import { openModal } from '../ui/layers';
+import { tooltip } from '../ui/tooltip';
 import { resolveTheme } from '../ui/theme';
 import { docsOn, goSettings, type AppContext } from './context';
 import { identity, rootModels, titleOf, type ScreenModel } from './meta';
 import { REPORT_ICON, reportsOf } from './report-page';
+import { EXPLORER_VIEWS, hasLedgerReports, openExplorer } from './explorer';
+import { EXPLORER_ICONS, KIND_TINTS, SHELL_ICONS } from './nav-icons';
 
 interface Tile { id: string; group: 'Lists' | 'Documents' | 'Reports' | 'Pages'; icon: string; tint: Tint; label: string; badge?: 'plus' | 'list'; run: () => void }
 interface Item { icon: string; tint: Tint | 'ghost'; label: string; sub?: string; hint?: string; run: () => void; tile?: boolean; record?: boolean; recent?: string }
@@ -19,10 +25,13 @@ const columns = () => { try { return window.matchMedia?.('(max-width: 760px)')?.
 
 /** Every quick access tile this user may use: lists, new records and pages. */
 export function quickTiles(ctx: AppContext): Tile[] {
-  const tiles: Tile[] = docsOn(ctx.session) ? [{ id: 'p-docs', group: 'Pages', icon: 'file-text', tint: 'slate', label: 'Docs', run: () => void ctx.router.go('docs', {}) }] : [];
+  const tiles: Tile[] = docsOn(ctx.session) ? [{ id: 'p-docs', group: 'Pages', icon: SHELL_ICONS.docs, tint: 'slate', label: 'Docs', run: () => void ctx.router.go('docs', {}) }] : [];
   // Controls opens in a new tab, as from the account menu, for people allowed to open it.
-  if (ctx.me.peek()?.controls) tiles.push({ id: 'p-controls', group: 'Pages', icon: 'sliders-horizontal', tint: 'slate', label: 'Go to Controls',
+  if (ctx.me.peek()?.controls) tiles.push({ id: 'p-controls', group: 'Pages', icon: SHELL_ICONS.controls, tint: 'slate', label: 'Go to Controls',
     run: () => { window.open('/controls', '_blank', 'noopener'); } });
+  tiles.push({ id: 'p-explorer', group: 'Pages', icon: SHELL_ICONS.explorer, tint: 'slate', label: 'Explorer', run: () => void openExplorer(ctx) });
+  for (const view of EXPLORER_VIEWS) if (view.value !== 'ledger' || hasLedgerReports(ctx))
+    tiles.push({ id: `p-explorer-${view.value}`, group: 'Pages', icon: view.icon, tint: 'slate', label: `Explorer: ${view.label}`, run: () => void openExplorer(ctx, view.value) });
   for (const model of rootModels(ctx.schema)) {
     const { icon, tint } = identity(model);
     tiles.push({ id: `l-${model.name}`, group: 'Lists', icon, tint, label: model.plural, badge: 'list', run: () => void ctx.router.go('list', { model: model.name }) });
@@ -93,8 +102,8 @@ function paletteBody(ctx: AppContext, close: () => void) {
   });
 
   const preferences = (): Item[] => [
-    ...(ctx.me.peek() ? [{ icon: 'settings', tint: 'slate' as const, label: 'Open settings', run: () => void goSettings(ctx.router, ctx.me.peek()!.last_page || 'profile') }] : []),
-    { icon: 'panel-left', tint: 'slate', label: 'Toggle sidebar', hint: '[', run: () => ctx.toggleSidebar() },
+    ...(ctx.me.peek() ? [{ icon: SHELL_ICONS.settings, tint: 'slate' as const, label: 'Open settings', run: () => void goSettings(ctx.router, ctx.me.peek()!.last_page || 'profile') }] : []),
+    { icon: SHELL_ICONS.menu, tint: 'slate', label: 'Toggle sidebar', hint: '[', run: () => ctx.toggleSidebar() },
     ...(ctx.me.peek() && !ctx.me.peek()!.portal ? [{ icon: resolveTheme(ctx.me.peek()!.prefs.theme) === 'dark' ? 'sun' : 'moon', tint: 'slate' as const,
       label: resolveTheme(ctx.me.peek()!.prefs.theme) === 'dark' ? 'Switch to light theme' : 'Switch to dark theme', run: () => ctx.toggleTheme() }] : []),
   ];
@@ -107,9 +116,15 @@ function paletteBody(ctx: AppContext, close: () => void) {
       return [['Recent', recent], ['Go to', tiles]] as Array<[string, Item[]]>;
     }
     const matches = (value: string) => value.toLowerCase().includes(text);
-    const pages = all.filter(tile => matches(tile.label) || matches(tile.group)).slice(0, 6)
+    const pages = all.filter(tile => matches(tile.label) || matches(tile.group)).slice(0, 8)
       .map(tile => ({ icon: tile.icon, tint: tile.tint, label: tile.label, hint: tile.group === 'Documents' ? 'Create' : tile.group === 'Lists' ? 'List' : tile.group === 'Reports' ? 'Report' : 'Page', run: tile.run }));
-    return [['Records', records.get()], ['Pages and actions', pages], ['Preferences', preferences().filter(item => matches(item.label))]] as Array<[string, Item[]]>;
+    // Last, the Explorer's search, filled with what was typed.
+    const typed = query.get().trim();
+    const explorer: Item[] = [
+      { icon: EXPLORER_ICONS.reports, tint: KIND_TINTS.report, label: `Search all reports for “${typed}”`, hint: 'Explorer', run: () => void openExplorer(ctx, 'reports', typed) },
+      { icon: EXPLORER_ICONS.data, tint: KIND_TINTS.list, label: `Search all data for “${typed}”`, hint: 'Explorer', run: () => void openExplorer(ctx, 'data', typed) },
+    ];
+    return [['Records', records.get()], ['Pages and actions', pages], ['Preferences', preferences().filter(item => matches(item.label))], ['Explorer', explorer]] as Array<[string, Item[]]>;
   });
   const items = derive(() => groups.get().flatMap(([, list]) => list));
   effect(() => { items.get(); untrack(() => { if (selected.peek() >= items.peek().length) selected.set(0); }); });
@@ -156,9 +171,11 @@ function paletteBody(ctx: AppContext, close: () => void) {
   const results = () => {
     let at = 0;
     const list = groups.get().filter(([, entries]) => entries.length);
-    if (!list.length) return searching.get() ? html`<div class="pal-empty">${Icon('search', { size: 'lg' })}<div>Searching…</div></div>`
-      : html`<div class="pal-empty">${Icon('search', { size: 'lg' })}<div>${`No results for “${query.peek().trim()}”`}</div><span>Try a record title or a page name.</span></div>`;
-    return list.map(([name, entries]) => html`<section class="pal-sec" role="group" aria-label=${name}><div class="pal-sh"><span>${name}</span></div>${entries.map(item => row(item, at++))}</section>`);
+    const section = ([name, entries]: [string, Item[]]) => html`<section class="pal-sec" role="group" aria-label=${name}><div class="pal-sh"><span>${name}</span></div>${entries.map(item => row(item, at++))}</section>`;
+    // With nothing found, the Explorer's search is still offered under the message.
+    if (list.every(([name]) => name === 'Explorer')) return [searching.get() ? html`<div class="pal-empty">${Icon('search', { size: 'lg' })}<div>Searching…</div></div>`
+      : html`<div class="pal-empty">${Icon('search', { size: 'lg' })}<div>${`No results for “${query.peek().trim()}”`}</div><span>Try a record title or a page name.</span></div>`, list.map(section)];
+    return list.map(section);
   };
 
   const keydown = (event: KeyboardEvent) => {
@@ -179,7 +196,12 @@ function paletteBody(ctx: AppContext, close: () => void) {
     role="combobox" aria-expanded="true" aria-controls="ev-pal-list" aria-activedescendant=${() => items.get().length ? `pal-${selected.get()}` : null}
     prop:value=${query} on:input=${(event: Event) => { query.set((event.target as HTMLInputElement).value); selected.set(0); editing.set(false); }} on:keydown=${toggle}>` as HTMLInputElement;
 
-  return html`<div class="pal-in">${Icon('search', { size: 'lg' })}${input}<kbd>Esc</kbd></div>
+  // The Explorer, from the end of the field: on its last view, with its search filled with what was typed.
+  const explorer = html`<button type="button" class="pal-ex" aria-label="Explorer" aria-keyshortcuts="G E"
+    on:click=${() => { const typed = query.peek().trim(); close(); void openExplorer(ctx, undefined, typed); }}
+    ref=${(el: HTMLElement) => tooltip(el, 'Explorer  G E')}>${Icon(SHELL_ICONS.explorer, { size: 'sm' })}</button>`;
+
+  return html`<div class="pal-in">${Icon('search', { size: 'lg' })}${input}${explorer}<kbd>Esc</kbd></div>
     <div class="pal-list" id="ev-pal-list" role="listbox" aria-label="Results">${() => query.get().trim() ? results() : home()}</div>
     <div class="pal-foot"><span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd> Move</span><span><kbd>↵</kbd> Open</span><span class="hide-sm"><kbd>⌘</kbd><kbd>K</kbd> Toggle</span></div>`;
 }

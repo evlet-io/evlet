@@ -77,11 +77,11 @@ def block_code(block, sections, main=None):
 
 
 def layout_code(model, sections):
-    """Meta.layout with the app's Tabs and blocks and the sections of a Controls layout, as Python source.
+    """Meta.layout with the app's blocks and the sections of a Controls layout, as Python source.
 
-    A section the app places keeps its place; one the app does not place (added or renamed in Controls) goes last
-    on the first Tab, or last without Tabs. A section Controls removed is left out."""
-    from .ui.metadata import Main, Section, Tab, view_for
+    A section the app places keeps its place; one the app does not place (added or renamed in Controls) goes last.
+    A section Controls removed is left out."""
+    from .ui.metadata import Main, Section, view_for
     layout = model.Meta.layout
     by_title = {section['title']: section for section in sections}
     placed = set()
@@ -98,20 +98,8 @@ def layout_code(model, sections):
             if text is not None:
                 lines.append(f'{indent}{text},')
         return lines
-    tabs = [entry for entry in layout if isinstance(entry, Tab)]
-    if not tabs:
-        lines = blocks(layout, '    ')
-        lines += [f'    {block_code(Section(section["title"], ()), by_title)},' for section in sections if section['title'] not in placed]
-        return 'layout = (\n' + '\n'.join(lines) + '\n)'
-    parts = []
-    for tab in tabs:
-        parts.append((tab, blocks(tab.blocks, '        ')))
-    rest = [f'        {block_code(Section(section["title"], ()), by_title)},' for section in sections if section['title'] not in placed]
-    lines = []
-    for index, (tab, inner) in enumerate(parts):
-        options = {**({'name': tab.name} if tab.name != Tab(tab.title, ()).name else {}), **({'panel': False} if tab.panel is False else {})}
-        tail = ''.join(f', {key}={literal(value)}' for key, value in options.items())
-        lines += [f'    Tab({tab.title!r}, (', *inner, *(rest if index == 0 else []), f'    ){tail}),']
+    lines = blocks(layout, '    ')
+    lines += [f'    {block_code(Section(section["title"], ()), by_title)},' for section in sections if section['title'] not in placed]
     return 'layout = (\n' + '\n'.join(lines) + '\n)'
 
 
@@ -225,9 +213,9 @@ class Exporter:
         return '\n'.join(lines)
 
     def layout(self, name, value):
-        """Meta.layout as Section(...) lines, with the record tab order."""
-        from .customization import panel_of, sections_of, tabs_of, width
-        model, sections, (tabs, default_tab) = self.models[name], sections_of(value), tabs_of(value)
+        """Meta.layout as Section(...) lines."""
+        from .customization import panel_of, sections_of, width
+        model, sections = self.models[name], sections_of(value)
         declared = model.__declared_fields__
         lines = ['layout = (']
         for section in sections:
@@ -242,12 +230,11 @@ class Exporter:
                 if entry['name'] in declared and entry['width'] != width(declared[entry['name']])]
         if wide:
             lines.append(f"# Widths have no Meta form; this instance changes them for: {', '.join(wide)}")
-        lines += [f'{key} = {literal(item)}' for key, item in (('tabs', tuple(tabs)), ('default_tab', default_tab)) if item]
         # What the side panel hides is panel=False on the field, Section or Table, or Meta.panel.
         if panel_of(value):
             lines.append(f'# Side panel hides (panel=False or Meta.panel): {panel_of(value)!r}')
         if model in getattr(self.registry, 'layouts', {}):
-            # A record layout keeps its Tabs and blocks, with this instance's sections in their places.
+            # A record layout keeps its blocks, with this instance's sections in their places.
             lines[:len(sections) + 2] = layout_code(model, sections).splitlines()
         return lines
 

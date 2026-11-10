@@ -59,9 +59,9 @@ from .postgres import PostgreSQLDatabase
 __all__ += ["PostgreSQLDatabase"]
 
 from .ui.application import App
-from .ui.metadata import Html, Main, Section, Tab
+from .ui.metadata import Html, Main, Section
 
-__all__ += ["App", "Html", "Main", "Section", "Tab"]
+__all__ += ["App", "Html", "Main", "Section"]
 
 from .instances import AppDefinition, Instance, Schedule
 from .auth import Security
@@ -119,3 +119,11 @@ __all__ += ["currency_decimals", "currency_unit", "round_money", "round_stored_m
 from .workspaces import NavGroup, Shortcut, Workspace
 
 __all__ += ["NavGroup", "Shortcut", "Workspace"]
+
+
+def __getattr__(name):
+    # Removed in 0.4: say where to go instead of a bare "cannot import name".
+    if name == 'Tab':
+        raise ImportError('evlet.Tab was removed: record pages have no tabs. Use Main(fields, *tables) first in '
+                          'Meta.layout and Section(...) after it')
+    raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

@@ -4,19 +4,21 @@
 //
 // Search, sort, page, view, tab and filters live in the address, so a link opens the same list.
 // With no tab there, the list opens on the model's default tab (Meta.list_tab); choosing another,
-// All included, puts it in the address. Everything runs on the server: the browser never filters or sorts a partial list.
+// All included, puts it in the address. A tab the address names on arrival stays there, the default
+// one too, until another is chosen: a sidebar shortcut to that tab keeps matching its own address. Everything runs on the server: the browser never filters or sorts a partial list.
 // The filter builder (rows of field, condition and value, child tables included) is filters.ts.
 //
-// A record opens on its own page or in a side panel beside the narrowed list (Meta.open_in, the
-// Controls list view, or the person's choice in the layout menu). The panel's record is `?open=`
-// in the list's address and its tab `?rtab=`, so a link or a reload opens the same list and record.
+// A record opens on its own page or in a side panel beside the narrowed list (Meta.open_in, or the
+// Controls list view). The panel's record is `?open=` in the list's address, so a link or a reload
+// opens the same list and record. The record panel and the filter panel are
+// never open together: opening one closes the other.
 
 import { each, html, match, when, type Child } from '../dom';
 import { ApiError, type RecordData } from '../api';
 import type { ListTabCounts } from './client';
 import { isRecordId } from '../ids';
 import { batch, cell, derive, effect, onCleanup, untrack } from '../reactive';
-import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedControl, SummaryStrip, type StatProps } from '../ui/base';
+import { Button, CountBadge, EmptyState, Icon, IconButton, SearchInput, SegmentedControl, SummaryStrip, type StatProps } from '../ui/base';
 import { currencyIn, displayValue, placesIn, localField, stateTint, statusTint } from '../ui/fields';
 import { humanize } from '../ui/kinds';
 import { closeDialogs, DialogFooter, MenuButton, openModal, toast } from '../ui/layers';
@@ -28,8 +30,10 @@ import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
-import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureLabel, measureView, LIST_KEYS, numberField, screenModel, sources, titleOf, type ScreenModel } from './meta';
+import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, trendValues, numberField, screenModel, sources, stateLook, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
+import { SCREEN_KEYS, useShortcuts } from './shortcuts';
+import { ariaKeys, withShortcut } from '../ui/shortcuts';
 import { recordId } from '../ids';
 
 export const PAGE_SIZE = 50;
@@ -39,6 +43,14 @@ const COMPACT_WIDTH = 460;
 
 /** Bulk changes send at most this many requests at once. */
 const BULK_AT_ONCE = 4;
+
+/** The small icon before a record's first value in a list: a ban (cancelled), a lock (locked or final) or a pencil
+ * (draft), muted; an empty slot of the same width for any other state. */
+export function StateIcon(look: ReturnType<typeof stateLook>): HTMLElement {
+  const icon = look === 'cancelled' ? ['ban', 'Cancelled'] : look === 'locked' ? ['lock', 'Locked'] : look === 'draft' ? ['pencil', 'Draft'] : null;
+  return (icon ? html`<span class="ev-state-ic" role="img" aria-label=${icon[1]}>${Icon(icon[0], { size: 'xs' })}</span>`
+    : html`<span class="ev-state-ic" aria-hidden="true"></span>`) as HTMLElement;
+}
 
 /** A list cell: status badge for the State and Meta.status, record title for links, formatted value. */
 export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema, row: () => RecordData): Child {
@@ -71,21 +83,19 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // ---------- how records open ----------
 
-  const openChoice = ctx.prefs.cell<'page' | 'panel' | null>(`openIn.${name}`, null);
-  const openIn = derive(() => openChoice.get() ?? model.open_in ?? 'page', { name: `${name}.open in` });
+  const openIn = model.open_in ?? 'page';
   /** The record open in the side panel (its id, or 'new'), from the address. */
   const opened = derive(() => {
     const route = router.route.get();
     return route?.name === 'list' && route.params.model === name ? route.query.open ?? null : null;
   }, { name: `${name}.open record` });
   const panelOpen = derive(() => opened.get() !== null);
-  /** The list's address with this record (and record tab) in the panel, or none. */
-  const listHref = (open: string | null, rtab: string | null = null) => {
+  /** The list's address with this record in the panel, or none. */
+  const listHref = (open: string | null) => {
     const route = router.route.peek();
     const mine = route?.name === 'list' && route.params.model === name ? route.query : {};
-    const query = Object.fromEntries(Object.entries(mine).filter(([key]) => LIST_KEYS.includes(key) && key !== 'open' && key !== 'rtab'));
+    const query = Object.fromEntries(Object.entries(mine).filter(([key]) => LIST_KEYS.includes(key) && key !== 'open'));
     if (open) query.open = open;
-    if (open && rtab) query.rtab = rtab;
     return router.href('list', { model: name }, query);
   };
 
@@ -111,6 +121,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const home = cell(tabSpec && tabSpec.kind !== 'link' && fits(tabSpec.default) ? tabSpec.default : 'all', { name: `${name}.home tab` });
   const finding = cell(Boolean(linkTabs && tabSpec!.default !== 'all' && !fits(start.tab)), { name: `${name}.finding home tab` });
   const tab = cell(fits(start.tab) ? start.tab : home.peek(), { name: `${name}.tab` });
+  /** The tab the address named on arrival, kept in it until the tab changes. */
+  let named: string | null = fits(start.tab) ? start.tab : null;
   if (finding.peek()) void findRecord(ctx, linkTabs!, tabSpec!.default).then(id => batch(() => {
     if (id) { home.set(id); tab.set(id); }
     finding.set(false);
@@ -126,22 +138,28 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   // The saved view's State is one more condition. Only equalities on distinct fields go as the shorter object form.
   const serverFilters = derive(() => compact([...filters.server.get(), ...(tabSpec && tab.get() !== 'all' ? [[tabSpec.field, 'eq', tab.get()]] : [])]));
   changes(() => filters.server.get(), () => page.set(1));
+  /** The list's own part of the address it last wrote (search, sort, page, view, tab, filters), to tell its own
+   * changes from a navigation to the same list with others, such as a sidebar shortcut. */
+  let written = '';
+  const ownPart = (query: Record<string, string>) => JSON.stringify(Object.entries(query).filter(([key]) => LIST_KEYS.includes(key) && key !== 'open').sort());
+  const rewrite = cell(0, { name: `${name}.rewrite address` });
   effect(() => {
+    rewrite.get();
     const params: Record<string, string> = {};
     if (query.get()) params.q = query.get();
     const order = sort.get();
     if (order) params.sort = `${order.dir === 'desc' ? '-' : ''}${order.key}`;
     if (page.get() > 1) params.page = String(page.get());
     if (view.get() === 'board') params.view = 'board';
-    if (tabSpec && tab.get() !== home.get()) params.tab = tab.get();
+    if (tabSpec && (tab.get() !== home.get() || tab.get() === named)) params.tab = tab.get();
     if (filters.address.get()) params.f = filters.address.get();
     // The panel's record stays open while the list changes around it.
     const now = untrack(() => router.route.peek()?.query ?? {});
     if (now.open) params.open = now.open;
-    if (now.open && now.rtab) params.rtab = now.rtab;
     // A create link (?open=new&customer=4) keeps its values while the new record is open.
     if (now.open === 'new') for (const [key, value] of Object.entries(now)) if (!LIST_KEYS.includes(key)) params[key] = value;
     const href = router.href('list', { model: name }, params);
+    written = ownPart(params);
     untrack(() => { if (router.route.peek()?.name === 'list' && router.route.peek()?.params.model === name && href.endsWith(router.route.peek()!.url)) return; void router.navigate(href, { replace: true }); });
   });
 
@@ -183,6 +201,31 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     void api.measures(name, current, text).then(result => batch(() => { measureCurrencies.set(result.currencies); measures.set(result.values); }),
       () => measures.set(null));
   });
+  // Trend lines on the measure cards (a measure's trend=): one aggregate per measure, grouped by its trend field and
+  // grain, with the same filters and search as the strip. Asked a moment after the filters settle; a failure hides the line.
+  const trended = declared.slice(0, 4).filter(measure => measure.trend);
+  const trends = cell<Record<string, number[]>>({}, { name: `${name}.trends` });
+  let trendTicket = 0, trendTimer: ReturnType<typeof setTimeout> | undefined;
+  if (trended.length) effect(() => {
+    if (finding.get()) return;
+    const current = serverFilters.get(), text = query.get();
+    reload.get();
+    const mine = ++trendTicket;
+    clearTimeout(trendTimer);
+    trendTimer = setTimeout(() => {
+      for (const measure of trended) {
+        const trend = measure.trend!;
+        void api.aggregate(name, [measure.name], [`${trend.field}:${trend.grain}`], current, text).then(result => {
+          if (mine !== trendTicket) return;
+          const values = trendValues(result.items, result.group_by?.[0] ?? `${trend.field}__${trend.grain}`, measure, trend);
+          const next = { ...trends.peek() };
+          if (values) next[measure.name] = values; else delete next[measure.name];
+          trends.set(next);
+        }, () => { if (mine !== trendTicket) return; const next = { ...trends.peek() }; delete next[measure.name]; trends.set(next); });
+      }
+    }, 250);
+  });
+  onCleanup(() => clearTimeout(trendTimer));
   // Board column totals by state, from one aggregate (Phase 9): a count and the board's declared
   // sum measure, with the measure's own where. The aggregate route works without declared
   // measures and follows the search box too.
@@ -231,11 +274,31 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // ---------- header, views and toolbar ----------
 
-  const create = () => openIn.peek() === 'panel' ? void router.navigate(listHref('new'), { replace: panelOpen.peek() }) : void router.go('create', { model: name });
+  const create = () => openIn === 'panel' ? void router.navigate(listHref('new'), { replace: panelOpen.peek() }) : void router.go('create', { model: name });
+  // New, with its shortcut (Alt+N, or C) in the tooltip.
+  const newButton = () => {
+    const button = Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', hideLabelOnPhone: true, onClick: create,
+      tip: withShortcut(`New ${model.label.toLowerCase()}`, SCREEN_KEYS.create) });
+    button.setAttribute('aria-keyshortcuts', `${ariaKeys(SCREEN_KEYS.create)} C`);
+    return button;
+  };
   if (canCreate) ctx.createHere.set(create);
   onCleanup(() => { if (ctx.createHere.peek() === create) ctx.createHere.set(null); });
 
-  const filterButton = Button({ label: 'Filter', icon: 'sliders-horizontal', hideLabelOnPhone: true, onClick: () => filtering.set(!filtering.peek()) });
+  /** Set when opening a record closed the filter panel, so closing the record opens it again. */
+  let filtersBeforePanel = false;
+  /** True while the filter panel comes back on its own: focus stays where the record panel left it. */
+  let restoring = false;
+  // Opening the filters closes the record panel first; a record with unsaved edits asks, and staying keeps it.
+  const toggleFilters = () => {
+    restoring = false;
+    if (filtering.peek()) return filtering.set(false);
+    if (!panelOpen.peek()) return filtering.set(true);
+    const was = filtersBeforePanel;
+    filtersBeforePanel = false;
+    void router.navigate(listHref(null)).then(done => { if (done) filtering.set(true); else filtersBeforePanel = was; });
+  };
+  const filterButton = Button({ label: 'Filter', icon: 'sliders-horizontal', hideLabelOnPhone: true, onClick: toggleFilters });
   filterButton.setAttribute('aria-controls', `ev-${name}-filters`);
   effect(() => filterButton.setAttribute('aria-expanded', String(filtering.get())));
   filterButton.append(CountBadge({ count: () => filters.active.get().length, tone: 'filled', label: 'Active filters' }));
@@ -248,10 +311,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     // Reports declared for this model (Report.model) open from here.
     reportsFor(ctx, name).length ? MenuButton({ label: 'Reports', icon: REPORT_ICON, hideLabelOnPhone: true, menuLabel: `${model.label} reports`,
       items: reportsFor(ctx, name).map(report => ({ label: report.label, icon: REPORT_ICON, tint: 'rose' as const, onSelect: () => void router.go('report', { report: report.name }) })) }) : null,
-    MenuButton({ icon: 'panel-right', tip: 'Open records in', ariaLabel: 'Open records in', menuLabel: 'Open records in', items: () => [{ heading: 'Open records in' },
-      { label: 'Side panel', icon: openIn.peek() === 'panel' ? 'check' : 'panel-right', onSelect: () => openChoice.set('panel') },
-      { label: 'Full page', icon: openIn.peek() === 'page' ? 'check' : 'maximize-2', onSelect: () => openChoice.set('page') }] }),
-    canCreate ? Button({ label: `New ${model.label.toLowerCase()}`, icon: 'plus', variant: 'primary', hideLabelOnPhone: true, onClick: create }) : null,
+    canCreate ? newButton() : null,
   ].filter(Boolean) as Child[] });
 
   // A Link's tabs are its most used values (and the open one), so they are drawn again when those change.
@@ -271,7 +331,29 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
       ...values.map(value => ({ id: value, label: tabLabel(value), count: tabCount(value) })),
     ] }));
   } : null;
-  changes(() => tab.get(), () => batch(() => { page.set(1); selection.set(new Set()); }));
+  let arriving = false;
+  changes(() => tab.get(), () => batch(() => { if (!arriving) named = null; page.set(1); selection.set(new Set()); }));
+  // A navigation to this list with another search, sort, page, view, tab or filters (a sidebar shortcut, a link)
+  // opens what it names, as a fresh visit would: the page is not built again for a change of query only.
+  changes(() => router.route.get(), () => {
+    const route = router.route.peek();
+    if (route?.name !== 'list' || route.params.model !== name || ownPart(route.query) === written) return;
+    const next = route.query;
+    arriving = true;
+    try {
+      batch(() => {
+        q.set(next.q ?? ''); query.set(next.q ?? '');
+        const order = sortFromUrl(next.sort ?? model.order_by);
+        if (JSON.stringify(order) !== JSON.stringify(sort.peek())) sort.set(order);
+        view.set(boarded && next.view === 'board' ? 'board' : 'list');
+        named = fits(next.tab) ? next.tab : null;
+        tab.set(named ?? home.peek());
+        if ((next.f ?? '') !== filters.address.peek()) { if (next.f) filters.load(next.f); else filters.clear(); }
+        page.set(Math.max(1, Number(next.page) || 1));
+        rewrite.set(rewrite.peek() + 1);
+      });
+    } finally { arriving = false; }
+  });
 
   const search = (model.search_fields ?? []).length ? SearchInput({ value: q, placeholder: `Search ${model.plural.toLowerCase()}`, label: `Search ${model.plural.toLowerCase()}` }) : null;
   if (search) {
@@ -279,13 +361,15 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     onCleanup(() => { if (ctx.pageSearch.peek()?.isConnected === false || ctx.pageSearch.peek() === search.querySelector('input')) ctx.pageSearch.set(null); });
   }
   // Clearing goes back to the tab the list opens on.
-  const clearAll = () => batch(() => { filters.clear(); q.set(''); tab.set(home.peek()); page.set(1); });
+  const clearAll = () => batch(() => { named = null; filters.clear(); q.set(''); tab.set(home.peek()); page.set(1); });
   const toolbar = Toolbar({ label: `${model.plural} tools`, left: [search, FilterChips(filters, ctx.links)],
     right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
-  const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map(measure => ({
+  // Each measure is a card with an icon for its function, in its color= or else the next accent, with its trend line.
+  const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map((measure, index) => ({
     label: measureLabel(measure), value: () => measureView(ctx.schema, model, measure, measures.get()?.[measure.name], measureCurrencies.get()),
-    note: measure.where ? 'Filtered by a rule' : undefined,
+    note: measure.where ? 'Filtered by a rule' : undefined, icon: measureIcon(model, measure), tone: measure.color ?? MEASURE_TONES[index],
+    ...(measure.trend ? { trend: () => trends.get()[measure.name] ?? null, trendLabel: `last ${measure.trend.points} ${measure.trend.grain}s` } : {}),
   }) as StatProps))) : null;
 
   // ---------- table ----------
@@ -293,25 +377,34 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   let focusPanel = false;
   /** Open a record: in the panel (switching rows replaces the history entry, so Back closes it) or on its page. */
   const open = (row: RecordData, focus = true) => {
-    if (openIn.peek() !== 'panel') return void router.go('record', { model: name, id: String(row.id) });
+    if (openIn !== 'panel') return void router.go('record', { model: name, id: String(row.id) });
     if (opened.peek() === String(row.id)) return;
     focusPanel = focus;
-    void router.navigate(listHref(String(row.id), router.route.peek()?.query.rtab ?? null), { replace: panelOpen.peek() });
+    void router.navigate(listHref(String(row.id)), { replace: panelOpen.peek() });
   };
   const plainClick = (event: MouseEvent) => event.button === 0 && !event.metaKey && !event.ctrlKey && !event.shiftKey && !event.altKey;
   const numbered = numberField(model);
   const showNumber = numbered && numbered.name !== model.title_field && fields.some(meta => meta.name === numbered.name) ? numbered : null;
+  // How the record's State reads (stateLook), as on its header. Its first cell starts with a small icon: a ban for a
+  // cancelled record (struck through and greyed too), a lock for a locked or final one, a pencil for a draft. With a
+  // State, every row keeps the icon's room, so the first column stays aligned.
+  const lookOf = (row: RecordData) => state ? stateLook(model, row[state.field]) : null;
+  const isCancelled = (row: RecordData) => lookOf(row) === 'cancelled';
+  const firstCell = (row: () => RecordData, content: Child) => html`<span class="ev-first">${state ? () => StateIcon(lookOf(row())) : null}<span class="ev-first-v">${content}</span></span>`;
   const columns: Column<RecordData>[] = fields.map((meta, index) => ({
     key: meta.name, label: meta.label, align: ['currency', 'decimal', 'integer', 'percent', 'duration'].includes(meta.type) ? 'right' : 'left',
     width: index === 0 ? 240 : meta.type === 'currency' ? 140 : 160, value: (row: RecordData) => row[meta.name],
     sortable: meta.stored !== false && meta.type !== 'tags' && meta.type !== 'longtext' && meta.type !== 'richtext' && meta.type !== 'image',
     render: index === 0 && meta.name === model.title_field
-      ? (row: () => RecordData) => html`<a class="ev-row-link" href=${() => router.href('record', { model: name, id: String(row().id) })}
-          on:click=${(event: MouseEvent) => { if (openIn.peek() === 'panel' && plainClick(event)) { event.preventDefault(); open(row()); } }}>${() => titleOf(model, row())}</a>${showNumber
-          ? when(panelOpen, () => html`<small class="ev-row-no mono">${() => String(row()[showNumber.name] ?? '')}</small>`) : null}`
-      : (row: () => RecordData) => cellView(ctx, model, meta, row),
+      ? (row: () => RecordData) => [firstCell(row, html`<a class="ev-row-link" href=${() => router.href('record', { model: name, id: String(row().id) })}
+          on:click=${(event: MouseEvent) => { if (openIn === 'panel' && plainClick(event)) { event.preventDefault(); open(row()); } }}>${() => titleOf(model, row())}</a>`), showNumber
+          ? when(panelOpen, () => html`<small class="ev-row-no mono">${() => String(row()[showNumber.name] ?? '')}</small>`) : null]
+      : index === 0 ? (row: () => RecordData) => firstCell(row, cellView(ctx, model, meta, row)) : (row: () => RecordData) => cellView(ctx, model, meta, row),
   }));
   const onlyTab = derive(() => tab.get() !== 'all' && !query.get() && !filters.active.get().length);
+  /** What a list shows while its rows load: placeholder lines, read out as "Loading projects". */
+  const loadingRows = () => html`<div class="ev-list-loading" role="status" aria-label=${`Loading ${model.plural.toLowerCase()}`}>
+    ${[0, 1, 2, 3, 4].map(() => html`<span class="ev-sk"></span>`)}</div>`;
   const tablePrefs = ctx.prefs.cell<TablePrefs>(`list.${name}`, emptyPrefs());
   const selectable = canDelete || Boolean(state?.moves.length);
   // Beside a panel the list keeps the title (with the number under it), the State and the first amount.
@@ -321,9 +414,12 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const current = derive(() => { const id = opened.get(); return id === null ? null : rows.get().find(row => String(row.id) === id)?.id ?? null; });
   const table = (narrow = false) => DataTable<RecordData>({ columns: narrow ? panelColumns : columns, rows, key: row => row.id, label: model.plural, pinned: 1,
     selectable: selectable && !narrow, selection, sort, serverSort: true, onOpen: row => open(row), prefs: tablePrefs, height: 640,
+    rowClass: row => isCancelled(row) ? 'ev-row-cancelled' : null,
     current: narrow ? current : undefined, onMove: narrow ? row => open(row, false) : undefined,
+    // While rows load the table says so; it shows an empty state only once a load found nothing.
     // Empty only because of the tab: Clear filters would change nothing, so it offers All instead.
-    empty: () => () => onlyTab.get()
+    empty: () => () => loading.get() && !failure.get() ? loadingRows()
+      : onlyTab.get()
       ? EmptyState({ icon: 'search', tint: 'slate', title: `No ${model.plural.toLowerCase()} in this tab`, text: 'Choose another tab, or show them all.',
         action: Button({ label: `Show all ${model.plural.toLowerCase()}`, onClick: () => tab.set('all') }) })
       : EmptyState({ icon: 'search', tint: 'slate', title: `No ${model.plural.toLowerCase()} match`, text: 'Try a different search or clear the filters.',
@@ -372,7 +468,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     label: `${model.plural} by ${state.field}`, columns: state.states.filter(value => only === 'all' || value === only).map(value => ({ value, label: humanize(value), tint: stateTint(value) }) as BoardColumn),
     cards: rows, key: row => row.id, group: row => String(row[state.field]),
     totals: () => boardTotals.get(), amounts: Boolean(valueField),
-    card: row => BoardCard({ title: () => titleOf(model, row()), tint,
+    card: row => BoardCard({ title: () => titleOf(model, row()), tint, cancelled: () => isCancelled(row()), mark: state ? () => StateIcon(lookOf(row())) : undefined,
       company: linkField ? () => { const id = row()[linkField.name]; return id ? ctx.links.title(linkField.target!, String(id)).get() ?? '' : ''; } : undefined,
       value: valueField ? () => { const value = (field: string) => row()[field];
         return displayOf(valueField, row()[valueField.name], currencyIn(valueField, value, ctx.links), placesIn(valueField, value, ctx.links)); } : undefined,
@@ -492,11 +588,11 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     const stateMeta = state ? fieldOf(model, state.field) : undefined;
     const isCurrent = (row: RecordData) => String(row.id) === opened.get();
     const element = html`<div class="ev-compact" role="listbox" aria-label=${model.plural}>${each(rows, row => row.id, row => html`<div role="option" class="ev-crow"
-      data-key=${String(row().id)} aria-selected=${() => String(isCurrent(row()))} tabindex=${() => isCurrent(row()) || (!current.get() && rows.get()[0] === row()) ? '0' : '-1'}
+      data-key=${String(row().id)} class:ev-row-cancelled=${() => isCancelled(row())} aria-selected=${() => String(isCurrent(row()))} tabindex=${() => isCurrent(row()) || (!current.get() && rows.get()[0] === row()) ? '0' : '-1'}
       on:click=${() => open(row())} on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') { event.preventDefault(); open(row()); } }}>
-      <span class="l1"><b>${() => titleOf(model, row())}</b>${amountField ? html`<span class="num">${cellView(ctx, model, amountField, row)}</span>` : null}</span>
+      <span class="l1">${firstCell(row, html`<b>${() => titleOf(model, row())}</b>`)}${amountField ? html`<span class="num">${cellView(ctx, model, amountField, row)}</span>` : null}</span>
       <span class="l2">${showNumber ? html`<span class="mono">${() => String(row()[showNumber.name] ?? '')}</span>` : html`<span></span>`}${stateMeta ? cellView(ctx, model, stateMeta, row) : null}</span></div>`,
-      { fallback: () => html`<p class="muted ev-note">No ${model.plural.toLowerCase()} match.</p>` })}</div>` as HTMLElement;
+      { fallback: () => () => loading.get() && !failure.get() ? loadingRows() : html`<p class="muted ev-note">No ${model.plural.toLowerCase()} match.</p>` })}</div>` as HTMLElement;
     element.addEventListener('keydown', event => {
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
       const items = [...element.querySelectorAll<HTMLElement>('[role="option"]')], at = items.indexOf(event.target as HTMLElement);
@@ -512,20 +608,30 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   };
 
   // The table and board are built once per view; loads only change their rows.
+  // The board shows its empty columns only after a load: before the first one it shows the loading lines.
   const mode = derive(() => failure.get() ? 'error'
+    : loading.get() && total.get() === null && view.get() === 'board' ? 'loading'
     : !loading.get() && total.get() === 0 && !query.get() && !filters.active.get().length && tab.get() === 'all' ? 'empty'
     : view.get() === 'list' && panelOpen.get() ? (listWidth.get() && listWidth.get() < COMPACT_WIDTH ? 'compact' : 'narrow') : view.get());
-  const content = html`<div role=${tabs ? 'tabpanel' : null} id=${() => tabs ? `ev-${name}-views-${tab.get()}-panel` : null} aria-labelledby=${() => tabs ? `ev-${name}-views-${tab.get()}` : null}>
-    ${match(mode, { error: () => body(), empty: () => body(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager],
+  const content = html`<div class="ev-list-body" role=${tabs ? 'tabpanel' : null} id=${() => tabs ? `ev-${name}-views-${tab.get()}-panel` : null} aria-labelledby=${() => tabs ? `ev-${name}-views-${tab.get()}` : null}>
+    ${match(mode, { error: () => body(), empty: () => body(), loading: () => loadingRows(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager],
       board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => boardOnly.get() === 'all'}>${() => `Showing ${humanize(boardOnly.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
         match(boardOnly, Object.fromEntries(['all', ...state!.states].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 
-  const list = html`<div class="page ev-list" class:ev-list-narrow=${panelOpen} data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${header}${tabs}${toolbar}${when(() => !panelOpen.get(), () => strip)}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>${content}${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;
+  const list = html`<div class="page ev-list" class:ev-list-narrow=${panelOpen} data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${ctx.crumbBar?.()}${header}${when(() => !panelOpen.get(), () => strip)}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>
+    <div class="ev-list-card" class:ev-list-card-board=${() => mode.get() === 'board'}>${tabs}${toolbar}${content}</div>${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;
   // The filter panel docks beside the list, inside the page: the list narrows, nothing covers it.
   const closeFilters = () => { filtering.set(false); queueMicrotask(() => filterButton.focus()); };
   const savedFilters = ctx.prefs.cell<SavedFilter[]>(`list.${name}.filters`, []);
+  // A record opening in the panel (a click, a link, Forward) closes the filter panel; the filters
+  // stay applied. Closing the record (Close, Escape, Back) opens the filter panel again if it was open.
+  changes(() => panelOpen.get(), () => {
+    if (panelOpen.peek()) {
+      if (filtering.peek()) { filtersBeforePanel = true; filtering.set(false); }
+    } else if (filtersBeforePanel) { filtersBeforePanel = false; restoring = true; filtering.set(true); }
+  });
   const main = html`<div class="ev-list-row" class:ev-filtering=${filtering}>${list}<div class="ev-filter-dock" id=${`ev-${name}-filters`}>${when(filtering,
-    () => FilterPanel(filters, ctx.links, { onClose: closeFilters, saved: savedFilters }))}</div></div>` as HTMLElement;
+    () => { const quiet = restoring; restoring = false; return FilterPanel(filters, ctx.links, { onClose: closeFilters, saved: savedFilters, focus: !quiet }); })}</div></div>` as HTMLElement;
   if (typeof ResizeObserver !== 'undefined') {
     const observer = new ResizeObserver(entries => listWidth.set(Math.round(entries[0]?.contentRect.width ?? 0)));
     observer.observe(list);
@@ -541,11 +647,10 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     void router.navigate(listHref(null)).then(done => { if (done && was) focusRow(was); });
   };
   const host = (id: string): PanelHost => ({
-    overlay, tab: router.route.peek()?.query.rtab,
-    setTab: next => void router.navigate(listHref(id, next), { replace: true }),
+    overlay,
     stays: to => Boolean(to && to.name === 'list' && to.params.model === name && (to.query.open ?? null) === id),
     close: closePanel,
-    show: next => { refresh(); void router.navigate(listHref(String(next)), { replace: true }); },
+    show: next => { refresh(); return router.navigate(listHref(String(next)), { replace: true }); },
     removed: () => { refresh(); void router.navigate(listHref(null), { replace: true }); },
   });
   // A saved, moved or changed record shows its new values in its row.
@@ -583,6 +688,10 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const split = SplitView({ main, side: panel, open: panelOpen, overlay, width: ctx.prefs.cell(`panelWidth.${name}`, 480),
     label: `Resize the ${model.label.toLowerCase()} panel` });
   split.classList.add('ev-list-split');
+  // Alt+N opens a new record, here or in the panel (docs/ui.md#keyboard-shortcuts); C, / and Enter on a row are the shell's and the table's.
+  useShortcuts({ root: split, actions: () => ({ create: canCreate ? { label: `New ${model.label.toLowerCase()}`, run: create } : null }),
+    help: () => [...(canCreate ? [['C', `New ${model.label.toLowerCase()}`] as [string, string]] : []), ...(search ? [['/', 'Search the list'] as [string, string]] : []),
+      ['Enter', `Open the focused ${model.label.toLowerCase()}`]] });
   split.append(html`<p class="ev-sr" aria-live="polite">${announce}</p>`);
   // Escape closes the panel (dialogs and menus close first: they are outside it).
   split.addEventListener('keydown', event => {

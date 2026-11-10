@@ -18,6 +18,8 @@ const field = (host: Element, name: string) => host.querySelector<HTMLElement>(`
 const heading = (host: Element) => host.querySelector<HTMLElement>('.doc-head .doc-title');
 const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('.grid tbody tr[data-key]')];
 const cellOf = (row: Element, col: string) => [...row.querySelectorAll<HTMLElement>('td[data-col]')].find(td => td.dataset.col === col)!;
+/** Open a "more information" row by its title. */
+const openRow = (host: Element, title: string) => click(host.querySelector(`.ev-more-row[data-section="${title}"] .ev-more-toggle`));
 
 describe('generated record view', () => {
   const customerRoutes = (orders: number, quotes = 0): Route[] => {
@@ -28,40 +30,44 @@ describe('generated record view', () => {
 
   it('shows an empty related list as one line, without a table of headers or a 0', async () => {
     const { host } = start(customerRoutes(0), '/app/customer/0000000000001');
-    await until(() => expect(byText(host, '.doc-tabs [role="tab"]', 'Related')).not.toBeNull());
-    click(byText(host, '.doc-tabs [role="tab"]', 'Related'));
+    await until(() => expect(host.querySelector('.ev-more-row[data-section="Related"]')).not.toBeNull());
+    openRow(host, 'Related');
     await until(() => expect(text(host.querySelector('.ev-related[aria-label="Orders"] .ev-related-empty'))).toBe('No orders yet.'));
     expect(host.querySelector('.ev-related[aria-label="Orders"] table')).toBeNull();
     expect(text(host.querySelector('.ev-related[aria-label="Orders"] .panel-h .num'))).toBe('');
   });
 
-  it('counts a related list named after its model in that model\'s words', async () => {
-    for (const [total, expected] of [[1, 'Orders, 1 order'], [3, 'Orders, 3 orders']] as const) {
-      const { host } = start(customerRoutes(total), '/app/customer/0000000000001');
-      await until(() => expect(host.querySelector('.rel-row')?.getAttribute('aria-label')).toBe(expected));
-      stopAll();
-    }
-  });
-  it('lays out the header, summary, Details sections and a tab per Table from the schema', async () => {
+  it('lays out the header, summary, the primary area with its Table, and no tabs, from the schema', async () => {
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
-    await until(() => expect(text(host.querySelector('.doc-head .eyebrow'))).toBe('Order'));
+    await until(() => expect(host.querySelector('.doc-head .doc-mark .ph-icon')?.getAttribute('aria-label')).toBe('Order'));
     expect(text(host.querySelector('.doc-head h1'))).toContain('Big order');
     expect(text(host.querySelector('.crumbs .cur'))).toBe('Big order');
-    expect([...host.querySelectorAll('.doc-tabs [role="tab"]')].map(text)).toEqual(['Details', 'Lines120']);
+    expect(host.querySelector('[role="tablist"]')).toBeNull();
     // Without key fields the summary shows the calculated values.
     await until(() => expect([...host.querySelectorAll('.sum-t span')].map(text)).toEqual(['Due', 'Total', 'Line count']));
-    expect(text(host.querySelector('.fs h3'))).toBe('Details');
-    expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['customer', 'stage', 'issued', 'due', 'reason', 'remark', 'total', 'line_count']);
+    // A model without Meta.layout: one section, its primary area with no heading, holding every field and then the Table.
+    expect(host.querySelector('.ev-cmp-main h3:not(.ev-cmp-th h3)')).toBeNull();
+    // The summary strip's values (due, total, line count) show there, not again in the form.
+    expect([...host.querySelectorAll('.ev-cmp-main .ff')].map(item => item.getAttribute('data-field'))).toEqual(['customer', 'stage', 'issued', 'reason', 'remark']);
+    expect(host.querySelector('.ev-more-row')).toBeNull();
     // reason applies only when the stage is lost.
     expect(field(host, 'reason')!.hidden).toBe(true);
-    expect(text(field(host, 'total')!.querySelector('label'))).toContain('ƒ calculated');
-    expect(text(host.querySelector('.fs-link'))).toContain('120 rows');
+    expect(field(host, 'total')).toBeNull();
+    expect(text(host.querySelector('.ev-cmp-main .ev-cmp-th h3'))).toBe('Lines');
+    expect(text(host.querySelector('.ev-cmp-main .ev-cmp-count'))).toBe('120');
     // The action from the schema is a header button; the record is remembered under the history button
-    // left of search, not in the sidebar.
+    // on the right of the top bar, left of notifications, not in the sidebar.
     expect(byText(host, '.doc-head button', 'Close')).not.toBeNull();
     expect(byText(host, '.nav-group', /^Recent/)).toBeNull();
-    const history = host.querySelector<HTMLElement>('.top-actions .rec-btn')!;
-    expect(history.nextElementSibling!.classList.contains('top-search')).toBe(true);
+    const history = host.querySelector<HTMLElement>('.topbar > .top-actions > .rec-btn')!;
+    expect(history).not.toBeNull();
+    // The record page's small breadcrumb sits in its main column, directly above the record's header.
+    const crumbs = host.querySelector<HTMLElement>('.doc-main > .ev-crumb-row > .page-crumbs')!;
+    expect(crumbs.parentElement!.nextElementSibling!.classList.contains('doc-head')).toBe(true);
+    // An order has no attachments or journal, so no side column and no drawer button at the end of the row.
+    expect(host.querySelector('.doc-side')).toBeNull();
+    expect(crumbs.nextElementSibling).toBeNull();
+    expect(host.querySelector('.topbar .crumbs')).toBeNull();
     click(history);
     const recent = document.querySelector('.rec-pop .rec-item');
     expect(text(recent)).toContain('Big order');
@@ -113,8 +119,8 @@ describe('generated record view', () => {
     expect(location.search).toBe('?tab=t-lines');
   });
 
-  it('switching tabs with unsaved edits asks nothing and keeps every edit for one save', async () => {
-    const { host, sent } = start(orderRoutes(), '/app/order/0000000000001?tab=t-lines');
+  it('keeps every line edit for one save', async () => {
+    const { host, sent } = start(orderRoutes(), '/app/order/0000000000001');
     await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
     const qty = cellOf(rowsIn(host)[1], 'qty');
     click(qty);
@@ -123,12 +129,6 @@ describe('generated record view', () => {
     press(input, 'Enter');
     press(document.activeElement!, 'Escape');
     await until(() => expect(text(host.querySelector('.ev-savebar'))).toContain('Unsaved changes'));
-    click(byText(host, '.doc-tabs [role="tab"]', 'Details'));
-    await until(() => expect(location.search).toBe(''));
-    expect(document.querySelector('.modal')).toBeNull();
-    expect(text(host.querySelector('.ev-savebar'))).toContain('Unsaved changes');
-    click(byText(host, '.doc-tabs [role="tab"]', 'Lines120'));
-    await until(() => expect(location.search).toBe('?tab=t-lines'));
     expect(document.querySelector('.modal')).toBeNull();
     await until(() => expect(text(cellOf(rowsIn(host)[1], 'qty'))).toContain('3'));
     press(host.querySelector('.doc')!, 'Enter', { metaKey: true });
@@ -204,6 +204,24 @@ describe('generated record view', () => {
     expect(lastToast()).toContain('Customer created');
   });
 
+  it('gives a new record the record title row: the model icon tile, Cancel and Create', async () => {
+    const created = { status: 201, etag: '"new"', body: { id: id(56), title: 'Acme Trading', rate: '0.00', credit_days: 30 } };
+    const { host, sent } = start([...adminRoutes(),
+      ['POST', /\/api\/customer$/, created],
+      ['GET', /\/api\/customer\/000000000001r$/, { ...created, status: 200 }],
+    ], '/app/customer/new?title=Acme%20Trading');
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New customer'));
+    // No name yet, so no letter mark: the model's icon on a tinted tile.
+    expect(host.querySelector('.doc-head .doc-mark .ph-icon svg')).not.toBeNull();
+    expect(host.querySelector('.doc-head .doc-mark .org-mark')).toBeNull();
+    const actions = [...host.querySelectorAll<HTMLButtonElement>('.doc-head .ph-actions button')];
+    expect(actions.map(button => text(button))).toEqual(['Cancel', 'Create customer']);
+    expect(actions[1].classList.contains('primary')).toBe(true);
+    click(actions[1]);
+    await until(() => expect(location.pathname).toBe('/app/customer/000000000001r'));
+    expect(requests(sent, 'POST', /customer$/)).toHaveLength(1);
+  });
+
   it('a naming series field says it is assigned on save, is never sent, and titles the saved record', async () => {
     const created = screen.quote_create, id = created.body.id;
     const { host, sent } = start([...adminRoutes(),
@@ -244,12 +262,12 @@ describe('permission-driven screens', () => {
     expect(host.querySelector('tbody [role="checkbox"]')).toBeNull();
     click(host.querySelector('a.ev-row-link'));
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Mariam Haddad'));
-    expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['email']);
-    expect(host.querySelector('.fs button.fval')).toBeNull();
+    expect([...host.querySelectorAll('.ev-cmp-card .ff')].map(item => item.getAttribute('data-field'))).toEqual(['email']);
+    expect(host.querySelector('.ev-cmp-card button.fval')).toBeNull();
     expect(host.querySelector('.doc-head button.fval')).toBeNull();
     expect(byText(host, '.doc-head button', 'Mark contacted')).toBeNull();
     // The viewer reads the file an administrator attached, and cannot add one.
-    await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('brief.txt'));
+    await until(() => expect(text(byText(host, '.side-sec', /^Attachments/))).toContain('brief.txt'));
     expect(host.querySelector('.ev-upload')).toBeNull();
     expect(host.querySelector('.ev-file-remove')).toBeNull();
   });
@@ -260,7 +278,7 @@ describe('permission-driven screens', () => {
     const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema],
       ['GET', /\/api\/contact\/0000000000001$/, screen.contact_detail],
       ['GET', /\/api\/contact\/0000000000001\/attachments$/, screen.attachments]], '/app/contact/0000000000001');
-    await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('brief.txt'));
+    await until(() => expect(text(byText(host, '.side-sec', /^Attachments/))).toContain('brief.txt'));
     expect(host.querySelector('.ev-file-remove')).toBeNull();
     expect(host.querySelector('.ev-upload')).toBeNull();
   });
@@ -278,7 +296,7 @@ describe('permission-driven screens', () => {
         return { status: 204, etag: null, body: null };
       }],
     ], '/app/contact/0000000000001');
-    const files = () => text(byText(host, '.side-sec', /^Files/));
+    const files = () => text(byText(host, '.side-sec', /^Attachments/));
     const removeOf = (name: string) => host.querySelector<HTMLButtonElement>(`.ev-file-remove[aria-label="Remove ${name}"]`);
     await until(() => expect(removeOf('brief.txt')).not.toBeNull());
     expect(removeOf('scan.pdf')).not.toBeNull();
@@ -319,8 +337,8 @@ describe('permission-driven screens', () => {
         return copy(screen.attachment_upload);
       }],
     ], '/app/contact/0000000000001');
-    await until(() => expect([...host.querySelectorAll('.fs .ff')].map(item => item.getAttribute('data-field'))).toEqual(['email', 'phone', 'notes']));
-    expect(host.querySelectorAll('.fs button.fval').length).toBe(3);
+    await until(() => expect([...host.querySelectorAll('.ev-cmp-card .ff')].map(item => item.getAttribute('data-field'))).toEqual(['email', 'phone', 'notes']));
+    expect(host.querySelectorAll('.ev-cmp-card button.fval').length).toBe(3);
     expect(host.querySelector('.doc-head .doc-title button.fval')).not.toBeNull();
     expect(byText(host, '.doc-head button', 'Mark contacted')).not.toBeNull();
     const upload = host.querySelector<HTMLInputElement>('.ev-upload input')!;
@@ -329,7 +347,7 @@ describe('permission-driven screens', () => {
     await until(() => expect(requests(sent, 'POST', /attachments$/)).toHaveLength(1));
     expect(requests(sent, 'POST', /attachments$/)[0].body).toEqual({ name: 'brief.txt', content: 'SGVsbG8=' });
     await until(() => expect(lastToast()).toBe('brief.txt attached'));
-    await until(() => expect(text(byText(host, '.side-sec', /^Files/))).toContain('brief.txt'));
+    await until(() => expect(text(byText(host, '.side-sec', /^Attachments/))).toContain('brief.txt'));
     const again = host.querySelector<HTMLInputElement>('.ev-upload input')!;
     Object.defineProperty(again, 'files', { value: [new File(['%PDF'], 'scan.pdf', { type: 'application/pdf' })], configurable: true });
     again.dispatchEvent(new Event('change', { bubbles: true }));
@@ -357,8 +375,11 @@ describe('printing a record', () => {
   it('opens the server PDF of the chosen design, with Download and File a copy', async () => {
     let filed = 0;
     const { host, sent } = start(routes(printing(), () => { filed += 1; }), '/app/contact/0000000000001');
-    await until(() => expect(byText(host, '.doc-head button', 'Print')).not.toBeNull());
-    click(byText(host, '.doc-head button', 'Print'));
+    // Print is in More, with the record's other items.
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Mariam Haddad'));
+    expect(byText(host, '.doc-head button', 'Print')).toBeNull();
+    click(host.querySelector('.doc-head button[aria-label="More actions"]'));
+    click(byText(document, '[role="menuitem"]', 'Print'));
     const drawer = () => document.querySelector<HTMLElement>('.drawer.ev-print')!;
     await until(() => expect(drawer()).not.toBeNull());
     const frame = drawer().querySelector('iframe')!;
@@ -381,35 +402,36 @@ describe('printing a record', () => {
     for (const schema of [printing(false), printing(true, [])]) {
       const { host } = start(routes(schema), '/app/contact/0000000000001');
       await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Mariam Haddad'));
-      expect(byText(host, '.doc-head button', 'Print')).toBeNull();
+      click(host.querySelector('.doc-head button[aria-label="More actions"]'));
+      expect([...document.querySelectorAll('[role="menuitem"]')].map(text)).not.toContain('Print');
       stopAll();
     }
   });
 });
 
-describe('Record info times', () => {
+describe('the record footer', () => {
   afterEach(() => { try { localStorage.clear(); } catch { /* no storage */ } });
-  const info = (host: Element) => byText(host, '.side-sec', /^Record info/)!;
-  const rows = (host: Element) => {
-    const block = info(host), terms = [...block.querySelectorAll('dt')].map(text);
-    return Object.fromEntries([...block.querySelectorAll('dd')].map((dd, index) => [terms[index], text(dd)]));
+  const foot = (host: Element) => host.querySelector<HTMLElement>('.doc-main > .ev-rec-foot')!;
+  const part = (host: Element, name: 'created' | 'modified') => {
+    const item = foot(host)?.querySelector(`[data-part="${name}"]`);
+    return item ? `${text(item.querySelector('.ev-rf-l'))} ${text(item.querySelector('.ev-rf-who'))} · ${text(item.querySelector('.ev-time'))}` : null;
   };
 
-  it('shows Created and Last modified relative to now, with who, and switches every time to exact on a click', async () => {
+  it('shows Created and Modified with who and when, and switches every time to exact on a click', async () => {
     // Recorded at 06:02 UTC; two hours later here.
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-04T08:02:30Z'));
     const { host } = start([...orderRoutes(), ['GET', /\/api\/_settings\/me$/, screen.settings_me]], '/app/order/0000000000001', { storage: localStorage });
-    await until(() => expect(rows(host)['Created']).toBe('2 hours ago · admin'));
-    expect(rows(host)['Last modified']).toBe('2 hours ago · admin');
-    const times = [...info(host).querySelectorAll<HTMLButtonElement>('button.ev-time-toggle')];
+    await until(() => expect(part(host, 'created')).toBe('Created admin · 2 hours ago'));
+    expect(part(host, 'modified')).toBe('Modified admin · 2 hours ago');
+    const times = [...foot(host).querySelectorAll<HTMLButtonElement>('button.ev-time-toggle')];
     expect(times.map(button => button.querySelector('time')!.getAttribute('datetime'))).toEqual(['2026-11-04T06:02:00.000Z', '2026-11-04T06:02:00.000Z']);
     expect(times[0].getAttribute('aria-label')).toBe('2 hours ago, 04-11-2026 10:02 GST. Show exact times');
     // Who links to Controls Users for a person who may open Controls.
-    await until(() => expect(info(host).querySelectorAll('dd a.link-q[href="/controls/users"]').length).toBe(2));
+    await until(() => expect(foot(host).querySelectorAll('a.ev-rf-who[href="/controls/users"]').length).toBe(2));
     click(times[0]);
-    await until(() => expect(rows(host)['Created']).toBe('04-11-2026 10:02 GST · admin'));
-    expect(rows(host)['Last modified']).toBe('04-11-2026 10:02 GST · admin');
+    await until(() => expect(part(host, 'created')).toBe('Created admin · 04-11-2026 10:02 GST'));
+    expect(part(host, 'modified')).toBe('Modified admin · 04-11-2026 10:02 GST');
     expect(times.map(button => button.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
     expect(localStorage.getItem('evlet.admin.exactTimes')).toBe('true');
   });
@@ -417,9 +439,27 @@ describe('Record info times', () => {
   it('opens with exact times when the person chose them before', async () => {
     localStorage.setItem('evlet.admin.exactTimes', 'true');
     const { host } = start(orderRoutes(), '/app/order/0000000000001', { storage: localStorage });
-    await until(() => expect(rows(host)['Created']).toBe('04-11-2026 10:02 GST · admin'));
+    await until(() => expect(part(host, 'created')).toBe('Created admin · 04-11-2026 10:02 GST'));
     // Without Controls, who is plain text.
-    expect(info(host).querySelector('dd a.link-q[href="/controls/users"]')).toBeNull();
+    expect(foot(host).querySelector('a.ev-rf-who')).toBeNull();
+  });
+
+  it('holds only Created, Modified, the ID with Copy, and Copy link, which copies the record address', async () => {
+    const writes: string[] = [];
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (value: string) => { writes.push(value); } }, configurable: true });
+    const { host } = start(orderRoutes(), '/app/order/0000000000001');
+    await until(() => expect(part(host, 'created')).not.toBeNull());
+    const footer = foot(host);
+    expect([...footer.querySelectorAll('.ev-rf-l')].map(text)).toEqual(['Created', 'Modified', 'ID']);
+    expect(text(footer.querySelector('.ev-rf-id .mono'))).toBe('0000000000001');
+    expect([...footer.querySelectorAll('button.icon-btn')].map(button => button.getAttribute('aria-label'))).toEqual(['Copy record ID', 'Copy link']);
+    click(footer.querySelector('button[aria-label="Copy record ID"]'));
+    await until(() => expect(writes).toEqual(['0000000000001']));
+    click(footer.querySelector('button[aria-label="Copy link"]'));
+    await until(() => expect(writes[1]).toBe(`${location.origin}/app/order/0000000000001`));
+    await until(() => expect(lastToast()).toBe('Copied the link'));
+    // Not in the side column: Record info is gone from there.
+    expect([...host.querySelectorAll('.side-sec h4')].map(text)).not.toContain('Record info');
   });
 });
 
@@ -433,33 +473,25 @@ describe('each fact shows once on the record page', () => {
   const stats = (host: Element) => [...host.querySelectorAll('.sum-t > span')].map(text);
   const blocks = (host: Element) => [...host.querySelectorAll('.side-sec h4')].map(item => text(item).replace(/All fields$/, ''));
 
-  it('E1: key fields show in the header facts, and the summary keeps only what the header does not show', async () => {
+  it('E1: key fields the form does not show make the subtitle, and the summary keeps only what the header does not show', async () => {
     const { host } = start(withOrder({ key_fields: ['customer', 'total'] }), '/app/order/0000000000001');
     await until(() => expect(stats(host)).toEqual(['Due', 'Line count']));
-    expect([...host.querySelectorAll('.rec-meta .ev-fact')].map(item => item.getAttribute('title'))).toEqual(['Customer', 'Total']);
+    // Both key fields are in the primary area, so they show there once and the subtitle stays empty.
+    expect(host.querySelector('.doc-head .doc-sub')).toBeNull();
+    expect(field(host, 'customer')).not.toBeNull();
+    expect(field(host, 'total')).not.toBeNull();
   });
 
   it('E1, E6: no summary strip when nothing is left to show, or when Meta.summary is False', async () => {
     const { host } = start(withOrder({ key_fields: ['customer', 'due', 'total'], fields: copy(screen.schema).body.models.find((model: { name: string }) => model.name === 'order').fields
       .map((field: { name: string }) => field.name === 'line_count' ? { ...field, compute: null } : field) }), '/app/order/0000000000001');
-    await until(() => expect(host.querySelectorAll('.rec-meta .ev-fact')).toHaveLength(3));
+    await until(() => expect(host.querySelector('.ev-rec-foot [data-part="created"]')).not.toBeNull());
     expect(host.querySelector('.sum')).toBeNull();
     stopAll();
     const off = start(withOrder({ summary: false }), '/app/order/0000000000001');
     await until(() => expect(text(off.host.querySelector('.doc-head h1'))).toContain('Big order'));
-    await until(() => expect(blocks(off.host)).toContain('Record info'));
+    await until(() => expect(off.host.querySelector('.ev-rec-foot [data-part="created"]')).not.toBeNull());
     expect(off.host.querySelector('.sum')).toBeNull();
-  });
-
-  it('E2: the Key fields block shows only while another tab than Details is open', async () => {
-    const { host } = start(orderRoutes(), '/app/order/0000000000001');
-    await until(() => expect(blocks(host)).toContain('Record info'));
-    expect(blocks(host)).not.toContain('Key fields');
-    click(byText(host, '.doc-tabs [role="tab"]', /^Lines/));
-    await until(() => expect(blocks(host)[0]).toBe('Key fields'));
-    click(byText(host, '.side-sec button', 'All fields'));
-    await until(() => expect(blocks(host)).not.toContain('Key fields'));
-    expect(byText(host, '.doc-tabs [role="tab"]', 'Details')!.getAttribute('aria-selected')).toBe('true');
   });
 
   it('E3: the read form leaves out the title the header edits; a new record keeps it in the form', async () => {
@@ -473,14 +505,15 @@ describe('each fact shows once on the record page', () => {
     expect(created.host.querySelector('.fld[data-field="title"] input')).not.toBeNull();
   });
 
-  it('E4: Record info keeps the times, and More copies the record ID', async () => {
+  it('E4: the footer keeps the times, and More has Copy link and Copy record ID', async () => {
     const writes: string[] = [];
     Object.defineProperty(navigator, 'clipboard', { value: { writeText: async (value: string) => { writes.push(value); } }, configurable: true });
     const { host } = start(orderRoutes(), '/app/order/0000000000001');
-    await until(() => expect(text(byText(host, '.side-sec', /^Record info/))).toContain('Created'));
-    expect([...byText(host, '.side-sec', /^Record info/)!.querySelectorAll('dt')].map(text)).not.toContain('ID');
+    await until(() => expect(text(host.querySelector('.ev-rec-foot'))).toContain('Created'));
+    expect(blocks(host)).not.toContain('Record info');
     click(host.querySelector('.doc-head button[aria-label="More actions"]'));
     await until(() => expect(byText(document.body, '[role="menuitem"]', 'Copy record ID')).not.toBeNull());
+    expect(byText(document.body, '[role="menuitem"]', 'Copy link')).not.toBeNull();
     click(byText(document.body, '[role="menuitem"]', 'Copy record ID'));
     await until(() => expect(writes).toEqual(['0000000000001']));
     await until(() => expect(lastToast()).toBe('Copied the record ID'));
@@ -494,34 +527,37 @@ describe('each fact shows once on the record page', () => {
       ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders)], ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page(quotes)]];
   };
 
-  it('E4: Record info is left out while it has nothing to show', async () => {
+  it('E4: the footer leaves out the times it does not have', async () => {
     const detail = copy(recorded.detail);
     delete detail.body._audit;
-    const { host } = start([...orderRoutes().filter(route => !String(route[1]).includes('order\\/0000000000001$')), ['GET', /\/api\/order\/0000000000001$/, detail]], '/app/order/0000000000001?tab=t-lines');
-    await until(() => expect(blocks(host)).toContain('Key fields'));
-    expect(blocks(host)).not.toContain('Record info');
+    const { host } = start([...orderRoutes().filter(route => !String(route[1]).includes('order\\/0000000000001$')), ['GET', /\/api\/order\/0000000000001$/, detail]], '/app/order/0000000000001');
+    await until(() => expect(host.querySelector('.ev-rec-foot .ev-rf-id')).not.toBeNull());
+    expect(host.querySelector('.ev-rec-foot [data-part="created"], .ev-rec-foot [data-part="modified"]')).toBeNull();
+    expect(text(host.querySelector('.ev-rec-foot .ev-rf-id .mono'))).toBe('0000000000001');
   });
 
-  it('E5: the Related block lists only relations with records, and goes when none has any', async () => {
+  it('E5: the Related row counts each relation while closed and lists them all when open', async () => {
     const { host } = start(customer(2, 0), '/app/customer/0000000000001');
-    await until(() => expect([...host.querySelectorAll('.side-sec .rel-row .rel-nm')].map(text)).toEqual(['Orders']));
-    expect(text(byText(host, '.side-sec', /^Related/))).not.toContain('Quotes');
-    stopAll();
-    const empty = start(customer(0, 0), '/app/customer/0000000000001');
-    await until(() => expect(blocks(empty.host)).toContain('Record info'));
-    await until(() => expect(blocks(empty.host)).not.toContain('Related'));
-    // The Related tab still lists both.
-    click(byText(empty.host, '.doc-tabs [role="tab"]', 'Related'));
-    await until(() => expect(text(empty.host.querySelector('.ev-related[aria-label="Quotes"] .ev-related-empty'))).toBe('No quotes yet.'));
+    await until(() => expect(text(host.querySelector('.ev-more-row[data-section="Related"] .ev-more-sum'))).toBe('Orders: 2 · Quotes: 0'));
+    openRow(host, 'Related');
+    await until(() => expect(text(host.querySelector('.ev-related[aria-label="Quotes"] .ev-related-empty'))).toBe('No quotes yet.'));
+    // Related is a row of the record, never a side block.
+    expect(blocks(host)).not.toContain('Related');
   });
 
-  it('E6: Meta.side_blocks picks and orders the side blocks', async () => {
-    const { host } = start(customer(2, 0, { side_blocks: ['info', 'related'] }), '/app/customer/0000000000001');
-    await until(() => expect(blocks(host)).toEqual(['Record info', 'Related']));
+  it('E6: Meta.side_blocks without files leaves the attachments out of the side column', async () => {
+    const contact = (patch: Record<string, unknown>): Route[] => {
+      const schema = copy(screen.schema);
+      Object.assign(schema.body.models.find((model: { name: string }) => model.name === 'contact'), patch);
+      return [['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema],
+        ['GET', /\/api\/contact\/0000000000001$/, screen.contact_detail], ['GET', /\/api\/contact\/0000000000001\/attachments$/, screen.attachments]];
+    };
+    const { host } = start(contact({}), '/app/contact/0000000000001');
+    await until(() => expect(blocks(host)).toContain('Attachments'));
     stopAll();
-    const none = start(customer(2, 0, { side_blocks: [] }), '/app/customer/0000000000001');
-    await until(() => expect(text(none.host.querySelector('.doc-head h1'))).not.toBe(''));
-    expect(blocks(none.host)).toEqual([]);
+    const none = start(contact({ side_blocks: ['info', 'related'] }), '/app/contact/0000000000001');
+    await until(() => expect(none.host.querySelector('.ev-rec-foot')).not.toBeNull());
+    expect(blocks(none.host)).not.toContain('Attachments');
   });
 });
 

@@ -5,7 +5,7 @@ Checked when the Registry is built and sent in /api/schema, cut per role, on rea
 import pytest
 
 from evlet import (Child, Count, Currency, Database, Integer, Link, LongText, Main, Model, Registry, Related, Rule, Section, Select,
-                   Sum, Tab, Table, Text)
+                   Sum, Table, Text)
 from evlet.calc import F
 from evlet.ui.metadata import ui_schema, view_for
 from test_business import client
@@ -156,7 +156,7 @@ def test_main_is_the_primary_area_and_sections_carry_descriptions():
         {'label': 'Effort', 'fields': ['hours', 'cost'], 'collapsible': True, 'collapsed': False, 'flow': 'rows',
          'description': 'Time spent and what it costs.'},
         {'label': 'Money', 'fields': ['budget', 'client_rate'], 'collapsible': True, 'collapsed': True, 'flow': 'rows'}]
-    assert entry['record_layout'] == {'compact': True, 'blocks': [
+    assert entry['record_layout'] == {'blocks': [
         {'kind': 'section', 'label': 'Job', 'main': True}, {'kind': 'table', 'name': 'lines', 'main': True},
         {'kind': 'section', 'label': 'Effort'},
         {'kind': 'related', 'model': 'visit', 'link': 'job', 'label': 'Visits', 'filters': [], 'fields': [], 'limit': 5, 'order': ['-id']},
@@ -180,16 +180,14 @@ def test_main_with_only_tables_and_a_layout_without_main_is_unchanged():
 @pytest.mark.parametrize('layout, meta, message', [
     ((Section('Job', ('title',)), Main(('status',), 'lines')), {}, r'Job\.Meta\.layout: put Main first'),
     ((Main(('title',), 'lines'), Main(('status',))), {}, r'Job\.Meta\.layout: use one Main'),
-    ((Main(('title',), 'lines'), Tab('More', (Section('S', ('status',)),))), {}, r'a layout with Main has no Tabs'),
-    ((Tab('More', (Main(('title',), 'lines'),)),), {}, r'Main goes first in a layout without Tabs, not inside a Tab'),
     ((Main(('title',)),), {}, r'a layout with Main places every Table field, in Main or after it; lines is not placed'),
     ((Main(('title',), 'items'),), {}, r"Main names 'items', which is not a Table field of Job"),
     ((Main(('title', 'secret'), 'lines'),), {}, r'Main names unknown or hidden fields: secret'),
     ((Main(('title',), 'lines'), Section('More', ('title',))), {}, r'Layout lists title more than once'),
     ((Main(('title',), 'lines'), 'lines'), {}, r"Table 'lines' is placed more than once"),
     ((Main(('title',), 'lines'), Section('Job', ('status',))), {}, r'give sections different titles'),
-    ((Main(('title',), 'lines'),), {'tabs': ('details', 'activity')}, r'a layout with Main shows no record tabs'),
-    ((Main(('title',), 'lines'),), {'default_tab': 'activity'}, r'a layout with Main shows no record tabs'),
+    ((Main(('title',), 'lines'),), {'tabs': ('details', 'activity')}, r'Job\.Meta\.tabs was removed: record pages have no tabs'),
+    ((Main(('title',), 'lines'),), {'default_tab': 'activity'}, r'Job\.Meta\.default_tab was removed: record pages have no tabs'),
     ((Main(('title',), 'lines'), Section('More', ('status',), description='')), {}, r"description must be nonempty text, not ''"),
     ((Main(('title',), 'lines'), Section('More', ('status',), description=3)), {}, r'description must be nonempty text, not 3'),
 ])
@@ -238,5 +236,5 @@ def test_the_playground_project_uses_the_compact_record_page():
     view = view_for(Project)
     assert [(group['label'], group.get('main', False), 'description' in group) for group in view['layout']] == [
         ('Project', True, False), ('Budget', False, True), ('Schedule', False, True), ('Notes', False, True)]
-    assert (view['tabs'], view['default_tab']) == ([], None)
-    assert registry.layouts[Project]['compact'] is True
+    assert 'tabs' not in view and 'default_tab' not in view
+    assert registry.layouts[Project]['blocks'][0] == {'kind': 'section', 'label': 'Project', 'main': True}

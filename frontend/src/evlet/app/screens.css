@@ -18,7 +18,7 @@
 .ev-login-brand{display:flex;align-items:center;gap:12px;font-size:15px}
 .ev-login-brand .ev-lockup{height:30px}
 .ev-login-brand span{color:var(--fg-3)}
-.ev-login-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow-md);padding:28px}
+.ev-login-card{width:min(400px,100%);background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-md);padding:28px}
 .ev-login-card h1{font-size:21px;font-weight:650;letter-spacing:-.02em;margin:14px 0 4px}
 .ev-login-card>p{color:var(--fg-3);margin:0 0 20px}
 .ev-login-card form{display:grid;gap:6px}
@@ -61,31 +61,67 @@
 .ev-contract tbody th{font-weight:550;white-space:nowrap;width:1%}
 .ev-keys{display:grid;grid-template-columns:auto 1fr;gap:8px 16px;margin:0;align-items:center}
 .ev-keys dd{margin:0;color:var(--fg-2)}
+.ev-keys-h{margin:0 0 6px;font-size:12px;font-weight:600;color:var(--fg-3);text-transform:uppercase;letter-spacing:.04em}
+.ev-keys-g + .ev-keys-g{margin-top:18px}
 
 /* ---------- lists ---------- */
 .ev-row-link{font-weight:550;color:var(--fg)}
 .ev-row-link:hover{color:var(--accent);text-decoration:underline}
+/* A cancelled record in a list: the first cell struck through in grey after a ban icon, the row's text, avatars and
+   chips a little muted; the status badge keeps its colour. */
+.ev-first{display:inline-flex;align-items:center;gap:6px;min-width:0;max-width:100%}
+.ev-state-ic{display:inline-flex;flex:none;width:12px;color:var(--fg-4)}
+.ev-row-cancelled>td{color:var(--fg-3)}
+.ev-first-v{min-width:0;overflow:hidden;text-overflow:ellipsis}
+.ev-row-cancelled .ev-first-v,.ev-row-cancelled .ev-first-v :is(.ev-row-link,b){color:var(--fg-3);text-decoration:line-through}
+.ev-row-cancelled :is(.avatar,.org-mark,.chip,.pill:not(.ev-status)){opacity:.6}
+.ev-crow.ev-row-cancelled .l1 .num,.ev-crow.ev-row-cancelled .l2 .mono{color:var(--fg-4)}
+/* A cancelled record's title in its header, and its soft red state strip. */
+.doc-head.is-cancelled h1{color:var(--fg-3);text-decoration:line-through;text-decoration-thickness:1.5px}
+.doc-head.is-cancelled h1 .fval{color:inherit}
+.inv-banner.b-rose>div:not(.grow){color:var(--t-rose)}
+.inv-banner.b-rose b{color:var(--t-rose)}
 .ev-pager{display:flex;align-items:center;justify-content:flex-end;gap:4px;padding:10px 2px;font-size:12.5px;color:var(--fg-3)}
 .ev-pager span{margin-right:6px}
 .ev-note{font-size:12.5px;margin:10px 2px}
 .ev-choices{display:flex;flex-wrap:wrap;gap:8px}
-.ev-list .sum{margin-top:4px}
-/* The list's table runs flush to the main area's edges, like a child table in focus view: no card border or
-   radius, rows edge to edge, and the first and last cells keep the page gutter so text lines up with the toolbar. */
-.ev-list{--ev-gut:28px}
-.ev-list.page{max-width:none}
-.ev-list-narrow{--ev-gut:18px}
-.ev-list .table-wrap,.ev-list .ev-compact{margin-inline:calc(-1 * var(--ev-gut));border-radius:0;border-inline:0}
+/* The measure cards: as far from the title above and the list card below as from each other. */
+.ev-list .sum{gap:var(--page-gap);margin:0 0 var(--page-gap)}
+.ev-list>.ph:has(+.sum){margin-bottom:var(--page-gap)}
+/* The list card: the tabs, the search row and the table in one white card on the grey main area. Scrolled up, it
+   sticks --ev-card-top below the top of the list's scrolling area and fills the rest of its height, so its tabs,
+   search row and table header stay in view; only the table scrolls, down and sideways, inside it. Its height is the
+   area's content box plus the list's top padding, less the top offset; the bottom padding is the gap under it. */
+.ev-list{--ev-gut:16px;--ev-pad-top:20px;--ev-card-top:12px}
+.ev-list.page{max-width:none;padding:var(--ev-pad-top) var(--page-gutter) 16px}
+.ev-list-card{position:sticky;top:var(--ev-card-top);z-index:2;display:flex;flex-direction:column;min-width:0;height:calc(100% + var(--ev-pad-top) - var(--ev-card-top));
+  border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden}
+.ev-list-card > .tabs{flex:none;margin:0;padding:0 8px}
+.ev-list-card > .toolbar{flex:none;margin:0;padding:10px var(--ev-gut);border-bottom:1px solid var(--divider)}
+.ev-list-card > .tabs + .toolbar{border-top:0}
+.ev-list-body{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;overflow:auto}
+.ev-list-body > *{flex:none}
+.ev-list-body > .table-wrap,.ev-list-body > .ev-compact{flex:1 1 auto;min-height:0;max-height:none;border:0;border-radius:0;overflow:auto}
+.ev-list-body > .empty{margin:auto}
+/* The board keeps its own height: the card holds it without sticking. */
+.ev-list-card-board{position:static;height:auto;overflow:visible}
+.ev-list-card-board .ev-list-body{overflow:visible}
+.ev-list-card-board .board-wrap{margin:0;padding:12px var(--ev-gut)}
+.ev-list-card-board .ev-note{margin:10px var(--ev-gut)}
 .ev-list .table-wrap .dt tr > :first-child:not(.w-check){padding-left:var(--ev-gut)}
 .ev-list .table-wrap .dt tr > .w-check{padding-left:max(12px,calc(var(--ev-gut) - 12px))}
 .ev-list .table-wrap .dt tr > :last-child{padding-right:var(--ev-gut)}
 .ev-list .table-wrap .dt td.dt-empty{padding:0}
 .ev-list .ev-compact .ev-crow{padding-inline:var(--ev-gut)}
-@media (max-width:760px){.ev-list{--ev-gut:max(16px,env(safe-area-inset-left,0px))}}
+/* Phones: the card scrolls with the page, and the table is as tall as its rows. */
+@media (max-width:760px){
+  .ev-list{--ev-gut:12px;--ev-pad-top:18px}
+  .ev-list.page{padding:var(--ev-pad-top) max(var(--page-gutter),env(safe-area-inset-right,0px)) 64px max(var(--page-gutter),env(safe-area-inset-left,0px))}
+  .ev-list-card{position:static;height:auto}
+  .ev-list-body{overflow:visible}
+}
 
 /* ---------- reports ---------- */
-.nav-sub{padding:6px 8px 2px;font-size:11.5px;color:var(--fg-4)}
-.app.collapsed .nav-sub{display:none}
 .ev-report-group{margin-bottom:20px}
 .ev-report-group h2{margin:0 0 8px;font-size:13px;font-weight:600;color:var(--fg-3)}
 .ev-report-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:10px}
@@ -129,6 +165,37 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 
 /* ---------- records ---------- */
 .ev-record{min-height:100%}
+/* A record page's side column stays put while the main column scrolls: it is as tall as the view
+   and scrolls on its own. Stacked under the main column (narrow windows, phones) it scrolls with it. */
+.view>.ev-record .doc:not(.no-side)>.doc-side{position:sticky;top:0;align-self:start;height:calc(100vh - var(--topbar-h));height:calc(100dvh - var(--topbar-h));
+  overflow-y:auto;overscroll-behavior:contain}
+/* A narrow record frame (DocFrame's doc-narrow: a side panel, or a window of about 980 px and under, after the sidebar
+   drawer of ui/styles.css) keeps its side column out of the main column's way. The button at the end of the breadcrumb
+   row (in a side panel, of its top line) opens it as a drawer on the right. The page and the panel share these rules. */
+.ev-crumb-row{display:flex;align-items:center;gap:8px;min-width:0;margin:0 0 6px}
+.ev-crumb-row>.crumbs{flex:1;margin:0}
+.ev-crumb-row>.crumbs[hidden]{display:block;visibility:hidden}
+.ev-side-toggle{display:none;margin:-6px -6px -6px auto}
+.ev-side-drawer-scrim{display:none}
+.doc-narrow:not(.no-side) .ev-side-toggle{display:grid}
+.doc-narrow:not(.no-side)>.ev-side-drawer-scrim{display:block}
+.ev-record .doc.doc-narrow:not(.no-side)>.doc-side{position:fixed;top:0;right:0;bottom:0;left:auto;width:min(var(--doc-side-w),90vw);height:auto;align-self:stretch;z-index:52;
+  border-top:0;border-left:1px solid var(--border);overflow-y:auto;overscroll-behavior:contain;outline:none;
+  padding-top:max(16px,env(safe-area-inset-top,0px));padding-right:max(16px,env(safe-area-inset-right,0px));
+  transform:translateX(100%);visibility:hidden}
+/* It slides only once the frame has its first width (doc-sized), so a record opening narrow does not flash its column. */
+.ev-record .doc.doc-narrow.doc-sized:not(.no-side)>.doc-side{transition:transform .22s ease,visibility 0s .22s}
+.ev-record .doc.doc-narrow.side-open:not(.no-side)>.doc-side{transform:none;visibility:visible;box-shadow:var(--shadow-lg);transition:transform .22s ease}
+/* The record footer, under the form: Created, Modified, the ID with Copy, and Copy link, on one quiet line. */
+.ev-rec-foot{display:flex;flex-wrap:wrap;align-items:center;gap:4px 16px;margin:12px 0 0;padding:0 2px;font-size:12.5px;line-height:24px;color:var(--fg-3)}
+.ev-rec-foot .grow{flex:1}
+.ev-rf-item{display:inline-flex;align-items:center;gap:5px;min-width:0;white-space:nowrap}
+.ev-rf-l{color:var(--fg-3)}
+.ev-rf-who{color:var(--fg-2)}
+.ev-rf-item .rel-time,.ev-rf-item time,.ev-rf-item button{color:var(--fg-2);font-size:inherit}
+.ev-rf-id .mono{color:var(--fg-2)}
+.ev-rec-foot .icon-btn.sm{margin:0 -2px}
+.doc-panel .ev-rec-foot{margin-top:16px}
 .ev-fact{display:inline-flex;align-items:center;gap:6px}
 .ev-savebar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:8px;margin:20px -4px 0;padding:10px 12px;border:1px solid var(--border);border-radius:var(--r-lg);
   background:var(--surface);box-shadow:var(--shadow-md);padding-bottom:max(10px,env(safe-area-inset-bottom,0px))}
@@ -142,20 +209,14 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-view-all:hover{text-decoration:underline}
 .ev-pager{display:flex;align-items:center;justify-content:flex-end;gap:2px;padding:6px 10px;border-top:1px solid var(--divider);font-size:12px}
 .ev-pager .num{margin-right:6px}
-/* A declared record layout (record-blocks.ts): blocks stack with the sections' spacing. */
-.ev-layout > .ev-block{margin-bottom:14px}
 .ev-html{padding:12px 16px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);font-size:13.5px;line-height:1.55}
 .ev-html .rt-view > :first-child{margin-top:0} .ev-html .rt-view > :last-child{margin-bottom:0}
 .ev-block-note{margin:0;padding:12px 16px}
-.ev-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:1px;margin:0;background:var(--divider)}
-.ev-stat{padding:12px 16px;background:var(--surface)}
-.ev-stat dt{font-size:12px;color:var(--fg-3)}
-.ev-stat dd{margin:2px 0 0;font-size:20px;font-weight:600;font-variant-numeric:tabular-nums}
-.ev-chart-stat{overflow:hidden}
+.ev-chart-stat .sum{margin:0;padding:12px 14px}
 .ev-files{display:grid;gap:10px}
 .ev-print-body{display:grid;gap:12px;min-height:0}
 .ev-print-design{display:grid;gap:4px;font-size:13px;max-width:320px}
-.ev-print-frame{width:100%;height:min(72vh,900px);border:1px solid var(--border);border-radius:10px;background:var(--surface)}
+.ev-print-frame{width:100%;height:min(72vh,900px);border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface)}
 .ev-print-note{margin:0;font-size:12px}
 .ev-print-actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
 .ev-print.drawer{width:min(760px,100vw)}
@@ -179,14 +240,14 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-revisions th, .ev-revisions td { padding: 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .ev-revision-record dl { display: grid; grid-template-columns: minmax(100px, 1fr) 3fr; gap: 8px 16px; }
 .ev-revision-record dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
-.ev-revision-record article { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.ev-revision-record article { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-lg); }
 
 /* ---------- slips ---------- */
 .modal.slip { width: min(760px, 100%); }
 .slip .slip-group { grid-column: 1 / -1; margin: 6px 0 -4px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); }
 .slip .slip-group:first-child { margin-top: 0; }
 .slip-table { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
-.slip-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r); }
+.slip-table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-lg); }
 .slip-table table { width: 100%; min-width: 420px; border-collapse: collapse; font-size: 13px; }
 .slip-table th { padding: 7px 8px; text-align: left; font-size: 11.5px; font-weight: 600; color: var(--fg-3); background: var(--bg-subtle); border-bottom: 1px solid var(--border); }
 .slip-table th .req { color: var(--t-rose); margin-left: 2px; }
@@ -205,8 +266,11 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 /* ---------- the filter side panel, docked beside the list ---------- */
 /* No overlay and no backdrop: the list narrows and scrolls on its own; the panel fills the height. */
 .ev-list-row{display:flex;height:100%;min-height:0;min-width:0;position:relative}
-.ev-list-row > .ev-list{flex:1 1 auto;min-width:0;overflow:auto;margin:0}
-.ev-filter-dock{flex:none;width:min(560px,48%);min-width:400px;min-height:0;display:flex;flex-direction:column;border-left:1px solid var(--border);background:var(--bg)}
+.ev-list-row > .ev-list{flex:1 1 auto;min-width:0;overflow-x:hidden;overflow-y:auto;margin:0}
+/* The docked filter panel is a card beside the list card, as tall as the visible area. */
+.ev-filter-dock{flex:none;width:min(560px,48%);min-width:400px;min-height:0;display:flex;flex-direction:column;margin:12px 16px 16px 0;
+  border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden}
+.ev-filtering > .ev-list.page{padding-right:12px}
 .ev-filter-dock:empty{display:none}
 .fb-dock{flex:1;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr) minmax(0,1fr);outline:none}
 .fb-dock-head{display:flex;align-items:center;gap:8px;padding:12px 16px 10px;border-bottom:1px solid var(--divider)}
@@ -228,22 +292,35 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .fb-apply[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:550}
 /* On a phone the panel is a full-width sheet in the same place, still without a backdrop. */
 @media (max-width:760px){
-  .ev-filter-dock{position:absolute;inset:0;width:auto;min-width:0;border-left:0;z-index:5}
+  .ev-filter-dock{position:absolute;inset:0;width:auto;min-width:0;margin:0;border:0;border-radius:0;z-index:5}
+  .ev-filtering > .ev-list.page{padding-right:max(12px,env(safe-area-inset-right,0px))}
   .fb-dock .fb-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 28px}
 }
 
 /* ---------- a list with a record in its side panel ---------- */
 .ev-list-split{position:absolute;inset:0}
-.ev-list-narrow.page{padding:18px 18px 32px}
+/* A record opened from the list is its own card beside the list card, a 13 px gap between them (the list's 8 px
+   padding, the 1 px divider and 4 px), on the grey ground; it fills the visible height and scrolls inside. */
+.ev-list-narrow{--ev-pad-top:12px}
+.ev-list-narrow.page{padding:var(--ev-pad-top) 8px 16px 18px}
+.ev-list-split > .split-side{margin:12px 16px 16px 4px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface)}
+.ev-list-split > .split-div::before{background:transparent}
+.ev-list-split.split-over > .split-side{margin:0;border:0;border-radius:0}
+.ev-panel-head{margin:-12px -18px 14px;padding:12px 18px 0;border-bottom:1px solid var(--divider)}
+/* Loading rows: placeholder lines while a list's first rows (or a tab's) are on their way. */
+.ev-list-loading{display:flex;flex-direction:column;gap:14px;padding:18px 16px 22px;max-width:760px}
+.ev-sk{display:block;height:12px;border-radius:var(--r-sm);background:var(--bg-muted);animation:ev-sk 1.2s ease-in-out infinite alternate}
+.ev-sk:nth-child(2n){width:82%}.ev-sk:nth-child(3n){width:64%}
+@keyframes ev-sk{from{opacity:1}to{opacity:.45}}
+@media (prefers-reduced-motion:reduce){.ev-sk{animation:none}}
 .ev-row-no{display:block;font-size:11.5px;color:var(--fg-4);line-height:1.2}
-.ev-panel{flex:1;min-height:0;overflow:auto;outline:none;background:var(--bg);display:flex;flex-direction:column}
+.ev-panel{flex:1;min-height:0;overflow:auto;outline:none;background:var(--surface);display:flex;flex-direction:column}
 .ev-panel > .ev-record{flex:1 0 auto;display:flex;flex-direction:column}
 .ev-panel > .ev-record > .doc{flex:1 0 auto}
 .ev-panel > .ev-record > .page{padding:24px 18px}
 .ev-panel-bar{display:flex;align-items:center;gap:8px;margin:0 0 10px;font-size:12px;color:var(--fg-3);min-height:30px}
 .ev-panel-bar .eyebrow{display:inline-flex;align-items:center;gap:5px;font-weight:550}
 .ev-panel-bar .grow{flex:1}
-.ev-panel-blocks{margin-top:8px}
 .ev-compact{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden}
 .ev-crow{display:grid;gap:3px;padding:9px 12px;border-bottom:1px solid var(--divider);cursor:pointer;outline:none}
 .ev-crow:last-child{border-bottom:0}
@@ -253,7 +330,6 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-crow .l1 b{font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 .ev-crow .l2{font-size:12px;color:var(--fg-4)}
 .ev-sr{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
-.ev-panel-blocks .fields dd{margin:0;padding:6px 0;display:flex;align-items:center}
 /* The line under a side panel that leaves parts out: the full page shows them. */
 .ev-panel-more{margin:12px 0 0;font-size:12.5px}
 .ev-panel-more .link-q{margin-left:4px;background:none;border:0;padding:0;font:inherit;cursor:pointer}
@@ -312,3 +388,187 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 @keyframes ntf-in{from{transform:translateX(calc(100% + 24px))}to{transform:none}}
 @keyframes ntf-out{to{opacity:0;transform:translateX(30%)}}
 @media (prefers-reduced-motion:reduce){.ntf-panel,.ntf-scrim{transition:none}.ntf-pop,.ntf-pop.out{animation:none}}
+
+/* ---------- explorer ---------- */
+.ex-views{margin:0 0 14px}
+.ex-app-filter{width:auto;min-width:140px}
+.ex-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px;margin-top:12px}
+.ex-card{display:flex;flex-direction:column;gap:6px;padding:12px 14px;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);color:var(--fg);min-width:0}
+.ex-card:hover{border-color:var(--border-strong);background:var(--bg-subtle)}
+.ex-card-h{display:flex;align-items:center;gap:10px;min-width:0}
+.ex-card-h b{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.ex-card-h .count{font-size:12px;color:var(--fg-3)}
+.ex-desc{font-size:12.5px;color:var(--fg-2);display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.ex-app{font-size:11.5px;color:var(--fg-3)}
+
+/* The workspace editor (app/workspace-editor.ts): flat rows of groups and their items, each with a grip, a name and an eye. */
+.modal.wse-modal { width: min(620px, 100%); }
+.wse { display: grid; gap: 10px; grid-column: 1 / -1; }
+.wse-top { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.wse-field { display: grid; gap: 4px; font-size: 12px; color: var(--fg-3); }
+.wse-groups { display: grid; gap: 8px; }
+.wse-group { border: 1px solid var(--border); border-radius: var(--r); padding: 6px; background: var(--surface); }
+.wse-group.hid > .wse-gh .wse-name, .wse-item.hid .wse-name { color: var(--fg-3); text-decoration: line-through; }
+.wse-line { display: flex; align-items: center; gap: 6px; }
+.wse-gh .wse-name { font-weight: 550; }
+.wse-name.input { height: 28px; border-color: transparent; background: transparent; padding: 0 6px; }
+.wse-name.input:hover { border-color: var(--border); }
+.wse-name.input:focus { border-color: var(--accent); background: var(--surface); }
+.wse-items { display: grid; gap: 1px; margin: 4px 0 0 18px; padding-left: 8px; border-left: 1px solid var(--border); min-height: 24px; }
+.wse-kind { color: var(--fg-3); flex: none; }
+.wse-empty { font-size: 12px; margin: 4px 6px; }
+.wse-items:has(> .wse-item) > .wse-empty { display: none; }
+.wse-add { display: inline-flex; align-items: center; gap: 4px; margin: 4px 0 0 30px; height: 24px; padding: 0 6px; border-radius: 6px; font-size: 12px; color: var(--fg-3); }
+.wse-add:hover { color: var(--accent); background: var(--bg-muted); }
+.wse-new { display: grid; gap: 6px; margin: 6px 0 2px 30px; padding: 8px; border-radius: var(--r); background: var(--bg-muted); }
+.wse-new-row { display: flex; gap: 6px; align-items: center; }
+.wse-new-row > .input { height: 30px; min-width: 0; }
+.wse-new-row > select.input { flex: 0 0 auto; width: auto; max-width: 50%; }
+.wse-err { margin: 2px 0 2px 34px; font-size: 12px; color: var(--t-rose); }
+.wse > .wse-err { margin-left: 0; }
+.wse-meta { margin: 0; font-size: 12px; }
+.wse-more { display: flex; gap: 6px; flex-wrap: wrap; }
+@media (max-width: 560px) { .wse-top { grid-template-columns: 1fr; } }
+
+/* A compact record page (Meta.layout starting with Main; record-page.ts and record-compact.ts): one white card with a
+   thin border on the page background, under the key cards. Inside it, top to bottom: the state banner strip (the only
+   tinted area), the Main fields and tables, then "more information" rows separated by thin full-width lines. No grey fills, shadows or inner boxes. */
+.doc-compact{--cmp-pad:14px}
+.doc-compact .doc-main{padding-top:12px;background:var(--page-bg)}
+.doc-compact .doc-side{background:var(--surface);padding:12px 12px 96px}
+.doc-compact .side-sec{margin-bottom:13px}
+.doc-compact .side-sec h4{margin-bottom:6px}
+.doc-compact .doc-head{margin-bottom:var(--page-gap)}
+.ev-cmp-card{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);overflow:hidden;margin-bottom:12px}
+.ev-cmp-card>.inv-banner{margin:0;border-radius:0;padding:7px var(--cmp-pad);background:var(--bg-subtle);color:var(--fg-2);font-size:13.5px;
+  border-bottom:1px solid var(--border);gap:8px}
+.ev-cmp-card>.inv-banner svg{color:var(--fg-3)}
+.ev-cmp-card>.inv-banner.b-rose{background:var(--t-rose-bg);color:var(--t-rose)}
+.ev-cmp-card>.inv-banner.b-rose svg{color:var(--t-rose)}
+/* Key cards: the list page's number cards (.sum, .stat-card) above the white card, spaced as on the list page. Wide,
+   one row of as many cards as there are. */
+.doc-compact .ev-cards{grid-template-columns:repeat(var(--cards,4),minmax(0,1fr));gap:var(--page-gap);margin:0 0 var(--page-gap)}
+/* Main fields and tables */
+.ev-cmp-main{padding:12px var(--cmp-pad) 14px}
+.ev-cmp-main:empty{display:none}
+.ev-cmp-grid .fs-g{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 14px}
+/* The row editor's form: four columns of labelled inputs where the card has room, fewer where it has not, so a currency
+   input keeps room for its value. */
+.g-ed-body .ev-cmp-grid .fs-g{grid-template-columns:repeat(auto-fill,minmax(max(160px,calc(25% - 11px)),1fr))}
+.ev-more-body .fs-g{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 14px}
+.ev-more-body .fs-cols .fs-colrun{gap:10px 14px}
+.ev-more-body .fs-col{gap:10px}
+.doc-compact .ev-cmp-card .ff{padding:0;gap:2px}
+.doc-compact .ev-cmp-card .ff label{font-size:13.5px;font-weight:400;color:var(--fg-3)}
+.doc-compact .ev-cmp-card .ff .fval{min-height:26px;padding:1px 6px;margin-left:-6px;width:calc(100% + 6px);font-size:13.5px;color:var(--fg)}
+.doc-compact .ev-cmp-card .ff .fval:hover{background:var(--surface);border-color:var(--border)}
+.doc-compact .ev-cmp-card .fval .muted{color:var(--fg-4)}
+.doc-compact .ev-cmp-card .ff-hint{font-size:12px}
+.ev-cmp-table{margin-top:14px}
+.ev-more-body .ev-cmp-table{margin-top:0}
+.ev-cmp-th{display:flex;align-items:baseline;gap:6px;margin-bottom:6px}
+.ev-cmp-th h3{margin:0;font-size:13.5px;font-weight:600}
+.ev-cmp-count{font-size:13.5px;color:var(--fg-3)}
+.ev-cmp-th .grow{flex:1}
+.ev-cmp-add{display:inline-flex;align-items:center;gap:4px;font-size:13.5px;font-weight:500;color:var(--accent)}
+.ev-cmp-add:hover{color:var(--accent-hover)}
+.ev-cmp-add svg{display:none}
+.ev-cmp-table .g-bar,.ev-cmp-table .g-under .g-keys{display:none}
+/* In focus view the table shows its own bar again (title, selection, Columns, Exit focus) and its key hints. */
+.ev-cmp-table .grid.max .g-bar{display:flex}
+.ev-cmp-table .grid.max .g-under .g-keys{display:inline-flex}
+/* With rows selected, the title line reads "Items 4  2 selected  Duplicate  Delete". */
+.ev-cmp-sel{font-size:13.5px;font-weight:550;color:var(--accent);margin-left:8px}
+.ev-cmp-th .btn.sm{margin-left:4px}
+.btn.ev-cmp-del{border-color:color-mix(in srgb,var(--t-rose) 35%,transparent)}
+.btn.ev-cmp-del:hover{border-color:var(--t-rose)}
+.ev-cmp-or{display:inline-flex;align-items:center;gap:4px;font-size:13.5px;margin-left:6px}
+/* The table title's tools: Focus and Columns, subtle square icon buttons. */
+.ev-cmp-tools{display:inline-flex;gap:2px;margin-left:4px}
+.ev-cmp-th{align-items:center}
+.ev-cmp-table .g-under:not(:has(.g-sum)):not(:has(.g-lock)){display:none}
+.ev-cmp-table.is-empty>.grid{display:none}
+.ev-cmp-table .grid{box-shadow:none}
+.ev-cmp-table table.g{font-size:13.5px}
+.ev-cmp-table .g th,.ev-cmp-table .g tfoot td,.ev-cmp-table .g tr.g-xrow td{background:var(--surface)}
+.ev-cmp-empty{display:flex;align-items:center;justify-content:center;gap:12px;border:1px dashed var(--border-strong);border-radius:6px;padding:13px 10px;
+  font-size:13.5px;color:var(--fg-3);background:var(--surface);text-align:center}
+/* More information */
+.ev-more{border-top:1px solid var(--border)}
+.ev-more-label{margin:0;padding:8px var(--cmp-pad);border-bottom:1px solid var(--border);font-size:12px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--fg-3)}
+.ev-more-row{display:grid;grid-template-columns:25% minmax(0,1fr);gap:4px 14px;padding:11px var(--cmp-pad);border-top:1px solid var(--border)}
+.ev-more-label+.ev-more-row{border-top:0}
+.ev-more-l{min-width:0}
+.ev-more-toggle{display:flex;align-items:center;gap:8px;font:inherit;font-size:13.5px;font-weight:600;color:var(--fg);padding:0;min-height:24px;text-align:left}
+.ev-more-chev{color:var(--fg-3);transition:transform .15s;flex:none}
+.ev-more-row.closed .ev-more-chev{transform:rotate(-90deg)}
+.ev-more-desc{margin:2px 0 0 22px;font-size:12px;line-height:1.4;font-weight:400;color:var(--fg-3)}
+.ev-more-l .fs-err{margin:4px 0 0 22px;display:inline-block}
+.ev-more-l .fs-err[hidden]{display:none}
+.ev-more-r{min-width:0}
+.ev-more-row.ev-more-wide{grid-template-columns:minmax(0,1fr)}
+.ev-more-wide .ev-more-l{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap}
+.ev-more-wide .ev-more-desc,.ev-more-wide .ev-more-l .fs-err{margin:0}
+.ev-more-wide .ev-more-sum-w{flex:1;min-width:0;text-align:right}
+.ev-more-wide .ev-more-tools{margin-left:auto;display:flex;gap:4px}
+.ev-more-wide .ev-more-tools[hidden],.ev-more-wide .ev-more-sum[hidden]{display:none}
+.ev-more-wide.closed .ev-more-r{display:none}
+.ev-more-sum{margin:0;min-height:24px;line-height:24px;font-size:13.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
+.ev-more-none{color:var(--fg-4)}
+.ev-more-body .ev-related{border:0;margin:0;box-shadow:none;background:var(--surface)}
+.ev-more-body .ev-related>.panel-h{padding:0 0 6px;border:0;justify-content:flex-end}
+.ev-more-body .ev-related>.panel-h:not(:has(.ev-view-all)){display:none}
+.ev-more-body .ev-related>.panel-h h3,.ev-more-body .ev-related>.panel-h .num{display:none}
+.ev-more-body .ev-report-chart{border:0;box-shadow:none;background:var(--surface)}
+/* Activity in the side column: the note box stays small until it is used. */
+.ev-cmp-activity .timeline{max-height:420px;overflow:auto}
+/* Activity in the side column reads at the page's primary text weight: names, field names and Save note are not bold. */
+.ev-cmp-activity .tl-item .hd b,.ev-cmp-activity .ev-diff b,.ev-cmp-activity .note b{font-weight:500}
+.ev-cmp-activity .btn{font-weight:500}
+.doc-compact .side-sec dd,.doc-compact .side-sec .fval{font-weight:400}
+.ev-cmp-activity>.eff-note{display:none}
+.ev-cmp-activity .composer{margin-bottom:12px;box-shadow:none}
+.ev-cmp-activity .composer:not(:focus-within) .rt-toolbar{display:none}
+.rt-toolbar-compact{padding:2px 4px;gap:0}
+.rt-toolbar-compact .rt-tool{width:26px;height:26px}
+.ev-cmp-activity .composer:not(:focus-within) .rt-surface{min-height:38px}
+/* The compact view steps down with its main column's width (DocFrame's doc-m, doc-s and doc-xs), on the page and in
+   a side panel alike: three field columns, then the phone layout, then one column. */
+.doc.doc-m .ev-cmp-grid .fs-g{grid-template-columns:repeat(3,minmax(0,1fr))}
+.doc.doc-m .ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc-compact.doc-s{--cmp-pad:10px}
+/* A narrower main column fits five cards as three over two. */
+.doc.doc-m .ev-cards[data-count="5"]{grid-template-columns:repeat(6,minmax(0,1fr))}
+.doc.doc-m .ev-cards[data-count="5"]>.stat-card{grid-column:span 2}
+.doc.doc-m .ev-cards[data-count="5"]>.stat-card:nth-child(n+4){grid-column:span 3}
+/* Narrow (a side panel, a phone): two cards a row, three when there are three; an odd last card takes the whole row.
+   Values keep one size (a card across the row would scale its value up) and wrap rather than being cut short. */
+.doc.doc-s .ev-cards,.doc.doc-s .ev-cards[data-count="5"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc.doc-s .ev-cards[data-count="5"]>.stat-card:nth-child(n){grid-column:auto}
+.doc.doc-s .ev-cards[data-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr))}
+.doc.doc-s .ev-cards:is([data-count="1"],[data-count="5"])>.stat-card:last-child{grid-column:1/-1}
+.doc.doc-s .ev-cards>.stat-card>b{font-size:16px;white-space:normal;overflow-wrap:anywhere}
+.doc.doc-xs .ev-cards[data-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc.doc-xs .ev-cards[data-count="3"]>.stat-card:last-child{grid-column:1/-1}
+.doc.doc-s .ev-more-row{grid-template-columns:1fr}
+.doc.doc-s .ev-more-desc{display:none}
+.doc.doc-s .ev-cmp-grid .fs-g,.doc.doc-s .ev-more-body .fs-g{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.doc.doc-xs .ev-cmp-grid .fs-g,.doc.doc-xs .ev-more-body .fs-g{grid-template-columns:1fr}
+/* A compact record in a list's side panel reads as one white section, like a document preview: the header (image,
+   title, badges, lock and subtitle, then the panel buttons), a thin line, the key cards as plain label-over-value
+   pairs, then the fields two to a row and the tables, with no boxes inside. The same view as the page; only the panel
+   variant (DocFrame's doc-panel) styles it so. */
+.doc-panel .ev-panel-bar{margin:0 0 6px}
+.doc-panel .doc-mark:not(:has(.doc-img-pic)):has(> .doc-tile){display:none}
+.doc-panel .doc-row:has(> .doc-mark > .doc-tile):not(:has(.doc-img-pic)) .ttl{grid-column:1/3}
+.doc-panel.doc-compact{--cmp-pad:18px}
+.doc-panel.doc-compact .doc-main{background:var(--surface)}
+.doc-panel.doc-compact .ev-panel-head{margin-bottom:0}
+.doc-panel.doc-compact .doc-head{margin-bottom:12px}
+.doc-panel .ev-cmp-card{margin:0 -18px;border:0;border-radius:0;background:none}
+.doc-panel .ev-cmp-card>.inv-banner:first-child{border-top:0}
+.doc-panel .ev-cards{margin:0 -18px;padding:12px 18px;gap:10px 14px;border-bottom:1px solid var(--border)}
+.doc-panel .ev-cards>.stat-card{padding:0;border:0;border-radius:0;background:none}
+.doc-panel .ev-cmp-grid .fs-g{grid-template-columns:repeat(2,minmax(0,1fr))}
+.doc-panel.doc-xs .ev-cmp-grid .fs-g{grid-template-columns:1fr}
+.doc-panel .ev-cmp-card+.ev-rec-foot,.doc-panel .ev-cmp-card~.ev-panel-more{border-top:1px solid var(--border);margin:0 -18px;padding:10px 18px}

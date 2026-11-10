@@ -217,40 +217,57 @@ def test_a_layout_saved_before_collapsible_sections_still_loads(tmp_path, hashed
     assert saved['value'] == old
 
 
-def test_a_layout_sets_section_flow_and_the_record_tab_order(app):
+def test_a_layout_sets_section_flow(app):
     admin = client(app)
     sections = [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 6}, {'name': 'source', 'width': 6}, {'name': 'value', 'width': 6}], 'flow': 'columns'},
                 {'title': 'Notes', 'fields': [{'name': 'notes', 'width': 12}]}]
-    value = {'sections': sections, 'tabs': ['activity', 'details', 'related'], 'default_tab': 'activity'}
-    assert save(admin, ('layout', 'Lead', value))[0] == 200
+    assert save(admin, ('layout', 'Lead', sections))[0] == 200
     entry = schema_of(admin, 'lead')
     assert [(group['label'], group['flow']) for group in entry['layout']] == [('Lead', 'columns'), ('Notes', 'rows')]
-    assert (entry['tabs'], entry['default_tab']) == (['activity', 'details', 'related'], 'activity')
+    assert 'tabs' not in entry and 'default_tab' not in entry
     state = admin('GET', '/api/_controls/state')[1]
     lead = next(model for model in state['models'] if model['name'] == 'Lead')
+    # The record's parts the side panel can hide.
     assert [tab['name'] for tab in lead['tabs']] == ['activity', 'details', 'revisions', 'related', 'postings']
     # Sections alone are saved as the plain list they always were; rows is not stored.
     assert save(admin, ('layout', 'Lead', [{**sections[0], 'flow': 'rows'}, sections[1]]))[0] == 200
     saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')['value']
     assert isinstance(saved, list) and 'flow' not in saved[0]
-    assert schema_of(admin, 'lead')['tabs'] == []
-    for bad, message in (({**value, 'tabs': ['lines']}, 'List record tabs of Lead once each'),
-                         ({**value, 'tabs': ['details', 'details']}, 'List record tabs of Lead once each'),
-                         ({**value, 'default_tab': 'postings'}, 'Open records on one of the record tabs.'),
-                         ({**value, 'extra': 1}, 'Send the layout as a list of sections, or as sections with tabs, default_tab and panel.'),
+    # Record pages have no tabs: a record tab order is refused.
+    for bad, message in (({'sections': sections, 'tabs': ['activity', 'details']}, 'Record pages have no tabs: send the layout as a list of sections'),
+                         ({'sections': sections, 'default_tab': 'activity'}, 'Record pages have no tabs'),
+                         ({'sections': sections, 'extra': 1}, 'Send the layout as a list of sections, or as sections and panel.'),
                          ([{**sections[0], 'flow': 'down'}], 'Section Lead: fill fields in rows ("rows") or down each column ("columns").')):
         assert message in save(admin, ('layout', 'Lead', bad))[1]['fields']['changes.0']
 
 
-def test_removing_a_field_keeps_the_record_tab_order_of_a_layout(app):
+def test_a_layout_saved_with_a_record_tab_order_keeps_its_sections(app):
+    # Saved before record tabs were removed in 0.4: its sections and side panel still apply, the tab order is dropped.
+    admin = client(app)
+    sections = [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 6}, {'name': 'source', 'width': 6}]},
+                {'title': 'More', 'fields': [{'name': 'notes', 'width': 12}]}]
+    legacy = {'sections': sections, 'tabs': ['activity', 'details'], 'default_tab': 'activity', 'panel': {'sections': ['More']}}
+    with app.database.transaction() as tx:
+        tx.connection.execute("INSERT INTO evlet_overrides (kind, key, value) VALUES ('layout', 'Lead', ?)", (json.dumps(legacy),))
+    problems = []
+    custom = app.business.controls.custom
+    with app.database.transaction() as tx:
+        rows = tx.connection.execute("SELECT kind, key, value FROM evlet_overrides").fetchall()
+    custom.apply(rows, problems)
+    assert problems == []
+    entry = schema_of(admin, 'lead')
+    assert [group['label'] for group in entry['layout']] == ['Lead', 'More'] and entry['panel']['sections'] == ['More']
+    assert 'tabs' not in entry and 'default_tab' not in entry
+
+
+def test_removing_a_field_keeps_the_sections_of_a_layout(app):
     admin = client(app)
     assert admin('POST', '/api/_controls/fields/Lead', {'name': 'region', 'type': 'Text', 'label': 'Region'})[0] == 201
-    value = {'sections': [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 6}, {'name': 'x_region', 'width': 6}]}], 'tabs': ['details', 'activity'], 'default_tab': None}
+    value = [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 6}, {'name': 'x_region', 'width': 6}]}]
     assert save(admin, ('layout', 'Lead', value))[0] == 200
     assert admin('DELETE', '/api/_controls/fields/Lead/x_region')[0] == 200
     saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')['value']
-    assert saved == {'sections': [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 6}]}], 'tabs': ['details', 'activity'], 'default_tab': None}
-    assert schema_of(admin, 'lead')['tabs'] == ['details', 'activity']
+    assert saved == [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 6}]}]
 
 
 def test_a_list_override_sets_columns_page_size_and_sort_and_drops_unreadable_columns(app):

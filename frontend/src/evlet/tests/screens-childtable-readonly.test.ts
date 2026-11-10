@@ -20,8 +20,7 @@ async function openLines({ detail = invoice.invoice_draft, schema = invoice.sche
     ['GET', /\/api\/invoice\/[0-9a-z]{13}\/(measures|related|journal|attachments)/, { status: 200, etag: null, body: { items: [], total: 0, limit: 50, offset: 0 } }],
     ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ], `/app/invoice/${id}`);
-  await until(() => expect(byText(host, '.doc-tabs [role="tab"]', /^Lines/)).not.toBeNull());
-  click(byText(host, '.doc-tabs [role="tab"]', /^Lines/));
+  // The Lines table is in the record's primary area.
   await until(() => expect(host.querySelectorAll('.grid tbody tr[data-key]')).toHaveLength(2));
   return host;
 }
@@ -33,7 +32,7 @@ const enterFocus = (host: Element) => {
 };
 const openRow = (host: Element) => {
   click(grid(host).querySelector('tbody tr[data-key] .g-exp')!);
-  const panel = grid(host).querySelector<HTMLElement>('.g-x');
+  const panel = grid(host).querySelector<HTMLElement>('.g-ed-main');
   expect(panel).not.toBeNull();
   return panel!;
 };
@@ -53,8 +52,8 @@ function expectReadOnly(host: Element) {
     expect(grid(host).querySelector('td.editing')).toBeNull();
     // Rows still open, to read them.
     const panel = openRow(host);
-    expect(text(panel)).toContain('Row 1 of 2');
-    for (const label of ['Move up', 'Move down', 'Duplicate', 'Delete']) expect(buttons(panel)).not.toContain(label);
+    expect(text(panel.querySelector('.g-ed-pos'))).toBe('1 of 2');
+    for (const label of ['Delete line', 'Insert below']) expect(buttons(panel)).not.toContain(label);
     for (const field of ['item', 'qty', 'rate']) {
       expect(controls(panel, field).length).toBeGreaterThan(0);
       expect(controls(panel, field).every(control => control.disabled)).toBe(true);
@@ -68,8 +67,9 @@ describe('a read-only child table, expanded', () => {
     const host = await openLines({ detail: invoice.invoice_issued_detail });
     expect(text(grid(host).querySelector('.g-lock'))).toContain('Locked.');
     expectReadOnly(host);
-    // The row editor says why, as the form does.
-    expect(text(openRow(host).querySelector('.fld[data-field="qty"] label'))).toContain('locked');
+    // The lock shows once, under the table, not beside each field of the row editor.
+    expect(text(openRow(host).querySelector('.fld[data-field="qty"] label'))).not.toContain('locked');
+    expect(text(grid(host).querySelector('.g-lock'))).toContain('Locked.');
   });
 
   it('stays read only for a record the server reports locked, as a cancelled one is', async () => {
@@ -95,8 +95,10 @@ describe('a read-only child table, expanded', () => {
     expect(cellOf(host, 'qty').getAttribute('aria-readonly')).toBe('true');
     const panel = openRow(host);
     expect(controls(panel, 'qty').every(control => control.disabled)).toBe(true);
+    // Read only while the lines are editable: this field keeps its own lock.
+    expect(text(panel.querySelector('.fld[data-field="qty"] label'))).toContain('read only');
     expect(controls(panel, 'rate').every(control => !control.disabled)).toBe(true);
-    expect(buttons(panel)).toEqual(expect.arrayContaining(['Move down', 'Delete']));
+    expect(buttons(panel)).toEqual(expect.arrayContaining(['Delete line', 'Insert below']));
   });
 
   it('stays editable in focus view and the row editor when the record is editable', async () => {
@@ -104,13 +106,15 @@ describe('a read-only child table, expanded', () => {
     enterFocus(host);
     expect(grid(host).querySelector('.g-add')).not.toBeNull();
     const panel = openRow(host);
-    expect(buttons(panel)).toEqual(expect.arrayContaining(['Move up', 'Move down', 'Duplicate', 'Delete']));
+    expect(buttons(panel)).toEqual(expect.arrayContaining(['Delete line', 'Insert below', 'Done']));
     for (const field of ['item', 'qty', 'rate']) expect(controls(panel, field).every(control => !control.disabled)).toBe(true);
     const qty = controls(panel, 'qty')[0] as HTMLInputElement;
     qty.value = '5';
     qty.dispatchEvent(new Event('input', { bubbles: true }));
     qty.dispatchEvent(new Event('change', { bubbles: true }));
     qty.dispatchEvent(new FocusEvent('blur'));
+    // The table shows only its first column beside the open row; Done brings the other columns back.
+    click(byText(panel, 'button', 'Done'));
     await until(() => expect(text(cellOf(host, 'qty'))).toContain('5'));
   });
 });

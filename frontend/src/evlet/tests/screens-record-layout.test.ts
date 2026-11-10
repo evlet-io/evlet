@@ -1,9 +1,9 @@
-// A declared record layout (Meta.layout with evlet.Tab, Related, Html, Chart and a Table field name), over the
-// responses recorded for the Site model (layout_* in screens-fixture.json): its Tabs replace Details, the Table
-// shows inside a tab, related jobs come from the list route and charts from the aggregate route with the
+// A declared record layout (Meta.layout with evlet.Main holding a Table, then Html, Chart and Related blocks), over the
+// responses recorded for the Site model (layout_* in screens-fixture.json): the blocks are "more information" rows
+// after the primary area, related jobs come from the list route and charts from the aggregate route with the
 // block's filters, and Html shows record values only as text.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { byText, click, press, recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
+import { recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import { copy, type Recorded, type Sent } from './server';
 import { blockFilters, viewAllHref } from '../app/record-blocks';
 
@@ -31,8 +31,7 @@ const routes = (model?: (model: any) => void): Route[] => [
   ['GET', /\/api\/site\?/, { status: 200, etag: null, body: { items: [screen.layout_site_detail.body], total: 1, limit: 50, offset: 0 } }],
 ];
 
-const tabs = (host: Element) => [...host.querySelectorAll('.doc-tabs [role="tab"]')].map(tab => text(tab).replace(/\d+$/, ''));
-const tab = (host: Element, label: string) => byText(host, '.doc-tabs [role="tab"]', label)!;
+const rows = (host: Element) => [...host.querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')));
 
 async function open(path = `/app/site/${site}`, model?: (model: any) => void) {
   const started = start(routes(model), path);
@@ -41,13 +40,16 @@ async function open(path = `/app/site/${site}`, model?: (model: any) => void) {
 }
 
 describe('a declared record layout', () => {
-  it('shows its Tabs instead of Details, with no tab for a placed Table and no automatic Related', async () => {
+  it('shows its blocks in order as more information after the primary area, and no automatic Related', async () => {
     const { host } = await open();
-    expect(tabs(host)).toEqual(['Overview', 'Work']);
-    expect(host.querySelector('.side-sec h4') ? [...host.querySelectorAll('.side-sec h4')].map(text) : []).not.toContain('Related');
-    // The section shows on the first Tab, with the fields no section lists (Other) after the blocks.
-    expect(host.querySelector('[data-field="region"]')).not.toBeNull();
-    expect(host.querySelector('section[aria-label="Other"] [data-field="notes"]')).not.toBeNull();
+    expect(host.querySelector('[role="tablist"]')).toBeNull();
+    // The primary area: Main's fields, then its Table.
+    expect(host.querySelector('.ev-cmp-main [data-field="region"]')).not.toBeNull();
+    expect(text(host.querySelector('.ev-cmp-main .ev-cmp-th h3'))).toBe('Visits');
+    // The blocks in the layout's order, then the fields no section lists (Other); listing related records itself turns
+    // the automatic Related row off.
+    expect(rows(host)).toEqual(['Notes', 'Totals', 'Hours by status', 'Open jobs', 'Same region', 'Other']);
+    expect(host.querySelector('.ev-more-row[data-section="Other"] [data-field="notes"]')).not.toBeNull();
   });
 
   it('shows Html with record values as text, never as markup', async () => {
@@ -65,7 +67,7 @@ describe('a declared record layout', () => {
     expect(asked.map(filtersOf)).toEqual([[['site', 'eq', site]], [['site', 'eq', site]]]);
     expect(asked.map(item => new URL(item.url, 'http://127.0.0.1').searchParams.get('measures'))).toEqual(['hours,jobs', 'hours']);
     // The stat numbers are the aggregate route's.
-    expect([...host.querySelectorAll('.ev-chart-stat .ev-stat')].map(stat => `${text(stat.querySelector('dt'))} ${text(stat.querySelector('dd'))}`)).toEqual(['Hours 25.0000', 'Jobs 4']);
+    expect([...host.querySelectorAll('.ev-chart-stat .stat-card')].map(stat => `${text(stat.querySelector('span'))} ${text(stat.querySelector('b'))}`)).toEqual(['Hours 25.0000', 'Jobs 4']);
     // The bar chart draws one bar per status, named for screen readers.
     const bars = host.querySelector('.ev-chart-bar svg[role="img"]')!;
     expect(bars.getAttribute('aria-label')).toBe('Hours by status chart');
@@ -73,7 +75,7 @@ describe('a declared record layout', () => {
   });
 
   it('lists related records through the list route with the block filters, a Ref filled from the record', async () => {
-    const { host, sent } = await open(`/app/site/${site}?tab=t-work`);
+    const { host, sent } = await open();
     await until(() => expect([...host.querySelectorAll('.ev-related[aria-label="Open jobs"] .ev-row-link')].map(text)).toEqual(['Design', 'Survey']));
     const asked = requests(sent, 'GET', /\/api\/job\?/);
     expect(asked.map(filtersOf)).toEqual(expect.arrayContaining([
@@ -88,40 +90,20 @@ describe('a declared record layout', () => {
     expect(text(block.querySelector('.ev-pager'))).toContain('1–2 of 3');
     const all = block.querySelector<HTMLAnchorElement>('.ev-view-all')!;
     expect(JSON.parse(new URL(all.href).searchParams.get('f')!)).toEqual([['site', 'eq', site], ['status', 'nin', ['done']]]);
-    // The Table shows inside the Work tab, with its row.
-    expect(host.querySelector('.ev-table-block')).not.toBeNull();
-    expect(text(host.querySelector('.ev-table-block'))).toContain('Survey');
+    // The Table shows in the primary area, with its row.
+    expect(text(host.querySelector('.ev-cmp-main [data-table-block="visits"]'))).toContain('Survey');
   });
 
-  it('moves between its Tabs by keyboard', async () => {
-    const { host } = await open();
-    tab(host, 'Overview').focus();
-    press(tab(host, 'Overview'), 'ArrowRight');
-    await until(() => expect(tab(host, 'Work').getAttribute('aria-selected')).toBe('true'));
-    expect(document.activeElement).toBe(tab(host, 'Work'));
+  it('brings the automatic Related row back when Meta.side_blocks names it', async () => {
+    const { host } = await open(`/app/site/${site}`, model => { model.side_blocks = ['related']; });
+    expect(rows(host)).toEqual(['Notes', 'Totals', 'Hours by status', 'Open jobs', 'Same region', 'Other', 'Related']);
   });
 
-  it('shows blocks on Details when the layout has no Tabs, the Table inside the form', async () => {
-    const { host } = await open(`/app/site/${site}`, model => {
-      model.record_layout = { blocks: model.record_layout.tabs.flatMap((item: { blocks: unknown[] }) => item.blocks) };
-    });
-    expect(tabs(host)).toEqual(['Details']);
-    await until(() => expect(host.querySelector('.ev-related[aria-label="Open jobs"]')).not.toBeNull());
-    const order = [...host.querySelector('.ev-layout')!.children].map(node => node.getAttribute('aria-label') ?? node.className);
-    expect(order).toEqual(['Site', 'ev-block ev-html', 'Totals', 'Hours by status', 'Other', 'Open jobs', 'Same region', 'ev-block ev-table-block']);
-  });
-
-  it('brings the automatic Related tab back when Meta.tabs names it', async () => {
-    const { host } = await open(`/app/site/${site}`, model => { model.tabs = ['work', 'related']; });
-    expect(tabs(host)).toEqual(['Work', 'Related', 'Overview']);
-  });
-
-  it('opens on its Tab in a side panel, with the side column blocks on the first Tab', async () => {
+  it('shows the same blocks in a side panel', async () => {
     const { host } = await open(`/app/site?open=${site}`, model => { model.open_in = 'panel'; });
     const panel = host.querySelector<HTMLElement>('.ev-panel')!;
-    expect(tabs(panel)).toEqual(['Overview', 'Work']);
+    expect(rows(panel)).toEqual(['Notes', 'Totals', 'Hours by status', 'Open jobs', 'Same region', 'Other']);
     await until(() => expect(panel.querySelector('.ev-html')).not.toBeNull());
-    click(tab(panel, 'Work'));
     await until(() => expect(panel.querySelector('.ev-related[aria-label="Same region"]')).not.toBeNull());
   });
 });
@@ -141,5 +123,25 @@ describe('record layout filters', () => {
     const job = ctx.schema.model('job');
     expect(viewAllHref(ctx, job, [['site', 'eq', site], ['status', 'eq', 'open']])).toBe(`/app/job?f=${JSON.stringify([['site', 'eq', site], ['status', 'in', ['open']]])}`);
     expect(viewAllHref(ctx, job, [['site', 'eq', site], ['nope', 'eq', 1]])).toBeNull();
+  });
+});
+
+describe('a new record with a declared layout', () => {
+  const focusedField = () => document.activeElement?.closest('[data-field]')?.getAttribute('data-field') ?? null;
+
+  it('focuses the first field of the primary area, even when the layout lists another section first', async () => {
+    const otherFirst = (model: any) => {
+      const blocks = model.record_layout.blocks;
+      model.record_layout.blocks = [blocks.find((block: { label?: string }) => block.label === 'Other'), ...blocks.filter((block: { label?: string }) => block.label !== 'Other')];
+    };
+    const { host } = start(routes(otherFirst), '/app/site/new');
+    await until(() => expect(host.querySelector('[data-field="notes"]')).not.toBeNull());
+    await until(() => expect(focusedField()).toBe('title'));
+  });
+
+  it('keeps the form order in the primary area', async () => {
+    const { host } = start(routes(), '/app/site/new');
+    await until(() => expect(host.querySelector('[data-field="title"]')).not.toBeNull());
+    await until(() => expect(focusedField()).toBe('title'));
   });
 });

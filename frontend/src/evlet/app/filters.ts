@@ -138,7 +138,11 @@ export function decode(fields: Map<string, FilterField>, text: string | undefine
   const linkValue = (value: unknown): unknown => typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? legacyRecordId(String(value))
     : Array.isArray(value) ? value.map(linkValue) : value;
   const add = (field: string, op: string, value: unknown) => {
-    if (fields.get(field)?.meta.type === 'link') value = linkValue(value);
+    const type = fields.get(field)?.meta.type;
+    if (type === 'link') value = linkValue(value);
+    // The server's list form, as a workspace shortcut sends it: a Boolean equality is "is yes" or "is no", a Select one "in".
+    if (op === 'eq' && type === 'boolean' && typeof value === 'boolean') { op = value ? 'yes' : 'no'; value = null; }
+    else if (op === 'eq' && type === 'select' && value !== null) { op = 'in'; value = [value]; }
     const row = { id: ++id, field, op, value };
     if (complete(fields, row)) state.rows.push(row);
   };
@@ -242,6 +246,8 @@ export interface FilterPanelOptions {
   onClose: () => void;
   /** The saved filters, usually a preference cell per list. */
   saved: Cell<SavedFilter[]>;
+  /** False opens the panel without moving focus or adding a row (it came back after a record closed). */
+  focus?: boolean;
 }
 
 /**
@@ -250,7 +256,7 @@ export interface FilterPanelOptions {
  * on its own.
  */
 export function FilterPanel(builder: FilterBuilder, links: LinkSource, options: FilterPanelOptions): HTMLElement {
-  const { onClose, saved } = options;
+  const { onClose, saved, focus = true } = options;
   const { state, byKey } = builder;
   const choices: GroupedChoice[] = builder.fields.map(field => ({ value: field.key, label: field.table ? field.meta.label : field.label, group: field.group, hint: humanize(field.meta.type) }));
   const update = (id: number, patch: Partial<FilterRow>) => state.set({ ...state.peek(), rows: state.peek().rows.map(row => row.id === id ? { ...row, ...patch } : row) });
@@ -323,6 +329,7 @@ export function FilterPanel(builder: FilterBuilder, links: LinkSource, options: 
     onClose();
   });
   // Opening starts on the first row's field, or adds a row and opens its field search.
+  if (!focus) return panel;
   if (!state.peek().rows.length) queueMicrotask(add);
   else queueMicrotask(() => panel.querySelector<HTMLElement>('.fb-field')?.focus());
   return panel;

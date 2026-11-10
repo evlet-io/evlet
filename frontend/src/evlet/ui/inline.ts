@@ -4,7 +4,7 @@
 // KeyValueList and FormSection lay InlineValues out for side panels and the Details tab.
 
 import { html, when, type Child } from '../dom';
-import { batch, cell, untrack } from '../reactive';
+import { batch, cell, onCleanup, untrack } from '../reactive';
 import { Button, Icon } from './base';
 import { uid } from './core';
 import { phrase, labeller } from './explain';
@@ -68,6 +68,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
   // Rich text at rest inside the edit button shows its links as text (a link inside a button can't be used).
   const rest = (editable = false) => html`<span class="tx-wrap">${props.display ? props.display(field)
     : displayValue(field, { links: props.links, plainLinks: editable })}</span>`;
+  // A click, or Enter or Space on the value, edits it and opens its picker (Tab only focuses the value).
   const start = () => {
     if (!untrack(() => field.editable.get())) return;
     before = untrack(() => field.value.get());
@@ -75,10 +76,24 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
     conflict.set(false);
     editing.set(true);
     control?.focus();
+    // After the click that started it has finished, so the picker doesn't take that click as one outside it.
+    if (control?.open) { const opening = control; setTimeout(() => { if (control === opening && editing.peek() && opening.element.isConnected) opening.open!(); }); }
+    document.addEventListener('focusin', away, true);
+    document.addEventListener('mousedown', away, true);
+  };
+  // Focus or a press somewhere else (not the field, not its picker) ends the edit, as leaving the input does: a
+  // picker that held the focus closes without the input ever losing it.
+  const away = (event: Event) => {
+    const target = event.target as Element | null;
+    if (!editing.peek() || busy.peek() || !target || !(target instanceof Node) || wrapper.contains(target) || target.closest?.('.pop')) return;
+    if (textual) { if (control?.commit()) void finish(false); }
+    else void finish(false);
   };
   // Back to rest. Focus returns to the value only after Enter or Esc; when the user left the
   // field (Tab, a click elsewhere) focus stays where they sent it.
   const stop = (focus: boolean) => {
+    document.removeEventListener('focusin', away, true);
+    document.removeEventListener('mousedown', away, true);
     editing.set(false);
     if (focus) wrapper.querySelector<HTMLElement>('.fval')?.focus();
   };
@@ -146,6 +161,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
       () => Button({ label: 'Reload', icon: 'rotate-ccw', size: 'small', onClick: () => { void reload(); } }))}</div>`;
   };
 
+  onCleanup(() => { document.removeEventListener('focusin', away, true); document.removeEventListener('mousedown', away, true); });
   const wrapper = html`<div class="iv" data-field=${meta.name}
     on:keydown=${(event: KeyboardEvent) => {
       if (!editing.peek()) return;
@@ -182,20 +198,25 @@ export function KeyValueList(items: Array<FieldLike | { label: string; field: Fi
   })}</dl>` as HTMLElement;
 }
 
+/** Fields as labelled InlineValues in a grid (two columns, or as many as the grid's CSS gives); long text spans the row. */
+export function FieldGrid(fields: FieldLike[], options: { save?: Save; links?: LinkSource | null; flow?: Flow } = {}): HTMLElement | null {
+  const wide = (field: FieldLike) => Boolean(field.meta.wide ?? field.meta.type === 'longtext');
+  const cells = fields.map(field => {
+    const id = uid('ff');
+    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
+      <label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
+      <div class="ff-v">${InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</div></div>` as Node;
+  });
+  return flowGrid(cells.map((node, index) => ({ node, wide: wide(fields[index]) })), options.flow);
+}
+
 /** A titled group of fields in two columns; long text spans both. */
 export function FormSection(props: { title: string; note?: string; fields: FieldLike[]; save?: Save; links?: LinkSource | null; extra?: Child;
   /** rows (default): across then down; columns: down the left column, then the right. */
   flow?: Flow;
   /** A collapsible form section (FoldSection): its form's Folds, how it starts and its place in the form. */
   fold?: { folds: Folds; collapsible: boolean; collapsed: FoldStart; index: number } }): HTMLElement {
-  const wide = (field: FieldLike) => Boolean(field.meta.wide ?? field.meta.type === 'longtext');
-  const cells = props.fields.map(field => {
-    const id = uid('ff');
-    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
-      <label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
-      <div class="ff-v">${InlineValue({ field, save: props.save, labelledBy: id, links: props.links })}</div></div>` as Node;
-  });
-  const grid = flowGrid(cells.map((node, index) => ({ node, wide: wide(props.fields[index]) })), props.flow);
+  const grid = FieldGrid(props.fields, props);
   if (props.fold) {
     return FoldSection({ title: props.title, note: props.note, fields: props.fields, folds: props.fold.folds, collapsible: props.fold.collapsible,
       collapsed: props.fold.collapsed, index: props.fold.index, body: [grid, props.extra ?? null] });

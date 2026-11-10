@@ -156,6 +156,10 @@ class ModelType(type):
             sources.update(getattr(base, '__sources__', {}))
         # Meta.revisable = True: the engine adds `revises`, a Reference to the record a revision replaced.
         meta = namespace['Meta'] if 'Meta' in namespace else next((base.Meta for base in bases if hasattr(base, 'Meta')), None)
+        # Record pages have no tabs since 0.4: the old options fail here, with where to go instead.
+        if 'Meta' in namespace:
+            from .ui.metadata import refuse_removed
+            refuse_removed(name, namespace['Meta'])
         revisable = getattr(meta, 'revisable', False)
         if revisable not in (True, False):
             raise ValueError(f'{name}: Meta.revisable is True or False')
@@ -454,11 +458,9 @@ class Registry:
         for model in models:
             for field in model.__declared_fields__.values():
                 check_currency_source(model, field)
-        from .ui.metadata import check_tabs, tab_names, view_for
+        from .ui.metadata import view_for
         for model in models:
-            view = view_for(model)
-            tables = [child.name for child in self.children if child.parent is model]
-            check_tabs(tables, view['tabs'], view['default_tab'], f'{model.__name__}.Meta.tabs', tab_names(model))
+            view_for(model)
         self.models = MappingProxyType(registered)
         self.resources = MappingProxyType(resources)
         for model in models:
@@ -497,7 +499,7 @@ class Registry:
         # Cards at the top of a compact record page: derived fields and per-record measures (evlet/meaning.py).
         from .meaning import cards_for
         self.cards = MappingProxyType(cards_for(self, models, child_models))
-        # Record layouts with Tabs, Related, Html, Chart or Table blocks (Meta.layout, evlet/ui/metadata.py).
+        # Record layouts with Main, Related, Html, Chart or Table blocks (Meta.layout, evlet/ui/metadata.py).
         from .ui.metadata import compile_layouts
         self.layouts = MappingProxyType(compile_layouts(self))
         # Rows documents post to other models (Meta.effects); the targets' rows are read only.

@@ -26,7 +26,7 @@ export function TasksPage(ctx: AppContext, status: Cell<EvaStatus | null>): HTML
     try { await eva.changeTask(task.id, { active }); toast(active ? 'Resumed' : 'Paused'); await load(); } catch (failure) { toast(errorText(failure), { icon: 'info' }); }
   };
 
-  return html`<div class="page eva-tasks">
+  return html`<div class="page eva-tasks">${ctx.crumbBar?.()}
     <div class="ph">${html`<span class="eva-mark lg">${Icon('clock')}</span>`}<h1>Scheduled tasks</h1>
       <span class="count">${() => `${tasks.get()?.length ?? 0} of ${limit.get()}`}</span><span class="grow"></span>
       <div class="ph-actions">${Button({ label: 'Chats', icon: 'message-square', onClick: () => void ctx.router.go('eva', {}) })}

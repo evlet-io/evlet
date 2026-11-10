@@ -14,18 +14,21 @@ const routes = (record: Recorded = f.draft): Route[] => [
 
 describe('document lifecycle contract', () => {
   it('confirms with the current ETag and updates state, revision and permitted actions', async () => {
-    const { host, sent } = start([...routes(), ['POST', /\/api\/order\/0000000000001\/confirm$/, f.confirmed]], '/app/order/0000000000001?tab=details');
+    const { host, sent } = start([...routes(), ['POST', /\/api\/order\/0000000000001\/confirm$/, f.confirmed]], '/app/order/0000000000001');
     await until(() => expect(byText(host, '.doc-head button', 'Confirm')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Confirm'));
     await until(() => expect(text(host)).toContain('Confirmed · Revision 1'));
     expect(requests(sent, 'POST', /\/confirm$/)[0].headers['if-match']).toBe(f.draft.etag);
     expect(byText(host, '.doc-head button', 'Cancel')).not.toBeNull();
     expect(byText(host, '.doc-head button', 'Confirm')).toBeNull();
-    expect(byText(host, '[role="tab"]', 'Revisions')).not.toBeNull();
+    // Revisions is a "more information" row of the record page.
+    expect(host.querySelector('.ev-more-row[data-section="Revisions"]')).not.toBeNull();
   });
 
   it('shows immutable snapshots and parent/child additions, removals and edits', async () => {
-    const { host, sent } = start(routes(f.reconfirmed), '/app/order/0000000000001?tab=revisions');
+    const { host, sent } = start(routes(f.reconfirmed), '/app/order/0000000000001');
+    await until(() => expect(host.querySelector('.ev-more-row[data-section="Revisions"] .ev-more-toggle')).not.toBeNull());
+    click(host.querySelector('.ev-more-row[data-section="Revisions"] .ev-more-toggle'));
     await until(() => expect(byText(host, 'button', 'Compare revisions')).not.toBeNull());
     await until(() => expect(byText(host, 'button', 'Compare revisions')?.hasAttribute('disabled')).toBe(false));
     click(byText(host, 'button', 'Compare revisions'));

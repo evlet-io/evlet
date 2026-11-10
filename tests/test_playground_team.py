@@ -83,13 +83,12 @@ def test_the_employee_record_layout_lists_and_charts_the_team_each_viewer_may_re
     accounts = seed_team(secured, PASSWORD)
     manager, outsider = client(secured, 'manager'), client(secured, 'outsider')
     entry = next(item for item in manager('GET', '/api/schema')[1]['models'] if item['name'] == 'employee')
-    tabs = entry['record_layout']['tabs']
-    assert [tab['name'] for tab in tabs] == ['profile', 'team']
-    assert [block['kind'] for block in tabs[0]['blocks']] == ['section', 'html', 'table', 'table']
-    assert [block['kind'] for block in tabs[1]['blocks']] == ['chart', 'chart', 'related', 'related']
-    # Nothing brings the automatic Related tab or side block back (the record page leaves them out).
-    assert 'related' not in entry['tabs'] and 'side_blocks' not in entry
-    reports, same = tabs[1]['blocks'][2], tabs[1]['blocks'][3]
+    blocks = entry['record_layout']['blocks']
+    assert [block['kind'] for block in blocks] == ['section', 'table', 'table', 'html', 'chart', 'chart', 'related', 'related']
+    assert blocks[0]['main'] and blocks[1]['main'] and blocks[2]['main']
+    # Nothing brings the automatic Related rows or side block back (the record page leaves them out).
+    assert 'side_blocks' not in entry
+    reports, same = blocks[6], blocks[7]
 
     def listed(c, block, record, department=None):
         filters = [[block['link'], 'eq', record]] + [[field, op, department] for field, op, _ in block['filters']]

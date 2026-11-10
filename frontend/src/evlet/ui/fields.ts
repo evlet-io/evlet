@@ -40,6 +40,9 @@ export interface FieldLike {
   readonly result?: Readable<Outcome>;
   readonly calculated: boolean;
   readonly editable: Readable<boolean>;
+  /** The whole record can't change now (its state locks it, or the role can't write it). The banner or header says
+   * so once, so the field shows no lock of its own; a field read only while the record is editable still does. */
+  readonly recordLocked?: Readable<boolean>;
   set(value: unknown): void;
 }
 
@@ -237,6 +240,15 @@ export function currencyPlaces(field: FieldLike, links: LinkSource | null = defa
   return () => currencyDecimals(code());
 }
 
+/** A Currency field's schema with the code its amount is in fixed (from its currency source), so text formatting
+ * (kinds.ts) shows that code at its decimals. Other fields' schema as it is. */
+export function moneyMeta(field: FieldLike, links: LinkSource | null = defaultLinks): () => FieldSchema {
+  const meta = field.meta;
+  if (meta.type !== 'currency') return () => meta;
+  const code = currencyCodeFor(field, links);
+  return () => ({ ...meta, currency: code() ?? undefined, currency_source: undefined });
+}
+
 /** The currency code of a Currency field for one record's values (a list row, say): see currencyFor. */
 export function currencyIn(meta: FieldSchema, value: (name: string) => unknown, links: LinkSource | null = defaultLinks): string {
   return currencyCodeIn(meta, value, links) ?? currencyOf(meta);
@@ -326,7 +338,7 @@ export function FieldHints(field: FieldLike): Node[] {
       return hint;
     }));
   }
-  hints.push(when(() => field.rules.get().locked || meta.read_only, () => {
+  hints.push(when(() => (field.rules.get().locked || meta.read_only) && !field.recordLocked?.get(), () => {
     const hint = html`<span class="ff-hint" tabindex="-1">${Icon('lock', { size: 'xs' })}${meta.read_only ? 'read only' : 'locked'}</span>` as HTMLElement;
     tooltip(hint, meta.locked_when && !meta.read_only ? `Locked when ${phrase(meta.locked_when, label)}` : meta.read_only ? 'This value can’t be changed here' : 'Locked');
     return hint;
@@ -357,6 +369,9 @@ export interface Control {
   focus(): void;
   /** Start editing with typed text (a Link control opens its search with it). */
   type?(text: string): void;
+  /** Open the control's picker (a Link search, a Select list, a date, date-time or time picker), for a click or
+   * Enter that starts editing. Plain text and number inputs have none. */
+  open?(): void;
 }
 
 // Two date-times that name the same moment (the server keeps microseconds, typed text has minutes).
@@ -481,7 +496,9 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
     element = html`<div class="in-affix" class:in-pick=${Boolean(picker)}>${before}${input}${after}${copy}${picker}</div>` as HTMLElement;
     picker?.attach(element);
   }
-  return { element, commit, focus: () => { input.focus(); input.select?.(); } };
+  // A click or Enter that starts editing opens a date, date-time or time picker; a duration is typed like a number.
+  const open = picker && kind.picker !== 'duration' ? () => picker.openPanel() : undefined;
+  return { element, commit, focus: () => { input.focus(); input.select?.(); }, open };
 }
 
 // ---------- pickers ----------
@@ -534,7 +551,8 @@ function PickerButton(field: FieldLike, input: HTMLInputElement, picker: 'date' 
     if (panel.querySelector('.cal-day')) focusCalendar(panel); else panel.querySelector<HTMLElement>('[role="spinbutton"],button')?.focus();
   };
   const button = html`<button type="button" class="in-pick-btn" tabindex="-1" aria-label=${`Choose ${meta.label.toLowerCase()}`}
-    disabled=${() => !field.editable.get()} on:click=${() => { if (close) close(); else { open(); input.focus(); } }}>${Icon(picker === 'date' || picker === 'datetime' ? 'calendar' : 'clock', { size: 'sm' })}</button>` as HTMLButtonElement & { attach(wrapper: HTMLElement): void };
+    disabled=${() => !field.editable.get()} on:click=${() => { if (close) close(); else { open(); input.focus(); } }}>${Icon(picker === 'date' || picker === 'datetime' ? 'calendar' : 'clock', { size: 'sm' })}</button>` as HTMLButtonElement & { attach(wrapper: HTMLElement): void; openPanel(): void };
+  button.openPanel = () => open();
   input.setAttribute('aria-haspopup', 'dialog');
   input.setAttribute('aria-expanded', 'false');
   input.addEventListener('click', () => open());
@@ -574,7 +592,7 @@ function SelectControl(field: FieldLike, id: string, options: ControlOptions): C
     choices: () => [...choices.map(value => ({ value, label: humanize(value) })),
       ...retired.filter(value => value === current()).map(value => ({ value, label: `${humanize(value)} (retired)`, disabled: true }))],
     onChange: value => { if (writeValue(field, value)) options.onCommit?.(); } });
-  return { element: button, commit: () => true, focus: () => button.focus(), type: text => button.open(text) };
+  return { element: button, commit: () => true, focus: () => button.focus(), type: text => button.open(text), open: () => button.open() };
 }
 
 // A Link: the chosen record's mark and title; a popover searches records of the target model.
@@ -597,7 +615,8 @@ function LinkControl(field: FieldLike, id: string, options: ControlOptions): Con
       event.preventDefault(); event.stopPropagation(); open(event.key);
     }
   });
-  return { element: button, commit: () => true, focus: () => button.focus(), type: text => { if (field.editable.peek()) open(text); } };
+  return { element: button, commit: () => true, focus: () => button.focus(), type: text => { if (field.editable.peek()) open(text); },
+    open: () => { if (field.editable.peek()) open(); } };
 }
 
 function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option: LinkOption | null) => void, typed = ''): Node {

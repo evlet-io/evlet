@@ -55,6 +55,8 @@ export function stopAll() {
   running.splice(0).forEach(stop => stop());
   document.body.innerHTML = '';
   delete document.documentElement.dataset.theme;
+  // The sidebar's workspace is kept per browser tab: each test opens as a fresh tab.
+  try { sessionStorage.clear(); } catch { /* no storage */ }
 }
 
 /** Wait until the assertion passes (requests and timers settle). */

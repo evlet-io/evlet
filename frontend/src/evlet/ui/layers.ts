@@ -2,13 +2,16 @@
 //
 // Each layer renders in its own scope on document.body and is removed, with its effects and
 // listeners, when it closes. Esc closes the top layer; dialogs keep focus inside, focus their
-// first field and give focus back to what opened them. No browser dialogs are used.
+// first field (or, with no field, their main action) and give focus back to what opened them.
+// In a dialog the arrow keys move between the footer's actions, Mod+S runs the main action and
+// Mod+Shift+D cancels (docs/ui.md#keyboard-shortcuts). No browser dialogs are used.
 
 import { html, type Child } from '../dom';
 import { cell, runWithOwner, scope } from '../reactive';
 import { Button, Icon, type ButtonProps } from './base';
-import { focusables, read, tint, trapFocus, uid, type Prop, type Tint } from './core';
+import { focusables, keyboardFirst, read, tint, trapFocus, uid, type Prop, type Tint } from './core';
 import { hideTip } from './tooltip';
+import { commitTyped, keyMatches } from './shortcuts';
 
 // Render into a fresh root scope (not owned by whatever opened the layer).
 function layer(render: (dispose: () => void) => Node): { node: Node; dispose: () => void } {
@@ -26,8 +29,9 @@ export interface PopoverOptions {
   /** role of the panel: menu (default) or dialog. */
   role?: 'menu' | 'dialog';
   label?: string;
-  /** Align the panel's left edge with the anchor (auto picks the side that fits). */
-  align?: 'auto' | 'left';
+  /** Align the panel's left edge with the anchor (auto picks the side that fits), or place it beside
+   * the anchor on its right, top edges level (side); side falls back to below when it does not fit. */
+  align?: 'auto' | 'left' | 'side';
   onClose?: () => void;
 }
 
@@ -87,8 +91,15 @@ export function openPopover(anchor: HTMLElement, render: (close: () => void) => 
   return () => close(true);
 }
 
-function place(panel: HTMLElement, anchor: Element, align: 'auto' | 'left') {
+function place(panel: HTMLElement, anchor: Element, align: 'auto' | 'left' | 'side') {
   const box = anchor.getBoundingClientRect(), width = panel.offsetWidth, height = panel.offsetHeight;
+  panel.classList.toggle('pop-side', false);
+  if (align === 'side' && box.right + 8 + width <= window.innerWidth - 12) {
+    panel.classList.add('pop-side');
+    panel.style.left = `${box.right + 8}px`;
+    panel.style.top = `${Math.max(12, Math.min(box.top, window.innerHeight - height - 12))}px`;
+    return;
+  }
   let left = align === 'left' || box.left + width < window.innerWidth - 12 ? box.left : box.right - width;
   left = Math.max(12, Math.min(left, window.innerWidth - width - 12));
   let top = box.bottom + 6;
@@ -137,6 +148,17 @@ export function MenuButton(props: ButtonProps & { items: MenuItem[] | (() => Men
   return button;
 }
 
+/**
+ * A main button with a chevron beside it that opens a menu of the alternatives: "Resume" with Complete and
+ * Cancel behind the chevron. The two halves read as one button; without alternatives there is no chevron.
+ */
+export function SplitButton(props: { main: HTMLButtonElement; items: MenuItem[] | (() => MenuItem[]); menuLabel: string; variant?: ButtonProps['variant'] }): HTMLElement {
+  const count = () => (typeof props.items === 'function' ? props.items() : props.items).length;
+  props.main.classList.add('split-main');
+  const more = count() ? MenuButton({ icon: 'chevron-down', variant: props.variant ?? 'primary', tip: props.menuLabel, ariaLabel: props.menuLabel, menuLabel: props.menuLabel, items: props.items, className: 'split-more' }) : null;
+  return html`<div class="btn-split" class:solo=${!more}>${props.main}${more}</div>` as HTMLElement;
+}
+
 // ---------- dialogs ----------
 
 export interface ModalOptions {
@@ -145,7 +167,7 @@ export interface ModalOptions {
   tint?: Tint;
   body: (close: () => void) => Child;
   footer?: (close: () => void) => Child;
-  /** Cmd or Ctrl Enter runs this (save the form). */
+  /** Cmd or Ctrl Enter, and Mod+S, run this (save the form). Without it Mod+S presses the footer's main action. */
   onSubmit?: () => void;
   onClose?: () => void;
   className?: string;
@@ -178,8 +200,17 @@ function dialog(kind: 'modal' | 'drawer', options: ModalOptions): () => void {
   // Closing by Esc, the scrim or the close button asks first when the layer has something to keep.
   const dismiss = () => { if (options.confirmClose?.() !== false) close(); };
   const keys = (event: KeyboardEvent) => {
-    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); dismiss(); return; }
+    if (event.key === 'Escape' || keyMatches(event, 'Mod+Shift+D')) { event.preventDefault(); event.stopPropagation(); if (!event.repeat) dismiss(); return; }
     if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && options.onSubmit) { event.preventDefault(); options.onSubmit(); return; }
+    // Mod+S is the main action, never the browser's Save Page. A held key does not press it again.
+    if (keyMatches(event, 'Mod+S')) {
+      event.preventDefault(); event.stopPropagation();
+      if (event.repeat) return;
+      commitTyped();
+      if (options.onSubmit) options.onSubmit(); else primaryAction(panel)?.click();
+      return;
+    }
+    if (moveBetweenActions(panel, event)) return;
     trapFocus(panel, event);
   };
   const head = (closeLabel: string) => html`<div class=${kind === 'modal' ? 'modal-h' : 'drawer-h'}>
@@ -201,11 +232,38 @@ function dialog(kind: 'modal' | 'drawer', options: ModalOptions): () => void {
     ?? (nodes.find(node => node instanceof HTMLElement && node.classList.contains('modal-wrap')) as HTMLElement).querySelector<HTMLElement>('[role="dialog"]')!;
   stack.push(close);
   layersOpen.set(stack.length);
-  // Focus the first field, else the first control, else the dialog.
+  // Focus the first field; a dialog without one (a confirm) focuses its main action, so Enter answers it; else the
+  // first control, else the dialog. On a touch device the dialog itself, so the on-screen keyboard does not open
+  // before the person picks a field.
   const body = panel.querySelector('.modal-b,.drawer-b')!;
-  const first = body.querySelector<HTMLElement>('input:not([disabled]),select:not([disabled]),textarea:not([disabled])') ?? focusables(body)[0] ?? panel;
-  first.focus();
+  const first = !keyboardFirst() ? panel
+    : body.querySelector<HTMLElement>('input:not([disabled]):not([type="hidden"]),select:not([disabled]),textarea:not([disabled]),[contenteditable="true"]')
+      ?? primaryAction(panel) ?? focusables(body)[0] ?? panel;
+  // The main action shows its focus ring even when a shortcut (a key with ⌘ or Ctrl) or a click opened the dialog.
+  first.focus(first === primaryAction(panel) ? { focusVisible: true } as FocusOptions : undefined);
   return close;
+}
+
+/** The footer's enabled buttons, in order. */
+const footerActions = (panel: HTMLElement) =>
+  [...panel.querySelectorAll<HTMLButtonElement>(':scope > .modal-f button:not([disabled]), :scope > .drawer-f button:not([disabled])')].filter(button => !button.closest('[hidden]'));
+
+/** A dialog's main action: DialogFooter's submit, else the footer's last primary, danger or success button. */
+export function primaryAction(panel: HTMLElement): HTMLButtonElement | null {
+  const actions = footerActions(panel);
+  return actions.find(button => button.dataset.primary !== undefined)
+    ?? actions.filter(button => button.matches('.primary, .danger, .success')).pop() ?? null;
+}
+
+// The arrow keys move between the footer's actions, wrapping, while one of them has the focus; Enter presses it.
+function moveBetweenActions(panel: HTMLElement, event: KeyboardEvent): boolean {
+  const step = ({ ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 } as Record<string, number>)[event.key];
+  if (!step || event.altKey || event.metaKey || event.ctrlKey || event.shiftKey) return false;
+  const actions = footerActions(panel), at = actions.indexOf(document.activeElement as HTMLButtonElement);
+  if (at < 0) return false;
+  event.preventDefault();
+  actions[(at + step + actions.length) % actions.length].focus();
+  return true;
 }
 
 /** Centred dialog with a header, body and footer. Esc and the scrim close it. Returns close. */
@@ -260,7 +318,10 @@ export async function copyText(text: string, what = text) {
   catch { toast(`Could not copy ${what}`, { icon: 'info' }); }
 }
 
-/** A dialog's standard footer: a note on the left, Cancel and the main action on the right. */
+/** A dialog's standard footer: a note on the left, Cancel and the main action on the right. The main action
+ * is what a dialog without a field focuses and what Mod+S presses. */
 export function DialogFooter(props: { note?: Prop<string>; cancel?: () => void; submit: ButtonProps }): Node {
-  return html`<span class="grow">${props.note === undefined ? null : () => read(props.note!)}</span>${props.cancel ? Button({ label: 'Cancel', variant: 'ghost', onClick: props.cancel }) : null}${Button({ variant: 'primary', ...props.submit })}`;
+  const submit = Button({ variant: 'primary', ...props.submit });
+  submit.dataset.primary = '';
+  return html`<span class="grow">${props.note === undefined ? null : () => read(props.note!)}</span>${props.cancel ? Button({ label: 'Cancel', variant: 'ghost', onClick: props.cancel }) : null}${submit}`;
 }

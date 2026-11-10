@@ -427,7 +427,7 @@ list opens the record in its side panel ([ui.md](ui.md#what-a-side-panel-shows))
 layout entry; it must be nonempty text. A layout can also start with `Main(fields, *tables)` for a
 compact record page ([ui.md](ui.md#compact-record-page)).
 
-### Field order and record tabs
+### Field order
 
 `Section(..., flow="rows" | "columns")` sets how a section's fields are ordered on screen and
 for Tab. `"rows"`, the default and the only order for a plain group, fills across, then down.
@@ -436,19 +436,8 @@ for Tab. `"rows"`, the default and the only order for a plain group, fills acros
 browser puts fields in the DOM in this order, so Tab, screen readers and a phone's single column all
 follow it. Each UI schema layout entry carries `flow`.
 
-`Meta.tabs` orders the record page's tabs and `Meta.default_tab` names the one a record opens on:
-
-```python
-class Meta:
-    tabs = ("details", "lines", "activity", "related")
-    default_tab = "details"
-```
-
-Names are `activity`, `details`, `revisions`, `related`, `postings` and the model's Table fields.
-Tabs left out follow in their usual order, and a tab a record doesn't have (Activity without a
-journal) is skipped. An unknown name, a name listed twice, or a `default_tab` missing from `tabs`
-fails registration naming the model. The schema adds `tabs` (`[]` without one) and `default_tab`
-(`null`). Controls can change both per site. The UI schema retains version 1 with additive layout,
+Record pages have no tabs since 0.4 ([ui.md](ui.md#compact-record-page)): `Tab`, `Meta.tabs` and
+`Meta.default_tab` fail when the model is defined, with a message pointing to `Main` and `Section`. The UI schema retains version 1 with additive layout,
 permissions, actions, children, child_only, and attachments metadata. Presentation
 changes do not alter migration checksums.
 

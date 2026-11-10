@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { html } from '../dom';
 import { cell } from '../reactive';
 import { localField } from '../ui/fields';
-import { FoldSection, Folds, foldSummary, revealField, revealFirstError } from '../ui/fold';
+import { FoldSection, Folds, foldSummary, isBlank, revealField, revealFirstError } from '../ui/fold';
 import { FormSection } from '../ui/inline';
 import { Prefs } from '../app/prefs';
 import { cleanup, render } from './ui-helpers';
@@ -59,6 +59,22 @@ describe('FoldSection', () => {
     list[0].set('');
     expect(summary.textContent).toBe('Required missing');
     expect(foldSummary(list)).toBe('Required missing');
+  });
+
+  it('counts a number still at a zero default as empty, in the summary and for collapsed="empty"', () => {
+    const fee = () => localField({ name: 'fee', type: 'decimal', label: 'Fee', default: '0.00' }, '0.00');
+    const count = () => localField({ name: 'count', type: 'integer', label: 'Count' }, 0);
+    expect(isBlank(fee())).toBe(true);
+    expect(isBlank(count())).toBe(true);
+    const typed = localField({ name: 'fee', type: 'decimal', label: 'Fee', default: '5.00' }, '0.00');
+    expect(isBlank(typed)).toBe(false);
+    expect(isBlank(localField({ name: 'name', type: 'text', label: 'Name' }, '0'))).toBe(false);
+    const list = [fee(), count()];
+    expect(foldSummary(list)).toBe('0 of 2 filled');
+    const host = render(() => section(new Folds(saved(), false, false), list, { collapsed: 'empty' }));
+    expect(host.querySelector<HTMLButtonElement>('.fs-toggle')!.getAttribute('aria-expanded')).toBe('false');
+    list[0].set('12.50');
+    expect(foldSummary(list)).toBe('1 of 2 filled');
   });
 
   it('counts errors in a badge and opens when a field inside gets one', () => {

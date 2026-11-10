@@ -33,9 +33,11 @@ const routes = (panel?: PanelSchema): Route[] => [
 ];
 
 const panel = (host: Element) => host.querySelector<HTMLElement>('.ev-panel')!;
-const tabs = (root: Element) => [...root.querySelectorAll('.doc-tabs [role="tab"]')].map(tab => text(tab).replace(/\d+$/, ''));
-const sections = (root: Element) => [...root.querySelectorAll('section[aria-label]')].map(node => node.getAttribute('aria-label'))
-  .filter(label => label === 'Invoice' || label === 'Amounts');
+/** The record's parts besides its sections: the primary area's tables, then the "more information" rows that are not sections. */
+const rows = (root: Element) => [...root.querySelectorAll('.ev-more-row')].map(node => node.getAttribute('data-section'));
+const mainTables = (root: Element) => [...root.querySelectorAll('.ev-cmp-main .ev-cmp-th h3')].map(text);
+/** The layout's sections shown: Invoice (the primary area) when it has fields, and Amounts as a row. */
+const sections = (root: Element) => [...(root.querySelector('.ev-cmp-main [data-field]') ? ['Invoice'] : []), ...rows(root).filter(title => title === 'Amounts')];
 const blocks = (root: Element) => [...root.querySelectorAll('.side-sec h4')].map(node => text(node));
 const field = (root: Element, name: string) => root.querySelector(`[data-field="${name}"]`);
 
@@ -48,43 +50,47 @@ async function openDraft(panelSchema?: PanelSchema) {
 describe('what a record shows in a side panel', () => {
   it('shows everything without model.panel, and no full page note', async () => {
     const host = await openDraft();
-    expect(tabs(panel(host))).toEqual(['Activity', 'Details', 'Lines', 'Related', 'Postings']);
-    click(byText(panel(host), '[role="tab"]', 'Details'));
-    await until(() => expect(sections(panel(host))).toEqual(['Invoice', 'Amounts']));
+    await until(() => expect(mainTables(panel(host))).toEqual(['Lines']));
+    expect(rows(panel(host))).toEqual(['Amounts', 'Related', 'Postings']);
+    expect(sections(panel(host))).toEqual(['Invoice', 'Amounts']);
+    await until(() => expect(blocks(panel(host))).toEqual(['Attachments', 'Activity']));
     expect(panel(host).querySelector('.ev-panel-more')).toBeNull();
   });
 
-  it('leaves out hidden sections, fields, tabs, blocks and the summary, and offers the full page', async () => {
+  it('leaves out hidden sections, fields, parts, blocks and the summary, and offers the full page', async () => {
     const host = await openDraft({ sections: ['Amounts'], fields: ['due_on'], tabs: ['activity', 'lines', 'postings'], blocks: ['info', 'summary'] });
-    expect(tabs(panel(host))).toEqual(['Details', 'Related']);
+    await until(() => expect(rows(panel(host))).toEqual(['Related']));
+    expect(mainTables(panel(host))).toEqual([]);
     expect(panel(host).querySelector('.sum')).toBeNull();
-    await until(() => expect(sections(panel(host))).toEqual(['Invoice']));
+    expect(sections(panel(host))).toEqual(['Invoice']);
     expect(field(panel(host), 'customer')).not.toBeNull();
     expect(field(panel(host), 'due_on')).toBeNull();
     expect(field(panel(host), 'total')).toBeNull();
-    expect(blocks(panel(host))).not.toContain('Record info');
+    expect(blocks(panel(host))).not.toContain('Activity');
+    expect(panel(host).querySelector('.ev-rec-foot')).toBeNull();
     const note = panel(host).querySelector('.ev-panel-more')!;
     expect(text(note)).toContain('Some parts of this invoice show only on the full page.');
     // The full page ignores model.panel.
     click(byText(note, 'button', 'Open full page'));
     await until(() => expect(location.pathname).toBe(`/app/invoice/${three}`));
-    await until(() => expect(tabs(host)).toEqual(['Activity', 'Details', 'Lines', 'Related', 'Postings']));
-    click(byText(host, '[role="tab"]', 'Details'));
-    await until(() => expect(sections(host)).toEqual(['Invoice', 'Amounts']));
+    await until(() => expect(rows(host)).toEqual(['Amounts', 'Related', 'Postings']));
+    expect(mainTables(host)).toEqual(['Lines']);
+    expect(sections(host)).toEqual(['Invoice', 'Amounts']);
     expect(field(host, 'due_on')).not.toBeNull();
   });
 
-  it('follows the order Meta.panel names tabs in, opening on the first one shown', async () => {
-    // As view_for writes Meta.panel = ("lines", "customer", "related"): only those, Lines first.
+  it('keeps only what Meta.panel names', async () => {
+    // As view_for writes Meta.panel = ("lines", "customer", "related").
     const host = await openDraft({ fields: ['due_on', 'number', 'posting_date', 'status'], sections: ['Amounts'], tabs: ['activity', 'postings', 'revisions'],
       blocks: ['files', 'info', 'key_fields', 'summary'], order: ['lines', 'details', 'related'] });
-    expect(tabs(panel(host))).toEqual(['Lines', 'Details', 'Related']);
-    expect(panel(host).querySelector('.doc-tabs [aria-selected="true"]') && text(panel(host).querySelector('.doc-tabs [aria-selected="true"]'))).toMatch(/^Lines/);
-    click(byText(panel(host), '[role="tab"]', 'Details'));
-    await until(() => expect(sections(panel(host))).toEqual(['Invoice']));
+    await until(() => expect(mainTables(panel(host))).toEqual(['Lines']));
+    expect(rows(panel(host))).toEqual(['Related']);
+    expect(sections(panel(host))).toEqual(['Invoice']);
     expect(field(panel(host), 'customer')).not.toBeNull();
     expect(field(panel(host), 'posting_date')).toBeNull();
+    // The side column keeps only what Meta.panel leaves: no Attachments, Activity or Record info.
     expect(blocks(panel(host))).toEqual([]);
+    expect(panel(host).querySelector('.ev-rec-foot')).toBeNull();
   });
 
   it('always shows a required field that is empty on a new record', async () => {

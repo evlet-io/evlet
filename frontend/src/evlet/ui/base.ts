@@ -1,6 +1,6 @@
 // Base and element components: Icon, IconTile, Button, IconButton, Checkbox, Switch,
 // SegmentedControl, Key, Chip, AddChip, CountBadge, StatusPill, Avatar, RecordMark, Divider,
-// ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, Stat, SummaryStrip, LinkButton,
+// ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, StatCard, Sparkline, SummaryStrip, LinkButton,
 // FilterChip, SearchInput.
 //
 // Each is a plain function that returns DOM. Properties are plain values, accessors or cells;
@@ -46,7 +46,7 @@ const built = new Map<string, SVGSVGElement>();
 /** Icon on a soft tinted square, 22 to 44 px. */
 export function IconTile(name: string, options: { tint?: Tint; size?: number } = {}): HTMLElement {
   const size = Math.max(22, Math.min(44, options.size ?? 32));
-  const element = html`<span class="ph-icon b-${tint(options.tint)}" style:width=${`${size}px`} style:height=${`${size}px`} style:border-radius=${`${Math.round(size / 3.6)}px`}>${Icon(name, { size: size >= 32 ? 'lg' : size >= 26 ? 'md' : 'sm' })}</span>` as HTMLElement;
+  const element = html`<span class="ph-icon b-${tint(options.tint)}" style:width=${`${size}px`} style:height=${`${size}px`}>${Icon(name, { size: size >= 32 ? 'lg' : size >= 26 ? 'md' : 'sm' })}</span>` as HTMLElement;
   return element;
 }
 
@@ -237,17 +237,93 @@ export function StateBanner(props: { tone: Prop<BannerTone>; title?: Prop<string
 
 // ---------- stats ----------
 
-export interface StatProps { label: Prop<string>; value: Prop<Child>; note?: Prop<string>; /** Shown muted when the value is empty. */ empty?: string }
-/** Label, value and a short note. The unit of the summary strip. */
-export function Stat(props: StatProps): HTMLElement {
-  const value = props.empty === undefined ? props.value
-    : () => { const current = read(props.value); return current === '' || current === null || current === undefined ? html`<span class="muted ev-unset">${props.empty}</span>` : current; };
-  return html`<div class="sum-t"><span>${props.label}</span><b class="num">${value}</b>${props.note === undefined ? null : html`<em>${props.note}</em>`}</div>` as HTMLElement;
+/** A stat card's accent: neutral (the default) or one of the seven tints. */
+export type StatTone = Tint | 'neutral';
+
+export interface StatProps {
+  label: Prop<string>;
+  /** Text, or a node shown as is (such as a currency symbol image and the amount). */
+  value: Prop<Child>;
+  /** A caption beside the label, such as "Filtered by a rule". */
+  note?: Prop<string>;
+  /** Shown muted when the value is empty. */
+  empty?: string;
+  /** A small icon on a tinted chip in the corner. */
+  icon?: string;
+  /** The accent: colours the icon chip and the trend line. Without an icon (or on a phone, where the chip hides), a tinted dot before the label. */
+  tone?: StatTone;
+  /** Numbers for a small trend line at the right of the card. Nothing shows with fewer than two. */
+  trend?: Prop<readonly number[] | null | undefined>;
+  /** What the trend covers, for its accessible summary, such as "Last 6 months". */
+  trendLabel?: string;
 }
 
-/** Up to four stats in one bordered row. */
+/** A thin number card: a muted label (with an optional caption beside it) over the value, an optional icon chip, accent and trend line. */
+export function StatCard(props: StatProps): HTMLElement {
+  const tone = props.tone && props.tone !== 'neutral' ? tint(props.tone) : null;
+  const value = props.empty === undefined ? props.value
+    : () => { const current = read(props.value); return current === '' || current === null || current === undefined ? html`<span class="muted ev-unset">${props.empty}</span>` : current; };
+  const dot = tone ? html`<i class="stat-dot" aria-hidden="true"></i>` : null;
+  // The value as text, for the card's accessible name and the tooltip of a value cut short.
+  const valueText = () => spokenText(read(props.value));
+  const trend = props.trend === undefined ? null : html`<div class="stat-tr">${() => Sparkline({
+    values: read(props.trend) ?? [], width: 64, height: 24, label: `${read(props.label)} trend${props.trendLabel ? `, ${props.trendLabel}` : ''}` })}</div>`;
+  return html`<div class=${`sum-t stat-card${tone ? ` tone-${tone}` : ''}${props.icon ? ' has-ic' : ''}`} role="group"
+    aria-label=${() => [read(props.label), valueText() || props.empty || '', props.note === undefined ? '' : read(props.note)].filter(Boolean).join(', ')}><span>${dot}${props.label}</span><b class="num" title=${valueText}>${value}</b>${props.note === undefined ? null : html`<em title=${props.note}>${props.note}</em>`}${
+    props.icon ? html`<i class="stat-ic" aria-hidden="true">${Icon(props.icon, { size: 'sm' })}</i>` : null}${trend}</div>` as HTMLElement;
+}
+
+/** The text a value reads as: a string as is, a node's text with each image's alt text in its place. */
+export function spokenText(value: Child): string {
+  if (value === null || value === undefined || typeof value === 'boolean') return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'bigint') return String(value);
+  if (typeof value === 'function') return spokenText(value());
+  if (Array.isArray(value)) return value.map(spokenText).join('').replace(/\s+/g, ' ').trim();
+  if (!(value instanceof Node)) return spokenText(value.get());
+  if (value.nodeType === Node.TEXT_NODE) return value.textContent ?? '';
+  if (value instanceof HTMLImageElement) return value.alt ? ` ${value.alt} ` : '';
+  if (value instanceof Element && value.getAttribute('aria-hidden') === 'true') return '';
+  return [...value.childNodes].map(spokenText).join('').replace(/\s+/g, ' ').trim();
+}
+
+/** The earlier name of StatCard. */
+export const Stat = StatCard;
+
+/** Up to four stat cards in a row that wraps on narrow screens. */
 export function SummaryStrip(stats: StatProps[]): HTMLElement {
-  return html`<div class="sum">${stats.slice(0, 4).map(Stat)}</div>` as HTMLElement;
+  return html`<div class="sum">${stats.slice(0, 4).map(StatCard)}</div>` as HTMLElement;
+}
+
+/** A short spoken summary of a trend: "12 points, from 3 to 9, low 2, high 10". */
+export function trendSummary(values: readonly number[]): string {
+  const number = (value: number) => value.toLocaleString('en-US', { maximumFractionDigits: 2 });
+  return `${values.length} points, from ${number(values[0])} to ${number(values[values.length - 1])}, low ${number(Math.min(...values))}, high ${number(Math.max(...values))}`;
+}
+
+/** A small trend line: a thin line with a light area under it and a dot on the last point, no axes.
+ * Values that are not finite numbers are skipped; with fewer than two left it returns null. */
+export function Sparkline(props: { values: readonly number[]; tone?: StatTone; label?: string; width?: number; height?: number }): SVGSVGElement | null {
+  const values = props.values.map(Number).filter(Number.isFinite);
+  if (values.length < 2) return null;
+  const width = props.width ?? 96, height = props.height ?? 28, pad = 2;
+  const low = Math.min(...values), high = Math.max(...values);
+  const x = (index: number) => +(pad + index * (width - 2 * pad) / (values.length - 1)).toFixed(2);
+  const y = (value: number) => +(high === low ? height / 2 : pad + (height - 2 * pad) * (1 - (value - low) / (high - low))).toFixed(2);
+  const line = values.map((value, index) => `${index ? 'L' : 'M'}${x(index)} ${y(value)}`).join(' ');
+  const svg = document.createElementNS(SVG, 'svg');
+  const tone = props.tone && props.tone !== 'neutral' ? ` c-${tint(props.tone)}` : '';
+  for (const [key, value] of Object.entries({ class: `ev-spark${tone}`, viewBox: `0 0 ${width} ${height}`, width: String(width), height: String(height), role: 'img',
+    'aria-label': `${props.label ? `${props.label}: ` : 'Trend: '}${trendSummary(values)}` })) svg.setAttribute(key, value);
+  const shape = (tag: string, attributes: Record<string, string>) => {
+    const node = document.createElementNS(SVG, tag);
+    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, value);
+    svg.append(node);
+  };
+  shape('path', { class: 'a', d: `${line} L${x(values.length - 1)} ${height} L${x(0)} ${height} Z` });
+  shape('path', { class: 'l', d: line, 'vector-effect': 'non-scaling-stroke' });
+  shape('circle', { class: 'p', cx: String(x(values.length - 1)), cy: String(y(values[values.length - 1])), r: '2' });
+  return svg;
 }
 
 // ---------- list helpers ----------

@@ -231,15 +231,15 @@ sections that always show. A Starts value other than these, or Starts on a secti
 is not stored. Fields and sections move by dragging their grip with a mouse or a finger, or from the keyboard: Space on a
 grip lifts it, the arrow keys move it (across section edges), Space drops it and Escape puts it back, each step
 announced to screen readers. The arrow buttons still work.
-**Record tabs** orders the record page's tabs the same way and chooses **Open records on**. A layout that sets them is
-saved as `{"sections": [...], "tabs": ["details", ...], "default_tab": "details" | null}`; without them it stays the
-plain list of sections. Tab names are the record's own tabs and the model's child tables (`tabs` in each model of
-`GET /api/_controls/state`). The export writes them as `Meta.tabs` and `Meta.default_tab` notes. For a model whose
-`Meta.layout` declares `Tab`s ([record layouts](ui.md#record-layouts)), those tabs replace Details in the list and a
-Table the layout places has no tab of its own. Controls moves fields and sections; the layout's tabs and blocks stay
-as the app declares them, a section keeps its place by title, and a section Controls adds goes last on the first tab.
-**Side panel**: what a record shows when a list opens it in a side panel. Each section, field and tab (Details aside) has
-a panel button, pressed while it shows there; the Side panel card has the summary strip, Files and Record info. A layout
+Record pages have no tabs (0.4): a layout is saved as the plain list of sections, or as `{"sections": [...], "panel":
+{...}}`. A layout saved before 0.4 with a record tab order (`tabs`, `default_tab`) keeps its sections and panel; the tab
+order is dropped, and sending one now is refused. For a model whose `Meta.layout` declares `Main` or blocks
+([record layouts](ui.md#record-layouts)), Controls moves fields and sections; the layout's blocks stay as the app
+declares them, a section keeps its place by title, and a section Controls adds goes last. Each model in
+`GET /api/_controls/state` lists its record parts in `tabs` (Activity, Details, Revisions, its child tables, Related,
+Postings), the names the side panel can hide.
+**Side panel**: what a record shows when a list opens it in a side panel. Each section, field and record part (Details aside) has
+a panel button, pressed while it shows there; the Side panel card has the summary strip, Files and Record info (the record footer). A layout
 that sets this is saved as `{"sections": [...], "panel": {"sections": [...], "fields": [...], "tabs": [...], "blocks": [...]}}`,
 each list naming what the panel hides (`blocks` from `summary`, `key_fields`, `files` and `info`). `panel` replaces the
 app's `panel=False` flags and `Meta.panel` for this instance, keeping the order `Meta.panel` gives; `{}` shows
@@ -762,7 +762,7 @@ records stay there.
 **Privacy.** No Controls route reads a personal mailbox, its messages or its credentials. A
 linked message is a Journal `message` entry on the record ([journal.md](journal.md)), with the
 mailbox owner as the actor and `{"text", "subject", "party", "direction", "source": "mailbox"}`.
-It shows in the record's Activity tab and through `GET /api/{model}/{id}/journal` (add
+It shows in the record's Activity and through `GET /api/{model}/{id}/journal` (add
 `?kind=message` for messages only), only to people who can read that record; API keys and AI
 assistants only within their scope. The entry also keeps the `Email` field that matched; the
 Journal read path leaves the address out (`party` is `null`, the entry `partial`) for readers who
@@ -895,7 +895,7 @@ the person's own app choice only narrow it further.
 
 **Journal.** A record changed through an assistant is journaled with the person as the actor,
 like any of their writes, and the entry names the client: `"via": "Claude"` on the entry
-(`"Local MCP connector"` for `evlet mcp`). The Activity tab shows "Sara changed it via Claude".
+(`"Local MCP connector"` for `evlet mcp`). The record's Activity shows "Sara changed it via Claude".
 The client name is the one the client registered, so it is a label, not proof of identity.
 
 The personal page is `/settings/ai` in the Settings shell (the `MyAIPage` component,

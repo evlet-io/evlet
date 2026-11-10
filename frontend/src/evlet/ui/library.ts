@@ -12,15 +12,15 @@ import { formatMoney } from '../model/format';
 import catalog from './catalog.json';
 import {
   AddChip, Avatar, Button, Checkbox, Chip, CountBadge, Divider, EmptyState, Icon, IconButton, IconTile, InfoNote, Key, LinkButton, ProgressBar,
-  QuickAddInput, RecordMark, ScoreBars, SearchInput, SegmentedControl, Stat, StateBanner, StatusPill, SummaryStrip, Switch,
+  QuickAddInput, RecordMark, ScoreBars, SearchInput, SegmentedControl, Sparkline, StatCard, StateBanner, StatusPill, SummaryStrip, Switch,
 } from './base';
-import { ChildRows, ChildTable } from './childtable';
+import { ChildTable } from './childtable';
 import { SplitView } from './split';
 import { tint, type Tint } from './core';
 import { DocFrame, DocHeader, LockBanner, MoveButton, SideBlock, StatusFlow, Tabs, type Lifecycle } from './doc';
 import { BaseField, displayValue, localField, type FieldLike } from './fields';
 import { FormSection, KeyValueList } from './inline';
-import { DialogFooter, Menu, MenuButton, openDrawer, openModal, openPopover, toast } from './layers';
+import { DialogFooter, Menu, MenuButton, openDrawer, openModal, openPopover, SplitButton, toast } from './layers';
 import { Board, BoardCard, BulkBar, Filters, ListSummary, PageHeader, Toolbar, type ActiveFilter } from './list';
 import { DateRangePanel, rangePresets, rangeText, type DateRange } from './pickers';
 import { DataTable, type Column } from './table';
@@ -45,7 +45,7 @@ export const ENTRIES: Entry[] = (() => {
   return [...withReference.slice(0, dates + 1), range, ...withReference.slice(dates + 1)];
 })();
 
-const WIDE = new Set(['data-table', 'summary-strip', 'tabs', 'toolbar', 'page-header', 'banner']);
+const WIDE = new Set(['data-table', 'summary-strip', 'stat', 'tabs', 'toolbar', 'page-header', 'banner']);
 const stack = (...items: Child[]) => html`<div class="lib-stack">${items}</div>`;
 const row = (...items: Child[]) => html`<div class="lib-row">${items}</div>`;
 
@@ -158,6 +158,8 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     'icon-button': () => row(IconButton({ icon: 'bell', tip: 'Notifications' }), IconButton({ icon: 'panel-left', tip: 'Toggle sidebar', active: cell(true) }), IconButton({ icon: 'copy', tip: 'Copy link' })),
     'menu-button': () => MenuButton({ label: 'New', icon: 'plus', variant: 'primary', items: [{ label: 'Deal', icon: 'handshake', tint: 'blue', hint: 'C', onSelect: () => toast('Opened New deal') },
       { label: 'Lead', icon: 'target', tint: 'teal', onSelect: () => toast('Opened New lead') }, 'separator', { label: 'Contact', icon: 'user-plus', tint: 'violet', onSelect: () => toast('Opened New contact') }] }),
+    'split-button': () => SplitButton({ main: MoveButton({ label: 'Resume', icon: 'play', variant: 'primary', blocked: null, onMove: () => toast('Moved to Active') }), menuLabel: 'Other moves',
+      items: [{ label: 'Complete', icon: 'circle-check', onSelect: () => toast('Moved to Completed') }, { label: 'Cancel', icon: 'circle-x', onSelect: () => toast('Moved to Cancelled') }] }),
     'move-button': () => row(MoveButton({ label: 'Issue', icon: 'send', variant: 'primary', blocked: null, onMove: () => toast('Issued as INV-2026-00042') }),
       MoveButton({ label: 'Mark paid', icon: 'circle-check', blocked: 'Outstanding is AED 25,200. Record the payment first.', onMove: () => {} })),
     'link-button': () => LinkButton({ label: 'All fields', icon: 'chevron-right', onClick: () => toast('Opened Details') }),
@@ -178,11 +180,14 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     'score-bars': () => row(ScoreBars({ score: 22 }), ScoreBars({ score: 56 }), ScoreBars({ score: 88 })),
     divider: () => row(Button({ label: 'Left', variant: 'ghost' }), Divider(), Button({ label: 'Right', variant: 'ghost' })),
     // display
-    stat: () => Stat({ label: 'Outstanding', value: 'AED 25,200', note: 'Due 16-12-2026' }),
+    stat: () => row(StatCard({ label: 'Outstanding', value: 'AED 25,200', note: 'Due 16-12-2026' }),
+      StatCard({ label: 'Pipeline', value: 'AED 1,150,000.00', icon: 'wallet', tone: 'blue', trend: [42, 48, 45, 61, 58, 72, 80], trendLabel: 'last 7 months' }),
+      StatCard({ label: 'Won deals', value: '18', tone: 'green', note: 'Filtered by a rule' })),
+    sparkline: () => row(Sparkline({ values: [3, 5, 4, 8, 6, 9, 12], tone: 'blue', label: 'Deals' }), Sparkline({ values: [9, 7, 8, 5, 6, 3], tone: 'rose', label: 'Overdue' }), Sparkline({ values: [4, 4, 4, 4], tone: 'teal', label: 'Flat' })),
     'summary-strip': onRecord(store => SummaryStrip([{ label: 'Total', value: () => formatMoney(store.field('total').value.get() as string), note: () => `${store.field('line_count').value.get()} lines` },
       { label: 'Issued', value: () => displayDate(store.field('issued').value.get()) }, { label: 'Due', value: () => displayDate(store.field('due').value.get()), note: 'From customer credit days' },
       { label: 'Stage', value: () => String(store.field('stage').value.get() ?? '') }]),
-    () => SummaryStrip([{ label: 'Total', value: 'AED 25,200' }, { label: 'Outstanding', value: 'AED 25,200', note: 'Not paid' }, { label: 'Due', value: '16-12-2026', note: 'In 45 days' }, { label: 'Payments', value: '0' }])),
+    () => SummaryStrip([{ label: 'Total', value: 'AED 25,200', icon: 'wallet', tone: 'blue' }, { label: 'Outstanding', value: 'AED 25,200', note: 'Not paid', icon: 'receipt', tone: 'teal' }, { label: 'Due', value: '16-12-2026', note: 'In 45 days', icon: 'calendar', tone: 'violet' }, { label: 'Payments', value: '0', icon: 'hash', tone: 'amber' }])),
     'kv-list': () => KeyValueList([f.select, f.currency, f.date], { save: () => true }),
     'empty-state': () => EmptyState({ icon: 'circle-check', tint: 'teal', title: 'No tasks', text: 'Add a follow-up so nothing slips.', action: Button({ label: 'Add task', icon: 'plus', size: 'small' }) }),
     banner: () => stack(StateBanner({ tone: 'neutral', title: 'Draft.', text: 'Everything can change. Issuing assigns the number and locks the invoice.' }),
@@ -200,12 +205,12 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     toolbar: () => Toolbar({ left: [SearchInput({ value: cell(''), placeholder: 'Search deals' }), Filters({ filters })], right: [ListSummary([{ label: 'Open', value: '12' }, { label: 'Pipeline', value: 'AED 1.15M' }])] }),
     'split-view': () => {
       const open = cell(true), width = cell(260);
-      return html`<div style="width:100%;height:180px;position:relative;border:1px solid var(--border);border-radius:12px;overflow:hidden">${SplitView({
+      return html`<div style="width:100%;height:180px;position:relative;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden">${SplitView({
         main: html`<div style="padding:12px">${Button({ label: () => open.get() ? 'Close the panel' : 'Open the panel', size: 'small', onClick: () => open.set(!open.peek()) })}</div>`,
         side: () => html`<p class="muted" style="padding:12px">Side panel</p>`, open, width, label: 'Resize the sample panel', minSide: 160, minMain: 120, initial: 260, breakpoint: 360,
       })}</div>`;
     },
-    'doc-frame': () => html`<div style="width:100%;border:1px solid var(--border);border-radius:12px;overflow:hidden">${DocFrame({ tint: 'blue', main: html`<p class="muted">Main column</p>`, side: html`<p class="muted">Side panel</p>` })}</div>`,
+    'doc-frame': () => html`<div style="width:100%;border:1px solid var(--border);border-radius:var(--r-lg);overflow:hidden">${DocFrame({ tint: 'blue', main: html`<p class="muted">Main column</p>`, side: html`<p class="muted">Side panel</p>` })}</div>`,
     'side-block': () => html`<div style="width:300px">${SideBlock({ title: 'Tags', body: row(Chip({ label: 'Hot', icon: 'flame', tone: 'rose' }), AddChip({ label: 'Tag' })) })}</div>`,
     drawer: () => Button({ label: 'Open a drawer', icon: 'panel-right', onClick: () => openDrawer({ title: 'Contact', body: () => KeyValueList([f.email, f.phone, f.tags], { save: () => true }),
       footer: close => Button({ label: 'Open record', variant: 'primary', onClick: () => { close(); toast('Opened the record'); } }) }) }),
@@ -213,17 +218,16 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     popover: () => { const button: HTMLButtonElement = Button({ label: 'Open a menu', icon: 'chevron-down', onClick: () => openPopover(button, close => Menu([{ label: 'Copy link', icon: 'link', onSelect: () => toast('Copied the link') }, { label: 'Delete', icon: 'trash-2', danger: true, onSelect: () => toast('Deleted') }], close)) }); return button; },
     'bulk-bar': () => html`<div class="lib-bulk">${BulkBar({ count: () => selected.get().size, actions: [{ label: 'Assign', icon: 'user', onClick: () => toast('Assigned') }, { label: 'Delete', icon: 'trash-2', onClick: () => toast('Deleted') }], onClear: () => selected.set(new Set()) })}</div>`,
     // sections
-    'doc-header': onRecord(store => DocHeader({ type: 'Order', icon: 'receipt', mark: RecordMark({ name: () => String(store.field('title').value.get() ?? ''), size: 'lg' }), title: store.field('title'),
+    'doc-header': onRecord(store => DocHeader({ type: 'Order', icon: 'receipt', tint: 'blue', title: store.field('title'), status: [StatusPill({ label: 'Draft', tint: 'slate' })],
       meta: [html`<b class="num">${() => formatMoney(store.field('total').value.get() as string)}</b>`, displayValue(store.field('customer')), html`${Icon('calendar', { size: 'xs' })}${() => `Due ${displayDate(store.field('due').value.get())}`}`],
-      actions: [Button({ label: 'Email', icon: 'mail', iconTint: 'blue', hideLabelOnPhone: true }), MoveButton({ label: 'Mark won', icon: 'trophy', variant: 'success', blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null, onMove: () => toast('Moved to Won') }),
+      actions: [Button({ label: 'Email', icon: 'mail', hideLabelOnPhone: true }), SplitButton({ main: MoveButton({ label: 'Mark won', icon: 'circle-check', variant: 'primary', blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null, onMove: () => toast('Moved to Won') }),
+        menuLabel: 'Other moves', items: [{ label: 'Mark lost', icon: 'circle-x', onSelect: () => toast('Moved to Lost') }] }),
         MenuButton({ icon: 'ellipsis', tip: 'More actions', items: [{ label: 'Copy link', icon: 'link', onSelect: () => toast('Copied the link') }] })] }),
       () => DocHeader({ type: 'Deal', icon: 'handshake', mark: RecordMark({ name: 'Al Sahra Trading', size: 'lg' }), title: 'ERP rollout, 3 entities', meta: [html`<b class="num">AED 186,000</b>`, 'Al Sahra Trading'] })),
     'status-flow': () => html`<div style="width:100%">${StatusFlow({ steps: STAGES.slice(0, 5), current: flowState, good: ['won'], onMove: to => { flowState.set(to); toast(`Moved to ${stageOf(to).label}`); },
       blocked: to => to === 'won' && flowState.peek() !== 'negotiation' ? 'Move to Negotiation before marking it won' : null })}</div>`,
     'state-banner': () => stack(SegmentedControl({ options: [{ value: 'draft', label: 'Draft' }, { value: 'locked', label: 'Issued' }, { value: 'void', label: 'Void' }], value: lifecycle, size: 'small', label: 'Lifecycle' }),
       LockBanner({ lifecycle, state: 'Issued', lockedText: 'Only remarks can change. To correct it, void or revise.', reason: 'Customer cancelled the order.', onRevise: () => toast('Opened a revision'), onVoid: () => toast('Opened Void invoice') })),
-    'child-rows': onRecord(store => html`<div style="width:100%;max-width:420px">${ChildRows({ table: store.table('lines'), title: 'Lines' })}</div>`,
-      () => html`<span class="muted">Needs a record. Open this page from the dev server to see the sample order.</span>`),
     'child-table': onRecord(store => html`<div style="width:100%">${ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], title: 'Lines', icon: 'package', crumb: () => String(store.field('title').value.get() ?? ''), height: 340 })}</div>`,
       () => html`<span class="muted">Needs a record. Open this page from the dev server to see the sample order.</span>`),
     'form-section': onRecord(store => html`<div style="width:100%">${FormSection({ title: 'Details', note: 'Values save as you change them.', fields: ['title', 'customer', 'stage', 'issued', 'due', 'reason', 'remark', 'total'].map(name => store.field(name)) })}</div>`,
@@ -237,7 +241,7 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     'action-dialog': () => Button({ label: 'Record payment', icon: 'wallet', onClick: () => openPayment() }),
     'peek-drawer': () => Button({ label: 'Peek a contact', icon: 'panel-right', onClick: () => openDrawer({ title: 'Contact', body: () => html`<div class="peek-top">${Avatar({ name: 'Khalid Al Mansoori', size: 'xl' })}<div><h2>Khalid Al Mansoori</h2><div class="sub">Finance manager, Al Sahra Trading</div></div></div>${KeyValueList([f.email, f.phone, f.tags], { save: () => true })}`,
       footer: close => Button({ label: 'Open record', variant: 'primary', onClick: () => { close(); toast('Opened the record'); } }) }) }),
-    'side-panel': () => html`<div class="doc-side" style="width:320px;border:1px solid var(--border);border-radius:12px">${SideBlock({ title: 'Key fields', body: KeyValueList([f.select, f.currency], { save: () => true }), action: LinkButton({ label: 'All fields' }) })}
+    'side-panel': () => html`<div class="doc-side" style="width:320px;border:1px solid var(--border);border-radius:var(--r-lg)">${SideBlock({ title: 'Key fields', body: KeyValueList([f.select, f.currency], { save: () => true }), action: LinkButton({ label: 'All fields' }) })}
       ${SideBlock({ title: 'Tags', body: row(Chip({ label: 'Renewal' }), AddChip({ label: 'Tag' })) })}</div>`,
   };
 }

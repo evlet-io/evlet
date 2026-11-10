@@ -276,7 +276,7 @@ def test_definitions_are_checked_when_registered(tmp_path):
         register()
     with pytest.raises(ValueError, match='choose one outcome'):
         register(becomes=Job, hand_in=lambda self: None)
-    with pytest.raises(ValueError, match='New menu'):
+    with pytest.raises(ValueError, match='not as a menu slip'):
         register(source=Client, menu=True, becomes=Job)
     with pytest.raises(ValueError, match='layout'):
         register(becomes=Job, layout=(('Main', ('missing',)),))

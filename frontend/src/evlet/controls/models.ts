@@ -284,17 +284,16 @@ function addField(ctx: ControlsContext, model: ModelInfo) {
 
 // ---------- form layout ----------
 
-/** A layout value as sections plus the record tab order and what a list's side panel hides: older layouts and
- * layouts with neither are a plain list. panel is null when the layout leaves the side panel to the app. */
-export function layoutValue(value: LayoutValue | null | undefined): { sections: LayoutSection[]; tabs: string[]; default_tab: string | null; panel: PanelHidden | null } {
-  if (Array.isArray(value)) return { sections: value, tabs: [], default_tab: null, panel: null };
-  return { sections: value?.sections ?? [], tabs: value?.tabs ?? [], default_tab: value?.default_tab ?? null, panel: value?.panel ?? null };
+/** A layout value as sections plus what a list's side panel hides: layouts without it are a plain list. panel is null
+ * when the layout leaves the side panel to the app. A record tab order saved before 0.4 is read past and not saved again. */
+export function layoutValue(value: LayoutValue | null | undefined): { sections: LayoutSection[]; panel: PanelHidden | null } {
+  if (Array.isArray(value)) return { sections: value, panel: null };
+  return { sections: value?.sections ?? [], panel: value?.panel ?? null };
 }
 
-/** The value to save: a plain list unless it orders the record tabs or sets the side panel, so other layouts keep their old shape. */
-export function layoutToSave(sections: LayoutSection[], tabs: string[], default_tab: string | null, panel: PanelHidden | null = null): LayoutValue {
-  if (!tabs.length && !default_tab && panel === null) return sections;
-  return { sections, ...(tabs.length || default_tab ? { tabs, default_tab } : {}), ...(panel !== null ? { panel } : {}) };
+/** The value to save: a plain list unless it sets the side panel, so other layouts keep their old shape. */
+export function layoutToSave(sections: LayoutSection[], panel: PanelHidden | null = null): LayoutValue {
+  return panel === null ? sections : { sections, panel };
 }
 
 type PanelKind = keyof PanelHidden;
@@ -393,15 +392,14 @@ function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
       return at >= 0 && next[at] && next.length === before.length ? next[at].title : title;
     }).filter(title => next.some(section => section.title === title)) } : panel;
     if (renamed?.sections && !renamed.sections.length) delete renamed.sections;
-    ctx.drafts.set(id, layoutToSave(next, value().tabs, value().default_tab, renamed));
+    ctx.drafts.set(id, layoutToSave(next, renamed));
   };
   const panelOf = () => value().panel;
-  const setPanel = (kind: PanelKind, name: string) => ctx.drafts.set(id, layoutToSave(sections(), value().tabs, value().default_tab, togglePanel(panelOf(), kind, name)));
+  const setPanel = (kind: PanelKind, name: string) => ctx.drafts.set(id, layoutToSave(sections(), togglePanel(panelOf(), kind, name)));
   const panelToggle = (kind: PanelKind, name: string, what: string) => IconButton({ icon: 'panel-right', size: 'small',
     tip: `Show ${what} in the side panel`, active: () => inPanel(panelOf(), kind, name), onClick: () => setPanel(kind, name) });
   const change = (fn: (draft: LayoutSection[]) => void) => { const draft = sections(); fn(draft); save(draft); };
   const label = (name: string) => effective(ctx, model.name, name).label;
-  const saveTabs = (tabs: string[], home: string | null) => ctx.drafts.set(id, layoutToSave(sections(), tabs, home, value().panel));
   const chip = (item: LayoutSection['fields'][number], index: number, position: number, count: number, total: number) => html`<div class="ctl-lf" class:full=${item.width === 12}
     class:off=${() => effective(ctx, model.name, item.name).hidden} data-field=${item.name} data-drag-item="field" data-drag-id=${item.name}>
     <button type="button" class="ctl-grip" data-drag-handle="field" aria-label=${`Move ${label(item.name)}`}
@@ -444,7 +442,7 @@ function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
       ${() => ctx.drafts.overridden(id) ? Button({ label: 'Reset to file', icon: 'rotate-ccw', size: 'small', variant: 'ghost', onClick: () => ctx.drafts.reset(id) }) : null}
       ${Button({ label: 'Add section', icon: 'plus', size: 'small', onClick: () => change(draft => { draft.push({ title: `Section ${draft.length + 1}`, fields: [] }); }) })}</div>
     ${when(() => ctx.drafts.errors.get().has(id), () => Callout('err', 'info', () => ctx.drafts.errors.get().get(id)))}
-    <div class="ctl-lwrap"><div class="ctl-stack"><div class="ctl-stack" data-drop-zone="section" data-zone="sections">${editor}</div>${() => TabsCard(model, value, saveTabs, panelToggle)}${() => PanelCard(panelToggle)}</div>
+    <div class="ctl-lwrap"><div class="ctl-stack"><div class="ctl-stack" data-drop-zone="section" data-zone="sections">${editor}</div>${() => PartsCard(model, panelToggle)}${() => PanelCard(panelToggle)}</div>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Preview</h2><p>${`New ${model.name.toLowerCase()} form, as people will see it`}</p></div>
         <span class="ctl-badge">${() => ctx.drafts.overridden(id) ? 'Changed here' : 'From the app'}</span></div><div class="ctl-pad">${preview}</div></section></div>
   </div>` as HTMLElement;
@@ -456,44 +454,25 @@ function LayoutTab(ctx: ControlsContext, model: ModelInfo): HTMLElement {
       const keys = sectionKeys(draft), moved = draft[keys.indexOf(key)], next = before === null ? null : draft[keys.indexOf(before)] ?? null;
       draft.splice(0, draft.length, ...moveBefore(draft, moved, next));
     }) });
-  dragList(element, { kind: 'tab', label: name => `${model.tabs?.find(tab => tab.name === name)?.label ?? name} tab`,
-    move: (name, _zone, before) => saveTabs(moveBefore(tabOrder(model, value().tabs), name, before), value().default_tab) });
   return element;
 }
 
-/** The record page's tabs in order, and the one a record opens on. Drag to reorder. */
-/** The model's record tabs in the saved order, the rest after them. */
-export function tabOrder(model: ModelInfo, saved: string[]): string[] {
-  const known = (model.tabs ?? []).map(tab => tab.name);
-  return [...saved.filter(name => known.includes(name)), ...known.filter(name => !saved.includes(name))];
-}
-
-/** The record parts a list's side panel can leave out besides sections, fields and tabs: the summary strip and blocks. */
+/** The record parts a list's side panel can leave out besides sections, fields and parts: the summary strip and blocks. */
 function PanelCard(toggle: (kind: PanelKind, name: string, what: string) => HTMLElement): HTMLElement {
   return html`<section class="ctl-card ctl-panel-parts"><div class="ctl-card-head"><div><h2>Side panel</h2>
-      <p>What a record shows when a list opens it in a side panel. Use the panel button on each section, field and tab, and here for the rest. The full page always shows everything, and hiding is not a permission.</p></div></div>
+      <p>What a record shows when a list opens it in a side panel. Use the panel button on each section, field and part, and here for the rest. The full page always shows everything, and hiding is not a permission.</p></div></div>
     <div class="ctl-pad"><ul class="ctl-tablist ctl-partlist">${PANEL_BLOCKS.map(([name, label]) => html`<li class="ctl-partrow"><span class="grow">${label}</span>${toggle('blocks', name, label)}</li>`)}</ul></div></section>` as HTMLElement;
 }
 
 type PanelToggle = (kind: PanelKind, name: string, what: string) => HTMLElement;
-function TabsCard(model: ModelInfo, value: () => ReturnType<typeof layoutValue>, save: (tabs: string[], home: string | null) => void, toggle?: PanelToggle): HTMLElement | null {
-  const known = model.tabs ?? [];
+/** The record's parts besides its sections (Activity, Revisions, child tables, Related, Postings), each with its side
+ * panel button. Record pages have no tabs, so there is no order to set. */
+function PartsCard(model: ModelInfo, toggle: PanelToggle): HTMLElement | null {
+  const known = (model.tabs ?? []).filter(part => part.name !== 'details');
   if (!known.length) return null;
-  const labelOf = (name: string) => known.find(tab => tab.name === name)?.label ?? name;
-  const current = value();
-  const order = tabOrder(model, current.tabs);
-  const home = current.default_tab ?? 'details';
-  const card = html`<section class="ctl-card ctl-tabs"><div class="ctl-card-head"><div><h2>Record tabs</h2>
-      <p>The order of the tabs on a record, and the one it opens on. A record shows only the tabs it has.</p></div></div>
-    <div class="ctl-pad"><ol class="ctl-tablist" data-drop-zone="tab" data-zone="tabs">${order.map((name, index) => html`<li class="ctl-tabrow" data-drag-item="tab" data-drag-id=${name}>
-      <button type="button" class="ctl-grip" data-drag-handle="tab" aria-label=${`Move ${labelOf(name)} tab`} aria-roledescription="draggable tab" aria-describedby="ctl-drag-help">${Icon('grip-vertical', { size: 'xs' })}</button>
-      <span class="grow">${labelOf(name)}</span>${name === home ? html`<span class="ctl-badge">Opens first</span>` : null}
-      ${toggle && name !== 'details' ? toggle('tabs', name, `${labelOf(name)} tab`) : null}
-      ${IconButton({ icon: 'arrow-up', tip: 'Move earlier', size: 'small', disabled: index === 0, onClick: () => save(moveBefore(order, name, order[index - 1]), current.default_tab) })}
-      ${IconButton({ icon: 'arrow-down', tip: 'Move later', size: 'small', disabled: index === order.length - 1, onClick: () => save(moveBefore(order, name, order[index + 2] ?? null), current.default_tab) })}</li>`)}</ol>
-      ${field('Open records on', 'ctl-tabs-home', Select({ id: 'ctl-tabs-home', label: 'Open records on', value: () => home, options: () => order.map(name => [name, labelOf(name)]),
-        onChange: next => save(order, next === 'details' && !current.default_tab ? null : next) }))}</div></section>` as HTMLElement;
-  return card;
+  return html`<section class="ctl-card ctl-tabs"><div class="ctl-card-head"><div><h2>Record parts</h2>
+      <p>The parts of a record besides its sections. A record shows only the parts it has.</p></div></div>
+    <div class="ctl-pad"><ul class="ctl-tablist">${known.map(part => html`<li class="ctl-tabrow"><span class="grow">${part.label}</span>${toggle('tabs', part.name, part.label)}</li>`)}</ul></div></section>` as HTMLElement;
 }
 
 // ---------- list view ----------

@@ -18,6 +18,8 @@ export interface FieldSchema {
   placeholder?: string;
   /** A unit shown after the input, such as % or days. */
   suffix?: string;
+  /** Integer(grouping=False): shown without thousands separators, such as a year. */
+  grouping?: boolean;
   scale?: number | null;
   /** A Currency field's code when it is fixed (on the field, or an app setting read by the server). */
   currency?: string;
@@ -37,6 +39,8 @@ export interface FieldSchema {
   default?: unknown;
   default_kind?: string;
   stored?: boolean;
+  /** No two records may hold the same value: Duplicate leaves it empty. */
+  unique?: boolean;
   compute?: Expression;
   initial?: Expression;
   applies_when?: Expression;
@@ -58,7 +62,7 @@ export interface ChildSchema { name: string; model: string; label: string; link:
   read_only?: boolean
   /** Table(sections=True): the rows may include section rows {id, section}, headings that group the rows below them. */
   sections?: boolean
-  /** Row fields each section row sums over its rows: the fields the table's total line sums. */
+  /** Row fields each section row sums over its own rows. Absent: a section shows no sums. */
   section_sums?: string[] }
 
 /** A section row in a record's children: {id, section}. It has none of the row fields. */
@@ -94,6 +98,10 @@ export interface ModelSchema {
   name: string;
   label: string;
   plural: string;
+  /** The model's docstring, '' when it has none. */
+  description?: string;
+  /** "<app>.<Class>" for a model an installed app declares; the Explorer and the workspaces read the app from it. */
+  resource?: string;
   title_field: string;
   fields: FieldSchema[];
   list_fields: string[];
@@ -101,10 +109,8 @@ export interface ModelSchema {
   /** Form sections. collapsible and collapsed come from evlet.Section or a Controls layout (absent from older servers). */
   layout?: Array<{ label: string; fields: string[]; wide?: string[]; collapsible?: boolean; collapsed?: boolean | 'empty';
     /** rows: across then down; columns: down the left column, then the right. */ flow?: 'rows' | 'columns';
-    /** evlet.Main: the compact page's primary area, shown without a heading (label is the model's label). */ main?: boolean;
+    /** evlet.Main: the record page's primary area, shown without a heading (label is the model's label). */ main?: boolean;
     /** Section(description=...): a line of text under the title. */ description?: string }>;
-  /** Record page tabs in order (record tabs and child table names) and the tab a record opens on. */
-  tabs?: string[]; default_tab?: string | null;
   /** Rows per page and default order, from a Controls list view. */
   page_size?: number;
   order_by?: string;
@@ -166,12 +172,9 @@ export type LayoutBlock =
   | { kind: 'html'; html: string }
   | { kind: 'chart'; type: 'bar' | 'line' | 'stat'; model: string; link: string; x: string | null; y: string[]; label: string | null; filters: LayoutCondition[] };
 
-/** A record page tab declared with evlet.Tab: its name (Meta.tabs, ?tab=t-<name>), label and blocks. */
-export interface LayoutTab { name: string; label: string; blocks: LayoutBlock[] }
-
-/** The record layout: Tabs, or blocks shown on Details without Tabs. compact: Meta.layout starts with evlet.Main (never
- * with Tabs); its blocks marked main are the primary area and the rest are "more information". */
-export interface RecordLayout { tabs?: LayoutTab[]; blocks?: LayoutBlock[]; compact?: boolean }
+/** The record layout of a Meta.layout with Main or blocks besides sections. Blocks marked main are the primary area
+ * (without one, the first section is) and the rest are "more information". */
+export interface RecordLayout { blocks: LayoutBlock[] }
 
 /** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */
 export interface PrintSchema { name: string; title: string; default: boolean }
@@ -179,7 +182,7 @@ export interface PrintSchema { name: string; title: string; default: boolean }
 /** A slip (evlet.Slip) the role may present; its fields come from the slip's own routes. */
 export interface SlipSchema { name: string; label: string; hand_in_label: string }
 
-export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Slips for the New menu. */ slips?: SlipSchema[];
+export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Menu slips (menu = True), presented from browser code. */ slips?: SlipSchema[];
   /** Reports the role may run (evlet.Report), with their filters, columns and view settings. */ reports?: ReportSchema[];
   /** Present when the app has print designs; available is false without the server's print extra. */ printing?: { available: boolean };
   /** How the currency codes the site changed are shown (Controls, Currencies); other codes show as 'AED 25,200.00'. */
@@ -219,6 +222,8 @@ export interface ReportColumn { name: string; type: 'text' | 'integer' | 'decima
 export interface ReportSchema {
   name: string;
   label: string;
+  /** Shown on the report's Explorer card when the server sends one (none does yet). */
+  description?: string;
   fields: Array<FieldSchema & { calculated?: boolean }>;
   autorun: boolean;
   columns: ReportColumn[];

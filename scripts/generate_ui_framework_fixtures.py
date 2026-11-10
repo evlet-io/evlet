@@ -16,7 +16,7 @@ from tempfile import TemporaryDirectory
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
                    Move, MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome,
-                   Report, Column, Chart, Count, Html, Main, Ref, Section, Tab)
+                   Report, Column, Chart, Count, Html, Main, Ref, Section)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
 from evlet.audit import fixed_times
@@ -616,7 +616,7 @@ def record_reports(folder):
 
 
 class Site(Model):
-    """For the screens: a record layout with Tabs, a placed Table, Related, Html and Chart blocks."""
+    """For the screens: a record layout with Main and a Table in it, Related, Html and Chart blocks."""
     permissions = ALL
     title = Text(required=True, label='Site name')
     region = Select(('north', 'south'), default='north')
@@ -630,17 +630,12 @@ class Site(Model):
 
     class Meta:
         layout = (
-            Tab('Overview', (
-                Section('Site', ('title', 'region')),
-                Html('<p>Work at <strong>{title}</strong> in {region}. Write {{braces}} as they are.</p>'),
-                Chart('stat', y=('hours', 'jobs'), model='job', label='Totals'),
-                Chart('bar', x='status', y='hours', model='job', label='Hours by status'),
-            )),
-            Tab('Work', (
-                Related('job', label='Open jobs', filters={'status__ne': 'done'}, fields=('title', 'status', 'hours'), limit=2, order='-hours'),
-                Related('job', label='Same region', filters={'region': Ref('region')}),
-                'visits',
-            )),
+            Main(('title', 'region'), 'visits'),
+            Html('<p>Work at <strong>{title}</strong> in {region}. Write {{braces}} as they are.</p>'),
+            Chart('stat', y=('hours', 'jobs'), model='job', label='Totals'),
+            Chart('bar', x='status', y='hours', model='job', label='Hours by status'),
+            Related('job', label='Open jobs', filters={'status__ne': 'done'}, fields=('title', 'status', 'hours'), limit=2, order='-hours'),
+            Related('job', label='Same region', filters={'region': Ref('region')}),
         )
 
 

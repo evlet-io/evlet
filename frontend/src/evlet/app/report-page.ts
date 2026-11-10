@@ -23,8 +23,10 @@ import { CHART_ROWS, plotChart } from '../ui/chart';
 import { ColumnsMenu, DataTable, emptyPrefs, type Column, type Sort, type TablePrefs } from '../ui/table';
 import type { ReportPage as Page } from './client';
 import type { AppContext } from './context';
+import { KIND_ICONS } from './nav-icons';
 
-export const REPORT_ICON = 'chart-column';
+/** The report icon of the navigation map (app/nav-icons.ts). */
+export const REPORT_ICON = KIND_ICONS.report;
 const PAGE = 50;
 const NUMBERS = ['integer', 'decimal', 'currency'];
 const CODE = /^[A-Z]{3}$/;
@@ -63,7 +65,7 @@ export function ReportsPage(ctx: AppContext): HTMLElement {
     ${IconTile(REPORT_ICON, { tint: 'rose', size: 32 })}<span><b>${report.label}</b>
     <small class="muted">${[`${report.columns.length} columns`, report.fields.filter(field => !field.hidden).length ? `${report.fields.filter(field => !field.hidden).length} filters` : 'No filters',
       report.autorun ? 'Runs as you filter' : ''].filter(Boolean).join(' · ')}</small></span></a>`;
-  return html`<div class="page ev-reports">${PageHeader({ icon: REPORT_ICON, tint: 'rose', title: 'Reports', count: reports.length })}
+  return html`<div class="page ev-reports">${ctx.crumbBar?.()}${PageHeader({ icon: REPORT_ICON, tint: 'rose', title: 'Reports', count: reports.length })}
     ${reports.length ? reportGroups(reports).map(([group, list]) => html`<section class="ev-report-group">${group ? html`<h2>${group}</h2>` : null}
       <div class="ev-report-cards">${list.map(card)}</div></section>`)
       : EmptyState({ icon: REPORT_ICON, tint: 'slate', title: 'No reports', text: 'Your role cannot run any report here.' })}</div>` as HTMLElement;
@@ -384,7 +386,7 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
     rows: () => [chart, table(), pager],
   });
 
-  return html`<div class="page ev-report" data-report=${name} aria-busy=${() => busy.get() ? 'true' : null}>${header}${viewBar}${filterBar}${status}${toolbar}${content}</div>` as HTMLElement;
+  return html`<div class="page ev-report" data-report=${name} aria-busy=${() => busy.get() ? 'true' : null}>${ctx.crumbBar?.()}${header}${viewBar}${filterBar}${status}${toolbar}${content}</div>` as HTMLElement;
 }
 
 /** Hand a file to the browser to save. */

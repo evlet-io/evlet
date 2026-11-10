@@ -8,7 +8,8 @@ import { canonical, CalcError, FiniteDocument, fingerprint } from '../model/fini
 import { currencyDecimals, currencyDecimalsTable, formatMoney, moneyWire, setCurrencyDecimals, setCurrencyDisplays } from '../model/format';
 import { currencyInput, RecordStore } from '../model/record';
 import { SchemaIndex, type AppSchema, type FieldSchema } from '../model/schema';
-import { displayValue, FieldControl, localField } from '../ui/fields';
+import { displayValue, FieldControl, localField, moneyMeta } from '../ui/fields';
+import { valueText } from '../app/record-compact';
 import { KINDS } from '../ui/kinds';
 import { moneyChild } from '../ui/money';
 import { displayOf } from '../app/meta';
@@ -121,6 +122,21 @@ describe('typing money', () => {
     typeInto(input, '1250');
     expect(amount.value.peek()).toBe('1250.00');
     expect(input.value).toBe('1,250');
+  });
+
+  it('shows a record currency’s places in one-line summaries (side panel subtitle, more information rows)', async () => {
+    setCurrencyDecimals(SITE);
+    const field = (name: string, extra: Partial<FieldSchema> = {}): FieldSchema => ({ name, type: 'text', label: name, required: false, read_only: false, ...extra });
+    const schema = { models: [{ name: 'deal', label: 'Deal', plural: 'Deals', title_field: 'currency', list_fields: ['currency'],
+      fields: [field('currency'), field('amount', { type: 'currency', scale: 6, currency_source: { field: 'currency' } })] }] } as unknown as AppSchema;
+    const store = new RecordStore({ api: createClient({ fetch: server([]).fetch }), schema, model: 'deal', today: () => '2026-11-10' });
+    running.push(() => store.dispose());
+    await store.create({ currency: 'KWD', amount: '1.5' });
+    const amount = store.field('amount');
+    expect(valueText(amount, null)).toBe('KWD 1.500');
+    expect(moneyMeta(amount, null)().currency).toBe('KWD');
+    store.field('currency').set('JPY');
+    expect(valueText(amount, null)).toBe('JPY 2');
   });
 });
 
