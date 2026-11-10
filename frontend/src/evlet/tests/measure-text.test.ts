@@ -1,7 +1,7 @@
 // How a measure's value reads (measureText in app/meta.ts): a count is a plain number, never money, and money whose
 // code each record takes from its own fields totals without a symbol, since no one code covers many records.
 import { describe, expect, it } from 'vitest';
-import { measureText, type MeasureSchema, type ScreenModel } from '../app/meta';
+import { displayOf, measureText, type MeasureSchema, type ScreenModel } from '../app/meta';
 import { SchemaIndex, type AppSchema } from '../model/schema';
 
 const field = (name: string, type: string, extra: Record<string, unknown> = {}) => ({ name, type, label: name, required: false, ...extra });
@@ -21,5 +21,18 @@ describe('measureText', () => {
     expect(measureText(index, model, measure('sum', 'amount'), '4117.05')).toBe('4,117.05');
     expect(measureText(index, model, measure('sum', 'fee'), '10.5')).toContain('10.50');
     expect(measureText(index, model, measure('sum', 'fee'), '10.5')).not.toBe('10.50');
+  });
+
+  it('never shows money at the schema scale (the storage scale, 6) when it has no one code', () => {
+    // As /api/schema sends a Currency since decimal places per currency: scale 6, the code from each record.
+    const stored = { name: 'visit', label: 'Visit', fields: [field('amount', 'currency', { scale: 6, currency_source: { field: 'currency_code', link: 'customer', model: 'customer' } }),
+      field('loose', 'currency', { scale: 6 })] };
+    const wide = new SchemaIndex({ models: [stored], currency: 'AED' } as unknown as AppSchema);
+    const visits = wide.schema.models[0] as unknown as ScreenModel;
+    expect(measureText(wide, visits, measure('sum', 'amount'), '0.00')).toBe('0.00');
+    expect(measureText(wide, visits, measure('sum', 'amount'), '1250.500')).toBe('1,250.500');
+    expect(measureText(wide, visits, measure('sum', 'amount'), 7)).toBe('7.00');
+    // A Currency with no code at all shows 2 places, not 6.
+    expect(String(displayOf(stored.fields[1] as any, '0.00'))).toMatch(/(^|\s)0\.00$/);
   });
 });

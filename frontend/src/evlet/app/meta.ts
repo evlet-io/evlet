@@ -248,12 +248,15 @@ export function measureView(index: SchemaIndex, model: ScreenModel, measure: Mea
 
 // A count is a plain number, never money, whatever field it counts. Money whose code each record takes from its own
 // fields (currency_source) has no one code over many records, so its total shows as a number without a symbol rather
-// than in the site's currency.
+// than in the site's currency. It keeps the places the server sent ("0.00"), never the schema scale, which is the
+// storage scale (6): 2 when the value carries none.
 function measureField(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): FieldSchema | undefined {
   if (value === null || value === undefined || measure.function === 'count' || measure.function === 'count_distinct') return undefined;
   const target = measure.model ? (index.schema.models.find(item => item.name === measure.model) as unknown as ScreenModel | undefined) : model;
   const field = target && measure.field ? fieldOf(target, measure.field) : undefined;
-  return field?.type === 'currency' && field.currency_source && !field.currency ? { ...field, type: 'decimal' } : field;
+  if (field?.type !== 'currency' || !field.currency_source || field.currency) return field;
+  const sent = typeof value === 'string' ? /\.(\d+)$/.exec(value.trim())?.[1].length : undefined;
+  return { ...field, type: 'decimal', scale: sent ?? 2 };
 }
 
 function plainMeasure(measure: MeasureSchema, value: unknown): string {
