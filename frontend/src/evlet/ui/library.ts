@@ -73,7 +73,10 @@ function demoFields() {
     longtext: localField({ name: 'remarks', type: 'longtext', label: 'Remarks' }, 'Three entities across Dubai mainland, JAFZA and Oman.'),
     integer: localField({ name: 'credit_days', type: 'integer', label: 'Credit days', minimum: 0, maximum: 365 }, 30),
     decimal: localField({ name: 'qty', type: 'decimal', label: 'Quantity', scale: 3 }, '2.500'),
-    currency: localField({ name: 'rate', type: 'currency', label: 'Rate', scale: 2 }, '42000.00'),
+    currency: localField({ name: 'rate', type: 'currency', label: 'Rate', scale: 6, currency: 'AED' }, '42000.00'),
+    // Each currency has its own decimals on the site (KWD 3, JPY 0); the schema scale (6) is only how amounts are stored.
+    currencyKwd: localField({ name: 'rate_kwd', type: 'currency', label: 'Rate in KWD', scale: 6, currency: 'KWD' }, '1250.375'),
+    currencyJpy: localField({ name: 'rate_jpy', type: 'currency', label: 'Rate in JPY', scale: 6, currency: 'JPY' }, '98000.00'),
     percent: localField({ name: 'discount', type: 'percent', label: 'Discount', scale: 2, minimum: '0', maximum: '100' }, '12.50'),
     date: localField({ name: 'posting_date', type: 'date', label: 'Posting date' }, '2026-11-01'),
     datetime: localField({ name: 'received_at', type: 'datetime', label: 'Received at' }, '2026-11-01T09:20:00Z'),
@@ -89,7 +92,7 @@ function demoFields() {
     state: localField({ name: 'status', type: 'state', label: 'Status' }, 'issued'),
     sequence: localField({ name: 'number', type: 'sequence', label: 'Number' }, 'INV-2026-00041'),
     reference: localField({ name: 'source_doc', type: 'reference', label: 'Settles' }, { model: 'invoice', id: 41 }),
-    computed: localField({ name: 'total', type: 'currency', label: 'Total', scale: 2, read_only: true,
+    computed: localField({ name: 'total', type: 'currency', label: 'Total', scale: 6, read_only: true,
       compute: { $expr: 'add', args: [{ $expr: 'ref', scope: 'self', field: 'net_total' }, { $expr: 'ref', scope: 'self', field: 'vat_total' }] } }, '25200.00'),
   };
 }
@@ -128,7 +131,7 @@ function demos(record: RecordStore | null): Record<string, Demo> {
     // inputs
     'base-field': () => stack(BaseField({ field: localField({ name: 'label', type: 'text', label: 'Label' }, 'Value') }), BaseField({ field: missing }), BaseField({ field: lockedField })),
     'text-field': field(f.text), 'longtext-field': field(f.longtext), 'integer-field': field(f.integer), 'decimal-field': field(f.decimal),
-    'currency-field': field(f.currency), 'percent-field': field(f.percent), 'date-field': field(f.date), 'datetime-field': field(f.datetime),
+    'currency-field': () => stack(BaseField({ field: f.currency }), BaseField({ field: f.currencyKwd }), BaseField({ field: f.currencyJpy })), 'percent-field': field(f.percent), 'date-field': field(f.date), 'datetime-field': field(f.datetime),
     'date-range': () => {
       const chosen = cell<DateRange | null>(rangePresets()[4].range);
       return stack(html`<div class="lib-static pop show" style="padding:10px">${DateRangePanel({ value: () => chosen.get(), onApply: range => chosen.set(range) })}</div>`,
@@ -248,7 +251,7 @@ const displayDate = (value: unknown) => typeof value === 'string' ? value.split(
 /** A create form: fields a new record needs, validated in place before it closes. */
 function openCreate() {
   const name = localField({ name: 'deal', type: 'text', label: 'Deal name', required: true });
-  const amount = localField({ name: 'amount', type: 'currency', label: 'Amount', scale: 2, required: true });
+  const amount = localField({ name: 'amount', type: 'currency', label: 'Amount', scale: 6, required: true });
   const stage = localField({ name: 'stage', type: 'select', label: 'Stage', choices: STAGES.slice(0, 4).map(item => item.value) }, 'qualification');
   const submit = (close: () => void) => {
     let ok = true;
@@ -263,7 +266,7 @@ function openCreate() {
 
 /** An action dialog with inputs, validated against the record ("Outstanding is only AED 25,200"). */
 function openPayment() {
-  const amount = localField({ name: 'amount', type: 'currency', label: 'Amount', scale: 2, required: true }, '25200.00');
+  const amount = localField({ name: 'amount', type: 'currency', label: 'Amount', scale: 6, required: true }, '25200.00');
   const date = localField({ name: 'date', type: 'date', label: 'Received on', required: true }, '2026-11-01');
   const submit = (close: () => void) => {
     if (Number(amount.value.peek() ?? 0) > 25200) { amount.error.set('Outstanding is only AED 25,200'); return; }

@@ -77,6 +77,34 @@
  },
  "compact_schema": {
   "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
    "models": [
     {
      "actions": [],
@@ -1861,6 +1889,34 @@
  },
  "layout_schema": {
   "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
    "models": [
     {
      "actions": [],
@@ -2958,6 +3014,34 @@
  },
  "report_schema": {
   "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
    "models": [
     {
      "actions": [],
@@ -3036,7 +3120,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -3398,6 +3482,34 @@
  },
  "schema": {
   "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
    "models": [
     {
      "actions": [],
@@ -3476,7 +3588,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -3687,7 +3799,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -3813,7 +3925,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3",
+      "model_schema_hash": "sha256:3d7170ab36e01e6d6aca82f036452a3de2c5f62584cb361660588085d89c6937",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -3997,7 +4109,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "lines[*].rate:initial",
          "target_type": "currency"
@@ -4046,7 +4158,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "lines[*].amount",
          "target_type": "currency"
@@ -4075,7 +4187,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "total",
          "target_type": "currency"
@@ -4117,11 +4229,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:59541c6c0ac279d6222790a74a5db30da7aebb1b06b7b7ab78142f6b163c298d",
+       "model_schema_hash": "sha256:76e551b3168001883b346c68fb593cd65f6b4bbc0cbf3310e5bc287a5dd123ac",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "order",
-       "source_plan_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3",
+       "source_plan_hash": "sha256:3d7170ab36e01e6d6aca82f036452a3de2c5f62584cb361660588085d89c6937",
        "tables": {
         "$root": {
          "fields": {
@@ -4235,7 +4347,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -4263,7 +4375,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           },
@@ -4298,7 +4410,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -4676,7 +4788,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -5405,7 +5517,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -5463,7 +5575,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -6258,7 +6370,7 @@
          "placeholder": "",
          "read_only": false,
          "required": false,
-         "scale": 2,
+         "scale": 6,
          "type": "currency",
          "unique": false
         },
@@ -6360,7 +6472,7 @@
       "placeholder": "",
       "read_only": false,
       "required": false,
-      "scale": 2,
+      "scale": 6,
       "type": "currency",
       "unique": false
      },
@@ -6414,7 +6526,7 @@
       "placeholder": "",
       "read_only": false,
       "required": false,
-      "scale": 2,
+      "scale": 6,
       "type": "currency",
       "unique": false
      },
@@ -6695,7 +6807,7 @@
          "placeholder": "",
          "read_only": false,
          "required": false,
-         "scale": 2,
+         "scale": 6,
          "type": "currency",
          "unique": false
         },
@@ -6797,7 +6909,7 @@
       "placeholder": "",
       "read_only": false,
       "required": false,
-      "scale": 2,
+      "scale": 6,
       "type": "currency",
       "unique": false
      },
@@ -6851,7 +6963,7 @@
       "placeholder": "",
       "read_only": false,
       "required": false,
-      "scale": 2,
+      "scale": 6,
       "type": "currency",
       "unique": false
      },
@@ -7038,6 +7150,34 @@
  },
  "slip_schema": {
   "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
    "models": [
     {
      "actions": [],
@@ -7116,7 +7256,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -7312,7 +7452,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -7492,6 +7632,34 @@
  },
  "viewer_schema": {
   "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
    "models": [
     {
      "actions": [],
@@ -7570,7 +7738,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -7781,7 +7949,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -7887,7 +8055,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3",
+      "model_schema_hash": "sha256:3d7170ab36e01e6d6aca82f036452a3de2c5f62584cb361660588085d89c6937",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -8071,7 +8239,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "lines[*].rate:initial",
          "target_type": "currency"
@@ -8120,7 +8288,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "lines[*].amount",
          "target_type": "currency"
@@ -8149,7 +8317,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "total",
          "target_type": "currency"
@@ -8191,11 +8359,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:59541c6c0ac279d6222790a74a5db30da7aebb1b06b7b7ab78142f6b163c298d",
+       "model_schema_hash": "sha256:76e551b3168001883b346c68fb593cd65f6b4bbc0cbf3310e5bc287a5dd123ac",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "order",
-       "source_plan_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3",
+       "source_plan_hash": "sha256:3d7170ab36e01e6d6aca82f036452a3de2c5f62584cb361660588085d89c6937",
        "tables": {
         "$root": {
          "fields": {
@@ -8309,7 +8477,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -8337,7 +8505,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           },
@@ -8372,7 +8540,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -8750,7 +8918,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -9355,7 +9523,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -9413,7 +9581,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false

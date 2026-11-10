@@ -48,7 +48,7 @@ version too. `apps.lock` and the database's installed manifest record the Evlet
 version and the last framework migration an instance was migrated with:
 
 ```json
-{"apps": {...}, "evlet": {"version": "0.3.0", "schema": "0006_fixed_ids"}}
+{"apps": {...}, "evlet": {"version": "0.3.0", "schema": "0007_money_scale"}}
 ```
 
 After you update Evlet in the environment, `evlet serve` and `evlet dev` refuse to
@@ -77,7 +77,9 @@ from the models; names stay empty for existing rows. `0004_record_times` adds th
 modified time and user columns to every model table and fills them from the Journal or the record id
 ([model-engine.md](model-engine.md#record-times)). `0005_unsaved_changes` adds `evlet_unsaved`, the
 unsaved changes people leave on saved records ([ui.md](ui.md#unsaved-changes)). `0006_fixed_ids` adds the
-trigger that refuses an id change to every model table ([model-engine.md](model-engine.md#only-evlet-makes-ids)). Steps never run while an instance is served.
+trigger that refuses an id change to every model table ([model-engine.md](model-engine.md#only-evlet-makes-ids)). `0007_money_scale` records that every
+Currency amount is stored at 6 places; `evlet migrate` moves the amounts before any app migration runs
+([model-engine.md](model-engine.md#decimal-places-per-currency)). Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet
 before restarting.

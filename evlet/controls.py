@@ -737,7 +737,14 @@ class Controls:
                 if schedule:
                     audit(connection, user.username, 'Jobs', schedule[1], 'Resumed' if value is None else 'Paused', before, value)
                 elif key == 'display.currencies':
-                    from .currencies import changed_codes, summary
+                    from .currencies import changed_codes, lowered, stored_excess, summary
+                    for code, places in lowered(before, value):
+                        count, first = stored_excess(connection, self.registry, code, places, self.business.settings.values.get
+                                                     if getattr(self.business, 'settings', None) is not None else None)
+                        if count:
+                            raise AccessError(409, f'{count} stored {code} amounts have more than {places} decimal places '
+                                                   f'(the first is {first}). Keep the decimals, or round those amounts first '
+                                                   'with evlet.round_stored_money, an explicit step that changes them.')
                     codes = ', '.join(changed_codes(before, value))
                     audit(connection, user.username, 'Display', key, f'Reset {codes} to the default' if value is None else f'Changed {codes}',
                           summary(before), summary(value))

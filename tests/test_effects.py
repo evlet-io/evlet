@@ -185,10 +185,10 @@ def test_a_move_posts_balanced_rows_atomically(books):
     status, moved, _ = move(c, url, 'issued')
     assert status == 200, moved
     ledger = entries(app)
-    # 0.10 + 0.20 debits balance the 0.30 credit exactly; amounts are stored as scaled integers.
+    # 0.10 + 0.20 debits balance the 0.30 credit exactly; amounts are stored as scaled integers (millionths).
     assert [(row['debit'], row['credit'], row['memo'], row['source_model'], row['source_id'], row['reversal']) for row in ledger] == [
-        (10, 0, 'a', 'invoice', RecordId(moved['id']), 0), (20, 0, 'b', 'invoice', RecordId(moved['id']), 0),
-        (0, 30, 'revenue', 'invoice', RecordId(moved['id']), 0)]
+        (100000, 0, 'a', 'invoice', RecordId(moved['id']), 0), (200000, 0, 'b', 'invoice', RecordId(moved['id']), 0),
+        (0, 300000, 'revenue', 'invoice', RecordId(moved['id']), 0)]
     assert [(row['item'], row['qty']) for row in entries(app, 'stockmove')] == [('a', -10000), ('b', -20000)]
     assert moved['_effects'] == [{'target': 'ledgerentry', 'rows': 3, 'reversals': 0, 'balanced': True},
                                  {'target': 'stockmove', 'rows': 2, 'reversals': 0}]
@@ -334,7 +334,7 @@ def test_void_writes_mirror_rows_and_keeps_originals(books):
     assert ledger[:3] == before
     # Swap exchanges debit and credit; the mirrors keep the source and are marked as reversals.
     assert [(row['debit'], row['credit'], row['memo'], row['source_id'], row['reversal']) for row in ledger[3:]] == [
-        (0, 10, 'a', RecordId(voided['id']), 1), (0, 20, 'b', RecordId(voided['id']), 1), (30, 0, 'revenue', RecordId(voided['id']), 1)]
+        (0, 100000, 'a', RecordId(voided['id']), 1), (0, 200000, 'b', RecordId(voided['id']), 1), (300000, 0, 'revenue', RecordId(voided['id']), 1)]
     # Negate flips the quantity.
     assert [(row['qty'], row['reversal']) for row in entries(app, 'stockmove')] == [(-10000, 0), (-20000, 0), (10000, 1), (20000, 1)]
     assert c('GET', url)[1]['_effects'][0] == {'target': 'ledgerentry', 'rows': 3, 'reversals': 3, 'balanced': True}
@@ -833,7 +833,7 @@ def check_numbers_and_rows_on_one_move_and_on_revise(books):
     assert move(c, copy_url, 'issued')[1]['number'] == 'B-002'
     # The reversal keeps the original's number and source; the copy posts once more under its own number.
     assert [(row['memo'], row['amount'], row['source_id'], row['reversal']) for row in entries(app, 'posting')] == [
-        ('B-001', 1000, RecordId(original['id']), 0), ('B-001', -1000, RecordId(original['id']), 1), ('B-002', 1000, RecordId(copy['id']), 0)]
+        ('B-001', 10000000, RecordId(original['id']), 0), ('B-001', -10000000, RecordId(original['id']), 1), ('B-002', 10000000, RecordId(copy['id']), 0)]
     assert effects.check(app) == []
 
 

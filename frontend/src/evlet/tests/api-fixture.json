@@ -15,7 +15,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3"
+    "model_schema_hash": "sha256:3d7170ab36e01e6d6aca82f036452a3de2c5f62584cb361660588085d89c6937"
    },
    "children": {
     "lines": [
@@ -1068,7 +1068,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3"
+    "model_schema_hash": "sha256:3d7170ab36e01e6d6aca82f036452a3de2c5f62584cb361660588085d89c6937"
    },
    "_row_ids": {
     "l0": "0000000000001",
@@ -4807,7 +4807,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
+    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
    },
    "_deletable": false,
    "_effects": [
@@ -5128,7 +5128,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.180Z",
+     "at": "2026-11-10T06:26:47.019Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5140,7 +5140,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.160Z",
+     "at": "2026-11-10T06:26:46.981Z",
      "data": {
       "fields": {
        "total": {
@@ -5202,7 +5202,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.145Z",
+     "at": "2026-11-10T06:26:46.961Z",
      "data": {
       "fields": {
        "customer": {
@@ -5272,7 +5272,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
+    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
    },
    "_deletable": false,
    "_effects": [
@@ -5426,7 +5426,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-09T18:59:33.230Z",
+     "at": "2026-11-10T06:26:47.083Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5438,7 +5438,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.229Z",
+     "at": "2026-11-10T06:26:47.081Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5450,7 +5450,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.226Z",
+     "at": "2026-11-10T06:26:47.078Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5460,7 +5460,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.224Z",
+     "at": "2026-11-10T06:26:47.075Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -5472,7 +5472,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.221Z",
+     "at": "2026-11-10T06:26:47.072Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5481,7 +5481,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.202Z",
+     "at": "2026-11-10T06:26:47.048Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5496,7 +5496,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.192Z",
+     "at": "2026-11-10T06:26:47.037Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5506,7 +5506,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.192Z",
+     "at": "2026-11-10T06:26:47.037Z",
      "data": {
       "targets": [
        {
@@ -5522,7 +5522,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.192Z",
+     "at": "2026-11-10T06:26:47.037Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5543,7 +5543,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.180Z",
+     "at": "2026-11-10T06:26:47.019Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5555,7 +5555,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.160Z",
+     "at": "2026-11-10T06:26:46.981Z",
      "data": {
       "fields": {
        "total": {
@@ -5617,7 +5617,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.145Z",
+     "at": "2026-11-10T06:26:46.961Z",
      "data": {
       "fields": {
        "customer": {
@@ -5667,7 +5667,7 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-09T18:59:33.224Z",
+   "at": "2026-11-10T06:26:47.075Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5683,7 +5683,7 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-09T18:59:33.226Z",
+   "at": "2026-11-10T06:26:47.078Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5697,7 +5697,7 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-09T18:59:33.221Z",
+   "at": "2026-11-10T06:26:47.072Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5861,7 +5861,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
+    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
    },
    "_deletable": false,
    "_effects": [
@@ -6116,7 +6116,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
+    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
    },
    "_effects": [
     {
@@ -6184,6 +6184,34 @@
  },
  "invoice_schema": {
   "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
    "models": [
     {
      "actions": [],
@@ -6262,7 +6290,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -6476,7 +6504,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -6511,7 +6539,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -6755,7 +6783,7 @@
          "placeholder": "",
          "read_only": false,
          "required": true,
-         "scale": 2,
+         "scale": 6,
          "type": "currency",
          "unique": false
         },
@@ -6809,7 +6837,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990",
+      "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -6859,7 +6887,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "lines[*].amount",
          "target_type": "currency"
@@ -6888,7 +6916,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "total",
          "target_type": "currency"
@@ -6906,11 +6934,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:7da7b91a87f70a887860a41353bf85fbfabf2b3342ec54c5d769bc1f882ba97a",
+       "model_schema_hash": "sha256:9acc5df75c905eb1088ee1d09c12ff4a16738f17293014ace3df19b7f60f8e9c",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "invoice",
-       "source_plan_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990",
+       "source_plan_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776",
        "tables": {
         "$root": {
          "fields": {
@@ -6969,7 +6997,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           },
@@ -7039,7 +7067,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -7059,7 +7087,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           },
@@ -7098,7 +7126,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -7342,7 +7370,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -7377,7 +7405,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -7821,7 +7849,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -8075,7 +8103,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -8133,7 +8161,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -8282,7 +8310,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
+    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
    },
    "_deletable": false,
    "_effects": [
@@ -8608,7 +8636,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-09T18:59:33.230Z",
+     "at": "2026-11-10T06:26:47.083Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -8620,7 +8648,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.229Z",
+     "at": "2026-11-10T06:26:47.081Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -8632,7 +8660,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.226Z",
+     "at": "2026-11-10T06:26:47.078Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -8642,7 +8670,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.224Z",
+     "at": "2026-11-10T06:26:47.075Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8654,7 +8682,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.221Z",
+     "at": "2026-11-10T06:26:47.072Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8663,7 +8691,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.202Z",
+     "at": "2026-11-10T06:26:47.048Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8678,7 +8706,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.192Z",
+     "at": "2026-11-10T06:26:47.037Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8688,7 +8716,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.192Z",
+     "at": "2026-11-10T06:26:47.037Z",
      "data": {},
      "id": 15,
      "kind": "changed",
@@ -8696,7 +8724,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.192Z",
+     "at": "2026-11-10T06:26:47.037Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8717,7 +8745,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.180Z",
+     "at": "2026-11-10T06:26:47.019Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8729,7 +8757,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.160Z",
+     "at": "2026-11-10T06:26:46.981Z",
      "data": {
       "fields": {
        "total": {
@@ -8791,7 +8819,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-09T18:59:33.145Z",
+     "at": "2026-11-10T06:26:46.961Z",
      "data": {
       "fields": {
        "customer": {
@@ -8847,6 +8875,34 @@
  },
  "invoice_viewer_schema": {
   "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
    "models": [
     {
      "actions": [],
@@ -8925,7 +8981,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -9080,7 +9136,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990",
+      "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -9130,7 +9186,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "lines[*].amount",
          "target_type": "currency"
@@ -9159,7 +9215,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "total",
          "target_type": "currency"
@@ -9177,11 +9233,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:7da7b91a87f70a887860a41353bf85fbfabf2b3342ec54c5d769bc1f882ba97a",
+       "model_schema_hash": "sha256:9acc5df75c905eb1088ee1d09c12ff4a16738f17293014ace3df19b7f60f8e9c",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "invoice",
-       "source_plan_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990",
+       "source_plan_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776",
        "tables": {
         "$root": {
          "fields": {
@@ -9240,7 +9296,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           },
@@ -9310,7 +9366,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -9330,7 +9386,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           },
@@ -9369,7 +9425,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -9597,7 +9653,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -9632,7 +9688,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -10070,7 +10126,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -10324,7 +10380,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -10382,7 +10438,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -10523,7 +10579,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:c2c126829e473639dada577374626109bd8a8f7ea31d354c665400b469252990"
+    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
    },
    "_deletable": false,
    "_effects": [
@@ -11256,6 +11312,34 @@
  },
  "schema": {
   "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
    "models": [
     {
      "actions": [],
@@ -11334,7 +11418,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -11535,7 +11619,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -11661,7 +11745,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3",
+      "model_schema_hash": "sha256:3d7170ab36e01e6d6aca82f036452a3de2c5f62584cb361660588085d89c6937",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -11845,7 +11929,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "lines[*].rate:initial",
          "target_type": "currency"
@@ -11894,7 +11978,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "lines[*].amount",
          "target_type": "currency"
@@ -11923,7 +12007,7 @@
          ],
          "result_type": "decimal",
          "rounding": "half_up",
-         "scale": 2,
+         "scale": 6,
          "stored": true,
          "target": "total",
          "target_type": "currency"
@@ -11965,11 +12049,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:59541c6c0ac279d6222790a74a5db30da7aebb1b06b7b7ab78142f6b163c298d",
+       "model_schema_hash": "sha256:76e551b3168001883b346c68fb593cd65f6b4bbc0cbf3310e5bc287a5dd123ac",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "order",
-       "source_plan_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3",
+       "source_plan_hash": "sha256:3d7170ab36e01e6d6aca82f036452a3de2c5f62584cb361660588085d89c6937",
        "tables": {
         "$root": {
          "fields": {
@@ -12083,7 +12167,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -12111,7 +12195,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           },
@@ -12146,7 +12230,7 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": 2,
+           "scale": 6,
            "stored": true,
            "type": "decimal"
           }
@@ -12524,7 +12608,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -12793,7 +12877,7 @@
        "read_only": false,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -12851,7 +12935,7 @@
        "read_only": true,
        "required": false,
        "required_when": null,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "currency",
        "unique": false
@@ -13080,7 +13164,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:886b1c51dcd6ee7c0d4906f9805553862aad6e8de68c3303296900b5e062d1d3"
+    "model_schema_hash": "sha256:3d7170ab36e01e6d6aca82f036452a3de2c5f62584cb361660588085d89c6937"
    },
    "_row_ids": {
     "n1": "000000000003s"

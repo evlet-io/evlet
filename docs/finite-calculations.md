@@ -286,6 +286,12 @@ at one. Rules can be declared on them; the rule reads other fields.
   `Currency(compute=qty * rate)` that yields `1.005` stores `1.01`, and
   `Decimal(scale=2, compute=x)` stores `0.12` for `0.125`. Set it per field:
   `Currency(rounding="half_even", compute=...)`.
+* A `Currency` result rounds to the decimal places of its own currency, resolved for each row
+  from its currency source: `Currency(currency="currency", compute=qty * rate)` stores `2.000` in
+  KWD, `2.00` in AED and `2` in JPY for `1.9995`, and a change of the currency recalculates it.
+  Intermediate values stay exact, so nothing rounds twice. Prefer an intermediate Currency field
+  to `round(x, 2)`, which hard-codes the places
+  ([model-engine.md](model-engine.md#decimal-places-per-currency)).
 * Range errors stay errors: a value that does not fit the column, or a rounded value
   outside the field's `minimum` or `maximum`, is `COMPUTE_RANGE_ERROR`.
 * `round(x, n)` always rounds half up. Use it for an intermediate step or a different scale.

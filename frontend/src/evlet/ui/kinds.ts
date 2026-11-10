@@ -5,7 +5,7 @@
 // dates, date-times in UTC, times as HH:MM:SS, durations as ISO 8601 (PT1H30M), tags as lists.
 
 import { parse as parseNumber, quantize, text as numberText } from '../model/finite';
-import { decimalMark, formatDate, formatDateTime, formatMoney, formatNumber, plainNumber as plain, wallToUtc } from '../model/format';
+import { currencyDecimals, decimalMark, formatDate, formatDateTime, formatMoney, formatNumber, moneyWire, plainNumber as plain, wallToUtc } from '../model/format';
 import { clockText, dateOrder, parseClock, parseDay, parseDayTime, parseLength } from './dateparse';
 
 /** Typed number text as a plain decimal, or an error that names the person's decimal mark. */
@@ -52,20 +52,34 @@ function bounds(value: number | string, meta: FieldSchema, show: (value: string)
   throw new InputError(`Use ${show(String(max))} or less`);
 }
 
-function decimal(scale: (meta: FieldSchema) => number) {
+function decimal(scale: (meta: FieldSchema) => number, money = false) {
   return (text: string, meta: FieldSchema) => {
     const clean = plainNumber(text);
     if (!clean) return null;
     if (!/^-?(\d+\.?\d*|\.\d+)$/.test(clean)) throw new InputError('Enter a number, for example 1250.50');
-    const places = (clean.split('.')[1] ?? '').length, allowed = scale(meta);
-    if (places > allowed) throw new InputError(allowed ? `Use at most ${allowed} decimal places` : 'Enter a whole number');
-    const value = numberText(quantize(parseNumber(clean.startsWith('.') ? `0${clean}` : clean.startsWith('-.') ? clean.replace('-.', '-0.') : clean), allowed), allowed);
+    // In money, trailing zeros are not places (as the server counts them): 12.500 fits a currency with 2.
+    const typed = clean.split('.')[1] ?? '', places = (money ? typed.replace(/0+$/, '') : typed).length, allowed = scale(meta);
+    if (places > allowed) {
+      // Money names its currency, as the server does: "Use at most 3 decimal places for KWD".
+      const code = money ? fixedCode(meta) : null, of = code ? ` for ${code}` : '';
+      throw new InputError(allowed ? `Use at most ${allowed} decimal place${allowed === 1 ? '' : 's'}${of}` : money ? `Use a whole amount${of}` : 'Enter a whole number');
+    }
+    const exact = quantize(parseNumber(clean.startsWith('.') ? `0${clean}` : clean.startsWith('-.') ? clean.replace('-.', '-0.') : clean), allowed);
+    // A Currency amount travels as the API sends it: at least 2 places, more only when it has them.
+    const value = money ? moneyWire(numberText(exact)) : numberText(exact, allowed);
     bounds(value, meta);
     return value;
   };
 }
 
 const scaleOf = (meta: FieldSchema, fallback: number) => typeof meta.scale === 'number' ? meta.scale : fallback;
+const fixedCode = (meta: FieldSchema) => typeof meta.currency === 'string' && /^[A-Z]{3}$/.test(meta.currency) ? meta.currency : null;
+/**
+ * The decimal places of a Currency field's amounts: those of its currency code on this site (KWD 3, JPY 0),
+ * or 2 when the field has no code. Never the schema scale, which is the storage scale (6). A field whose code
+ * comes from the record is resolved first (fields.ts, currencyPlaces) and passed here with that code.
+ */
+export const moneyPlaces = (meta: FieldSchema) => { const code = fixedCode(meta); return code ? currencyDecimals(code) : 2; };
 /** The fixed currency code of a Currency field (AED unless the schema names one). */
 export const currencyOf = (meta: FieldSchema) => {
   const code = meta.currency;
@@ -191,9 +205,9 @@ export const KINDS: Record<string, Kind> = {
     parse: decimal(meta => scaleOf(meta, 2)), align: 'right', inputMode: 'decimal', suffix: meta => meta.suffix || null,
   },
   currency: {
-    format: (value, meta) => empty(value) ? '' : formatMoney(value as string, { currency: currencyOf(meta), scale: scaleOf(meta, 2) }),
-    edit: (value, meta) => empty(value) ? '' : formatNumber(value as string, scaleOf(meta, 2)),
-    parse: decimal(meta => scaleOf(meta, 2)), align: 'right', inputMode: 'decimal', prefix: currencyOf,
+    format: (value, meta) => empty(value) ? '' : formatMoney(value as string, { currency: currencyOf(meta), scale: moneyPlaces(meta) }),
+    edit: (value, meta) => empty(value) ? '' : formatNumber(value as string, moneyPlaces(meta)),
+    parse: decimal(moneyPlaces, true), align: 'right', inputMode: 'decimal', prefix: currencyOf,
   },
   percent: {
     format: (value, meta) => empty(value) ? '' : `${formatNumber(value as string, scaleOf(meta, 2))}%`,

@@ -16,7 +16,7 @@ import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildTable, type ChildTableControls } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow } from '../ui/doc';
-import { currencyFor, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
+import { currencyFor, currencyPlaces, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
 import { autofocusForm, initialFocusField, layoutFocusOrder } from '../ui/autofocus';
 import { flowGrid, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
 import { NoteComposer } from './composer';
@@ -723,7 +723,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     label: meta.label, value: () => {
       const value = view(meta.name).value.get();
       if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
-      return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(meta.name), ctx.links)()) : formatOf(meta, value);
+      return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(meta.name), ctx.links)(), currencyPlaces(view(meta.name), ctx.links)()) : formatOf(meta, value);
     },
     empty: 'Not set',
     note: view(meta.name).calculated ? 'Calculated' : undefined,

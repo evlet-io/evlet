@@ -10,7 +10,7 @@ import { html, match, type Child } from '../dom';
 import { ApiError, type Session } from '../api';
 import { cell, derive, onCleanup } from '../reactive';
 import { SchemaIndex, type AppSchema } from '../model/schema';
-import { setCurrencyDisplays } from '../model/format';
+import { setCurrencyDecimals, setCurrencyDisplays } from '../model/format';
 import { Button, EmptyState } from '../ui/base';
 import { apiLinks, setLinkSource } from '../ui/fields';
 import { closeDialogs, closePopover, DialogFooter, openModal } from '../ui/layers';
@@ -63,6 +63,8 @@ export function App(options: AppOptions): Node {
     if (!alive) return;
     // How this site shows each currency code (Controls, Currencies), before anything formats money.
     setCurrencyDisplays(schemaData.currency_display);
+    // Decimal places of every code that does not have 2 (ISO 4217 with this site's changes): KWD 3, JPY 0.
+    setCurrencyDecimals(schemaData.currency_decimals);
     context.peek()?.prefs.dispose();
     const prefs = options.storage === undefined ? new Prefs(current.user!.username) : new Prefs(current.user!.username, options.storage);
     const unsaved = options.storage === undefined ? new LocalUnsaved(instanceKey(current), current.user!.username)

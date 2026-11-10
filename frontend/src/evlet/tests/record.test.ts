@@ -77,7 +77,7 @@ describe('opening a record', () => {
     const { store } = backend();
     await store.open(id(1));
     const total = store.field('total'), stage = store.field('stage'), reason = store.field('reason');
-    expect([total.label, total.meta.type, total.meta.scale, total.calculated]).toEqual(['Total', 'currency', 2, true]);
+    expect([total.label, total.meta.type, total.meta.scale, total.calculated]).toEqual(['Total', 'currency', 6, true]);
     expect(stage.meta.choices).toEqual(['open', 'won', 'lost']);
     expect(reason.meta.applies_when).not.toBeNull();
     expect(store.actions.map(action => action.name)).toEqual(['close']);

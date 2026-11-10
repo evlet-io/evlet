@@ -4,7 +4,7 @@
 // current text colour, so a one-colour symbol reads in light and dark themes alike.
 
 import { html, type Child } from '../dom';
-import { currencyDisplay, formatMoney, formatNumber, INVALID_AMOUNT, symbolText } from '../model/format';
+import { currencyDecimals, currencyDisplay, formatMoney, formatNumber, INVALID_AMOUNT, symbolText } from '../model/format';
 
 /**
  * The symbol of a code as a node: an image, or a text span. The image's data: URI was checked when the
@@ -22,19 +22,21 @@ export function CurrencySymbol(code: string, display = currencyDisplay(code)): H
 }
 
 /**
- * An amount with its symbol, as the site shows the code (or as `display` says, for a preview). Text symbols give the same text as formatMoney; an image symbol gives a
- * span with the image before or after the number. Empty values give ''.
+ * An amount with its symbol, as the site shows the code (or as `display` says, for a preview), at the code's
+ * decimal places (currencyDecimals) unless `places` says otherwise. Text symbols give the same text as
+ * formatMoney; an image symbol gives a span with the image before or after the number. Empty values give ''.
  */
-export function moneyChild(value: unknown, currency: string, scale = 2, display = currencyDisplay(currency)): Child {
+export function moneyChild(value: unknown, currency: string, places = currencyDecimals(currency), display = currencyDisplay(currency)): Child {
   if (value === null || value === undefined || value === '') return '';
-  if (!display.image) return formatMoney(value as string, { currency, scale, display });
-  const number = formatNumber(value as string | number, scale);
+  if (!display.image) return formatMoney(value as string, { currency, scale: places, display });
+  const number = formatNumber(value as string | number, places);
   if (number === INVALID_AMOUNT) return number;
-  const gap = display.space ? ' ' : '';
+  const gap = display.space ? ' ' : '';
   return display.position === 'prefix'
     ? html`<span class="money">${CurrencySymbol(currency, display)}${gap}${number}</span>`
     : html`<span class="money">${number}${gap}${CurrencySymbol(currency, display)}</span>`;
 }
 
-/** An amount that follows its value and currency as they change. */
-export const Money = (value: () => unknown, currency: () => string, scale = 2): Child => () => moneyChild(value(), currency(), scale);
+/** An amount that follows its value and currency as they change, at the currency's decimals (or `places`). */
+export const Money = (value: () => unknown, currency: () => string, places?: () => number): Child =>
+  () => moneyChild(value(), currency(), places ? places() : currencyDecimals(currency()));

@@ -187,6 +187,8 @@ export interface AppSchema { version: number; ui_version: number; models: ModelS
   /** Present when the app has print designs; available is false without the server's print extra. */ printing?: { available: boolean };
   /** How the currency codes the site changed are shown (Controls, Currencies); other codes show as 'AED 25,200.00'. */
   currency_display?: Record<string, CurrencyDisplay>;
+  /** Decimal places of every currency code that does not have 2 (ISO 4217 with the site's changes); others have 2. */
+  currency_decimals?: Record<string, number>;
   /** Named sidebars (evlet.Workspace), with only what this role can open; docs/ui.md#workspaces. */ workspaces?: WorkspaceSchema[] }
 
 /** A workspace: declared by an app, or the automatic one of an app that declares none. */

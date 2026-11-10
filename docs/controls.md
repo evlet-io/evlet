@@ -335,14 +335,22 @@ that code looks beside the amount:
 - **Spacing**: a space between the symbol and the amount, or none.
 - **Match the text colour** (images only): the image's shape is painted in the text colour, so a
   one-colour symbol reads in light and dark themes. Turn it off for a symbol with its own colours.
+- **Decimals**: 0 to 6 places, ISO 4217 by default (AED 2, KWD 3, JPY 0). **Add currency** adds a
+  code that is not listed, such as a client's own unit with 5 places.
 
 A code that is not listed shows as it always has: the code, a space, then the amount
-(`AED 1,234.50`). Number formatting does not change here: separators and decimals follow each
-person's region, and amounts are never converted.
+(`AED 1,234.50`), with its ISO places. Separators follow each person's region, and amounts are
+never converted.
+
+Raising a code's decimals takes effect at once. Lowering them is refused with 409 while a stored
+amount in that code has more places, naming how many and the first one; nothing is saved. To lower
+them anyway, round those amounts first with the explicit, audited step
+`round_stored_money(app, "AED", 2, actor="finance-admin")`, which rounds them half up and then saves
+the new decimals ([model-engine.md](model-engine.md#decimal-places-per-currency)).
 
 It lives in Controls, not Settings: Settings is each person's own account, while this changes what
 everyone on the site sees, like the other site-wide settings here. It is the setting
-`display.currencies` (`{"AED": {"symbol", "image", "position", "space", "tint"}}`, only the changed
+`display.currencies` (`{"AED": {"symbol", "image", "position", "space", "tint", "decimals"}}`, only the changed
 codes, at most 30), saved through the change bar with the others. Every save writes an audit row
 (area `Display`, "Changed AED") whose before and after name each image by type, size and a short
 hash, never its bytes. **Reset to default** removes one code; **Reset all to default** removes the
@@ -367,7 +375,8 @@ Where the display applies:
 
 On screen an image sits at text height on the number's baseline, with the ISO code as its `alt` text
 for screen readers and copying. A right-to-left symbol such as `د.إ` is isolated so it stays on its
-side of the digits. `/api/schema` sends the changed codes as `currency_display`, so the browser
+side of the digits. `/api/schema` sends the changed codes as `currency_display`, and the places of
+every code that does not have 2 as `currency_decimals` (`{"JPY": 0, "KWD": 3, ...}`), so the browser
 formats without another request; people see a change on their next page load.
 
 Trusted code can set it the same way, checked and audited:

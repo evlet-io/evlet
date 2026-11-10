@@ -158,8 +158,13 @@ production ready, but the rules below hold from 0.3 on.
   schema's `state` entry ([states-actions.md](states-actions.md#cancelled-states)).
 
 - **Currency display.** `set_currency_display(application, value, *, actor='cli')`, the setting
-  `display.currencies` with its entry form (`symbol`, `image`, `position`, `space`, `tint`) and its
-  limits, and `currency_display` in `/api/schema` ([controls.md](controls.md#currencies)).
+  `display.currencies` with its entry form (`symbol`, `image`, `position`, `space`, `tint`,
+  `decimals`) and its limits, and `currency_display` in `/api/schema` ([controls.md](controls.md#currencies)).
+- **Currency decimals.** `currency_decimals(code, displays=None)`, `currency_unit(code, displays=None)`,
+  `round_money(value, code, rounding='half_up', displays=None)`, `set_currency_decimals(application,
+  decimals, *, actor='cli')`, `round_stored_money(application, code, decimals, *, actor='cli')`, `currency_decimals` in `/api/schema`, the 409 refusal when lowering a code's
+  decimals, Currency storage at 6 places with values serialized with at least 2, and the
+  `currency` entry of a finite plan's Currency targets ([model-engine.md](model-engine.md#decimal-places-per-currency)).
 
 For each of these, the contract covers the name and the arguments it takes: their names,
 order, whether they are keyword-only, and their defaults. Model `Meta` options and the

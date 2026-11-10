@@ -7,7 +7,8 @@ from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decim
 from evlet.calc import F
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
-CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
+# KWD has 3 decimal places (ISO 4217); XCR is a client's own credit unit the demo gives 5 in Controls, Currencies.
+CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR', 'KWD', 'XCR']
 
 
 class Customer(Model):

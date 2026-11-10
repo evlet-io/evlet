@@ -7,6 +7,7 @@ import sqlite3
 from .fields import ACTIVE, EMPTY_LAYER, Image, Link, MISSING, Reference, RichText
 from . import audit
 from .identity import FIXED_ID, RecordId, new_id, sequential
+from .currencies import check_amounts
 from .models import ValidationError, identifier
 from .query import SqlQuery
 from .naming import has_title, title_of
@@ -389,6 +390,7 @@ class Session:
             record = model(**{**record._values, **numbers})
         periods.check(self, model, after=record._values)
         self.check_references(model, record._values)
+        check_amounts(self, model, record._values)
         names, stored = storage_columns(model, stored_values(model, record._values), model.__fields__)
         created = insert(self.connection, table, names, stored, id_title=has_title(model), actor=self.actor)
         images.settle(self, model, created, record._values)
@@ -442,6 +444,7 @@ class Session:
         if changes:
             periods.check(self, model, before=current._values, after=record._values)
             self.check_references(model, {name: record._values[name] for name in changes})
+            check_amounts(self, model, record._values)
             table = identifier(self.registry.name_for(model))
             values = stored_values(model, record._values, current.id)
             names, stored = storage_columns(model, values, [*changes, *(['title'] if has_title(model) and 'title' not in changes else [])])
@@ -586,6 +589,7 @@ class Session:
             given.append(row_id)
             record = model(**values, **stamps)
             periods.check(self, model, after=record._values)
+            check_amounts(self, model, record._values)
             records.append(record)
             stored.append(storage_columns(model, record._values, names)[1])
         columns = storage_columns(model, records[0]._values, names)[0]
@@ -658,6 +662,7 @@ class Session:
         if not changes:
             return current
         periods.check(self, model, before=current._values, after=record._values)
+        check_amounts(self, model, record._values)
         table = identifier(self.registry.name_for(model))
         names, stored = storage_columns(model, record._values, list(changes))
         assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
