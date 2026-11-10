@@ -146,3 +146,39 @@ describe('FormSection', () => {
     expect(host.querySelector('section')!.classList.contains('closed')).toBe(true);
   });
 });
+
+describe('one click opens the picker', () => {
+  const choice = () => localField({ name: 'kind', type: 'select', label: 'Kind', choices: ['visit', 'repair'] }, 'visit');
+  const day = () => localField({ name: 'due', type: 'date', label: 'Due' }, '2026-11-10');
+  const text = () => localField({ name: 'note', type: 'text', label: 'Note' }, 'Hello');
+
+  it('opens a Select list and a date picker on the click that starts editing; Esc closes the picker and keeps editing', async () => {
+    for (const make of [choice, day]) {
+      const host = render(() => InlineValue({ field: make(), save: () => true, confirm: false }));
+      host.querySelector<HTMLButtonElement>('button.fval')!.click();
+      await flush();
+      expect(host.querySelector('.fval-edit')).not.toBeNull();
+      const pop = document.querySelector<HTMLElement>('.pop')!;
+      expect(pop).not.toBeNull();
+      key(pop.querySelector<HTMLElement>('input, button, [tabindex]') ?? pop, 'Escape');
+      await flush();
+      expect(document.querySelector('.pop')).toBeNull();
+      expect(host.querySelector('.fval-edit')).not.toBeNull();
+      cleanup();
+    }
+  });
+
+  it('only focuses a text input, and Tab onto a value opens nothing', async () => {
+    const host = render(() => InlineValue({ field: text(), save: () => true, confirm: false }));
+    host.querySelector<HTMLButtonElement>('button.fval')!.click();
+    await flush();
+    expect(document.activeElement).toBe(host.querySelector('.fval-edit input'));
+    expect(document.querySelector('.pop')).toBeNull();
+    cleanup();
+    const other = render(() => InlineValue({ field: choice(), save: () => true, confirm: false }));
+    other.querySelector<HTMLButtonElement>('button.fval')!.focus();
+    await flush();
+    expect(other.querySelector('.fval-edit')).toBeNull();
+    expect(document.querySelector('.pop')).toBeNull();
+  });
+});

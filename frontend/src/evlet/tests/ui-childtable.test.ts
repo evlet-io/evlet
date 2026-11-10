@@ -42,8 +42,14 @@ describe('ChildTable over a record store', () => {
     key(input, 'Enter');
     expect(store.table('lines').rows.peek()[0].field('product').value.peek()).toBe(id(2));
     expect(document.querySelector('.link-search')).toBeNull();
-    // Typing on the cell's open control does the same.
+    // One click edits the cell and opens its search; Esc closes the search and keeps the cell editing.
     cellOf(rowsIn(host)[1], 'product').click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(document.querySelectorAll('.link-search input')).toHaveLength(1);
+    key(document.querySelector('.link-search input')!, 'Escape');
+    expect(document.querySelector('.link-search')).toBeNull();
+    expect(cellOf(rowsIn(host)[1], 'product').classList.contains('editing')).toBe(true);
+    // Typing on the cell's open control starts the search with it.
     key(cellOf(rowsIn(host)[1], 'product').querySelector('button')!, 'l');
     await new Promise(resolve => setTimeout(resolve, 0));
     expect(document.querySelector<HTMLInputElement>('.link-search input')!.value).toBe('l');
@@ -394,8 +400,8 @@ describe('ChildTable focus, click and Tab', () => {
     const store = await entryLines();
     const links = { search: async () => [{ id: id(2), title: 'Licence' }], title: () => cell<string | null>('Licence') };
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['note', 'product', 'phone'], links }));
+    // The click that edits the cell opens its search.
     await press(cellOf(rowsIn(host)[0], 'product'));
-    key(cellOf(rowsIn(host)[0], 'product').querySelector('button')!, 'L');
     await tick();
     key(document.querySelector<HTMLInputElement>('.link-search input')!, 'Enter');
     await tick();

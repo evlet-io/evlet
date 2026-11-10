@@ -614,6 +614,9 @@ mount(document.querySelector('#app')!, () => DocFrame({
 - **Tabs** and **TabPanel** are for screens of your own (a list's tabs use Tabs); the record page has no
   tabs since 0.4, and `sticky` and `keepTabPlace` went with them.
 - **InlineValue** reads first and edits in place: click or Enter opens the field's input,
+  and for a Link, Select, date, date-time or time field its picker too, in one step (a `Control`'s
+  `open()`; Tab onto the value opens nothing, and Esc in the picker closes it and keeps editing).
+  Table cells do the same on a click, Enter or F2, but not when typing starts the edit.
   Enter saves (one field, through `record.save()`, no Save button), Esc cancels, leaving the
   field saves. Focus returns to the value after Enter or Esc; after Tab or a click elsewhere
   it stays where the user went. Text the user did not change is never written, so a

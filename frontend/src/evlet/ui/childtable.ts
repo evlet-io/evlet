@@ -311,7 +311,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   };
   const focusCell = (spot: Spot) => { if (spot) cellAt(spot)?.focus(); };
   const reveal = (key: string) => { const index = indexOf(key); if (index >= 0) view.reveal(scroller, index); };
-  const startEdit = (spot: NonNullable<Spot>, typed?: string) => {
+  // open: a click, Enter or F2 also opens the cell's picker (a Link search, a list, a date); typing does not.
+  const startEdit = (spot: NonNullable<Spot>, typed?: string, open = false) => {
     const row = untrack(() => rows.get()).find(item => item.key === spot.key);
     if (!row || !editable(row, spot.col)) return false;
     reveal(spot.key);
@@ -324,6 +325,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       startText = textIn();
       if (typed !== undefined && control.type) control.type(typed);
       else if (typed !== undefined && input) { input.value = typed; input.setSelectionRange?.(typed.length, typed.length); }
+      else if (open && control.open) { const opening = control; setTimeout(() => { if (control === opening && opening.element.isConnected) opening.open!(); }); }
     }
     return true;
   };
@@ -778,7 +780,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       if (next && !startEdit(next)) moveActive(next);
       return;
     }
-    if (event.key === 'Enter' || event.key === 'F2') { event.preventDefault(); startEdit(spot); return; }
+    if (event.key === 'Enter' || event.key === 'F2') { event.preventDefault(); startEdit(spot, undefined, true); return; }
     if ((event.key === 'Delete' || event.key === 'Backspace') && editable(row, spot.col)) { event.preventDefault(); writeValue(row.field(spot.col), null); return; }
     if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey && event.key !== ' ') {
       const kind = kindOf(row.field(spot.col).meta.type);
@@ -792,7 +794,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const spot = { key: tr.dataset.key!, col: td.dataset.col! };
     landed = null;
     if (editing.peek()) { if (!commit()) { refocus(); return; } stopEdit(false); }
-    if (!startEdit(spot)) moveActive(spot);
+    if (!startEdit(spot, undefined, true)) moveActive(spot);
   });
   // A cell that takes the focus (a click, a tap) becomes the active cell, so the active cell and
   // the focus never part. While a cell is being edited, the click that follows decides.
