@@ -804,10 +804,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
         event.preventDefault();
         if (!commit()) { refocus(); return; }
         const next = below(editingNow);
-        // Enter in a new last row with a value in it adds the next row, for keying in lines one after another.
+        // Enter after typing in a new last row adds the next row, for keying in lines one after another.
         const row = untrack(() => rows.get()).find(item => item.key === editingNow.key);
-        const value = row ? untrack(() => row.field(editingNow.col).value.get()) : null;
-        if (!next && row?.isNew && value !== null && value !== undefined && value !== '' && untrack(() => canAdd.get())) { stopEdit(false); addTo(sectionOf(row) ?? undefined); return; }
+        const typed = row ? JSON.stringify(untrack(() => row.field(editingNow.col).value.get()) ?? null) !== JSON.stringify(before ?? null) : false;
+        if (!next && row?.isNew && typed && untrack(() => canAdd.get())) { stopEdit(false); addTo(sectionOf(row) ?? undefined); return; }
         stopEdit(!next);
         if (next && !startEdit(next)) moveActive(next);
       }

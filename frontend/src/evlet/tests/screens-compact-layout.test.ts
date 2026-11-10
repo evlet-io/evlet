@@ -106,6 +106,23 @@ describe('a compact record page', () => {
     await until(() => expect(doc.classList.contains('side-open')).toBe(false));
   });
 
+  it('shows the selection on the table title line: the count, Duplicate and Delete, with the row placeholder below', async () => {
+    const { host } = await start(routes, `/app/shipment/${shipment}`);
+    await until(() => expect(host.querySelector('.ev-cmp-table tbody tr[data-key]')).not.toBeNull());
+    const title = host.querySelector('.ev-cmp-table .ev-cmp-th')!;
+    expect(title.querySelector('.ev-cmp-sel')).toBeNull();
+    (host.querySelector('.ev-cmp-table tbody tr[data-key] [role="checkbox"]') as HTMLElement).click();
+    await until(() => expect(text(title.querySelector('.ev-cmp-sel'))).toBe('1 selected'));
+    // Title, count, "1 selected", Duplicate, then Delete (red, outlined).
+    expect([...title.querySelectorAll('button')].slice(0, 2).map(text)).toEqual(['Duplicate', 'Delete']);
+    expect(title.querySelector('.btn.ev-cmp-del.danger-soft')).not.toBeNull();
+    byText(title, 'button', 'Duplicate').click();
+    await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('2'));
+    byText(title, 'button', 'Delete').click();
+    await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('1'));
+    expect(title.querySelector('.ev-cmp-sel')).toBeNull();
+  });
+
   it('shows a Main table compactly with its row count and an Add row as its last row, and lists the rest as more information', async () => {
     const { host } = await start(routes, `/app/shipment/${shipment}`);
     await until(() => expect(host.querySelector('.ev-cmp-th')).not.toBeNull());

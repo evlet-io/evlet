@@ -623,13 +623,18 @@ mount(document.querySelector('#app')!, () => DocFrame({
   confirms with a toast that has Undo.
 - **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
   across editable cells and wrap rows (from a cell being edited or not; past the last cell Tab
-  goes on to Add row), Enter moves down, Esc cancels, arrow keys move between cells. One cell is
+  goes on to the Add row placeholder), Enter moves down (in a new last row, after typing, Enter adds the next row), Esc cancels, arrow keys move between cells. One cell is
   active at a time and it holds the focus (a roving `tabindex` in a `role="grid"`): a click or tap
   focuses the clicked cell, a cell that can't be committed keeps the focus, and an unchanged cell
   never blocks moving on. A choice from a dropdown, Link search or picker commits the cell and
   returns the focus to it, so Tab goes to the next cell and Enter to the cell below. Typing starts
   editing (on a Link cell it opens the search with what was typed), Alt and an
-  arrow moves a row. Rows can be added, duplicated
+  arrow moves a row. The table's last row is a quiet **Add row placeholder** (a muted plus, "Add row", and "or add a
+  section" when the schema has sections), above the total line: a click or Enter on it adds a row there and puts the
+  cursor in its first editable cell. It is hidden while the lines are locked or read only and at `max_rows`. With rows
+  selected (a section row's checkbox selects the section alone), the title bar shows "N selected", **Duplicate** (copies
+  without ids, directly after the last selected row; a selected section with its lines) and **Delete** (a deleted
+  section keeps its lines), none of it on a locked table. Rows can be added, duplicated
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the
   record saves or the lines are locked), moved by their drag handle (mouse, touch, or Space and
@@ -641,12 +646,17 @@ mount(document.querySelector('#app')!, () => DocFrame({
   arrow), Close, then Delete line, Insert below and Done; nested tables follow the form. Esc closes
   the editor, then focus view. A narrow window shows the form alone. `rowForm(row, field)` draws the
   form instead of the default grid of fields, and `controls(api)` hands the caller the table's
-  `focused`, `toggleFocus()`, `columns(anchor)`, `sectioned` and `addSection()` for buttons of its own.
+  `focused`, `toggleFocus()`, `columns(anchor)`, `sectioned`, `addSection()`, `add()`, `selected`, `editable`,
+  `duplicateSelected()` and `deleteSelected()` for buttons of its own (the compact record page puts the selection
+  on the table's title line: "Items 4", "2 selected", Duplicate, Delete).
   A Table whose schema has `"sections": true` takes **section rows** (`{"id", "section": "<label>"}`
   among its rows in a payload, `Table.sections` in the store): each is a full-width heading with a
   drag handle, a chevron that hides its lines, its label (renamed in place), "N lines", and the sums of
-  its own lines in the fields the schema's `section_sums` names (none without it). The add row offers "or
-  add a section"; deleting a section keeps its lines; a locked or confirmed record offers no section edits.
+  its own lines in the fields the schema's `section_sums` names (none without it). Each open section but the last
+  ends with its own Add row placeholder, which adds at the end of that section's lines; the table's last one adds
+  at the end of the last section and offers "or add a section" (a new section starts with its label in edit). A
+  closed section shows none, and adding into it opens it. New rows keep their place through the change set's
+  `order`, so a save and reload shows them where they were added. Deleting a section keeps its lines; a locked or confirmed record offers no section edits.
   Line pages count lines only, each page bringing the section rows before its first line. A save sends
   sections as `{_key, section}` to create (`_row_ids` maps the key back), `{id, section}` to rename, their
   ids to delete, and `order` with rows and sections whenever a section changed; Duplicate copies them as
