@@ -86,6 +86,15 @@ export interface ChildTableControls {
   /** Whether the table takes section rows, and adding one at the end (it starts being renamed). */
   sectioned: boolean;
   addSection(): void;
+  /** Add a row where the table's last Add row placeholder adds one (the end of the last section, else the end), and
+   * start editing its first editable cell. */
+  add(): void;
+  /** How many rows and section rows are selected, and whether rows can change now (not locked, loaded). */
+  selected: Readable<number>;
+  editable: Readable<boolean>;
+  /** Copy the selected rows (a selected section with its lines) after the last one selected; remove them. */
+  duplicateSelected(): void;
+  deleteSelected(): void;
 }
 
 /** A row's key values on one line: "4 × 2,228.26 = 8,913.04" from two values typed in and a calculated one, else
@@ -210,18 +219,68 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     for (const section of sections) if (!out.has(section.key)) out.set(section.key, []);
     return out;
   }, { name: `${table.name} (section lines)` });
-  type Entry = { kind: 'row'; row: Row } | { kind: 'section'; section: TableSection };
+  // Rows can be added while the lines are editable and below the schema's max_rows.
+  const maxRows = table.meta.max_rows;
+  const canAdd = derive(() => !readOnly.get() && (typeof maxRows !== 'number' || rows.get().length < maxRows), { name: `${table.name} (can add)` });
+  // Each open section but the last ends with its own Add row placeholder; the table's last placeholder (after the
+  // rows) adds to the end of the last section.
+  type Entry = { kind: 'row'; row: Row } | { kind: 'section'; section: TableSection } | { kind: 'add'; section: string };
   const entries = derive<Entry[]>(() => {
     if (!hasSections.get()) return visible.get().map(row => ({ kind: 'row' as const, row }));
-    const out: Entry[] = [], sections = table.sections.get(), closed = closedSections.get(), list = rows.get();
+    const out: Entry[] = [], sections = table.sections.get(), closed = closedSections.get(), list = rows.get(), adding = canAdd.get();
+    const last = sections[sections.length - 1]?.key;
     let current: string | null = null;
+    const open = (section: TableSection) => {
+      if (adding && current && current !== last && !closed.has(current)) out.push({ kind: 'add', section: current });
+      out.push({ kind: 'section', section });
+      current = section.key;
+    };
     for (const row of list) {
-      for (const section of sections) if (section.before === row.key) { out.push({ kind: 'section', section }); current = section.key; }
+      for (const section of sections) if (section.before === row.key) open(section);
       if (!current || !closed.has(current)) out.push({ kind: 'row', row });
     }
-    for (const section of sections) if (section.before === null || !list.some(row => row.key === section.before)) out.push({ kind: 'section', section });
+    for (const section of sections) if (section.before === null || !list.some(row => row.key === section.before)) open(section);
     return out;
   }, { name: `${table.name} (entries)` });
+  /** Rows and section rows in the order they are drawn (each section just before the line it starts at). */
+  type Token = { row: Row; section?: undefined } | { section: TableSection; row?: undefined };
+  const sequence = (): Token[] => {
+    const out: Token[] = [], sections = table.sections.peek(), list = rows.peek();
+    for (const row of list) {
+      for (const section of sections) if (section.before === row.key) out.push({ section });
+      out.push({ row });
+    }
+    for (const section of sections) if (section.before === null || !list.some(row => row.key === section.before)) out.push({ section });
+    return out;
+  };
+  /** Put the rows and section rows in a drawn order: rows move to their places, and each section starts at the row
+   * that follows it, so the change set's order keeps them where they are drawn. */
+  const arrangeAs = (seq: Token[]) => batch(() => {
+    const order = seq.flatMap(token => token.row ? [token.row] : []);
+    order.forEach((row, at) => { if (rows.peek()[at] !== row) table.move(row, at); });
+    if (!sectioned) return;
+    const current = new Map(table.sections.peek().map(section => [section.key, section]));
+    const next: TableSection[] = [];
+    seq.forEach((token, at) => {
+      if (!token.section) return;
+      const section = current.get(token.section.key);
+      if (!section) return;
+      const after = seq.slice(at + 1).find(item => item.row)?.row?.key ?? null;
+      next.push(section.before === after ? section : { ...section, before: after });
+    });
+    if (next.some((section, at) => section !== table.sections.peek()[at]) || next.length !== table.sections.peek().length) table.sections.set(next);
+  });
+  /** Where a section's lines end in a drawn order: the next section row after it, or the end. */
+  const endOf = (seq: Token[], key: string) => {
+    const at = seq.findIndex(token => token.section?.key === key);
+    const next = seq.findIndex((token, index) => index > at && token.section);
+    return next < 0 ? seq.length : next;
+  };
+  /** The section a row is under, or null. */
+  const sectionOf = (row: Row): string | null => {
+    for (const [key, lines] of sectionLines.peek()) if (lines.includes(row)) return key;
+    return null;
+  };
   /** The line fields a section row sums (the schema's section_sums); none without it. */
   const sectionSums = new Set(table.meta.section_sums ?? []);
   /** The sum of a column over some lines, exact (decimal text), formatted as the total line formats it. */
@@ -310,7 +369,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // A cell that could not be committed keeps editing, and keeps the focus.
   const refocus = () => { if (control && !control.element.contains(document.activeElement)) control.focus(); };
   // The first control after the table, for Tab past its last cell.
-  const after = () => grid.querySelector<HTMLButtonElement>('.g-under .g-add:not(:disabled)');
+  const after = () => grid.querySelector<HTMLButtonElement>('tr.g-addrow-end .g-add') ?? grid.querySelector<HTMLButtonElement>('.g-empty .btn');
   const cancel = () => {
     const spot = editing.peek();
     if (!spot) return;
@@ -357,40 +416,75 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // Why rows can't change now, or null.
   const blocked = () => readOnly.peek() ? (locked.peek() ? 'The lines are locked, so the rows can\u2019t come back.' : 'The record is still loading. Try Undo again in a moment.')
     : record.saving.peek() ? 'The record is being saved. Try Undo again in a moment.' : null;
-  const add = () => {
-    if (readOnly.peek()) return;
-    const row = table.add();
+  /** Add a row at the end of a section's lines (by default the last section; the end without sections), open that
+   * section, and start editing the new row's first editable cell. */
+  const addTo = (key: string | null = table.sections.peek().at(-1)?.key ?? null) => {
+    if (!canAdd.peek()) return null;
+    const row = batch(() => {
+      const added = table.add();
+      if (key && table.sections.peek().some(section => section.key === key)) {
+        const seq = sequence().filter(token => token.row !== added);
+        seq.splice(endOf(seq, key), 0, { row: added });
+        arrangeAs(seq);
+        if (closedSections.peek().has(key)) toggleSection(key);
+      }
+      return added;
+    });
     const first = untrack(() => columns.get()).find(column => editable(row, column.key));
     reveal(row.key);
     if (first) startEdit({ key: row.key, col: first.key });
+    return row;
   };
-  const duplicate = (list: Row[]) => {
-    if (readOnly.peek() || !list.length) return;
-    batch(() => {
-      for (const row of list) {
-        const copy = table.add(copyValues(row));
-        table.move(copy, untrack(() => rows.get()).indexOf(row) + 1);
-      }
+  const add = () => { addTo(); };
+  const counted = (rowCount: number, sectionCount: number) => [rowCount ? (rowCount === 1 ? '1 row' : `${rowCount} rows`) : '',
+    sectionCount ? (sectionCount === 1 ? '1 section' : `${sectionCount} sections`) : ''].filter(Boolean).join(' and ');
+  /** Copies of the selected rows, without their ids, directly after the last one selected. A selected section comes
+   * with its lines, and the copies then go after the lines of the section the last selected item is in. */
+  const duplicate = (list: Row[], sectionKeys: string[] = []) => {
+    if (readOnly.peek() || (!list.length && !sectionKeys.length)) return;
+    const seq = sequence(), picked = new Set<Row>(list), whole = new Set(sectionKeys);
+    const copied: Token[] = [];
+    let current: string | null = null, last = -1;
+    seq.forEach((token, at) => {
+      if (token.section) {
+        current = token.section.key;
+        if (whole.has(current)) { copied.push(token); last = at; }
+      } else if (picked.has(token.row) || (current && whole.has(current))) { copied.push(token); last = at; }
     });
-    toast(list.length === 1 ? 'Duplicated 1 row' : `Duplicated ${list.length} rows`, { icon: 'copy' });
+    if (!copied.length) return;
+    let at = last + 1;
+    // With a section among the copies, they go after the block the last selected item is in, so no line changes section.
+    if (copied.some(token => token.section)) {
+      const next = seq.findIndex((token, index) => index > last && token.section);
+      at = next < 0 ? seq.length : next;
+    }
+    batch(() => {
+      const fresh: Token[] = copied.map(token => token.row ? { row: table.add(copyValues(token.row)) } : { section: table.addSection(token.section!.label, null) });
+      seq.splice(at, 0, ...fresh);
+      arrangeAs(seq);
+    });
+    const rowCount = copied.filter(token => token.row).length;
+    toast(`Duplicated ${counted(rowCount, copied.length - rowCount)}`, { icon: 'copy' });
   };
-  const remove = (list: Row[]) => {
-    if (readOnly.peek() || !list.length) return;
+  const remove = (list: Row[], sectionKeys: string[] = []) => {
+    if (readOnly.peek() || (!list.length && !sectionKeys.length)) return;
     const positions = list.map(row => ({ at: untrack(() => rows.get()).indexOf(row), row })).sort((a, b) => a.at - b.at);
     batch(() => {
+      // A deleted section keeps its lines, under the section before it.
+      for (const key of sectionKeys) table.removeSection(key);
       for (const row of list) table.remove(row);
       selection.set(new Set());
       if (list.some(row => row.key === expanded.peek())) expanded.set(null);
     });
-    toast(list.length === 1 ? 'Deleted 1 row' : `Deleted ${list.length} rows`, {
+    toast(`Deleted ${counted(list.length, sectionKeys.length)}`, {
       icon: 'trash-2',
-      // The same rows come back, with their ids and rows of rows, where they were.
-      undo: () => {
+      // The same rows come back, with their ids and rows of rows, where they were (not when a section went with them).
+      undo: list.length && !sectionKeys.length ? () => {
         const why = blocked();
         if (why) { toast(why, { icon: 'info' }); return; }
         try { for (const item of positions) table.restore(item.row, item.at); }
         catch (error) { toast(error instanceof Error ? error.message : 'The rows could not come back.', { icon: 'info' }); }
-      },
+      } : undefined,
     });
   };
   const moveRow = (row: Row, direction: 1 | -1) => {
@@ -401,6 +495,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     reveal(row.key);
   };
   const selectedRows = () => rows.get().filter(row => selection.get().has(row.key));
+  /** The selected section rows (selected as s:<key>), in order. A section's checkbox selects the section alone. */
+  const selectedSections = () => table.sections.get().filter(section => selection.get().has(`s:${section.key}`));
+  const duplicateSelected = () => duplicate(untrack(selectedRows), untrack(selectedSections).map(section => section.key));
+  const deleteSelected = () => remove(untrack(selectedRows), untrack(selectedSections).map(section => section.key));
   const toggle = (key: string, on: boolean) => { const next = new Set(selection.peek()); if (on) next.add(key); else next.delete(key); selection.set(next); };
 
   // ---------- views ----------
@@ -554,14 +652,33 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       queueMicrotask(() => { input.focus(); input.select(); });
       return input;
     };
-    return html`<tr class="g-sec" role="row" data-key=${`s:${key}`} data-drag-item="line" data-drag-id=${`s:${key}`}>
+    return html`<tr class="g-sec" role="row" data-key=${`s:${key}`} class:sel=${() => selection.get().has(`s:${key}`)} data-drag-item="line" data-drag-id=${`s:${key}`}>
       <td class="g-ctl stk" style="left:0" role="gridcell"><div class="g-ci">
+        ${Checkbox({ checked: () => selection.get().has(`s:${key}`), onChange: on => toggle(`s:${key}`, on), ariaLabel: () => `Select section ${item().label}` })}
         ${when(() => !readOnly.get(), () => html`<button type="button" class="g-drag" data-drag-handle="line" aria-label=${() => `Move section ${item().label}`} aria-roledescription="draggable section">${Icon('grip-vertical', { size: 'xs' })}</button>`)}
         <button type="button" class="g-sec-tog" aria-expanded=${() => String(open())} aria-label=${() => `${open() ? 'Hide' : 'Show'} the lines of ${item().label}`}
           on:click=${() => toggleSection(key)}>${Icon('chevron-down', { size: 'xs' })}</button></div></td>
       ${each(columns, column => column.key, (column, index) => html`<td role="gridcell" class=${column().align === 'right' ? 'r num' : ''} class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => index() === 0
         ? html`<span class="g-sec-l">${label}<span class="muted g-sec-n">${() => `${lines().length} ${lines().length === 1 ? 'line' : 'lines'}`}</span>${when(() => !readOnly.get(), () => IconButton({ icon: 'trash-2', tip: () => `Delete section ${item().label} (its lines stay)`, size: 'small', onClick: () => table.removeSection(key) }))}</span>`
         : sectionSums.has(column().key) ? sumOf(lines(), column()) : ''}</td>`)}</tr>`;
+  };
+  /** A quiet Add row placeholder: a muted plus, "Add row" in the first column and, on the table's last one of a table with
+   * sections, "or add a section" in the next. A section's own one adds at the end of its lines; the last one at the end
+   * of the last section (else of the table). */
+  const addRowView = (section: string | null, end: boolean) => {
+    const addSec = () => html`<button type="button" class="g-add-sec" on:click=${addSection}>or add a section</button>`;
+    const tr = html`<tr class="g-addrow" class:g-addrow-end=${end} role="row" data-add=${section ?? ''}>
+      <td class="g-ctl stk" style="left:0" role="gridcell"><span class="g-addrow-plus" aria-hidden="true">${Icon('plus', { size: 'xs' })}</span></td>
+      ${each(columns, column => column.key, (column, index) => html`<td role="gridcell" class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => index() === 0
+        ? html`<button type="button" class="g-add" aria-label=${section && !end ? () => `Add row to ${table.sections.get().find(item => item.key === section)?.label ?? 'section'}` : 'Add row'}
+            on:click=${() => addTo(section ?? undefined)}>Add row</button>${end && sectioned && columns.get().length === 1 ? addSec() : null}`
+        : index() === 1 && end && sectioned ? addSec() : ''}</td>`)}</tr>` as HTMLElement;
+    // A click anywhere on the placeholder but "or add a section" adds the row.
+    tr.addEventListener('click', event => {
+      if ((event.target as Element).closest('button')) return;
+      addTo(section ?? undefined);
+    });
+    return tr;
   };
   /** A line or section moved by its drag handle to before item `before` (a line key, s:<section key>, or null for the end). */
   const moveLine = (id: string, before: string | null) => {
@@ -601,7 +718,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     <b class="g-rec-title">${heading.title}</b>${heading.number ? html`<span class="g-rec-no mono">${heading.number}</span>` : null}
     <span class="grow"></span>${Button({ icon: 'arrow-left', label: 'Back to form', variant: 'ghost', size: 'small', hideLabelOnPhone: true, onClick: () => { leaveFocus(); grid.querySelector<HTMLElement>('.g-bar [aria-pressed]')?.focus(); } })}</header>`;
 
-  props.controls?.({ focused, toggleFocus: () => focused.peek() ? leaveFocus() : enterFocus(), columns: anchor => columnsMenu(anchor), sectioned, addSection });
+  props.controls?.({ focused, toggleFocus: () => focused.peek() ? leaveFocus() : enterFocus(), columns: anchor => columnsMenu(anchor), sectioned, addSection,
+    add, selected: derive(() => selection.get().size), editable: derive(() => !readOnly.get()), duplicateSelected, deleteSelected });
   const focusButton = () => {
     const button = html`<button type="button" class="btn sm" class:primary=${focused} aria-pressed=${() => String(focused.get())}
       on:click=${() => focused.peek() ? leaveFocus() : enterFocus()}>${() => Icon(focused.get() ? 'minimize-2' : 'maximize-2', { size: 'sm' })}<span class="hide-sm">${() => focused.get() ? 'Exit focus' : 'Focus'}</span></button>` as HTMLElement;
@@ -615,8 +733,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       ${props.heading ? null : when(focused, () => html`<span class="g-crumb">${props.crumb ?? ''}${Icon('chevron-right', { size: 'xs' })}</span>`)}
       <div class="g-t" id=${titleId}>${IconTile(props.icon ?? 'table-2', { tint: props.tint ?? 'blue', size: 26 })}${props.title ?? table.meta.label}<span class="n num" aria-label=${() => `${rows.get().length} rows`}>${() => String(rows.get().length)}</span></div>
       ${when(() => selection.get().size > 0 && !readOnly.get(), () => html`<span class="g-selinfo" role="status">${() => `${selection.get().size} selected`}</span>
-        ${Button({ icon: 'copy', label: 'Duplicate', variant: 'ghost', size: 'small', onClick: () => duplicate(selectedRows()) })}
-        ${Button({ icon: 'trash-2', label: 'Delete', variant: 'soft-danger', size: 'small', onClick: () => remove(selectedRows()) })}`)}
+        ${Button({ icon: 'copy', label: 'Duplicate', variant: 'ghost', size: 'small', onClick: duplicateSelected })}
+        ${Button({ icon: 'trash-2', label: 'Delete', variant: 'soft-danger', size: 'small', onClick: deleteSelected })}`)}
       <span class="grow"></span>
       ${(() => { const button = Button({ icon: 'columns-3', label: 'Columns', size: 'small', hideLabelOnPhone: true, onClick: () => columnsMenu(button) }); button.setAttribute('aria-haspopup', 'dialog'); return button; })()}
       ${focusButton()}
@@ -631,10 +749,12 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
           onChange: on => selection.set(on ? new Set(rows.peek().map(row => row.key)) : new Set()) })}</th>${each(columns, column => column.key, header)}</tr></thead>
         <tbody data-drop-zone="line" data-zone="lines">
           <tr class="spacer" aria-hidden="true"><td colspan=${() => String(columns.get().length + 1)} style="padding:0;border:0" style:height=${() => `${hasSections.get() ? 0 : view.range.get().before}px`}></td></tr>
-          ${each(entries, entry => entry.kind === 'row' ? entry.row.key : `s:${entry.section.key}`, (entry, index) => entry().kind === 'row'
-            ? rowView(() => (entry() as { row: Row }).row, index) : sectionView(() => (entry() as { section: TableSection }).section), { fallback: () => html`<tr><td colspan=${() => String(columns.get().length + 1)} class="g-empty"><div class="g-empty-in">${Icon(props.icon ?? 'table-2', { size: 'lg', className: 'muted' })}<span>No rows yet</span>${when(() => !readOnly.get(),
+          ${each(entries, entry => entry.kind === 'row' ? entry.row.key : entry.kind === 'add' ? `a:${entry.section}` : `s:${entry.section.key}`, (entry, index) => entry().kind === 'row'
+            ? rowView(() => (entry() as { row: Row }).row, index) : entry().kind === 'add' ? addRowView((entry() as { section: string }).section, false)
+              : sectionView(() => (entry() as { section: TableSection }).section), { fallback: () => html`<tr><td colspan=${() => String(columns.get().length + 1)} class="g-empty"><div class="g-empty-in">${Icon(props.icon ?? 'table-2', { size: 'lg', className: 'muted' })}<span>No rows yet</span>${when(() => !readOnly.get(),
             () => Button({ icon: 'plus', label: 'Add the first row', variant: 'primary', size: 'small', onClick: add }))}</div></td></tr>` })}
           <tr class="spacer" aria-hidden="true"><td colspan=${() => String(columns.get().length + 1)} style="padding:0;border:0" style:height=${() => `${hasSections.get() ? 0 : view.range.get().after}px`}></td></tr>
+          ${when(() => canAdd.get() && (rows.get().length > 0 || hasSections.get()), () => addRowView(null, true))}
         </tbody>
         ${when(() => rows.get().length > 0 && Object.keys(sums).length > 0, () => html`<tfoot><tr role="row"><td class="g-ctl stk" style="left:0"></td>${each(columns, column => column.key, (column, index) => html`<td
           class=${column().align === 'right' ? 'r num' : 'num'} class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => sums[column().key]
@@ -642,8 +762,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       </table>
     </div>
     <div class="g-under">${when(locked, () => html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
-      () => html`${Button({ icon: 'plus', label: 'Add row', size: 'small', className: 'g-add', disabled: () => !record.ready.get(), onClick: add })}${sectioned
-        ? html`<span class="g-add-sec">or <button type="button" class="link-q" disabled=${() => !record.ready.get()} on:click=${addSection}>add a section</button></span>` : null}<span class="muted hide-sm">${Key('Tab')} next cell · ${Key('Enter')} cell below · ${Key('Esc')} cancel</span>`)}
+      () => html`<span class="muted hide-sm g-keys">${Key('Tab')} next cell · ${Key('Enter')} cell below · ${Key('Esc')} cancel</span>`)}
       <span class="grow"></span>${summary.length ? html`<div class="g-sum">${summary.map(item => html`<div class:gt=${Boolean(item.grand)}><span>${item.label}</span><b class="num">${item.value}</b></div>`)}</div>` : null}</div>
     ${props.heading?.footer ? when(focused, () => html`<div class="g-foot">${props.heading!.footer!()}</div>`) : null}
   </div>` as HTMLElement;
@@ -685,6 +804,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
         event.preventDefault();
         if (!commit()) { refocus(); return; }
         const next = below(editingNow);
+        // Enter in a new last row with a value in it adds the next row, for keying in lines one after another.
+        const row = untrack(() => rows.get()).find(item => item.key === editingNow.key);
+        const value = row ? untrack(() => row.field(editingNow.col).value.get()) : null;
+        if (!next && row?.isNew && value !== null && value !== undefined && value !== '' && untrack(() => canAdd.get())) { stopEdit(false); addTo(sectionOf(row) ?? undefined); return; }
         stopEdit(!next);
         if (next && !startEdit(next)) moveActive(next);
       }
@@ -760,7 +883,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   });
   // A row that disappears (removed, or the record reloaded) cannot stay selected or open.
   effect(() => {
-    const keys = new Set(rows.get().map(row => row.key));
+    const keys = new Set([...rows.get().map(row => row.key), ...table.sections.get().map(section => `s:${section.key}`)]);
     untrack(() => {
       if ([...selection.peek()].some(key => !keys.has(key))) selection.set(new Set([...selection.peek()].filter(key => keys.has(key))));
       if (expanded.peek() && !keys.has(expanded.peek()!)) expanded.set(null);

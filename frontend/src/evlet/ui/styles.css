@@ -928,7 +928,13 @@ table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:1
 .g-sec-n{font-weight:400;font-size:12px;white-space:nowrap}
 .g-sec-l .icon-btn{opacity:0}
 .g tr.g-sec:hover .g-sec-l .icon-btn,.g-sec-l .icon-btn:focus-visible{opacity:1}
-.g-add-sec{font-size:13px;color:var(--fg-3);display:inline-flex;align-items:center;gap:4px}
+/* The Add row placeholder: the last row of the table (and of each open section), quiet until hovered. */
+.g tr.g-addrow td{cursor:pointer;color:var(--fg-4)}
+.g tbody tr.g-addrow:hover td{background:var(--surface)}
+.g-addrow-plus{display:inline-grid;place-items:center;width:100%;color:var(--fg-4)}
+.g-add,.g-add-sec{font:inherit;color:var(--fg-4);padding:0 2px;border-radius:var(--r-sm)}
+.g tr.g-addrow:hover .g-add,.g-add:hover,.g-add-sec:hover,.g tr.g-addrow:hover .g-addrow-plus{color:var(--fg-2)}
+.g-add:focus-visible,.g-add-sec:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 .g-ci .check,.g th .check{width:16px;height:16px;margin:0}
 .g-exp{display:inline-flex;align-items:center;justify-content:space-between;gap:2px;height:24px;padding:0 3px 0 6px;border-radius:var(--r-sm);color:var(--fg-3);font-size:12px;min-width:40px}
 .g-exp:hover{background:var(--bg-muted);color:var(--fg)}
@@ -956,8 +962,6 @@ th:hover>.rz::after{background:var(--border-strong)}
 .input.ro{display:flex;align-items:center;justify-content:flex-end;background:var(--bg-muted);color:var(--fg-2);border-color:transparent}
 .g-under{display:flex;align-items:center;gap:12px;padding:8px 12px;border-top:1px solid var(--border);flex-wrap:wrap;font-size:12px}
 .g-under .grow{flex:1}
-.g-add{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 10px;border-radius:var(--r);color:var(--accent);font-weight:550;font-size:12.5px}
-.g-add:hover{background:var(--accent-soft)}
 .g-sum{display:flex;gap:20px;align-items:baseline}
 .g-sum div{display:flex;flex-direction:column;align-items:flex-end}
 .g-sum span{font-size:11.5px;color:var(--fg-3)}

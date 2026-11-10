@@ -106,12 +106,14 @@ describe('a compact record page', () => {
     await until(() => expect(doc.classList.contains('side-open')).toBe(false));
   });
 
-  it('shows a Main table compactly with its row count and Add, and lists the rest as more information', async () => {
+  it('shows a Main table compactly with its row count and an Add row as its last row, and lists the rest as more information', async () => {
     const { host } = await start(routes, `/app/shipment/${shipment}`);
     await until(() => expect(host.querySelector('.ev-cmp-th')).not.toBeNull());
     expect(text(host.querySelector('.ev-cmp-th h3'))).toBe('Stops');
     expect(text(host.querySelector('.ev-cmp-th .ev-cmp-count'))).toBe('1');
-    expect(text(host.querySelector('.ev-cmp-th .ev-cmp-add'))).toBe('Add stop');
+    // Add is the table's own last row now, not a link on the title line.
+    expect(host.querySelector('.ev-cmp-th .ev-cmp-add')).toBeNull();
+    expect(text(host.querySelector('.ev-cmp-table tbody tr.g-addrow-end .g-add'))).toBe('Add row');
     expect(text(host.querySelector('.ev-more-label'))).toBe('More information');
     // One card holds the Main area and more information; the key cards sit above it.
     const card = host.querySelector('.ev-cmp-card')!;

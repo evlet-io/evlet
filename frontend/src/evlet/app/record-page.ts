@@ -846,22 +846,29 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- a compact record page ----------
 
-  /** A Table on a compact page: its title, a muted row count and Add on the right (in Main), the grid, and a light
-   * dashed box while it has no rows. Add uses the grid's own Add row, so the new row's first cell starts editing. */
+  /** A Table on a compact page: its title and a muted row count (with rows selected: "2 selected", Duplicate and
+   * Delete), Focus and Columns on the right, the grid (whose last row adds a row), and a light dashed box while it has
+   * no rows. */
   const compactTable = (child: { name: string; label: string; model?: string; read_only?: boolean }, withTitle: boolean) => {
     const table = store.table(child.name);
     const count = () => table.rows.get().length;
+    // A table with section rows but no lines yet still shows them.
+    const empty = () => count() === 0 && table.sections.get().length === 0;
     const canAdd = () => canWrite && !locked.get() && !child.read_only;
     const noun = rowNoun(child.label);
-    let host: HTMLElement | null = null;
     const add = () => {
-      const button = host?.querySelector<HTMLButtonElement>('.g-add');
-      if (button) { button.click(); return; }
+      const controls = tableControls.get(child.name);
+      if (controls) { controls.add(); return; }
       try { table.add(); } catch (error) { toast((error as Error).message, { icon: 'info' }); }
     };
+    // Only the empty box offers Add: once there are rows, the table's own last row adds one.
     const addLink = () => when(canAdd, () => html`<button type="button" class="link-q ev-cmp-add" on:click=${add}>${Icon('plus', { size: 'xs' })}Add ${noun}</button>${
       tableControls.get(child.name)?.sectioned ? html`<span class="ev-cmp-or muted">or <button type="button" class="link-q ev-cmp-add" on:click=${() => tableControls.get(child.name)?.addSection()}>add a section</button></span>` : null}`);
     const grid = tablePanel(child), controls = tableControls.get(child.name);
+    // The selection bar, on the title line while rows are selected (not on a locked record).
+    const selectionBar = () => controls ? when(() => controls.selected.get() > 0 && controls.editable.get(), () => html`<span class="ev-cmp-sel" role="status">${() => `${controls.selected.get()} selected`}</span>
+      ${Button({ label: 'Duplicate', size: 'small', onClick: () => controls.duplicateSelected() })}
+      ${Button({ label: 'Delete', variant: 'soft-danger', size: 'small', className: 'ev-cmp-del', onClick: () => controls.deleteSelected() })}`) : null;
     // Focus (the table takes the content area; Esc leaves it) and Columns, as subtle square buttons by the title.
     const focusButton = controls ? (() => {
       const button = IconButton({ icon: 'maximize-2', tip: () => controls.focused.get() ? 'Leave focus (Esc)' : 'Focus', size: 'small', active: controls.focused, onClick: () => controls.toggleFocus() });
@@ -873,12 +880,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       button.setAttribute('aria-haspopup', 'dialog');
       return button;
     })()}</span>` : null;
-    host = html`<div class="ev-cmp-table" class:is-empty=${() => count() === 0} data-table-block=${child.name}>
-      ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span><span class="grow"></span>${addLink()}${tools}</div>`
-        : html`<div class="ev-cmp-th ev-cmp-th-tools"><span class="grow"></span>${tools}</div>`}
-      ${when(() => count() === 0, () => html`<div class="ev-cmp-empty"><span>${canAdd() ? `No ${child.label.toLowerCase()} yet. Add the first one.` : `No ${child.label.toLowerCase()} yet.`}</span>${withTitle ? null : addLink()}</div>`)}
+    return html`<div class="ev-cmp-table" class:is-empty=${empty} data-table-block=${child.name}>
+      ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span>${selectionBar()}<span class="grow"></span>${tools}</div>`
+        : html`<div class="ev-cmp-th ev-cmp-th-tools">${selectionBar()}<span class="grow"></span>${tools}</div>`}
+      ${when(empty, () => html`<div class="ev-cmp-empty"><span>${canAdd() ? `No ${child.label.toLowerCase()} yet. Add the first one.` : `No ${child.label.toLowerCase()} yet.`}</span>${addLink()}</div>`)}
       ${grid}</div>` as HTMLElement;
-    return host;
   };
   /** Where a "more information" row that is not a section starts: open, except on a phone after the first. */
   const rowStart = (open: boolean, index: number) => folds.phone && index > 0 ? false : open;

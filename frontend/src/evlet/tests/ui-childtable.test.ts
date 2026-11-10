@@ -131,7 +131,7 @@ describe('ChildTable over a record store', () => {
       const { store } = await bigOrder(2);
       const lines = store.table('lines');
       const host = render(() => ChildTable({ table: lines, columns: ['qty', 'rate', 'amount'] }));
-      [...host.querySelectorAll<HTMLButtonElement>('.g-under button')].find(button => button.textContent!.includes('Add row'))!.click();
+      host.querySelector<HTMLButtonElement>('tbody tr.g-addrow .g-add')!.click();
       expect(rowsIn(host)).toHaveLength(3);
       expect(cellOf(rowsIn(host)[2], 'qty').classList.contains('editing')).toBe(true);
       key(host.querySelector('td.editing input')!, 'Escape');

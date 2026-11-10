@@ -470,11 +470,15 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-add{display:inline-flex;align-items:center;gap:4px;font-size:13.5px;font-weight:500;color:var(--accent)}
 .ev-cmp-add:hover{color:var(--accent-hover)}
 .ev-cmp-add svg{display:none}
-.ev-cmp-table .g-bar,.ev-cmp-table .g-under .g-add,.ev-cmp-table .g-under .g-add~.muted{display:none}
-/* In focus view the table shows its own bar again (title, Columns, Exit focus) and its Add row. */
+.ev-cmp-table .g-bar,.ev-cmp-table .g-under .g-keys{display:none}
+/* In focus view the table shows its own bar again (title, selection, Columns, Exit focus) and its key hints. */
 .ev-cmp-table .grid.max .g-bar{display:flex}
-.ev-cmp-table .grid.max .g-under .g-add,.ev-cmp-table .grid.max .g-under .g-add~.muted{display:inline-flex}
-.ev-cmp-table .grid:not(.max) .g-add-sec{display:none}
+.ev-cmp-table .grid.max .g-under .g-keys{display:inline-flex}
+/* With rows selected, the title line reads "Items 4  2 selected  Duplicate  Delete". */
+.ev-cmp-sel{font-size:13.5px;font-weight:550;color:var(--accent);margin-left:8px}
+.ev-cmp-th .btn.sm{margin-left:4px}
+.btn.ev-cmp-del{border-color:color-mix(in srgb,var(--t-rose) 35%,transparent)}
+.btn.ev-cmp-del:hover{border-color:var(--t-rose)}
 .ev-cmp-or{display:inline-flex;align-items:center;gap:4px;font-size:13.5px;margin-left:6px}
 /* The table title's tools: Focus and Columns, subtle square icon buttons. */
 .ev-cmp-tools{display:inline-flex;gap:2px;margin-left:4px}
