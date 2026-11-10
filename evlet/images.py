@@ -257,8 +257,12 @@ def purge(tx, now=None):
 
 
 def purge_job(business):
-    """The hourly framework task: purge held images, then reclaim unreferenced private files."""
-    def run(job, payload):
+    """The hourly framework task: purge held images, then reclaim unreferenced private files.
+
+    It is an external task (Task(..., external=True)): the jobs runner calls it as run(context, payload) with no
+    transaction open, so it commits its own delete before the storage collects the files nothing references.
+    """
+    def run(context, payload):
         with business.database.transaction() as tx:
             removed = purge(tx)
         collect = getattr(business.storage, 'collect', None)

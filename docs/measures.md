@@ -321,7 +321,8 @@ GET /api/invoice/aggregate?measures=amount:sum:total,count:count,outstanding&gro
 ```json
 {"group_by": ["status", "posting_date__month"],
  "measures": ["amount", "count", "outstanding"],
- "items": [{"status": "issued", "posting_date__month": "2025-01", "amount": "150.00", "count": 2, "outstanding": "110.00"}]}
+ "items": [{"status": "issued", "posting_date__month": "2025-01", "amount": "150.00", "count": 2, "outstanding": "110.00"}],
+ "currencies": {"amount": "AED", "outstanding": "AED"}}
 ```
 
 Counts are integers. Sums, minimums and maximums use their field's JSON format
@@ -335,7 +336,7 @@ same optional `filters` and `q` (search) as the list, so totals follow the list'
 its search box.
 
 ```json
-{"measures": {"outstanding": "110.00", "count": 4}}
+{"measures": {"outstanding": "110.00", "count": 4}, "currencies": {"outstanding": "AED"}}
 ```
 
 ### GET /api/{model}/{id}/measures
@@ -344,8 +345,24 @@ The declared per-record measures the caller may read, for one record. It takes n
 parameters. The record must be readable by the caller, otherwise 404.
 
 ```json
-{"measures": {"payments": 3, "paid": "40.10", "last_payment": "2025-03-01"}}
+{"measures": {"payments": 3, "paid": "40.10", "last_payment": "2025-03-01"}, "currencies": {"paid": "SAR"}}
 ```
+
+### Currencies
+
+All three routes add `currencies` when any result has one: the ISO code of each money result, a
+sum, minimum or maximum of a Currency field. A response with none leaves the key out. A count has no currency and never appears there. The code comes from the
+field's `currency=`:
+
+* a fixed code (`"AED"`) or an app setting gives that code;
+* a field read through the per-record measure's own Link (`currency="customer.currency_code"` on
+  `Sum("value", model=Contract, link="customer")`) gives the code of the record the page shows;
+* any other field (`currency="currency_code"`, or a Link path to another record) gives the one code
+  every counted row with a value has. An aggregate decides it over all its groups.
+
+Rows in more than one currency, or a currency field or linked model the caller cannot read
+(or reads under a row scope), give no entry: the browser then shows a plain amount rather than
+one in the default currency. Each such measure costs one more statement.
 
 ### Errors
 

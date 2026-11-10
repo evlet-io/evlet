@@ -209,9 +209,12 @@ actions. Legacy `ChildTable` rows do not run finite rules or calculations, so re
   locked field stop applying would clear it, so it is refused with `This field is locked, so a
   change that would clear it is not allowed`, and a session keeps the saved value. On an update the lock is decided on the document
   as saved, before this write's changes, so one write cannot unlock a field and change it, and a
-  lock that reads its own field (`locked_when=F("price") > 100`) keeps a saved 500. On create
-  the current rule applies, and a locked field may only be empty or equal to its default or its
-  initial suggestion. Saving the unchanged value is allowed.
+  lock that reads its own field (`locked_when=F("price") > 100`) keeps a saved 500. A new record,
+  and a new row added to a saved record, have no saved state, so nothing on them is locked: their
+  fields may be filled in any order, and initial suggestions fill them as usual. A field that
+  locks once another is set (`locked_when=F("signed_at") != None`) can be entered in the same
+  create as that other field; it is locked from the next write on. The browser follows the same
+  rule. Saving the unchanged value is allowed.
 
 A rule with no ready true or false value (pending, an error, or null) is undecided.
 Undecided rules fail closed:
@@ -409,7 +412,8 @@ position order: `{"items": [...], "total": n, "limit": l, "offset": o}`. `limit`
 100 (default 100). Nested collections alternate names and row IDs:
 `/api/project/01hc1sd9vc1ye/lines/phases/01hc1sdb0j8m4/tasks`. Every row on the path must be readable and belong
 to the row before it. Items have the same shape as embedded rows (readable fields only,
-no `evlet_owner` or `evlet_position`) and embed their own collections. `total` counts the
+no `evlet_owner` or `evlet_position`), embed their own collections and carry their
+virtual (`stored=False`) results, calculated over the whole saved document. `total` counts the
 rows this user can read. `Context.get` in Python returns every readable row.
 
 The ETag of a document covers every row the user can read, not only the embedded page, so a

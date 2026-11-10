@@ -175,12 +175,13 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // Model-level measures (Phase 9) follow the list's filters and its search box.
   const declared = (model.measures ?? []).filter(measure => !measure.per_record);
-  const measures = cell<Record<string, unknown> | null>(null);
+  const measures = cell<Record<string, unknown> | null>(null), measureCurrencies = cell<Record<string, string>>({});
   if (declared.length) effect(() => {
     if (finding.get()) return;
     const current = serverFilters.get(), text = query.get();
     reload.get();
-    void api.measures(name, current, text).then(values => measures.set(values), () => measures.set(null));
+    void api.measures(name, current, text).then(result => batch(() => { measureCurrencies.set(result.currencies); measures.set(result.values); }),
+      () => measures.set(null));
   });
   // Board column totals by state, from one aggregate (Phase 9): a count and the board's declared
   // sum measure, with the measure's own where. The aggregate route works without declared
@@ -283,7 +284,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     right: [html`<span class="summary" aria-live="polite">${() => loading.get() ? 'Loading…' : total.get() === null ? '' : `${total.get()} ${total.get() === 1 ? model.label.toLowerCase() : model.plural.toLowerCase()}`}</span>`] });
 
   const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map(measure => ({
-    label: measureLabel(measure), value: () => measureView(ctx.schema, model, measure, measures.get()?.[measure.name]),
+    label: measureLabel(measure), value: () => measureView(ctx.schema, model, measure, measures.get()?.[measure.name], measureCurrencies.get()),
     note: measure.where ? 'Filtered by a rule' : undefined,
   }) as StatProps))) : null;
 

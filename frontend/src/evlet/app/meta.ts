@@ -197,16 +197,39 @@ export function titleOf(model: ScreenModel, data: Record<string, unknown>): stri
   return field && field.type !== 'text' && field.type !== 'sequence' ? formatOf(field, value) : String(value);
 }
 
-/** A measure's value as text, by the measured field's type (an image currency symbol reads as its code). */
-export function measureText(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): string {
+/**
+ * A measure's value as text, by the measured field's type (an image currency symbol reads as its code).
+ * `currencies` is the route's answer, as for measureView.
+ */
+export function measureText(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown,
+  currencies?: Record<string, string>): string {
   const field = measureField(index, model, measure, value);
-  return field ? formatOf(field, value) : plainMeasure(measure, value);
+  if (!field) return plainMeasure(measure, value);
+  const money = moneyField(field, measure, currencies);
+  return money ? formatOf(money, value) : formatOf(field, value);
 }
 
-/** A measure's value on screen: money shows the site's currency symbol, an image when the site set one. */
-export function measureView(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): Child {
+/**
+ * A Currency field whose code comes from each record (currency_source), as a measure's money result shows it: with
+ * the route's code, or as a plain amount without one. A field with a fixed or default currency keeps it (null).
+ */
+function moneyField(field: FieldSchema, measure: MeasureSchema, currencies?: Record<string, string>): FieldSchema | null {
+  if (field.type !== 'currency' || !currencies || !field.currency_source) return null;
+  const code = currencies[measure.name];
+  return code ? { ...field, currency: code } : { ...field, type: 'decimal', scale: field.scale ?? 2 };
+}
+
+/**
+ * A measure's value on screen: money shows the site's currency symbol, an image when the site set one.
+ * `currencies` is what the measures route answered (docs/measures.md): a money result in it takes that code, and one
+ * missing from it (rows in several currencies, or none the caller may read) shows as a plain amount, never in the
+ * default currency. Without `currencies` the field's own currency applies.
+ */
+export function measureView(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown,
+  currencies?: Record<string, string>): Child {
   const field = measureField(index, model, measure, value);
-  return field ? displayOf(field, value) : plainMeasure(measure, value);
+  if (!field) return plainMeasure(measure, value);
+  return displayOf(moneyField(field, measure, currencies) ?? field, value);
 }
 
 function measureField(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): FieldSchema | undefined {

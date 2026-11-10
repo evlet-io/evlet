@@ -19,7 +19,7 @@ from .permissions import trusted
 from .models import ASSIGNED_ID, ValidationError, identifier, refuse_id
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
-from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal, wire, wire_scale
+from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal
 from . import sections
 
 
@@ -1091,8 +1091,11 @@ def path_label(item, path):
     return None
 
 
-def settle(context, draft, *, complete, previous=None, kept=False):
+def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
     """Bring a document tree to a consistent state: inputs, fetches, calculations, then checks.
+
+    `checks=False` stops after the calculations, for reading a saved document's virtual results
+    (Business.add_virtual_values): its Link and field checks are a save's, not a read's.
 
     A preview (complete=False) returns errors and field states; a save (complete=True) also runs
     the full validation and raises ValidationError on any error. With `kept` (an ordinary write on a
@@ -1113,8 +1116,7 @@ def settle(context, draft, *, complete, previous=None, kept=False):
     for prefix, item in all_drafts:
         apply_inputs(item, prefix, internal(item), errors)
         object.__setattr__(item, '_caller', dict(item._values))
-        if not kept:
-            apply_fetches(context, item, prefix, prior(item), errors, targets)
+        apply_fetches(context, item, prefix, prior(item), errors, targets, virtual_only=kept)
     # derive() sets its values before calculations; a locked or posted record keeps them, like its results.
     if getattr(draft._definition, '__derives__', ()) and draft.parent is None and not kept:
         all_drafts = derive(context, draft, internal, errors, targets)
@@ -1125,6 +1127,8 @@ def settle(context, draft, *, complete, previous=None, kept=False):
         finite_settle(context, plan, draft, errors, states, complete, previous, kept)
     else:
         compute_legacy(context, draft, all_drafts, errors, states, complete, kept)
+    if not checks:
+        return errors, states
     # Every Link target is read once, in batches, before the per-field checks.
     targets.prefetch(link_values([item for _, item in all_drafts]))
     if complete:
@@ -1265,17 +1269,21 @@ def apply_inputs(item, prefix, internal, errors):
             errors[prefix + name] = str(exc)
 
 
-def apply_fetches(context, item, prefix, old, errors, targets=None):
-    """Copy `fetch='link.field'` values from the linked record when the link changed."""
+def apply_fetches(context, item, prefix, old, errors, targets=None, *, virtual_only=False):
+    """Copy `fetch='link.field'` values from the linked record when the link changed.
+
+    A virtual fetch (stored=False) has no saved copy, so it is always read from the linked record.
+    `virtual_only` reads only those, for a record that keeps its saved copies (a locked or posted one).
+    """
     for name, field in item._definition.__declared_fields__.items():
-        if not field.fetch: continue
+        if not field.fetch or virtual_only and field.stored: continue
         link_name, target_name = field.fetch.split('.')
         link = item._definition.__declared_fields__.get(link_name)
         if not isinstance(link, Link) or target_name not in link.target.__declared_fields__:
             raise ValueError('Fetch must reference a declared Link target field')
         if not field.read_only and name in item._submitted and item._values.get(name) is not None:
             if old is None or old._values.get(name) != item._values.get(name) or old._values.get(link_name) == item._values.get(link_name): continue
-        if not field.read_only and old is not None and old._values.get(link_name) == item._values.get(link_name): continue
+        if field.stored and not field.read_only and old is not None and old._values.get(link_name) == item._values.get(link_name): continue
         try:
             value = None
             if item._values.get(link_name) is not None:
@@ -1285,6 +1293,9 @@ def apply_fetches(context, item, prefix, old, errors, targets=None):
                 value = getattr(record, target_name)
             item._values[name] = field.clean(value)
         except ValueError as exc: errors[prefix + name] = str(exc)
+        except AccessError:
+            if field.stored: raise
+            item._values[name] = None  # A virtual copy of a record this user cannot read stays empty.
 
 
 def compute_legacy(context, draft, all_drafts, errors, states, complete, kept=False):
@@ -1427,28 +1438,12 @@ LOCKED_PENDING = 'This field is locked until the values its lock rule reads are 
 def locked_change(item, old, name):
     """Whether the caller (request body, Context values or an action) changed a locked field.
 
-    Values the engine writes (initial suggestions, cleared fields) are not caller changes. On a new
-    row, a nonempty value the caller supplied counts as a change unless it equals the field's default
-    or its initial suggestion.
+    Values the engine writes (initial suggestions, cleared fields) are not caller changes. A new record
+    or row has no saved value to keep, and its locks are never set (Document.locked).
     """
-    value = item._caller.get(name, item._values.get(name))
     if old is None:
-        return name in item._submitted and value not in EMPTY and value not in item._rules[name].get('allowed', ())
-    return value != old._values.get(name)
-
-
-def allowed_on_create(field, document, row, name):
-    """Values a locked field may take on create: its static default and its initial suggestion."""
-    allowed = []
-    if field.default is not MISSING and field.default is not None and not callable(field.default) and not isinstance(field.default, Ref):
-        allowed.append(field.validate(field.default))
-    result = document.results.get((row.handle, name + ':initial'))
-    if result is not None and result.state == 'ready' and result.value is not None:
-        try:
-            allowed.append(from_wire(field, wire(result.value, wire_scale(document.entries[row.path, name + ':initial']))))
-        except ValueError:
-            pass
-    return tuple(allowed)
+        return False
+    return item._caller.get(name, item._values.get(name)) != old._values.get(name)
 
 
 def from_wire(field, value):
@@ -1578,8 +1573,6 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
             decided = saved[name] if name in saved else document.decided(row, name, 'locked_when', None)
             if decided is None and policy.expression_allowed(user, item._definition, name, 'locked_when'):
                 state['message'] = LOCKED_PENDING
-            if item.id is None:
-                state['allowed'] = allowed_on_create(item._definition.__declared_fields__[name], document, row, name)
         object.__setattr__(item, '_rules', rules)
         for field in fields.get(row.path, ()):
             name = field['field']

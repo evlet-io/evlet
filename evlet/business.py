@@ -220,7 +220,6 @@ class Business:
         from . import images, mentions
         images.initialize(self.database)
         mentions.initialize(self.database)
-        self.schedule_image_purge()
         self.settings.initialize()
         self.unsaved.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
@@ -261,6 +260,8 @@ class Business:
             self.jobs.policy = self.policy
             self.jobs.initialize()
             self.unsaved.schedule()
+            # After the queue's tables exist, so a new database gets the schedule on its first start.
+            self.schedule_image_purge()
             if self.application is not None:
                 with self.database._connection() as connection:
                     namespace = connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
@@ -836,9 +837,13 @@ class Business:
                     # A save replaces the saver's unsaved changes (docs/internal/unsaved-changes.md).
                     self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id)
                 extra = self.availability(context, model, context._tx.get(model, result['id']))
-            # The write returns every readable row; the ETag covers them all and the body embeds the first page.
-            etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')})
-            result = {**self.embedded(result), **extra}
+                # The write returns every readable row; the ETag covers them all and the body embeds the first page.
+                etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')})
+                result = {**self.embedded(result), **extra}
+                if result.get('id') is not None and self.virtual_models(model) and self.policy.allows(user, model, 'read'):
+                    from .documents import Context
+                    reader = Context(self, context._tx, user, readonly=True)
+                    result = self.add_virtual_values(reader, model, RecordId(result['id']), result)
             if plan is not None:
                 result['_calculation'] = {'language': plan['language'], 'model_schema_hash': plan['model_schema_hash']}
             return (201 if record_id is None else 200), result, [(b'etag', etag)]
@@ -918,8 +923,86 @@ class Business:
                 self.unsaved.record_saved(tx.connection, user, parts[2], record_id)
             loaded = {} if method == 'GET' else None
             result = self.detail(tx, user, record, row_limit=None, loaded=loaded)
-            extra = self.availability(Context(self, tx, user, readonly=True), model, record, loaded) if method == 'GET' else {}
-        return 200, {**self.embedded(result), **extra}, [(b'etag', self.revision(result))]
+            etag = self.revision(result)
+            extra = {}
+            if method == 'GET':
+                context = Context(self, tx, user, readonly=True)
+                extra = self.availability(context, model, record, loaded)
+                result = self.add_virtual_values(context, model, record_id, self.embedded(result), loaded, record)
+            else:
+                result = self.embedded(result)
+        return 200, {**result, **extra}, [(b'etag', etag)]
+
+    def virtual_models(self, model):
+        """Whether a document or any of its owned row models declares a virtual (stored=False) result."""
+        cache = self.__dict__.setdefault('_virtual_models', {})
+        if model not in cache:
+            cache[model] = False  # An owned table never contains its owner; this only guards the walk.
+            cache[model] = any(not field.stored for field in model.__declared_fields__.values()) or any(
+                self.virtual_models(child.model) for child in self.children.values() if child.parent is model)
+        return cache[model]
+
+    def virtual_values(self, context, model, record_id, loaded=None, record=None):
+        """A saved document's virtual results (compute, fetch, Query lookups, query functions), as the caller sees them.
+
+        Returns {(model, record or row id): {field: value}}. They are calculated as the draft preview calculates
+        them, from the saved values and every saved row (rows a row scope hides too, as on a save), and each one is
+        given only when the field is readable, like a stored field. `loaded` holds the owned rows a detail of
+        `record` just read (see `detail`); when it has them all, they are not read again.
+        """
+        if not getattr(model, '__declaration_mode__', False) or model in self.child_models or not self.virtual_models(model):
+            return {}
+        from .documents import load_draft, settle, walk
+        from .effects import has_postings
+        from .states import locked_state, loaded_document
+        try:
+            draft = loaded_document(self, model, record, loaded, context=context) if record is not None else None
+            if draft is None:
+                draft, previous = load_draft(context, model, record_id, {}, preview=True)
+            else:
+                previous = loaded_document(self, model, record, loaded, context=context)
+            kept = locked_state(model, previous._values) is not None or has_postings(context._tx.connection, self.registry, model, previous)
+            settle(context, draft, complete=False, previous=previous, kept=kept, checks=False)
+        except (AccessError, ValidationError):
+            # A result that reads what this user cannot, or a document over its row limit, is left out.
+            return {}
+        result, readable = {}, {}
+        for _, item in walk(draft):
+            definition = item._definition
+            if item.id is None or not any(not field.stored for field in definition.__declared_fields__.values()):
+                continue
+            if definition not in readable:
+                readable[definition] = self.policy.fields(context.user, definition)
+            values = {}
+            for name, field in definition.__declared_fields__.items():
+                if field.stored or name not in readable[definition] or name.startswith('evlet_'):
+                    continue
+                try:
+                    value = field.serialize(item._values.get(name))
+                except Exception:
+                    value = None
+                if value is not None and isinstance(field, Link) and not field.ledger_target \
+                        and RecordId(value) not in self.policy.visible(context._tx, context.user, field.target, [RecordId(value)]):
+                    value = None
+                values[name] = value
+            result[definition, item.id] = values
+        return result
+
+    def apply_virtual_values(self, model, node, values):
+        """Put virtual_values() into a serialized record or row and its embedded rows, matched by model and id."""
+        if not values or not isinstance(node, dict) or 'section' in node:
+            return node
+        node.update(values.get((model, node.get('id')), {}))
+        for child in self.children.values():
+            if child.parent is model:
+                for row in (node.get('children') or {}).get(child.name, ()):
+                    self.apply_virtual_values(child.model, row, values)
+        return node
+
+    def add_virtual_values(self, context, model, record_id, result, loaded=None, record=None):
+        """A record's detail with its virtual results (see virtual_values). They are not part of the ETag: they
+        may read other records or the date, which a save of this record does not change."""
+        return self.apply_virtual_values(model, result, self.virtual_values(context, model, record_id, loaded, record))
 
     def availability(self, context, model, record, loaded=None):
         """Moves and actions the caller may use on a saved record now (`_moves`, `_actions`, `_locked`); not part of the ETag.
@@ -1310,6 +1393,12 @@ class Business:
                 item.pop('evlet_position', None)
             if items:
                 self.embed(tx, user, child.model, items)
+                # Virtual results of the page's rows, calculated over the whole saved document as on its detail.
+                if self.virtual_models(child.model):
+                    from .documents import Context
+                    virtual = self.virtual_values(Context(self, tx, user, readonly=True), model, record_id)
+                    for item in items.values():
+                        self.apply_virtual_values(child.model, item, virtual)
             listed = list(items.values())
             from . import sections
             headings = sections.load(tx, child, [owner_id]).get(owner_id)
@@ -1422,12 +1511,9 @@ class Business:
         from .jobs import Task
         if self.jobs is None or not any(images.holders(model) for model in self.registry.models.values()):
             return
-        self.jobs.tasks.setdefault(images.PURGE_TASK, Task(images.PURGE_TASK, images.purge_job(self), max_attempts=1))
-        try:
-            with self.database.transaction() as tx:
-                exists = tx.connection.execute('SELECT 1 FROM evlet_schedules WHERE name=?', (images.PURGE_TASK,)).fetchone()
-        except Exception:  # the jobs tables are created when the queue initializes
-            return
+        self.jobs.tasks.setdefault(images.PURGE_TASK, Task(images.PURGE_TASK, images.purge_job(self), max_attempts=1, external=True))
+        with self.database.transaction() as tx:
+            exists = tx.connection.execute('SELECT 1 FROM evlet_schedules WHERE name=?', (images.PURGE_TASK,)).fetchone()
         if not exists:
             self.jobs.schedule(images.PURGE_TASK, images.PURGE_TASK, {}, every=3600)
 

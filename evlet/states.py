@@ -511,10 +511,11 @@ def action_arguments(context, model, method, declaration, arguments, saved):
 
 # What the caller may do now
 
-def loaded_document(business, model, record, loaded):
+def loaded_document(business, model, record, loaded, context=None):
     """The saved document tree from the rows a detail already read, or None when it left rows out.
 
     Over a row limit it is None too, so the guard loads the document itself and reports the limit.
+    With a `context` the drafts can be settled (Business.add_virtual_values).
     """
     from .calc import LIMITS
     from .documents import Draft, row_bounds
@@ -523,8 +524,8 @@ def loaded_document(business, model, record, loaded):
     finite = business.registry.plan_for(model) is not None
     count = [0]
 
-    def build(definition, values, record_id):
-        item = Draft(definition, values, record_id=record_id)
+    def build(definition, values, record_id, parent=None):
+        item = Draft(definition, values, context=context, parent=parent, record_id=record_id)
         for child in business.children.values():
             if child.parent is not definition:
                 continue
@@ -534,7 +535,7 @@ def loaded_document(business, model, record, loaded):
                 return None
             item._rows[child.name] = []
             for row in rows:
-                built = build(child.model, row._values, row.id)
+                built = build(child.model, row._values, row.id, item if context is not None else None)
                 if built is None:
                     return None
                 item._rows[child.name].append(built)

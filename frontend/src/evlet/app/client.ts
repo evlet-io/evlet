@@ -15,6 +15,9 @@ const NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
 
 export interface Attachment { id: number; name: string; size: number }
 /** GET /api/{model}/list_tabs: counts per tab value (records without one count in total only); more: a Link has other values. */
+/** Declared measure values by name, and the currency code of each money result that has one. */
+export interface MeasureValues { values: Record<string, unknown>; currencies: Record<string, string> }
+
 export interface ListTabCounts { field: string; total: number; items: Array<{ value: string; count: number }>; more: boolean }
 
 export class AppClient extends ApiClient {
@@ -70,20 +73,25 @@ export class AppClient extends ApiClient {
     await this.request('POST', '/api/auth/setup', { body: { username, password } });
   }
 
-  /** Declared model-level measures (Phase 9), following the list's filters and search text. */
-  async measures(model: string, filters?: Record<string, unknown> | unknown[], q?: string) {
-    return (await this.request<{ measures: Record<string, unknown> }>('GET', `/api/${model}/measures`,
-      { query: { filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined, q: q || undefined } })).data.measures;
+  /**
+   * Declared model-level measures (Phase 9), following the list's filters and search text. `currencies` names the
+   * currency of each money result whose records share one (docs/measures.md); counts never have one.
+   */
+  async measures(model: string, filters?: Record<string, unknown> | unknown[], q?: string): Promise<MeasureValues> {
+    const data = (await this.request<{ measures: Record<string, unknown>; currencies?: Record<string, string> }>('GET', `/api/${model}/measures`,
+      { query: { filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined, q: q || undefined } })).data;
+    return { values: data.measures, currencies: data.currencies ?? {} };
   }
 
-  /** Declared per-record measures (Phase 9). */
-  async recordMeasures(model: string, id: string) {
-    return (await this.request<{ measures: Record<string, unknown> }>('GET', `/api/${model}/${id}/measures`)).data.measures;
+  /** Declared per-record measures (Phase 9), with the currency of each money result as for measures(). */
+  async recordMeasures(model: string, id: string): Promise<MeasureValues> {
+    const data = (await this.request<{ measures: Record<string, unknown>; currencies?: Record<string, string> }>('GET', `/api/${model}/${id}/measures`)).data;
+    return { values: data.measures, currencies: data.currencies ?? {} };
   }
 
   /** An ad hoc aggregate (Phase 9): measures as `name:function:field`, grouped by fields. */
   async aggregate(model: string, measures: string[], groupBy: string[] = [], filters?: Record<string, unknown> | unknown[], q?: string) {
-    return (await this.request<{ group_by: string[]; measures: string[]; items: Array<Record<string, unknown>> }>('GET', `/api/${model}/aggregate`, { query: {
+    return (await this.request<{ group_by: string[]; measures: string[]; items: Array<Record<string, unknown>>; currencies?: Record<string, string> }>('GET', `/api/${model}/aggregate`, { query: {
       measures: measures.join(','), group_by: groupBy.length ? groupBy.join(',') : undefined,
       filters: filters && Object.keys(filters).length ? JSON.stringify(filters) : undefined, q: q || undefined,
     } })).data;

@@ -204,7 +204,7 @@ function groupText(ctx: AppContext, model: ScreenModel, key: string, value: unkn
 export function MeasureChart(ctx: AppContext, block: ChartBlock, record: BlockRecord): Child {
   const model = target(ctx, block.model);
   if (!model) return null;
-  const items = cell<Array<Record<string, unknown>> | null>(null), problem = cell('');
+  const items = cell<Array<Record<string, unknown>> | null>(null), problem = cell(''), currencies = cell<Record<string, string>>({});
   const measures = block.y.map(name => (model.measures ?? []).find(item => item.name === name)).filter(item => item !== undefined);
   if (!measures.length) return null;
   const [field, part] = (block.x ?? '').split(':');
@@ -215,18 +215,21 @@ export function MeasureChart(ctx: AppContext, block: ChartBlock, record: BlockRe
     if (!filters) { batch(() => { items.set([]); problem.set(''); }); return; }
     const ticket = ++asked;
     void ctx.api.aggregate(model.name, measures.map(item => item.name), block.x ? [block.x] : [], filters).then(result => {
-      if (ticket === asked) batch(() => { items.set(Array.isArray(result.items) ? result.items : [result.items as Record<string, unknown>]); problem.set(''); });
+      if (ticket === asked) batch(() => {
+        currencies.set(result.currencies ?? {});
+        items.set(Array.isArray(result.items) ? result.items : [result.items as Record<string, unknown>]); problem.set('');
+      });
     }, error => { if (ticket === asked) problem.set(problemText(error)); });
   };
   const label = block.label ?? measures.map(measureLabel).join(' and ');
-  const value = (row: Record<string, unknown>, name: string) => measureText(ctx.schema, model, measures.find(item => item.name === name)!, row[name]);
+  const value = (row: Record<string, unknown>, name: string) => measureText(ctx.schema, model, measures.find(item => item.name === name)!, row[name], currencies.get());
   const body = () => {
     const rows = items.get();
     if (problem.get()) return html`<p class="muted ev-block-note">${problem.get()}</p>`;
     if (rows === null) return html`<p class="muted ev-block-note" role="status">Loading…</p>`;
     if (block.type === 'stat') {
       const row = rows[0] ?? {};
-      return html`<dl class="ev-stats">${measures.map(item => html`<div class="ev-stat"><dt>${measureLabel(item)}</dt><dd class="num">${measureView(ctx.schema, model, item, row[item.name])}</dd></div>`)}</dl>`;
+      return html`<dl class="ev-stats">${measures.map(item => html`<div class="ev-stat"><dt>${measureLabel(item)}</dt><dd class="num">${measureView(ctx.schema, model, item, row[item.name], currencies.get())}</dd></div>`)}</dl>`;
     }
     if (!rows.length) return html`<p class="ev-related-empty">Nothing to chart yet.</p>`;
     const host = html`<div class="ev-report-chart-plot"></div>` as HTMLElement;
