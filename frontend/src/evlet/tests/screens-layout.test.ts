@@ -145,3 +145,12 @@ describe('section descriptions', () => {
     expect(desc).toContain('color:var(--fg-3)');
   });
 });
+
+describe('a board card\'s state icon', () => {
+  it('keeps the same 6 px gap before the title as a list row, centred on the title', () => {
+    const card = rule(css('ui/styles.css'), '.card .t>.ev-state-ic');
+    expect(card).toContain('margin-right:6px');
+    expect(card).toContain('vertical-align:-1px');
+    expect(rule(css('ui/styles.css'), '.card .t>.ev-state-ic:empty')).toContain('display:none');
+  });
+});
