@@ -307,7 +307,25 @@ def describe(kind, noun='field'):
     return ('an ' if str(kind)[0] in 'aeiou' else 'a ') + f'{kind} {noun}'
 
 
-def round_field(field, value):
+def round_field(field, value, read=None):
+    """A legacy formula's result for its field: whole for Integer, the field's scale (half even) for Decimal, and
+    for Currency the decimals of the currency it resolves to through `read` (the record's values), else 2."""
+    if value is not None and getattr(field, 'kind', None) == 'currency':
+        from .currencies import currency_decimals
+        source, code = field.currency_source(), None
+        if source is not None and 'code' in source:
+            code = source['code']
+        elif source is not None and 'field' in source and read is not None:
+            try:
+                code = read(source['link'] + '.' + source['field'] if 'link' in source else source['field'])
+            except (KeyError, ValueError, TypeError, AttributeError):
+                code = None
+        elif source is not None and 'setting' in source:
+            from .currencies import setting_code
+            code = setting_code(source['setting']['app'] + '.' + source['setting']['key'])
+        with localcontext() as context:
+            context.prec = 40
+            return number(value).quantize(Decimal(1).scaleb(-currency_decimals(code)), rounding=ROUND_HALF_EVEN)
     if value is not None and isinstance(field, Integer):
         numeric = number(value)
         if numeric != numeric.to_integral_value() or abs(numeric) > 2**53-1:

@@ -1495,7 +1495,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "lines[*].base_amount",
      "target_type": "currency"
@@ -1524,7 +1524,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "base_total",
      "target_type": "currency"
@@ -1615,7 +1615,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "lines[*].allocated_cost",
      "target_type": "currency"
@@ -1644,7 +1644,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "allocated_total",
      "target_type": "currency"
@@ -1697,7 +1697,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "large",
      "target_type": "currency"
@@ -1736,7 +1736,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "largest",
      "target_type": "currency"
@@ -1798,7 +1798,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:1d01ff61eb39945e34c58817f717fb507b00651061739cf12f79dfb0672d84fc",
+   "model_schema_hash": "sha256:7078fb2ac1fa32a7d8b2356f208a8dee53419e629b88af3c61103c6e5358b29d",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "costsheet",
@@ -1812,7 +1812,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -1823,7 +1823,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -1847,7 +1847,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -1858,7 +1858,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -1871,7 +1871,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -1935,7 +1935,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -1946,7 +1946,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -1972,7 +1972,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -2090,7 +2090,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "items[*].entered_amount",
      "target_type": "currency"
@@ -2203,7 +2203,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "items[*].net",
      "target_type": "currency"
@@ -2232,7 +2232,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "net_total",
      "target_type": "currency"
@@ -2371,7 +2371,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "items[*].vat",
      "target_type": "currency"
@@ -2400,7 +2400,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "vat_total",
      "target_type": "currency"
@@ -2448,7 +2448,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "taxable_net",
      "target_type": "currency"
@@ -2487,7 +2487,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "items[*].total",
      "target_type": "currency"
@@ -2516,7 +2516,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "grand_total",
      "target_type": "currency"
@@ -2558,7 +2558,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:431bd135c6271409a54d2113c491abe25e36c514a79941aaebb4fe7acfd164bb",
+   "model_schema_hash": "sha256:a520c7161e78f0de66dd49e01e81cf5a01c35c72c9e1018dc6193a10c8b2277b",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "invoice",
@@ -2572,7 +2572,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -2618,7 +2618,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -2629,7 +2629,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -2651,7 +2651,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       }
@@ -2682,7 +2682,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -2693,7 +2693,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -2730,7 +2730,7 @@
        "maximum": null,
        "minimum": "0",
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -2754,7 +2754,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -2765,7 +2765,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -3002,6 +3002,547 @@
       }
      },
      "model": "moments",
+     "path": [],
+     "tables": []
+    }
+   }
+  },
+  "money": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "currency": {
+      "code": "KWD"
+     },
+     "expression": {
+      "$expr": "mul",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "qty",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "rate",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "fixed",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "qty"
+      ],
+      [
+       "self",
+       null,
+       "rate"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 6,
+     "stored": true,
+     "target": "fixed",
+     "target_type": "currency"
+    },
+    {
+     "currency": {
+      "expression": {
+       "$expr": "ref",
+       "field": "currency",
+       "scope": "self"
+      },
+      "reads": [
+       [
+        "self",
+        null,
+        "currency"
+       ]
+      ]
+     },
+     "expression": {
+      "$expr": "mul",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "qty",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "rate",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "own",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "qty"
+      ],
+      [
+       "self",
+       null,
+       "rate"
+      ],
+      [
+       "self",
+       null,
+       "currency"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 6,
+     "stored": true,
+     "target": "own",
+     "target_type": "currency"
+    },
+    {
+     "currency": {
+      "expression": {
+       "$expr": "ref",
+       "field": "currency",
+       "scope": "self"
+      },
+      "reads": [
+       [
+        "self",
+        null,
+        "currency"
+       ]
+      ]
+     },
+     "expression": {
+      "$expr": "mul",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "qty",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "rate",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "even",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "qty"
+      ],
+      [
+       "self",
+       null,
+       "rate"
+      ],
+      [
+       "self",
+       null,
+       "currency"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 6,
+     "stored": true,
+     "target": "even",
+     "target_type": "currency"
+    },
+    {
+     "currency": {
+      "expression": {
+       "$expr": "hop",
+       "field": "customer",
+       "steps": [
+        [
+         "customer",
+         "currency",
+         "text"
+        ]
+       ]
+      },
+      "reads": [
+       [
+        "self",
+        null,
+        "customer"
+       ],
+       [
+        "lookup",
+        "customer",
+        "currency"
+       ]
+      ]
+     },
+     "expression": {
+      "$expr": "mul",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "qty",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "rate",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "linked",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "qty"
+      ],
+      [
+       "self",
+       null,
+       "rate"
+      ],
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "currency"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 6,
+     "stored": true,
+     "target": "linked",
+     "target_type": "currency"
+    },
+    {
+     "currency": {
+      "setting": "billing.currency"
+     },
+     "expression": {
+      "$expr": "mul",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "qty",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "rate",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "shared",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "qty"
+      ],
+      [
+       "self",
+       null,
+       "rate"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 6,
+     "stored": true,
+     "target": "shared",
+     "target_type": "currency"
+    },
+    {
+     "expression": {
+      "$expr": "mul",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "qty",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "rate",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "plain",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "qty"
+      ],
+      [
+       "self",
+       null,
+       "rate"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 6,
+     "stored": true,
+     "target": "plain",
+     "target_type": "currency"
+    },
+    {
+     "currency": {
+      "expression": {
+       "$expr": "ref",
+       "field": "currency",
+       "scope": "self"
+      },
+      "reads": [
+       [
+        "self",
+        null,
+        "currency"
+       ]
+      ]
+     },
+     "expression": {
+      "$expr": "mul",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "rate",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "2"
+       }
+      ]
+     },
+     "field": "suggested",
+     "kind": "initial",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "rate"
+      ],
+      [
+       "self",
+       null,
+       "currency"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 6,
+     "stored": true,
+     "target": "suggested:initial",
+     "target_type": "currency"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 1000,
+    "decimal_text": 128,
+    "document_rows": 5000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:3f0bbbc081c27b4ccfd091b22b93b58b005e346052bb75fb923fd5efd9a66657",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "money",
+   "tables": {
+    "$root": {
+     "fields": {
+      "currency": {
+       "computed": false,
+       "default": {
+        "value": "KWD"
+       },
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "customer": {
+       "computed": false,
+       "default": null,
+       "kind": "link",
+       "maximum": null,
+       "minimum": "1",
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "link"
+      },
+      "even": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 6,
+       "stored": true,
+       "type": "decimal"
+      },
+      "fixed": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 6,
+       "stored": true,
+       "type": "decimal"
+      },
+      "linked": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 6,
+       "stored": true,
+       "type": "decimal"
+      },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "own": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 6,
+       "stored": true,
+       "type": "decimal"
+      },
+      "plain": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 6,
+       "stored": true,
+       "type": "decimal"
+      },
+      "qty": {
+       "computed": false,
+       "default": {
+        "value": "1"
+       },
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 3,
+       "stored": true,
+       "type": "decimal"
+      },
+      "rate": {
+       "computed": false,
+       "default": {
+        "value": "0"
+       },
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 6,
+       "stored": true,
+       "type": "decimal"
+      },
+      "shared": {
+       "computed": true,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 6,
+       "stored": true,
+       "type": "decimal"
+      },
+      "suggested": {
+       "computed": false,
+       "default": null,
+       "kind": "currency",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 6,
+       "stored": true,
+       "type": "decimal"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      }
+     },
+     "lookups": [
+      {
+       "fields": [
+        "currency"
+       ],
+       "model": "customer"
+      }
+     ],
+     "model": "money",
      "path": [],
      "tables": []
     }
@@ -3362,7 +3903,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "lines[*].rate:initial",
      "target_type": "currency"
@@ -3401,7 +3942,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "lines[*].amount",
      "target_type": "currency"
@@ -3430,7 +3971,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "total",
      "target_type": "currency"
@@ -3498,7 +4039,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:643277bcaec5401a84e98e93c854d1c1fde3906af4b69638a0d6729b2fc9f071",
+   "model_schema_hash": "sha256:b1f1b10bf402acd9cb585b6ba1722d67c08ae7c3a7fa85814c39c165c9cfbd7c",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "offer",
@@ -3582,7 +4123,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -3650,7 +4191,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       }
@@ -3679,7 +4220,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -3703,7 +4244,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -3812,7 +4353,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": false,
      "target": "phases[*].hourly_rate",
      "target_type": "currency"
@@ -3862,7 +4403,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "phases[*].tasks[*].amount",
      "target_type": "currency"
@@ -3893,7 +4434,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "phases[*].total",
      "target_type": "currency"
@@ -3922,7 +4463,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "total",
      "target_type": "currency"
@@ -3940,7 +4481,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:66a40ea7b1ce13985b656b8ea2af720f8a30bbbf90200fd58da16b24416915d0",
+   "model_schema_hash": "sha256:8ea5cbcf674bdd85143adf3cb36ad86eb4afb15345e8dca198c97a6194d510df",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "project",
@@ -3956,7 +4497,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -4000,7 +4541,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       }
@@ -4020,7 +4561,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": false,
        "type": "decimal"
       },
@@ -4055,7 +4596,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       }
@@ -4079,7 +4620,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -4129,7 +4670,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "up",
      "target_type": "currency"
@@ -4173,7 +4714,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_even",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "even_currency",
      "target_type": "currency"
@@ -4293,7 +4834,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "bounded",
      "target_type": "currency"
@@ -4325,7 +4866,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "third",
      "target_type": "currency"
@@ -4375,7 +4916,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:e860db4b2a7ca09d26e7a4ab367e540e6b8718e664277cb7d7b350abf7700336",
+   "model_schema_hash": "sha256:9695a4a0bb19fadb3f59a3a377dd7f76aa45feb84c9994fec755deb40d668225",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "rounding",
@@ -4400,7 +4941,7 @@
        "maximum": "10",
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -4422,7 +4963,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -4466,7 +5007,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -4488,7 +5029,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -4695,7 +5236,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "discount",
      "target_type": "currency"
@@ -4811,7 +5352,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "net",
      "target_type": "currency"
@@ -4919,7 +5460,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "lines[*].discount",
      "target_type": "currency"
@@ -4948,7 +5489,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "line_discounts",
      "target_type": "currency"
@@ -4966,7 +5507,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:684a89a4e794c6786fa176cfe5aaaf6c2d328794a4ea9079a468883cd22feffc",
+   "model_schema_hash": "sha256:068b0fbc2b338cc6b0758414552e34d02441c82d1e17d1c7fec0dd36bc89e6a9",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "sale",
@@ -4982,7 +5523,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -5004,7 +5545,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -5048,7 +5589,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -5081,7 +5622,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -5143,7 +5684,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -5165,7 +5706,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       }
@@ -6190,7 +6731,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "unrounded",
      "target_type": "currency"
@@ -6232,7 +6773,7 @@
      ],
      "result_type": "decimal",
      "rounding": "half_up",
-     "scale": 2,
+     "scale": 6,
      "stored": true,
      "target": "rounded",
      "target_type": "currency"
@@ -6282,7 +6823,7 @@
     "graph_nodes": 50000,
     "table_depth": 8
    },
-   "model_schema_hash": "sha256:f22fac4950d29a97c937241d893a2e06c9052477367f68daa0390c0f6fc7b51e",
+   "model_schema_hash": "sha256:bea406195b5d31e66f8d1f365f12dcab645d6ca9d0e6bc056ad1e508556ab5ba",
    "numeric_profile": "finite40-hu18-v1",
    "plan_version": 1,
    "root_resource": "states",
@@ -6406,7 +6947,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -6483,7 +7024,7 @@
        "maximum": null,
        "minimum": null,
        "required": false,
-       "scale": 2,
+       "scale": 6,
        "stored": true,
        "type": "decimal"
       },
@@ -16917,6 +17458,530 @@
        ]
       },
       "total": "6.0000"
+     }
+    }
+   ]
+  },
+  {
+   "currencies": {
+    "decimals": {
+     "JPY": 0,
+     "KWD": 3,
+     "XCL": 5
+    },
+    "settings": {
+     "billing.currency": "JPY"
+    }
+   },
+   "data": {
+    "customer": 7,
+    "qty": "1.5",
+    "rate": "1.3335"
+   },
+   "model": "money",
+   "name": "money-places",
+   "steps": [
+    {
+     "requests": [
+      [
+       "customer",
+       "0000000000007",
+       [
+        "currency"
+       ]
+      ]
+     ],
+     "revision": 1,
+     "rules": {},
+     "snapshot": {
+      "_states": {
+       "linked": {
+        "causes": [
+         "@customer.0000000000007.currency"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "currency": "KWD",
+      "customer": 7,
+      "even": "2.00",
+      "fixed": "2.00",
+      "linked": null,
+      "own": "2.00",
+      "plain": "2.00",
+      "qty": "1.5",
+      "rate": "1.3335",
+      "shared": "2.00",
+      "suggested": "2.667"
+     },
+     "trace": {
+      "changed": [
+       "even",
+       "fixed",
+       "linked",
+       "own",
+       "plain",
+       "shared",
+       "suggested",
+       "suggested:initial"
+      ],
+      "evaluated": 7,
+      "skipped": 0,
+      "steps": 25
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "currency": "XCL"
+      }
+     ],
+     "requests": [],
+     "revision": 2,
+     "rules": {},
+     "snapshot": {
+      "currency": "KWD",
+      "customer": 7,
+      "even": "2.00",
+      "fixed": "2.00",
+      "linked": "2.00025",
+      "own": "2.00",
+      "plain": "2.00",
+      "qty": "1.5",
+      "rate": "1.3335",
+      "shared": "2.00",
+      "suggested": "2.667"
+     },
+     "trace": {
+      "changed": [
+       "linked"
+      ],
+      "evaluated": 1,
+      "skipped": 6,
+      "steps": 4
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "currency",
+      "JPY"
+     ],
+     "requests": [],
+     "revision": 3,
+     "rules": {},
+     "snapshot": {
+      "currency": "JPY",
+      "customer": 7,
+      "even": "2.00",
+      "fixed": "2.00",
+      "linked": "2.00025",
+      "own": "2.00",
+      "plain": "2.00",
+      "qty": "1.5",
+      "rate": "1.3335",
+      "shared": "2.00",
+      "suggested": "3.00"
+     },
+     "trace": {
+      "changed": [
+       "suggested",
+       "suggested:initial"
+      ],
+      "evaluated": 3,
+      "skipped": 4,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "rate",
+      "101.5"
+     ],
+     "requests": [],
+     "revision": 4,
+     "rules": {},
+     "snapshot": {
+      "currency": "JPY",
+      "customer": 7,
+      "even": "152.00",
+      "fixed": "152.25",
+      "linked": "152.25",
+      "own": "152.00",
+      "plain": "152.25",
+      "qty": "1.5",
+      "rate": "101.5",
+      "shared": "152.00",
+      "suggested": "203.00"
+     },
+     "trace": {
+      "changed": [
+       "even",
+       "fixed",
+       "linked",
+       "own",
+       "plain",
+       "shared",
+       "suggested",
+       "suggested:initial"
+      ],
+      "evaluated": 7,
+      "skipped": 0,
+      "steps": 25
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "currency",
+      "XCL"
+     ],
+     "requests": [],
+     "revision": 5,
+     "rules": {},
+     "snapshot": {
+      "currency": "XCL",
+      "customer": 7,
+      "even": "152.25",
+      "fixed": "152.25",
+      "linked": "152.25",
+      "own": "152.25",
+      "plain": "152.25",
+      "qty": "1.5",
+      "rate": "101.5",
+      "shared": "152.00",
+      "suggested": "203.00"
+     },
+     "trace": {
+      "changed": [
+       "even",
+       "own"
+      ],
+      "evaluated": 3,
+      "skipped": 4,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "rate",
+      "0.0000033"
+     ],
+     "requests": [],
+     "revision": 6,
+     "rules": {},
+     "snapshot": {
+      "currency": "XCL",
+      "customer": 7,
+      "even": "0.00",
+      "fixed": "0.00",
+      "linked": "0.00",
+      "own": "0.00",
+      "plain": "0.00",
+      "qty": "1.5",
+      "rate": "0.0000033",
+      "shared": "0.00",
+      "suggested": "0.00001"
+     },
+     "trace": {
+      "changed": [
+       "even",
+       "fixed",
+       "linked",
+       "own",
+       "plain",
+       "shared",
+       "suggested",
+       "suggested:initial"
+      ],
+      "evaluated": 7,
+      "skipped": 0,
+      "steps": 25
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "currency",
+      ""
+     ],
+     "requests": [],
+     "revision": 7,
+     "rules": {},
+     "snapshot": {
+      "currency": "",
+      "customer": 7,
+      "even": "0.00",
+      "fixed": "0.00",
+      "linked": "0.00",
+      "own": "0.00",
+      "plain": "0.00",
+      "qty": "1.5",
+      "rate": "0.0000033",
+      "shared": "0.00",
+      "suggested": "0.00"
+     },
+     "trace": {
+      "changed": [
+       "suggested",
+       "suggested:initial"
+      ],
+      "evaluated": 3,
+      "skipped": 4,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "currency",
+      "AED"
+     ],
+     "requests": [],
+     "revision": 8,
+     "rules": {},
+     "snapshot": {
+      "currency": "AED",
+      "customer": 7,
+      "even": "0.00",
+      "fixed": "0.00",
+      "linked": "0.00",
+      "own": "0.00",
+      "plain": "0.00",
+      "qty": "1.5",
+      "rate": "0.0000033",
+      "shared": "0.00",
+      "suggested": "0.00"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 3,
+      "skipped": 4,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "rate",
+      "-1.3335"
+     ],
+     "requests": [],
+     "revision": 9,
+     "rules": {},
+     "snapshot": {
+      "currency": "AED",
+      "customer": 7,
+      "even": "-2.00",
+      "fixed": "-2.00",
+      "linked": "-2.00025",
+      "own": "-2.00",
+      "plain": "-2.00",
+      "qty": "1.5",
+      "rate": "-1.3335",
+      "shared": "-2.00",
+      "suggested": "-2.67"
+     },
+     "trace": {
+      "changed": [
+       "even",
+       "fixed",
+       "linked",
+       "own",
+       "plain",
+       "shared",
+       "suggested",
+       "suggested:initial"
+      ],
+      "evaluated": 7,
+      "skipped": 0,
+      "steps": 25
+     }
+    },
+    {
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "currency": "JPY"
+      }
+     ],
+     "requests": [],
+     "revision": 10,
+     "rules": {},
+     "snapshot": {
+      "currency": "AED",
+      "customer": 7,
+      "even": "-2.00",
+      "fixed": "-2.00",
+      "linked": "-2.00",
+      "own": "-2.00",
+      "plain": "-2.00",
+      "qty": "1.5",
+      "rate": "-1.3335",
+      "shared": "-2.00",
+      "suggested": "-2.67"
+     },
+     "trace": {
+      "changed": [
+       "linked"
+      ],
+      "evaluated": 1,
+      "skipped": 6,
+      "steps": 4
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "customer",
+      null
+     ],
+     "requests": [],
+     "revision": 11,
+     "rules": {},
+     "snapshot": {
+      "currency": "AED",
+      "customer": null,
+      "even": "-2.00",
+      "fixed": "-2.00",
+      "linked": "-2.00",
+      "own": "-2.00",
+      "plain": "-2.00",
+      "qty": "1.5",
+      "rate": "-1.3335",
+      "shared": "-2.00",
+      "suggested": "-2.67"
+     },
+     "trace": {
+      "changed": [],
+      "evaluated": 1,
+      "skipped": 6,
+      "steps": 4
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "currency",
+      "KWD"
+     ],
+     "requests": [],
+     "revision": 12,
+     "rules": {},
+     "snapshot": {
+      "currency": "KWD",
+      "customer": null,
+      "even": "-2.00",
+      "fixed": "-2.00",
+      "linked": "-2.00",
+      "own": "-2.00",
+      "plain": "-2.00",
+      "qty": "1.5",
+      "rate": "-1.3335",
+      "shared": "-2.00",
+      "suggested": "-2.667"
+     },
+     "trace": {
+      "changed": [
+       "suggested",
+       "suggested:initial"
+      ],
+      "evaluated": 3,
+      "skipped": 4,
+      "steps": 12
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "rate",
+      "2.0005"
+     ],
+     "requests": [],
+     "revision": 13,
+     "rules": {},
+     "snapshot": {
+      "currency": "KWD",
+      "customer": null,
+      "even": "3.001",
+      "fixed": "3.001",
+      "linked": "3.00",
+      "own": "3.001",
+      "plain": "3.00",
+      "qty": "1.5",
+      "rate": "2.0005",
+      "shared": "3.00",
+      "suggested": "4.001"
+     },
+     "trace": {
+      "changed": [
+       "even",
+       "fixed",
+       "linked",
+       "own",
+       "plain",
+       "shared",
+       "suggested",
+       "suggested:initial"
+      ],
+      "evaluated": 7,
+      "skipped": 0,
+      "steps": 25
+     }
+    },
+    {
+     "command": [
+      "set",
+      "",
+      "qty",
+      "-1"
+     ],
+     "requests": [],
+     "revision": 14,
+     "rules": {},
+     "snapshot": {
+      "currency": "KWD",
+      "customer": null,
+      "even": "-2.00",
+      "fixed": "-2.001",
+      "linked": "-2.00",
+      "own": "-2.001",
+      "plain": "-2.00",
+      "qty": "-1",
+      "rate": "2.0005",
+      "shared": "-2.00",
+      "suggested": "4.001"
+     },
+     "trace": {
+      "changed": [
+       "even",
+       "fixed",
+       "linked",
+       "own",
+       "plain",
+       "shared"
+      ],
+      "evaluated": 6,
+      "skipped": 1,
+      "steps": 21
      }
     }
    ]

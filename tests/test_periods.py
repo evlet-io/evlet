@@ -216,7 +216,8 @@ def voucher(c, model, day, amount='10.00'):
 
 def postings(app):
     with app.database.transaction() as tx:
-        return [(row['posted_on'], row['amount'], bool(row['reversal'])) for row in
+        # Stored millionths, shown here as hundredths.
+        return [(row['posted_on'], row['amount'] // 10000, bool(row['reversal'])) for row in
                 tx.connection.execute('SELECT posted_on, amount, reversal FROM posting ORDER BY id').fetchall()]
 
 

@@ -390,15 +390,28 @@ class Decimal(Field):
                 "maximum": None if self.maximum is None else str(self.maximum)}
 
 
+def _tidy(value):
+    """A Currency amount with its trailing zeros dropped down to 2 places: Decimal("12.500000") is Decimal("12.50")."""
+    if value is None:
+        return None
+    exponent = value.normalize().as_tuple().exponent
+    places = max(2, -exponent if isinstance(exponent, int) else 0)
+    return value.quantize(DecimalValue(1).scaleb(-places))
+
+
 CURRENCY_SOURCE = re.compile(r"[A-Z]{3}|[A-Za-z][A-Za-z0-9_]*(\.[A-Za-z][A-Za-z0-9_]*)?|settings\.[a-z][a-z0-9_]{0,62}\.[a-z][a-z0-9_]{0,40}")
 
 
 class Currency(Decimal):
+    """An exact amount of money. Stored at a fixed 6 decimal places (MONEY_SCALE) whatever its currency; each
+    write is checked against the decimals of the currency it resolves to (evlet.currencies), and calculations
+    round to them. `scale` is the storage scale, not the number of decimals shown."""
     kind = "currency"
     default_rounding = "half_up"
 
     def __init__(self, *, currency=None, **kwargs):
-        super().__init__(scale=2, **kwargs)
+        from .currencies import MONEY_SCALE
+        super().__init__(scale=MONEY_SCALE, **kwargs)
         # Display metadata only, never a conversion. Where the code comes from:
         #   "AED"                            an ISO 4217 code
         #   "currency"                       a Text or Select field on the same record
@@ -408,6 +421,17 @@ class Currency(Decimal):
             raise ValueError("currency takes an ISO 4217 code such as 'AED', a field name, link.field "
                              "or settings.app.key")
         self.currency = currency
+
+    def validate(self, value):
+        return _tidy(super().validate(value))
+
+    def from_storage(self, value):
+        return _tidy(super().from_storage(value))
+
+    def serialize(self, value):
+        # At least 2 places, more only when the amount carries them: "12.50", "1.250" stays "1.25", "0.12345".
+        # Amounts typed before amounts were stored at 6 places read and travel exactly as they did.
+        return None if value is None else format(_tidy(value), "f")
 
     def currency_source(self):
         """The currency source as the UI schema sends it: {'code'}, {'field'}, {'link', 'field'} or {'setting'}."""

@@ -65,7 +65,8 @@ def value_schema(field, *, read=False):
         if kind in ('currency', 'decimal', 'percent'):
             scale = field['scale']
             value['pattern'] = r'^-?[0-9]+$' if not scale else rf'^-?[0-9]+(?:\.[0-9]{{1,{scale}}})?$'
-            value['description'] = 'Use an exact decimal string. Bounds and business validation apply on the server.'
+            value['description'] = 'Use an exact decimal string. Bounds and business validation apply on the server.' + (
+                " An amount has at most its currency's decimal places (KWD 3, JPY 0; see currency_decimals in /api/schema)." if kind == 'currency' else '')
     if not field['required'] or (read and kind == 'link'):
         value = {'anyOf': [value, {'type': 'null'}]}
     if field.get('help_text'):

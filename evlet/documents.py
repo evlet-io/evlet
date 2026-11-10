@@ -1318,7 +1318,7 @@ def compute_legacy(context, draft, all_drafts, errors, states, complete, kept=Fa
                 continue
             try:
                 if field.compute is not None:
-                    value = round_field(field, evaluate(nodes[key]['compute'], item.read))
+                    value = round_field(field, evaluate(nodes[key]['compute'], item.read), item.read)
                     item._values[name] = field.validate(value) if value is not None else None
                     if value is None: states[prefix + name] = 'missing-input'
                 if field.query is not None:
@@ -1690,6 +1690,9 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     # References are checked when they change; a saved one is not rechecked on every write.
     tx.check_references(model, {name: draft._values.get(name) for name in model.__fields__
                                  if before is None or before._values.get(name) != draft._values.get(name)})
+    # Amounts carry at most their currency's places (calculated ones were rounded to them already).
+    from .currencies import check_amounts
+    check_amounts(tx, model, draft._values)
     # The standard title follows its source on every write (evlet/naming.py).
     if has_title(model):
         draft._values['title'] = stored_values(model, draft._values, draft.id)['title']

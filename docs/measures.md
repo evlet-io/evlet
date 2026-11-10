@@ -27,7 +27,7 @@ stored: a virtual or `stored=False` field cannot be measured.
 Sums are exact. Decimal and Currency values are stored as scaled integers and the
 database adds those integers, so `1000 x 0.10` is exactly `100.00`. Only the final
 total is checked: it must lie in the signed 64-bit range of stored values, from
--2^63 to 2^63 - 1 scaled units (for Currency, about 92 million billion either way).
+-2^63 to 2^63 - 1 scaled units (for Currency, stored in millionths, about 9.2 million million either way).
 A larger total is an error, never a rounded or floating point number. Intermediate
 totals never fail, so the result does not depend on the order of rows and SQLite and
 PostgreSQL agree. With `group_by`, one group out of range fails the whole request.

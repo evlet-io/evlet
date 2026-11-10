@@ -8,6 +8,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Decimal places per currency.** Each currency code has 0 to 6 places: ISO 4217 by default (AED 2,
+  KWD 3, JPY 0), changed or added by an admin in Controls, Currencies (`decimals` in
+  `display.currencies`, for example a client's own unit with 5). Writes refuse an amount with more
+  places than its currency ("Use at most 3 decimal places for KWD"); finite and legacy formulas,
+  table sums and totals round to the currency each row resolves through its currency source; print,
+  CSV and every screen show exactly those places. Trusted code uses `currency_decimals(code)`,
+  `round_money(value, code)` (half up) and `currency_unit(code)` instead of hard-coding 2, and an app
+  with its own currency list writes it to the framework with `set_currency_decimals(app, {...})`.
+  Money kept in `Decimal(scale=4)` moves to `Currency` with `AlterField`, exactly. Lowering a code's places is refused (409)
+  while stored amounts would lose digits; `round_stored_money(app, code, places, actor=...)` is the
+  explicit step that rounds them. `/api/schema` sends `currency_decimals`. The Playground adds a KWD
+  customer and a 5-place unit ([docs/model-engine.md](docs/model-engine.md#decimal-places-per-currency)).
+
 - **Section rows in Tables: `Table(..., sections=True)`.** A Table may hold section rows,
   headings such as "Goods" that group the rows below them, like the sections of a quotation.
   A section row has an id, a label and a place, and none of the row's fields. Iterating
@@ -238,6 +251,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Hourly image purge.** The `evlet_image_purge` task failed on every run because its handler did
   not match the jobs runner's call, and on a new database its schedule was only created on the
   second start. Held images and unreferenced private files are now cleaned up hourly.
+- **Records stay editable after the move to 6 decimal places.** A finite document whose formula read
+  the same Link its currency comes through (for example `customer.discount` with
+  `currency='customer.currency'`) got a new calculation version from the currency source, so after
+  `evlet migrate` (step `0007_money_scale`) every saved record was refused with 409
+  `SCHEMA_VERSION_MISMATCH`. Saved documents now keep their version. When a record really was
+  calculated with older formulas, the browser says so and asks for a recalculation instead of
+  "Someone else changed this record".
 
 - **Rich text images in documents.** Saving a document (a model with a State, `Meta.journal` or other
   declarations) now links the held images its rich text refers to and deletes the ones it no longer
@@ -378,6 +398,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Upgrade notes
 
+- **Currency amounts move to 6 stored places.** Run `evlet migrate` for each instance: it backs the
+  database up, multiplies every stored Currency amount by 10,000 with exact integer arithmetic
+  (framework step `0007_money_scale`), then runs app migrations. Serving an unmoved instance is
+  refused. Other applications move on startup or in `database.migrate()`. Values read and travel as
+  before (`"12.50"`), applied migration checksums and saved calculation versions do not change, and
+  the largest Currency amount is now 9,223,372,036,854.775807. A `Currency` field's schema `scale`
+  is now 6, the storage scale: format from `currency_decimals` instead. Apps that rounded money with
+  `quantize(Decimal("0.01"))` or `round(x, 2)` should use `round_money(value, code)` so KWD and JPY
+  amounts are right.
 - **Python pages are gone.** If an app imports `evlet.ui` page names (`PageView`, `ListView`,
   `FormView`, `Column`, `ViewRegistry` and the rest), delete those definitions and shape the
   generated screens with `Model.Meta` (`layout`, `list_fields`, `tabs`, `open_in`, `panel`). An

@@ -27,8 +27,10 @@ class Contact(Model):
   `unique`, `index`, and an optional `validator` callable.
 - `Decimal` has a fixed scale from 0 to 9, defaulting to 4. It stores scaled signed
   64-bit integers and returns decimal strings. Floats, nonfinite numbers, extra
-  fractional digits, and out-of-range values are rejected. `Currency` fixes the
-  scale at 2. There is no automatic rounding or currency conversion.
+  fractional digits, and out-of-range values are rejected. `Currency` stores every
+  amount at 6 places and allows as many decimal places as its currency has
+  ([Decimal places per currency](#decimal-places-per-currency)). Typed values are never
+  rounded, and amounts are never converted between currencies.
 - `Boolean` accepts actual booleans. `Date` accepts a Python date or `YYYY-MM-DD`.
   `DateTime` requires a timezone-aware datetime or ISO string and normalizes it to
   UTC with six fractional digits. Naive datetimes are rejected.
@@ -401,6 +403,86 @@ declared default is used.
 
 The code is shown as `AED 25,200.00` unless the site changed how that code looks: a text or image
 symbol, before or after the amount ([controls.md](controls.md#currencies)).
+
+### Decimal places per currency
+
+Each currency code has a number of decimal places from 0 to 6. The default is the code's ISO 4217
+minor unit: AED, USD, EUR and most others have 2, KWD, BHD, OMR, JOD, IQD, LYD and TND have 3, JPY,
+KRW, VND, CLP, ISK, UGX and the CFA francs have 0, CLF and UYW have 4. A code ISO does not list has
+2. An admin changes a code's places, or adds a code such as a client's own unit with 5, in Controls,
+Currencies ([controls.md](controls.md#currencies)).
+
+| Where | What the places decide |
+| --- | --- |
+| Writes (forms, the API, trusted `tx.create`/`update`, ledger `insert_many`, Effects) | An amount with more places than its currency has is refused: `Use at most 3 decimal places for KWD`. It is never rounded silently |
+| Finite calculations (`compute=`, `initial=`), table sums, totals | The result rounds to its currency's places with the field's `rounding` ([finite-calculations.md](finite-calculations.md#writers-scales-and-rounding)) |
+| Legacy string formulas | Round half even to the record's currency |
+| `derive()` | Round yourself with `round_money(value, code)`; an amount left with too many places is refused like any write |
+| Lists, forms, cards, totals, measures, reports, print, CSV | Exactly the currency's places: `KWD 1.500`, `JPY 1,500` |
+
+The currency an amount is in comes from its [currency source](#where-a-currency-fields-code-comes-from),
+read for each record: a field of the record, a field of the linked record (read in the same
+transaction), an app setting, or a fixed code. An amount with no currency source, or whose source is
+empty, has 2 places, as before. A Table row reads its document's currency through a field of its own,
+for example `currency = Text(max_length=3, compute=parent.currency)` with
+`amount = Currency(currency="currency", compute=qty * rate)`.
+
+Trusted code reads the same table:
+
+```python
+from evlet import currency_decimals, round_money
+
+currency_decimals("KWD")                      # 3, or what the site set in Controls
+round_money(Decimal("0.50615"), "KWD")        # Decimal("0.506"), half up like Currency fields
+round_money(net * rate, self.currency, "half_even")
+```
+
+Inside a request, job, action, `derive()` or transaction they read the site in use; anywhere else
+they use ISO 4217, or the setting you pass as `displays=`. Never hard-code 2 for money.
+`round_money` rounds half up unless you pass `"half_even"`. `currency_unit(code)` is the smallest
+amount, `Decimal("0.001")` for KWD, so a tolerance can scale with the currency:
+`abs(difference) <= 5 * currency_unit(code)`.
+
+**One source of truth.** The framework's table (Controls, Currencies) is the only place a currency's
+places live. An app with its own currency list does not keep a second `decimals` field: it reads
+`currency_decimals(code)`, and when its list adds a code or changes places it writes them to the
+framework with `set_currency_decimals(app, {"XCL": 4}, actor="finance")`, from an action, job or
+script (it saves Controls in its own transaction, so not from inside `derive()`). It keeps other codes
+and symbols as they are, and lowering is refused like in Controls.
+
+**Money in `Currency` fields.** Keep amounts in `Currency` fields with a currency source, not in
+`Decimal(scale=...)`: only Currency amounts get their currency's places on writes, in calculations and
+on screen. An app that stored money in `Decimal` moves it with one migration per field, which
+multiplies each stored value exactly (by 100 from scale 4) inside the migration transaction:
+
+```python
+Migration("0002_money", AlterField("posting", "amount", Currency(currency="currency")))
+```
+
+The step checks each value against the 6 stored places, not against its currency, so round values
+with `round_money` first if any carry more places than their currency has.
+
+**Storage.** Every Currency amount is stored as a signed 64-bit count of millionths, whatever its
+currency, so changing a currency's places never rewrites stored values: the largest amount is
+9,223,372,036,854.775807 either way. Raising a currency's places takes effect at once. Lowering
+them is refused while a stored amount in that currency has more places; `round_stored_money(app,
+code, places, actor=...)` is the explicit step that rounds those amounts half up and then lowers
+the places. Rounding changes stored values, so a document's total may no longer equal the sum of
+its rounded lines until it is recalculated; Revisions and the Journal keep what they recorded, and
+rows of append-only ledgers are never changed (the step refuses instead). Values still travel as
+decimal strings with at least 2 places: `"12.50"`, `"1.500"` reads `"1.50"`, `"0.12345"`.
+
+**Moving an existing database.** Releases up to 0.4 stored amounts as hundredths. The first time
+this release opens such a database it multiplies every stored Currency amount (app fields, Controls
+fields and ledger rows) by 10,000 in one transaction, with exact integer arithmetic, records the
+new scale in `evlet_money` and rewrites the saved schema; an amount too large for 6 places names its
+record and changes nothing. An instance does this only in `evlet migrate`, after its backup
+(framework step `0007_money_scale`); serving it before that is refused. An application that is not
+an instance does it on startup, like its other framework steps, or in `database.migrate()` before any
+app migration runs, on SQLite and PostgreSQL alike. Applied migration checksums do not change: a
+Currency field's scale belongs to the framework and checksums as 2, and saved documents keep their
+calculation version, so they stay editable after the move (also when a formula reads the Link its
+currency comes through, such as `customer` for `currency='customer.currency'`).
 
 `Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
 `Time`, `Tags` and references cannot be used in calculations.

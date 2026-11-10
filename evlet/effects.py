@@ -501,6 +501,8 @@ def write(engine, bound, draft):
     business, tx, target = engine._business, engine._tx, bound.target
     tx.check_references(target, {name: draft._values.get(name) for name, field in target.__declared_fields__.items()
                                  if isinstance(field, Reference) and name != SOURCE})
+    from .currencies import check_amounts
+    check_amounts(tx, target, draft._values)
     names, values = storage_columns(target, stored_values(target, draft._values), target.__fields__)
     table = identifier(business.registry.name_for(target))
     record_id = insert(tx.connection, table, names, values, id_title=has_title(target), actor=tx.actor)

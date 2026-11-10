@@ -693,11 +693,14 @@ class Formats:
             return ''
         amount = Decimal(str(value))
         code = currency or self.design.currency
+        from .currencies import currency_decimals, money_html, round_money
+        # As many places as the currency has on this site (KWD 3, JPY 0); a code-less amount has 2.
+        places = currency_decimals(code, self.currencies)
+        amount = round_money(amount, code, displays=self.currencies)
         if not code:
-            return self.ltr(f'{amount:,.2f}')
-        from .currencies import money_html
-        # The symbol is the site's (text, or an image embedded as a data: URI); the number format stays as it is.
-        return self.ltr(self.markup(money_html(self.currencies, code, f'{amount:,.2f}')))
+            return self.ltr(f'{amount:,.{places}f}')
+        # The symbol is the site's (text, or an image embedded as a data: URI).
+        return self.ltr(self.markup(money_html(self.currencies, code, f'{amount:,.{places}f}')))
 
     def number(self, value, places=None):
         if value is None or value == '':

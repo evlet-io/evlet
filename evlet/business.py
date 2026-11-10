@@ -355,6 +355,9 @@ class Business:
         displays = self.controls.settings.get('display.currencies') if getattr(self, 'controls', None) is not None else None
         if displays:
             result['currency_display'] = displays
+        # Decimal places of every code that does not have 2: ISO 4217 with this site's changes (evlet.currencies).
+        from .currencies import decimals_table
+        result['currency_decimals'] = decimals_table(displays)
         if self.tenant:
             result['tenant'] = self.tenant
         available = {name for name, model in self.registry.models.items() if self.policy.allows(user, model, 'read')}

@@ -149,7 +149,8 @@ def correct(c, url, operation, body=None, **kwargs):
 
 def ledger(app):
     with app.database.transaction() as tx:
-        return [(row['debit'], row['credit'], bool(row['reversal'])) for row in
+        # Stored millionths, shown here as hundredths.
+        return [(row['debit'] // 10000, row['credit'] // 10000, bool(row['reversal'])) for row in
                 tx.connection.execute('SELECT debit, credit, reversal FROM ledger ORDER BY id').fetchall()]
 
 

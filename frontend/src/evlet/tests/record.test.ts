@@ -3,7 +3,7 @@ import { createClient } from '../api';
 import { effect, scope } from '../reactive';
 import { buildChanges } from '../model/changes';
 import { fingerprint } from '../model/finite';
-import { RecordStore, sameValue } from '../model/record';
+import { RecordStore, sameValue, STALE_FORMULAS } from '../model/record';
 import type { AppSchema } from '../model/schema';
 import { copy, id, responses, server, type Sent } from './server';
 
@@ -77,7 +77,7 @@ describe('opening a record', () => {
     const { store } = backend();
     await store.open(id(1));
     const total = store.field('total'), stage = store.field('stage'), reason = store.field('reason');
-    expect([total.label, total.meta.type, total.meta.scale, total.calculated]).toEqual(['Total', 'currency', 2, true]);
+    expect([total.label, total.meta.type, total.meta.scale, total.calculated]).toEqual(['Total', 'currency', 6, true]);
     expect(stage.meta.choices).toEqual(['open', 'won', 'lost']);
     expect(reason.meta.applies_when).not.toBeNull();
     expect(store.actions.map(action => action.name)).toEqual(['close']);
@@ -348,6 +348,17 @@ describe('saving', () => {
     expect(await store.save()).toBe(false);
     expect(store.conflict.peek()).toMatchObject({ status: 409, message: 'This record changed since you opened it. Reload it before saving.' });
     expect(store.field('title').value.peek()).toBe('Mine');
+    expect(store.dirty.peek()).toBe(true);
+  });
+
+  it('says a record saved under other formulas needs recalculating, not that someone else changed it', async () => {
+    const error = 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it';
+    const { store } = backend([['PATCH', /\/api\/order\/0000000000001$/, { status: 409, body: { error }, etag: null }]]);
+    await store.open(id(1));
+    store.field('title').set('Mine');
+    expect(await store.save()).toBe(false);
+    expect(store.conflict.peek()).toBeNull();
+    expect(store.formError.peek()).toBe(STALE_FORMULAS);
     expect(store.dirty.peek()).toBe(true);
   });
 

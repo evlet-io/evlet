@@ -9,7 +9,10 @@ from evlet import (Boolean, Child, Currency, Database, Date, DateTime, Decimal, 
                    Registry, Select, Series, Table, Text)
 from evlet import framework
 from examples.playground.items import core_fields, item_fields
-from examples.playground.models import CURRENCIES, Customer, Invoice, Project
+from examples.playground.models import Customer, Invoice, Project
+
+# The currencies of the Playground at 0006, before 0019 added KWD and XCR.
+CURRENCIES = ['AED', 'SAR', 'USD', 'EUR', 'INR']
 from test_business import client, hashed, secured  # noqa: F401
 
 
@@ -188,7 +191,7 @@ def test_an_upgraded_playground_keeps_invoice_numbers_as_names_and_continues_the
     assert current.migrate(migrations) == ['0007_employees', '0008_record_names', '0009_ledger', '0010_invoice_project', '0011_project_brief', '0012_invoice_payment_status', '0013_points',
                                               '0014_project_task_index', '0015_recognition',
                                               '0016_employee_profile', '0017_employee_skill_levels',
-                                              '0018_item_photo']
+                                              '0018_item_photo', '0019_more_currencies']
     assert '0003_record_names' in framework.upgrade(current)
     assert not framework.pending(current)
     assert {'name', 'title', 'customer_name'} <= set(columns(path, 'customer')) and 'number' not in Invoice.__fields__

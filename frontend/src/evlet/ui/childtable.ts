@@ -13,7 +13,7 @@ import type { Field, Row, Table } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Button, Checkbox, Icon, IconTile, Key } from './base';
 import { read, textOf, uid, type Prop, type Tint } from './core';
-import { BaseField, currencyFor, displayValue, FieldControl, fieldFor, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
+import { BaseField, currencyFor, currencyPlaces, displayValue, FieldControl, fieldFor, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
 import { moneyChild } from './money';
 import { kindOf } from './kinds';
 import { openPopover, toast } from './layers';
@@ -107,7 +107,7 @@ function parentGrandTotals(table: Table, sums: Record<string, Field>): Field[] {
 const valueText = (value: FieldLike | Prop<Child>): Child => {
   if (value && typeof value === 'object' && 'meta' in value) {
     const meta = value.meta;
-    if (meta.type === 'currency') return moneyChild(value.value.get(), currencyFor(value)(), typeof meta.scale === 'number' ? meta.scale : 2);
+    if (meta.type === 'currency') return moneyChild(value.value.get(), currencyFor(value)(), currencyPlaces(value)());
     return kindOf(meta.type).format(value.value.get(), meta);
   }
   return read(value as Prop<Child>) ?? '';

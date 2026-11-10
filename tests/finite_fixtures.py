@@ -146,6 +146,7 @@ class Customer(Model):
     rate = Decimal(scale=2, default=0)
     vip = Boolean(default=False)
     since = Date()
+    currency = Text(max_length=3, default='')
 
 
 class SaleLine(Child):
@@ -225,9 +226,29 @@ class Capped(Model):
     total = Decimal(compute=lines.sum('qty'))
 
 
+class Money(Model):
+    """Currency targets round to their own currency: a fixed code, a field of the row, a field behind a Link, an app
+    setting (a host input), or none (2 places). The host gives the currency table."""
+    Meta = FiniteMeta
+    customer = Link(Customer)
+    currency = Text(max_length=3, default='KWD')
+    qty = Decimal(scale=3, default='1')
+    rate = Decimal(scale=6, default='0')
+    fixed = Currency(currency='KWD', compute=F('qty') * F('rate'))
+    own = Currency(currency='currency', compute=F('qty') * F('rate'))
+    even = Currency(currency='currency', rounding='half_even', compute=F('qty') * F('rate'))
+    linked = Currency(currency='customer.currency', compute=F('qty') * F('rate'))
+    shared = Currency(currency='settings.billing.currency', compute=F('qty') * F('rate'))
+    plain = Currency(compute=F('qty') * F('rate'))
+    suggested = Currency(currency='currency', initial=F('rate') * 2)
+
+
+# Host inputs of a scenario's document, when it has any: the currency table and setting currencies.
+HOSTS = {'money-places': {'decimals': {'JPY': 0, 'KWD': 3, 'XCL': 5}, 'settings': {'billing.currency': 'JPY'}}}
+
 MODELS = {'invoice': Invoice, 'project': Project, 'cost': CostSheet, 'states': States,
           'rounding': Rounding, 'schedule': Schedule, 'sale': Sale, 'choice': Choice, 'moments': Moments,
-          'offer': Offer, 'capped': Capped}
+          'offer': Offer, 'capped': Capped, 'money': Money}
 LOOKUP_MODELS = (Region, Customer)
 
 
@@ -300,6 +321,11 @@ SCENARIOS = [
       ['replace', '', 'lines', [{'_key': 'a'}, {'_key': 'b'}, {'_key': 'c'}]], ['remove', 'lines.r0'],
       ['add', '', 'lines', {'_key': 'n3', 'qty': '5'}], ['batch', [['remove', 'lines.n1'], ['add', '', 'lines', {'_key': 'n4'}]]],
       ['add', '', 'lines', {'_key': 'n5'}]]),
+    ('money-places', 'money', {'customer': 7, 'qty': '1.5', 'rate': '1.3335'},
+     [['lookup', 'customer', 7, {'currency': 'XCL'}], ['set', '', 'currency', 'JPY'], ['set', '', 'rate', '101.5'],
+      ['set', '', 'currency', 'XCL'], ['set', '', 'rate', '0.0000033'], ['set', '', 'currency', ''], ['set', '', 'currency', 'AED'],
+      ['set', '', 'rate', '-1.3335'], ['lookup', 'customer', 7, {'currency': 'JPY'}], ['set', '', 'customer', None],
+      ['set', '', 'currency', 'KWD'], ['set', '', 'rate', '2.0005'], ['set', '', 'qty', '-1']]),
     ('when', 'choice', {'a': '6'},
      [['set', '', 'flag', True], ['set', '', 'a', None], ['set', '', 'flag', False], ['set', '', 'a', '6'],
       ['set', '', 'zero', '4'], ['today', '2026-11-01'], ['set', '', 'flag', True], ['set', '', 'a', '0.5'], ['set', '', 'flag', None]]),
@@ -403,7 +429,7 @@ def collect():
     plans = {name: registry.plans[model] for name, model in MODELS.items()}
     scenarios = []
     for name, model, data, commands in SCENARIOS + [random_scenario(seed) for seed in (1, 2, 3)]:
-        document = Document(plans[model], data)
+        document = Document(plans[model], data, currencies=HOSTS.get(name))
         ruled = any(field.get('kind') for field in plans[model]['fields'])
         extra = (lambda: {'rules': rule_map(document)}) if ruled else dict
         steps = [{'snapshot': strip(document.snapshot()), 'revision': document.revision, 'trace': document.trace,
@@ -416,7 +442,7 @@ def collect():
             except CalcError as exc:
                 steps.append({'command': command, 'error': exc.code, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
                               'requests': document.lookup_requests(), **extra()})
-        scenarios.append({'name': name, 'model': model, 'data': data, 'steps': steps})
+        scenarios.append({'name': name, 'model': model, 'data': data, 'steps': steps, **({'currencies': HOSTS[name]} if name in HOSTS else {})})
     return {'plans': plans, 'scenarios': scenarios, 'numeric': numeric_cases(),
             'invalid_plans': [{'name': 'unknown-op', 'expression': {'$expr': 'eval', 'args': []}},
                               {'name': 'prototype', 'expression': {'$expr': 'ref', 'scope': 'self', 'field': '__proto__'}},
