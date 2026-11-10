@@ -5,6 +5,8 @@ running the same command again resumes after a failure.
 """
 
 from contextlib import contextmanager
+import ipaddress
+import json
 from pathlib import Path
 import shlex
 import sqlite3
@@ -13,6 +15,10 @@ import subprocess
 from .project import child, valid_name
 
 CADDYFILE = '/etc/caddy/Caddyfile'
+CADDY_DIR = '/etc/caddy'
+SYSTEMD_DIR = '/etc/systemd/system'
+# This server's public addresses, saved by the first DNS check that passed with --ip.
+SERVER_FILE = 'server.json'
 STEP_OPTIONS = ('app', 'get', 'instance', 'dev', 'host', 'trust', 'apply', 'ip')
 
 
@@ -153,18 +159,75 @@ def create_admin(root, name, username, password):
             app.database.close()
 
 
-def privileged_steps(root, name):
-    """The sudo commands that install the service and the Caddy site. Shown first; run only with --apply."""
+def installed(name):
+    """Where --apply installs the instance's systemd unit and Caddy site."""
+    return Path(SYSTEMD_DIR) / f'evlet-{name}.service', Path(CADDY_DIR) / f'evlet-{name}.caddy'
+
+
+def differs(source, target):
+    """Whether an installed file is missing or not the same as the one in deploy/. Unreadable counts as different."""
+    try:
+        return Path(target).read_bytes() != Path(source).read_bytes()
+    except OSError:
+        return True
+
+
+def privileged_steps(root, name, restart=False):
+    """The sudo commands that install the service and the Caddy site. Shown first; run only with --apply.
+
+    Every step runs again on each --apply, so a file that changed since the last install is replaced and
+    Caddy reloads it. restart also restarts a service that was already running with an older unit."""
     deploy = root / 'deploy'
-    unit, site = f'evlet-{name}.service', f'evlet-{name}.caddy'
+    unit, site = installed(name)
     return [
-        ['sudo', 'install', '-m', '644', str(deploy / unit), '/etc/systemd/system/' + unit],
-        ['sudo', 'install', '-m', '644', str(deploy / site), '/etc/caddy/' + site],
-        ('import', '/etc/caddy/' + site),
+        ['sudo', 'install', '-m', '644', str(deploy / unit.name), str(unit)],
+        ['sudo', 'install', '-m', '644', str(deploy / site.name), str(site)],
+        ('import', str(site)),
         ['sudo', 'systemctl', 'daemon-reload'],
         ['sudo', 'systemctl', 'enable', '--now', f'evlet-{name}'],
+        *([['sudo', 'systemctl', 'restart', f'evlet-{name}']] if restart else []),
         ['sudo', 'systemctl', 'reload', 'caddy'],
     ]
+
+
+def saved_addresses(root):
+    """The public addresses a passing DNS check stored in deploy/server.json, or None."""
+    try:
+        value = json.loads((root / 'deploy' / SERVER_FILE).read_text(encoding='utf-8')).get('ip')
+        if not isinstance(value, list) or not value:
+            return None
+        return [str(ipaddress.ip_address(item)) for item in value]
+    except (OSError, ValueError, TypeError, AttributeError):
+        return None
+
+
+def save_addresses(root, ips):
+    """Keep the addresses a passing DNS check used, so later runs on this server need no --ip."""
+    from . import proxy
+    addresses = sorted({str(ipaddress.ip_address(item)) for item in ips})
+    proxy.write(root / 'deploy' / SERVER_FILE, json.dumps({'ip': addresses}, indent=2) + '\n')
+
+
+def site_answers(host, fetch=None, attempts=4, pause=5.0, sleep=None):
+    """One line saying whether https://host answers from outside, after Caddy reloads. Information only, never a failure.
+
+    It tries for about half a minute, since Caddy may still be getting the certificate."""
+    import time
+    from ..assistants import Assistants
+    fetch, sleep = fetch or Assistants.fetch, sleep or time.sleep
+    url = f'https://{host}/.well-known/oauth-protected-resource'
+    reason = ''
+    for attempt in range(attempts):
+        if attempt:
+            sleep(pause)
+        try:
+            status, _, _ = fetch('GET', url)
+        except Exception as exc:  # any network or TLS failure only means "not yet"
+            reason = str(getattr(exc, 'reason', exc))
+            continue
+        return f'https://{host} answers (status {status}).'
+    return (f'https://{host} does not answer yet ({reason}). Caddy keeps trying to get the certificate. '
+            'Check the A record and that ports 80 and 443 are open, then open the address again in a few minutes.')
 
 
 def describe(command):
@@ -217,12 +280,24 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
         line = proxy.trust_line(trusted)
         if line:
             print(f'Add this line to Instance(...) in instances/{name}/config.py so Evlet sees client addresses:\n    {line},')
+        installed_unit, installed_site = installed(name)
+        # An earlier --apply installed older files: say so, and restart the service when its unit changed.
+        restart = installed_unit.exists() and differs(unit, installed_unit)
+        for source, target in ((site, installed_site), (unit, installed_unit)):
+            if target.exists() and differs(source, target):
+                print(f'{target} is out of date. ' + ('Installing the new file.' if apply else 'Run the steps below, or --apply, to replace it.'))
     with step('DNS check'):
-        report, ok = proxy.check(app.routes, ips)
+        saved = None if ips else saved_addresses(root)
+        if saved:
+            print(f'Using the public address saved in deploy/{SERVER_FILE}: ' + ', '.join(saved))
+        report, ok = proxy.check(app.routes, ips or saved)
         print(report)
         if not ok:
-            raise ValueError(f'{host} does not point at this server yet. Fix its A or AAAA record, or pass --ip with the public address')
-    commands = privileged_steps(root, name)
+            raise ValueError(f'{host} has no usable A or AAAA record yet. Point it at this server, or pass --ip with the public address')
+        if ips and saved_addresses(root) != sorted({str(ipaddress.ip_address(item)) for item in ips}):
+            save_addresses(root, ips)
+            print(f'Saved the public address in deploy/{SERVER_FILE}; later runs on this server need no --ip')
+    commands = privileged_steps(root, name, restart=restart)
     if not apply:
         print('Review the two files, then run these steps with sudo:')
         print('\n'.join('    ' + describe(command) for command in commands))
@@ -231,6 +306,7 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
     with step('install the service and Caddy site'):
         run_privileged(commands, run=run)
     print(f'Serving https://{host} through Caddy. Evlet listens on 127.0.0.1:{port} only.')
+    print(site_answers(host))
 
 
 def run(root, args, *, confirm=None, ask=None):

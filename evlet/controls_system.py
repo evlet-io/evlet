@@ -16,7 +16,7 @@ PAGE = 50
 PROXY_LATER = 'Proxy config and host checks arrive with sub-hosts. Until then, use evlet routes on the server.'
 LOOKUP_SECONDS = 5
 CHECK_SECONDS = 10
-DNS = ('points here', 'points elsewhere', 'no A or AAAA record')
+DNS = ('points here', 'may point here', 'points elsewhere', 'no A or AAAA record')
 
 
 def bounded(resolve):
@@ -146,12 +146,13 @@ class System:
             raise AccessError(409, str(exc)) from None
         lines, hosts = report.splitlines(), []
         for host in routes.hosts():
-            line = next((item for item in lines if item.startswith(host + ' ')), '')
+            line = next((item for item in lines if item.startswith(host + ' ') and item.endswith(DNS)), '')
             status = next((item for item in DNS if line.endswith(item)), None)
             records = line[len(host):len(line) - len(status)].strip() if status else ''
             found = {'host': host, 'records': '' if records == '-' else records, 'dns': status}
-            hosts.append(found | (certificate(host) if status == DNS[0] else {'certificate': None, 'expires': None}))
-        notes = [item for item in lines if not any(item.startswith(host + ' ') for host in routes.hosts())]
+            # Behind NAT a host that may point here is checked too; its certificate shows whether it does.
+            hosts.append(found | (certificate(host) if status in DNS[:2] else {'certificate': None, 'expires': None}))
+        notes = [item for item in lines if not any(item.startswith(host + ' ') and item.endswith(DNS) for host in routes.hosts())]
         return {'hosts': hosts, 'notes': notes, 'ok': ok}
 
     # ---------- jobs ----------

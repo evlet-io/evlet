@@ -94,7 +94,8 @@ export function RoutingPage(ctx: ControlsContext): HTMLElement {
       const result = await ctx.api.checkHosts();
       checks.set(new Map(result.hosts.map(item => [item.host, item])));
       notes.set(result.notes);
-      toast(result.ok ? 'Every host points here' : 'Some hosts need attention', { icon: result.ok ? 'check' : 'info' });
+      const clear = result.ok && !result.notes.length;
+      toast(clear ? 'Every host points here' : 'Some hosts need attention', { icon: clear ? 'check' : 'info' });
     } catch (failure) { toast(message(failure), { icon: 'info' }); } finally { checking.set(false); }
   };
   const proxy = () => {
@@ -108,6 +109,7 @@ export function RoutingPage(ctx: ControlsContext): HTMLElement {
       footer: close => DialogFooter({ submit: { label: 'Done', onClick: close } }) });
   };
   const dns = (item?: HostCheck) => !item ? html`<span class="muted">Not checked</span>` : item.dns === 'points here' ? StatusPill({ label: 'Points here', tint: 'green' })
+    : item.dns === 'may point here' ? StatusPill({ label: 'May point here', tint: 'amber' })
     : StatusPill({ label: item.dns === 'points elsewhere' ? 'Points elsewhere' : 'No record', tint: 'rose' });
   const cert = (item?: HostCheck) => !item ? null : item.certificate === 'valid' ? StatusPill({ label: 'Valid', tint: 'green' })
     : item.certificate === 'missing' ? StatusPill({ label: 'No valid certificate', tint: 'rose' }) : StatusPill({ label: 'Waiting for DNS', tint: 'amber' });

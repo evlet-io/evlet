@@ -9,10 +9,12 @@ import base64
 import binascii
 import hashlib
 import hmac
+import ipaddress
 import json
 import re
 import secrets
 import time
+from http.client import HTTPException
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
 from .auth import AccessError, KeyAccess, User, client_network
@@ -519,6 +521,71 @@ class Assistants:
         for item in clients:
             item['recent'] = recent.get(item['id'], 0)
         return {'address': (self.origin(scope) or '') + '/_/mcp', 'clients': clients, 'totals': totals}
+
+    # ---------- reachability (Controls, MCP) ----------
+
+    REACH_SECONDS = 30
+
+    @staticmethod
+    def fetch(method, url, body=None, headers=None):
+        """One request to this site's public address, without redirects or proxies. Returns (status, headers, body)."""
+        from urllib.error import HTTPError as Failure
+        from urllib.request import ProxyHandler, Request, build_opener
+        from .connector import NoRedirect
+        request = Request(url, data=body, method=method, headers={'User-Agent': 'Evlet reachability check', **(headers or {})})
+        try:
+            with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=5) as response:
+                return response.status, {key.lower(): value for key, value in response.headers.items()}, response.read(65536)
+        except Failure as exc:
+            with exc:
+                return exc.code, {key.lower(): value for key, value in exc.headers.items()}, exc.read(65536)
+
+    def reach(self, scope, user):
+        """Whether the public address reaches /_/mcp: its discovery document, then an unsigned call that must get 401
+        with a Bearer challenge. Admins only, on demand, and kept for REACH_SECONDS so a busy button can't flood it."""
+        if user.role != 'admin':
+            raise AccessError(403, ADMIN_ONLY)
+        origin = self.origin(scope)
+        url = urlsplit(origin or '')
+        local = url.hostname in (None, 'localhost') or url.hostname.endswith('.localhost') or url.scheme != 'https'
+        if not local:
+            try:
+                local = ipaddress.ip_address(url.hostname).is_loopback
+            except ValueError:
+                pass
+        if local:
+            return {'checked': False, 'reachable': None, 'reason': 'Only on a site with a domain.'}
+        if not self.settings()['mcp.enabled']:
+            return {'checked': False, 'reachable': None, 'reason': 'Turn the MCP server on, then check again.'}
+        now = time.time()
+        cached = getattr(self, 'reached', {}).get(origin)
+        if cached and now - cached['at'] < self.REACH_SECONDS:
+            return cached
+        result = {'checked': True, 'at': int(now), **self.probe(origin)}
+        self.reached = {origin: result}
+        return result
+
+    def probe(self, origin):
+        blocked = ('Blocked by the proxy. On the server, run evlet setup again with --host and --apply, '
+                   'or write the proxy file again with evlet proxy.')
+        try:
+            status, _, body = self.fetch('GET', origin + '/.well-known/oauth-protected-resource/_/mcp')
+            try:
+                resource = json.loads(body).get('resource') if status == 200 else None
+            except (ValueError, AttributeError):
+                resource = None
+            if resource != origin + '/_/mcp':
+                return {'reachable': False, 'reason': f'The sign-in details at {origin}/.well-known/oauth-protected-resource/_/mcp did not come from '
+                                                      f'this instance (status {status}). Check the DNS record and the proxy.'}
+            status, headers, _ = self.fetch('POST', origin + '/_/mcp', b'{}', {'Content-Type': 'application/json'})
+        except (OSError, ValueError, HTTPException) as exc:
+            return {'reachable': False, 'reason': f'Could not connect to {origin}: {getattr(exc, "reason", exc)}'}
+        challenge = headers.get('www-authenticate', '')
+        if status == 401 and challenge.startswith('Bearer ') and 'resource_metadata=' in challenge:
+            return {'reachable': True, 'reason': 'Reachable from the internet.'}
+        if status == 404:
+            return {'reachable': False, 'reason': blocked}
+        return {'reachable': False, 'reason': f'{origin}/_/mcp answered {status} instead of asking to sign in.'}
 
     def api(self, scope, body, user):
         """/api/_oauth/authorize (the consent page) and /api/_settings/me/ai (a person's own assistants). Signed-in sessions only."""

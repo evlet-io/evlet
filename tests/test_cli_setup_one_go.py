@@ -220,16 +220,48 @@ def test_host_writes_caddy_site_unit_and_prints_privileged_steps(tmp_path, monke
     assert 'Administrator exists. If nobody knows its password' in out and 'Domain is erp.example.com' in out
 
 
-def test_host_stops_when_dns_points_elsewhere(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(proxy, 'check', resolving('198.51.100.9'))
+def test_host_stops_only_when_dns_is_surely_wrong_and_never_needs_ip(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(site, 'ask_admin', lambda: ('owner', PASSWORD))
     target = tmp_path / 'p'
+    command = ['setup', str(target), '--app', 'notes', '--instance', 'acme', '--trust', '--host', 'erp.example.com']
+    # A private record while this server has a public address: stop.
+    monkeypatch.setattr(proxy, 'check', resolving('10.0.0.9'))
     with pytest.raises(SystemExit):
-        main(['setup', str(target), '--app', 'notes', '--instance', 'acme', '--trust', '--host', 'erp.example.com', '--ip', '203.0.113.7'])
+        main(command + ['--ip', '84.12.169.35'])
     captured = capsys.readouterr()
     assert 'points elsewhere' in captured.out and 'sudo' not in captured.out
-    assert 'Step "DNS check" failed' in captured.err
+    assert 'Step "DNS check" failed' in captured.err and not (target / 'deploy/server.json').exists()
     assert (target / 'deploy/evlet-acme.caddy').is_file()
+    # No record at all: stop.
+    monkeypatch.setattr(proxy, 'check', functools.partial(proxy.check, resolve=lambda *args, **kwargs: []))
+    with pytest.raises(SystemExit):
+        main(command)
+    assert 'no A or AAAA record' in capsys.readouterr().out
+    # Behind NAT the server sees only a private address. A public record warns and setup goes on, without --ip.
+    monkeypatch.setattr(proxy, 'server_addresses', lambda: {'10.0.0.4'})
+    monkeypatch.setattr(proxy, 'check', resolving('84.12.169.35'))
+    main(command)
+    out = capsys.readouterr().out
+    assert 'may point here' in out and 'sudo systemctl reload caddy' in out
+    assert 'erp.example.com points at 84.12.169.35. If that is not this server, fix its A record. Ports 80 and 443 must be open.' in out
+
+
+def test_site_answers_is_information_only():
+    waits = []
+
+    def failing(method, url):
+        raise OSError('certificate not ready')
+    line = site.site_answers('erp.example.com', fetch=failing, sleep=waits.append)
+    assert line.startswith('https://erp.example.com does not answer yet (certificate not ready).') and waits == [5.0, 5.0, 5.0]
+    calls = []
+
+    def later(method, url):
+        calls.append(url)
+        if len(calls) < 2:
+            raise OSError('refused')
+        return 404, {}, b''
+    assert site.site_answers('erp.example.com', fetch=later, sleep=waits.append) == 'https://erp.example.com answers (status 404).'
+    assert calls == ['https://erp.example.com/.well-known/oauth-protected-resource'] * 2
 
 
 def test_host_refuses_a_weak_admin_password_and_an_edited_config(tmp_path, monkeypatch, capsys):
@@ -261,6 +293,7 @@ def test_apply_runs_each_privileged_step_after_showing_it(tmp_path, monkeypatch,
     ran = []
     actual_run = subprocess.run
     monkeypatch.setattr(site.subprocess, 'run', lambda args, **values: ran.append((args, values.get('input'))) if args[0] == 'sudo' else actual_run(args, **values))
+    monkeypatch.setattr(site, 'site_answers', lambda host: f'https://{host} answers (status 200).')
     target = tmp_path / 'p'
     main(['setup', str(target), '--app', 'notes', '--instance', 'acme', '--trust', '--host', 'erp.example.com', '--ip', '203.0.113.7', '--apply'])
     out = capsys.readouterr().out
@@ -274,6 +307,7 @@ def test_apply_runs_each_privileged_step_after_showing_it(tmp_path, monkeypatch,
         ['sudo', 'systemctl', 'reload', 'caddy']]
     assert ran[2][1] == '\nimport /etc/caddy/evlet-acme.caddy\n'
     assert out.count('$ sudo') == 5 and 'Serving https://erp.example.com through Caddy' in out
+    assert out.rstrip().endswith('https://erp.example.com answers (status 200).')
 
 
 def test_apply_needs_systemd(monkeypatch):
@@ -289,3 +323,65 @@ def test_unit_keeps_paths_literal(tmp_path):
     for root, user in ((tmp_path / 'with space', 'evlet'), (tmp_path / '100%', 'evlet'), (tmp_path, 'root;rm')):
         with pytest.raises(ValueError, match='letters, digits'):
             proxy.systemd_unit(root, 'acme', 8000, user)
+
+
+def test_host_remembers_the_public_address_and_replaces_outdated_installed_files(tmp_path, monkeypatch, capsys):
+    import shutil
+    seen, resolved = [], resolving('203.0.113.7')
+
+    def check(routes, addresses=None):
+        seen.append(addresses)
+        return resolved(routes, addresses)
+    monkeypatch.setattr(proxy, 'check', check)
+    monkeypatch.setattr(site, 'ask_admin', lambda: ('owner', PASSWORD))
+    etc = tmp_path / 'etc'
+    (etc / 'caddy').mkdir(parents=True)
+    (etc / 'systemd').mkdir()
+    monkeypatch.setattr(site, 'CADDY_DIR', str(etc / 'caddy'))
+    monkeypatch.setattr(site, 'SYSTEMD_DIR', str(etc / 'systemd'))
+    target = tmp_path / 'p'
+    command = ['setup', str(target), '--app', 'notes', '--instance', 'acme', '--trust', '--host', 'erp.example.com']
+    main(command + ['--ip', '203.0.113.7'])
+    out = capsys.readouterr().out
+    root = target.resolve()
+    assert 'Saved the public address in deploy/server.json' in out and seen == [['203.0.113.7']]
+    assert (root / 'deploy/server.json').read_text() == '{\n  "ip": [\n    "203.0.113.7"\n  ]\n}\n'
+    # A later run on the same server needs no --ip; --ip still wins when given.
+    main(command)
+    out = capsys.readouterr().out
+    assert 'Using the public address saved in deploy/server.json: 203.0.113.7' in out and seen[-1] == ['203.0.113.7']
+    # Files an earlier --apply installed from 0.4.0: the Caddy site blocked /_/mcp and the unit is older.
+    (etc / 'caddy/evlet-acme.caddy').write_text('erp.example.com {\n\t@internal path /_/*\n\trespond @internal 404\n}\n')
+    (etc / 'systemd/evlet-acme.service').write_text('[Service]\n')
+    main(command)
+    out = capsys.readouterr().out
+    assert f'{etc}/caddy/evlet-acme.caddy is out of date. Run the steps below, or --apply, to replace it.' in out
+    assert 'sudo systemctl restart evlet-acme' in out
+    monkeypatch.setattr(shutil, 'which', lambda name: '/usr/bin/' + name)
+    caddyfile = tmp_path / 'Caddyfile'
+    caddyfile.write_text(f'import {etc}/caddy/evlet-acme.caddy\n')
+    monkeypatch.setattr(site, 'CADDYFILE', str(caddyfile))
+    ran = []
+
+    def fake(args, **values):
+        ran.append(args)
+        if args[:2] == ['sudo', 'install']:
+            shutil.copyfile(args[-2], args[-1])  # what sudo install does
+    actual_run = subprocess.run
+    monkeypatch.setattr(site.subprocess, 'run', lambda args, **values: fake(args, **values) if args[0] == 'sudo' else actual_run(args, **values))
+    monkeypatch.setattr(site, 'site_answers', lambda host: 'checked ' + host)
+    main(command + ['--apply'])
+    out = capsys.readouterr().out
+    assert 'is out of date. Installing the new file.' in out
+    assert ran == [['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.service', f'{etc}/systemd/evlet-acme.service'],
+                   ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.caddy', f'{etc}/caddy/evlet-acme.caddy'],
+                   ['sudo', 'systemctl', 'daemon-reload'],
+                   ['sudo', 'systemctl', 'enable', '--now', 'evlet-acme'],
+                   ['sudo', 'systemctl', 'restart', 'evlet-acme'],
+                   ['sudo', 'systemctl', 'reload', 'caddy']]
+    assert proxy.caddy_refuses((etc / 'caddy/evlet-acme.caddy').read_text(), ['/_/mcp', '/_/tls-allowed']) == ['/_/tls-allowed']
+    # Once current, --apply still runs every step (Caddy reloads), but restarts nothing and reports nothing outdated.
+    ran.clear()
+    main(command + ['--apply'])
+    out = capsys.readouterr().out
+    assert 'out of date' not in out and ['sudo', 'systemctl', 'restart', 'evlet-acme'] not in ran and ['sudo', 'systemctl', 'reload', 'caddy'] in ran
