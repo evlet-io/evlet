@@ -197,7 +197,7 @@ describe('ChildTable undo, duplicate and nested rows', () => {
       const { store } = await bigOrder(1);
       const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'amount'] }));
       const cols = [...host.querySelectorAll<HTMLElement>('col')];
-      expect(parseInt(cols[0].style.width)).toBeLessThanOrEqual(64);
+      expect(parseInt(cols[0].style.width)).toBeLessThanOrEqual(72); // checkbox, a narrow drag handle and Edit
       expect(parseInt(cols[1].style.width)).toBeLessThanOrEqual(120);
     } finally { window.matchMedia = media; }
   });
