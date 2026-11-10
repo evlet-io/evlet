@@ -546,7 +546,17 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
 
   // ---------- the row editor ----------
 
-  const rowTitle = (row: Row) => { const first = columns.get()[0]; return first ? kindOf(first.meta.type).format(row.field(first.key).value.get(), first.meta) || 'New row' : 'New row'; };
+  // A row's title: its first column as text, a Link as the linked record's title (never its id).
+  const rowTitle = (row: Row) => {
+    const first = columns.get()[0];
+    if (!first) return 'New row';
+    const value = row.field(first.key).value.get();
+    if (first.meta.type === 'link' && value !== null && value !== undefined && value !== '') {
+      const title = props.links && first.meta.target ? props.links.title(first.meta.target, String(value)).get() : null;
+      return title || 'Loading';
+    }
+    return kindOf(first.meta.type).format(value, first.meta) || 'New row';
+  };
   const openEditor = (key: string) => {
     if (!focused.peek()) { focusedForEditor = true; enterFocus(); }
     expanded.set(key);
@@ -559,7 +569,11 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   };
   const stepEditor = (direction: 1 | -1) => {
     const list = rows.peek(), at = list.findIndex(row => row.key === expanded.peek()) + direction;
-    if (at >= 0 && at < list.length) expanded.set(list[at].key);
+    if (at < 0 || at >= list.length) return;
+    // A row in a closed section opens it, so the list shows the row being edited.
+    const section = sectionOf(list[at]);
+    if (section && closedSections.peek().has(section)) toggleSection(section);
+    expanded.set(list[at].key);
   };
   const insertBelow = (row: Row) => {
     if (readOnly.peek()) return;
@@ -575,11 +589,36 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   };
   // The rows as a narrow list (checkbox, number, title) and the row's fields as one form beside it.
   const editorView = () => {
-    const list = html`<div class="g-ed-list" role="listbox" aria-label=${`${props.title ?? table.meta.label}: rows`}>${each(rows, item => item.key, (item, at) => html`<div role="option" class="g-ed-item"
-      data-key=${item().key} aria-selected=${() => String(expanded.get() === item().key)} tabindex=${() => expanded.get() === item().key ? '0' : '-1'}
-      on:click=${(event: MouseEvent) => { if (!(event.target as Element).closest('.check')) expanded.set(item().key); }}>
-      ${Checkbox({ checked: () => selection.get().has(item().key), onChange: on => toggle(item().key, on), ariaLabel: () => `Select row ${at() + 1}` })}
-      <span class="num g-ed-no">${() => String(at() + 1)}</span><span class="g-ed-t">${() => rowTitle(item())}</span></div>`)}</div>` as HTMLElement;
+    // The list keeps the table's structure: section headings (a click shows or hides their lines) and rows by title.
+    // A click on a row's title opens it in the editor, and on the open row closes the editor.
+    type Item = { kind: 'row'; row: Row } | { kind: 'section'; section: TableSection };
+    const items = derive<Item[]>(() => hasSections.get()
+      ? entries.get().flatMap(entry => entry.kind === 'add' ? [] : [entry as Item])
+      : rows.get().map(row => ({ kind: 'row' as const, row })), { name: `${table.name} (row editor list)` });
+    const pick = (key: string) => { if (expanded.peek() === key) closeEditor(); else expanded.set(key); };
+    const rowItem = (row: Row) => {
+      const at = () => rows.get().indexOf(row);
+      return html`<div role="option" class="g-ed-item" data-key=${row.key} aria-selected=${() => String(expanded.get() === row.key)}
+        tabindex=${() => expanded.get() === row.key ? '0' : '-1'}
+        on:click=${(event: MouseEvent) => { if (!(event.target as Element).closest('.check')) pick(row.key); }}>
+        ${Checkbox({ checked: () => selection.get().has(row.key), onChange: on => toggle(row.key, on), ariaLabel: () => `Select row ${at() + 1}` })}
+        <span class="num g-ed-no">${() => String(at() + 1)}</span><span class="g-ed-t">${() => rowTitle(row)}</span></div>`;
+    };
+    const sectionItem = (section: () => TableSection) => {
+      const key = section().key, open = () => !closedSections.get().has(key), count = () => sectionLines.get().get(key)?.length ?? 0;
+      return html`<div role="presentation" class="g-ed-sec" data-key=${`s:${key}`}>
+        <button type="button" class="g-ed-sec-b" aria-expanded=${() => String(open())} aria-label=${() => `${open() ? 'Hide' : 'Show'} the lines of ${section().label}`}
+          on:click=${() => toggleSection(key)}>${Icon('chevron-down', { size: 'xs' })}<b>${() => section().label}</b><span class="muted num">${() => String(count())}</span></button></div>`;
+    };
+    const list = html`<div class="g-ed-list" role="listbox" aria-label=${`${props.title ?? table.meta.label}: rows`}>${each(items,
+      item => item.kind === 'row' ? item.row.key : `s:${item.section.key}`,
+      item => item().kind === 'row' ? rowItem((item() as { row: Row }).row) : sectionItem(() => (item() as { section: TableSection }).section))}</div>` as HTMLElement;
+    list.addEventListener('keydown', event => {
+      if ((event.key === 'Enter' || event.key === ' ') && (event.target as Element).matches?.('.g-ed-item')) {
+        event.preventDefault();
+        pick((event.target as HTMLElement).dataset.key!);
+      }
+    });
     list.addEventListener('keydown', event => {
       if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
       event.preventDefault();

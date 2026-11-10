@@ -878,6 +878,14 @@ body.has-fab .toasts{right:auto;left:50%;transform:translateX(-50%);align-items:
 .g-ed-item .check{width:16px;height:16px;margin:0;flex:none}
 .g-ed-no{color:var(--fg-3);font-size:12px;min-width:18px;text-align:right;flex:none}
 .g-ed-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* A section heading in the row editor's list: a click shows or hides its rows. */
+.g-ed-sec{border-bottom:1px solid var(--divider);background:var(--bg-subtle)}
+.g-ed-sec-b{display:flex;align-items:center;gap:6px;width:100%;height:34px;padding:0 10px;font:inherit;font-size:12.5px;color:var(--fg);text-align:left}
+.g-ed-sec-b b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
+.g-ed-sec-b svg{color:var(--fg-3);transition:transform .15s;flex:none}
+.g-ed-sec-b[aria-expanded="false"] svg{transform:rotate(-90deg)}
+.g-ed-sec-b:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
+.g-ed-sec~.g-ed-item{padding-left:18px}
 .g-ed-main{display:flex;flex-direction:column;min-width:0;min-height:0}
 .g-ed-h{display:flex;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid var(--border);flex:none}
 .g-ed-badge{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:var(--r);background:var(--bg-muted);color:var(--fg-2);font-size:12px;font-weight:600;flex:none}
@@ -1087,7 +1095,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .in-affix>span{display:flex;align-items:center;padding:0 9px;background:var(--bg-subtle);color:var(--fg-3);font-size:12.5px;font-weight:550}
 .in-affix>span:first-child{border-right:1px solid var(--border)}
 .in-affix>span:last-child:not(:first-child){border-left:1px solid var(--border)}
-.in-affix .input{border:0;box-shadow:none!important;border-radius:0}
+.in-affix .input{border:0;box-shadow:none!important;border-radius:0;flex:1;min-width:0}
 .input.r{text-align:right}
 .in-link{display:flex;align-items:center;gap:8px;height:32px;padding:0 10px;border:1px solid var(--border-strong);border-radius:var(--r);background:var(--surface)}
 .in-link>span{flex:1;min-width:0}

@@ -28,7 +28,7 @@ async function sectionedOrder(detailOf?: (lines: Array<Record<string, unknown>>)
   const lines: Array<Record<string, unknown>> = detail.body.children.lines;
   lines.splice(2, 0, { id: 's2', section: 'Services' });
   lines.splice(0, 0, { id: 's1', section: 'Hardware' });
-  if (detailOf) detail.body.children.lines = detailOf(lines);
+  if (detailOf) (detail.body.children as Record<string, unknown>).lines = detailOf(lines);
   const { api } = backend([['GET', /\/api\/order\/0000000000001$/, detail],
     ['GET', /\/api\/order\/0000000000001\/lines\/lines\?/, copy(responses.lines_page)]]);
   const store = new RecordStore({ api, schema: sectioned, model: 'order', today: () => '2026-11-01' });

@@ -639,8 +639,10 @@ mount(document.querySelector('#app')!, () => DocFrame({
   the same rows with their ids and rows of rows; Undo is refused with a message while the
   record saves or the lines are locked), moved by their drag handle (mouse, touch, or Space and
   the arrow keys), and the table can take over the view (focus view). A row's **Edit** (the pencil
-  by its number) opens the **row editor** in focus view: the rows as a narrow list on the left (click
-  or the arrow keys switch row) and the row's fields as one form on the right, in the table's frame,
+  by its number) opens the **row editor** in focus view: the rows as a narrow list on the left, in the
+  table's structure (section headings, whose click shows or hides their rows, and each row by its title, a Link
+  as the linked record's title, never its id; a click opens a row, and on the open row closes the editor; the
+  arrow keys switch row) and the row's fields as one form on the right, in the table's frame,
   with the row's number, title and a one-line summary ("4 × 2,228.26 = 8,913.04": two values typed in
   and a calculated one, else the first values set), "1 of 3" with previous and next (also Alt and an
   arrow), Close, then Delete line, Insert below and Done; nested tables follow the form. Esc closes

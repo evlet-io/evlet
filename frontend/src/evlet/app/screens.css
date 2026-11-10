@@ -452,6 +452,8 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-main{padding:12px var(--cmp-pad) 14px}
 .ev-cmp-main:empty{display:none}
 .ev-cmp-grid .fs-g{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 14px}
+/* The row editor's form sits beside the rows list: as many columns as fit, so a currency input keeps room for its value. */
+.g-ed-body .ev-cmp-grid .fs-g{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
 .ev-more-body .fs-g{grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 14px}
 .ev-more-body .fs-cols .fs-colrun{gap:10px 14px}
 .ev-more-body .fs-col{gap:10px}

@@ -3,6 +3,7 @@
 // moving and deleting, read from and saved to the record's change set.
 import { afterEach, describe, expect, it } from 'vitest';
 import { ChildTable, rowSummary, type ChildTableControls } from '../ui/childtable';
+import { cell } from '../reactive';
 import { RecordStore } from '../model/record';
 import { tableChanges } from '../model/changes';
 import type { AppSchema } from '../model/schema';
@@ -270,5 +271,52 @@ describe('section rows', () => {
     expect(host.querySelector('tr.g-sec')).toBeNull();
     expect(host.querySelector('.g-add-sec')).toBeNull();
     expect(tableChanges(store.table('lines'))).not.toHaveProperty('order');
+  });
+});
+
+describe('the row editor list', () => {
+  const links = { search: async () => [], title: (_model: string, key: string) => cell<string | null>(`Product ${key.slice(-1)}`) };
+  const items = (host: Element) => [...host.querySelectorAll<HTMLElement>('.g-ed-list > *')];
+
+  it('keeps the table\'s structure: section headings and row titles, never record ids', async () => {
+    const store = await sectionedOrder();
+    const table = store.table('lines');
+    const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'], links }));
+    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    const list = items(host);
+    expect(list[0].classList.contains('g-ed-sec')).toBe(true);
+    expect(list[0].textContent).toContain('Hardware');
+    expect(list[1].querySelector('.g-ed-t')!.textContent).toBe(`Product ${String(table.rows.peek()[0].field('product').value.peek()).slice(-1)}`);
+    expect(host.querySelector('.g-ed-list')!.textContent).not.toMatch(/#\d{6,}/);
+    expect(list[3].textContent).toContain('Services');
+    expect(host.querySelector('.g-ed-ttl b')!.textContent).toMatch(/^Product /);
+  });
+
+  it('a click on a section heading hides or shows its rows; a click on the open row closes the editor', async () => {
+    const store = await sectionedOrder();
+    const table = store.table('lines');
+    const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'], links }));
+    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    const count = () => host.querySelectorAll('.g-ed-list .g-ed-item').length;
+    expect(count()).toBe(120);
+    host.querySelectorAll<HTMLButtonElement>('.g-ed-sec-b')[1].click();
+    expect(count()).toBe(2);
+    expect(host.querySelectorAll('.g-ed-sec-b')[1].getAttribute('aria-expanded')).toBe('false');
+    // The table follows: the section is closed there too.
+    expect(host.querySelectorAll('tr.g-sec .g-sec-tog')[1].getAttribute('aria-expanded')).toBe('false');
+    host.querySelectorAll<HTMLButtonElement>('.g-ed-sec-b')[1].click();
+    expect(count()).toBe(120);
+    // Another row's title opens it; the open row's title closes the editor.
+    host.querySelectorAll<HTMLElement>('.g-ed-item')[1].click();
+    expect(position(host)).toBe('2 of 120');
+    host.querySelectorAll<HTMLElement>('.g-ed-item')[1].click();
+    expect(host.querySelector('.g-ed')).toBeNull();
+  });
+
+  it('shows the values of currency inputs in the form', async () => {
+    const { store } = await bigOrder(2);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'rate', 'amount'] }));
+    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    expect(host.querySelector<HTMLInputElement>('.g-ed-body .fld[data-field="rate"] input')!.value).toBe('2.50');
   });
 });
