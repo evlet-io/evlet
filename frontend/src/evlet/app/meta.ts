@@ -234,29 +234,51 @@ export function titleOf(model: ScreenModel, data: Record<string, unknown>): stri
   return field && field.type !== 'text' && field.type !== 'sequence' ? formatOf(field, value) : String(value);
 }
 
-/** A measure's value as text, by the measured field's type (an image currency symbol reads as its code). */
-export function measureText(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): string {
+/**
+ * A measure's value as text, by the measured field's type (an image currency symbol reads as its code).
+ * `currencies` is the route's answer, as for measureView.
+ */
+export function measureText(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown,
+  currencies?: Record<string, string>): string {
   const field = measureField(index, model, measure, value);
-  return field ? formatOf(field, value) : plainMeasure(measure, value);
+  if (!field) return plainMeasure(measure, value);
+  return formatOf(moneyField(field, measure, value, currencies) ?? field, value);
 }
 
-/** A measure's value on screen: money shows the site's currency symbol, an image when the site set one. */
-export function measureView(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): Child {
-  const field = measureField(index, model, measure, value);
-  return field ? displayOf(field, value) : plainMeasure(measure, value);
+/**
+ * A Currency field whose code comes from each record (currency_source), as a measure's money result shows it: with
+ * the route's code (a SAR record's sum shows SAR), else as a plain amount without a symbol, since no one code covers
+ * rows in several currencies. Without the route's `currencies`, a field with a fallback code keeps it (null).
+ * The plain amount keeps the places the server sent ("0.00"), never the schema scale, which is the storage scale
+ * (6): 2 when the value carries none. A field with no currency source keeps its own code (null).
+ */
+function moneyField(field: FieldSchema, measure: MeasureSchema, value: unknown, currencies?: Record<string, string>): FieldSchema | null {
+  if (field.type !== 'currency' || !field.currency_source) return null;
+  const code = currencies?.[measure.name];
+  if (code) return { ...field, currency: code, currency_source: undefined };
+  if (!currencies && field.currency) return null;
+  const sent = typeof value === 'string' ? /\.(\d+)$/.exec(value.trim())?.[1].length : undefined;
+  return { ...field, type: 'decimal', scale: sent ?? 2 };
 }
 
-// A count is a plain number, never money, whatever field it counts. Money whose code each record takes from its own
-// fields (currency_source) has no one code over many records, so its total shows as a number without a symbol rather
-// than in the site's currency. It keeps the places the server sent ("0.00"), never the schema scale, which is the
-// storage scale (6): 2 when the value carries none.
+/**
+ * A measure's value on screen: money shows the site's currency symbol, an image when the site set one.
+ * `currencies` is what the measures route answered (docs/measures.md): a money result in it takes that code, and one
+ * missing from it (rows in several currencies, or none the caller may read) shows as a plain amount, never in the
+ * default currency. Without `currencies` the field's own currency applies.
+ */
+export function measureView(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown,
+  currencies?: Record<string, string>): Child {
+  const field = measureField(index, model, measure, value);
+  if (!field) return plainMeasure(measure, value);
+  return displayOf(moneyField(field, measure, value, currencies) ?? field, value);
+}
+
+// A count is a plain number, never money, whatever field it counts (moneyField says how money shows).
 function measureField(index: SchemaIndex, model: ScreenModel, measure: MeasureSchema, value: unknown): FieldSchema | undefined {
   if (value === null || value === undefined || measure.function === 'count' || measure.function === 'count_distinct') return undefined;
   const target = measure.model ? (index.schema.models.find(item => item.name === measure.model) as unknown as ScreenModel | undefined) : model;
-  const field = target && measure.field ? fieldOf(target, measure.field) : undefined;
-  if (field?.type !== 'currency' || !field.currency_source || field.currency) return field;
-  const sent = typeof value === 'string' ? /\.(\d+)$/.exec(value.trim())?.[1].length : undefined;
-  return { ...field, type: 'decimal', scale: sent ?? 2 };
+  return target && measure.field ? fieldOf(target, measure.field) : undefined;
 }
 
 function plainMeasure(measure: MeasureSchema, value: unknown): string {

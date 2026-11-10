@@ -719,8 +719,12 @@ def compile_plan(registry, root, *, force=False):
                 if field.kind == 'currency' and option in ('compute', 'initial'):
                     money = money_source(field, context, label)
                     if money is not None:
+                        # The currency source lists only the reads it adds, so formula_hash can leave exactly those out
+                        # (a formula may read the same link, for example `customer`, as `customer.currency` does).
+                        if 'reads' in money:
+                            money['reads'] = [read for read in money['reads'] if read not in item['reads']]
+                            item['reads'] += money['reads']
                         item['currency'] = money
-                        item['reads'] += [read for read in money.get('reads', ()) if read not in item['reads']]
                 fields.append(item)
         lookups = {}
         for item in fields:
@@ -742,7 +746,8 @@ def compile_plan(registry, root, *, force=False):
 def money_source(field, context, label):
     """Where a calculated Currency field finds the currency it rounds to: {'code'}, {'setting'} (a host input), or
     {'expression', 'reads'} reading a field of the row or of a linked record. The reads join the item's reads, so a
-    change of currency recalculates the amount; formula_hash leaves them out."""
+    change of currency recalculates the amount; compile_plan keeps only those the formula does not read already, and
+    formula_hash leaves them out."""
     source = field.currency_source()
     if source is None:
         return None
@@ -921,6 +926,7 @@ def formula_hash(plan):
 def legacy_money(field):
     if field.get('target_type') != 'currency':
         return field
+    # The currency source's reads are only the ones it added to the formula's own (compile_plan).
     extra = field.get('currency', {}).get('reads', ())
     original = [read for read in field['reads'] if read not in extra] if extra else field['reads']
     return {**{key: value for key, value in field.items() if key != 'currency'}, 'reads': original,
@@ -1739,16 +1745,19 @@ class Document:
         self._pristine = True
 
     def locked(self, row, field):
-        """A field's lock as the server enforces it: decided on the saved row, or now for a new row."""
+        """A field's lock as the server enforces it: decided on the row as saved.
+
+        A new record or row has no saved state, so nothing is locked on it: its fields may be filled in any order.
+        """
         saved = self.locks.get(row.handle, {})
-        value = saved[field] if field in saved else self.decided(row, field, 'locked_when', None)
-        return value is not False and (field in saved or (row.handle, field + ':locked_when') in self.deps)
+        return field in saved and saved[field] is not False
 
     def rule_states(self, handle):
         """{field: {applies, required, locked}} for fields of this row that declare rules.
 
         Undecided rules (pending, error or null) fail closed: the field applies, is required and is locked.
-        A saved row's lock is decided on the row as loaded, so one write cannot unlock and change a field.
+        A saved row's lock is decided on the row as loaded, so one write cannot unlock and change a field;
+        a new row has no saved state and nothing on it is locked.
         """
         row = self._row(handle)
         states = {}

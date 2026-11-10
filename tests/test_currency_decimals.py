@@ -12,6 +12,7 @@ from evlet import (AddField, AlterField, Application, Child, CreateModel, Curren
 from evlet.auth import LocalAuth, User, password_hash
 from evlet.calc import F, Document, compile_plan, formula_hash, parent
 from evlet.currencies import MONEY_SCALE, check, decimals_table, stored_excess
+from evlet.identity import RecordId
 from evlet.migrations import SchemaError, money_scale
 from test_business import PASSWORD, client, http
 from test_postgres import pg_dsn  # noqa: F401 - fixture
@@ -466,6 +467,75 @@ def test_append_only_ledgers_are_moved_and_keep_their_triggers(tmp_path):
         assert ledger.has_triggers(connection, False, 'entry')
         with pytest.raises(Exception, match='append'):
             connection.execute('UPDATE entry SET amount = 0')
+
+
+class Buyer(Model):
+    permissions = FULL
+    currency = Select(['AED', 'KWD', 'JPY'], default='AED')
+    discount = Decimal(scale=2, default='0')
+
+
+class Order(Model):
+    """A finite document saved before amounts moved to 6 places: one of its amounts reads the same Link its currency
+    comes through."""
+    permissions = FULL
+
+    class Line(Child):
+        qty = Decimal(scale=3, default='1')
+        rate = Currency(currency='AED', default='0')
+        amount = Currency(currency='AED', compute=F('qty') * F('rate'))
+
+    buyer = Link(Buyer)
+    reference = Text(default='')
+    currency = Select(['AED', 'KWD', 'JPY'], default='AED')
+    lines = Table(Line)
+    net = Currency(currency='currency', compute=lines.sum('amount'))
+    discount = Currency(currency='buyer.currency', compute=F('net') * F('buyer.discount') / D('100'))
+    vat = Currency(currency='currency', compute=F('net') * D('0.05'))
+
+
+# The formula version Evlet 0.4 recorded for every saved Order (its formula_hash before amounts moved to 6 places).
+ORDER_HASH_0_4 = 'sha256:a9279561798663a46a1050b6e15d1789225c11eb923be3054ef3cfcbb723902c'
+
+
+def test_saved_finite_documents_stay_editable_after_the_move_to_six_places(tmp_path):
+    # The currency sources add reads (buyer, buyer.currency) that the formula version leaves out, even when a formula
+    # reads the same Link: the move changes how amounts are stored, not the formulas.
+    assert formula_hash(Registry(Buyer, Order).plan_for(Order)) == ORDER_HASH_0_4
+    path = tmp_path / 'orders.sqlite3'
+    app = application(path, Buyer, Order)
+    app.initialize()
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
+    admin = login(app)
+    status, buyer, _ = admin('POST', '/api/buyer', {'currency': 'KWD', 'discount': '10'})
+    assert status == 201, buyer
+    status, order, _ = admin('POST', '/api/order', {'buyer': buyer['id'], 'children': {'lines': [{'qty': '2', 'rate': '12.5'}]}})
+    assert status == 201, order
+    record_id = int(RecordId(order['id']))
+    app.database.close()
+    legacy_database(app)
+    with app.database._connection() as connection:
+        changed = connection.execute("UPDATE evlet_calculation_versions SET plan_hash = ? WHERE resource = 'order'", (ORDER_HASH_0_4,))
+        assert changed.rowcount == 1
+        connection.commit()
+    assert stored(app, 'order', 'net', record_id) == 2500
+    # evlet migrate: framework step 0007_money_scale moves the amounts; the saved Order is then edited as before.
+    moved = application(path, Buyer, Order)
+    moved.initialize()
+    assert stored(moved, 'order', 'net', record_id) == 25_000_000
+    admin = login(moved)
+    status, saved, headers = admin('GET', f'/api/order/{order["id"]}')
+    assert status == 200 and D(saved['net']) == D('25') and D(saved['discount']) == D('2.5'), saved
+    status, saved, headers = admin('PATCH', f'/api/order/{order["id"]}', {'currency': 'KWD', 'reference': 'PO-7'},
+                                   headers={b'if-match': headers[b'etag']})
+    assert status == 200, saved
+    assert (saved['currency'], D(saved['net']), D(saved['vat']), D(saved['discount'])) == ('KWD', D('25'), D('1.25'), D('2.5'))
+    # A real formula change is still refused until the record is recalculated.
+    with moved.database._connection() as connection:
+        connection.execute("UPDATE evlet_calculation_versions SET plan_hash = 'sha256:other' WHERE resource = 'order'")
+        connection.commit()
+    status, refused, _ = admin('PATCH', f'/api/order/{order["id"]}', {'reference': 'PO-8'}, headers={b'if-match': headers[b'etag']})
+    assert status == 409 and refused['error'].startswith('SCHEMA_VERSION_MISMATCH'), refused
 
 
 def test_money_scale_is_a_no_op_on_a_new_database(tmp_path):

@@ -162,7 +162,10 @@ def test_document_sessions_report_rule_states():
     document.set(root, 'stage', 'lost')
     assert document.rule_states(root)['reason'] == {'applies': True, 'required': True, 'locked': False}
     document.set(root, 'stage', 'won')
-    assert document.rule_states(root)['discount']['locked'] is True
+    # A new document has no saved state, so nothing on it is locked.
+    assert document.rule_states(root)['discount']['locked'] is False
+    saved = Document(plan, {'id': 4, 'stage': 'won'})
+    assert saved.rule_states(saved.root.handle)['discount']['locked'] is True
 
 
 # initial= over HTTP
@@ -246,10 +249,12 @@ def test_locked_fields_reject_changes_over_http_actions_and_context(deals):
     # The engine does not overwrite a locked field; other suggestions still follow their inputs.
     moved = patch(c, url, {'client': ids['two']})[1]
     assert (moved['discount'], moved['terms']) == ('2.50', 10)
-    assert c('POST', '/api/deal', {'stage': 'won', 'discount': '1.00', 'note': 'x'})[1]['fields'] == {
-        'discount': 'This field is locked and cannot be changed now'}
+    # Nothing is locked on create: the record has no saved values to keep.
+    status, created, _ = c('POST', '/api/deal', {'stage': 'won', 'discount': '1.00', 'note': 'x'})
+    assert status == 201 and created['discount'] == '1.00'
     created = c('POST', '/api/deal', {'stage': 'won', 'client': ids['one']})[1]
-    assert created['discount'] is None and created['terms'] == 30
+    rate = c('GET', f"/api/client/{ids['one']}")[1]['rate']
+    assert created['discount'] == rate and created['terms'] == 30
     assert c('GET', url)[1]['discount'] == '2.50'
 
 
@@ -612,8 +617,11 @@ def test_a_self_referencing_lock_uses_the_saved_value(tmp_path):
 
     app = application(tmp_path, Offer)
     c = client(app)
-    # On create the current rule applies, so a price above 100 is refused there.
-    assert c('POST', '/api/offer', {'price': '500'})[0] == 422
+    # On create nothing is locked: there is no saved price yet, so 500 is accepted and then kept.
+    high = c('POST', '/api/offer', {'price': '500'})[1]
+    assert high['price'] == '500.00'
+    status, result, _ = patch(c, f"/api/offer/{high['id']}", {'price': '50'})
+    assert status == 422 and 'locked' in result['fields']['price']
     offer = c('POST', '/api/offer', {'price': '50'})[1]
     url = f"/api/offer/{offer['id']}"
     assert patch(c, url, {'price': '500'})[1]['price'] == '500.00'
@@ -679,14 +687,41 @@ def test_shipped_plans_list_only_readable_lookups(deals):
     assert 'secret_limit' in str(admin.get('plan', admin))
 
 
-def test_a_locked_field_accepts_its_default_or_suggestion_on_create(deals):
+def test_no_field_is_locked_on_create_or_on_new_rows(deals):
     app, c, ids = deals
-    created = c('POST', '/api/deal', {'stage': 'won', 'approved': False, 'note': 'x'})
-    assert created[0] == 201, created
-    rate = c('GET', f"/api/client/{ids['one']}")[1]['rate']
-    status, result, _ = c('POST', '/api/deal', {'stage': 'won', 'client': ids['one'], 'discount': rate})
-    assert status == 201, result
-    assert c('POST', '/api/deal', {'stage': 'won', 'client': ids['one'], 'discount': '0.01'})[0] == 422
+    # A field that locks once another is set may be entered after it, in the same create.
+    status, result, _ = c('POST', '/api/deal', {'stage': 'won', 'client': ids['one'], 'discount': '0.01'})
+    assert status == 201 and result['discount'] == '0.01', result
+    with app.business.context(User(1, 'admin', 'admin')) as context:
+        assert context.create(Deal, stage='won', discount='3.00', note='x')['discount'] == '3.00'
+    # The draft preview of a new record reports nothing locked either.
+    preview = c('POST', '/api/_draft/deal', {'values': {'stage': 'won', 'discount': '0.02', 'note': 'x'}})[1]
+    assert 'discount' not in preview['errors'] and preview['states'].get('discount') != 'locked'
+    # Once saved, the lock is decided on the saved record.
+    status, result, _ = patch(c, f"/api/deal/{result['id']}", {'discount': '0.02'})
+    assert status == 422 and 'locked' in result['fields']['discount']
+
+
+def test_a_new_row_has_no_locks_but_a_saved_row_keeps_them(tmp_path):
+    class Lot(Child):
+        sealed = Boolean(default=False)
+        code = Text(default='', locked_when=F('sealed') == True)  # noqa: E712
+
+    class Shipment(Model):
+        Meta = FiniteMeta
+        permissions = ALL
+        lots = Table(Lot)
+
+    app = application(tmp_path, Shipment)
+    c = client(app)
+    # A sealed row with a code: on a new row both are accepted together.
+    shipment = c('POST', '/api/shipment', {'children': {'lots': [{'_key': 'a', 'sealed': True, 'code': 'A1'}]}})
+    assert shipment[0] == 201, shipment
+    url, row = f"/api/shipment/{shipment[1]['id']}", shipment[1]['children']['lots'][0]['id']
+    added = patch(c, url, {'children': {'lots': {'create': [{'_key': 'b', 'sealed': True, 'code': 'B1'}]}}})
+    assert added[0] == 200 and [lot['code'] for lot in added[1]['children']['lots']] == ['A1', 'B1']
+    status, result, _ = patch(c, url, {'children': {'lots': {'update': [{'id': row, 'code': 'A2'}]}}})
+    assert status == 422 and 'locked' in str(result['fields'])
 
 
 def test_recompute_stores_values_that_no_longer_apply_as_empty(tmp_path):

@@ -266,6 +266,44 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Field read checks on chained formulas.** Working out which fields a role may read walked every
+  path of every string formula again for each formula that read another one, so the time doubled
+  with each link in the chain: two such formulas took 2 seconds, a dozen made requests hang. Each
+  answer is now kept per role and model for the life of the policy, so each formula is walked once.
+  The answers are the same as before.
+- **Percent in string formulas.** `compute="price * discount / 100"` with a `Percent` field failed at
+  registration with "Arithmetic requires numeric fields". Percent is now a number there, read as
+  its stored value (12.50 is 12.50), as in finite-v1. Arithmetic on a field that is not a number
+  gives an error naming the formula, the field and its type
+  ([docs/amendment-v2.md](docs/amendment-v2.md)).
+- **Virtual values in record responses.** `stored=False` results (string formulas, Query lookups,
+  function queries and `fetch=` copies) were missing from `GET /api/{model}/{id}`, the create and
+  update responses and `/lines/` pages, so the browser showed "Not set" until an edit ran the
+  draft preview. They are now calculated from the saved values and shown with the same field read
+  checks as stored fields. They are not part of the ETag. A virtual `fetch=` now always reads its
+  linked record, also on a locked or posted record, and is empty when the caller cannot read it.
+- **Field locks on create.** `locked_when` was judged against the values being created, so a
+  field that locks once another is set had to be entered first. A new record and a new row have
+  no saved state, so nothing on them is locked now; the lock applies from the next write. The
+  browser engine follows the same rule. Saved rows keep their locks as before
+  ([docs/finite-calculations.md](docs/finite-calculations.md#field-rules)).
+- **Money measures in the right currency.** A sum of a Currency field whose currency comes from
+  the record (`currency="currency_code"` or `"customer.currency_code"`) was shown in the default
+  currency, AED, on a record in SAR. The measures and aggregate routes now return `currencies`,
+  the code of each money result whose rows share one, and the list summary, record summary and
+  record charts use it. A count never has a currency, and rows in mixed currencies show a plain
+  amount ([docs/measures.md](docs/measures.md#currencies)).
+- **Hourly image purge.** The `evlet_image_purge` task failed on every run because its handler did
+  not match the jobs runner's call, and on a new database its schedule was only created on the
+  second start. Held images and unreferenced private files are now cleaned up hourly.
+- **Records stay editable after the move to 6 decimal places.** A finite document whose formula read
+  the same Link its currency comes through (for example `customer.discount` with
+  `currency='customer.currency'`) got a new calculation version from the currency source, so after
+  `evlet migrate` (step `0007_money_scale`) every saved record was refused with 409
+  `SCHEMA_VERSION_MISMATCH`. Saved documents now keep their version. When a record really was
+  calculated with older formulas, the browser says so and asks for a recalculation instead of
+  "Someone else changed this record".
+
 - **Rich text images in documents.** Saving a document (a model with a State, `Meta.journal` or other
   declarations) now links the held images its rich text refers to and deletes the ones it no longer
   uses, as plain models always did. Before, a document's new images stayed in the holding area and

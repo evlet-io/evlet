@@ -30,6 +30,7 @@ const KEY = /^[A-Za-z0-9_-]{1,64}$/;
 const NUMERIC = new Set(['decimal', 'currency', 'integer', 'percent', 'duration']);
 const sameRules = (a: Rules, b: Rules) => a.applies === b.applies && a.required === b.required && a.locked === b.locked;
 const sameOutcome = (a: Outcome, b: Outcome) => a.state === b.state && (a as any).code === (b as any).code;
+export const STALE_FORMULAS = 'This record was calculated with older formulas, so it cannot be saved yet. Ask an administrator to recalculate it.';
 
 /** Whether two field values mean the same: '' and null are both empty, '1.50' equals '1.5' for numbers, lists by content. */
 export function sameValue(meta: FieldSchema | undefined, a: unknown, b: unknown): boolean {
@@ -679,6 +680,8 @@ export class RecordStore {
 
   private refused(error: unknown): false {
     if (error instanceof ValidationError) this.showErrors(error.fields);
+    // Saved under other formulas: reloading does not help, so it is not shown as someone else's change.
+    else if (error instanceof ConflictError && error.code === 'SCHEMA_VERSION_MISMATCH') this.formError.set(STALE_FORMULAS);
     else if (error instanceof ConflictError) this.conflict.set(error);
     else if (error instanceof ApiError) this.formError.set(error.message);
     else throw error;

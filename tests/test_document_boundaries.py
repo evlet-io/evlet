@@ -137,7 +137,7 @@ def test_expression_type_errors_fail_before_schema_creation():
     class Invalid(Model):
         title = Text()
         amount = Currency(compute='title * 2')
-    with pytest.raises(ValueError, match='numeric'): Registry(Invalid)
+    with pytest.raises(ValueError, match='Arithmetic requires numbers, but title is a text field'): Registry(Invalid)
 
 
 def test_hidden_dependencies_and_outputs_are_not_disclosed(tmp_path):

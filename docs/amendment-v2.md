@@ -144,8 +144,11 @@ The common field vocabulary adds:
 
 Expressions use bounded literals/references, arithmetic, comparison, null checks,
 lazy Boolean/conditional operations and `sum/count/min/max`. No arbitrary calls,
-comprehensions, imports or source evaluation are accepted. Numeric fields use
-exact decimals. Intermediates allow at most 40 significant coefficient digits
+comprehensions, imports or source evaluation are accepted. Numeric fields
+(Integer, Decimal, Currency and Percent) use exact decimals. A Percent is its stored
+number, as in finite-v1: a Percent of `12.50` is 12.50, so `price * discount / 100`
+takes 12.5% of a price. Arithmetic on any other field is refused when the registry is
+built, with an error that names the formula, the field and its type. Intermediates allow at most 40 significant coefficient digits
 and 36 fractional places; division rounds to 18 places, half even. Target fields
 round half even to their declared scale and enforce signed scaled-storage bounds.
 New document integers and integer results must fit `±(2**53-1)`. Legacy database
@@ -171,6 +174,14 @@ The public `Query` declaration is internally `ReactiveQuery`; the existing
 one row; multiple matches are an error. Function sources use
 `Query(function, fields={"qty": Decimal(), ...})` and explicit `@depends(...)`.
 A single virtual field can instead use `Decimal(query=function, stored=False)`.
+
+Virtual results (`stored=False`: formulas, Query lookups, function queries and `fetch=`
+copies) are calculated for each record response: `GET /api/{model}/{id}`, the create and
+update responses and pages of `/lines/`. They are calculated from the saved values as the
+draft preview calculates them, and a role sees one only when it may read the field, as for
+stored fields (a formula over a field it cannot read stays out). They are not part of the
+record's ETag, since they may read other records or the date. A virtual `fetch=` always reads
+the linked record, which it shows empty when the caller cannot read that record.
 `items.*.qty` includes row membership and each row quantity. Functions receive
 the effective unsaved draft, immutable row collections and a read-only context.
 They return declared values and cannot write/enqueue through that context.

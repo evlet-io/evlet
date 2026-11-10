@@ -428,11 +428,21 @@ class Policy:
             readable = {name for name in readable if not model.__declared_fields__[name].hidden}
         return readable
 
-    def fields(self, user, model, *, write=False, _visiting=frozenset()):
+    def field_readable(self, user, model, name, visiting=frozenset()):
+        """Whether one field is in fields(user, model), without working out the rest of the model's fields."""
+        if name not in self.presented(user, model):
+            return False
+        if getattr(model, '__declaration_mode__', False) and not self.derivation_allowed(user, model, name, visiting):
+            return False
+        if name == 'title':
+            return all(source == 'title' or self.field_readable(user, model, source, visiting) for source in title_sources(model))
+        return True
+
+    def fields(self, user, model, *, write=False):
         rule = self.rule(user, model)
         readable = self.presented(user, model)
         if getattr(model, '__declaration_mode__', False):
-            readable = {name for name in readable if self.derivation_allowed(user, model, name, _visiting)}
+            readable = {name for name in readable if self.derivation_allowed(user, model, name)}
         # The standard title repeats its source fields, so it is readable only with them (evlet/naming.py).
         if 'title' in readable and not title_sources(model) <= readable:
             readable = readable - {'title'}
@@ -447,8 +457,28 @@ class Policy:
                 and not getattr(model.__declared_fields__[name], 'ledger_target', False)}
 
     def derivation_allowed(self, user, model, name, visiting=frozenset()):
+        """Whether this role may read a derived field: every path its formula or query reads is readable.
+
+        The answer depends only on the role (and API key), the registry and these fixed rules, so it is
+        memoised per policy (Controls builds a new policy when permissions change). Each formula is walked once
+        per role; formulas that read other formulas reuse the stored answers instead of walking every path
+        again, which grew exponentially with chained formulas.
+        """
+        cache = self.__dict__.setdefault('_derivations', {})
+        key = (user.role, getattr(user, 'access', None), model, name)
+        if key in cache:
+            return cache[key]
+        if (model, name) in visiting:
+            return False  # A cycle is never readable; registration rejects value cycles anyway.
+        result = self._derivation_allowed(user, model, name, visiting | {(model, name)})
+        cache[key] = result
+        return result
+
+    def _derivation_allowed(self, user, model, name, visiting):
         from .reactivity import plans, references
         from .calc import is_finite
+        # Counted so a test can check that each formula is walked once per role (test_formula_and_record_values.py).
+        self.__dict__['_derivation_walks'] = self.__dict__.get('_derivation_walks', 0) + 1
         field = model.__declared_fields__[name]
         if is_finite(field) or getattr(field, 'initial', None) is not None:
             # A finite result (or initial suggestion) is readable only when every input and whole collection
@@ -458,21 +488,19 @@ class Policy:
         paths = set(getattr(field.query, '__depends__', ()))
         paths |= references(plans(model)[name].get('compute'))
         if not paths: return True
-        if (model, name) in visiting: return False
-        visiting = visiting | {(model, name)}
         for path in paths:
             parts = path.replace('.*.', '.').split('.')
             target = model
             source = model.__sources__.get(parts[0]) if len(parts) == 2 else None
             if source is not None:
                 if parts[1] not in source.fields: return False
-                if isinstance(source.target, type) and (not self.allows(user, source.target, 'read') or parts[1] not in self.fields(user, source.target, _visiting=visiting)):
+                if isinstance(source.target, type) and (not self.allows(user, source.target, 'read') or not self.field_readable(user, source.target, parts[1], visiting)):
                     return False
                 from .declarations import Ref
                 for dependency in [value.path for value in source.filters.values() if isinstance(value, Ref)] + list(getattr(source.target, '__depends__', ())):
                     dep_parts = dependency.split('.')
                     owner = next((child.parent for child in self.registry.children if child.model is model), None) if dep_parts[0] == 'parent' else model
-                    if owner is None or len(dep_parts) > (2 if dep_parts[0] == 'parent' else 1) or dep_parts[-1] not in self.fields(user, owner, _visiting=visiting): return False
+                    if owner is None or len(dep_parts) > (2 if dep_parts[0] == 'parent' else 1) or not self.field_readable(user, owner, dep_parts[-1], visiting): return False
                 continue
             if len(parts) > 1:
                 if parts[0] == 'parent':
@@ -482,7 +510,7 @@ class Policy:
                     if target is not None and self.rule(user, target).scope is not None:
                         return False
                 if target is None: return False
-            if not self.allows(user, target, 'read') or parts[-1] not in self.fields(user, target, _visiting=visiting):
+            if not self.allows(user, target, 'read') or not self.field_readable(user, target, parts[-1], visiting):
                 return False
         return True
 

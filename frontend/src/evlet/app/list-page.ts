@@ -193,12 +193,13 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // Model-level measures (Phase 9) follow the list's filters and its search box.
   const declared = (model.measures ?? []).filter(measure => !measure.per_record);
-  const measures = cell<Record<string, unknown> | null>(null);
+  const measures = cell<Record<string, unknown> | null>(null), measureCurrencies = cell<Record<string, string>>({});
   if (declared.length) effect(() => {
     if (finding.get()) return;
     const current = serverFilters.get(), text = query.get();
     reload.get();
-    void api.measures(name, current, text).then(values => measures.set(values), () => measures.set(null));
+    void api.measures(name, current, text).then(result => batch(() => { measureCurrencies.set(result.currencies); measures.set(result.values); }),
+      () => measures.set(null));
   });
   // Trend lines on the measure cards (a measure's trend=): one aggregate per measure, grouped by its trend field and
   // grain, with the same filters and search as the strip. Asked a moment after the filters settle; a failure hides the line.
@@ -366,7 +367,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
 
   // Each measure is a card with an icon for its function, in its color= or else the next accent, with its trend line.
   const strip = declared.length ? when(() => measures.get() !== null, () => SummaryStrip(declared.slice(0, 4).map((measure, index) => ({
-    label: measureLabel(measure), value: () => measureView(ctx.schema, model, measure, measures.get()?.[measure.name]),
+    label: measureLabel(measure), value: () => measureView(ctx.schema, model, measure, measures.get()?.[measure.name], measureCurrencies.get()),
     note: measure.where ? 'Filtered by a rule' : undefined, icon: measureIcon(model, measure), tone: measure.color ?? MEASURE_TONES[index],
     ...(measure.trend ? { trend: () => trends.get()[measure.name] ?? null, trendLabel: `last ${measure.trend.points} ${measure.trend.grain}s` } : {}),
   }) as StatProps))) : null;

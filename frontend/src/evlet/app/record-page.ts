@@ -27,7 +27,7 @@ import { DataTable, emptyPrefs, type Column } from '../ui/table';
 import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
-import type { JournalEntry, JournalPage } from './client';
+import type { JournalEntry, JournalPage, MeasureValues } from './client';
 import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, listFields, measureLabel, measureView, numberField, screenModel, sections, sequenceField, summaryFields, titleOf, LIST_KEYS, panelView, stateLook, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { blockFilters, declaresRelated, HtmlContent, MeasureChart, RelatedRecords, type BlockRecord } from './record-blocks';
@@ -714,7 +714,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   })() : null;
 
   const perRecord = (model.measures ?? []).filter(measure => measure.per_record);
-  const recordMeasures = cell<Record<string, unknown> | null>(null);
+  const recordMeasures = cell<MeasureValues | null>(null);
   // Meta.cards replace the summary strip (an empty tuple shows no cards).
   const cardNames = model.cards;
   const measuredCards = perRecord.some(measure => cardNames?.includes(measure.name));
@@ -728,10 +728,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     empty: 'Not set',
     note: view(meta.name).calculated ? 'Calculated' : undefined,
   }));
-  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' });
+  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' });
   const cardStats = (cardNames ?? []).flatMap((card): StatProps[] => {
     const measure = perRecord.find(item => item.name === card);
-    if (measure) return [{ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' }];
+    if (measure) return [{ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' }];
     const meta = fieldOf(model, card);
     if (!meta || !has(card)) return [];
     return [{ label: meta.label, empty: 'Not set', value: () => {
