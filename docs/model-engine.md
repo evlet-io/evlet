@@ -481,7 +481,8 @@ record and changes nothing. An instance does this only in `evlet migrate`, after
 an instance does it on startup, like its other framework steps, or in `database.migrate()` before any
 app migration runs, on SQLite and PostgreSQL alike. Applied migration checksums do not change: a
 Currency field's scale belongs to the framework and checksums as 2, and saved documents keep their
-calculation version.
+calculation version, so they stay editable after the move (also when a formula reads the Link its
+currency comes through, such as `customer` for `currency='customer.currency'`).
 
 `Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
 `Time`, `Tags` and references cannot be used in calculations.

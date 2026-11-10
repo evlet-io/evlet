@@ -221,6 +221,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Records stay editable after the move to 6 decimal places.** A finite document whose formula read
+  the same Link its currency comes through (for example `customer.discount` with
+  `currency='customer.currency'`) got a new calculation version from the currency source, so after
+  `evlet migrate` (step `0007_money_scale`) every saved record was refused with 409
+  `SCHEMA_VERSION_MISMATCH`. Saved documents now keep their version. When a record really was
+  calculated with older formulas, the browser says so and asks for a recalculation instead of
+  "Someone else changed this record".
+
 - **Rich text images in documents.** Saving a document (a model with a State, `Meta.journal` or other
   declarations) now links the held images its rich text refers to and deletes the ones it no longer
   uses, as plain models always did. Before, a document's new images stayed in the holding area and
