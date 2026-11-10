@@ -99,15 +99,37 @@ artifact as the last PyPI release.
 
 ### From 0.3 to 0.4
 
-Evlet 0.4 removes code the browser never used. Check each app before you upgrade:
+Evlet 0.4 stores money at 6 places, removes record tabs and removes code the browser never
+used. Check each app before you upgrade:
 
+- Change the app's dependency from `evlet>=0.3.0,<0.4` to `evlet>=0.4.0,<0.5`.
+- Run `evlet migrate` for each instance before you serve it, as described above. It applies
+  `0006_fixed_ids` and `0007_money_scale`, which moves every stored Currency amount to 6 places
+  exactly. An instance that has not been migrated refuses to serve.
+- Keep money in `Currency` fields with a currency source. Move each money field kept in
+  `Decimal(scale=4)` with one app migration, which multiplies the stored values exactly:
+  `Migration("0002_money", AlterField("posting", "amount", Currency(currency="currency")))`.
+  The step checks each value against the 6 stored places, so round values that carry more places
+  than their currency has with `round_money` first
+  ([model-engine.md](model-engine.md#decimal-places-per-currency)).
+- Stop hard-coding 2 places. Replace `quantize(Decimal("0.01"))` and `round(x, 2)` on money with
+  `round_money(value, code)`, read a currency's places with `currency_decimals(code)`, and scale
+  tolerances with `currency_unit(code)`, such as `abs(difference) <= 5 * currency_unit(code)`.
+  Writes now refuse an amount with more places than its currency has.
+- An app that keeps its own currency list with a `decimals` field drops that field. It reads
+  `currency_decimals(code)` and writes new codes or places to the framework with
+  `set_currency_decimals(app, {"XCL": 4}, actor="finance")` from an action, job or script.
+- A `Currency` field's `scale` in `/api/schema` is now 6. Clients format amounts from
+  `currency_decimals` instead.
+- Set `Meta.board = "<state field>"` on a model that should keep the Board view on its list.
 - Search the app for `evlet.ui` imports. Delete `PageView`, `ListView`, `FormView` and
   `ViewRegistry` definitions and move what they set into `Model.Meta`: `layout` with
   `Section(...)`, `list_fields` and `open_in`. Controls, Export as code
   writes these for an instance's layout and list overrides.
 - Record pages have no tabs. Replace `Tab(...)` in `Meta.layout` with `Main(fields, *tables)` first
   and `Section(...)` and the other blocks after it, and remove `Meta.tabs` and `Meta.default_tab`.
-  They fail when the model is defined, saying so. Activity moves to the side column; Revisions,
+  They fail when the model is defined, saying so. This removal has no deprecation period: no apps
+  built on Evlet were released yet. Activity moves to the side column; Revisions,
   Related and Postings are rows of "more information".
 - An `AppDefinition(views=views)` whose `views` is empty keeps working. Remove `ui=` and any
   non-empty `views=`; Evlet refuses them at start-up.
