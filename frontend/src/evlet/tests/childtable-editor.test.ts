@@ -14,12 +14,14 @@ import responses from './api-fixture.json';
 afterEach(cleanup);
 
 const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('tbody tr[data-key]:not(.g-sec)')];
+/** The rows of the outer table only (the row editor's card can hold a nested table). */
+const outerRows = (host: Element) => [...host.querySelectorAll<HTMLElement>(':scope > .grid > .g-body > .g-scroll > table > tbody > tr[data-key]:not(.g-sec)')];
 const press = (target: Element, key: string, options: KeyboardEventInit = {}) => target.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true, ...options }));
 const buttonIn = (root: Element, label: string) => [...root.querySelectorAll<HTMLButtonElement>('button')].find(button => button.textContent?.trim() === label || button.getAttribute('aria-label') === label)!;
 const position = (host: Element) => host.querySelector('.g-ed-pos')!.textContent;
 
 describe('the row editor', () => {
-  it('opens from a row\'s Edit in focus view, with the rows as a list beside the row\'s form, and Esc closes both', async () => {
+  it('opens from a row\'s Edit in focus view, the table cut down to its first column beside the row\'s card, and Esc closes both', async () => {
     const { store } = await bigOrder(3);
     let controls: ChildTableControls | null = null;
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], controls: value => { controls = value; } }));
@@ -30,8 +32,14 @@ describe('the row editor', () => {
     const grid = host.querySelector('.grid')!;
     expect(grid.classList.contains('max')).toBe(true);
     expect(controls!.focused.peek()).toBe(true);
-    expect(host.querySelectorAll('.g-ed-list [role="option"]')).toHaveLength(3);
-    expect(host.querySelector('.g-ed-list [aria-selected="true"]')!.getAttribute('data-key')).toBe(rowsIn(host)[1].dataset.key);
+    // The table stays, with its first column only, the open row marked; the card is beside it.
+    expect(grid.classList.contains('g-editing')).toBe(true);
+    expect(rowsIn(host)).toHaveLength(3);
+    expect([...host.querySelectorAll(':scope > .grid > .g-body > .g-scroll thead th[data-key]')].map(th => th.getAttribute('data-key'))).toEqual(['product']);
+    expect(rowsIn(host).map(row => row.classList.contains('open'))).toEqual([false, true, false]);
+    expect(host.querySelector('.g-body > .g-scroll + .g-ed')).not.toBeNull();
+    // The bar is a plain title line: no record strip.
+    expect(host.querySelector('.g-rec')).toBeNull();
     expect(position(host)).toBe('2 of 3');
     expect(host.querySelector('.g-ed-badge')!.textContent).toBe('2');
     // The summary: the two values typed in times each other, and the calculated one.
@@ -44,7 +52,7 @@ describe('the row editor', () => {
     expect(grid.classList.contains('max')).toBe(false);
   });
 
-  it('steps with previous and next, Alt and an arrow, and a click in the list; Done closes it', async () => {
+  it('steps with previous and next, Alt and an arrow, and a click on a row\'s title; Done closes it', async () => {
     const { store } = await bigOrder(3);
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'amount'] }));
     rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
@@ -54,11 +62,15 @@ describe('the row editor', () => {
     press(host.querySelector('.g-ed-body input')!, 'ArrowDown', { altKey: true });
     expect(position(host)).toBe('3 of 3');
     expect(buttonIn(host.querySelector('.g-ed-h')!, 'Next row').disabled).toBe(true);
-    host.querySelectorAll<HTMLElement>('.g-ed-list [role="option"]')[0].click();
+    // A row's title opens it (not an inline edit), Enter on a title too; the open row's title closes the editor.
+    rowsIn(host)[0].querySelector<HTMLElement>('td[data-col="product"]')!.click();
     expect(position(host)).toBe('1 of 3');
-    // The list moves with the arrow keys too.
-    press(host.querySelector('.g-ed-list')!, 'ArrowDown');
+    expect(host.querySelector('td.editing')).toBeNull();
+    press(rowsIn(host)[1].querySelector('td[data-col="product"]')!, 'Enter');
     expect(position(host)).toBe('2 of 3');
+    rowsIn(host)[1].querySelector<HTMLElement>('td[data-col="product"]')!.click();
+    expect(host.querySelector('.g-ed')).toBeNull();
+    rowsIn(host)[1].querySelector<HTMLButtonElement>('.g-exp')!.click();
     buttonIn(host.querySelector('.g-ed-f')!, 'Done').click();
     expect(host.querySelector('.g-ed')).toBeNull();
   });
@@ -75,7 +87,7 @@ describe('the row editor', () => {
     const second = table.rows.peek()[2].key;
     buttonIn(host.querySelector('.g-ed-f')!, 'Delete line').click();
     expect(table.rows.peek()).toHaveLength(3);
-    expect(host.querySelector('.g-ed-list [aria-selected="true"]')!.getAttribute('data-key')).toBe(second);
+    expect(host.querySelector('tbody tr.open')!.getAttribute('data-key')).toBe(second);
   });
 
   it('draws the caller\'s form for the row, and offers no Delete or Insert while locked', async () => {
@@ -172,7 +184,7 @@ describe('section rows', () => {
     let controls: ChildTableControls | null = null;
     const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'], controls: value => { controls = value; } }));
     expect(controls!.sectioned).toBe(true);
-    host.querySelector<HTMLButtonElement>('tr.g-sec .g-sec-name')!.click();
+    host.querySelector<HTMLButtonElement>('tr.g-sec .g-sec-name')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     const input = host.querySelector<HTMLInputElement>('tr.g-sec .g-sec-input')!;
     input.value = 'Equipment';
     press(input, 'Enter');
@@ -239,8 +251,10 @@ describe('section rows', () => {
     const store = await sectionedOrder();
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'amount'], locked: true }));
     const section = host.querySelector('tr.g-sec')!;
-    expect(section.querySelector('button.g-sec-name')).toBeNull();
+    // The label still shows or hides the lines, but a double click does not rename it.
     expect(section.querySelector('.g-sec-name')!.textContent).toBe('Hardware');
+    section.querySelector('.g-sec-name')!.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
+    expect(section.querySelector('.g-sec-input')).toBeNull();
     expect(section.querySelector('.g-drag')).toBeNull();
     expect(section.querySelector('.icon-btn')).toBeNull();
     expect(host.querySelector('.g-add-sec')).toBeNull();
@@ -274,43 +288,55 @@ describe('section rows', () => {
   });
 });
 
-describe('the row editor list', () => {
+describe('the row editor beside the table', () => {
   const links = { search: async () => [], title: (_model: string, key: string) => cell<string | null>(`Product ${key.slice(-1)}`) };
-  const items = (host: Element) => [...host.querySelectorAll<HTMLElement>('.g-ed-list > *')];
 
-  it('keeps the table\'s structure: section headings and row titles, never record ids', async () => {
+  it('keeps the table\'s structure on the left, by row title and never record ids', async () => {
     const store = await sectionedOrder();
     const table = store.table('lines');
     const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'], links }));
     rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
-    const list = items(host);
-    expect(list[0].classList.contains('g-ed-sec')).toBe(true);
-    expect(list[0].textContent).toContain('Hardware');
-    expect(list[1].querySelector('.g-ed-t')!.textContent).toBe(`Product ${String(table.rows.peek()[0].field('product').value.peek()).slice(-1)}`);
-    expect(host.querySelector('.g-ed-list')!.textContent).not.toMatch(/#\d{6,}/);
-    expect(list[3].textContent).toContain('Services');
-    expect(host.querySelector('.g-ed-ttl b')!.textContent).toMatch(/^Product /);
+    expect([...host.querySelectorAll('tr.g-sec .g-sec-name')].map(node => node.textContent)).toEqual(['Hardware', 'Services']);
+    const product = String(table.rows.peek()[0].field('product').value.peek());
+    expect(rowsIn(host)[0].querySelector('td[data-col="product"]')!.textContent).toContain(`Product ${product.slice(-1)}`);
+    expect(host.querySelector('.g-scroll')!.textContent).not.toMatch(/#[0-9a-z]{10,}/);
+    expect(host.querySelector('.g-ed-ttl b')!.textContent).toBe(`Product ${product.slice(-1)}`);
+    // A section row keeps its count, and the footer its line count.
+    expect(host.querySelector('tr.g-sec .g-sec-n')!.textContent).toBe('2 lines');
   });
 
-  it('a click on a section heading hides or shows its rows; a click on the open row closes the editor', async () => {
+  it('a click on a section title hides or shows its rows, with the editor open or not; the open row\'s title closes the editor', async () => {
     const store = await sectionedOrder();
     const table = store.table('lines');
     const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'], links }));
-    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
-    const count = () => host.querySelectorAll('.g-ed-list .g-ed-item').length;
-    expect(count()).toBe(120);
-    host.querySelectorAll<HTMLButtonElement>('.g-ed-sec-b')[1].click();
-    expect(count()).toBe(2);
-    expect(host.querySelectorAll('.g-ed-sec-b')[1].getAttribute('aria-expanded')).toBe('false');
-    // The table follows: the section is closed there too.
-    expect(host.querySelectorAll('tr.g-sec .g-sec-tog')[1].getAttribute('aria-expanded')).toBe('false');
-    host.querySelectorAll<HTMLButtonElement>('.g-ed-sec-b')[1].click();
-    expect(count()).toBe(120);
-    // Another row's title opens it; the open row's title closes the editor.
-    host.querySelectorAll<HTMLElement>('.g-ed-item')[1].click();
+    const name = (at: number) => host.querySelectorAll<HTMLButtonElement>('tr.g-sec .g-sec-name')[at];
+    // In the normal table.
+    name(1).click();
+    expect(outerRows(host)).toHaveLength(2);
+    expect(name(1).getAttribute('aria-expanded')).toBe('false');
+    name(1).click();
+    expect(outerRows(host)).toHaveLength(120);
+    // With the editor open.
+    outerRows(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    name(1).click();
+    expect(outerRows(host)).toHaveLength(2);
+    name(1).click();
+    outerRows(host)[1].querySelector<HTMLElement>('td[data-col="product"]')!.click();
     expect(position(host)).toBe('2 of 120');
-    host.querySelectorAll<HTMLElement>('.g-ed-item')[1].click();
+    outerRows(host)[1].querySelector<HTMLElement>('td[data-col="product"]')!.click();
     expect(host.querySelector('.g-ed')).toBeNull();
+  });
+
+  it('shows a new row\'s empty title as its placeholder, and "Not set" in empty inputs', async () => {
+    const { store } = await bigOrder(1);
+    const table = store.table('lines');
+    const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'rate', 'amount'], links }));
+    rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
+    buttonIn(host.querySelector('.g-ed-f')!, 'Insert below').click();
+    const label = table.rows.peek()[1].field('product').meta;
+    expect(rowsIn(host)[1].querySelector('td[data-col="product"] .g-ph')!.textContent).toBe(label.placeholder || label.label);
+    expect(host.querySelector('.g-ed-f .btn.g-ed-del')).not.toBeNull();
+    expect(buttonIn(host.querySelector('.g-ed-f')!, 'Done').classList.contains('primary')).toBe(true);
   });
 
   it('shows the values of currency inputs in the form', async () => {
@@ -318,6 +344,8 @@ describe('the row editor list', () => {
     const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'rate', 'amount'] }));
     rowsIn(host)[0].querySelector<HTMLButtonElement>('.g-exp')!.click();
     expect(host.querySelector<HTMLInputElement>('.g-ed-body .fld[data-field="rate"] input')!.value).toBe('2.50');
+    const empty = [...host.querySelectorAll<HTMLInputElement>('.g-ed-body input')].find(input => !input.value);
+    if (empty) expect(empty.placeholder).toBe('Not set');
   });
 });
 

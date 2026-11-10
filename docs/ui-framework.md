@@ -647,14 +647,17 @@ mount(document.querySelector('#app')!, () => DocFrame({
   never the first, a pinned, a required or a summed column), and "2 more columns" in the toolbar opens
   the row editor, which shows every field. Only when the kept columns at their minimum still don't
   fit does the table scroll sideways. A column the person resized keeps its width. A row's **Edit** (the pencil
-  by its number) opens the **row editor** in focus view: the rows as a narrow list on the left, in the
-  table's structure (section headings, whose click shows or hides their rows, and each row by its title, a Link
-  as the linked record's title, never its id; a click opens a row, and on the open row closes the editor; the
-  arrow keys switch row) and the row's fields as one form on the right, in the table's frame,
-  with the row's number, title and a one-line summary ("4 × 2,228.26 = 8,913.04": two values typed in
-  and a calculated one, else the first values set), "1 of 3" with previous and next (also Alt and an
-  arrow), Close, then Delete line, Insert below and Done; nested tables follow the form. Esc closes
-  the editor, then focus view. A narrow window shows the form alone. `rowForm(row, field)` draws the
+  by its number) opens the **row editor** in focus view. The table's bar becomes a plain title line ("Items 4",
+  then the focus and Columns buttons as small square icons, no record strip). On the left, about a quarter of the
+  width, the table stays, cut down to its control column and first column: its section rows, each row by its title
+  (a Link as the linked record's title, never its id; an empty one shows the field's placeholder, muted) and the
+  total line. The open row is marked and its pencil ringed. The first column is not edited inline while the
+  editor is open: a click or Enter on a row's title opens that row, and on the open row closes the editor. On the
+  right, a card with the row's number, title and a one-line summary ("4 × 2,228.26 = 8,913.04": two values typed
+  in and a calculated one, else the first values set), previous, "1 of 3" and next (also Alt and an arrow) and
+  Close; then the row's form (empty inputs say "Not set"), nested tables after it, and Delete line, Insert below
+  and Done. Esc closes the editor, then focus view. A narrow window shows the card alone. A click on a section's
+  title shows or hides its lines, with the editor open or not; a double click (or F2) renames it. `rowForm(row, field)` draws the
   form instead of the default grid of fields, and `controls(api)` hands the caller the table's
   `focused`, `toggleFocus()`, `columns(anchor)`, `sectioned`, `addSection()`, `add()`, `selected`, `editable`,
   `duplicateSelected()` and `deleteSelected()` for buttons of its own (the compact record page puts the selection

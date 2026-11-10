@@ -217,7 +217,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     return fitColumns(arranged.get(), room.get() - ctl(), { width: baseWidth, sized: column => prefs.get().widths[column.key] !== undefined,
       keep: column => pinned.has(column.key) || sumKeys.has(column.key) || Boolean(column.meta.required) });
   }, { name: `${table.name} (fitted columns)` });
-  const columns = derive(() => fit.get().shown, { name: `${table.name} (shown columns)` });
+  // The row open in the row editor. While it is open the table beside it is cut down to its first column.
+  const expanded = cell<string | null>(null, { name: `${table.name} (row editor)` });
+  const fullColumns = derive(() => fit.get().shown, { name: `${table.name} (fitted shown columns)` });
+  const columns = derive(() => expanded.get() !== null ? fullColumns.get().slice(0, 1) : fullColumns.get(), { name: `${table.name} (shown columns)` });
   const hiddenToFit = derive(() => fit.get().hidden, { name: `${table.name} (hidden to fit)` });
   const widthOf = (column: ChildColumn) => fit.get().widths.get(column.key) ?? baseWidth(column);
   const totalWidth = derive(() => ctl() + columns.get().reduce((sum, column) => sum + widthOf(column), 0));
@@ -235,8 +238,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const selection = cell(new Set<string>(), { name: `${table.name} (selection)` });
   const editing = cell<Spot>(null, { name: `${table.name} (editing)`, equals: sameSpot });
   const active = cell<Spot>(null, { name: `${table.name} (active cell)`, equals: sameSpot });
-  // The row open in the row editor, and whether opening it took the table into focus view.
-  const expanded = cell<string | null>(null, { name: `${table.name} (row editor)` });
+  // Whether opening the row editor took the table into focus view.
   let focusedForEditor = false;
   const focused = cell(false, { name: `${table.name} (focus view)` });
   const indexOf = (key: string) => untrack(() => rows.get()).findIndex(row => row.key === key);
@@ -361,6 +363,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // ---------- editing ----------
 
   const editable = (row: Row, col: string) => {
+    if (untrack(() => expanded.get()) !== null) return false;
     const column = allColumns.find(item => item.key === col);
     return Boolean(column) && !column!.calculated && !untrack(() => readOnly.get()) && untrack(() => row.field(col).editable.get());
   };
@@ -563,7 +566,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const cellView = (row: Row, column: () => ChildColumn, rowEdit: () => string | null, rowActive: () => string | null, rowSpot: () => string | null) => {
     const key = column().key, field = row.field(key), meta = field.meta, kind = kindOf(meta.type);
     const canEdit = () => !column().calculated && !readOnly.get() && field.editable.get();
-    const display = RICH.has(meta.type) ? () => displayValue(field, { links: props.links, empty: '' }) : () => textOf(() => kind.format(field.value.get(), meta));
+    const shown = RICH.has(meta.type) ? () => displayValue(field, { links: props.links, empty: '' }) : () => textOf(() => kind.format(field.value.get(), meta));
+    const blank = () => { const value = field.value.get(); return value === null || value === undefined || value === ''; };
+    // Read as a live child, so opening or closing the row editor swaps the placeholder in or out.
+    const display = () => () => expanded.get() !== null && blank() ? html`<span class="g-ph">${meta.placeholder || meta.label}</span>` : untrack(shown);
     const td = html`<td role="gridcell" data-col=${key} class=${`num${column().align === 'right' ? ' r' : ''}`} class:ed=${canEdit} class:calc=${() => !canEdit()}
       class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)} class:editing=${() => rowEdit() === key} class:active=${() => rowSpot() === key}
       class:invalid=${() => Boolean(field.error.get())} class:noted=${() => !field.error.get() && Boolean(field.note.get())} aria-invalid=${() => field.error.get() ? 'true' : null} aria-readonly=${() => canEdit() ? null : 'true'}
@@ -594,7 +600,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
 
   // A row's title: its first column as text, a Link as the linked record's title (never its id).
   const rowTitle = (row: Row) => {
-    const first = columns.get()[0];
+    const first = fullColumns.get()[0];
     if (!first) return 'New row';
     const value = row.field(first.key).value.get();
     if (first.meta.type === 'link' && value !== null && value !== undefined && value !== '') {
@@ -613,6 +619,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (leave) { focusedForEditor = false; leaveFocus(); }
     if (key) queueMicrotask(() => { reveal(key); byKey(scroller, 'tr', key)?.querySelector<HTMLElement>('.g-exp')?.focus(); });
   };
+  /** A row's title or Edit: opens the row in the editor, and on the row already open closes the editor. */
+  const pick = (key: string) => { if (expanded.peek() === key) closeEditor(); else openEditor(key); };
   const stepEditor = (direction: 1 | -1) => {
     const list = rows.peek(), at = list.findIndex(row => row.key === expanded.peek()) + direction;
     if (at < 0 || at >= list.length) return;
@@ -633,70 +641,38 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     remove([row]);
     if (next) expanded.set(next.key); else closeEditor();
   };
-  // The rows as a narrow list (checkbox, number, title) and the row's fields as one form beside it.
+  // The row's fields as one card beside the table, which is cut down to its first column while the card is open.
   const editorView = () => {
-    // The list keeps the table's structure: section headings (a click shows or hides their lines) and rows by title.
-    // A click on a row's title opens it in the editor, and on the open row closes the editor.
-    type Item = { kind: 'row'; row: Row } | { kind: 'section'; section: TableSection };
-    const items = derive<Item[]>(() => hasSections.get()
-      ? entries.get().flatMap(entry => entry.kind === 'add' ? [] : [entry as Item])
-      : rows.get().map(row => ({ kind: 'row' as const, row })), { name: `${table.name} (row editor list)` });
-    const pick = (key: string) => { if (expanded.peek() === key) closeEditor(); else expanded.set(key); };
-    const rowItem = (row: Row) => {
-      const at = () => rows.get().indexOf(row);
-      return html`<div role="option" class="g-ed-item" data-key=${row.key} aria-selected=${() => String(expanded.get() === row.key)}
-        tabindex=${() => expanded.get() === row.key ? '0' : '-1'}
-        on:click=${(event: MouseEvent) => { if (!(event.target as Element).closest('.check')) pick(row.key); }}>
-        ${Checkbox({ checked: () => selection.get().has(row.key), onChange: on => toggle(row.key, on), ariaLabel: () => `Select row ${at() + 1}` })}
-        <span class="num g-ed-no">${() => String(at() + 1)}</span><span class="g-ed-t">${() => rowTitle(row)}</span></div>`;
-    };
-    const sectionItem = (section: () => TableSection) => {
-      const key = section().key, open = () => !closedSections.get().has(key), count = () => sectionLines.get().get(key)?.length ?? 0;
-      return html`<div role="presentation" class="g-ed-sec" data-key=${`s:${key}`}>
-        <button type="button" class="g-ed-sec-b" aria-expanded=${() => String(open())} aria-label=${() => `${open() ? 'Hide' : 'Show'} the lines of ${section().label}`}
-          on:click=${() => toggleSection(key)}>${Icon('chevron-down', { size: 'xs' })}<b>${() => section().label}</b><span class="muted num">${() => String(count())}</span></button></div>`;
-    };
-    const list = html`<div class="g-ed-list" role="listbox" aria-label=${`${props.title ?? table.meta.label}: rows`}>${each(items,
-      item => item.kind === 'row' ? item.row.key : `s:${item.section.key}`,
-      item => item().kind === 'row' ? rowItem((item() as { row: Row }).row) : sectionItem(() => (item() as { section: TableSection }).section))}</div>` as HTMLElement;
-    list.addEventListener('keydown', event => {
-      if ((event.key === 'Enter' || event.key === ' ') && (event.target as Element).matches?.('.g-ed-item')) {
-        event.preventDefault();
-        pick((event.target as HTMLElement).dataset.key!);
-      }
-    });
-    list.addEventListener('keydown', event => {
-      if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-      event.preventDefault();
-      stepEditor(event.key === 'ArrowDown' ? 1 : -1);
-      queueMicrotask(() => list.querySelector<HTMLElement>('[aria-selected="true"]')?.focus());
-    });
-    // The form follows the row the editor is on; the list stays, with its scroll position.
+    // The card follows the row the editor is on.
     const main = () => {
       const key = expanded.get();
       const row = key ? untrack(() => rows.get()).find(item => item.key === key) : undefined;
       return row ? untrack(() => editorMain(row)) : null;
     };
-    return html`<div class="g-ed" role="region" aria-label=${() => `${props.title ?? table.meta.label}: row editor`}>${list}${main}</div>` as HTMLElement;
+    return html`<div class="g-ed" role="region" aria-label=${() => `${props.title ?? table.meta.label}: row editor`}>${main}</div>` as HTMLElement;
   };
   const editorMain = (row: Row) => {
     const index = () => rows.get().indexOf(row);
-    const field = (name: string) => rowField(row.field(name));
+    // Empty inputs of the row editor say "Not set".
+    const field = (name: string) => {
+      const view = rowField(row.field(name)), meta = view.meta;
+      return meta.placeholder ? view : Object.create(view, { meta: { value: { ...meta, placeholder: 'Not set' } } }) as FieldLike;
+    };
     const form = props.rowForm ? props.rowForm(row, field)
       : html`<div class="g-x-f">${allColumns.map(column => html`<div class=${column.meta.type === 'longtext' ? 'wide' : ''}>${BaseField({ field: field(column.key), links: props.links })}</div>`)}</div>`;
     return html`<div class="g-ed-main" role="group" aria-label=${() => `Row ${index() + 1}: ${rowTitle(row)}`}>
         <div class="g-ed-h"><span class="g-ed-badge num">${() => String(index() + 1)}</span>
-          <div class="g-ed-ttl"><b>${() => rowTitle(row)}</b><span class="g-ed-sum">${() => { rows.get(); return rowSummary(row, columns.get()); }}</span></div>
+          <div class="g-ed-ttl"><b>${() => rowTitle(row)}</b><span class="g-ed-sum">${() => { rows.get(); return rowSummary(row, fullColumns.get()); }}</span></div>
+          ${IconButton({ icon: 'chevron-left', tip: 'Previous row', size: 'small', disabled: () => index() <= 0, onClick: () => stepEditor(-1) })}
           <span class="g-ed-pos num">${() => `${index() + 1} of ${rows.get().length}`}</span>
-          ${IconButton({ icon: 'chevron-up', tip: 'Previous row', size: 'small', disabled: () => index() <= 0, onClick: () => stepEditor(-1) })}
-          ${IconButton({ icon: 'chevron-down', tip: 'Next row', size: 'small', disabled: () => index() >= rows.get().length - 1, onClick: () => stepEditor(1) })}
+          ${IconButton({ icon: 'chevron-right', tip: 'Next row', size: 'small', disabled: () => index() >= rows.get().length - 1, onClick: () => stepEditor(1) })}
           ${IconButton({ icon: 'x', tip: 'Close (Esc)', size: 'small', onClick: () => closeEditor() })}</div>
         <div class="g-ed-body">${form}
           ${[...row.tables.values()].map(nested => html`<div class="g-x-nested">${ChildTable({ table: nested, locked: props.locked, links: props.links, height: 228,
             lockedText: props.lockedText, icon: 'rows-3', tint: props.tint })}</div>`)}</div>
         <div class="g-ed-f">${when(() => !readOnly.get(), () => [
           Button({ icon: 'trash-2', label: 'Delete line', variant: 'ghost', size: 'small', className: 'g-ed-del', onClick: () => deleteLine(row) }),
-          Button({ icon: 'plus', label: 'Insert below', variant: 'ghost', size: 'small', onClick: () => insertBelow(row) })])}
+          Button({ icon: 'plus', label: 'Insert below', size: 'small', onClick: () => insertBelow(row) })])}
           <span class="grow"></span>${Button({ label: 'Done', variant: 'primary', size: 'small', onClick: () => closeEditor() })}</div>
       </div>` as HTMLElement;
   };
@@ -707,12 +683,12 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const rowSpot = derive(() => { const spot = active.get(); return spot?.key === row.key ? spot.col : null; });
     // The one cell Tab reaches from outside the grid (roving tabindex): the active cell, or the first.
     const rowActive = derive(() => active.get() ? rowSpot.get() : number() === 1 ? columns.get()[0]?.key ?? null : null);
-    const tr = html`<tr role="row" data-key=${row.key} class:sel=${() => selection.get().has(row.key)} data-drag-item="line" data-drag-id=${row.key}
+    const tr = html`<tr role="row" data-key=${row.key} class:sel=${() => selection.get().has(row.key)} class:open=${() => expanded.get() === row.key} data-drag-item="line" data-drag-id=${row.key}
       aria-rowindex=${() => String(number() + 1)} aria-selected=${() => String(selection.get().has(row.key))}>
       <td class="g-ctl stk" style="left:0" role="gridcell">${derived ? html`<div class="g-ci g-ci-n"><span class="num muted">${() => String(number())}</span></div>` : html`<div class="g-ci">${Checkbox({ checked: () => selection.get().has(row.key), onChange: on => toggle(row.key, on), ariaLabel: () => `Select row ${number()}` })}
         <button type="button" class="g-drag" data-drag-handle="line" aria-label=${() => `Move row ${number()}`} aria-roledescription="draggable row" disabled=${() => readOnly.get()}>${Icon('grip-vertical', { size: 'xs' })}</button>
-        <button type="button" class="g-exp" aria-label=${() => `Edit row ${number()}`} title="Edit"
-          on:click=${() => openEditor(row.key)}><span class="num">${() => String(number())}</span>${Icon('pencil', { size: 'xs' })}</button></div>`}</td>
+        <button type="button" class="g-exp" aria-label=${() => `Edit row ${number()}`} title="Edit" aria-pressed=${() => expanded.get() === row.key ? 'true' : null}
+          on:click=${() => pick(row.key)}><span class="num">${() => String(number())}</span>${Icon('pencil', { size: 'xs' })}</button></div>`}</td>
       ${each(columns, column => column.key, column => cellView(row, column, () => rowEdit.get(), () => rowActive.get(), () => rowSpot.get()))}</tr>`;
     return tr;
   };
@@ -725,8 +701,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const open = () => !closedSections.get().has(key);
     const label = () => {
       // A locked or confirmed record refuses section edits: the label is plain text then.
-      if (readOnly.get()) return html`<b class="g-sec-name">${() => item().label}</b>`;
-      if (renaming.get() !== key) return html`<button type="button" class="g-sec-name" title="Rename" on:click=${() => renaming.set(key)}><b>${() => item().label}</b></button>`;
+      if (readOnly.get()) return html`<button type="button" class="g-sec-name" aria-expanded=${() => String(open())} on:click=${() => toggleSection(key)}><b>${() => item().label}</b></button>`;
+      if (renaming.get() !== key) return html`<button type="button" class="g-sec-name" title="Show or hide its lines. Double-click to rename." aria-expanded=${() => String(open())}
+        on:click=${() => toggleSection(key)} on:dblclick=${(event: MouseEvent) => { event.preventDefault(); if (!closedSections.peek().has(key)) renaming.set(key); else { toggleSection(key); renaming.set(key); } }}
+        on:keydown=${(event: KeyboardEvent) => { if (event.key === 'F2') { event.preventDefault(); renaming.set(key); } }}><b>${() => item().label}</b></button>`;
       const input = html`<input class="input g-sec-input" aria-label="Section name" value=${untrack(() => item().label)}>` as HTMLInputElement;
       const done = (keep: boolean) => { if (renaming.peek() !== key) return; const text = input.value.trim(); renaming.set(null); if (keep && text && text !== untrack(() => item().label)) table.renameSection(key, text); };
       input.addEventListener('keydown', event => {
@@ -806,35 +784,35 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   props.controls?.({ focused, toggleFocus: () => focused.peek() ? leaveFocus() : enterFocus(), columns: anchor => columnsMenu(anchor), sectioned, addSection,
     add, selected: derive(() => selection.get().size), editable: derive(() => !readOnly.get()), duplicateSelected, deleteSelected });
   const focusButton = () => {
-    const button = html`<button type="button" class="btn sm" class:primary=${focused} aria-pressed=${() => String(focused.get())}
+    const button = html`<button type="button" class="btn sm g-focb" class:primary=${() => focused.get() && expanded.get() === null} aria-pressed=${() => String(focused.get())}
       on:click=${() => focused.peek() ? leaveFocus() : enterFocus()}>${() => Icon(focused.get() ? 'minimize-2' : 'maximize-2', { size: 'sm' })}<span class="hide-sm">${() => focused.get() ? 'Exit focus' : 'Focus'}</span></button>` as HTMLElement;
     tooltip(button, () => focused.get() ? 'Back to record (Esc)' : 'Focus view');
     return button;
   };
   const titleId = uid('ct');
   grid = html`<div class="grid" class:max=${focused} class:g-editing=${() => expanded.get() !== null} data-table=${table.name}>
-    ${props.heading ? when(focused, () => focusHead(props.heading!)) : null}
+    ${props.heading ? when(() => focused.get() && expanded.get() === null, () => focusHead(props.heading!)) : null}
     <div class="g-bar">
-      ${props.heading ? null : when(focused, () => html`<span class="g-crumb">${props.crumb ?? ''}${Icon('chevron-right', { size: 'xs' })}</span>`)}
+      ${props.heading ? null : when(() => focused.get() && expanded.get() === null, () => html`<span class="g-crumb">${props.crumb ?? ''}${Icon('chevron-right', { size: 'xs' })}</span>`)}
       <div class="g-t" id=${titleId}>${IconTile(props.icon ?? 'table-2', { tint: props.tint ?? 'blue', size: 26 })}${props.title ?? table.meta.label}<span class="n num" aria-label=${() => `${rows.get().length} rows`}>${() => String(rows.get().length)}</span></div>
       ${when(() => selection.get().size > 0 && !readOnly.get(), () => html`<span class="g-selinfo" role="status">${() => `${selection.get().size} selected`}</span>
         ${Button({ icon: 'copy', label: 'Duplicate', variant: 'ghost', size: 'small', onClick: duplicateSelected })}
         ${Button({ icon: 'trash-2', label: 'Delete', variant: 'soft-danger', size: 'small', onClick: deleteSelected })}`)}
       <span class="grow"></span>
-      ${when(() => hiddenToFit.get().length > 0 && rows.get().length > 0, () => {
+      ${when(() => hiddenToFit.get().length > 0 && rows.get().length > 0 && expanded.get() === null, () => {
         const more = html`<button type="button" class="g-more link-q" on:click=${() => openEditor((rows.peek()[0]).key)}>${() => {
           const count = hiddenToFit.get().length; return `${count} more ${count === 1 ? 'column' : 'columns'}`; }}</button>` as HTMLElement;
         tooltip(more, () => `Hidden to fit: ${hiddenToFit.get().map(column => column.label).join(', ')}. Open a row to see every field.`);
         return more;
       })}
-      ${(() => { const button = Button({ icon: 'columns-3', label: 'Columns', size: 'small', hideLabelOnPhone: true, onClick: () => columnsMenu(button) }); button.setAttribute('aria-haspopup', 'dialog'); return button; })()}
+      ${(() => { const button = Button({ icon: 'columns-3', label: 'Columns', size: 'small', hideLabelOnPhone: true, className: 'g-colb', onClick: () => columnsMenu(button) }); button.setAttribute('aria-haspopup', 'dialog'); tooltip(button, 'Columns'); return button; })()}
       ${focusButton()}
     </div>
-    ${when(() => expanded.get() !== null, editorView)}
+    <div class="g-body">
     <div class="g-scroll" tabindex="-1">
       <table class="g" role="grid" aria-labelledby=${titleId} aria-rowcount=${() => String(rows.get().length + 1)} aria-colcount=${() => String(columns.get().length + 1)}
-        aria-readonly=${() => readOnly.get() ? 'true' : null} style:width=${() => `${totalWidth.get()}px`}>
-        <colgroup><col style:width=${() => `${ctl()}px`}>${each(columns, column => column.key, column => html`<col style:width=${() => `${widthOf(column())}px`}>`)}</colgroup>
+        aria-readonly=${() => readOnly.get() ? 'true' : null} style:width=${() => expanded.get() !== null ? '100%' : `${totalWidth.get()}px`}>
+        <colgroup><col style:width=${() => `${ctl()}px`}>${each(columns, column => column.key, column => html`<col style:width=${() => expanded.get() !== null ? null : `${widthOf(column())}px`}>`)}</colgroup>
         <thead><tr role="row" aria-rowindex="1"><th class="g-ctl stk" style="left:0" scope="col">${derived ? html`<span class="sr-only">Row</span>` : Checkbox({ checked: () => rows.get().length > 0 && selectedRows().length === rows.get().length,
           mixed: () => selectedRows().length > 0 && selectedRows().length < rows.get().length, ariaLabel: 'Select all rows',
           onChange: on => selection.set(on ? new Set(rows.peek().map(row => row.key)) : new Set()) })}</th>${each(columns, column => column.key, header)}</tr></thead>
@@ -851,6 +829,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
           class=${column().align === 'right' ? 'r num' : 'num'} class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => sums[column().key]
             ? valueText(sums[column().key]) : index() === 0 ? `Total · ${rows.get().length} ${rows.get().length === 1 ? 'line' : 'lines'}` : ''}</td>`)}</tr></tfoot>`)}
       </table>
+    </div>
+    ${when(() => expanded.get() !== null, editorView)}
     </div>
     <div class="g-under">${when(locked, () => derived && !read(props.lockedText ?? '') ? null : html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
       () => html`<span class="muted hide-sm g-keys">${Key('Tab')} next cell · ${Key('Enter')} cell below · ${Key('Esc')} cancel</span>`)}
@@ -942,6 +922,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       if (next && !startEdit(next)) moveActive(next);
       return;
     }
+    if (event.key === 'Enter' && expanded.peek() !== null) { event.preventDefault(); pick(spot.key); return; }
     if (event.key === 'Enter' || event.key === 'F2') { event.preventDefault(); startEdit(spot, undefined, true); return; }
     if ((event.key === 'Delete' || event.key === 'Backspace') && editable(row, spot.col)) { event.preventDefault(); writeValue(row.field(spot.col), null); return; }
     if (event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey && event.key !== ' ') {
@@ -955,6 +936,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (!td || !tr || td.classList.contains('editing')) return;
     const spot = { key: tr.dataset.key!, col: td.dataset.col! };
     landed = null;
+    // With the row editor open, a row's title opens that row (and the open row's closes the editor).
+    if (expanded.peek() !== null) { active.set(spot); pick(spot.key); return; }
     if (editing.peek()) { if (!commit()) { refocus(); return; } stopEdit(false); }
     if (!startEdit(spot, undefined, true)) moveActive(spot);
   });

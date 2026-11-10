@@ -113,6 +113,8 @@ describe('a read-only child table, expanded', () => {
     qty.dispatchEvent(new Event('input', { bubbles: true }));
     qty.dispatchEvent(new Event('change', { bubbles: true }));
     qty.dispatchEvent(new FocusEvent('blur'));
+    // The table shows only its first column beside the open row; Done brings the other columns back.
+    click(byText(panel, 'button', 'Done'));
     await until(() => expect(text(cellOf(host, 'qty'))).toContain('5'));
   });
 });

@@ -870,36 +870,41 @@ body.has-fab .toasts{right:auto;left:50%;transform:translateX(-50%);align-items:
 .grid.max .g-scroll{max-height:none;flex:1}
 /* The row editor (a row's Edit, in focus view): the rows as a narrow list on the left, the row's fields as one form on
    the right, in the table's own frame. A narrow window shows the form alone. */
-.grid.g-editing .g-scroll{display:none}
-.g-ed{display:grid;grid-template-columns:minmax(180px,260px) minmax(0,1fr);flex:1;min-height:0;border-top:1px solid var(--border);background:var(--surface)}
-.g-ed-list{border-right:1px solid var(--border);overflow:auto;min-height:0}
-.g-ed-item{display:flex;align-items:center;gap:8px;height:38px;padding:0 10px;border-bottom:1px solid var(--divider);cursor:pointer;font-size:13px;outline:none}
-.g-ed-item:hover{background:var(--bg-subtle)}
-.g-ed-item[aria-selected="true"]{background:var(--accent-soft);box-shadow:inset 3px 0 0 var(--accent)}
-.g-ed-item:focus-visible{box-shadow:inset 0 0 0 2px var(--accent)}
-.g-ed-item .check{width:16px;height:16px;margin:0;flex:none}
-.g-ed-no{color:var(--fg-3);font-size:12px;min-width:18px;text-align:right;flex:none}
-.g-ed-t{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* A section heading in the row editor's list: a click shows or hides its rows. */
-.g-ed-sec{border-bottom:1px solid var(--divider);background:var(--bg-subtle)}
-.g-ed-sec-b{display:flex;align-items:center;gap:6px;width:100%;height:34px;padding:0 10px;font:inherit;font-size:12.5px;color:var(--fg);text-align:left}
-.g-ed-sec-b b{font-weight:600;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}
-.g-ed-sec-b svg{color:var(--fg-3);transition:transform .15s;flex:none}
-.g-ed-sec-b[aria-expanded="false"] svg{transform:rotate(-90deg)}
-.g-ed-sec-b:focus-visible{outline:2px solid var(--accent);outline-offset:-2px}
-.g-ed-sec~.g-ed-item{padding-left:18px}
-.g-ed-main{display:flex;flex-direction:column;min-width:0;min-height:0}
-.g-ed-h{display:flex;align-items:center;gap:6px;padding:10px 16px;border-bottom:1px solid var(--border);flex:none}
-.g-ed-badge{display:inline-grid;place-items:center;min-width:24px;height:24px;padding:0 6px;border-radius:var(--r);background:var(--bg-muted);color:var(--fg-2);font-size:12px;font-weight:600;flex:none}
+.g-body{display:contents}
+/* The row editor: the table cut down to its first column on the left (a quarter of the width), the row's card on the right. The table's bar becomes a plain title line with square icon buttons. */
+.grid.g-editing .g-body{display:flex;gap:12px;flex:1;min-height:0;padding:0 16px 16px;align-items:stretch}
+.grid.g-editing .g-scroll{flex:0 0 25%;min-width:200px;max-height:none;border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface)}
+.grid.g-editing tr.g-addrow,.grid.g-editing .g-under,.grid.g-editing .g-drag,.grid.g-editing .g-sec-l .icon-btn{display:none}
+.grid.g-editing .g td.ed:hover{box-shadow:none}
+.grid.g-editing .g tbody td[data-col]{cursor:pointer;font-weight:550}
+.grid.g-editing .g tbody td .g-ph{font-weight:400;color:var(--fg-4)}
+.grid.g-editing .g-sec-l{display:flex;width:100%}
+.grid.g-editing .g-sec-n{margin-left:auto}
+.grid.g-editing .g tfoot td{color:var(--fg-3)}
+.grid.g-editing .g-bar{border-bottom:0;padding:12px 16px}
+.grid.g-editing .g-t .ph-icon{display:none}
+.grid.g-editing .g-t .n{background:none;padding:0;font-size:inherit;font-weight:400;color:var(--fg-3)}
+.grid.g-editing .g-bar .g-focb{order:1}
+.grid.g-editing .g-bar .g-colb{order:2}
+.grid.g-editing .g-bar .g-focb,.grid.g-editing .g-bar .g-colb{width:28px;padding:0;justify-content:center;background:var(--surface);color:var(--fg-2);border-color:var(--border-strong)}
+.grid.g-editing .g-bar .g-focb span,.grid.g-editing .g-bar .g-colb span{display:none}
+.g tr.open td{background:var(--accent-soft)}
+.grid.g-editing .g tr.open .g-exp{box-shadow:0 0 0 2px var(--accent);background:var(--surface);color:var(--accent)}
+.g-ed{display:flex;flex:1;min-width:0;min-height:0}
+.g-ed-main{display:flex;flex-direction:column;flex:1;min-width:0;min-height:0;background:var(--surface);border:1px solid var(--border);border-radius:var(--r-lg);box-shadow:var(--shadow-md)}
+.g-ed-h{display:flex;align-items:center;gap:6px;padding:12px 16px;border-bottom:1px solid var(--border);flex:none}
+.g-ed-badge{display:inline-grid;place-items:center;min-width:26px;height:26px;padding:0 6px;border-radius:var(--r);background:var(--accent-soft);color:var(--accent);font-size:12.5px;font-weight:600;flex:none}
 .g-ed-ttl{display:flex;flex-direction:column;min-width:0;flex:1;margin-left:4px}
 .g-ed-ttl b{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .g-ed-sum{font-size:12.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.g-ed-pos{font-size:12px;color:var(--fg-3);white-space:nowrap;margin:0 4px}
+.g-ed-pos{font-size:12.5px;color:var(--fg-3);white-space:nowrap}
 .g-ed-body{flex:1;min-height:0;overflow:auto;padding:14px 16px}
-.g-ed-f{display:flex;align-items:center;gap:6px;padding:10px 16px;border-top:1px solid var(--border);flex:none}
+.g-ed-body .input{text-align:left}
+.g-ed-body .input.r{text-align:right}
+.g-ed-f{display:flex;align-items:center;gap:8px;padding:10px 16px;border-top:1px solid var(--border);flex:none}
 .g-ed-f .grow{flex:1}
 .btn.g-ed-del{color:var(--t-rose)}
-@media (max-width:760px){.g-ed{grid-template-columns:minmax(0,1fr)}.g-ed-list{display:none}.g-ed-h,.g-ed-body,.g-ed-f{padding-left:12px;padding-right:12px}}
+@media (max-width:760px){.grid.g-editing .g-scroll{display:none}.grid.g-editing .g-body{padding:0 8px 8px}.g-ed-h,.g-ed-body,.g-ed-f{padding-left:12px;padding-right:12px}}
 table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:13px}
 .g th{position:sticky;top:0;z-index:2;background:var(--bg-subtle);height:36px;padding:0 10px;text-align:left;font-weight:550;font-size:12px;color:var(--fg-3);border-bottom:1px solid var(--border);border-right:1px solid var(--divider);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;user-select:none}
 .g th.r{text-align:right}
@@ -911,7 +916,6 @@ table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:1
 .g td.calc{color:var(--fg-2)}
 .g tbody tr:hover td{background:var(--bg-subtle)}
 .g tr.sel td{background:var(--accent-soft)}
-.g tr.open td{background:var(--acc-bg,var(--accent-soft))}
 .g td.editing{padding:0;box-shadow:inset 0 0 0 2px var(--accent),var(--edge,0 0 transparent)!important;overflow:visible;background:var(--surface)!important}
 .g td.editing .input{height:36px;border:0;border-radius:0;box-shadow:none;background:transparent;width:100%;padding:0 9px}
 .g .stk{position:sticky;z-index:1}
@@ -951,7 +955,6 @@ table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:1
 .g-exp:hover{background:var(--bg-muted);color:var(--fg)}
 .g-exp svg{transition:transform .15s}
 .g tr.open .g-exp{color:var(--accent)}
-.g tr.open .g-exp svg{transform:rotate(90deg)}
 .g tfoot td{position:sticky;bottom:0;z-index:2;background:var(--bg-subtle);font-weight:600;border-top:1px solid var(--border);border-bottom:0}
 .g tfoot td.stk{z-index:3}
 .rz{position:absolute;top:0;right:0;width:8px;height:100%;cursor:col-resize;z-index:4;touch-action:none}
