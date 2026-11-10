@@ -137,3 +137,11 @@ describe('field hints', () => {
     expect(rule(styles, '.ff-hint.init')).toContain('color:var(--fg-4)');
   });
 });
+
+describe('section descriptions', () => {
+  it('read smaller than the section title, in the muted colour', () => {
+    const desc = rule(css('app/screens.css'), '.ev-more-desc');
+    expect(desc).toContain('font-size:12px');
+    expect(desc).toContain('color:var(--fg-3)');
+  });
+});
