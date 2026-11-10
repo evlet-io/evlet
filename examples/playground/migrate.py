@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sqlite3
 
-from evlet import (AddField, AddIndex, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Image, Integer,
+from evlet import (AddField, AddIndex, AlterField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Image, Integer,
                    Link, LongText, Migration, Model, PostgreSQLDatabase, Recompute, Registry, RenameField, RetireField, RichText, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, Invoice, registry
@@ -224,6 +224,13 @@ migrations.append(Migration('0017_employee_skill_levels',
 
 # A photo for each item (Item.Meta.image shows it as the record's avatar). Existing items start without one.
 migrations.append(Migration('0018_item_photo', AddField('item', 'photo', Image())))
+
+
+# Customers and payments may be in KWD (3 decimal places) or the demo's 5-place credit unit XCR.
+migrations.append(Migration('0019_more_currencies',
+    AlterField('customer', 'currency', Select(['AED', 'SAR', 'USD', 'EUR', 'INR', 'KWD', 'XCR'], required=True, default='AED')),
+    AlterField('payment', 'currency', Select(['AED', 'SAR', 'USD', 'EUR', 'INR', 'KWD', 'XCR'], required=True, default='AED')),
+))
 
 
 def legacy_registry():

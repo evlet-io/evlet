@@ -132,7 +132,7 @@ the real rows only. Templates also get `sections`: for each such Table of the do
 `{"label", "rows", "sums"}` in order (`sections.lines`), where rows above the first section come
 first with the label `None`. A sum covers only fields the person printing can read on every row.
 
-Helpers: `money(value, currency=None)` gives `AED 5,616.35`, or the symbol and position the site
+Helpers: `money(value, currency=None)` gives `AED 5,616.35` (`KWD 1,234.500`, `JPY 1,235`: the currency's decimal places), or the symbol and position the site
 set in Controls, Currencies, with an image symbol embedded in the PDF ([controls.md](controls.md#currencies)); `date(value)` gives `03-11-2026`,
 `number(value, places=None)` and `ar(text)` (marks Arabic text right to left). They isolate text
 direction, so dates and amounts read correctly inside Arabic. Noto Sans and Noto Sans Arabic are

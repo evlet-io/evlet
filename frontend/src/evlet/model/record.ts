@@ -14,12 +14,12 @@
 // When the schema ships a calculation plan, a Session (session.ts) computes calculated
 // fields, initial values and the applies/required/locked rules into the field cells.
 
-import { compare, parse, type FiniteDocument } from './finite';
+import { compare, parse, type CurrencyInput, type FiniteDocument } from './finite';
 import { ApiError, ConflictError, ValidationError, type ApiClient, type DraftResult, type FieldErrors, type RecordData, type User } from '../api';
 import { batch, cell, derive, getOwner, runWithOwner, scope, untrack, type Cell, type Derive } from '../reactive';
 import { buildChanges, findField } from './changes';
 import { dependentsOf, fitsRecord, linkScope } from './links';
-import { todayGst } from './format';
+import { currencyDecimalsTable, todayGst } from './format';
 import { Session } from './session';
 import { isCalculated, isSectionRow, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
 
@@ -365,6 +365,23 @@ export interface RecordOptions {
 
 const PAGE = 100;
 
+/**
+ * The calculation engine's currency input: the site's places per code, and the code of each app setting a
+ * calculated Currency field reads. The schema already sends a setting's code as that field's `currency`.
+ */
+export function currencyInput(plan: any, index: SchemaIndex): CurrencyInput {
+  const settings: Record<string, string> = {};
+  const tables = Object.values<any>(plan?.tables ?? {});
+  for (const field of plan?.fields ?? []) {
+    const setting = field.currency?.setting;
+    if (typeof setting !== 'string') continue;
+    const table = tables.find(entry => JSON.stringify(entry.path) === JSON.stringify(field.path));
+    const code = table ? index.field(table.model, field.field)?.currency : undefined;
+    if (typeof code === 'string' && /^[A-Z]{3}$/.test(code)) settings[setting] = code;
+  }
+  return { decimals: currencyDecimalsTable(), settings };
+}
+
 export class RecordStore {
   readonly index: SchemaIndex;
   readonly meta: ModelSchema;
@@ -403,7 +420,7 @@ export class RecordStore {
     this.index = options.schema instanceof SchemaIndex ? options.schema : new SchemaIndex(options.schema);
     this.meta = this.index.model(options.model);
     const plan = this.meta.calculation?.plan;
-    this.session = plan ? new Session(this.api, plan, options.today ?? (() => todayGst())) : null;
+    this.session = plan ? new Session(this.api, plan, options.today ?? (() => todayGst()), () => currencyInput(plan, this.index)) : null;
     let dirty!: Derive<boolean>;
     this.stop = scope(() => {
       this.owner = getOwner();

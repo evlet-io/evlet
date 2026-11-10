@@ -106,6 +106,97 @@ def _metadata(connection):
     create_store(connection)
 
 
+# Currency amounts are stored at MONEY_SCALE places (evlet/currencies.py). Releases up to 0.4 stored them at 2; this
+# row records that a database's amounts are at the current scale. A database without it is moved by money_scale().
+MONEY = 'CREATE TABLE IF NOT EXISTS evlet_money (id INTEGER PRIMARY KEY CHECK(id = 1), scale INTEGER NOT NULL)'
+
+
+def _currency_scale(definition, scale):
+    """A saved definition (dict) with every Currency field at `scale`."""
+    for model in definition.get('models', ()):
+        for field in model.get('fields', ()):
+            if field.get('type') == 'currency' and field.get('scale') is not None:
+                field['scale'] = scale
+    return definition
+
+
+def upgraded_definition(saved):
+    """A saved definition (JSON text) as it reads once its Currency amounts are at MONEY_SCALE."""
+    from .currencies import MONEY_SCALE
+    return json.dumps(_currency_scale(json.loads(saved), MONEY_SCALE), sort_keys=True, separators=(',', ':'))
+
+
+def money_columns(connection, registry, saved, postgres=False):
+    """[(table, column, scale, ledger)] of every stored Currency column: from the saved definition (or the models when
+    the database predates saved definitions) and from the Currency fields Controls added (evlet_custom_fields)."""
+    if saved is not None:
+        models = [(model['name'], 'ledger' in model, [(field['name'], field.get('scale', 2)) for field in model['fields']
+                                                      if field.get('type') == 'currency' and field.get('stored', True)])
+                  for model in json.loads(saved)['models']]
+    else:
+        models = [(name, ledgers.is_ledger(model), [(key, 2) for key, field in app_fields(model).items() if field.kind == 'currency'])
+                  for name, model in registry.models.items()]
+    found = [(table, column, scale, ledger) for table, ledger, fields in models for column, scale in fields]
+    exists = "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_custom_fields'" if postgres \
+        else "SELECT 1 FROM sqlite_master WHERE name='evlet_custom_fields'"
+    if connection.execute(exists).fetchone() is not None:
+        ledger_names = {table for table, ledger, _ in models if ledger}
+        for row in connection.execute('SELECT model, name, definition FROM evlet_custom_fields ORDER BY model, name'):
+            if json.loads(row[2]).get('type') == 'Currency':
+                found.append((row[0], row[1], 2, row[0] in ledger_names))
+    return found
+
+
+def money_scale(connection, registry, saved, *, allow=True, postgres=False):
+    """Move a database's Currency amounts from the 2 places releases up to 0.4 stored to MONEY_SCALE, in the open
+    transaction, with exact integer arithmetic. Returns the saved definition (JSON text or None) as it now reads.
+
+    A new database, or one already moved, is left alone. `allow=False` (an instance being served) refuses instead,
+    so the move only happens inside `evlet migrate`, after its backup. An amount that would not fit the 64-bit
+    column names its record and nothing is changed."""
+    from .currencies import MONEY_SCALE
+    connection.execute(MONEY)
+    row = connection.execute('SELECT scale FROM evlet_money WHERE id = 1').fetchone()
+    if row is not None:
+        if row[0] != MONEY_SCALE:
+            raise SchemaError('This database stores amounts at another scale; install the Evlet release that wrote it')
+        return saved
+    tables = set(_postgres_tables(connection) if postgres else _tables(connection))
+    columns = [item for item in money_columns(connection, registry, saved, postgres) if item[0] in tables and item[2] < MONEY_SCALE]
+    if columns and not allow:
+        raise SchemaError('Evlet now stores currency amounts at 6 decimal places and this database still has them at 2; '
+                          'stop serving and run evlet migrate (it backs the database up first)')
+    for table, column, scale, ledger in columns:
+        factor = 10 ** (MONEY_SCALE - scale)
+        limit = MAX_INTEGER // factor
+        quoted, name = identifier(table), identifier(column)
+        found = connection.execute(f'SELECT "id" FROM {quoted} WHERE {name} > ? OR {name} < ? ORDER BY "id" LIMIT 1',
+                                   (limit, -limit)).fetchone()
+        if found is not None:
+            raise SchemaError(f'{table} #{RecordId(found[0])}: {column} is too large to keep at 6 decimal places; '
+                              'the largest amount is 9,223,372,036,854.775807')
+        triggers = ledger and ledgers.has_triggers(connection, postgres, table)
+        if triggers:
+            ledgers.drop_triggers(connection, postgres, table)
+        connection.execute(f'UPDATE {quoted} SET {name} = {name} * {factor} WHERE {name} IS NOT NULL')
+        if triggers:
+            ledgers.add_triggers(connection, postgres, table)
+    connection.execute('INSERT INTO evlet_money (id, scale) VALUES (1, ?)', (MONEY_SCALE,))
+    if saved is None:
+        return None
+    upgraded = upgraded_definition(saved)
+    connection.execute('UPDATE evlet_schema SET definition = ? WHERE id = 1', (upgraded,))
+    return upgraded
+
+
+def _moved(saved):
+    return None if saved is None else (saved,)
+
+
+def _postgres_tables(connection):
+    return {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename NOT LIKE 'evlet\\_%'")}
+
+
 def _definition(registry):
     return json.dumps(_normalized(registry.schema()), sort_keys=True, separators=(',', ':'))
 
@@ -277,6 +368,7 @@ def initialize(database):
                 ensure_tables(connection)
             _metadata(connection)
             saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()
+            saved = _moved(money_scale(connection, database.registry, saved and saved[0], allow=getattr(database, 'upgrade_money', True)))
             if saved:
                 ledger_switch(saved[0], database.registry)
             if saved and not _same(saved[0], database.registry):
@@ -905,7 +997,7 @@ def _recompute_legacy(session, model, operation, skipped, changes, posted=None):
             field = model.__declared_fields__.get(key)
             if field is not None and field.compute is not None:
                 try:
-                    value = round_field(field, evaluate(nodes[key]['compute'], draft.read))
+                    value = round_field(field, evaluate(nodes[key]['compute'], draft.read), draft.read)
                     draft._values[key] = None if value is None else field.validate(value)
                 except (ValueError, ArithmeticError, TypeError) as exc:
                     raise SchemaError(f'{operation.table} #{record_id}.{key}: {exc}') from exc
@@ -935,8 +1027,23 @@ class Migration:
         self.name, self.operations = name, operations
 
     def checksum(self):
-        value = json.dumps([op.signature() for op in self.operations], sort_keys=True, separators=(',', ':'))
+        # A Currency field's scale is the framework's storage scale, not something a migration chooses, so it
+        # checksums as 2 (what releases up to 0.4 used): applied histories keep matching after the move to 6 places.
+        signatures = [_stable(op.signature()) for op in self.operations]
+        value = json.dumps(signatures, sort_keys=True, separators=(',', ':'))
         return hashlib.sha256(value.encode()).hexdigest()
+
+
+def _stable(value):
+    """A signature with every Currency field's scale written as 2 (see Migration.checksum)."""
+    if isinstance(value, dict):
+        value = {key: _stable(item) for key, item in value.items()}
+        if value.get('type') == 'currency' and value.get('scale') is not None:
+            value['scale'] = 2
+        return value
+    if isinstance(value, list):
+        return [_stable(item) for item in value]
+    return value
 
 
 def _planned_definition(saved, pending, steps=None):
@@ -1163,6 +1270,8 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             _metadata(connection)
             history = _history(connection, migrations, checksums)
             saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()
+            # Amounts move to 6 places before any app step reads or writes them (an explicit migration, after evlet migrate's backup).
+            saved = _moved(money_scale(connection, database.registry, saved and saved[0]))
             if not fresh and not saved:
                 raise SchemaError('Initialize the legacy database with its original models before migrating')
             pending = migrations[len(history):]
@@ -1474,6 +1583,8 @@ def plan(database, migrations):
         def exists(name):
             return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
         saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone() if exists('evlet_schema') else None
+        if saved and not exists('evlet_money'):
+            saved = (upgraded_definition(saved[0]),)  # migrate() moves the amounts to 6 places first
         history = connection.execute('SELECT name, checksum FROM evlet_migrations ORDER BY position').fetchall() \
             if exists('evlet_migrations') else []
         return plan_from(saved and saved[0], history, migrations, database.registry, tables=bool(_tables(connection)))

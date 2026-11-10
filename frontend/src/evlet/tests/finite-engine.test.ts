@@ -32,9 +32,9 @@ function ruleMap(document: FiniteDocument) {
   return Object.fromEntries(Object.keys(result).sort().map(key => [key, result[key]]));
 }
 
-// A rebuilt session receives the same host inputs (today and lookups) as the original.
+// A rebuilt session receives the same host inputs (currencies, today and lookups) as the original.
 function rebuild(document: FiniteDocument, plan: any) {
-  const fresh = new FiniteDocument(plan, document.sources());
+  const fresh = new FiniteDocument(plan, document.sources(), undefined, document.currencies);
   fresh.batch(commands => {
     if (document.today !== null) commands.setToday(document.today);
     for (const [model, records] of document.lookups) for (const [id, values] of records) commands.setLookups(model, id, {...values});
@@ -87,7 +87,7 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
 
   for (const scenario of fixtures.scenarios as any[]) {
     it(`replays ${scenario.name} with identical snapshots, states and evaluation counts`, () => {
-      const document = new FiniteDocument(plans[scenario.model], structuredClone(scenario.data));
+      const document = new FiniteDocument(plans[scenario.model], structuredClone(scenario.data), undefined, scenario.currencies ?? null);
       const [initial, ...steps] = scenario.steps;
       expect(strip(document.snapshot())).toEqual(initial.snapshot);
       expect(document.trace).toEqual(initial.trace);

@@ -505,7 +505,7 @@ class Forms:
                          + (f' ({column.unit})' if column.type == 'currency' and column.unit and re.fullmatch('[A-Z]{3}', column.unit) else '')
                          for column in columns])
         for row in rows:
-            writer.writerow([csv_cell(row.get(column.name), column.type) for column in columns])
+            writer.writerow([csv_cell(money_cell(row.get(column.name), column), column.type) for column in columns])
         if (total or 0) > len(rows):
             writer.writerow([f'{total - len(rows)} more rows were left out. Narrow the filters to export them.'])
         filename = quote((report.title or report.__name__) + '.csv', safe='')
@@ -515,6 +515,18 @@ class Forms:
 
 
 EXPORT_ROWS = 5000
+
+
+def money_cell(value, column):
+    """A currency column's amount with exactly its currency's places (KWD 1.500, JPY 100), when the column names one."""
+    if column.type != 'currency' or not column.unit or not re.fullmatch('[A-Z]{3}', column.unit) or value in (None, ''):
+        return value
+    from decimal import Decimal, InvalidOperation
+    from .currencies import round_money
+    try:
+        return format(round_money(value if isinstance(value, Decimal) else str(value), column.unit), 'f')
+    except (InvalidOperation, ValueError):
+        return value
 
 
 def csv_cell(value, kind='text'):

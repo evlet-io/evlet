@@ -7,7 +7,8 @@
 
 import type { RecordData } from '../api';
 import type { FieldSchema, ModelSchema, SchemaIndex } from '../model/schema';
-import { currencyOf, kindOf } from '../ui/kinds';
+import { currencyOf, kindOf, moneyPlaces } from '../ui/kinds';
+import { currencyDecimals } from '../model/format';
 import { moneyChild } from '../ui/money';
 import type { Child } from '../dom';
 import { tintFor, type Tint } from '../ui/core';
@@ -176,9 +177,11 @@ export const formatOf = (meta: FieldSchema, value: unknown) => value === null ||
 /**
  * A value to show on screen: money with the site's currency symbol (an image when the site set one), anything
  * else as formatOf's text. `code` is the currency when it comes from the record; the field's fixed code otherwise.
+ * Money shows `places` decimals when given (the record's currency, fields.ts placesIn), else those of `code`,
+ * else those of the field's fixed code (2 without one): never the schema scale, which is the storage scale.
  */
-export function displayOf(meta: FieldSchema, value: unknown, code?: string): Child {
-  if (meta.type === 'currency') return moneyChild(value, code ?? currencyOf(meta), typeof meta.scale === 'number' ? meta.scale : 2);
+export function displayOf(meta: FieldSchema, value: unknown, code?: string, places?: number): Child {
+  if (meta.type === 'currency') return moneyChild(value, code ?? currencyOf(meta), places ?? (code ? currencyDecimals(code) : moneyPlaces(meta)));
   return formatOf(meta, value);
 }
 

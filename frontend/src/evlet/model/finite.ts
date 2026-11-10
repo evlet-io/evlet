@@ -291,12 +291,13 @@ function aggregate(node: any, scope: Scope, budget: Budget): Result {
   return ready(selected.reduce((best, value) => (compare(value, best) < 0) === (node.kind === 'min') ? value : best));
 }
 
-// Target assignment: quantize to the field's scale with its rounding; the declared bounds hold.
-function convert(result: Result, field: any, at: string, meta?: any): Result {
+// Target assignment: quantize to the field's scale (a Currency amount: its currency's `places`) with its
+// rounding; the declared bounds hold, and the range check stays at the field's (storage) scale.
+function convert(result: Result, field: any, at: string, meta?: any, places: number | null = null): Result {
   if (result.state !== 'ready' || result.value === null || field.result_type !== 'decimal') return result;
   let value = result.value as Num;
-  const scale = field.scale;
-  if (scale !== null && value.scale > scale) { value = quantize(value, scale, field.rounding || 'half_up'); result = ready(value); }
+  const scale = field.scale, target = places === null ? scale : places;
+  if (target !== null && value.scale > target) { value = quantize(value, target, field.rounding || 'half_up'); result = ready(value); }
   const magnitude = value.coef < 0n ? -value.coef : value.coef;
   if (field.target_type === 'integer' && magnitude > SAFE_INTEGER) return failed('COMPUTE_RANGE_ERROR', [at]);
   if (scale !== null && magnitude * 10n ** BigInt(scale - value.scale) > STORED_LIMIT) return failed('COMPUTE_RANGE_ERROR', [at]);
@@ -335,6 +336,15 @@ function sourceValue(meta: any, raw: any, at: string): Result {
   }
 }
 
+// The places a plan entry's value travels with: a Currency amount keeps at least 2 (as Currency.serialize).
+export const wireScale = (field: any) => field.target_type === 'currency' ? 2 : field.scale;
+
+/**
+ * Host input for Currency targets: the decimal places of each code that does not have 2 (/api/schema
+ * currency_decimals) and the code each app setting holds ('app.key' -> 'KWD'). A code not listed, or none, has 2.
+ */
+export interface CurrencyInput { decimals?: Record<string, number>; settings?: Record<string, string> }
+
 const address = (path: string[], field: string) => path.map(name => name + '[*].').join('') + field;
 // Plan entries: a calculation (no kind) or a field's initial and rules (applies_when, required_when, locked_when).
 const KINDS = ['initial', 'applies_when', 'required_when', 'locked_when'], RULES = ['applies_when', 'required_when', 'locked_when'];
@@ -368,6 +378,7 @@ export function checkPlan(plan: any) {
     if (![undefined, null, 'half_up', 'half_even'].includes(field.rounding)) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target rounding');
     if (own(field, 'kind') && !KINDS.includes(field.kind)) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid plan entry kind');
     checkNode(field.expression, 0, {count: 0});
+    if (own(field, 'currency') && field.currency !== null && field.currency !== undefined) checkMoney(field);
   }
   for (const table of Object.values<any>(plan.tables)) {
     for (const key of ['min_rows', 'max_rows'])
@@ -378,6 +389,23 @@ export function checkPlan(plan: any) {
     for (const meta of Object.values<any>(table.fields))
       for (const bound of [meta.minimum, meta.maximum]) if (bound !== null && bound !== undefined) parse(bound);
   }
+}
+
+// Where a Currency target finds the code it rounds to: {code}, {setting} (a host input), or {expression, reads}
+// reading a field of the row or of a linked record; those reads are also the entry's reads.
+function checkMoney(field: any) {
+  const money = field.currency, keys = money && typeof money === 'object' && !Array.isArray(money) ? Object.keys(money) : [];
+  let ok = field.target_type === 'currency' && (keys.length === 1 || keys.length === 2);
+  if (ok && own(money, 'code')) ok = keys.length === 1 && typeof money.code === 'string' && /^[A-Z]{3}$/.test(money.code);
+  else if (ok && own(money, 'setting')) ok = keys.length === 1 && typeof money.setting === 'string' && /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/.test(money.setting);
+  else if (ok) {
+    const reads = new Set((field.reads || []).map((read: any) => canonical(read)));
+    ok = keys.length === 2 && own(money, 'expression') && own(money, 'reads') && !!money.expression && typeof money.expression === 'object'
+      && !Array.isArray(money.expression) && ['ref', 'hop'].includes(ownValue(money.expression, '$expr')) && Array.isArray(money.reads)
+      && money.reads.every((read: any) => reads.has(canonical(read)));
+    if (ok) checkNode(money.expression, 0, {count: 0});
+  }
+  if (!ok) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid currency source');
 }
 
 const SCOPES = new Set(['self', 'parent', 'row']);
@@ -508,8 +536,12 @@ export class FiniteDocument {
   private publishing = false;
   private disposed = false;
 
-  constructor(readonly plan: any, data: any = {}, private budget: number = plan?.limits?.evaluation_steps) {
+  // Host input for Currency targets (CurrencyInput); null gives every code 2 places.
+  currencies: CurrencyInput | null;
+
+  constructor(readonly plan: any, data: any = {}, private budget: number = plan?.limits?.evaluation_steps, currencies: CurrencyInput | null = null) {
     checkPlan(plan);
+    this.currencies = currencies;
     for (const entry of Object.values<any>(plan.tables)) this.schema.set(entry.path.join('/'), entry);
     plan.fields.forEach((field: any, position: number) => {
       const path = field.path.join('/');
@@ -663,6 +695,22 @@ export class FiniteDocument {
     return meta ? sourceValue(meta, ownValue(row.values, field), row.label + field) : failed('UNSUPPORTED_EXPRESSION', [row.label + field]);
   }
 
+  // The decimal places of a Currency target's currency on this row, or a pending Result while a linked
+  // record's currency is still being looked up. An empty or unknown currency has 2.
+  moneyPlaces(money: any, scope: Scope, budget: Budget): number | Result {
+    let code: unknown = null;
+    if (!money || !Object.keys(money).length) code = null;
+    else if (own(money, 'code')) code = money.code;
+    else if (own(money, 'setting')) code = ownValue(this.currencies?.settings ?? {}, money.setting);
+    else {
+      const found = evaluate(money.expression, scope, budget);
+      if (found.state === 'pending') return found;
+      code = found.state === 'ready' ? found.value : null;
+    }
+    const places = typeof code === 'string' ? ownValue(this.currencies?.decimals ?? {}, code) : undefined;
+    return typeof places === 'number' && Number.isInteger(places) ? places : 2;
+  }
+
   todayResult(): Result {
     return this.today === null || this.today === undefined ? pending('COMPUTE_INPUT_MISSING', ['@today']) : sourceValue({type: 'date'}, this.today, '@today');
   }
@@ -681,8 +729,14 @@ export class FiniteDocument {
       if (!fresh.has(node) && !anyChanged(inputs, changed, false)) { skipped++; continue; }
       const at = row.label + name, scope = new Scope(this, row, null, at);
       let outcome = evaluate(field.expression, scope, budget);
-      if (!field.kind) outcome = convert(outcome, field, at, meta);
-      else if (field.kind === 'initial') outcome = convert(outcome, field, at);
+      let places: number | null = null;
+      if (field.target_type === 'currency' && (!field.kind || field.kind === 'initial') && outcome.state === 'ready' && outcome.value !== null) {
+        // A Currency target without a currency source has 2 places, as before amounts were stored at 6.
+        const found = this.moneyPlaces(field.currency || {}, scope, budget);
+        if (typeof found === 'number') places = found; else outcome = found;
+      }
+      if (!field.kind) outcome = convert(outcome, field, at, meta, places);
+      else if (field.kind === 'initial') outcome = convert(outcome, field, at, undefined, places);
       if (scope.misses.size) this.misses.set(node, scope.misses); else this.misses.delete(node);
       evaluated++;
       this.counts.set(node, (this.counts.get(node) || 0) + 1);
@@ -690,7 +744,7 @@ export class FiniteDocument {
       let value: unknown = undefined, write = false;
       if (field.kind === 'initial' && this.armed.has(node) && outcome.state !== 'pending') {
         this.armed.delete(node);
-        if (outcome.state === 'ready' && !this.locked(row, field.field)) { value = wire(outcome.value, field.scale); write = true; }
+        if (outcome.state === 'ready' && !this.locked(row, field.field)) { value = wire(outcome.value, wireScale(field)); write = true; }
       } else if (field.kind === 'applies_when' && outcome.state === 'ready' && outcome.value === false && (ownValue(row.values, field.field) ?? null) !== null
         // A field locked on the saved row keeps its value; the server refuses the write instead.
         && (ownValue(this.locks.get(handle) || {}, field.field) ?? false) === false) {
@@ -1075,7 +1129,7 @@ export class FiniteDocument {
     for (const [, field] of this.templates.get(row.path.join('/')) || []) {
       if (field.kind) continue;
       const outcome = this.results.get(nodeKey(row.handle, field.field));
-      result[field.field] = outcome?.state === 'ready' ? wire(outcome.value, field.scale) : null;
+      result[field.field] = outcome?.state === 'ready' ? wire(outcome.value, wireScale(field)) : null;
       if (outcome && outcome.state !== 'ready') states[field.field] = publicResult(outcome);
     }
     if (Object.keys(states).length) result._states = states;

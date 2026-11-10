@@ -74,7 +74,9 @@ export function formatNumber(value: string | number | null | undefined, scale = 
 // symbol or a small image, before or after the amount, with or without a space. Codes the site has not
 // changed show as they always have: 'AED 25,200.00'. The number itself is formatted as above either way.
 
-export interface CurrencyDisplay { symbol: string; image: string | null; position: 'prefix' | 'suffix'; space: boolean; tint?: boolean }
+export interface CurrencyDisplay { symbol: string; image: string | null; position: 'prefix' | 'suffix'; space: boolean; tint?: boolean;
+  /** Decimal places of the code's amounts (0 to 6), when an admin changed them; read through currencyDecimals. */
+  decimals?: number }
 let displays: Record<string, CurrencyDisplay> = {};
 const RTL = /[\u0590-\u08ff\ufb1d-\ufdff\ufe70-\ufefc]/;
 
@@ -101,9 +103,47 @@ export function symbolText(code: string, display = currencyDisplay(code)) {
   return RTL.test(display.symbol) ? `\u2068${display.symbol}\u2069` : display.symbol;
 }
 
-/** Money with its currency: formatMoney('25200') is 'AED 25,200.00', or as the site shows that code. */
+// ---------- currency decimals ----------
+// How many decimal places amounts in each code have on this site: ISO 4217 minor units (AED 2, KWD 3, JPY 0),
+// changed or added by an admin in Controls, Currencies. /api/schema sends every code that does not have 2 as
+// currency_decimals; a code not listed, or no code at all, has 2. Amounts are stored at 6 places whatever
+// their currency, so a field's schema scale is never the number of places shown.
+
+/** ISO 4217 minor units of the active codes that do not have 2 (as evlet.currencies.ISO_DECIMALS). */
+export const ISO_DECIMALS: Readonly<Record<string, number>> = Object.freeze({
+  ...Object.fromEntries(['BIF', 'CLP', 'DJF', 'GNF', 'ISK', 'JPY', 'KMF', 'KRW', 'PYG', 'RWF', 'UGX', 'UYI', 'VND', 'VUV', 'XAF', 'XOF', 'XPF'].map(code => [code, 0])),
+  ...Object.fromEntries(['BHD', 'IQD', 'JOD', 'KWD', 'LYD', 'OMR', 'TND'].map(code => [code, 3])),
+  CLF: 4, UYW: 4,
+});
+export const DEFAULT_DECIMALS = 2;
+export const MAX_DECIMALS = 6;
+let decimals: Record<string, number> = { ...ISO_DECIMALS };
+
+/** Use the site's decimals per code from now on (/api/schema currency_decimals). Null goes back to ISO 4217. Bad entries are ignored. */
+export function setCurrencyDecimals(next: Record<string, number> | null | undefined) {
+  decimals = next ? {} : { ...ISO_DECIMALS };
+  for (const [code, places] of Object.entries(next ?? {}))
+    if (/^[A-Z]{3}$/.test(code) && Number.isInteger(places) && places >= 0 && places <= MAX_DECIMALS) decimals[code] = places;
+}
+
+/** The decimal places of amounts in `code` on this site: currencyDecimals('KWD') is 3. No code, or an unknown one, has 2. */
+export function currencyDecimals(code: string | null | undefined): number {
+  return typeof code === 'string' && Object.prototype.hasOwnProperty.call(decimals, code) ? decimals[code] : DEFAULT_DECIMALS;
+}
+
+/** Every code whose places are not 2, as currencyDecimals reads them: the calculation engine's host input. */
+export const currencyDecimalsTable = (): Record<string, number> =>
+  Object.fromEntries(Object.entries(decimals).filter(([, places]) => places !== DEFAULT_DECIMALS));
+
+/**
+ * A money value as the API sends it: at least 2 places, more only when the amount has them.
+ * moneyWire('12.5') is '12.50', moneyWire('1.2340') is '1.234', moneyWire('100') is '100.00'.
+ */
+export const moneyWire = (value: string): string => text(parse(value), 2);
+
+/** Money with its currency: formatMoney('25200') is 'AED 25,200.00', or as the site shows that code, at that code's decimals. */
 export function formatMoney(value: string | number | null | undefined, options: { currency?: string; scale?: number; display?: CurrencyDisplay } = {}): string {
-  const number = formatNumber(value, options.scale ?? 2);
+  const number = formatNumber(value, options.scale ?? currencyDecimals(options.currency ?? 'AED'));
   if (!number || number === INVALID_AMOUNT) return number;
   const code = options.currency ?? 'AED', display = options.display ?? currencyDisplay(code), gap = display.space ? ' ' : '';
   return display.position === 'prefix' ? `${symbolText(code, display)}${gap}${number}` : `${number}${gap}${symbolText(code, display)}`;

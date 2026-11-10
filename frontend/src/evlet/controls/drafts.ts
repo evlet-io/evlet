@@ -1,7 +1,7 @@
 // Override drafts behind the change bar: what is saved, what changed since, and the save itself.
 // Saving sends every change in one request; the server applies all of them or none.
 
-import { ValidationError } from '../api';
+import { ConflictError, ValidationError } from '../api';
 import { cell, derive } from '../reactive';
 import type { ControlsClient, FieldOverride, LayoutSection, ListValue, OverrideItem, PermValue, SeriesValue } from './client';
 
@@ -64,6 +64,10 @@ export class Drafts {
       this.load((await this.api.overrides()).items);
       return true;
     } catch (failure) {
+      // A setting the stored data refuses (lowering a currency's decimals while amounts have more places) answers
+      // 409 with the reason; it is shown on that setting, and nothing is saved.
+      const refused = failure instanceof ConflictError ? changes.find(change => change.item.key === 'display.currencies') : undefined;
+      if (refused) { this.errors.set(new Map([[refused.id, (failure as ConflictError).message]])); return false; }
       if (!(failure instanceof ValidationError)) throw failure;
       this.errors.set(new Map(Object.entries(failure.fields).flatMap(([field, message]) => {
         const index = /^changes\.(\d+)$/.exec(field);
@@ -101,8 +105,9 @@ export function permSummary(value: PermValue | null | undefined, scopes: Record<
 
 export function settingText(key: string, value: unknown) {
   if (key === 'display.currencies') {
-    const entries = Object.entries((value ?? {}) as Record<string, { symbol: string; image: string | null; position: string }>);
-    return entries.length ? entries.map(([code, item]) => `${code}: ${item.image ? 'image' : item.symbol} ${item.position === 'suffix' ? 'after' : 'before'}`).join(', ') : 'Codes before amounts';
+    const entries = Object.entries((value ?? {}) as Record<string, { symbol: string; image: string | null; position: string; decimals?: number }>);
+    const places = (item: { decimals?: number }) => typeof item.decimals === 'number' ? `, ${item.decimals} decimal${item.decimals === 1 ? '' : 's'}` : '';
+    return entries.length ? entries.map(([code, item]) => `${code}: ${item.image ? 'image' : item.symbol} ${item.position === 'suffix' ? 'after' : 'before'}${places(item)}`).join(', ') : 'Codes before amounts';
   }
   if (typeof value === 'boolean') return value ? 'On' : 'Off';
   if (key === 'mcp.rate') return `${value} a minute`;

@@ -545,7 +545,7 @@ def test_recompute_checksums_validation_and_string_formulas(tmp_path):
     database = Database(tmp_path / 'legacy.sqlite3', Registry(Sale), migrations=[base])
     database.initialize()
     with database.transaction() as tx:
-        tx.connection.execute('INSERT INTO sale (qty, rate, amount) VALUES (30000, 250, 0)')
+        tx.connection.execute('INSERT INTO sale (qty, rate, amount) VALUES (30000, 2500000, 0)')  # rate 2.50 in millionths
 
     class Sale(Model):  # noqa: F811
         storage_name = 'sale'

@@ -14,7 +14,7 @@ import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, IconTile, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildRows, ChildTable } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, TabPanel, Tabs, type TabItem } from '../ui/doc';
-import { currencyFor, displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
+import { currencyFor, currencyPlaces, displayValue, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
 import { flowGrid, FoldSection, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
 import { NoteComposer } from './composer';
 import { FormSection, KeyValueList } from '../ui/inline';
@@ -597,7 +597,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     label: meta.label, value: () => {
       const value = view(meta.name).value.get();
       if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
-      return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(meta.name), ctx.links)()) : formatOf(meta, value);
+      return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(meta.name), ctx.links)(), currencyPlaces(view(meta.name), ctx.links)()) : formatOf(meta, value);
     },
     empty: 'Not set',
     note: view(meta.name).calculated ? 'Calculated' : undefined,
@@ -771,7 +771,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const tablePanel = (child: { name: string; label: string; read_only?: boolean }) => panel ? ChildRows({ table: store.table(child.name), title: child.label,
     locked: tableLocked(child), lockedText: tableText(child), links: ctx.links, onOpenFull: () => expand(`t-${child.name}`),
     totals: model.fields.filter(meta => (meta.compute as any)?.$expr === 'aggregate' && (meta.compute as any).table === child.name && has(meta.name))
-      .map(meta => ({ label: meta.label, value: () => displayOf(meta, store.field(meta.name).value.get(), meta.type === 'currency' ? currencyFor(store.field(meta.name), ctx.links)() : undefined) })) }) : ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
+      .map(meta => ({ label: meta.label, value: () => displayOf(meta, store.field(meta.name).value.get(), meta.type === 'currency' ? currencyFor(store.field(meta.name), ctx.links)() : undefined,
+        meta.type === 'currency' ? currencyPlaces(store.field(meta.name), ctx.links)() : undefined) })) }) : ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
     locked: tableLocked(child), lockedText: tableText(child), links: ctx.links, crumb: () => titleText.get(),
     // Focus view keeps a compact copy of this header, and the save bar, above and below the lines.
     heading: { type: model.label, icon: look.icon, title: () => titleText.get(),

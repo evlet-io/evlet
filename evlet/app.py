@@ -441,6 +441,8 @@ class Application:
                      "limit": limit, "offset": offset, "total": total}, []
 
     def initialize(self):
+        # Moving stored amounts to 6 places (evlet.migrations.money_scale) is a framework step too: inside evlet migrate for instances.
+        self.database.upgrade_money = not self.managed_framework
         self.database.initialize()
         # Instances apply framework steps only through evlet migrate; other applications apply them here.
         from .framework import upgrade

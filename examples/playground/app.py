@@ -159,8 +159,10 @@ DEMO_SYMBOL = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr
 
 
 def show_currencies(app):
-    """The demo shows AED with an image symbol before the amount, in the text colour (Controls, Currencies)."""
-    return set_currency_display(app, {'AED': {'image': DEMO_SYMBOL, 'position': 'prefix', 'space': True, 'tint': True}}, actor='playground')
+    """The demo shows AED with an image symbol before the amount, in the text colour, and adds XCR, a client's own
+    credit unit with 5 decimal places (Controls, Currencies). KWD keeps its ISO 3 places."""
+    return set_currency_display(app, {'AED': {'image': DEMO_SYMBOL, 'position': 'prefix', 'space': True, 'tint': True},
+                                      'XCR': {'symbol': 'CR', 'position': 'suffix', 'decimals': 5}}, actor='playground')
 
 
 def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=None):

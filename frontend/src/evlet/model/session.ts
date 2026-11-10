@@ -5,7 +5,7 @@
 // rules. Its results flow into the field cells. It supplies today() and reads the Link
 // lookups it waits for (customer.credit_days) with GET /api/{model}/{id}.
 
-import { FiniteDocument, wire, type Result, type RuleState } from './finite';
+import { FiniteDocument, wire, wireScale, type CurrencyInput, type Result, type RuleState } from './finite';
 import type { ApiClient } from '../api';
 import { batch } from '../reactive';
 import type { Row, Table } from './record';
@@ -19,7 +19,12 @@ export class Session {
   private tried = new Set<string>();
   private work = new Set<Promise<unknown>>();
 
-  constructor(private readonly api: ApiClient, private readonly plan: any, private readonly today: () => string) {}
+  /**
+   * `currencies` gives the engine the places of each currency code and the code of each app setting a Currency
+   * field reads, so calculated amounts round to their currency (KWD 3, JPY 0). It is read when the session starts.
+   */
+  constructor(private readonly api: ApiClient, private readonly plan: any, private readonly today: () => string,
+    private readonly currencies: () => CurrencyInput | null = () => null) {}
 
   /**
    * Build a session from the rows and bind every row's cells to it. Known lookups are given
@@ -28,7 +33,7 @@ export class Session {
    */
   start(root: Row) {
     this.stop();
-    const plan = this.plan, doc = new FiniteDocument(plan, this.data(root));
+    const plan = this.plan, doc = new FiniteDocument(plan, this.data(root), undefined, this.currencies());
     this.engine = doc;
     bindHandles(doc.root, root);
     // Today and lookups read before are given in one batch, so the document settles once.
@@ -141,7 +146,7 @@ export class Session {
       if (!field) continue;
       if (meta.computed) {
         const planned = doc.fields.get(row.path.join('/') + '\u0000' + name);
-        const scale = planned?.scale ?? null, integer = planned?.target_type === 'integer';
+        const scale = planned ? wireScale(planned) ?? null : null, integer = planned?.target_type === 'integer';
         const apply = (result: Result, keep: boolean) => {
           field.result.set(result.state === 'ready' ? { state: 'ready' } : { state: result.state, code: result.code });
           if (result.state === 'ready') {

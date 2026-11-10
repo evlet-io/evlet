@@ -44,7 +44,9 @@ def test_integer_validation(value):
         Counter(count=value)
 
 
-@pytest.mark.parametrize("value", ["NaN", "Infinity", "sNaN", "garbage", "1.001", 1.2, True, "1e100", "-0.01", "0"])
+# A Currency field keeps 6 places; its currency's own places are checked when the record is written
+# (tests/test_currency_decimals.py).
+@pytest.mark.parametrize("value", ["NaN", "Infinity", "sNaN", "garbage", "1.0000001", 1.2, True, "1e100", "-0.01", "0"])
 def test_currency_rejects_invalid_or_lossy_values(value):
     with pytest.raises(ValidationError):
         Invoice(customer=1, reference="INV-1", total=value)
