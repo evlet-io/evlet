@@ -1,22 +1,25 @@
 // The record store replays the shared finite-v1 scenarios (Python-generated plans and results)
 // through its public API: field.set, table.add, table.remove and lookups read over HTTP.
 // After every step its cells must hold the values and rules Python recorded.
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import fixtures from './finite-fixtures.json';
 import { createClient } from '../api';
 import { legacyRecordId } from '../ids';
 import { RecordStore, type Row } from '../model/record';
+import { setCurrencyDecimals } from '../model/format';
 import type { AppSchema, ModelSchema } from '../model/schema';
 
 const plans = (fixtures as any).plans as Record<string, any>;
 
-// A schema for a plan alone: one model per table, with calculated fields marked.
-function schemaFor(plan: any): AppSchema {
+// A schema for a plan alone: one model per table, with calculated fields marked. A Currency field whose code is
+// an app setting gets the code the scenario's host input names, as /api/schema sends it.
+function schemaFor(plan: any, currencies: any = null): AppSchema {
   const entries = Object.values<any>(plan.tables);
   const models: ModelSchema[] = entries.map(entry => ({
     name: entry.model, label: entry.model, plural: entry.model, title_field: 'id', list_fields: [],
     fields: Object.entries<any>(entry.fields).map(([name, meta]) => ({
       name, type: meta.kind, label: name, required: meta.required, read_only: meta.computed, compute: meta.computed ? {} : null, default_kind: 'none',
+      ...settingCode(plan, entry, name, currencies),
     })),
     children: entry.tables.map((table: string) => ({
       name: table, label: table, link: 'evlet_owner',
@@ -27,6 +30,12 @@ function schemaFor(plan: any): AppSchema {
     language: plan.language, numeric_profile: plan.numeric_profile, model_schema_hash: plan.model_schema_hash, capabilities: {}, plan,
   };
   return { version: 1, ui_version: 1, models };
+}
+
+function settingCode(plan: any, entry: any, name: string, currencies: any) {
+  const planned = plan.fields.find((field: any) => field.field === name && field.path.join('/') === entry.path.join('/') && field.currency?.setting);
+  const code = planned && currencies?.settings?.[planned.currency.setting];
+  return code ? { currency: code } : {};
 }
 
 // The scenarios name records by their legacy integer ids; the browser reads them by text id.
@@ -86,9 +95,10 @@ function expectRules(root: Row, rules: Record<string, any>) {
 
 const settle = () => new Promise(resolve => setTimeout(resolve, 0));
 const REPLAYED = ['invoice-toggle', 'cost-round-trip', 'states', 'rounding-modes', 'datetime', 'hops', 'loaded-offer',
-  'invoice-random-1', 'invoice-random-2', 'invoice-random-3'];
+  'invoice-random-1', 'invoice-random-2', 'invoice-random-3', 'money-places'];
 
 describe('record store against the shared finite-v1 scenarios', () => {
+  afterEach(() => setCurrencyDecimals(null));
   for (const scenario of (fixtures as any).scenarios.filter((item: any) => REPLAYED.includes(item.name))) {
     it(`replays ${scenario.name}`, async () => {
       const plan = plans[scenario.model], model = plan.tables.$root.model;
@@ -97,7 +107,9 @@ describe('record store against the shared finite-v1 scenarios', () => {
       // A saved document's detail is the scenario data; every other read is a lookup.
       const fetch = (async (input: RequestInfo | URL) => data.id && String(input) === `/api/${model}/${textId(data.id)}`
         ? new Response(JSON.stringify(data), { status: 200 }) : backend.fetch(input)) as typeof globalThis.fetch;
-      const store = new RecordStore({ api: createClient({ fetch }), schema: schemaFor(plan), model });
+      // The site's places per code, as /api/schema currency_decimals gives them to the app.
+      setCurrencyDecimals(scenario.currencies?.decimals ?? null);
+      const store = new RecordStore({ api: createClient({ fetch }), schema: schemaFor(plan, scenario.currencies), model });
       if (data.id) await store.open(textId(data.id)); else await store.create(data);
       const [initial, ...steps] = scenario.steps;
       await replay(store, backend, initial, steps);

@@ -63,8 +63,8 @@ def test_wrong_type_too_large_and_fake_images_are_refused(content, kind, message
 
 def test_values_are_normalized_and_defaults_drop_out():
     assert check({'USD': {'symbol': '$'}, 'EUR': {'symbol': '€', 'position': 'suffix', 'space': False}, 'INR': {}}) == {
-        'EUR': {'symbol': '€', 'image': None, 'position': 'suffix', 'space': False, 'tint': False},
-        'USD': {'symbol': '$', 'image': None, 'position': 'prefix', 'space': True, 'tint': False}}
+        'EUR': {'symbol': '€', 'image': None, 'position': 'suffix', 'space': False, 'tint': False, 'decimals': 2},
+        'USD': {'symbol': '$', 'image': None, 'position': 'prefix', 'space': True, 'tint': False, 'decimals': 2}}
     for bad, message in (({'aed': {}}, 'ISO 4217'), ({'AED': {'symbol': '<b>'}}, 'without < or >'), ({'AED': {'position': 'left'}}, 'prefix or suffix'),
                          ({'AED': {'colour': 'red'}}, 'send symbol'), ({'AED': {'space': 'yes'}}, 'true or false'), ([], 'object keyed')):
         with pytest.raises(ValueError, match=message):
@@ -90,8 +90,8 @@ def test_settings_round_trip_reach_the_schema_and_the_audit_log(secured):
     assert status == 200, payload
     schema = admin('GET', '/api/schema')[1]
     assert schema['currency_display'] == {
-        'AED': {'symbol': 'AED', 'image': image, 'position': 'prefix', 'space': True, 'tint': True},
-        'USD': {'symbol': '$', 'image': None, 'position': 'prefix', 'space': False, 'tint': False}}
+        'AED': {'symbol': 'AED', 'image': image, 'position': 'prefix', 'space': True, 'tint': True, 'decimals': 2},
+        'USD': {'symbol': '$', 'image': None, 'position': 'prefix', 'space': False, 'tint': False, 'decimals': 2}}
     editor = client(secured, 'editor')
     assert editor('GET', '/api/schema')[1]['currency_display']['USD']['symbol'] == '$'
     state = admin('GET', '/api/_controls/state')[1]
@@ -212,3 +212,7 @@ def test_trusted_code_sets_the_display_and_the_playground_shows_aed_as_an_image(
     app = playground_app(tmp_path)
     shown = app.business.controls.settings['display.currencies']['AED']
     assert shown['image'].startswith('data:image/png;base64,') and shown['tint'] and shown['position'] == 'prefix'
+    # The demo's client credit unit has 5 places; its KWD customers keep ISO's 3.
+    from evlet import currency_decimals
+    displays = app.business.controls.settings['display.currencies']
+    assert displays['XCR']['decimals'] == 5 and currency_decimals('KWD', displays) == 3

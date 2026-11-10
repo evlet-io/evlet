@@ -149,7 +149,7 @@ describe('Controls, Currencies', () => {
     click(byText(host, '.ctl-changebar button', 'Save changes'));
     await until(() => expect(sent.some(item => item.method === 'POST')).toBe(true));
     expect(sent.find(item => item.method === 'POST')!.body).toEqual({ changes: [{ kind: 'setting', key: 'display.currencies',
-      value: { USD: { symbol: '$', image: null, position: 'suffix', space: true, tint: false } } }] });
+      value: { USD: { symbol: '$', image: null, position: 'suffix', space: true, tint: false, decimals: 2 } } }] });
   });
 
   it('shows the image in the preview and resets a code to the default', async () => {

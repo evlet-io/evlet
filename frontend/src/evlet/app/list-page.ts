@@ -17,7 +17,7 @@ import type { ListTabCounts } from './client';
 import { isRecordId } from '../ids';
 import { batch, cell, derive, effect, onCleanup, untrack } from '../reactive';
 import { Button, CountBadge, EmptyState, IconButton, SearchInput, SegmentedControl, SummaryStrip, type StatProps } from '../ui/base';
-import { currencyIn, displayValue, localField, stateTint, statusTint } from '../ui/fields';
+import { currencyIn, displayValue, placesIn, localField, stateTint, statusTint } from '../ui/fields';
 import { humanize } from '../ui/kinds';
 import { closeDialogs, DialogFooter, MenuButton, openModal, toast } from '../ui/layers';
 import { SplitView } from '../ui/split';
@@ -51,7 +51,8 @@ export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema,
     return displayValue(field, { links: ctx.links, empty: '' });
   }
   // A Currency field whose code comes from the record (or a record it links to) shows that code.
-  if (meta.type === 'currency') return () => displayOf(meta, row()[meta.name], currencyIn(meta, name => row()[name], ctx.links));
+  if (meta.type === 'currency') return () => { const value = (field: string) => row()[field];
+    return displayOf(meta, row()[meta.name], currencyIn(meta, value, ctx.links), placesIn(meta, value, ctx.links)); };
   return () => formatOf(meta, row()[meta.name]);
 }
 
@@ -372,7 +373,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     totals: () => boardTotals.get(), amounts: Boolean(valueField),
     card: row => BoardCard({ title: () => titleOf(model, row()), tint,
       company: linkField ? () => { const id = row()[linkField.name]; return id ? ctx.links.title(linkField.target!, String(id)).get() ?? '' : ''; } : undefined,
-      value: valueField ? () => displayOf(valueField, row()[valueField.name], currencyIn(valueField, name => row()[name], ctx.links)) : undefined,
+      value: valueField ? () => { const value = (field: string) => row()[field];
+        return displayOf(valueField, row()[valueField.name], currencyIn(valueField, value, ctx.links), placesIn(valueField, value, ctx.links)); } : undefined,
       date: dateField ? () => formatOf(dateField, row()[dateField.name]) : undefined,
       onOpen: () => open(row()) }),
     canMove: moveBlocked,

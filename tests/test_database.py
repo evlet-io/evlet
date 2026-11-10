@@ -22,7 +22,8 @@ def test_playground_round_trip_survives_reopening(database):
         "name": None, "title": str(payment.id),
     }
     with sqlite3.connect(database.path) as conn:
-        assert conn.execute("SELECT total, typeof(total) FROM invoice").fetchone() == (10010, "integer")
+        # Currency amounts are stored as an exact count of millionths.
+        assert conn.execute("SELECT total, typeof(total) FROM invoice").fetchone() == (100100000, "integer")
         assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"
 
 

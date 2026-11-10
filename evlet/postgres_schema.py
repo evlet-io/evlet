@@ -9,6 +9,7 @@ from .models import identifier, storage_name
 from .migrations import (Applied, SchemaError, AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, RenameField,
                          Recompute, RetireField, RunData, retired_columns, step_arguments, destructive, maintenance_steps, run_data,
                          _metadata, _definition, _migration_plan, _history, _same, _comparable, mismatch, link_target, plan_from,
+                         money_scale, _moved, upgraded_definition,
                          _planned_definition, _recompute, recomputes, index_columns, stored_columns, app_fields, instance_columns,
                          standard_fields, leftover_standard, audit_columns, SetAppendOnly, ledger_switch,
                          ledger_tables)
@@ -186,6 +187,7 @@ def initialize(database):
         fresh = not tables(db)
         _metadata(db)
         saved = db.execute('SELECT definition FROM evlet_schema WHERE id=1').fetchone()
+        saved = _moved(money_scale(db, database.registry, saved and saved[0], allow=getattr(database, 'upgrade_money', True), postgres=True))
         if saved:
             ledger_switch(saved[0], database.registry)
         if saved and not _same(saved[0], database.registry):
@@ -273,6 +275,7 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             _metadata(db)
             history = _history(db, migrations, checksums)
             saved = db.execute('SELECT definition FROM evlet_schema WHERE id=1').fetchone()
+            saved = _moved(money_scale(db, database.registry, saved and saved[0], postgres=True))
             if not fresh and not saved:
                 raise SchemaError('Initialize the legacy database with its original models before migrating')
             pending = migrations[len(history):]
@@ -331,6 +334,8 @@ def plan(database, migrations):
         def exists(name):
             return db.execute("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename=?", (name,)).fetchone() is not None
         saved = db.execute('SELECT definition FROM evlet_schema WHERE id=1').fetchone() if exists('evlet_schema') else None
+        if saved and not exists('evlet_money'):
+            saved = (upgraded_definition(saved[0]),)
         history = [(row[0], row[1]) for row in db.execute('SELECT name,checksum FROM evlet_migrations ORDER BY position')] \
             if exists('evlet_migrations') else []
         return plan_from(saved and saved[0], history, migrations, database.registry, tables=bool(tables(db)))

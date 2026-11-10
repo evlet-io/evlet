@@ -716,6 +716,11 @@ def compile_plan(registry, root, *, force=False):
                              'scale': entry[name]['scale'] if option in ('compute', 'initial') else None, 'stored': field.stored,
                              'rounding': getattr(field, 'rounding', None) if kind == 'decimal' and option in ('compute', 'initial') else None,
                              'expression': ir, 'reads': [list(read) for read in reads]})
+                if field.kind == 'currency' and option in ('compute', 'initial'):
+                    money = money_source(field, context, label)
+                    if money is not None:
+                        item['currency'] = money
+                        item['reads'] += [read for read in money.get('reads', ()) if read not in item['reads']]
                 fields.append(item)
         lookups = {}
         for item in fields:
@@ -732,6 +737,27 @@ def compile_plan(registry, root, *, force=False):
     plan['model_schema_hash'] = fingerprint(plan)
     check_plan(plan)
     return plan
+
+
+def money_source(field, context, label):
+    """Where a calculated Currency field finds the currency it rounds to: {'code'}, {'setting'} (a host input), or
+    {'expression', 'reads'} reading a field of the row or of a linked record. The reads join the item's reads, so a
+    change of currency recalculates the amount; formula_hash leaves them out."""
+    source = field.currency_source()
+    if source is None:
+        return None
+    if 'code' in source:
+        return {'code': source['code']}
+    if 'setting' in source:
+        return {'setting': source['setting']['app'] + '.' + source['setting']['key']}
+    path = source['link'] + '.' + source['field'] if 'link' in source else source['field']
+    ir, _, reads = compile_expression(F(path), context, label)
+    return {'expression': ir, 'reads': [list(read) for read in reads]}
+
+
+def wire_scale(field):
+    """The places a plan entry's value travels with: a Currency amount keeps at least 2 (as Currency.serialize)."""
+    return 2 if field.get('target_type') == 'currency' else field['scale']
 
 
 def creation_default(field):
@@ -866,7 +892,9 @@ def formula_hash(plan):
     and required or locked rules never change a saved result, so they are left out; applies_when
     can clear a value calculations read, so it counts.
     """
-    deciding = [field for field in plan['fields'] if field.get('kind') in (None, 'applies_when')]
+    # Currency fields hash as they did before amounts were stored at 6 places and rounded to their own currency:
+    # the currency table is site data, not a formula, so saved documents keep their recorded hash.
+    deciding = [legacy_money(field) for field in plan['fields'] if field.get('kind') in (None, 'applies_when')]
     used = {(tuple(field['path']), field['field']) for field in deciding}
     for field in deciding:
         for scope, table, name in field['reads']:
@@ -881,13 +909,22 @@ def formula_hash(plan):
     for table in plan['tables'].values():
         for name, meta in table['fields'].items():
             if (tuple(table['path']), name) in used:
-                fields[address(tuple(table['path']), name)] = {key: meta[key] for key in keys}
+                fields[address(tuple(table['path']), name)] = {key: 2 if key == 'scale' and meta['kind'] == 'currency' else meta[key] for key in keys}
     body = {key: plan[key] for key in ('plan_version', 'language', 'numeric_profile', 'expression_version', 'compiler_version')}
     # A field's rounding counts only when it differs from its type default, so plans that predate it keep their hash.
     formulas = [{key: value for key, value in field.items() if key != 'rounding' or value not in (None, default_rounding(field['target_type']))}
                 for field in deciding]
     body.update(formulas=formulas, fields=fields)
     return 'sha256:' + hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
+def legacy_money(field):
+    if field.get('target_type') != 'currency':
+        return field
+    extra = field.get('currency', {}).get('reads', ())
+    original = [read for read in field['reads'] if read not in extra] if extra else field['reads']
+    return {**{key: value for key, value in field.items() if key != 'currency'}, 'reads': original,
+            'scale': 2 if field.get('scale') is not None else None}
 
 
 # Evaluation: pure, exact and state-aware.
@@ -1069,13 +1106,15 @@ def aggregate(node, scope, budget):
     return ready(best)
 
 
-def convert(result, field, at, meta=None):
-    """Target assignment: quantize to the field's scale with its rounding; the declared bounds hold."""
+def convert(result, field, at, meta=None, places=None):
+    """Target assignment: quantize to the field's scale (a Currency amount: its currency's `places`) with its
+    rounding; the declared bounds hold."""
     if result.state != 'ready' or result.value is None or field['result_type'] != 'decimal':
         return result
     value, scale = result.value, field['scale']
-    if scale is not None and value.scale > scale:
-        value = quantize(value, scale, field.get('rounding') or 'half_up')
+    target = scale if places is None else places
+    if target is not None and value.scale > target:
+        value = quantize(value, target, field.get('rounding') or 'half_up')
         result = ready(value)
     if field['target_type'] == 'integer' and abs(value.coef) > SAFE_INTEGER:
         return error('COMPUTE_RANGE_ERROR', [at])
@@ -1172,10 +1211,13 @@ class Scope:
 
 class Document:
     """A browser-equivalent session over one plan. The server uses it for full settlement."""
-    def __init__(self, plan, data=None, *, budget=None, checked=False):
+    def __init__(self, plan, data=None, *, budget=None, checked=False, currencies=None):
         # The server passes checked=True for plans its own registry compiled and checked at startup.
         if not checked:
             check_plan(plan)
+        # Host input for Currency targets: {'decimals': {code: places}, 'settings': {'app.key': code}}. Codes not in
+        # decimals have 2. The server leaves it out and reads the site in use (evlet.currencies).
+        self.currencies = currencies
         self.plan, self.hash = plan, plan['model_schema_hash']
         self.schema = {tuple(entry['path']): entry for entry in plan['tables'].values()}
         self.templates, self.entries = {}, {}
@@ -1358,6 +1400,27 @@ class Document:
             return error('UNSUPPORTED_EXPRESSION', [row.label + field])
         return source_value(meta, row.values.get(field), row.label + field)
 
+    def money_places(self, money, scope, budget):
+        """The decimal places of a Currency target's currency on this row, or a pending Result while a linked
+        record's currency is still being looked up. An empty or unknown currency has 2."""
+        from .currencies import currency_decimals, setting_code
+        if not money:
+            code = None
+        elif 'code' in money:
+            code = money['code']
+        elif 'setting' in money:
+            code = (self.currencies or {}).get('settings', {}).get(money['setting']) if self.currencies is not None \
+                else setting_code(money['setting'])
+        else:
+            found = evaluate(money['expression'], scope, budget)
+            if found.state == 'pending':
+                return found
+            code = found.value if found.state == 'ready' else None
+        if self.currencies is not None:
+            places = self.currencies.get('decimals', {}).get(code) if isinstance(code, str) else None
+            return 2 if type(places) is not int else places
+        return currency_decimals(code)
+
     def today_result(self):
         if self.today is None:
             return pending('COMPUTE_INPUT_MISSING', ['@today'])
@@ -1387,10 +1450,16 @@ class Document:
             at = row.label + node[1]
             scope = Scope(self, row, at=at)
             outcome = evaluate(field['expression'], scope, budget)
+            places = None
+            if field.get('target_type') == 'currency' and kind in (None, 'initial') and outcome.state == 'ready' and outcome.value is not None:
+                # A Currency target without a currency source has 2 places, as before amounts were stored at 6.
+                places = self.money_places(field.get('currency') or {}, scope, budget)
+                if isinstance(places, Result):
+                    outcome, places = places, None
             if kind is None:
-                outcome = convert(outcome, field, at, self.schema[row.path]['fields'][node[1]])
+                outcome = convert(outcome, field, at, self.schema[row.path]['fields'][node[1]], places)
             elif kind == 'initial':
-                outcome = convert(outcome, field, at)
+                outcome = convert(outcome, field, at, None, places)
             if scope.misses:
                 self.misses[node] = scope.misses
             else:
@@ -1405,7 +1474,7 @@ class Document:
             if kind == 'initial' and node in self.armed and outcome.state != 'pending':
                 self.armed.discard(node)
                 if outcome.state == 'ready' and not self.locked(row, field['field']):
-                    value = wire(outcome.value, field['scale'])
+                    value = wire(outcome.value, wire_scale(field))
             elif kind == 'applies_when' and outcome.state == 'ready' and outcome.value is False and row.values.get(target[1]) is not None \
                     and self.locks.get(row.handle, {}).get(field['field'], False) is False:
                 # A field locked on the saved row keeps its value; the server refuses the write instead.
@@ -1709,7 +1778,7 @@ class Document:
             if tuple(field['path']) != row.path or field.get('kind'):
                 continue
             outcome = self.results.get((row.handle, field['field']))
-            result[field['field']] = wire(outcome.value, field['scale']) if outcome and outcome.state == 'ready' else None
+            result[field['field']] = wire(outcome.value, wire_scale(field)) if outcome and outcome.state == 'ready' else None
             if outcome and outcome.state != 'ready':
                 states[field['field']] = outcome.public()
         if states:
@@ -1742,6 +1811,21 @@ def check_plan(plan):
         if field.get('kind', None) not in (None, *KINDS) or 'kind' in field and field['kind'] is None:
             raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid plan entry kind')
         check_node(field['expression'], 0, [0])
+        money = field.get('currency')
+        if money is not None:
+            if field.get('target_type') != 'currency' or not isinstance(money, dict) or len(money) not in (1, 2):
+                raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid currency source')
+            if 'code' in money:
+                ok = len(money) == 1 and isinstance(money['code'], str) and re.fullmatch('[A-Z]{3}', money['code']) is not None
+            elif 'setting' in money:
+                ok = len(money) == 1 and isinstance(money['setting'], str) and re.fullmatch(r'[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*', money['setting']) is not None
+            else:
+                ok = set(money) == {'expression', 'reads'} and isinstance(money['expression'], dict) \
+                    and money['expression'].get('$expr') in ('ref', 'hop') and all(read in field['reads'] for read in money['reads'])
+                if ok:
+                    check_node(money['expression'], 0, [0])
+            if not ok:
+                raise CalcError('UNSUPPORTED_EXPRESSION', 'Invalid currency source')
     for table in plan['tables'].values():
         for key in ('min_rows', 'max_rows'):
             if key in table and (type(table[key]) is not int or not 0 <= table[key] <= LIMITS['collection_rows']):

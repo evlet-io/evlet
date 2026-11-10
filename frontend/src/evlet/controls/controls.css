@@ -354,5 +354,6 @@
 .ctl-cur-preview{display:inline-flex;align-items:baseline;gap:10px;font-size:16px;font-variant-numeric:tabular-nums;padding:4px 10px;border-radius:var(--r);background:var(--bg-subtle)}
 .ctl-cur-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px 20px}
 .ctl-cur-code{width:90px;text-transform:uppercase}
+.ctl-cur-dec{width:90px}
 .ctl-cur .seg button{white-space:nowrap}
 .ctl-cur-note{margin-top:12px}

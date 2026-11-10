@@ -18,7 +18,7 @@ import { formula, labeller, phrase, source } from './explain';
 import { checkTag, currencyOf, durationText, humanize, InputError, kindOf } from './kinds';
 import { copyText, openPopover } from './layers';
 import { DatePanel, DateTimePanel, Dropdown, DurationPanel, focusCalendar, TimePanel, type DateTimeValue } from './pickers';
-import { currencyDisplay, formatDate, zoneOffset } from '../model/format';
+import { currencyDecimals, currencyDisplay, formatDate, zoneOffset } from '../model/format';
 import { CurrencySymbol, Money } from './money';
 import { parseClock, parseDay, parseDayTime, parseLength } from './dateparse';
 import { tooltip } from './tooltip';
@@ -219,20 +219,42 @@ const CODE = /^[A-Z]{3}$/;
  * is empty or can't be read.
  */
 export function currencyFor(field: FieldLike, links: LinkSource | null = defaultLinks): () => string {
+  const code = currencyCodeFor(field, links);
+  return () => code() ?? currencyOf(field.meta);
+}
+
+/** The code a Currency field's amount is in, as currencyFor, but null when it has none (no code, or an empty source). */
+export function currencyCodeFor(field: FieldLike, links: LinkSource | null = defaultLinks): () => string | null {
   const meta = field.meta;
-  if (!meta.currency_source || !(field instanceof Field)) return () => currencyOf(meta);
+  if (!meta.currency_source || !(field instanceof Field)) return () => currencyCodeIn(meta, () => undefined, links);
   const row = field.row;
-  return () => currencyIn(meta, name => row.fields.get(name)?.value.get(), links);
+  return () => currencyCodeIn(meta, name => row.fields.get(name)?.value.get(), links);
+}
+
+/** The decimal places of a Currency field's amount: its currency's on this site (KWD 3, JPY 0), 2 without a code. */
+export function currencyPlaces(field: FieldLike, links: LinkSource | null = defaultLinks): () => number {
+  const code = currencyCodeFor(field, links);
+  return () => currencyDecimals(code());
 }
 
 /** The currency code of a Currency field for one record's values (a list row, say): see currencyFor. */
 export function currencyIn(meta: FieldSchema, value: (name: string) => unknown, links: LinkSource | null = defaultLinks): string {
-  const source = meta.currency_source, fallback = currencyOf(meta);
-  const code = (found: unknown) => typeof found === 'string' && CODE.test(found) ? found : fallback;
-  if (!source) return fallback;
+  return currencyCodeIn(meta, value, links) ?? currencyOf(meta);
+}
+
+/** The decimal places of a Currency field for one record's values: see currencyPlaces. */
+export function placesIn(meta: FieldSchema, value: (name: string) => unknown, links: LinkSource | null = defaultLinks): number {
+  return currencyDecimals(currencyCodeIn(meta, value, links));
+}
+
+/** The code of a Currency field for one record's values, or null when it has none. */
+export function currencyCodeIn(meta: FieldSchema, value: (name: string) => unknown, links: LinkSource | null = defaultLinks): string | null {
+  const source = meta.currency_source, fixed = typeof meta.currency === 'string' && CODE.test(meta.currency) ? meta.currency : null;
+  const code = (found: unknown) => typeof found === 'string' && CODE.test(found) ? found : fixed;
+  if (!source) return fixed;
   if (!source.link) return code(value(source.field));
   const id = value(source.link);
-  if (id === null || id === undefined || id === '' || !source.model || !links?.record) return fallback;
+  if (id === null || id === undefined || id === '' || !source.model || !links?.record) return fixed;
   return code(links.record(source.model, String(id)).get()?.[source.field]);
 }
 
@@ -271,8 +293,8 @@ export function displayValue(field: FieldLike, options: { links?: LinkSource | n
   }
   if (meta.type === 'currency') {
     // The site's symbol (text or an image) before or after the amount; the code follows its source.
-    const currency = currencyFor(field, links);
-    return when(() => !isEmpty(value()), () => html`<span class="tx num">${Money(value, currency, typeof meta.scale === 'number' ? meta.scale : 2)}</span>`, blank);
+    const currency = currencyFor(field, links), places = currencyPlaces(field, links);
+    return when(() => !isEmpty(value()), () => html`<span class="tx num">${Money(value, currency, places)}</span>`, blank);
   }
   const numeric = kind.align === 'right';
   // A unit declared with suffix= reads after the number at rest too: 5.00%, 8 hours.
@@ -395,7 +417,10 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
 
   // Text-like inputs: text, numbers, money, dates, times, durations, email, url, phone, long text.
   const textarea = kind.control === 'textarea';
-  const shown = () => (kind.edit ?? kind.format)(field.value.get(), meta);
+  // A Currency amount is typed and shown at its currency's decimals, which can come from the record (kinds.ts, moneyPlaces).
+  const money = meta.type === 'currency' ? currencyCodeFor(field, options.links) : null;
+  const typed = (): FieldSchema => money ? { ...meta, currency: money() ?? undefined, currency_source: undefined } : meta;
+  const shown = () => (kind.edit ?? kind.format)(field.value.get(), typed());
   const commit = (): boolean => {
     // Text the user did not change is not a change, even when the stored value is more precise
     // than its display (date-times with seconds) or the server normalized it (+971 numbers).
@@ -405,7 +430,7 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
       return true;
     }
     let value: unknown;
-    try { value = kind.parse ? kind.parse(input.value, meta) : input.value; }
+    try { value = kind.parse ? kind.parse(input.value, untrack(typed)) : input.value; }
     catch (error) {
       if (!(error instanceof InputError)) throw error;
       if (kind.picker) return unreadable();

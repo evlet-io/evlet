@@ -1,6 +1,7 @@
-// Controls, Build: Currencies (docs/controls.md#currencies). How each currency code is shown on this site:
-// a text symbol or a small image, before or after the amount, with or without a space. Codes left out show
-// as they always have ("AED 25,200.00"). The whole set is one setting, display.currencies, saved through the
+// Controls, Build: Currencies (docs/controls.md#currencies). Each currency code on this site: how many decimal
+// places its amounts have (ISO 4217 by default: AED 2, KWD 3, JPY 0; any code can be added, a client's own code
+// too) and how it is shown: a text symbol or a small image, before or after the amount, with or without a space.
+// Codes left out keep their ISO decimals and show as they always have ("AED 25,200.00"). The whole set is one setting, display.currencies, saved through the
 // change bar and audited; only admins change it. The preview uses the draft, so it shows what Save would give.
 
 import { html, when } from '../dom';
@@ -8,7 +9,7 @@ import { cell, derive } from '../reactive';
 import { Button, Switch } from '../ui/base';
 import { toast } from '../ui/layers';
 import { moneyChild } from '../ui/money';
-import type { CurrencyDisplay } from '../model/format';
+import { DEFAULT_DECIMALS, ISO_DECIMALS, MAX_DECIMALS, type CurrencyDisplay } from '../model/format';
 import { Callout, Head, type ControlsContext } from './app';
 import { idOf } from './drafts';
 
@@ -16,7 +17,9 @@ const ID = idOf('setting', 'display.currencies');
 export const MAX_IMAGE = 32 * 1024;
 export const MAX_PIXELS = 128;
 type Displays = Record<string, CurrencyDisplay>;
-const fresh = (code: string): CurrencyDisplay => ({ symbol: code, image: null, position: 'prefix', space: true, tint: false });
+/** The decimals a code has when nobody changed them: ISO 4217 minor units, or 2 for a code ISO does not list. */
+export const isoDecimals = (code: string) => Object.prototype.hasOwnProperty.call(ISO_DECIMALS, code) ? ISO_DECIMALS[code] : DEFAULT_DECIMALS;
+const fresh = (code: string): CurrencyDisplay => ({ symbol: code, image: null, position: 'prefix', space: true, tint: false, decimals: isoDecimals(code) });
 
 /**
  * The type of image bytes, read from the bytes and never from the name: PNG, WebP or null. The server checks
@@ -64,7 +67,7 @@ export function CurrenciesPage(ctx: ControlsContext): HTMLElement {
   };
   const add = () => {
     const code = adding.peek().trim().toUpperCase();
-    if (!/^[A-Z]{3}$/.test(code)) { addError.set('Enter a three-letter ISO code, such as AED.'); return; }
+    if (!/^[A-Z]{3}$/.test(code)) { addError.set('Enter a three-letter code, such as AED.'); return; }
     if (displays()[code]) { addError.set(`${code} is already listed.`); return; }
     put(code, {});
     adding.set('');
@@ -87,12 +90,13 @@ export function CurrenciesPage(ctx: ControlsContext): HTMLElement {
 
   const row = (code: string) => {
     const value = () => displays()[code] ?? fresh(code);
+    const places = () => value().decimals ?? isoDecimals(code);
     const disabled = () => !admin();
     const file = html`<input type="file" accept="image/png,image/webp" hidden aria-label=${`Image symbol for ${code}`}
       on:change=${(event: Event) => void choose(code, event.target as HTMLInputElement)}>` as HTMLInputElement;
     return html`<div class="ctl-cur" data-code=${code}>
       <div class="ctl-cur-head"><strong class="mono">${code}</strong>
-        <span class="ctl-cur-preview" aria-label=${() => `Preview of ${code}`}>${() => moneyChild('1234.5', code, 2, value())}<span class="muted">·</span>${() => moneyChild('-75', code, 2, value())}</span>
+        <span class="ctl-cur-preview" aria-label=${() => `Preview of ${code}`}>${() => moneyChild('1234.5', code, places(), value())}<span class="muted">·</span>${() => moneyChild('-75', code, places(), value())}</span>
         <span class="grow"></span>
         ${Button({ label: 'Reset to default', size: 'small', disabled, onClick: () => put(code, null) })}</div>
       <div class="ctl-cur-grid">
@@ -100,6 +104,11 @@ export function CurrenciesPage(ctx: ControlsContext): HTMLElement {
           <input class="input" id=${`ctl-cur-sym-${code}`} maxlength="8" disabled=${() => disabled() || Boolean(value().image)} prop:value=${() => value().symbol}
             on:change=${(event: Event) => { const text = (event.target as HTMLInputElement).value.trim(); put(code, { symbol: text || code }); }}>
           <span class="ctl-hint">${() => value().image ? 'The image is shown instead. Text-only places, such as filters and CSV, show the code.' : html`Text such as $, €, <bdi>د.إ</bdi> or the code itself.`}</span></div>
+        <div class="ctl-field"><label for=${`ctl-cur-dec-${code}`}>Decimals</label>
+          <select class="input ctl-cur-dec" id=${`ctl-cur-dec-${code}`} disabled=${disabled}
+            on:change=${(event: Event) => put(code, { decimals: Number((event.target as HTMLSelectElement).value) })}>
+            ${Array.from({ length: MAX_DECIMALS + 1 }, (_, count) => html`<option value=${String(count)} prop:selected=${() => places() === count}>${String(count)}</option>`)}</select>
+          <span class="ctl-hint">${() => places() === isoDecimals(code) ? `The ISO 4217 default for ${code}.` : `${code} has ${isoDecimals(code)} by default.`} Lowering it is refused while saved amounts have more places.</span></div>
         <div class="ctl-field"><span class="lbl">Image symbol</span>
           <div class="ctl-line">${file}
             ${Button({ label: () => value().image ? 'Replace image' : 'Upload image', icon: 'upload', size: 'small', disabled, onClick: () => file.click() })}
@@ -118,13 +127,13 @@ export function CurrenciesPage(ctx: ControlsContext): HTMLElement {
   };
 
   return html`<div>
-    ${Head('Currencies', 'How amounts show their currency on this site: in forms, lists, boards, totals, reports and print designs. Separators and decimals follow each person’s region and do not change here.')}
+    ${Head('Currencies', 'How many decimals each currency has on this site, and how amounts show it: in forms, lists, boards, totals, reports and print designs. Separators follow each person’s region and do not change here.')}
     ${() => admin() ? null : Callout('info', 'lock', 'Only an admin can change how currencies are shown.')}
     ${() => drafts.errors.get().has(ID) ? Callout('err', 'info', drafts.errors.get().get(ID)!) : null}
     <section class="ctl-card"><div class="ctl-card-head"><div><h2>Currency display</h2>
-        <p>A code that is not listed shows as it always has: the code, a space, then the amount, such as AED 1,234.50.</p></div></div>
+        <p>A code that is not listed has its ISO 4217 decimals (KWD 3, JPY 0, most others 2) and shows as it always has: the code, a space, then the amount, such as AED 1,234.50. You can add any three-letter code, your own too.</p></div></div>
       ${() => codes.get() ? codes.get().split(' ').map(row)
-        : html`<div class="ctl-empty">Every currency shows its code before the amount.</div>`}
+        : html`<div class="ctl-empty">Every currency has its ISO decimals and shows its code before the amount.</div>`}
       ${() => admin() ? html`<div class="ctl-pad ctl-line">
         <input class="input ctl-cur-code" maxlength="3" placeholder="AED" aria-label="Currency code to add" prop:value=${adding}
           on:input=${(event: Event) => { adding.set((event.target as HTMLInputElement).value.toUpperCase()); addError.set(null); }}

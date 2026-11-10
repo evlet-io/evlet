@@ -103,18 +103,18 @@ def test_exact_sums_over_many_rows_and_large_values(app):
     # 1000 x 0.10 is exactly 100.00; a float sum would give 99.9999999999986.
     assert rows == [{'sum': D_('100.00'), 'qty': D_('1.000'), 'units': 3000, 'n': 1000}]
     assert str(rows[0]['sum']) == '100.00'
-    half = 2**62
-    insert(app, Invoice, [{'total': str(D_(half) / 100), 'owner': 'big'}, {'total': str(D_(half - 1) / 100), 'owner': 'big'},
+    # Currency amounts are stored in millionths: the largest sum is 9,223,372,036,854.775807.
+    insert(app, Invoice, [{'total': '4611686018427.38', 'owner': 'big'}, {'total': '4611686018427.39', 'owner': 'big'},
                           {'total': '-0.01', 'owner': 'big'}])
-    assert total(app, measures={'sum': Sum('total')}, filters={'owner': 'big', 'total__gt': '0'}) == [{'sum': D_('92233720368547758.07')}]
-    assert total(app, measures={'sum': Sum('total')}, filters={'owner': 'big'}) == [{'sum': D_('92233720368547758.06')}]
+    assert total(app, measures={'sum': Sum('total')}, filters={'owner': 'big', 'total__gt': '0'}) == [{'sum': D_('9223372036854.77')}]
+    assert total(app, measures={'sum': Sum('total')}, filters={'owner': 'big'}) == [{'sum': D_('9223372036854.76')}]
     insert(app, Invoice, [{'total': '0.01', 'owner': 'big'}, {'total': '0.01', 'owner': 'big'}])
     with pytest.raises(ValidationError) as error:
         total(app, measures={'sum': Sum('total')}, filters={'owner': 'big', 'total__gt': '0'})
     assert error.value.errors == {'measures': 'A sum is outside the exact range of stored numbers; narrow the filters'}
     # Count, Min and Max are unaffected by the large values.
     assert total(app, measures={'n': Count(), 'low': Min('total'), 'high': Max('total')}, filters={'owner': 'big'}) == [
-        {'n': 5, 'low': D_('-0.01'), 'high': D_('46116860184273879.04')}]
+        {'n': 5, 'low': D_('-0.01'), 'high': D_('4611686018427.39')}]
 
 
 def test_sums_depend_only_on_the_final_total(app):
