@@ -16,6 +16,9 @@ class Expression:
     op: str
     args: tuple
 
+# Field kinds string formulas calculate with: exact decimals, as finite-v1 reads them (a Percent of 12.50 is 12.50).
+NUMERIC = ('integer', 'decimal', 'currency', 'percent')
+
 OPS = {ast.Add: 'add', ast.Sub: 'sub', ast.Mult: 'mul', ast.Div: 'div',
        ast.Eq: 'eq', ast.NotEq: 'ne', ast.Lt: 'lt', ast.LtE: 'lte', ast.Gt: 'gt', ast.GtE: 'gte',
        ast.Is: 'eq', ast.IsNot: 'ne'}
@@ -250,13 +253,16 @@ def template(registry, model):
                 if parts[0] in owner.__sources__:
                     value = owner.__sources__[parts[0]].fields[parts[1]]
                 else: value = owner.__declared_fields__[parts[0]]
-                kind = 'number' if value.kind in ('decimal', 'currency', 'integer') else value.kind
+                kind = 'number' if value.kind in NUMERIC else value.kind
                 return ('array', kind) if aggregate else kind
             for kind in ('compute', 'visible_if', 'required_if', 'read_only_if'):
                 if kind not in entry: continue
-                result_type = expression_type(entry[kind], reference_type)
+                try:
+                    result_type = expression_type(entry[kind], reference_type)
+                except ValueError as exc:
+                    raise ValueError(f'{model.__name__}.{prefix}{name} ({kind}): {exc}') from None
                 # A Select holds text: a formula may calculate it (one of its choices, which validation checks).
-                target_type = 'number' if field.kind in ('decimal', 'currency', 'integer') else 'text' if field.kind == 'select' else field.kind
+                target_type = 'number' if field.kind in NUMERIC else 'text' if field.kind == 'select' else field.kind
                 if kind == 'compute' and result_type not in (target_type, 'null'):
                     raise ValueError(f'{model.__name__}.{prefix}{name}: expression type {result_type} does not match {target_type}')
     return nodes, order, inputs, owners
@@ -277,7 +283,11 @@ def expression_type(value, read):
             if isinstance(arg, str):
                 try: number(arg); continue
                 except ArithmeticError: pass
-            raise ValueError('Arithmetic requires numeric fields or decimal literals')
+            if isinstance(arg, Expression) and arg.op == 'ref':
+                raise ValueError(f'Arithmetic requires numbers, but {arg.args[0]} is {describe(kind)}. '
+                                 'Use integer, decimal, currency or percent fields, or decimal text such as "0.05"')
+            raise ValueError(f'Arithmetic requires numbers, but part of the formula gives {describe(kind, "value")}. '
+                             'Use integer, decimal, currency or percent fields, or decimal text such as "0.05"')
         return 'number'
     if op in ('sum', 'count', 'min', 'max'):
         if not isinstance(kinds[0], tuple) or kinds[0][0] != 'array' or op != 'count' and kinds[0][1] != 'number':
@@ -288,6 +298,13 @@ def expression_type(value, read):
         if kinds[2] == 'null' or kinds[1] == kinds[2]: return kinds[1]
         raise ValueError('Conditional branches require compatible types')
     return 'boolean'
+
+
+def describe(kind, noun='field'):
+    """What a formula part is, as an error message names it: "a text field", "a boolean value", "a table"."""
+    if isinstance(kind, tuple):
+        return 'a table' if kind[1] == 'record' else 'a table column (use sum, min or max)'
+    return ('an ' if str(kind)[0] in 'aeiou' else 'a ') + f'{kind} {noun}'
 
 
 def round_field(field, value):
