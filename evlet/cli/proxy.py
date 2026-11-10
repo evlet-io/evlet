@@ -2,6 +2,7 @@
 
 import ipaddress
 import os
+import re
 from pathlib import Path
 import socket
 import tempfile
@@ -38,10 +39,12 @@ def _note(instance, trusted=()):
 
 
 def caddy(routes, port=8000, instance='<name>', trusted=()):
+    from ..app import PUBLIC_PATHS
     sites = []
     for host in _hosts(routes):
-        # /_/ holds framework internals, such as the on-demand TLS check, for local callers only.
-        lines = [f'{host} {{', '\t@internal path /_/*', '\trespond @internal 404']
+        # /_/ holds framework routes. The MCP endpoint, its OAuth sign-in and the mailbox sign-in return
+        # are public; the rest, such as the on-demand TLS check, are for local callers only.
+        lines = [f'{host} {{', '\t@internal {', '\t\tpath /_/*', '\t\tnot path ' + ' '.join(PUBLIC_PATHS), '\t}', '\trespond @internal 404']
         if host in routes.sub_hosts():
             lines += [f'\t@primary_only path_regexp (?i)^/({"|".join(PRIMARY_ONLY)})(/|$)', '\trespond @primary_only 404']
         lines += [f'\treverse_proxy 127.0.0.1:{port}', '}']
@@ -49,27 +52,8 @@ def caddy(routes, port=8000, instance='<name>', trusted=()):
     return _note(instance, trusted) + '\n\n'.join(sites) + '\n'
 
 
-def nginx(routes, port=8000, instance='<name>', trusted=()):
-    hosts = _hosts(routes)
-    blocks = [f'''server {{
-    listen 80;
-    listen [::]:80;
-    server_name {' '.join(hosts)};
-    return 301 https://$host$request_uri;
-}}''']
-    for host in hosts:
-        block = f'''server {{
-    listen 443 ssl;
-    listen [::]:443 ssl;
-    server_name {host};
-    ssl_certificate /etc/letsencrypt/live/{host}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/{host}/privkey.pem;
-    location ^~ /_/ {{ return 404; }}
-'''
-        if host in routes.sub_hosts():
-            block += f'    location ~* ^/({"|".join(PRIMARY_ONLY)})(/|$) {{ return 404; }}\n'
-        block += f'''    location / {{
-        proxy_pass http://127.0.0.1:{port};
+def _nginx_proxy(port, body):
+    return f'''proxy_pass http://127.0.0.1:{port};
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
@@ -77,11 +61,83 @@ def nginx(routes, port=8000, instance='<name>', trusted=()):
         proxy_set_header Connection "";
         proxy_buffering off;
         proxy_read_timeout 3600s;
-        client_max_body_size 2m;
+        client_max_body_size {body};'''
+
+
+def nginx(routes, port=8000, instance='<name>', trusted=()):
+    from ..app import PUBLIC_PATHS
+    hosts = _hosts(routes)
+    blocks = [f'''server {{
+    listen 80;
+    listen [::]:80;
+    server_name {' '.join(hosts)};
+    return 301 https://$host$request_uri;
+}}''']
+    # Exact locations win over the /_/ prefix, so only the public framework routes pass. Evlet reads at most 64 KiB there.
+    public = ''.join(f'    location = {path} {{\n        {_nginx_proxy(port, "128k")}\n    }}\n' for path in PUBLIC_PATHS)
+    for host in hosts:
+        block = f'''server {{
+    listen 443 ssl;
+    listen [::]:443 ssl;
+    server_name {host};
+    ssl_certificate /etc/letsencrypt/live/{host}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{host}/privkey.pem;
+{public}    location ^~ /_/ {{ return 404; }}
+'''
+        if host in routes.sub_hosts():
+            block += f'    location ~* ^/({"|".join(PRIMARY_ONLY)})(/|$) {{ return 404; }}\n'
+        block += f'''    location / {{
+        {_nginx_proxy(port, "2m")}
     }}
 }}'''
         blocks.append(block)
     return _note(instance, trusted) + '\n\n'.join(blocks) + '\n'
+
+
+def _caddy_path(pattern, path):
+    """Caddy's path matcher: exact, or * as a wildcard; case-insensitive."""
+    return re.fullmatch('.*'.join(re.escape(part) for part in pattern.lower().split('*')), path.lower()) is not None
+
+
+def caddy_refuses(text, paths):
+    """The paths a Caddy file answers with 404 before Evlet sees them, on any of its sites.
+
+    It reads the matchers evlet proxy writes now and wrote before (path, not path and path_regexp,
+    on one line or in a block) used by respond @name 404, so start-up can warn about an outdated file.
+    """
+    matchers, refusing, block = {}, set(), None
+    for raw in text.splitlines():
+        line = raw.split('#', 1)[0].strip()
+        if block is not None:
+            if line == '}':
+                block = None
+            elif line:
+                matchers[block].append(line.split())
+            continue
+        words = line.split()
+        if len(words) >= 2 and words[0].startswith('@'):
+            if words[1:] == ['{']:
+                block = words[0]
+                matchers[block] = []
+            else:
+                matchers[words[0]] = [words[1:]]
+        elif len(words) >= 3 and words[0] == 'respond' and words[1].startswith('@') and words[2] == '404':
+            refusing.add(words[1])
+
+    def matches(conditions, path):
+        for condition in conditions:
+            negate = condition[0] == 'not'
+            kind, *values = condition[1:] if negate else condition
+            if kind == 'path':
+                hit = any(_caddy_path(value, path) for value in values)
+            elif kind == 'path_regexp' and values:
+                hit = re.search(values[-1], path) is not None
+            else:
+                return False  # a matcher this reader does not know never counts as refusing
+            if hit == negate:
+                return False
+        return bool(conditions)
+    return [path for path in paths if any(matches(matchers.get(name, ()), path) for name in refusing)]
 
 
 def server_addresses():
@@ -98,26 +154,34 @@ def server_addresses():
 
 
 def check(routes, addresses=None, resolve=socket.getaddrinfo):
-    """One line per host saying whether its A/AAAA records point at this server, and whether all do."""
+    """One line per host saying where its A/AAAA records point, then any warnings, and whether setup may go on.
+
+    It stops (False) only for a host with no record, or with only private records while this server has a public address."""
     addresses = {str(ipaddress.ip_address(item)) for item in (addresses or server_addresses())}
     lines, ok = [], True
-    if any(ipaddress.ip_address(item).is_private for item in addresses):
-        lines.append('This server has a private address. Pass --ip with its public address.')
+    # Behind NAT (most cloud servers) this server only sees private addresses, so a public record can't be
+    # matched. That is a warning, not a stop: Caddy keeps retrying its certificate until DNS is right.
+    public_here = any(ipaddress.ip_address(item).is_global for item in addresses)
+    warnings = []
     width = max(len(host) for host in _hosts(routes)) + 3
     for host in routes.hosts():
         try:
             records = sorted({str(ipaddress.ip_address(info[4][0].split('%')[0])) for info in resolve(host, None, proto=socket.IPPROTO_TCP)})
         except (OSError, UnicodeError):
             records = []
+        public = any(ipaddress.ip_address(item).is_global for item in records)
         if not records:
-            status = 'no A or AAAA record'
-        elif set(records) <= addresses:
-            status = 'points here'
+            status, passed = 'no A or AAAA record', False
+        elif set(records) & addresses:
+            status, passed = 'points here', True
+        elif public or not public_here:
+            status, passed = 'may point here', True
+            warnings.append(f'{host} points at {", ".join(records)}. If that is not this server, fix its A record. Ports 80 and 443 must be open.')
         else:
-            status = 'points elsewhere'
-        ok = ok and status == 'points here'
+            status, passed = 'points elsewhere', False
+        ok = ok and passed
         lines.append(host.ljust(width) + (', '.join(records) or '-').ljust(32) + status)
-    return '\n'.join(lines), ok
+    return '\n'.join(lines + warnings), ok
 
 
 def write(path, text):
