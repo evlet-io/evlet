@@ -406,7 +406,8 @@ position order: `{"items": [...], "total": n, "limit": l, "offset": o}`. `limit`
 100 (default 100). Nested collections alternate names and row IDs:
 `/api/project/01hc1sd9vc1ye/lines/phases/01hc1sdb0j8m4/tasks`. Every row on the path must be readable and belong
 to the row before it. Items have the same shape as embedded rows (readable fields only,
-no `evlet_owner` or `evlet_position`) and embed their own collections. `total` counts the
+no `evlet_owner` or `evlet_position`), embed their own collections and carry their
+virtual (`stored=False`) results, calculated over the whole saved document. `total` counts the
 rows this user can read. `Context.get` in Python returns every readable row.
 
 The ETag of a document covers every row the user can read, not only the embedded page, so a

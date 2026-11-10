@@ -1091,8 +1091,11 @@ def path_label(item, path):
     return None
 
 
-def settle(context, draft, *, complete, previous=None, kept=False):
+def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
     """Bring a document tree to a consistent state: inputs, fetches, calculations, then checks.
+
+    `checks=False` stops after the calculations, for reading a saved document's virtual results
+    (Business.add_virtual_values): its Link and field checks are a save's, not a read's.
 
     A preview (complete=False) returns errors and field states; a save (complete=True) also runs
     the full validation and raises ValidationError on any error. With `kept` (an ordinary write on a
@@ -1113,8 +1116,7 @@ def settle(context, draft, *, complete, previous=None, kept=False):
     for prefix, item in all_drafts:
         apply_inputs(item, prefix, internal(item), errors)
         object.__setattr__(item, '_caller', dict(item._values))
-        if not kept:
-            apply_fetches(context, item, prefix, prior(item), errors, targets)
+        apply_fetches(context, item, prefix, prior(item), errors, targets, virtual_only=kept)
     # derive() sets its values before calculations; a locked or posted record keeps them, like its results.
     if getattr(draft._definition, '__derives__', ()) and draft.parent is None and not kept:
         all_drafts = derive(context, draft, internal, errors, targets)
@@ -1125,6 +1127,8 @@ def settle(context, draft, *, complete, previous=None, kept=False):
         finite_settle(context, plan, draft, errors, states, complete, previous, kept)
     else:
         compute_legacy(context, draft, all_drafts, errors, states, complete, kept)
+    if not checks:
+        return errors, states
     # Every Link target is read once, in batches, before the per-field checks.
     targets.prefetch(link_values([item for _, item in all_drafts]))
     if complete:
@@ -1265,17 +1269,21 @@ def apply_inputs(item, prefix, internal, errors):
             errors[prefix + name] = str(exc)
 
 
-def apply_fetches(context, item, prefix, old, errors, targets=None):
-    """Copy `fetch='link.field'` values from the linked record when the link changed."""
+def apply_fetches(context, item, prefix, old, errors, targets=None, *, virtual_only=False):
+    """Copy `fetch='link.field'` values from the linked record when the link changed.
+
+    A virtual fetch (stored=False) has no saved copy, so it is always read from the linked record.
+    `virtual_only` reads only those, for a record that keeps its saved copies (a locked or posted one).
+    """
     for name, field in item._definition.__declared_fields__.items():
-        if not field.fetch: continue
+        if not field.fetch or virtual_only and field.stored: continue
         link_name, target_name = field.fetch.split('.')
         link = item._definition.__declared_fields__.get(link_name)
         if not isinstance(link, Link) or target_name not in link.target.__declared_fields__:
             raise ValueError('Fetch must reference a declared Link target field')
         if not field.read_only and name in item._submitted and item._values.get(name) is not None:
             if old is None or old._values.get(name) != item._values.get(name) or old._values.get(link_name) == item._values.get(link_name): continue
-        if not field.read_only and old is not None and old._values.get(link_name) == item._values.get(link_name): continue
+        if field.stored and not field.read_only and old is not None and old._values.get(link_name) == item._values.get(link_name): continue
         try:
             value = None
             if item._values.get(link_name) is not None:
@@ -1285,6 +1293,9 @@ def apply_fetches(context, item, prefix, old, errors, targets=None):
                 value = getattr(record, target_name)
             item._values[name] = field.clean(value)
         except ValueError as exc: errors[prefix + name] = str(exc)
+        except AccessError:
+            if field.stored: raise
+            item._values[name] = None  # A virtual copy of a record this user cannot read stays empty.
 
 
 def compute_legacy(context, draft, all_drafts, errors, states, complete, kept=False):
