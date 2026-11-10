@@ -220,7 +220,6 @@ class Business:
         from . import images, mentions
         images.initialize(self.database)
         mentions.initialize(self.database)
-        self.schedule_image_purge()
         self.settings.initialize()
         self.unsaved.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
@@ -261,6 +260,8 @@ class Business:
             self.jobs.policy = self.policy
             self.jobs.initialize()
             self.unsaved.schedule()
+            # After the queue's tables exist, so a new database gets the schedule on its first start.
+            self.schedule_image_purge()
             if self.application is not None:
                 with self.database._connection() as connection:
                     namespace = connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
@@ -1507,12 +1508,9 @@ class Business:
         from .jobs import Task
         if self.jobs is None or not any(images.holders(model) for model in self.registry.models.values()):
             return
-        self.jobs.tasks.setdefault(images.PURGE_TASK, Task(images.PURGE_TASK, images.purge_job(self), max_attempts=1))
-        try:
-            with self.database.transaction() as tx:
-                exists = tx.connection.execute('SELECT 1 FROM evlet_schedules WHERE name=?', (images.PURGE_TASK,)).fetchone()
-        except Exception:  # the jobs tables are created when the queue initializes
-            return
+        self.jobs.tasks.setdefault(images.PURGE_TASK, Task(images.PURGE_TASK, images.purge_job(self), max_attempts=1, external=True))
+        with self.database.transaction() as tx:
+            exists = tx.connection.execute('SELECT 1 FROM evlet_schedules WHERE name=?', (images.PURGE_TASK,)).fetchone()
         if not exists:
             self.jobs.schedule(images.PURGE_TASK, images.PURGE_TASK, {}, every=3600)
 

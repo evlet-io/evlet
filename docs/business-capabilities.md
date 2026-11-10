@@ -372,7 +372,9 @@ a URL or a `data:` URI ([internal/rich-text.md](internal/rich-text.md)).
   someone else's held image or to a purged one is refused with a field error. Images belong to the
   record's own fields; a child table row's rich text takes none.
 - Held images nobody saved are purged after 24 hours: on every upload, and by the hourly framework
-  task `evlet_image_purge` when the application runs jobs.
+  task `evlet_image_purge` when the application runs jobs. It runs outside a transaction (an
+  external task), commits its delete and then lets the storage reclaim files nothing references.
+  Its schedule is created when the application first initializes with jobs.
 - Print Design embeds a record's images in its PDF, and `Mailboxes.send_mail(..., html=..., record=...)`
   sends them inline (`cid:`), never as links.
 

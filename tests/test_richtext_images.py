@@ -186,6 +186,30 @@ def test_held_images_are_purged_after_a_day(app):
     assert status == 422 and 'no longer available' in error['fields']['body']
 
 
+def test_the_hourly_purge_runs_through_the_jobs_runner(tmp_path):
+    from evlet.images import PURGE_TASK
+    from evlet.jobs import JobQueue
+    registry = Registry(Note, Plain)
+    database = Database(tmp_path / 'jobs.sqlite3', registry)
+    jobs = JobQueue(database, [])
+    application = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False,
+                                                       allow_setup=True), jobs=jobs)
+    application.initialize()
+    http(application, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
+    admin = signed_in(application)
+    held = admin('POST', '/api/note/_images', image())[1]
+    assert held['id']
+    # The image was held more than a day ago; the purge reads the clock itself.
+    with database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_attachments SET created_at=created_at-?', (HOLD_SECONDS + 60,))
+    # The framework schedule runs the task as the worker does: tick, claim and execute.
+    assert jobs.run_one(now=int(time.time()) + 3600) is True
+    with database.transaction() as tx:
+        job = tx.connection.execute('SELECT state, error FROM evlet_jobs WHERE task=?', (PURGE_TASK,)).fetchone()
+    assert (job['state'], job['error']) == ('succeeded', None)
+    assert rows(application) == []
+
+
 def test_the_sanitiser_keeps_only_attachment_references():
     stored, text = sanitise('<p>a</p><img src="https://evil.example/x.png" data-attachment="5" alt="x" onerror="alert(1)">'
                             '<img src="data:image/svg+xml,<svg onload=alert(1)>"><figure class="rt-full huge"><img data-attachment="6"></figure>')
