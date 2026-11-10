@@ -32,6 +32,12 @@ describe('measureText', () => {
     expect(measureText(wide, visits, measure('sum', 'amount'), '0.00')).toBe('0.00');
     expect(measureText(wide, visits, measure('sum', 'amount'), '1250.500')).toBe('1,250.500');
     expect(measureText(wide, visits, measure('sum', 'amount'), 7)).toBe('7.00');
+    // With the route's currencies (docs/measures.md): its code first, then the plain amount at the sent places.
+    expect(measureText(wide, visits, measure('sum', 'amount'), '0.00', { m: 'SAR' })).toMatch(/0\.00$/);
+    expect(measureText(wide, visits, measure('sum', 'amount'), '0.00', { m: 'SAR' })).not.toMatch(/0\.000/);
+    expect(measureText(wide, visits, measure('sum', 'amount'), '1.234', { m: 'KWD' })).toContain('KWD');
+    expect(measureText(wide, visits, measure('sum', 'amount'), '0.00', {})).toBe('0.00');
+    expect(measureText(wide, visits, measure('count', null), 4, { m: 'SAR' })).toBe('4');
     // A Currency with no code at all shows 2 places, not 6.
     expect(String(displayOf(stored.fields[1] as any, '0.00'))).toMatch(/(^|\s)0\.00$/);
   });
