@@ -240,6 +240,15 @@ export function currencyPlaces(field: FieldLike, links: LinkSource | null = defa
   return () => currencyDecimals(code());
 }
 
+/** A Currency field's schema with the code its amount is in fixed (from its currency source), so text formatting
+ * (kinds.ts) shows that code at its decimals. Other fields' schema as it is. */
+export function moneyMeta(field: FieldLike, links: LinkSource | null = defaultLinks): () => FieldSchema {
+  const meta = field.meta;
+  if (meta.type !== 'currency') return () => meta;
+  const code = currencyCodeFor(field, links);
+  return () => ({ ...meta, currency: code() ?? undefined, currency_source: undefined });
+}
+
 /** The currency code of a Currency field for one record's values (a list row, say): see currencyFor. */
 export function currencyIn(meta: FieldSchema, value: (name: string) => unknown, links: LinkSource | null = defaultLinks): string {
   return currencyCodeIn(meta, value, links) ?? currencyOf(meta);

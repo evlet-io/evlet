@@ -7,7 +7,7 @@ import { cell, derive, effect, untrack, type Readable } from '../reactive';
 import { Icon, StatCard, type StatProps } from '../ui/base';
 import { uid } from '../ui/core';
 import { isBlank, isEmpty, type Folds } from '../ui/fold';
-import type { FieldLike, LinkSource } from '../ui/fields';
+import { moneyMeta, type FieldLike, type LinkSource } from '../ui/fields';
 import { formatOf } from './meta';
 import { plainOf } from '../richtext/html';
 
@@ -40,7 +40,8 @@ export function valueText(field: FieldLike, links: LinkSource | null): string {
   if (isEmpty(value)) return '';
   if (meta.type === 'link' && meta.target && links) return links.title(meta.target, String(value)).get() ?? '…';
   if (meta.type === 'richtext') return plainOf(String(value)).replace(/\s+/g, ' ').trim();
-  const text = formatOf(meta, value).replace(/\s+/g, ' ').trim();
+  // Money in the record's currency at its decimals (KWD 3, JPY 0).
+  const text = formatOf(moneyMeta(field, links)(), value).replace(/\s+/g, ' ').trim();
   const unit = (meta.type === 'integer' || meta.type === 'decimal') && meta.suffix ? (meta.suffix === '%' ? '%' : ` ${meta.suffix}`) : '';
   return text + unit;
 }

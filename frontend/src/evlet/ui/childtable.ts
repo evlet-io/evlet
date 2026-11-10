@@ -14,7 +14,7 @@ import type { Field, Row, Table, TableSection } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Button, Checkbox, Icon, IconButton, IconTile, Key } from './base';
 import { read, textOf, uid, type Prop, type Tint } from './core';
-import { BaseField, currencyFor, currencyPlaces, displayValue, FieldControl, fieldFor, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
+import { BaseField, currencyFor, currencyPlaces, displayValue, FieldControl, fieldFor, moneyMeta, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
 import { moneyChild } from './money';
 import { kindOf } from './kinds';
 import { openPopover, toast } from './layers';
@@ -132,10 +132,12 @@ export interface ChildTableControls {
 
 /** A row's key values on one line: "4 × 2,228.26 = 8,913.04" from two values typed in and a calculated one, else
  * the first values that are set. */
-export function rowSummary(row: Row, columns: ChildColumn[]): string {
-  // A Decimal shows its significant digits ("2", not "2.0000"); other values as the field formats them.
+export function rowSummary(row: Row, columns: ChildColumn[], links?: LinkSource | null): string {
+  // A Decimal shows its significant digits ("2", not "2.0000"); other values as the field formats them, money in
+  // the row's currency at its decimals.
   const text = (column: ChildColumn) => {
-    const shown = kindOf(column.meta.type).format(untrack(() => row.field(column.key).value.get()), column.meta);
+    const field = row.field(column.key);
+    const shown = kindOf(column.meta.type).format(untrack(() => field.value.get()), moneyMeta(field, links)());
     return column.meta.type === 'decimal' ? shown.replace(/(\.\d*?)0+(?=\D*$)/, '$1').replace(/\.(?=\D*$)/, '') : shown;
   };
   const numeric = columns.slice(1).filter(column => NUMERIC.has(column.meta.type));
@@ -339,10 +341,11 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const total = values.reduce((sum, value) => { const [whole, part = ''] = value.replace('-', '').split('.'); const units = BigInt(whole + part.padEnd(scale, '0')); return sum + (value.startsWith('-') ? -units : units); }, 0n);
     const negative = total < 0n, digits = (negative ? -total : total).toString().padStart(scale + 1, '0');
     const text = `${negative ? '-' : ''}${scale ? `${digits.slice(0, -scale)}.${digits.slice(-scale)}` : digits}`;
-    const parent = sums[column.key], places = typeof column.meta.scale === 'number' ? column.meta.scale : 2;
+    const parent = sums[column.key];
     if (column.meta.type === 'currency') {
       const source = parent && typeof parent === 'object' && 'meta' in parent ? parent : lines[0] ? lines[0].field(column.key) : null;
-      if (source) return moneyChild(text, currencyFor(source)(), places);
+      // At the currency's decimals (KWD 3, JPY 0), as the total line and the cells show it.
+      if (source) return moneyChild(text, currencyFor(source)(), currencyPlaces(source)());
     }
     return kindOf(column.meta.type).format(text, column.meta);
   };
@@ -664,7 +667,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       : html`<div class="g-x-f">${allColumns.map(column => html`<div class=${column.meta.type === 'longtext' ? 'wide' : ''}>${BaseField({ field: field(column.key), links: props.links })}</div>`)}</div>`;
     return html`<div class="g-ed-main" role="group" aria-label=${() => `Row ${index() + 1}: ${rowTitle(row)}`}>
         <div class="g-ed-h"><span class="g-ed-badge num">${() => String(index() + 1)}</span>
-          <div class="g-ed-ttl"><b>${() => rowTitle(row)}</b><span class="g-ed-sum">${() => { rows.get(); return rowSummary(row, fullColumns.get()); }}</span></div>
+          <div class="g-ed-ttl"><b>${() => rowTitle(row)}</b><span class="g-ed-sum">${() => { rows.get(); return rowSummary(row, fullColumns.get(), props.links); }}</span></div>
           ${IconButton({ icon: 'chevron-left', tip: 'Previous row', size: 'small', disabled: () => index() <= 0, onClick: () => stepEditor(-1) })}
           <span class="g-ed-pos num">${() => `${index() + 1} of ${rows.get().length}`}</span>
           ${IconButton({ icon: 'chevron-right', tip: 'Next row', size: 'small', disabled: () => index() >= rows.get().length - 1, onClick: () => stepEditor(1) })}

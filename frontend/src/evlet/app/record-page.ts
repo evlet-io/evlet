@@ -737,7 +737,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return [{ label: meta.label, empty: 'Not set', value: () => {
       const value = view(card).value.get();
       if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
-      return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(card), ctx.links)()) : formatOf(meta, value);
+      return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(card), ctx.links)(), currencyPlaces(view(card), ctx.links)()) : formatOf(meta, value);
     } }];
   });
   const summaryShown = !isNew && (!shows || shows.block('summary'));
