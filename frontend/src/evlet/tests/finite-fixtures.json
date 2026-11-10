@@ -13987,7 +13987,7 @@
        },
        "price": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "reason": {
@@ -13997,12 +13997,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        }
       }
@@ -14073,7 +14073,7 @@
        },
        "price": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "reason": {
@@ -14083,12 +14083,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        }
       }
@@ -14127,13 +14127,14 @@
       "price": "120",
       "reason": null,
       "stage": "won",
-      "terms": null,
+      "terms": "30",
       "total": "2766.00"
      },
      "trace": {
       "changed": [
        "discount",
        "discount:initial",
+       "terms",
        "terms:initial"
       ],
       "evaluated": 2,
@@ -14159,7 +14160,7 @@
        },
        "price": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "reason": {
@@ -14169,12 +14170,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        }
       }
@@ -14251,7 +14252,7 @@
       "price": null,
       "reason": null,
       "stage": "won",
-      "terms": null,
+      "terms": "30",
       "total": null
      },
      "trace": {
@@ -14291,7 +14292,7 @@
        },
        "price": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "reason": {
@@ -14301,12 +14302,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        }
       }
@@ -14383,7 +14384,7 @@
       "price": null,
       "reason": null,
       "stage": "won",
-      "terms": null,
+      "terms": "30",
       "total": null
      },
      "trace": {
@@ -14411,7 +14412,7 @@
        },
        "price": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "reason": {
@@ -14421,12 +14422,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        }
       }
@@ -14503,7 +14504,7 @@
       "price": null,
       "reason": null,
       "stage": "won",
-      "terms": null,
+      "terms": "30",
       "total": null
      },
      "trace": {
@@ -14533,7 +14534,7 @@
        },
        "price": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "reason": {
@@ -14543,12 +14544,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        }
       }
@@ -14632,7 +14633,7 @@
       "price": null,
       "reason": null,
       "stage": "won",
-      "terms": null,
+      "terms": "30",
       "total": null
      },
      "trace": {
@@ -14662,7 +14663,7 @@
        },
        "price": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "reason": {
@@ -14672,12 +14673,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": true,
+        "locked": false,
         "required": false
        }
       }
@@ -14761,7 +14762,7 @@
       "price": null,
       "reason": null,
       "stage": "won",
-      "terms": null,
+      "terms": "30",
       "total": null
      },
      "trace": {

@@ -1031,11 +1031,11 @@ export class FiniteDocument {
     this.pristine = true;
   }
 
-  // A field's lock as the server enforces it: decided on the saved row, or now for a new row.
+  // A field's lock as the server enforces it: decided on the row as saved. A new record or row has no saved
+  // state, so nothing is locked on it and its fields may be filled in any order.
   locked(row: Row, field: string): boolean {
     const saved = this.locks.get(row.handle) || {};
-    const value = own(saved, field) ? saved[field] : this.decided(row, field, 'locked_when', null);
-    return value !== false && (own(saved, field) || this.deps.has(nodeKey(row.handle, field + ':locked_when')));
+    return own(saved, field) && saved[field] !== false;
   }
 
   // {field: {applies, required, locked}} for fields of this row that declare rules.

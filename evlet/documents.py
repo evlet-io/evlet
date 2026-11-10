@@ -19,7 +19,7 @@ from .permissions import trusted
 from .models import ASSIGNED_ID, ValidationError, identifier, refuse_id
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
-from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal, wire
+from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal
 from . import sections
 
 
@@ -1427,28 +1427,12 @@ LOCKED_PENDING = 'This field is locked until the values its lock rule reads are 
 def locked_change(item, old, name):
     """Whether the caller (request body, Context values or an action) changed a locked field.
 
-    Values the engine writes (initial suggestions, cleared fields) are not caller changes. On a new
-    row, a nonempty value the caller supplied counts as a change unless it equals the field's default
-    or its initial suggestion.
+    Values the engine writes (initial suggestions, cleared fields) are not caller changes. A new record
+    or row has no saved value to keep, and its locks are never set (Document.locked).
     """
-    value = item._caller.get(name, item._values.get(name))
     if old is None:
-        return name in item._submitted and value not in EMPTY and value not in item._rules[name].get('allowed', ())
-    return value != old._values.get(name)
-
-
-def allowed_on_create(field, document, row, name):
-    """Values a locked field may take on create: its static default and its initial suggestion."""
-    allowed = []
-    if field.default is not MISSING and field.default is not None and not callable(field.default) and not isinstance(field.default, Ref):
-        allowed.append(field.validate(field.default))
-    result = document.results.get((row.handle, name + ':initial'))
-    if result is not None and result.state == 'ready' and result.value is not None:
-        try:
-            allowed.append(from_wire(field, wire(result.value, document.entries[row.path, name + ':initial']['scale'])))
-        except ValueError:
-            pass
-    return tuple(allowed)
+        return False
+    return item._caller.get(name, item._values.get(name)) != old._values.get(name)
 
 
 def from_wire(field, value):
@@ -1578,8 +1562,6 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
             decided = saved[name] if name in saved else document.decided(row, name, 'locked_when', None)
             if decided is None and policy.expression_allowed(user, item._definition, name, 'locked_when'):
                 state['message'] = LOCKED_PENDING
-            if item.id is None:
-                state['allowed'] = allowed_on_create(item._definition.__declared_fields__[name], document, row, name)
         object.__setattr__(item, '_rules', rules)
         for field in fields.get(row.path, ()):
             name = field['field']

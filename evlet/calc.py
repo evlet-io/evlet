@@ -1670,16 +1670,19 @@ class Document:
         self._pristine = True
 
     def locked(self, row, field):
-        """A field's lock as the server enforces it: decided on the saved row, or now for a new row."""
+        """A field's lock as the server enforces it: decided on the row as saved.
+
+        A new record or row has no saved state, so nothing is locked on it: its fields may be filled in any order.
+        """
         saved = self.locks.get(row.handle, {})
-        value = saved[field] if field in saved else self.decided(row, field, 'locked_when', None)
-        return value is not False and (field in saved or (row.handle, field + ':locked_when') in self.deps)
+        return field in saved and saved[field] is not False
 
     def rule_states(self, handle):
         """{field: {applies, required, locked}} for fields of this row that declare rules.
 
         Undecided rules (pending, error or null) fail closed: the field applies, is required and is locked.
-        A saved row's lock is decided on the row as loaded, so one write cannot unlock and change a field.
+        A saved row's lock is decided on the row as loaded, so one write cannot unlock and change a field;
+        a new row has no saved state and nothing on it is locked.
         """
         row = self._row(handle)
         states = {}
