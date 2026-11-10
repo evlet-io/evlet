@@ -24,7 +24,7 @@ import { DataTable, emptyPrefs, type Column } from '../ui/table';
 import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
-import type { JournalEntry, JournalPage } from './client';
+import type { JournalEntry, JournalPage, MeasureValues } from './client';
 import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, keyFields, listFields, measureLabel, measureView, numberField, orderTabs, screenModel, sections, sequenceField,
   summaryFields, titleOf, LIST_KEYS, panelView, type PanelView, type ActionMeta, type AuditPerson, type DetailExtras, type RecordAudit, type ScreenModel } from './meta';
 import { cellView } from './list-page';
@@ -591,7 +591,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   })() : null;
 
   const perRecord = (model.measures ?? []).filter(measure => measure.per_record);
-  const recordMeasures = cell<Record<string, unknown> | null>(null);
+  const recordMeasures = cell<MeasureValues | null>(null);
   if (perRecord.length && !isNew && model.summary !== false) effect(() => { options.detail.get(); void api.recordMeasures(name, store.id!).then(values => recordMeasures.set(values), () => recordMeasures.set(null)); });
   const stats: StatProps[] = summaryFields(model, new Set(factFields.map(meta => meta.name))).filter(meta => has(meta.name)).map(meta => ({
     label: meta.label, value: () => {
@@ -602,7 +602,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     empty: 'Not set',
     note: view(meta.name).calculated ? 'Calculated' : undefined,
   }));
-  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()![measure.name]) : '…' });
+  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' });
   const summary = stats.length && !isNew && (!shows || shows.block('summary')) ? SummaryStrip(stats) : null;
 
   // ---------- tabs ----------

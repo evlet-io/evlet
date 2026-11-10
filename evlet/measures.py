@@ -169,6 +169,7 @@ class Compiled:
     values: tuple         # parameters, in column order
     trend: tuple | None = None   # (Date field, grain, points) of a model-level measure
     color: str | None = None     # one of fields.COLORS
+    predicate: str | None = None  # the where= SQL alone (1 for rows that count); its parameters lead `values`
 
 
 @dataclass(frozen=True)
@@ -230,7 +231,7 @@ def compile_measure(registry, owner, name, measure):
         else:
             sql = ({'count_distinct': 'count(DISTINCT {})', 'min': 'min({})', 'max': 'max({})'}[measure.function].format(value),)
     return Compiled(name, measure.function, owner, target, measure.field, link, ir, reads, sql, tuple(values) * len(sql),
-                    trend, measure.color)
+                    trend, measure.color, predicate)
 
 
 def compile_trend(owner, measure):
@@ -587,9 +588,13 @@ def aggregate(tx, model, measures, group_by=(), filters=None, limit=None, after=
     return execute(tx.connection, tx.registry, model, compiled, groups, where, values, page=limit)
 
 
-def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, zone='UTC', search=('', None), children=()):
+def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, zone='UTC', search=('', None), children=(),
+               currencies=None):
     """Declared measure values: model-level over the filtered (and searched) records, or per record over related
-    rows. `search` is the list search text and the fields it looks in (None: the model's search fields)."""
+    rows. `search` is the list search text and the fields it looks in (None: the model's search fields).
+
+    `currencies` is an optional (codes, source_for) pair: `codes` receives the currency code of each money result
+    (see currency_codes), and `source_for(item)` gives the currency source the caller may use, or None."""
     scope_for = scope_for or (lambda target: ('', ()))
     if record_id is None:
         # Filters are checked even when no measure is available.
@@ -597,6 +602,8 @@ def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, z
         if not items:
             return {}
         where, values = combine(where, values, *scope_for(model))
+        if currencies is not None:
+            currencies[0].update(currency_codes(tx, items, where, values, zone, None, currencies[1]))
         return execute(tx.connection, tx.registry, model, items, [], where, values, zone)[0]
     if filters:
         raise ValidationError({'filters': 'Per-record measures take no filters'})
@@ -605,8 +612,57 @@ def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, z
         for link in dict.fromkeys(item.link for item in items if item.target is target):
             chosen = [item for item in items if item.target is target and item.link == link]
             where, values = combine(f' WHERE "record".{identifier(link)} = ?', [record_id], *scope_for(target))
+            if currencies is not None:
+                currencies[0].update(currency_codes(tx, chosen, where, values, zone, record_id, currencies[1]))
             result.update(execute(tx.connection, tx.registry, target, chosen, [], where, values, zone)[0])
     return {item.name: result[item.name] for item in items}
+
+
+def money(item):
+    """Whether a measure's result is an amount of money: a sum, minimum or maximum of a Currency field."""
+    return item.function in ('sum', 'min', 'max') and item.field is not None \
+        and getattr(item.target.__fields__[item.field], 'kind', None) == 'currency'
+
+
+def currency_codes(tx, items, where, values, zone, record_id, source_for):
+    """{measure name: ISO code} for money measures whose counted rows all share one currency.
+
+    A count has no currency. A sum, minimum or maximum of a Currency field takes the field's code: a fixed code
+    or setting as declared, the record's own code when the field reads it through the measure's Link (a per-record
+    measure), and otherwise the one code every counted row with a value has. Rows in different currencies, or a
+    source the caller cannot read, give no code: the amount is then shown without a symbol, never as the default.
+    """
+    result = {}
+    for item in items:
+        if not money(item):
+            continue
+        source = source_for(item)
+        if source is None:
+            continue
+        if 'code' in source:
+            result[item.name] = source['code']
+            continue
+        link, name = source.get('link'), source['field']
+        if record_id is not None and link == item.link:
+            # The currency of the record the measure is about, which the caller has read.
+            code = getattr(tx.get(item.owner, record_id), name, None)
+            if isinstance(code, str) and code:
+                result[item.name] = code
+            continue
+        column = f'"record".{identifier(name)}' if link is None else f'"linked".{identifier(name)}'
+        join = '' if link is None else (f' LEFT JOIN {identifier(tx.registry.name_for(item.target.__fields__[link].target))} AS "linked"'
+                                        f' ON "linked".id = "record".{identifier(link)}')
+        condition, parameters = f'"record".{identifier(item.field)} IS NOT NULL', []
+        if item.predicate is not None:
+            condition += f' AND {item.predicate} = 1'
+            parameters = [value.value(zone) if isinstance(value, Today) else value
+                          for value in item.values[:len(item.values) // len(item.sql)]]
+        sql = (f'SELECT min({column}), max({column}), count(*) - count({column}) '
+               f'FROM {identifier(tx.registry.name_for(item.target))} AS "record"{join}{where} {"AND" if where else "WHERE"} {condition}')
+        low, high, missing = tx.connection.execute(sql, [*values, *parameters]).fetchone()
+        if isinstance(low, str) and low and low == high and not missing:
+            result[item.name] = low
+    return result
 
 
 def measures(tx, model, record_id=None, filters=None):
@@ -663,7 +719,9 @@ def searched(business, user, model, search):
     return search, [name for name in view_for(model)['search_fields'] if name in readable]
 
 
-def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=None, search=''):
+def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=None, search='', currencies=None):
+    """An aggregate with the caller's permissions. A `currencies` dict receives the currency code of each money
+    measure whose counted records share one, over all groups (currency_codes)."""
     policy, registry = business.policy, business.registry
     policy.require(user, model, 'read')
     readable = policy.fields(user, model)
@@ -691,7 +749,10 @@ def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=N
     text, fields = searched(business, user, model, search)
     where, values = SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields)
     where, values = combine(where, values, *policy.scope_sql(user, model))
-    return execute(tx.connection, registry, model, compiled, groups, where, values, getattr(business, 'timezone', None) or 'UTC')
+    zone = getattr(business, 'timezone', None) or 'UTC'
+    if currencies is not None:
+        currencies.update(currency_codes(tx, compiled, where, values, zone, None, lambda item: currency_source(business, user, item)))
+    return execute(tx.connection, registry, model, compiled, groups, where, values, zone)
 
 
 # The list page's tabs (Meta.list_tabs): record counts per value of one State, Select or Link field.
@@ -755,8 +816,12 @@ def available(business, user, model, per_record):
             if (item.link is not None) == per_record and allowed(business.policy, user, item)]
 
 
-def scoped_measures(business, tx, user, model, record_id=None, filters=None, search=''):
-    """Declared measures this role may read; others are left out. Row scopes apply to every model."""
+def scoped_measures(business, tx, user, model, record_id=None, filters=None, search='', currencies=None):
+    """Declared measures this role may read; others are left out. Row scopes apply to every model.
+
+    A `currencies` dict receives the currency code of each money result the caller may see (currency_codes)."""
+    if currencies is not None:
+        currencies = (currencies, lambda item: currency_source(business, user, item))
     policy = business.policy
     policy.require(user, model, 'read')
     items = available(business, user, model, record_id is not None)
@@ -765,7 +830,33 @@ def scoped_measures(business, tx, user, model, record_id=None, filters=None, sea
     else:
         policy.record(tx, user, model, record_id)
     return values_for(tx, model, items, record_id, filters, lambda target: policy.scope_sql(user, target),
-                      getattr(business, 'timezone', None) or 'UTC', searched(business, user, model, search), getattr(business, 'children', {}).values())
+                      getattr(business, 'timezone', None) or 'UTC', searched(business, user, model, search), getattr(business, 'children', {}).values(),
+                      currencies)
+
+
+def currency_source(business, user, item):
+    """The currency source of a money measure this caller may use: {'code'}, {'field'} or {'link', 'field'}, or None.
+
+    A setting becomes its code. A field must be readable, and a Link it reads through must lead to a model the
+    caller reads without a row scope, unless it is the measure's own Link back to the record the page shows.
+    """
+    policy, target = business.policy, item.target
+    source = target.__fields__[item.field].currency_source()
+    if source is None or 'code' in source:
+        return source
+    if 'setting' in source:
+        entry = business.currency_for(user, target, {'name': item.field, 'currency_source': source}, set())
+        return {'code': entry['currency']} if entry.get('currency') else None
+    readable = policy.fields(user, target)
+    if 'link' not in source:
+        return source if source['field'] in readable else None
+    link = target.__fields__.get(source['link'])
+    if source['link'] not in readable or not isinstance(link, Link) or not policy.allows(user, link.target, 'read') \
+            or source['field'] not in policy.fields(user, link.target):
+        return None
+    if source['link'] != item.link and policy.rule(user, link.target).scope is not None:
+        return None
+    return source
 
 
 def schema(business, user, model):
@@ -858,14 +949,17 @@ def route(business, scope, user, model, parts):
         connection.execute('BEGIN')
         tx = Session(connection, business.registry)
         if parts[3] == 'aggregate':
-            rows = scoped_aggregate(business, tx, user, model, requested, group_by, filters, query.get('q', ''))
+            codes = {}
+            rows = scoped_aggregate(business, tx, user, model, requested, group_by, filters, query.get('q', ''), codes)
             compiled, groups = prepare(business.registry, model, requested, group_by)
             items = [{**{group.key: encode_group(model, group, row[group.key]) for group in groups},
                       **{item.name: encode(item, row[item.name]) for item in compiled}} for row in rows]
-            return 200, {'group_by': [group.key for group in groups], 'measures': list(requested), 'items': items}, []
-        result = scoped_measures(business, tx, user, model, record_id, filters, query.get('q', ''))
+            return 200, {'group_by': [group.key for group in groups], 'measures': list(requested), 'items': items,
+                         **({'currencies': codes} if codes else {})}, []
+        codes = {}
+        result = scoped_measures(business, tx, user, model, record_id, filters, query.get('q', ''), codes)
     items = {item.name: item for item in declared(business.registry, model)}
-    return 200, {'measures': {name: encode(items[name], value) for name, value in result.items()}}, []
+    return 200, {'measures': {name: encode(items[name], value) for name, value in result.items()}, **({'currencies': codes} if codes else {})}, []
 
 
 def encode_group(model, group, value):
