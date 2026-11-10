@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "{{name}}"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["evlet>=0.3.0,<0.4"]
+dependencies = ["evlet>=0.4.0,<0.5"]
 
 [tool.evlet]
 app = true

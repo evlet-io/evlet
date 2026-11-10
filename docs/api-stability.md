@@ -187,7 +187,7 @@ A deprecation is a plain warning at the call site:
 warnings.warn("Foo(bar=...) is deprecated; use Foo(baz=...)", DeprecationWarning, stacklevel=2)
 ```
 
-Apps should pin Evlet to one minor series, such as `evlet>=0.3.0,<0.4`, and run their tests
+Apps should pin Evlet to one minor series, such as `evlet>=0.4.0,<0.5`, and run their tests
 with `-W error::DeprecationWarning` before they move to the next series.
 
 ## Changing the surface

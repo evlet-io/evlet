@@ -48,7 +48,7 @@ version too. `apps.lock` and the database's installed manifest record the Evlet
 version and the last framework migration an instance was migrated with:
 
 ```json
-{"apps": {...}, "evlet": {"version": "0.3.0", "schema": "0007_money_scale"}}
+{"apps": {...}, "evlet": {"version": "0.4.0", "schema": "0007_money_scale"}}
 ```
 
 After you update Evlet in the environment, `evlet serve` and `evlet dev` refuse to
