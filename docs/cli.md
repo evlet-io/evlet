@@ -220,11 +220,13 @@ it exits with status 1 when there is any difference. See [effects.md](effects.md
 does, then prints the resolved hosts and paths, marking locked rows and where each
 row came from. See [routing.md](routing.md).
 `proxy` prints a Caddy (`--caddy`) or nginx (`--nginx`) configuration for the
-instance hosts, refusing `/controls` and `/docs` on sub-hosts. `--write PATH` writes
+instance hosts, refusing `/controls` and `/docs` on sub-hosts and framework `/_/`
+paths other than the MCP, OAuth and mailbox sign-in routes. `--write PATH` writes
 it to that file instead; nothing else is written and no service is reloaded.
-`--check` reports whether each host's A and AAAA records point at this server and
-exits with status 1 when one does not; pass `--ip` when the public address cannot
-be detected.
+`--check` reports where each host's A and AAAA records point. It warns when a host
+points at a public address this server cannot see as its own (behind NAT), and exits
+with status 1 only when a host has no record, or points only at private addresses while
+this server has a public one. `--ip` names this server's public address.
 `link-user` links an account to a record, such as a portal user to their customer,
 for row scopes like `own_customer`, or a staff user to their employee record for a
 team scope (`Hierarchy.team`). `--remove` removes the link. Both are written to the Controls
@@ -419,19 +421,54 @@ After installing the apps it:
 3. Writes `deploy/evlet-acme.caddy` (the `evlet proxy acme --caddy` output) and
    `deploy/evlet-acme.service`, a systemd unit like the one below that runs
    `evlet serve acme --jobs` on 127.0.0.1. Caddy is the only public listener.
-4. Checks DNS like `evlet proxy acme --check`. If the host does not point at this
-   server yet, it stops; pass `--ip` when the public address cannot be detected.
+4. Checks DNS like `evlet proxy acme --check`. `--ip` is never required. A host that
+   resolves to an address of this server passes. Behind NAT, as on most cloud servers,
+   the server sees only a private address, so a host that points at a public address
+   gets one warning line, such as `erp.example.com points at 84.12.169.35. If that is
+   not this server, fix its A record. Ports 80 and 443 must be open.`, and setup goes on;
+   Caddy keeps retrying the certificate. It stops only when the host has no A or AAAA
+   record, or points only at private addresses while this server has a public one.
+   `--ip` names this server's public address when you want an exact match. Once a
+   check passes with it, the address is kept in `deploy/server.json` and used by later
+   runs; a new `--ip` replaces it.
 5. Prints the privileged steps: copy the two files into `/etc/systemd/system/`
    and `/etc/caddy/`, add an `import` line to `/etc/caddy/Caddyfile`, then
    `systemctl daemon-reload`, `systemctl enable --now evlet-acme` and
    `systemctl reload caddy`, each with `sudo`.
 
 Review the two files, then run those steps yourself, or run the same command again
-with `--apply`. `--apply` shows each step before running it, and `sudo` asks for
+with `--apply`. Every run writes both files again from the current Evlet. When the copy
+in `/etc/caddy/` or `/etc/systemd/system/` differs, it says the copy is out of date, and
+`--apply` installs the new one and reloads Caddy. When the unit changed, it also restarts
+the service. After Caddy reloads, `--apply` asks
+`https://erp.example.com/.well-known/oauth-protected-resource` a few times over about half
+a minute and prints whether the site answers. This is information only: while Caddy is
+still getting the certificate it says so and the command still succeeds. `--apply` shows each step before running it, and `sudo` asks for
 your password; nothing runs with `sudo` without it. Caddy must already be installed;
 Evlet does not install it. `--dev` and `--host` cannot be combined: development
 servers and sign-in links stay on loopback. This prepares a single-server site; it
 does not make Evlet production ready.
+
+The Caddy site refuses `/_/*` from outside except the routes MCP clients and mailbox
+sign-in need: `/_/mcp`, `/_/oauth/authorize`, `/_/oauth/token`, `/_/oauth/register`,
+`/_/oauth/revoke`, `/_/mail/callback` and `/_/mail/continue.js`
+([routing.md](routing.md#evlet-proxy)). The site file written by 0.4.0 refused all of
+`/_/*`, so remote MCP got 404. To upgrade such a site, as the service user:
+
+```sh
+sudo systemctl stop evlet-acme
+myproject/.venv/bin/python -m pip install -U evlet
+evlet migrate acme --project myproject
+evlet setup myproject --app notes --instance acme --host erp.example.com --apply
+```
+
+The last step writes the new Caddy site, installs it, reloads Caddy and starts the
+service again.
+
+`evlet serve` logs one warning line at start-up while the installed
+`/etc/caddy/evlet-acme.caddy` still blocks one of those routes. It only reads that file;
+nothing outside `--apply` changes `/etc` or calls `sudo`. Controls, AI, MCP has a
+**Check** button that tests the public address from the server.
 
 ### Serve an instance behind Caddy
 
@@ -466,9 +503,16 @@ only one process per instance. Add this site to `/etc/caddy/Caddyfile`:
 
 ```text
 app.example.com {
+    @internal {
+        path /_/*
+        not path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js
+    }
+    respond @internal 404
     reverse_proxy 127.0.0.1:8000
 }
 ```
+
+`evlet proxy acme --caddy` prints this block for your hosts.
 
 Caddy obtains the certificate and passes the original Host header, which must
 match `domain`. Then run:

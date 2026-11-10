@@ -11,11 +11,11 @@ from ..identity import path_id
 
 def dispatch(application, scope):
     """Return a UI response or None when the core application owns the route."""
-    from ..app import HTTPError
+    from ..app import HTTPError, TLS_CHECK
 
     path, method = scope['path'], scope['method']
     host = dict(scope.get('headers', [])).get(b'host', b'')
-    if path == '/_/tls-allowed':
+    if path == TLS_CHECK:
         return _tls_allowed(application, scope)
     if not path.startswith('/api/') and method == 'GET':
         if application.business: application.business.auth.guard(scope)

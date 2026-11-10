@@ -160,6 +160,8 @@ export interface KeysApi {
 /** A connected AI assistant, as Controls lists it. Per-request detail stays on each person's own page. */
 export interface AssistantRow { id: number; client_name: string; username: string; role: string; created_at: number; last_used: number | null; calls: number }
 export interface McpOverview { address: string; clients: AssistantRow[]; totals: { reads: number; writes: number; denied: number } }
+/** Controls → AI → MCP: whether the public address reaches /_/mcp. checked is false on loopback or with MCP off. */
+export interface McpReach { checked: boolean; reachable: boolean | null; reason: string; at?: number }
 /** Controls → AI → Eva: whether config.py turned AI on, and what Controls may set. Never the provider key. */
 export interface EvaConfig {
   configured: boolean; active_users: number; allowed_users: number; jobs: boolean; settings: Record<string, unknown>;
@@ -286,6 +288,7 @@ export class ControlsClient extends ApiClient implements KeysApi {
   async createKey(body: { name: string; scope: KeyScope; user?: string }) { return (await this.request<CreatedKey>('POST', '/api/_controls/keys', { body })).data; }
   async revokeKey(id: number) { return (await this.request<{ items: ApiKeyRow[] }>('DELETE', `/api/_controls/keys/${id}`)).data; }
   async mcp() { return (await this.request<McpOverview>('GET', '/api/_controls/mcp')).data; }
+  async mcpReach() { return (await this.request<McpReach>('POST', '/api/_controls/mcp/reach', { body: {} })).data; }
   async evaConfig() { return (await this.request<EvaConfig>('GET', '/api/_controls/eva')).data; }
   async evaUsage(period: string) { return (await this.request<EvaUsage>('GET', '/api/_controls/eva/usage', { query: { period } })).data; }
   async toolCalls(query: { origin?: string; outcome?: string; q?: string; before?: number }) {

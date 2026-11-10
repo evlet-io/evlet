@@ -18,6 +18,14 @@ logger = logging.getLogger(__name__)
 MAX_BODY_BYTES = 64 * 1024
 # Unsaved changes may be up to 1 MB (the unsaved.entry_kb maximum); the route checks the instance limit.
 UNSAVED_BODY = 1024 * 1024 + 4096
+# Framework routes under /_/ that clients on the internet must reach: the remote MCP endpoint, its
+# OAuth 2.1 sign-in, and the return from a personal mailbox's OAuth sign-in. The Caddy and nginx files
+# that evlet proxy and evlet setup write pass exactly these and refuse every other /_/ path.
+MCP_PATHS = ('/_/mcp', '/_/oauth/authorize', '/_/oauth/token', '/_/oauth/register', '/_/oauth/revoke')
+MAIL_PATHS = ('/_/mail/callback', '/_/mail/continue.js')
+PUBLIC_PATHS = MCP_PATHS + MAIL_PATHS
+# The Caddy on-demand TLS check answers loopback callers only; the proxy refuses it from outside.
+TLS_CHECK = '/_/tls-allowed'
 
 
 def image_limit(business):
@@ -121,7 +129,7 @@ class Application:
                 await self._eva_stream(scope, receive, send)
                 return
             body = None
-            internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/'))
+            internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] != TLS_CHECK
             if internal:
                 # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
                 data = bytearray()
@@ -371,7 +379,7 @@ class Application:
 
     def _internal(self, scope, raw):
         self.business.controls.refresh()
-        if scope['path'] in ('/_/mail/callback', '/_/mail/continue.js'):
+        if scope['path'] in MAIL_PATHS:
             return self.business.mailboxes.callback(scope, raw)
         return self.business.assistants.dispatch(scope, raw)
 

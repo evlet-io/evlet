@@ -4,6 +4,45 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **Remote MCP works behind the generated proxy.** The Caddy and nginx files from
+  `evlet proxy` and `evlet setup --host` refused every `/_/` path, so `/_/mcp`, the OAuth
+  sign-in at `/_/oauth/*` and the mailbox sign-in return at `/_/mail/*` got 404, and a
+  Claude custom connector could not connect. They now pass exactly those routes
+  (`evlet.app.PUBLIC_PATHS`) and still refuse the rest, such as `/_/tls-allowed`. A test
+  fails if a new `/_/` route is not in either group.
+- **The on-demand TLS check answers on instances with accounts.** `/_/tls-allowed` fell into
+  the MCP routes and answered 404 for every host.
+- **`evlet setup --host --apply` replaces outdated installed files.** It says when the copy in
+  `/etc/caddy/` or `/etc/systemd/system/` is out of date, installs the new one, reloads Caddy,
+  and restarts the service when its unit changed.
+
+### Added
+
+- `evlet serve` logs one warning line at start-up when the installed
+  `/etc/caddy/evlet-<instance>.caddy` blocks a public route, with the command to fix it.
+- `evlet setup --host` never needs `--ip`. Behind NAT, a host that points at a public address
+  the server cannot see as its own gets one warning line and setup goes on. It stops only for a
+  host with no record, or with only private records while the server has a public address.
+  `evlet proxy --check` and Controls, Routing follow the same rule (`may point here`).
+- A `--ip` given to `evlet setup --host` is kept in `deploy/server.json` after a passing check and
+  used by later runs. A new `--ip` replaces it.
+- After `--apply` reloads Caddy, `evlet setup --host` checks for about half a minute whether
+  `https://<host>` answers and prints the result. It never fails the command.
+- Controls, AI, MCP: a **Check** button shows whether the public address reaches `/_/mcp`,
+  with a short reason when it does not. Admins only, on demand.
+
+### Upgrading
+
+A site set up with `evlet setup --host` on 0.4.0 needs its Caddy file updated. As the service
+user: stop the service, upgrade Evlet in the project's `.venv`, run `evlet migrate <instance>`,
+then run the same `evlet setup ... --host ... --apply` command again
+([docs/cli.md](docs/cli.md#serve-a-site-on-a-domain-in-one-go)). With nginx, write the file again
+with `evlet proxy <instance> --nginx` and reload nginx.
+
 ## 0.4.0 (10-11-2026)
 
 This release adds decimal places per currency with money stored at 6 places, the compact record page

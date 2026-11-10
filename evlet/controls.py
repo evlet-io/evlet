@@ -1290,8 +1290,9 @@ class Controls:
             return self.workspace_route(scope, body, user)
         self.check(scope, user)
         path, method = scope['path'].removeprefix('/api/_controls'), scope['method']
-        # Every change asks for a recent two-step code; reading, trying a naming series and previewing a print design do not.
-        if method not in ('GET', 'HEAD') and not re.fullmatch(r'/naming/[A-Za-z][A-Za-z0-9_]{0,63}/try', path) and path != '/prints/preview':
+        # Every change asks for a recent two-step code; reading, trying a naming series, previewing a print design
+        # and checking that MCP is reachable do not.
+        if method not in ('GET', 'HEAD') and not re.fullmatch(r'/naming/[A-Za-z][A-Za-z0-9_]{0,63}/try', path) and path not in ('/prints/preview', '/mcp/reach'):
             self.business.settings.recently_verified(user)
         if (path == '/prints' or path.startswith('/prints/')) and getattr(self.business, 'prints', None) is not None:
             response = self.business.prints.designer.dispatch(path, method, body, user)
@@ -1376,6 +1377,8 @@ class Controls:
                 raise AccessError(503, str(exc)) from None
         if path == '/mcp' and method == 'GET':
             return 200, self.business.assistants.overview(scope), []
+        if path == '/mcp/reach' and method == 'POST':
+            return 200, self.business.assistants.reach(scope, user), []
         if path == '/tools' and method == 'GET':
             # The Tool log: every call from Eva, MCP clients and the API.
             from .tools import query_of

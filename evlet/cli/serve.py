@@ -174,10 +174,37 @@ def development_dirs(root, path):
     return dirs
 
 
+def proxy_warning(root, name, domain, port=8000):
+    """One line when the Caddy site evlet setup installed for this instance refuses a public /_/ route, else None.
+
+    It only reads the installed file, and only when it can; it never changes it."""
+    import shlex
+    from ..app import PUBLIC_PATHS
+    from ..instances import read_lock
+    from . import proxy, site
+    target = site.installed(name)[1]
+    try:
+        text = target.read_text(encoding='utf-8')
+    except (OSError, UnicodeError):
+        return None
+    refused = proxy.caddy_refuses(text, PUBLIC_PATHS)
+    if not refused:
+        return None
+    try:
+        apps = ','.join(read_lock(child(root, 'instances', name))['apps']) or 'APP'
+    except (OSError, ValueError, KeyError):
+        apps = 'APP'
+    command = ['evlet', 'setup', str(root), '--instance', name, '--app', apps, '--host', domain or 'HOST', *(['--port', str(port)] if port != 8000 else []), '--apply']
+    return (f'{target} blocks {", ".join(refused)}, so MCP clients and mailbox sign-in cannot reach this instance. '
+            f'Run {shlex.join(command)} to update it (add --ip with the public address if DNS checks fail).')
+
+
 def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=False, debug=False, link=True, user=None):
     from ..instances import read_instance
     path = child(root, 'instances', name)
     config = read_instance(path)
+    if not development and (warning := proxy_warning(root, name, config.domain, port)):
+        logging.getLogger(__name__).warning('%s', warning)
     primary = declares_primary(path)
     if development and (host not in ('127.0.0.1', 'localhost') or config.domain or primary):
         raise ValueError('Development serving requires a local instance and loopback host')

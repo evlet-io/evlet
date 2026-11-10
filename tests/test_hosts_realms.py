@@ -331,13 +331,19 @@ CADDY = '''# Evlet reads client addresses from X-Forwarded-For only from trusted
 #     trusted_proxies=("127.0.0.1", "::1"),
 
 erp.acme.com {
-\t@internal path /_/*
+\t@internal {
+\t\tpath /_/*
+\t\tnot path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js
+\t}
 \trespond @internal 404
 \treverse_proxy 127.0.0.1:8000
 }
 
 portal.acme.com {
-\t@internal path /_/*
+\t@internal {
+\t\tpath /_/*
+\t\tnot path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js
+\t}
 \trespond @internal 404
 \t@primary_only path_regexp (?i)^/(controls|docs)(/|$)
 \trespond @primary_only 404
@@ -387,7 +393,11 @@ def test_routes_proxy_and_link_user_commands(project, capsys, tmp_path, hashed):
     application = runtime(project)
     try:
         report, ok = proxy.check(application.routes, ['203.0.113.5'], resolve=lambda host, port, proto: [(0, 0, 0, '', ('203.0.113.5' if host == 'erp.acme.com' else '198.51.100.7', 0))])
-        assert not ok and re.search(r'erp\.acme\.com +203\.0\.113\.5 +points here', report) and 'portal.acme.com   198.51.100.7' in report
+        # This server has no public address, so a record elsewhere warns and setup goes on.
+        assert ok and re.search(r'erp\.acme\.com +203\.0\.113\.5 +points here', report) and re.search(r'portal\.acme\.com +198\.51\.100\.7 +may point here', report)
+        assert 'portal.acme.com points at 198.51.100.7. If that is not this server, fix its A record. Ports 80 and 443 must be open.' in report
+        # It stops only for a host without a record.
+        assert not proxy.check(application.routes, ['203.0.113.5'], resolve=lambda *args, **kwargs: [])[1]
         assert proxy.check(application.routes, ['203.0.113.5'], resolve=lambda *args, **kwargs: [(0, 0, 0, '', ('203.0.113.5', 0))])[1]
         status, page, _ = http(application, 'GET', '/anything', headers={b'host': b'portal.acme.com'})
         assert status == 200 and b'Notes portal' in page and config(page)['realm'] == 'portal'

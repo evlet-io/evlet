@@ -7,7 +7,7 @@ import { cell } from '../reactive';
 import { Button, IconButton, StatusPill, Switch } from '../ui/base';
 import { copyText, DialogFooter, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
-import type { McpOverview } from './client';
+import type { McpOverview, McpReach } from './client';
 import { idOf } from './drafts';
 import { ask, message } from './people';
 
@@ -71,6 +71,17 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
       catch (failure) { toast(message(failure), { icon: 'info' }); }
     }, true);
   const totals = () => overview.get()?.totals ?? { reads: 0, writes: 0, denied: 0 };
+  // Reachability is checked only when an admin asks; the server keeps the answer for half a minute.
+  const reach = cell<McpReach | null>(null), checking = cell(false);
+  const check = async () => {
+    checking.set(true);
+    try { reach.set(await ctx.api.mcpReach()); } catch (failure) { toast(message(failure), { icon: 'info' }); } finally { checking.set(false); }
+  };
+  const reachPill = () => {
+    const value = reach.get();
+    if (!value || value.reachable === null) return StatusPill({ label: 'Not checked', tint: 'slate' });
+    return value.reachable ? StatusPill({ label: 'Yes', tint: 'green' }) : StatusPill({ label: 'No', tint: 'rose' });
+  };
 
   return html`<div>
     ${Head('MCP', 'Let AI clients such as Claude work with this instance. They sign in as a user with Allow MCP and see only what that user is allowed to see.')}
@@ -80,6 +91,9 @@ export function McpPage(ctx: ControlsContext): HTMLElement {
         ${row('enabled', 'MCP server', 'Turning it off stops every client straight away.', Switch({ on, ariaLabel: 'MCP server', onChange: next => set('enabled', next) }))}
         ${row(null, 'Address', html`Remote clients connect here. Local clients can run <code class="ctl-icode">evlet mcp</code> instead.`,
           html`<code class="ctl-icode">${() => overview.get()?.address ?? ''}</code>${IconButton({ icon: 'copy', tip: 'Copy', onClick: () => void copyText(overview.peek()?.address ?? '', 'the address') })}`)}
+        ${() => state.get().me.role === 'admin' ? row(null, 'Reachable from the internet',
+          () => reach.get()?.reason ?? 'Checks the public address the way an AI client does: the sign-in details, then the MCP endpoint.',
+          html`${reachPill}${Button({ label: () => checking.get() ? 'Checking…' : 'Check', size: 'small', icon: 'globe', disabled: checking, onClick: () => void check() })}`) : null}
         ${row('allow_writes', 'Allow writes', "Off by default. When on, clients can create, update and delete records and run actions, within the user's permissions.",
           Switch({ on: writes, ariaLabel: 'Allow writes', disabled: () => !on(), onChange: allowWrites }))}
         ${row('rate', 'Tool calls per minute', 'Per client. The framework allows at most 60.',

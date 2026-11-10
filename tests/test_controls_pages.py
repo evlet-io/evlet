@@ -192,9 +192,16 @@ def test_routing_writes_the_proxy_config_and_checks_hosts_with_evlet_proxy(hosts
     monkeypatch.setattr(system, 'bounded', lambda resolve: lambda host, port, **options: [(2, 1, 6, '', (records[host], 0))])
     monkeypatch.setattr(system, 'certificate', lambda host: {'certificate': 'valid', 'expires': 1800000000})
     checked = controls.system.check_hosts(types.SimpleNamespace(id=1))
-    assert checked == {'ok': False, 'notes': [], 'hosts': [
+    # A public record that is not this server's address only warns: it may be a NAT or a CDN in front.
+    assert checked == {'ok': True, 'notes': ['portal.acme.com points at 1.1.1.1. If that is not this server, fix its A record. Ports 80 and 443 must be open.'], 'hosts': [
         {'host': 'erp.acme.com', 'records': '9.9.9.9', 'dns': 'points here', 'certificate': 'valid', 'expires': 1800000000},
-        {'host': 'portal.acme.com', 'records': '1.1.1.1', 'dns': 'points elsewhere', 'certificate': None, 'expires': None}]}
+        {'host': 'portal.acme.com', 'records': '1.1.1.1', 'dns': 'may point here', 'certificate': 'valid', 'expires': 1800000000}]}
+    # A private record while this server has a public address is wrong for sure.
+    records['portal.acme.com'] = '10.0.0.5'
+    controls.system.checked.clear()
+    checked = controls.system.check_hosts(types.SimpleNamespace(id=1))
+    assert checked['ok'] is False and checked['notes'] == []
+    assert checked['hosts'][1] == {'host': 'portal.acme.com', 'records': '10.0.0.5', 'dns': 'points elsewhere', 'certificate': None, 'expires': None}
 
 
 def test_export_writes_the_own_customer_preset_with_the_public_function(hosts):
