@@ -4,484 +4,251 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.0 (10-11-2026)
+
+This release adds decimal places per currency with money stored at 6 places, the compact record page
+without tabs, child table tools and section rows, image fields, derived values, ledger models,
+workspaces, list tabs and `evlet setup` in one go. It removes the Python page API and native panels,
+which the browser never used. It covers #120 to #159. Evlet is still not production ready.
+
+### Upgrading
+
+- **Run `evlet migrate` for each instance before you serve it.** An instance migrated with 0.3.0
+  refuses to serve until you do. Stop the server first. It backs up the database, then runs the new
+  framework steps `0006_fixed_ids` (a trigger on every model table that refuses an id change) and
+  `0007_money_scale` (every stored Currency amount moves to 6 places, exactly), then the app
+  migrations ([docs/app-upgrades.md](docs/app-upgrades.md#upgrade-evlet)).
+- **Apps must allow Evlet 0.4.** Change an app's dependency from `evlet>=0.3.0,<0.4` to
+  `evlet>=0.4.0,<0.5`. New apps get this by default.
+- Then work through the Breaking list below. [docs/app-upgrades.md](docs/app-upgrades.md#from-03-to-04)
+  has the same steps as a checklist.
 
 ### Breaking
 
-- **Record pages have no tabs: every record uses the compact record page.** `Tab`, `Meta.tabs` and
-  `Meta.default_tab` are removed; using them fails when the model is defined, with a message pointing to
-  `Main` and `Section`. A model without `Meta.layout` puts every field in the primary area, in
-  declaration order, followed by its Tables; a layout of sections only uses its first section as the
-  primary area and the others as "more information". Activity moves to the side column (a drawer in a
-  narrow window, so the record comes first); Revisions, Related and Postings are rows of more
-  information. The record address no longer takes `?tab=`, and a list's side panel no longer writes
-  `?rtab=`. `record_layout` loses its `compact` key and is `{"blocks": [...]}` only. Controls layouts no
-  longer take a record tab order (`tabs`, `default_tab`); one saved before keeps its sections and panel.
-  The side panel's narrow child rows (`ChildRows`), the Key fields and Related side blocks, sticky record
-  tabs and `keepTabPlace` are gone ([docs/app-upgrades.md](docs/app-upgrades.md)).
+- **Record pages have no tabs.** `Tab`, `Meta.tabs` and `Meta.default_tab` are removed. They are
+  removed without the usual deprecation period, by decision of the project owner, because no apps
+  built on Evlet have been released yet. Using them fails when the model is defined, with a message
+  that points to `Main` and `Section`. Lay a record out with `Main(fields, *tables)` first in
+  `Meta.layout` and `Section(...)` and the other blocks after it. A model without `Meta.layout` puts
+  every field in the primary area, in declaration order, followed by its Tables; a layout of
+  sections only uses its first section as the primary area and the others as "more information".
+  Activity moves to the side column (a drawer in a narrow window); Revisions, Related and Postings
+  are rows of "more information". The record address no longer takes `?tab=`, and a list's side
+  panel no longer writes `?rtab=`. `record_layout` in `/api/schema` is `{"blocks": [...]}` only, with
+  no `compact` key. Controls layouts no longer take a record tab order; one saved before keeps its
+  sections and panel. The side panel's narrow child rows (`ChildRows`), the Key fields and Related
+  side blocks, sticky record tabs and `keepTabPlace` are gone.
+- **Currency amounts are stored at 6 places.** After `evlet migrate`, values still read and travel
+  as before (`"12.50"`), applied migration checksums and saved calculation versions do not change,
+  and the largest Currency amount is 9,223,372,036,854.775807. A `Currency` field's schema `scale` is
+  now 6, the storage scale: format from `currency_decimals` instead. Apps started outside an instance
+  move on startup or in `database.migrate()`. Code that rounded money with `quantize(Decimal("0.01"))`
+  or `round(x, 2)` should use `round_money(value, code)` so KWD and JPY amounts are right.
+- **Writes refuse amounts with more places than their currency.** For example "Use at most 3 decimal
+  places for KWD". Nothing is rounded silently (see Decimal places per currency below).
+- **The list board is opt-in.** A list offers the Board view only when `Meta.board` names its State
+  field, such as `board = "stage"`. Apps that relied on the automatic board for every model with a
+  State must set it. An old `?view=board` link opens the table. `Meta.board` on any other field fails
+  registration, naming the model.
+- **Python pages are gone.** The Python page API in `evlet.ui` (`PageView`, `ListView`, `FormView`,
+  `Column`, `ViewRegistry`, the compiler, component contracts and page expressions) and the
+  `GET /api/ui` and `GET /api/ui/resolve` routes are removed. Delete those definitions and shape the
+  generated screens with `Model.Meta` (`layout`, `list_fields`, `open_in`, `panel`). An
+  `AppDefinition` may still pass `views=()`; a non-empty `views` or a `ui` registry is refused at
+  start-up. `Application` and `App` no longer take `views` or `ui`. Clients that called `/api/ui`
+  read `/api/schema` instead. The Playground's Projects demo and Layouts pages go with it.
+- **Native panels are gone.** Remove `.ts` and `.js` modules from an app's `views/` folder and the
+  matching `package-data` line from its `pyproject.toml`. `native_panels` in `/api/schema` and
+  `/assets/apps/...` are removed, and a build no longer runs Node for them.
+- **`evlet new` is gone.** Use `evlet setup myproject --app notes --instance acme --dev`. The nested
+  app layout and `evlet app <name> --legacy` stay.
+- **`evlet.metadata` is gone.** `field_schema`, `label_for`, `ui_schema` and `view_for` live in
+  `evlet.ui.metadata`, which is internal ([docs/api-stability.md](docs/api-stability.md#internal)).
+- **`evlet.calc.Document` loses `observe`, `observe_table`, `observe_rules`, `subscriptions`,
+  `explain` and `dispose`.** The server settles a document once and reads its snapshot; the browser
+  engine keeps all of them.
+- **A caller-supplied record `id` is refused** on every create and update path with
+  `ValidationError({'id': ...})`, and HTTP POST and PATCH answer 422 on `id` instead of 403 (see
+  Fixed ids below).
 
 ### Added
 
-- **`Integer(grouping=False)`.** Shows a number without thousands separators, such as a year (`2023`). Display
-  only; `/api/schema` sends `"grouping": false` ([docs/model-engine.md](docs/model-engine.md)).
-
-- **Child table tools, row editor and section rows.** A compact record's table has Focus and Columns buttons by
-  its title. A row's Edit (a pencil by its number, beside a new drag handle) opens the row editor in focus view: the
-  rows as a list beside one form for the row, with a summary line, previous and next, Delete line, Insert below and
-  Done; a row model's Sections show as "more information" rows there. A Table whose schema has `"sections": true`
-  draws section rows as headings with their own sums, closes, renames, moves and deletes them, and saves them in
-  the change set. Rows no longer open in place.
-
-- **Lifecycle on lists and records.** Cancelled records (a red `final` state, or `void`) are struck through and
-  greyed in lists and boards, and show red "Cancelled" text and a soft red strip with when, who and why on the record.
-  Locked or final states read as a lock and grey text, the starting state as a dashed Draft pill. Read from the
-  state field's `cancelled` list when the schema sends one, else from the State's `final`, `voidable` and colours,
-  with `locked` and `default` ([docs/ui.md](docs/ui.md#how-a-records-lifecycle-reads)).
-
-- **The side panel reads as one white section.** A compact record in a list's side panel has its header (record
-  image slot, title, status badge, a lock while it can't be changed, then the drawer button, Expand and Close), a
-  muted subtitle of its number and first key fields, a thin line, the key cards as plain pairs, then the fields two
-  to a row and the tables. The panel shows no stage bar. `DocHeader` takes `subtitle`, `image` and `tools`, and
-  the record page shows a schema's `image` field left of the title when the schema names one
-  ([docs/ui.md](docs/ui.md#what-a-side-panel-shows)).
-
-- **Key cards as number cards, and `Meta.panel_summary`.** A compact record page draws `Meta.cards` as the
-  list page's number cards above the white card, two or three to a row in a side panel or on a phone.
-  `Meta.panel_summary = False` leaves the summary strip or the key cards out of a list's side panel; the full page
-  keeps them ([docs/ui.md](docs/ui.md#what-a-side-panel-shows)).
-
-- **The compact record page is drawn.** A layout that starts with `Main` shows its cards, the Main card with
-  the state banner inside it, "more information" rows with one-line summaries while closed, and a side column
-  with Attachments, Activity and Record info. It has no tabs. Section descriptions show under section titles
-  on every record layout ([docs/ui.md](docs/ui.md#compact-record-page)).
-
 - **Decimal places per currency.** Each currency code has 0 to 6 places: ISO 4217 by default (AED 2,
-  KWD 3, JPY 0), changed or added by an admin in Controls, Currencies (`decimals` in
-  `display.currencies`, for example a client's own unit with 5). Writes refuse an amount with more
-  places than its currency ("Use at most 3 decimal places for KWD"); finite and legacy formulas,
-  table sums and totals round to the currency each row resolves through its currency source; print,
-  CSV and every screen show exactly those places. Trusted code uses `currency_decimals(code)`,
-  `round_money(value, code)` (half up) and `currency_unit(code)` instead of hard-coding 2, and an app
-  with its own currency list writes it to the framework with `set_currency_decimals(app, {...})`.
-  Money kept in `Decimal(scale=4)` moves to `Currency` with `AlterField`, exactly. Lowering a code's places is refused (409)
-  while stored amounts would lose digits; `round_stored_money(app, code, places, actor=...)` is the
-  explicit step that rounds them. `/api/schema` sends `currency_decimals`. The Playground adds a KWD
-  customer and a 5-place unit ([docs/model-engine.md](docs/model-engine.md#decimal-places-per-currency)).
-
-- **Section rows in Tables: `Table(..., sections=True)`.** A Table may hold section rows,
-  headings such as "Goods" that group the rows below them, like the sections of a quotation.
-  A section row has an id, a label and a place, and none of the row's fields. Iterating
-  `self.lines` still yields only real rows, so `derive()`, postings, validation, sums and existing
-  app code are unchanged; `self.lines.sections()` gives `(label, rows)` pairs. Records list them
-  in `children` as `{"id", "section"}`, and the existing routes create, rename, move and delete
-  them with the same checks as rows (`create`, `update`, `delete` on the row model; locked
-  records refuse them). `/api/schema` marks the Table `"sections": true` and names
-  `section_sums`, the fields the total line sums, which each section shows for its rows (computed,
-  never stored). Print shows them as heading rows with their sums, the Journal records them, and
-  a revise copies them. They are stored in the framework table `evlet_sections`, so turning
-  `sections=True` on needs no migration. The record page's table draws them (see Child table tools above). The Playground's Employee groups Skills this way, with no migration
-  ([docs/model-engine.md](docs/model-engine.md#section-rows)).
-- **Cancelled states: `State(..., cancelled=...)`.** Names the final states that mean a record
-  was called off, such as cancelled or lost, so the browser can show them as cancelled instead of
-  guessing. Each must be a final state, checked when the class is created. On a voidable State,
-  `"void"` counts as cancelled without being listed. `/api/schema` carries the list as
-  `state.cancelled`. It changes no moves, locks or permissions
-  ([docs/states-actions.md](docs/states-actions.md#cancelled-states)).
-- **Image fields: `Image()` and `Meta.image`.** A model can hold an image per field, such as an
-  item photo or a logo. The image is a private attachment of the record, stored and checked like
-  rich text images: PNG, JPEG, GIF or WebP by their bytes (SVG refused), up to Controls
-  `files.image_max_kb`. Upload to `/api/{model}/{id}/attachments` (or `/api/{model}/_images` before
-  the record is saved) with `"purpose": "image"`, then save the returned id in the field. Replacing
-  or clearing deletes the old image; deleting the record deletes its images; Duplicate leaves the
-  image out and a revision copies it. A person who cannot read the field cannot load the image.
-  `Meta.image` names the field used as the record's avatar and adds `"image"` to the model's
-  `/api/schema` entry. Forms show a preview with Upload, Replace and Remove. Add a field with
-  `AddField(model, name, Image())`. The Playground's items have a Photo (migration `0018_item_photo`)
-  ([docs/model-engine.md](docs/model-engine.md#image-fields)).
-
-- **Derived values: `derive()` and `Meta.derives`.** A document builds stored values formulas
-  cannot express in `derive(self)`, such as one row per distinct value of another Table or rows
-  built from a linked record. `Meta.derives` may also name `"table.field"`: a field derive() sets on
-  each row of a Table people edit, such as a line's net or converted amount, while the rows stay
-  the caller's. It runs on every write and preview, before calculations, and what
-  it sets is cleaned, calculated, validated and returned like caller input. The fields and Tables
-  named in `Meta.derives` are refused to callers (`DERIVED_FIELD_WRITE`, 422) and marked
-  `read_only` in `/api/schema`; the record page shows a derived Table without editing. It reads
-  linked records through a read-only `self.context.session`. `validate()` stays for checks only:
-  apps that assigned values there should move them to `derive()`. The Playground's Employee
-  derives its Skill levels (migration `0017_employee_skill_levels`)
-  ([docs/model-engine.md](docs/model-engine.md#derived-values)).
-
-- **Closing checks: `before_close(self, to)`.** One read-only hook that runs before a move into a
-  final state, a void, a lifecycle cancel and a delete, on every surface, and refuses with a
-  `ValidationError` before anything is written. Use it for "cancel the later documents first"
-  checks instead of repeating them in each Move's run method. The Playground's Employee refuses a
-  delete while people report to them ([docs/states-actions.md](docs/states-actions.md#before-a-record-closes)).
-
-- **Compact record page: `Meta.cards`, `Main` and section descriptions.** `Meta.cards` names zero
-  to five derived values for cards at the top of a record: fields with `compute=`, `fetch=` or
-  `query=` (stored or not) and per-record measures. `Main(fields, *tables)` as the first block of
-  `Meta.layout` is the primary area, with no heading; every block after it is "more information".
-  A layout with `Main` takes no `Tab`s, `Meta.tabs` or `Meta.default_tab`, and places every `Table`
-  field. `Section(..., description=...)` adds a line under a section's title. All of it is checked
-  when the registry is built, and `/api/schema` sends `cards` (cut per role, like `key_fields`),
-  `"compact": true` and `"main": true` on the record layout, and `description` on sections. Models
-  without them are unchanged. The Playground's Project uses it, so its record tabs are gone
-  and its Planning section is now Budget ([docs/ui.md](docs/ui.md#compact-record-page)).
-
-- **Duplicate options.** `Meta.duplicate = False` hides a model's record Duplicate action, and
-  `copy=False` on any field or `Table` keeps that value or those rows out of a duplicate. Both
-  default to `True`, must be booleans (`ValueError`), and show in `/api/schema` only when off
-  (`duplicate: false` on the model, `copy: false` on the field or `children` entry). They are
-  display only: the stored schema, migrations and their checksums are unchanged, so no migration
-  is needed. The Playground's Invoice `reference` uses `copy=False`
-  ([docs/ui.md](docs/ui.md#duplicate)).
-
-- **Only Evlet makes record ids, and ids never change.** A caller-supplied `id` is refused on every
-  create and update path with one message, `ValidationError({'id': 'The id is assigned by Evlet when
-  the record is created and never changes; leave it out'})`: `database`/`tx.create` and `update`
-  (in `tx.maintenance()` too), `context.create`, `update` and `move` values, `self.id = ...` in
-  handlers, and HTTP POST and PATCH, which now answer 422 on `id` instead of 403 "One or more fields
-  cannot be written". Before, Python callers got "id: Unknown field". Every model table also gets a
-  database trigger that refuses an `UPDATE` changing `id` on SQLite and PostgreSQL
-  (`ConflictError: <table>: record ids never change`). Ledger rows keep database-assigned ids and
-  `tx.reserve_ids`. **Upgrade:** framework step `0006_fixed_ids` adds the triggers, so run
-  `evlet migrate` after upgrading. `evlet ids check INSTANCE` reports rows with an empty, zero or
-  negative id and tables without the trigger; it never rewrites ids
-  ([docs/model-engine.md](docs/model-engine.md#only-evlet-makes-ids)).
-
-- **`customize_workspaces` in `GET /api/_settings/me`.** A boolean next to `controls`: true when
-  the signed-in person may use the workspace override routes (`/api/_controls/workspaces`). It
-  calls the routes' own check, so admin always, desk roles with Customize workspaces on, never
-  portal people, on the hosts and networks that open Controls. A session that still owes a two-step
-  code reports true and the routes ask for it. It only reports access, so the browser can offer
-  Customize without probing the route ([docs/settings.md](docs/settings.md#pages)).
-
-- **Record layouts.** `Meta.layout` can declare the whole record page: `Tab(title, blocks)`s, or
-  plain blocks without tabs, holding `Section`s, `Table` field names (the table shows inside the tab
-  or the form instead of on its own tab), `Related(model, link=None, filters=..., fields=..., limit=...,
-  order=..., label=...)` lists of related records, `Html(...)` text from the app with `{field}`
-  values, and `Chart('stat' | 'bar' | 'line', x=..., y=..., model=..., link=...)` blocks over the
-  related model's declared measures. Filters use the list syntax and `Ref('field')` compares with
-  a field of the record. Related rows come from the list route and charts from the aggregate route,
-  so row scopes and field permissions apply; `/api/schema` sends the layout as `record_layout`, cut
-  to what each role reads. Everything is checked when the registry is built. A model whose layout
-  declares a `Related` block no longer shows the automatic Related tab and side block unless
-  `Meta.tabs` or `Meta.side_blocks` names `related`. Models with sections only are unchanged. Html
-  keeps to the rich text allowlist and inserts record values as text only. Controls "Export as
-  code" writes the full `Meta.layout`. The Playground's Employee uses every block
-  ([docs/ui.md](docs/ui.md#record-layouts)).
-
-- **`self.context.session` in run methods and actions.** A Move's `run` method and an `@action`
-  handler can write other rows, such as ledger rows, in the move or action's own transaction:
-  `self.context.session` is its `evlet.Session`, with `tx.lock`, `tx.insert_many`,
-  `tx.reserve_ids` and `tx.aggregate`. The State change, the Sequence number, the record's changes
-  and those rows commit together, and any failure rolls all of it back. It is trusted code that
-  bypasses row and field permissions. It is open only while the handler runs; every other context
-  refuses it with `AccessError` (403), including services, reports and everything Eva, assistants,
-  tools, MCP and the connector reach. Before, this needed a legacy `Action` and `tx.maintenance()`.
-  The Playground's Recognise action on an employee writes its Recognition ledger this way
-  ([docs/states-actions.md](docs/states-actions.md#the-transaction-session-in-run-methods-and-actions)).
-- **Trends and colours on declared measures.** A model-level measure in `Meta.measures` takes
-  `trend="starts_on"` (that Date field by month, 6 points) or `trend=("starts_on", "month", 12)`,
-  and any declared measure takes `color=` with one of the Select badge colours. Both are checked
-  when the `Registry` is built, with a `ValueError` naming the model and measure, and appear in the
-  measure's `/api/schema` entry only when set (`"trend": {"field", "grain", "points"}`, `"color"`).
-  A role that cannot read the trend field gets the measure without `trend`. The browser reads the
-  series from the existing `GET /api/{model}/aggregate` route with `group_by=<field>:<grain>`, under
-  the same filters and permissions ([docs/measures.md](docs/measures.md#trends-and-colours)).
-- **Where the cursor starts.** `Meta.focus = "customer"` on a model, and `focus = "name"` on a
-  `Slip`, names the field a new form puts the cursor in. It must be a visible, writable, stored
-  field (not calculated, hidden, read only, a table or a Sequence), checked when the registry is
-  built or the application starts. `/api/schema` and the slip surface carry it as `focus` only
-  when set, and a role that cannot read the field does not get it. It is display only; without it
-  the browser uses the first editable field ([docs/ui.md](docs/ui.md#where-the-cursor-starts)).
-- **Workspaces.** New public names `Workspace`, `NavGroup` and `Shortcut` declare named sidebars:
-  `Workspace('Projects', icon='kanban', groups=(NavGroup('Projects', items=('project',
-  Shortcut('project', view='board', label='Board'))),))`. Items are model names and shortcuts to a
-  filtered list or board, a report, a slip or an app path or http(s) address. An app package
-  declares them in `workspaces.py`; `Application(workspaces=...)` and `AppDefinition(workspaces=...)`
-  take them too. Every item is checked when the application is built, with a message naming the
-  workspace and item. `/api/schema` has `workspaces`, with only the items each role can open; an
-  app that declares none gets one automatic workspace grouped as the sidebar is. The browser does
-  not draw them yet ([docs/ui.md](docs/ui.md#workspaces)).
-- **Workspace overrides per site.** Admins, and roles with the new Controls access "Customize
-  workspaces" (Roles page, `customize_workspaces`), can reorder, hide and rename groups and items,
-  rename workspaces, add shortcuts and add custom workspaces, then reset them, through
-  `GET /api/_controls/workspaces` and `PUT`/`DELETE /api/_controls/workspaces/<key>`. Overrides are
-  stored in `evlet_overrides` (kind `workspace`, added to the table's kind check on start) and
-  audited under Workspaces. `/api/schema` applies them before permission filtering, so they never
-  widen access ([docs/controls.md](docs/controls.md#workspaces)).
-- **`source_kind` on reports.** The report catalog (`/api/_reports`, `/api/schema`) says
-  `"ledger"` for a report whose `model` is a ledger model, `"model"` for any other model and null
-  without one ([docs/reports.md](docs/reports.md#reports-over-a-ledger-model)).
-
-- **`evlet setup` in one go.** `evlet setup myproject --app notes,crm --instance acme --dev` creates
-  the project, apps and instance, installs the apps in dependency order and starts `evlet dev` on
-  loopback. `--get URL,URL` fetches apps from Git with the `app --get` checks and trust question;
-  `--app` and `--get` take comma lists and combine. `--trust` answers the trust questions for the
-  whole run. `--host erp.example.com` instead asks for the first administrator in the terminal,
-  sets the instance domain, writes a Caddy site and a systemd unit under `deploy/`, checks DNS and
-  prints the `sudo` steps; `--apply` runs them, showing each first. `--dev` and `--host` cannot be
-  combined. A failed step is named, and running the same command again skips finished steps.
-  Without the new options `evlet setup` is unchanged ([docs/cli.md](docs/cli.md#setup-in-one-go)).
-- **Composite and unique indexes on normal models.** `Meta.indexes` now works on every model, with
-  the ledger form: `[(("station", "on_date", "kind"), {"unique": True}), ("on_date",)]`. The
-  database enforces a unique entry on SQLite and PostgreSQL, and a write that breaks it raises
-  `ValidationError` on the entry's fields (HTTP 422). A `Child` row can name its owner field for a
-  value unique per record. The entries are part of the saved schema and the startup check, and
-  `AddIndex(table, ("a", "b"), unique=True)` adds one. Models without `Meta.indexes` are unchanged
-  ([docs/model-engine.md](docs/model-engine.md#composite-and-unique-indexes)).
-- **Paged aggregates and long `in` lists for trusted batch code.** `tx.aggregate(...)` and
-  `database.aggregate(...)` take `limit` (1 to 10,000) and `after` (the previous page's last
-  group) to walk any number of groups in a stable order, each exactly once, a page at a time.
-  Trusted session queries (`tx.list`, `tx.count`, `tx.aggregate` and the `database` forms)
-  take `in` and `nin` lists of up to 30,000 values in all, each bound as a parameter. Jobs that
-  chunked lists to 100 values and groupings to 500 groups can drop the chunking. HTTP,
-  `Context`, Eva, tools, MCP and Connector keep their limits of 100 values and 500 groups
-  ([docs/measures.md](docs/measures.md#paging-through-many-groups),
-  [docs/model-engine.md](docs/model-engine.md#long-in-lists-in-trusted-code)).
-- **`tx.aggregate(...)`.** The transaction session runs the same exact aggregates as
-  `database.aggregate`, with the same arguments, limits and result, and sees the transaction's own
-  writes. Use it instead of the internal `evlet.measures.aggregate(tx, ...)`
-  ([docs/measures.md](docs/measures.md#ad-hoc-aggregates-in-python)).
-- **Ledger ids.** A ledger `Meta.indexes` entry may name `id`, such as `("serial", "id")`.
-  `tx.reserve_ids(model, count)` reserves ids so the rows of one `insert_many` batch can link to
-  each other or to themselves; `insert_many` and `tx.create` take a reserved `id`. On SQLite a
-  rollback hands the ids back; on PostgreSQL they come from the identity sequence and a rollback
-  leaves a gap ([docs/ledger.md](docs/ledger.md#reserving-ids-txreserve_ids)).
-- **Currency display per site.** Controls, Currencies sets how each currency code is shown: a text
-  symbol (`$`, `€`, `د.إ`) or a small PNG or WebP image, before or after the amount, with or
-  without a space. Images are at most 32 KB and 128 x 128 pixels, checked by their bytes; SVG is
-  refused. It applies to forms (at rest and in the input's side box), lists, boards, totals,
-  measures, reports and print designs, where the image is embedded in the PDF. Number formatting
-  is unchanged, and codes nobody set show as before (`AED 25,200.00`). Only admins change it; every
-  change is audited. `/api/schema` sends it as `currency_display`, and trusted code can use
-  `set_currency_display(app, {...})`. Report CSV now names a currency column's code in its header,
-  `Total (AED)`, and keeps plain numbers. The Playground shows AED with a placeholder image symbol
+  KWD 3, JPY 0), changed or added by an admin in Controls, Currencies (for example a client's own
+  unit with 5). Finite and legacy formulas, table sums and totals round to the currency each row
+  resolves through its currency source, and print, CSV and every screen show exactly those places.
+  Trusted code uses `currency_decimals(code)`, `round_money(value, code)` (half up) and
+  `currency_unit(code)` instead of hard-coding 2. An app with its own currency list writes it to the
+  framework with `set_currency_decimals(app, {...})`. Money kept in `Decimal(scale=4)` moves to
+  `Currency` with `AlterField`, exactly. Lowering a code's places is refused (409) while stored
+  amounts would lose digits; `round_stored_money(app, code, places, actor=...)` is the explicit step
+  that rounds them. `/api/schema` sends `currency_decimals`. When a saved record was calculated with
+  older formulas, the browser asks for a recalculation instead of saying someone else changed it.
+  The Playground adds a KWD customer and a 5-place unit
+  ([docs/model-engine.md](docs/model-engine.md#decimal-places-per-currency)).
+- **Currency display per site.** Controls, Currencies sets how each code is shown: a text symbol
+  (`$`, `€`, `د.إ`) or a small PNG or WebP image (at most 32 KB and 128 x 128 pixels, SVG refused),
+  before or after the amount, with or without a space. It applies to forms, lists, boards, totals,
+  measures, reports and print designs. Only admins change it, and every change is audited.
+  `/api/schema` sends `currency_display`, and trusted code can use `set_currency_display(app, {...})`.
+  Report CSV names a currency column's code in its header, `Total (AED)`
   ([docs/controls.md](docs/controls.md#currencies)).
-- `Naming(..., label="Project number")` labels the standard `name` field for the model's domain on
-  the form, in list columns, filters, search and the schema
-  ([docs/sequences.md](docs/sequences.md)). The Playground labels it "Invoice number".
-
-### Fixed
-
-- **Field read checks on chained formulas.** Working out which fields a role may read walked every
-  path of every string formula again for each formula that read another one, so the time doubled
-  with each link in the chain: two such formulas took 2 seconds, a dozen made requests hang. Each
-  answer is now kept per role and model for the life of the policy, so each formula is walked once.
-  The answers are the same as before.
-- **Percent in string formulas.** `compute="price * discount / 100"` with a `Percent` field failed at
-  registration with "Arithmetic requires numeric fields". Percent is now a number there, read as
-  its stored value (12.50 is 12.50), as in finite-v1. Arithmetic on a field that is not a number
-  gives an error naming the formula, the field and its type
-  ([docs/amendment-v2.md](docs/amendment-v2.md)).
-- **Virtual values in record responses.** `stored=False` results (string formulas, Query lookups,
-  function queries and `fetch=` copies) were missing from `GET /api/{model}/{id}`, the create and
-  update responses and `/lines/` pages, so the browser showed "Not set" until an edit ran the
-  draft preview. They are now calculated from the saved values and shown with the same field read
-  checks as stored fields. They are not part of the ETag. A virtual `fetch=` now always reads its
-  linked record, also on a locked or posted record, and is empty when the caller cannot read it.
-- **Field locks on create.** `locked_when` was judged against the values being created, so a
-  field that locks once another is set had to be entered first. A new record and a new row have
-  no saved state, so nothing on them is locked now; the lock applies from the next write. The
-  browser engine follows the same rule. Saved rows keep their locks as before
-  ([docs/finite-calculations.md](docs/finite-calculations.md#field-rules)).
-- **Money measures in the right currency.** A sum of a Currency field whose currency comes from
-  the record (`currency="currency_code"` or `"customer.currency_code"`) was shown in the default
-  currency, AED, on a record in SAR. The measures and aggregate routes now return `currencies`,
-  the code of each money result whose rows share one, and the list summary, record summary and
-  record charts use it. A count never has a currency, and rows in mixed currencies show a plain
-  amount ([docs/measures.md](docs/measures.md#currencies)).
-- **Hourly image purge.** The `evlet_image_purge` task failed on every run because its handler did
-  not match the jobs runner's call, and on a new database its schedule was only created on the
-  second start. Held images and unreferenced private files are now cleaned up hourly.
-- **Records stay editable after the move to 6 decimal places.** A finite document whose formula read
-  the same Link its currency comes through (for example `customer.discount` with
-  `currency='customer.currency'`) got a new calculation version from the currency source, so after
-  `evlet migrate` (step `0007_money_scale`) every saved record was refused with 409
-  `SCHEMA_VERSION_MISMATCH`. Saved documents now keep their version. When a record really was
-  calculated with older formulas, the browser says so and asks for a recalculation instead of
-  "Someone else changed this record".
-
-- **Rich text images in documents.** Saving a document (a model with a State, `Meta.journal` or other
-  declarations) now links the held images its rich text refers to and deletes the ones it no longer
-  uses, as plain models always did. Before, a document's new images stayed in the holding area and
-  were purged after a day.
-
-- A `Workspace` is registered once: listing the same one twice no longer fails as a key clash with
-  itself, and a workspace another app's `workspaces.py` imports stays with the app that declares it.
-  A real key clash names both workspaces and their sources, such as `app notes (notes/workspaces.py)`
-  ([docs/ui.md](docs/ui.md#workspaces)).
-- A raw `UPDATE` or `DELETE` that an append-only ledger table refuses raises `ConflictError` with
-  the message `<table> is append only: its rows are never changed or deleted` on SQLite and
-  PostgreSQL. PostgreSQL raised a generic database error before. New PostgreSQL triggers raise an
-  integrity error; ones made by 0.3 are recognised too, so no migration is needed.
-
-- Records with text ids show their move and action buttons again. The browser client now reads
-  record details from paths with a text id, so allowed moves are no longer refused.
-- Record pages with a text id, such as `/app/<model>/01hff1w8vgqwf`, are served with 200 instead
-  of 404. A decimal id from an older link is still served ([docs/routing.md](docs/routing.md)).
-- More > Reset layout puts collapsible sections back to their starting state at once, including
-  `collapsed="empty"`, instead of waiting for an animation that a background page never plays.
-- **Back to the app from Controls.** The top of the Controls sidebar links back to the last app
-  page, or the start page; the search palette offers Go to Controls to roles that open it.
-- **Change password from the account menu.** It opens the Sign-in & security password form
-  in a small dialog; both use one shared form.
-- **Saved filters on lists.** The filter panel keeps the current filters under a name, per
-  person on the device. Choosing one applies it; each can be deleted.
-- **Files can be removed from a record.** Each file in the Files block has a remove button,
-  shown to roles that can upload. It asks first, and a locked record shows none.
-- **A read-only child table stays read only when opened in the row editor.** On a locked or
-  cancelled record, or without write access, a row opened from the table or its focus view showed
-  editable inputs. They are now read only, like the cells, and the rows still open to read.
-- **List tabs by a chosen field, with a default tab.** `Meta.list_tabs` names the State, Select
-  or Link field whose values are the list's tabs, and `Meta.list_tab` the tab the list opens on
-  (`"all"` by default). Without them a model's State drives the tabs as before; `list_tabs = None`
-  turns them off. Counts come from the new `GET /api/{model}/list_tabs`, which follows the list's
-  filters, search and row scope; a Link shows its 8 most used values. `/api/schema` adds
-  `list_tabs` for roles that can read the field (additive). Choosing a tab, All included, keeps it
-  in the address. The Controls list view sets both per instance
-  ([docs/ui.md](docs/ui.md#list-tabs)).
-- **Ledger models.** `Meta.ledger = True` stores a model lean: an integer id the database assigns in
-  insert order and the declared columns only, with no public surface (`Meta.api` is `None`). Options:
-  `append_only` (database triggers refuse UPDATE and DELETE), `journal`, `timestamps` (`created_at`,
-  `modified_at`), `indexes` (composite and unique) and `period`. `tx.insert_many(model, rows)` inserts
-  rows with one prepared statement and returns their ids. New migration `SetAppendOnly`; `AddIndex`
-  takes a tuple of fields for a ledger index. `evlet ledger list --instance NAME` prints each ledger
-  model with its row count and options ([docs/ledger.md](docs/ledger.md)).
+- **The compact record page.** `Main(fields, *tables)` as the first block of `Meta.layout` is the
+  primary area, with no heading; every block after it is "more information", shown as rows with a
+  one-line summary while closed. `Meta.cards` names up to five derived values (fields with
+  `compute=`, `fetch=` or `query=`, and per-record measures) drawn as number cards above the record.
+  `Section(..., description=...)` adds a line under a section's title. The side column holds
+  Attachments, Activity and Record info. All of it is checked when the registry is built, and
+  `/api/schema` sends `cards` (cut per role) and `description`
+  ([docs/ui.md](docs/ui.md#compact-record-page)).
+- **Record layout blocks.** Besides `Main` and `Section`, `Meta.layout` takes `Table` field names,
+  `Related(model, link=None, filters=..., fields=..., limit=..., order=..., label=...)` lists of
+  related records, `Html(...)` text with `{field}` values, and `Chart('stat' | 'bar' | 'line', ...)`
+  blocks over a related model's declared measures. Filters use the list syntax, and `Ref('field')`
+  compares with a field of the record. Related rows and charts come from the list and aggregate
+  routes, so row scopes and field permissions apply. Html keeps to the rich text allowlist and
+  inserts record values as text only. Controls, Export as code writes the full `Meta.layout`
+  ([docs/ui.md](docs/ui.md#record-layouts)).
+- **Child table tools, row editor and section rows.** A record's table has Focus and Columns buttons.
+  A row's Edit opens the row editor in focus view: the rows as a list beside one form for the row,
+  with previous and next, Delete line, Insert below and Done. `Table(..., sections=True)` lets a
+  Table hold section rows, headings such as "Goods" that group the rows below them, each with its own
+  sums. Iterating `self.lines` still yields only real rows, so existing app code is unchanged;
+  `self.lines.sections()` gives `(label, rows)` pairs. The existing routes create, rename, move and
+  delete section rows with the same checks as rows. They are stored in `evlet_sections`, so turning
+  them on needs no migration. Print, the Journal and revisions include them
+  ([docs/model-engine.md](docs/model-engine.md#section-rows)).
+- **Image fields: `Image()` and `Meta.image`.** A field holds an image, such as an item photo, as a
+  private attachment of the record: PNG, JPEG, GIF or WebP checked by their bytes (SVG refused), up to
+  Controls `files.image_max_kb`. A person who cannot read the field cannot load the image.
+  `Meta.image` names the record's avatar, shown left of the title. Add one with
+  `AddField(model, name, Image())` ([docs/model-engine.md](docs/model-engine.md#image-fields)).
+- **Derived values: `derive()` and `Meta.derives`.** A document builds stored values that formulas
+  cannot express, such as rows built from a linked record, or a field on each row of a Table. It runs
+  on every write and preview, before calculations. The fields and Tables it sets are refused to
+  callers (`DERIVED_FIELD_WRITE`, 422) and marked `read_only` in `/api/schema`. `validate()` stays for
+  checks only ([docs/model-engine.md](docs/model-engine.md#derived-values)).
+- **Closing checks: `before_close(self, to)`.** One read-only hook that runs before a move into a
+  final state, a void, a cancel and a delete, on every surface, and refuses with a `ValidationError`
+  before anything is written
+  ([docs/states-actions.md](docs/states-actions.md#before-a-record-closes)).
+- **Cancelled states: `State(..., cancelled=...)`.** Names the final states that mean a record was
+  called off. On a voidable State, `"void"` counts without being listed. Lists and boards strike
+  cancelled records through, and the record shows when, who and why. Locked or final states show a
+  lock, and the starting state a Draft pill
+  ([docs/states-actions.md](docs/states-actions.md#cancelled-states)).
+- **`self.context.session` in run methods and actions.** A Move's `run` method and an `@action`
+  handler can write other rows, such as ledger rows, in their own transaction, with `tx.lock`,
+  `tx.insert_many`, `tx.reserve_ids` and `tx.aggregate`. Everything commits or rolls back together.
+  It is open only while the handler runs; every other context refuses it with `AccessError` (403)
+  ([docs/states-actions.md](docs/states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+- **Ledger models.** `Meta.ledger = True` stores a model lean: a database-assigned integer id and the
+  declared columns only, with no public surface. Options are `append_only`, `journal`, `timestamps`,
+  `indexes` and `period`. An append-only table refuses `UPDATE` and `DELETE` with `ConflictError` on
+  SQLite and PostgreSQL. `tx.insert_many(model, rows)` inserts rows with one prepared statement, and
+  `tx.reserve_ids(model, count)` reserves ids so rows of one batch can link to each other. New
+  migration `SetAppendOnly`, and `evlet ledger list --instance NAME`
+  ([docs/ledger.md](docs/ledger.md)).
+- **Fixed ids.** Only Evlet makes record ids, and ids never change. Every model table gets a database
+  trigger that refuses an id change (framework step `0006_fixed_ids`). `evlet ids check INSTANCE`
+  reports rows with an empty, zero or negative id and tables without the trigger; it never rewrites
+  ids ([docs/model-engine.md](docs/model-engine.md#only-evlet-makes-ids)).
+- **Composite and unique indexes on every model.** `Meta.indexes`, such as
+  `[(("station", "on_date", "kind"), {"unique": True}), ("on_date",)]`. A write that breaks a unique
+  entry raises `ValidationError` (HTTP 422). `AddIndex(table, ("a", "b"), unique=True)` adds one
+  ([docs/model-engine.md](docs/model-engine.md#composite-and-unique-indexes)).
 - **Transaction locks.** `tx.lock(*keys, timeout=None)` holds named locks on business keys until the
-  transaction ends, PostgreSQL advisory locks taken in a fixed order, a key check on SQLite. A wait
-  past `timeout` raises the new `LockTimeout`. Nothing changes for existing apps.
+  transaction ends. A wait past `timeout` raises the new `LockTimeout`.
+- **`tx.aggregate(...)`, paged aggregates and long `in` lists.** The transaction session runs the same
+  aggregates as `database.aggregate` and sees its own writes. Both take `limit` and `after` to walk
+  any number of groups a page at a time. Trusted session queries take `in` and `nin` lists of up to
+  30,000 values. HTTP, `Context`, Eva, tools, MCP and the connector keep their limits
+  ([docs/measures.md](docs/measures.md#paging-through-many-groups)).
 - **Progress for long jobs.** A job handler reports `context.progress(done, total, message)`.
-  `Task(..., resumable=True)` runs a long rebuild or recalculation in steps, each in its own
-  transaction; a step returns a checkpoint, and a job that stops (worker stopped, failed step or
-  crashed process) resumes from its last committed checkpoint. Controls > Jobs shows progress,
-  `GET /api/_jobs/<id>` returns it, and the new `evlet jobs list --instance NAME` prints it. The
-  table `evlet_job_progress` is created when the queue starts; no migration is needed
+  `Task(..., resumable=True)` runs a long job in steps, each in its own transaction, and resumes from
+  the last committed checkpoint. Controls, Jobs and `GET /api/_jobs/<id>` show progress, and
+  `evlet jobs list --instance NAME` prints it
   ([docs/jobs-realtime.md](docs/jobs-realtime.md#progress-and-long-jobs)).
-- **The list board is opt-in.** A model's list offers the Board view only when `Meta.board`
-  names its State field, such as `board = "stage"`, and the board groups by that field. Without
-  it the list is a table with the saved views per state, and an old `?view=board` link opens the
-  table. Apps that relied on the automatic board for every model with a State must now set
-  `Meta.board`. `Meta.board` on any other field fails registration naming the model.
+- **Workspaces.** `Workspace`, `NavGroup` and `Shortcut` declare named sidebars of models and
+  shortcuts to a filtered list or board, a report, a slip or an address, in an app's `workspaces.py`
+  or through `Application(workspaces=...)`. `/api/schema` has `workspaces`, with only the items each
+  role can open. Admins, and roles with the new Controls access "Customize workspaces", can reorder,
+  hide, rename and add items and workspaces per site; overrides never widen access.
+  `GET /api/_settings/me` reports `customize_workspaces`
+  ([docs/ui.md](docs/ui.md#workspaces), [docs/controls.md](docs/controls.md#workspaces)).
+- **List tabs.** `Meta.list_tabs` names the State, Select or Link field whose values are the list's
+  tabs, and `Meta.list_tab` the tab it opens on. `list_tabs = None` turns them off. Counts come from
+  `GET /api/{model}/list_tabs`, under the list's filters and row scope. Controls sets both per
+  instance ([docs/ui.md](docs/ui.md#list-tabs)).
+- **`evlet setup` in one go.** `evlet setup myproject --app notes,crm --instance acme --dev` creates
+  the project, apps and instance, installs the apps and starts `evlet dev`. `--get` fetches apps
+  from Git, `--trust` answers the trust questions, and `--host erp.example.com` prepares a server
+  install with a Caddy site and a systemd unit under `deploy/` (`--apply` runs the steps). Running the
+  same command again skips finished steps ([docs/cli.md](docs/cli.md#setup-in-one-go)).
+- **Smaller model options.** `Integer(grouping=False)` shows a number without thousands separators.
+  `Naming(..., label="Project number")` labels the standard `name` field. `Meta.focus` (and `focus`
+  on a `Slip`) names the field a new form starts in. `Meta.duplicate = False` hides Duplicate, and
+  `copy=False` on a field or `Table` keeps it out of a duplicate. `Meta.summary = False` leaves out
+  the summary strip, `Meta.side_blocks` keeps attachments (`files`) or the automatic Related row (`related`), and `Meta.panel_summary = False`
+  leaves the cards out of a list's side panel. Measures take `trend=` and `color=`. Reports say
+  `source_kind`. All are checked when the registry is built.
+- **Choose what a list's side panel shows.** `panel=False` on a field, `Section` or `Table` keeps it
+  on the full page only, and `Meta.panel` names the only parts the panel keeps, in order. Controls,
+  Form layout sets the same per instance. It is display only
+  ([docs/ui.md](docs/ui.md#what-a-side-panel-shows)).
+- **In the browser:** saved filters on lists, removing a file from a record, More > Copy record ID,
+  Change password from the account menu, a history button for recent records, a notification
+  centre behind the bell, and a link from Controls back to the app.
 
 ### Changed
 
-- **Controls, Export as code now writes code that works.** It used to export form layout and
-  list overrides as `FormView` and `ListView` code, which the browser ignored, so pasting it
-  changed nothing. It now writes `Meta` options on the model's class in its models file:
-  `layout = (Section(...), ...)` with `tabs` and `default_tab`, and `list_fields`, `open_in`,
-  `list_tabs` and `list_tab`. Pasted into the model, they give the same screens as the
-  overrides. Field widths follow the field type, and a list's page size and sort stay instance
-  overrides; the export says so in a comment.
-- **Aggregate filters on row-scoped Links.** `GET /api/{model}/aggregate` (and `context.aggregate`)
-  now allow an `eq` or `in` filter on a Link to a model the caller reads under a row scope when
-  every id is a record the caller can read, as lists already did. Other ids still answer 403
+- **Controls, Export as code writes code that works.** It writes `Meta` options on the model's class
+  (`layout`, `list_fields`, `open_in`, `list_tabs`, `list_tab`) instead of `FormView` and `ListView`
+  code the browser ignored.
+- **Sign-in lands on the first list, not Docs.** After sign-in, and at any address that matches no
+  route, the app opens the start page saved in Settings, else the first list the role can open.
+- **Aggregate filters on row-scoped Links.** `GET /api/{model}/aggregate` allows an `eq` or `in`
+  filter on a Link to a row-scoped model when every id is a record the caller can read
   ([docs/measures.md](docs/measures.md#permissions)).
-- **`Related` and `Chart` take more arguments.** `Related(model, link=None, ..., filters=None,
-  fields=())`: `link` stays required in `Meta.relations`, which refuses `filters` and `fields`.
-  `Chart(type, x=None, ..., model=None, link=None, filters=None)`: a report chart still needs `x`
-  and takes none of the new ones. Existing calls are unchanged.
-- **Sign-in lands on the first list, not Docs.** After sign-in, at `/`, at `/app` and at any
-  address that matches no route, the app opens the start page saved in Settings, else the first
-  list the role can open, with Docs on or off. Docs open only when chosen as the start page or
-  when the app has no list; they stay in the sidebar and the search palette.
-- **The list filter panel is a side panel.** It docks beside the table inside the page, with
-  no overlay or blur, and fills the height of the screen. Filter rows (field, condition, value)
-  sit on top and saved filters below; each half scrolls on its own. Escape closes it.
-- **Related records load when shown, five at a time.** Opening a record no longer asks for
-  every relation: the Related block and each Related tab section load when they scroll into
-  view, and one page serves both. Each section shows five rows with a small pager, and View all
-  opens the related list filtered to this record.
-- **Lists run flush to the main area.** A model list's table no longer sits in a rounded,
-  bordered card. Its rows run edge to edge, like a child table in focus view, and the list page
-  uses the full width of the main area. Related lists and reports keep their own look.
-- **`Meta.summary` and `Meta.side_blocks`.** `summary = False` leaves the record page's summary
-  strip out. `side_blocks = ('related', 'files')` picks and orders the side blocks, from
-  `key_fields`, `related`, `files` and `info`. Both are checked when the registry is built and go
-  into the UI schema only when a model sets them.
-- **More > Copy record ID** on the record page.
-- **Choose what a list's side panel shows.** `panel=False` on a field, `Section` or `Table` keeps
-  it on the full page only. `Meta.panel = ('Contact', 'notes', 'activity')` names the only parts
-  the panel keeps, in order: sections, fields, tabs, `summary` and side blocks. Names are checked
-  when the registry is built. Controls, Form layout has a panel button per section, field and tab,
-  and a Side panel card for the rest, stored with the layout. Hiding is display only. A required
-  field that is empty on a new record always shows, and the panel offers Open full page when it
-  hides anything. The UI schema carries `panel` only when something is hidden.
-- **The record page shows each fact once.** Key fields show in the header facts and no longer in
-  the summary strip, which now holds calculated values and per-record measures the header doesn't
-  show (no strip when nothing is left). The Key fields side block shows only while a tab other
-  than Details is open. A saved record's Details form leaves out the title, name and State that the
-  header shows; the title is edited in the header. A new record's form keeps them.
-- **The Related side block lists only relations with records** and is left out when none has any.
-  The Related tab still lists every relation.
-- **Record info no longer shows the record id.** Use More > Copy record ID. The block is left out
-  while it has nothing to show, such as an older record without times.
+- **`Related` and `Chart` take more arguments.** Existing calls are unchanged.
+- **The record page shows each fact once.** Key fields show in the header, and the summary strip
+  holds only calculated values and measures the header does not show. Record info no longer shows
+  the record id.
+- **Related records load when shown, five at a time,** with a small pager and View all.
+- **Lists run flush to the main area,** and the filter panel docks beside the table as a side
+  panel.
+- **Controls Jobs lists the jobs on the left** and shows the chosen job's schedules and runs on the
+  right. Only the Controls nav list scrolls.
+- **Focus rings.** The note composer shows one focus ring, matching rich text fields.
 
-- **Related counts use the model's words.** In the side block, a relation named after its model
-  is announced as "Payments, 1 payment" by screen readers; other relations still say "records".
-  An empty relation in the Related tab is one short line instead of a table of headers, and its
-  heading shows no 0.
-- **Record tabs show their keyboard focus ring inside the tab**, so the scrolling tab strip no
-  longer clips it.
-- **The note composer shows one focus ring.** The editor inside it no longer draws its own
-  border and ring, and the ring matches rich text form fields.
-- **Controls Jobs lists the jobs on the left.** All sits on top, and each job shows its latest
-  run and how many recent runs it has. A click (or the arrow keys) shows that job's schedules and
-  runs on the right, and the choice stays in the address as `?job=<name>`. On a phone the jobs
-  are a row of chips above the runs.
-- **The bell opens a notification centre.** It is a panel along the right edge under the top
-  bar, grouped by day, that closes on a click anywhere else or Esc. A click on an item marks it
-  read; Go to opens its record when the person can open it. New items slide in as popups at the
-  top right while the panel is closed.
-- **Only the Controls nav list scrolls.** The brand and workspace at the top of the Controls
-  sidebar and the account card at the bottom stay in place, like the app sidebar, also in the
-  phone drawer.
-- **Recent records moved from the sidebar to a history button left of search.** It lists them
-  newest first with the model and when each was opened, and has a Clear action.
+### Fixed
 
-### Upgrade notes
-
-- **Currency amounts move to 6 stored places.** Run `evlet migrate` for each instance: it backs the
-  database up, multiplies every stored Currency amount by 10,000 with exact integer arithmetic
-  (framework step `0007_money_scale`), then runs app migrations. Serving an unmoved instance is
-  refused. Other applications move on startup or in `database.migrate()`. Values read and travel as
-  before (`"12.50"`), applied migration checksums and saved calculation versions do not change, and
-  the largest Currency amount is now 9,223,372,036,854.775807. A `Currency` field's schema `scale`
-  is now 6, the storage scale: format from `currency_decimals` instead. Apps that rounded money with
-  `quantize(Decimal("0.01"))` or `round(x, 2)` should use `round_money(value, code)` so KWD and JPY
-  amounts are right.
-- **Python pages are gone.** If an app imports `evlet.ui` page names (`PageView`, `ListView`,
-  `FormView`, `Column`, `ViewRegistry` and the rest), delete those definitions and shape the
-  generated screens with `Model.Meta` (`layout`, `list_fields`, `tabs`, `open_in`, `panel`). An
-  `AppDefinition` may still pass `views=()`, as older app scaffolds do; a non-empty `views` or a
-  `ui` registry is refused at start-up with a message that says so. `Application` and `App` no
-  longer take `views` or `ui`. Clients that called `/api/ui` read `/api/schema` instead
-  ([docs/app-upgrades.md](docs/app-upgrades.md#from-03-to-04)).
-- **Native panels are gone.** Remove `.ts` and `.js` modules from an app's `views/` folder and
-  the matching `package-data` line from its `pyproject.toml`. A build no longer runs Node for them.
-- **`evlet new` is gone.** Use `evlet setup myproject --app notes --instance acme --dev`.
-- **`evlet.metadata` is gone.** `field_schema`, `label_for`, `ui_schema` and `view_for` live in
-  `evlet.ui.metadata`, which is internal ([docs/api-stability.md](docs/api-stability.md#internal)).
-
-### Removed
-
-These were never rendered or called at run time. Nothing an app or a person uses in the browser
-changes.
-
-- The Python page API in `evlet.ui` (definitions, compiler, component contracts, view registry
-  and page expressions), and the `GET /api/ui` and `GET /api/ui/resolve` routes. Python page
-  routes no longer claim paths in the route table. The Playground's Projects demo and Layouts
-  pages, which were Python pages, are removed with it.
-- Native TS/JS panels: `evlet/native.py`, `native_panels` in `/api/schema`, and
-  `/assets/apps/...`.
-- The `evlet new` standalone starter (`evlet/cli/legacy.py`). The nested app layout and
-  `evlet app <name> --legacy` stay; apps such as Finance use that layout.
-- The `evlet.metadata` compatibility module.
-- `evlet.calc.Document.observe`, `observe_table`, `observe_rules`, `subscriptions`, `explain`
-  and `dispose`. The server settles a document once and reads its snapshot; the browser engine
-  keeps all of them.
+- **Field read checks on chained formulas** walked every path again for each formula that read
+  another one, so a dozen chained formulas made requests hang. Each answer is now kept per role and
+  model.
+- **Percent in string formulas.** `compute="price * discount / 100"` with a `Percent` field failed
+  at registration. Percent is now a number there
+  ([docs/amendment-v2.md](docs/amendment-v2.md)).
+- **Virtual values in record responses.** `stored=False` results were missing from
+  `GET /api/{model}/{id}`, the create and update responses and `/lines/` pages, so the browser showed
+  "Not set". They are now calculated from the saved values, under the same field read checks.
+- **Field locks on create.** `locked_when` was judged against the values being created. A new record
+  and a new row have nothing locked now; the lock applies from the next write
+  ([docs/finite-calculations.md](docs/finite-calculations.md#field-rules)).
+- **Money measures in the right currency.** A sum of a Currency field whose currency comes from the
+  record was shown in the default currency. The measures and aggregate routes now return
+  `currencies`, and the summaries and charts use it
+  ([docs/measures.md](docs/measures.md#currencies)).
+- **Hourly image purge.** The `evlet_image_purge` task failed on every run. Held images and
+  unreferenced private files are now cleaned up hourly.
+- **Rich text images in documents.** Saving a document now links the held images its rich text uses
+  and deletes the ones it no longer uses. Before, new images were purged after a day.
+- **Records with text ids.** Record pages such as `/app/<model>/01hff1w8vgqwf` are served with 200
+  instead of 404, and their move and action buttons show again
+  ([docs/routing.md](docs/routing.md)).
+- **A read-only child table stays read only in the row editor** on a locked or cancelled record, or
+  without write access.
+- More > Reset layout puts collapsible sections back to their starting state at once.
 
 ## 0.3.0 (05-11-2026)
 
