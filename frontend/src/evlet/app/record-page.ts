@@ -9,7 +9,7 @@ import { html, match, when, type Child } from '../dom';
 import { ApiError, ValidationError, type RecordData } from '../api';
 import { legacyRecordId, recordId } from '../ids';
 import { uid } from '../ui/core';
-import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Readable } from '../reactive';
+import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Cell, type Readable } from '../reactive';
 import type { Route } from '../router';
 import { RecordStore, type Field, type Row, type Rules } from '../model/record';
 import type { FieldSchema } from '../model/schema';
@@ -836,9 +836,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const derivedText = () => 'Filled in by the record when it is saved.';
   const tableLocked = (child: { read_only?: boolean }) => () => Boolean(child.read_only) || locked.get() || !canWrite;
   const tableText = (child: { read_only?: boolean }) => child.read_only ? derivedText : lockedText;
-  const tablePanel = (child: { name: string; label: string; model?: string; read_only?: boolean }) => ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
-    rowForm: rowForm(child), controls: controls => tableControls.set(child.name, controls),
-    locked: tableLocked(child), lockedText: tableText(child), links: ctx.links, crumb: () => titleText.get(),
+  // A derived table drops its editing controls; in a "more information" row its note sits in the row's heading instead.
+  const tablePanel = (child: { name: string; label: string; model?: string; read_only?: boolean }, note = true) => ChildTable({ table: store.table(child.name), title: child.label, icon: 'rows-3', tint: look.tint,
+    rowForm: rowForm(child), controls: controls => tableControls.set(child.name, controls), derived: Boolean(child.read_only),
+    locked: tableLocked(child), lockedText: child.read_only && !note ? '' : tableText(child), links: ctx.links, crumb: () => titleText.get(),
     heading: { type: model.label, icon: look.icon, title: () => titleText.get(),
       number: numberText ?? (naming ? () => { const value = store.field('name').value.get(); return value && String(value) !== titleText.get() ? String(value) : ''; } : null),
       mark: () => look.person ? Avatar({ name: markName, size: 'sm' }) : RecordMark({ name: markName, size: 'sm', tint: look.tint }), footer: () => saveBarView() },
@@ -848,8 +849,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   /** A Table on a compact page: its title and a muted row count (with rows selected: "2 selected", Duplicate and
    * Delete), Focus and Columns on the right, the grid (whose last row adds a row), and a light dashed box while it has
-   * no rows. */
-  const compactTable = (child: { name: string; label: string; model?: string; read_only?: boolean }, withTitle: boolean) => {
+   * no rows.
+   * withTitle: the table heads the primary area with its title. Otherwise it sits in a "more information" row, whose
+   * heading takes the tools (toolsOut) so the table spans the card's width. */
+  const compactTable = (child: { name: string; label: string; model?: string; read_only?: boolean }, withTitle: boolean, toolsOut?: Cell<Child>) => {
     const table = store.table(child.name);
     const count = () => table.rows.get().length;
     // A table with section rows but no lines yet still shows them.
@@ -864,7 +867,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     // Only the empty box offers Add: once there are rows, the table's own last row adds one.
     const addLink = () => when(canAdd, () => html`<button type="button" class="link-q ev-cmp-add" on:click=${add}>${Icon('plus', { size: 'xs' })}Add ${noun}</button>${
       tableControls.get(child.name)?.sectioned ? html`<span class="ev-cmp-or muted">or <button type="button" class="link-q ev-cmp-add" on:click=${() => tableControls.get(child.name)?.addSection()}>add a section</button></span>` : null}`);
-    const grid = tablePanel(child), controls = tableControls.get(child.name);
+    const grid = tablePanel(child, withTitle), controls = tableControls.get(child.name);
     // The selection bar, on the title line while rows are selected (not on a locked record).
     const selectionBar = () => controls ? when(() => controls.selected.get() > 0 && controls.editable.get(), () => html`<span class="ev-cmp-sel" role="status">${() => `${controls.selected.get()} selected`}</span>
       ${Button({ label: 'Duplicate', size: 'small', onClick: () => controls.duplicateSelected() })}
@@ -882,7 +885,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     })()}</span>` : null;
     return html`<div class="ev-cmp-table" class:is-empty=${empty} data-table-block=${child.name}>
       ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span>${selectionBar()}<span class="grow"></span>${tools}</div>`
-        : html`<div class="ev-cmp-th ev-cmp-th-tools">${selectionBar()}<span class="grow"></span>${tools}</div>`}
+        : toolsOut ? (toolsOut.set([selectionBar(), tools]), null) : html`<div class="ev-cmp-th ev-cmp-th-tools">${selectionBar()}<span class="grow"></span>${tools}</div>`}
       ${when(empty, () => html`<div class="ev-cmp-empty"><span>${canAdd() ? `No ${child.label.toLowerCase()} yet. Add the first one.` : `No ${child.label.toLowerCase()} yet.`}</span>${addLink()}</div>`)}
       ${grid}</div>` as HTMLElement;
   };
@@ -920,8 +923,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         case 'table': {
           const child = tables.find(item => item.name === block.name)!;
           const table = store.table(child.name);
-          rows.push(MoreRow({ title: child.label, folds, start: rowStart(untrack(() => table.rows.get().length) > 0, position),
-            summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false) }));
+          const tools = cell<Child>(null);
+          rows.push(MoreRow({ title: child.label, folds, start: rowStart(untrack(() => table.rows.get().length) > 0, position), wide: true,
+            description: child.read_only ? derivedText() : undefined, tools: () => tools.get(),
+            summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false, tools) }));
           break;
         }
         case 'related': {

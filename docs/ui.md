@@ -39,7 +39,8 @@ save bar in view ([ui-framework.md](ui-framework.md)).
 A Table the record fills itself (`Meta.derives`, [model-engine.md](model-engine.md#derived-values))
 is read only on the record page, in focus view and in the row editor, whatever the state: it reads
 "Filled in by the record when it is saved." and a save never sends its rows. Its fields show read
-only too.
+only too, and it has no editing controls: no selection checkboxes, drag handles or Edit, only the row
+number (ChildTable `derived`).
 
 Model `Meta` options shape these screens: `list_fields`, `title_field`, `search_fields`,
 `layout` (sections, or tabs and blocks, see Record layouts below), `key_fields`, `cards`, `relations`, `measures`, `open_in`, `list_tabs`,
@@ -304,7 +305,7 @@ class Employee(Model):
 |---|---|
 | `Main(fields, *tables)` | The primary area, first: fields, then Table fields. |
 | `Section(...)` or `('Title', fields)` | Fields, as before. Without `Main`, the first section is the primary area. |
-| A `Table` field name | The child table, as a row of more information. A Table no block places joins the primary area. |
+| A `Table` field name | The child table, as a row of more information: its title, note and Focus and Columns tools on one line across the top and the table the full width of the card below (a section keeps its heading on the left). A Table no block places joins the primary area. |
 | `Related(model, link=None, *, label, filters, fields, limit, order)` | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. |
 | `Html(content)` | Text from the app. `{field}` shows that field of the record. |
 | `Chart(type, x=None, y=..., *, model, link=None, filters, label)` | Declared measures of `model` over the records that point to this one: `'stat'` numbers, or `'bar'` or `'line'` grouped by `x` (`'status'`, `'due:month'`). |

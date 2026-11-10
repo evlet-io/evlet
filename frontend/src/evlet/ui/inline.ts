@@ -4,7 +4,7 @@
 // KeyValueList and FormSection lay InlineValues out for side panels and the Details tab.
 
 import { html, when, type Child } from '../dom';
-import { batch, cell, untrack } from '../reactive';
+import { batch, cell, onCleanup, untrack } from '../reactive';
 import { Button, Icon } from './base';
 import { uid } from './core';
 import { phrase, labeller } from './explain';
@@ -68,6 +68,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
   // Rich text at rest inside the edit button shows its links as text (a link inside a button can't be used).
   const rest = (editable = false) => html`<span class="tx-wrap">${props.display ? props.display(field)
     : displayValue(field, { links: props.links, plainLinks: editable })}</span>`;
+  // A click, or Enter or Space on the value, edits it and opens its picker (Tab only focuses the value).
   const start = () => {
     if (!untrack(() => field.editable.get())) return;
     before = untrack(() => field.value.get());
@@ -75,10 +76,24 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
     conflict.set(false);
     editing.set(true);
     control?.focus();
+    // After the click that started it has finished, so the picker doesn't take that click as one outside it.
+    if (control?.open) { const opening = control; setTimeout(() => { if (control === opening && editing.peek() && opening.element.isConnected) opening.open!(); }); }
+    document.addEventListener('focusin', away, true);
+    document.addEventListener('mousedown', away, true);
+  };
+  // Focus or a press somewhere else (not the field, not its picker) ends the edit, as leaving the input does: a
+  // picker that held the focus closes without the input ever losing it.
+  const away = (event: Event) => {
+    const target = event.target as Element | null;
+    if (!editing.peek() || busy.peek() || !target || !(target instanceof Node) || wrapper.contains(target) || target.closest?.('.pop')) return;
+    if (textual) { if (control?.commit()) void finish(false); }
+    else void finish(false);
   };
   // Back to rest. Focus returns to the value only after Enter or Esc; when the user left the
   // field (Tab, a click elsewhere) focus stays where they sent it.
   const stop = (focus: boolean) => {
+    document.removeEventListener('focusin', away, true);
+    document.removeEventListener('mousedown', away, true);
     editing.set(false);
     if (focus) wrapper.querySelector<HTMLElement>('.fval')?.focus();
   };
@@ -146,6 +161,7 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
       () => Button({ label: 'Reload', icon: 'rotate-ccw', size: 'small', onClick: () => { void reload(); } }))}</div>`;
   };
 
+  onCleanup(() => { document.removeEventListener('focusin', away, true); document.removeEventListener('mousedown', away, true); });
   const wrapper = html`<div class="iv" data-field=${meta.name}
     on:keydown=${(event: KeyboardEvent) => {
       if (!editing.peek()) return;

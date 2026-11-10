@@ -128,3 +128,12 @@ describe('a list loading its rows', () => {
     expect(host.querySelector('.ev-list .ev-list-loading')).toBeNull();
   });
 });
+
+describe('field hints', () => {
+  it('follow the label and wrap under it as one piece, so a hint never squeezes the label', () => {
+    const styles = css('ui/styles.css');
+    expect(rule(styles, '.ff label')).toContain('flex-wrap:wrap');
+    expect(rule(styles, '.ff-hint')).toContain('white-space:nowrap');
+    expect(rule(styles, '.ff-hint.init')).toContain('color:var(--fg-4)');
+  });
+});

@@ -297,6 +297,20 @@ describe('a compact record in a side panel', () => {
     await until(() => expect(host.querySelectorAll('.ev-cards .stat-card')).toHaveLength(3));
   });
 
+  it('runs a table row\'s heading and tools across the top and gives the table the full width; a section keeps its heading on the left', async () => {
+    const model = screen.compact_schema.body.models.find((item: { name: string }) => item.name === 'shipment');
+    const blocks = model.record_layout.blocks.map((block: { kind: string; main?: boolean }) => block.kind === 'table' ? { ...block, main: false } : block);
+    const { host } = await start(withSchema(shipmentSchema({ attachments: true, record_layout: { blocks } })), `/app/shipment/${shipment}`);
+    await until(() => expect(host.querySelector('.ev-more-row[data-section="Stops"]')).not.toBeNull());
+    const row = host.querySelector<HTMLElement>('.ev-more-row[data-section="Stops"]')!;
+    if (row.classList.contains('closed')) row.querySelector<HTMLButtonElement>('.ev-more-toggle')!.click();
+    await until(() => expect(row.querySelector('.grid')).not.toBeNull());
+    expect(row.classList.contains('ev-more-wide')).toBe(true);
+    expect(row.querySelector('.ev-more-l .ev-more-tools [aria-haspopup="dialog"]')).not.toBeNull();
+    expect(row.querySelector('.ev-cmp-th-tools')).toBeNull();
+    expect(host.querySelector('.ev-more-row[data-section="Charges"]')!.classList.contains('ev-more-wide')).toBe(false);
+  });
+
   it('hides what Meta.panel leaves out of the shared view, and the full page shows it', async () => {
     const { host } = await start(withSchema(shipmentSchema({ attachments: true, open_in: 'panel', panel: { sections: ['Charges'], blocks: ['summary', 'files', 'info'] } })),
       `/app/shipment?open=${shipment}`);

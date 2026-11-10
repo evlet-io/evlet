@@ -614,6 +614,9 @@ mount(document.querySelector('#app')!, () => DocFrame({
 - **Tabs** and **TabPanel** are for screens of your own (a list's tabs use Tabs); the record page has no
   tabs since 0.4, and `sticky` and `keepTabPlace` went with them.
 - **InlineValue** reads first and edits in place: click or Enter opens the field's input,
+  and for a Link, Select, date, date-time or time field its picker too, in one step (a `Control`'s
+  `open()`; Tab onto the value opens nothing, and Esc in the picker closes it and keeps editing).
+  Table cells do the same on a click, Enter or F2, but not when typing starts the edit.
   Enter saves (one field, through `record.save()`, no Save button), Esc cancels, leaving the
   field saves. Focus returns to the value after Enter or Esc; after Tab or a click elsewhere
   it stays where the user went. Text the user did not change is never written, so a
@@ -638,7 +641,12 @@ mount(document.querySelector('#app')!, () => DocFrame({
   (with their rows of rows, as new rows), removed with Undo (`Table.restore()` brings back
   the same rows with their ids and rows of rows; Undo is refused with a message while the
   record saves or the lines are locked), moved by their drag handle (mouse, touch, or Space and
-  the arrow keys), and the table can take over the view (focus view). A row's **Edit** (the pencil
+  the arrow keys), and the table can take over the view (focus view). Columns fit the table's width
+  before it scrolls sideways (`fitColumns`): each column shrinks toward a minimum for its type, then
+  low-priority columns hide (long text and lists first, then calculated values, then from the right;
+  never the first, a pinned, a required or a summed column), and "2 more columns" in the toolbar opens
+  the row editor, which shows every field. Only when the kept columns at their minimum still don't
+  fit does the table scroll sideways. A column the person resized keeps its width. A row's **Edit** (the pencil
   by its number) opens the **row editor** in focus view: the rows as a narrow list on the left, in the
   table's structure (section headings, whose click shows or hides their rows, and each row by its title, a Link
   as the linked record's title, never its id; a click opens a row, and on the open row closes the editor; the

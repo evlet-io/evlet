@@ -75,10 +75,14 @@ export interface MoreRowProps {
   fields?: FieldLike[];
   /** Text shown while closed with nothing to summarise. */
   none?: string;
+  /** A table: the title, description and tools run on one line across the top and the content takes the full width. */
+  wide?: boolean;
+  /** Tools at the end of a wide row's heading (a table's Focus and Columns), shown while the row is open. */
+  tools?: () => Child;
 }
 
 /** One "more information" row: title, description and chevron on the left, the content (or its one-line summary
- * while closed) on the right. The person's choice is kept like a section's (Folds, by title). */
+ * while closed) on the right. A wide row (a table) puts its heading on one line across the top instead. The person's choice is kept like a section's (Folds, by title). */
 export function MoreRow(props: MoreRowProps): HTMLElement {
   const { folds, title } = props;
   const open = folds.open(title, props.start);
@@ -94,16 +98,18 @@ export function MoreRow(props: MoreRowProps): HTMLElement {
   });
   const id = uid('more'), head = uid('more-h');
   const summary: Readable<string> = derive(() => open.get() ? '' : props.summary());
-  return html`<section class="ev-more-row" class:closed=${() => !open.get()} aria-labelledby=${head} data-section=${title}
+  return html`<section class="ev-more-row" class:closed=${() => !open.get()} class:ev-more-wide=${Boolean(props.wide)} aria-labelledby=${head} data-section=${title}
     on:ev-reveal=${() => folds.reveal(title)}>
     <div class="ev-more-l">
       <button type="button" class="ev-more-toggle" id=${head} aria-expanded=${() => String(open.get())} aria-controls=${id}
         on:click=${() => folds.toggle(title, !untrack(() => open.get()))}>${Icon('chevron-down', { size: 'xs', className: 'ev-more-chev' })}<span>${title}</span></button>
       ${props.description ? html`<p class="ev-more-desc">${props.description}</p>` : null}
       <span class="badge fs-err" hidden=${() => !errors.get()}>${() => errors.get() ? `${errors.get()} ${errors.get() === 1 ? 'error' : 'errors'}` : ''}</span>
+      ${props.wide ? html`<p class="ev-more-sum ev-more-sum-w" hidden=${() => open.get()}>${() => summary.get() || html`<span class="ev-more-none">${props.none ?? 'Nothing filled in'}</span>`}</p>
+        <span class="ev-more-tools" hidden=${() => !open.get()}>${() => props.tools?.() ?? null}</span>` : null}
     </div>
     <div class="ev-more-r">
-      <p class="ev-more-sum" hidden=${() => open.get()} title=${() => summary.get() || null}>${() => summary.get() || html`<span class="ev-more-none">${props.none ?? 'Nothing filled in'}</span>`}</p>
+      <p class="ev-more-sum" hidden=${() => open.get() || Boolean(props.wide)} title=${() => summary.get() || null}>${() => summary.get() || html`<span class="ev-more-none">${props.none ?? 'Nothing filled in'}</span>`}</p>
       <div class="ev-more-body" id=${id} hidden=${() => !open.get()}>${when(() => drawn.get(), props.body)}</div>
     </div></section>` as HTMLElement;
 }

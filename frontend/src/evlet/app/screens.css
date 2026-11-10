@@ -505,6 +505,13 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-more-l .fs-err{margin:4px 0 0 22px;display:inline-block}
 .ev-more-l .fs-err[hidden]{display:none}
 .ev-more-r{min-width:0}
+.ev-more-row.ev-more-wide{grid-template-columns:minmax(0,1fr)}
+.ev-more-wide .ev-more-l{display:flex;align-items:center;gap:4px 12px;flex-wrap:wrap}
+.ev-more-wide .ev-more-desc,.ev-more-wide .ev-more-l .fs-err{margin:0}
+.ev-more-wide .ev-more-sum-w{flex:1;min-width:0;text-align:right}
+.ev-more-wide .ev-more-tools{margin-left:auto;display:flex;gap:4px}
+.ev-more-wide .ev-more-tools[hidden],.ev-more-wide .ev-more-sum[hidden]{display:none}
+.ev-more-wide.closed .ev-more-r{display:none}
 .ev-more-sum{margin:0;min-height:24px;line-height:24px;font-size:13.5px;color:var(--fg-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:default}
 .ev-more-none{color:var(--fg-4)}
 .ev-more-body .ev-related{border:0;margin:0;box-shadow:none;background:var(--surface)}

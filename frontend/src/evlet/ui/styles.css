@@ -761,8 +761,10 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .fs-g{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px 28px}
 .ff{min-width:0;display:flex;flex-direction:column;gap:1px;padding:3px 0}
 .ff.full{grid-column:1/-1}
-.ff label{font-size:12px;color:var(--fg-3);font-weight:500;display:flex;gap:8px;align-items:center}
-.ff-hint{display:inline-flex;align-items:center;gap:3px;color:var(--fg-3);font-weight:400}
+/* A hint (from customer, calculated, locked) follows the label as a small note and wraps under it as one piece when
+   the column is narrow, so the label itself never breaks to make room. */
+.ff label{font-size:12px;color:var(--fg-3);font-weight:500;display:flex;flex-wrap:wrap;gap:0 8px;align-items:center}
+.ff-hint{display:inline-flex;align-items:center;gap:3px;color:var(--fg-3);font-weight:400;white-space:nowrap}
 .ff .fval{min-height:34px;border:1px solid transparent}
 .ff .fval:hover{border-color:var(--border);background:var(--surface)}
 .ff.full .fval span.tx{white-space:pre-wrap;overflow:visible}
@@ -917,6 +919,7 @@ table.g{border-collapse:separate;border-spacing:0;table-layout:fixed;font-size:1
 .g .s2{--edge:inset -1px 0 0 var(--border);box-shadow:var(--edge)}
 .grid.scrolled .g .s2{--edge:inset -1px 0 0 var(--border),var(--pin-shade);box-shadow:var(--edge)}
 .g-ctl{padding:0 6px!important}
+.g-ci-n{justify-content:center;font-size:12px}
 .g-ci{display:flex;align-items:center;gap:4px}
 .g-drag{display:inline-grid;place-items:center;width:16px;height:24px;border-radius:var(--r-sm);color:var(--fg-4);cursor:grab;flex:none}
 .g-drag:hover:not(:disabled){color:var(--fg-2);background:var(--bg-muted)}
@@ -1046,7 +1049,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .diff .new{color:var(--fg);font-weight:550}
 .diff svg{color:var(--fg-4)}
 .ff-hint.calc{color:var(--t-violet);font-weight:550;font-size:11px;cursor:help}
-.ff-hint.init{color:var(--t-teal);font-weight:500;font-size:11px}
+.ff-hint.init{color:var(--fg-4);font-weight:400;font-size:11px}
 .g-lock{display:inline-flex;align-items:center;gap:6px;color:var(--fg-3);font-size:12px;padding:4px 2px}
 .btn.danger{background:var(--t-rose);border-color:var(--t-rose);color:var(--on-tint)}
 .btn.danger:hover{filter:brightness(.95)}
