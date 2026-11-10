@@ -217,10 +217,12 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const locked = derive(() => Boolean(read(props.locked ?? false)), { name: `${table.name} (locked)` });
   const readOnly = derive(() => locked.get() || !record.ready.get());
   const grand = props.totals ? [] : parentGrandTotals(table, sums as Record<string, Field>);
-  const summary = props.summary ?? [...Object.entries(sums), ...grand.map(field => [field.meta.name, field] as const)].map(([key, value], index, all) => ({
+  const summary: Array<TotalItem & { column?: string }> = props.summary ?? [...Object.entries(sums), ...grand.map(field => [field.meta.name, field] as const)].map(([key, value], index, all) => ({
     label: value && typeof value === 'object' && 'meta' in value ? value.meta.label : allColumns.find(column => column.key === key)?.label ?? key,
-    value: () => valueText(value), grand: index === all.length - 1 && all.length > 1,
+    value: () => valueText(value), grand: index === all.length - 1 && all.length > 1, column: index < Object.keys(sums).length ? key : undefined,
   }));
+  // A column's sum shows once: in the total line while that column shows, under the table only when it doesn't.
+  const summaryShown = derive(() => summary.filter(item => !item.column || rows.get().length === 0 || !columns.get().some(column => column.key === item.column)));
 
   const rows = table.rows;
   const selection = cell(new Set<string>(), { name: `${table.name} (selection)` });
@@ -696,7 +698,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     <div class="g-under">${when(locked, () => derived && !read(props.lockedText ?? '') ? null : html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
       () => html`${Button({ icon: 'plus', label: 'Add row', size: 'small', className: 'g-add', disabled: () => !record.ready.get(), onClick: add })}${sectioned
         ? html`<span class="g-add-sec">or <button type="button" class="link-q" disabled=${() => !record.ready.get()} on:click=${addSection}>add a section</button></span>` : null}<span class="muted hide-sm">${Key('Tab')} next cell · ${Key('Enter')} cell below · ${Key('Esc')} cancel</span>`)}
-      <span class="grow"></span>${summary.length ? html`<div class="g-sum">${summary.map(item => html`<div class:gt=${Boolean(item.grand)}><span>${item.label}</span><b class="num">${item.value}</b></div>`)}</div>` : null}</div>
+      <span class="grow"></span>${when(() => summaryShown.get().length > 0, () => html`<div class="g-sum">${each(summaryShown, item => item.label, item => html`<div class:gt=${Boolean(item().grand)}><span>${item().label}</span><b class="num">${item().value}</b></div>`)}</div>`)}</div>
     ${props.heading?.footer ? when(focused, () => html`<div class="g-foot">${props.heading!.footer!()}</div>`) : null}
   </div>` as HTMLElement;
   scroller = grid.querySelector('.g-scroll') as HTMLElement;

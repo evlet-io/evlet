@@ -663,7 +663,9 @@ mount(document.querySelector('#app')!, () => DocFrame({
   record header above the table and the save bar below it, outside the rows that scroll; on a phone
   the header is one line. Esc or Back to form returns to the form. Under 480 px the control column
   and the first column get narrower. The footer and the totals under it come from the parent's calculated
-  sums over the table (`total = lines.sum("amount")`). Only rows in view are in the DOM.
+  sums over the table (`total = lines.sum("amount")`). A column's sum shows once: in the total line while
+  the column shows, and under the table only while it is hidden; totals built from those sums (a grand
+  total) stay under the table. Only rows in view are in the DOM.
 - **DataTable** sorts (exact for decimals), resizes (double click resets), reorders columns
   (drag a header, or Alt and an arrow, within the pinned or the scrolling range), pins columns on
   the left (`pinned`, default 1, or the saved range), selects rows, moves with the arrow keys and
