@@ -203,9 +203,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   });
   const arranged = derive(() => arrange(allColumns, prefs.get()), { name: `${table.name} (arranged columns)` });
   const narrow = cell(narrowNow(), { name: `${table.name} (narrow)` });
-  // The control column: checkbox, drag handle and the row's number with Edit (a phone leaves out the handle and the number).
+  // The control column: checkbox, drag handle and the row's number with Edit (a phone keeps a narrow handle, without the number).
   const derived = Boolean(props.derived);
-  const ctl = () => derived ? 44 : narrow.get() ? 64 : 104;
+  const ctl = () => derived ? 44 : narrow.get() ? 72 : 104;
   const baseWidth = (column: ChildColumn) => prefs.get().widths[column.key]
     ?? (narrow.get() && arranged.get()[0]?.key === column.key ? Math.min(column.width, 120) : column.width);
   const allKeys = allColumns.map(column => column.key);
@@ -229,10 +229,12 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const locked = derive(() => Boolean(read(props.locked ?? false)), { name: `${table.name} (locked)` });
   const readOnly = derive(() => locked.get() || !record.ready.get());
   const grand = props.totals ? [] : parentGrandTotals(table, sums as Record<string, Field>);
-  const summary = props.summary ?? [...Object.entries(sums), ...grand.map(field => [field.meta.name, field] as const)].map(([key, value], index, all) => ({
+  const summary: Array<TotalItem & { column?: string }> = props.summary ?? [...Object.entries(sums), ...grand.map(field => [field.meta.name, field] as const)].map(([key, value], index, all) => ({
     label: value && typeof value === 'object' && 'meta' in value ? value.meta.label : allColumns.find(column => column.key === key)?.label ?? key,
-    value: () => valueText(value), grand: index === all.length - 1 && all.length > 1,
+    value: () => valueText(value), grand: index === all.length - 1 && all.length > 1, column: index < Object.keys(sums).length ? key : undefined,
   }));
+  // A column's sum shows once: in the total line while that column shows, under the table only when it doesn't.
+  const summaryShown = derive(() => summary.filter(item => !item.column || rows.get().length === 0 || !columns.get().some(column => column.key === item.column)));
 
   const rows = table.rows;
   const selection = cell(new Set<string>(), { name: `${table.name} (selection)` });
@@ -748,7 +750,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (readOnly.peek()) return;
     const list = rows.peek(), sections = table.sections.peek();
     const anchorOf = (target: string | null): string | null => target === null ? null : target.startsWith('s:') ? sections.find(section => section.key === target.slice(2))?.before ?? null : target;
-    if (id.startsWith('s:')) { table.moveSection(id.slice(2), anchorOf(before)); return; }
+    if (id.startsWith('s:')) { table.moveSection(id.slice(2), anchorOf(before), before?.startsWith('s:') ? before.slice(2) : undefined); return; }
     const row = list.find(item => item.key === id);
     if (!row || before === id) return;
     batch(() => {
@@ -834,7 +836,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     </div>
     <div class="g-under">${when(locked, () => derived && !read(props.lockedText ?? '') ? null : html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
       () => html`<span class="muted hide-sm g-keys">${Key('Tab')} next cell · ${Key('Enter')} cell below · ${Key('Esc')} cancel</span>`)}
-      <span class="grow"></span>${summary.length ? html`<div class="g-sum">${summary.map(item => html`<div class:gt=${Boolean(item.grand)}><span>${item.label}</span><b class="num">${item.value}</b></div>`)}</div>` : null}</div>
+      <span class="grow"></span>${when(() => summaryShown.get().length > 0, () => html`<div class="g-sum">${each(summaryShown, item => item.label, item => html`<div class:gt=${Boolean(item().grand)}><span>${item().label}</span><b class="num">${item().value}</b></div>`)}</div>`)}</div>
     ${props.heading?.footer ? when(focused, () => html`<div class="g-foot">${props.heading!.footer!()}</div>`) : null}
   </div>` as HTMLElement;
   scroller = grid.querySelector('.g-scroll') as HTMLElement;

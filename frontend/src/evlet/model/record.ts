@@ -349,15 +349,17 @@ export class Table {
     });
   }
 
-  /** Put a section row before line `before` (null: after the last line), after any section already there. */
-  moveSection(key: string, before: string | null) {
+  /** Put a section row before line `before` (null: after the last line), after any section already there, or just
+   * before section `ahead` when it is given (a section dropped on another one lands above it). */
+  moveSection(key: string, before: string | null, ahead?: string) {
     this.record.assertEditable();
     const section = this.sections.peek().find(item => item.key === key);
     if (!section) return;
     const rest = this.sections.peek().filter(item => item !== section), order = this.rows.peek().map(row => row.key);
     const rank = (item: TableSection) => item.before === null ? order.length : order.indexOf(item.before);
     const moved = { ...section, before };
-    const list = [...rest, moved].map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map(entry => entry.item);
+    const at = ahead ? rest.findIndex(item => item.key === ahead) : -1;
+    const list = (at >= 0 ? [...rest.slice(0, at), moved, ...rest.slice(at)] : [...rest, moved]).map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map(entry => entry.item);
     this.sections.set(list);
   }
 

@@ -22,9 +22,19 @@ describe('ChildTable over a record store', () => {
     expect(cellOf(rowsIn(host)[1], 'amount').textContent!.trim()).toBe('AED 5.00');
     expect(cellOf(rowsIn(host)[1], 'amount').classList.contains('calc')).toBe(true);
     expect(footer(host)).toEqual(['', 'Total · 3 lines', '', '', 'AED 15.00']);
-    expect(host.querySelector('.g-sum')!.textContent).toContain('AED 15.00');
+    // Each sum shows once, in the total line; nothing repeats it under the table.
+    expect(host.querySelector('.g-sum')).toBeNull();
     expect(host.querySelector('table')!.getAttribute('role')).toBe('grid');
     expect(host.querySelector('.g-t .n')!.textContent).toBe('3');
+  });
+
+  it('shows a sum under the table only while its column is hidden', async () => {
+    const { store } = await bigOrder(3);
+    const prefs = cell({ ...emptyPrefs(), hidden: ['amount'] });
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['product', 'qty', 'rate', 'amount'], prefs }));
+    expect(host.querySelector('.g-sum')!.textContent).toContain('AED 15.00');
+    prefs.set(emptyPrefs());
+    expect(host.querySelector('.g-sum')).toBeNull();
   });
 
   it('starts the Link search when the user types in a Link cell', async () => {

@@ -42,13 +42,13 @@ describe('testCRM: a deal and its lines', () => {
     const { host } = run.start(`/app/deal/${id}`);
     await until(() => expect(rows(host)).toHaveLength(2));
     expect(text(host.querySelector('.doc-head h1'))).toBe('Production planning module');
-    expect(sums(host)).toBe('SubtotalAED 83,400.00Vat totalAED 4,170.00TotalAED 87,570.00');
+    expect(sums(host)).toBe('TotalAED 87,570.00');
     // The footer totals each column by its plain sum, not the recurring (filtered) one.
     expect([...host.querySelectorAll('.doc-main tfoot td')].map(text).slice(-2)).toEqual(['AED 83,400.00', 'AED 4,170.00']);
 
     edit(cellOf(rows(host)[1], 'qty'), '15');
     expect(cellOf(rows(host)[1], 'amount').textContent!.trim()).toBe('AED 48,000.00');
-    expect(sums(host)).toBe('SubtotalAED 93,000.00Vat totalAED 4,650.00TotalAED 97,650.00');
+    expect(sums(host)).toBe('TotalAED 97,650.00');
     press(document.activeElement!, 'Escape');
 
     // A new line from a product: description, rate and taxable come from the product.
@@ -62,7 +62,7 @@ describe('testCRM: a deal and its lines', () => {
     click(byText(document.body, '.pop [role="option"]', /Training day/));
     await until(() => expect(cellOf(rows(host)[2], 'rate').textContent!.trim()).toBe('AED 2,400.00'));
     expect(cellOf(rows(host)[2], 'description').textContent!.trim()).toBe('Training day');
-    expect(sums(host)).toBe('SubtotalAED 95,400.00Vat totalAED 4,770.00TotalAED 100,170.00');
+    expect(sums(host)).toBe('TotalAED 100,170.00');
 
     // Alt and an arrow moves a line; it goes to the top.
     press(cellOf(rows(host)[2], 'qty'), 'ArrowUp', { altKey: true });
@@ -79,7 +79,7 @@ describe('testCRM: a deal and its lines', () => {
     expect(lines.create).toEqual([expect.objectContaining({ product: expect.stringMatching(/^[0-9a-z]{13}$/) })]);
     expect(lines.order).toHaveLength(3);
     expect(saved.body.subtotal).toBeUndefined();
-    await until(() => expect(sums(host)).toBe('SubtotalAED 95,400.00Vat totalAED 4,770.00TotalAED 100,170.00'));
+    await until(() => expect(sums(host)).toBe('TotalAED 100,170.00'));
     expect(rows(host).map(row => text(cellOf(row, 'description')))).toEqual(['Training day', 'ERP core licence', 'Implementation day']);
 
     // Remove a line with its checkbox; Undo is offered.
@@ -87,7 +87,7 @@ describe('testCRM: a deal and its lines', () => {
     click(byText(host, '.doc-main button', 'Delete'));
     expect(rows(host)).toHaveLength(2);
     expect(lastToast()).toContain('Deleted 1 row');
-    expect(sums(host)).toBe('SubtotalAED 93,000.00Vat totalAED 4,650.00TotalAED 97,650.00');
+    expect(sums(host)).toBe('TotalAED 97,650.00');
     expect(run.misses).toEqual([]);
   });
 

@@ -388,7 +388,7 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .ev-status-cancelled.ev-status-go:hover,.ev-status-locked.ev-status-go:hover{filter:none;text-decoration:underline}
 /* A cancelled board card: the title struck through and grey, the rest a little muted. */
 .card.is-cancelled .t{color:var(--fg-3);text-decoration:line-through}
-.card .t>.ev-state-ic{display:inline-flex;width:12px;margin-right:6px;vertical-align:-2px;color:var(--fg-4)}
+.card .t>.ev-state-ic{display:inline-flex;width:12px;margin-right:6px;vertical-align:-1px;color:var(--fg-4)}
 .card .t>.ev-state-ic:empty{display:none}
 .card.is-cancelled :is(.o,.f){opacity:.7}
 .ev-status-go .chev{margin-left:-1px;opacity:.7}
@@ -1266,7 +1266,8 @@ th:hover>.rz::after{background:var(--border-strong)}
 .lib-bulk{width:100%;display:flex;justify-content:center}
 .lib-bulk .bulk{position:static;transform:none}
 .lib-bulk .bulk:not(.show){opacity:.5}
-@media (max-width:480px){.g-exp{min-width:24px}.g-exp .num{display:none}.g-drag{display:none}}
+/* A phone keeps a narrow drag handle, so rows and sections can still be reordered by touch. */
+@media (max-width:480px){.g-exp{min-width:24px}.g-exp .num{display:none}.g-drag{width:12px}}
 @media (max-width:760px){.lib-app .sidebar{display:none}.g-x-f>div.wide{grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 /* select, pickers and side boxes (pickers.ts) */

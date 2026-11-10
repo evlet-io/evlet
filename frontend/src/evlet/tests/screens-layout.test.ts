@@ -137,3 +137,29 @@ describe('field hints', () => {
     expect(rule(styles, '.ff-hint.init')).toContain('color:var(--fg-4)');
   });
 });
+
+describe('section descriptions', () => {
+  it('read smaller than the section title, in the muted colour', () => {
+    const desc = rule(css('app/screens.css'), '.ev-more-desc');
+    expect(desc).toContain('font-size:12px');
+    expect(desc).toContain('color:var(--fg-3)');
+  });
+});
+
+describe('a board card\'s state icon', () => {
+  it('keeps the same 6 px gap before the title as a list row, centred on the title', () => {
+    const card = rule(css('ui/styles.css'), '.card .t>.ev-state-ic');
+    expect(card).toContain('margin-right:6px');
+    expect(card).toContain('vertical-align:-1px');
+    expect(rule(css('ui/styles.css'), '.card .t>.ev-state-ic:empty')).toContain('display:none');
+  });
+});
+
+describe('reordering table rows on a phone', () => {
+  it('keeps a narrow drag handle under 480 px instead of hiding it', () => {
+    const styles = css('ui/styles.css');
+    const phone = /@media \(max-width:480px\)\{\.g-exp\{[^}]*\}[^@]*?\}\}/.exec(styles)![0];
+    expect(phone).toContain('.g-drag{width:12px}');
+    expect(phone).not.toContain('.g-drag{display:none}');
+  });
+});

@@ -670,15 +670,23 @@ mount(document.querySelector('#app')!, () => DocFrame({
   at the end of the last section and offers "or add a section" (a new section starts with its label in edit). A
   closed section shows none, and adding into it opens it. New rows keep their place through the change set's
   `order`, so a save and reload shows them where they were added. Deleting a section keeps its lines; a locked or confirmed record offers no section edits.
-  Line pages count lines only, each page bringing the section rows before its first line. A save sends
+  A section dropped on another section lands above it (`Table.moveSection(key, before, ahead)`).
+  Line pages count lines only, each page bringing the section rows before its first line. Once a table
+  has a section row it draws every loaded line instead of only the rows in view: section rows differ in
+  height and a closed section hides its lines, which the fixed-height window can't place. Lines still load
+  a page (100) at a time, so the DOM grows only as far as the person scrolls in more. A table without
+  section rows stays virtualized. A save sends
   sections as `{_key, section}` to create (`_row_ids` maps the key back), `{id, section}` to rename, their
   ids to delete, and `order` with rows and sections whenever a section changed; Duplicate copies them as
   `{section}` entries in their places. Without the key the table is as before. With `heading` (the record's type,
   icon, mark, title, number and a `footer` such as the form's save bar), focus view keeps a compact
   record header above the table and the save bar below it, outside the rows that scroll; on a phone
   the header is one line. Esc or Back to form returns to the form. Under 480 px the control column
-  and the first column get narrower. The footer and the totals under it come from the parent's calculated
-  sums over the table (`total = lines.sum("amount")`). Only rows in view are in the DOM.
+  and the first column get narrower; the control column drops the row number but keeps a narrow drag
+  handle, so rows and sections still reorder by touch. The footer and the totals under it come from the parent's calculated
+  sums over the table (`total = lines.sum("amount")`). A column's sum shows once: in the total line while
+  the column shows, and under the table only while it is hidden; totals built from those sums (a grand
+  total) stay under the table. Only rows in view are in the DOM.
 - **DataTable** sorts (exact for decimals), resizes (double click resets), reorders columns
   (drag a header, or Alt and an arrow, within the pinned or the scrolling range), pins columns on
   the left (`pinned`, default 1, or the saved range), selects rows, moves with the arrow keys and
