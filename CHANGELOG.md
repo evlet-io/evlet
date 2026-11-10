@@ -189,7 +189,7 @@ which the browser never used. It covers #120 to #159. Evlet is still not product
   `Naming(..., label="Project number")` labels the standard `name` field. `Meta.focus` (and `focus`
   on a `Slip`) names the field a new form starts in. `Meta.duplicate = False` hides Duplicate, and
   `copy=False` on a field or `Table` keeps it out of a duplicate. `Meta.summary = False` leaves out
-  the summary strip, `Meta.side_blocks` picks the side column blocks, and `Meta.panel_summary = False`
+  the summary strip, `Meta.side_blocks` keeps attachments (`files`) or the automatic Related row (`related`), and `Meta.panel_summary = False`
   leaves the cards out of a list's side panel. Measures take `trend=` and `color=`. Reports say
   `source_kind`. All are checked when the registry is built.
 - **Choose what a list's side panel shows.** `panel=False` on a field, `Section` or `Table` keeps it
