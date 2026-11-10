@@ -210,6 +210,24 @@ describe('section rows', () => {
     expect(first.key).toBe(table.sections.peek()[0].before);
   });
 
+  it('puts a section dropped on another section above it', async () => {
+    const store = await sectionedOrder();
+    const table = store.table('lines');
+    const host = render(() => ChildTable({ table, columns: ['product', 'qty', 'amount'] }));
+    const names = () => [...host.querySelectorAll('tr.g-sec .g-sec-name')].map(node => node.textContent);
+    // Services lifted by its handle and moved up past Hardware's two lines lands on Hardware: it goes above it.
+    const handle = host.querySelectorAll<HTMLButtonElement>('tr.g-sec [data-drag-handle]')[1];
+    handle.focus();
+    press(handle, ' ');
+    for (let step = 0; step < 3; step++) press(handle, 'ArrowUp');
+    press(handle, ' ');
+    expect(names()).toEqual(['Services', 'Hardware']);
+    expect(table.sections.peek().map(section => section.before)).toEqual([table.rows.peek()[0].key, table.rows.peek()[0].key]);
+    // The store's own call, with the section to go above.
+    table.moveSection(table.sections.peek()[1].key, table.rows.peek()[0].key, table.sections.peek()[0].key);
+    expect(table.sections.peek().map(section => section.label)).toEqual(['Hardware', 'Services']);
+  });
+
   it('pages in lines only: a later page brings the section rows before its first line, and asks once', async () => {
     const store = await sectionedOrder({ page: true });
     const table = store.table('lines');

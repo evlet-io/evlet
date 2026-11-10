@@ -616,7 +616,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (readOnly.peek()) return;
     const list = rows.peek(), sections = table.sections.peek();
     const anchorOf = (target: string | null): string | null => target === null ? null : target.startsWith('s:') ? sections.find(section => section.key === target.slice(2))?.before ?? null : target;
-    if (id.startsWith('s:')) { table.moveSection(id.slice(2), anchorOf(before)); return; }
+    if (id.startsWith('s:')) { table.moveSection(id.slice(2), anchorOf(before), before?.startsWith('s:') ? before.slice(2) : undefined); return; }
     const row = list.find(item => item.key === id);
     if (!row || before === id) return;
     batch(() => {

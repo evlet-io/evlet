@@ -655,6 +655,7 @@ mount(document.querySelector('#app')!, () => DocFrame({
   drag handle, a chevron that hides its lines, its label (renamed in place), "N lines", and the sums of
   its own lines in the fields the schema's `section_sums` names (none without it). The add row offers "or
   add a section"; deleting a section keeps its lines; a locked or confirmed record offers no section edits.
+  A section dropped on another section lands above it (`Table.moveSection(key, before, ahead)`).
   Line pages count lines only, each page bringing the section rows before its first line. Once a table
   has a section row it draws every loaded line instead of only the rows in view: section rows differ in
   height and a closed section hides its lines, which the fixed-height window can't place. Lines still load
