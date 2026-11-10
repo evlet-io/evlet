@@ -346,7 +346,7 @@ class EnginePolicy(Policy):
     def presented(self, user, model):
         return set(model.__declared_fields__)
 
-    def fields(self, user, model, *, write=False, _visiting=frozenset()):
+    def fields(self, user, model, *, write=False):
         return set(model.__declared_fields__)
 
     def scope_sql(self, user, model):
