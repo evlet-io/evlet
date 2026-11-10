@@ -376,6 +376,8 @@ class Shipment(Model):
 
 - **`Meta.cards`** names zero to five derived values: fields with `compute=`, `fetch=` or `query=`
   (stored or `stored=False`) and per-record measures (`Meta.measures` with `model=` and `link=`). A
+  count reads as a plain number, never money. A sum of money whose code each record takes from its own
+  fields (`currency=` naming a field or a Link) shows without a symbol, since no one code covers it. A
   stored field people fill in, a hidden field, a model-level measure, an unknown name, a name given
   twice, more than five, or a name that is both a field and a measure fails when the registry is
   built. Cards are for root models, not Table rows. `/api/schema` sends `cards` as a list of names,
