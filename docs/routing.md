@@ -315,8 +315,18 @@ loopback origins.
 
 `evlet proxy acme --caddy` (or `--nginx`) prints a reverse proxy configuration for
 the instance's primary host and sub-hosts, forwarding to `127.0.0.1:<port>`. It
-answers 404 for `/_/*` on every host, and for `/controls*` and `/docs*` on sub-hosts,
-as the instance does. Its first lines give the exact `trusted_proxies` line to add to
+answers 404 for `/controls*` and `/docs*` on sub-hosts, as the instance does, and for
+`/_/*` on every host except the framework routes that must reach the internet:
+
+| Path | Used by |
+|---|---|
+| `/_/mcp` | Remote MCP clients, such as a Claude custom connector |
+| `/_/oauth/authorize`, `/_/oauth/token`, `/_/oauth/register`, `/_/oauth/revoke` | MCP client sign-in (OAuth 2.1) |
+| `/_/mail/callback`, `/_/mail/continue.js` | The return from a personal mailbox sign-in |
+
+Every other `/_/` path, such as the on-demand TLS check `/_/tls-allowed`, is for local
+callers only. The list is `evlet.app.PUBLIC_PATHS`; a test fails if the framework serves a
+`/_/` path that is in neither group. `/.well-known/` passes like any other path. Its first lines give the exact `trusted_proxies` line to add to
 `Instance(...)`, unless the instance already trusts `127.0.0.1` and `::1`; with
 `--write` the line is printed on the terminal as well.
 
@@ -326,13 +336,19 @@ as the instance does. Its first lines give the exact `trusted_proxies` line to a
 #     trusted_proxies=("127.0.0.1", "::1"),
 
 erp.acme.com {
-	@internal path /_/*
+	@internal {
+		path /_/*
+		not path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js
+	}
 	respond @internal 404
 	reverse_proxy 127.0.0.1:8000
 }
 
 portal.acme.com {
-	@internal path /_/*
+	@internal {
+		path /_/*
+		not path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js
+	}
 	respond @internal 404
 	@primary_only path_regexp (?i)^/(controls|docs)(/|$)
 	respond @primary_only 404
@@ -342,19 +358,28 @@ portal.acme.com {
 
 - `--write PATH` writes it to that file. Without it nothing is written, and the
   command never reloads Caddy or nginx; review the file and reload it yourself.
-- `--check` resolves each host's A and AAAA records and reports whether they point at
-  this server, found from its outgoing address. Behind NAT, pass `--ip` with the public
-  address. It exits with status 1 when a host points elsewhere or has no record.
+- `--check` resolves each host's A and AAAA records and compares them with this server's
+  addresses, found from its outgoing address or given with `--ip`. A match is `points here`.
+  Behind NAT the server sees only private addresses, so a public record is `may point here`
+  with a warning line to check the A record and ports 80 and 443. It exits with status 1
+  only for a host with no record (`no A or AAAA record`), or with only private records while
+  this server has a public address (`points elsewhere`). Controls, Routing shows the same.
 - `--write` creates the file with mode 0644; it holds no secrets.
 - The nginx output expects certificates under `/etc/letsencrypt/live/<host>/`, and keeps
-  connections open for an hour so the event stream works.
+  connections open for an hour so the event stream works. Each public `/_/` path has its own
+  `location =` block before `location ^~ /_/ { return 404; }`, with the same proxy settings and
+  `client_max_body_size 128k` (Evlet reads at most 64 KiB there).
+- Files written by Evlet 0.4.0 and earlier refuse every `/_/` path, so remote MCP and
+  mailbox sign-in get 404. Write the file again and reload the proxy. A site made with
+  `evlet setup --host` updates with the same command and `--apply`
+  ([cli.md](cli.md#serve-a-site-on-a-domain-in-one-go)).
 
 ### Many instances on one server
 
 Caddy can get certificates on demand instead of listing every host. Each instance
 answers `GET /_/tls-allowed?domain=<host>` from its route table: 200 for its own hosts,
 404 otherwise. It answers only when the client address is on this machine, so Caddy
-asks it directly at `127.0.0.1:<port>`; the `evlet proxy` output also refuses `/_/*`
+asks it directly at `127.0.0.1:<port>`; the `evlet proxy` output also refuses it
 from outside, because a proxied request arrives from the loopback address too.
 
 ```text

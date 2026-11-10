@@ -864,7 +864,9 @@ and conversation (owner and number only, never titles).
 People connect AI assistants (MCP clients such as Claude) to the instance. Remote clients
 use `https://<primary host>/_/mcp` and sign in with OAuth; local ones run `evlet mcp`
 ([connector.md](connector.md)). Both act as the person who signed in and go through the same
-Tool Engine, API routes and permission checks as the browser.
+Tool Engine, API routes and permission checks as the browser. The reverse proxy must pass
+`/_/mcp`, `/_/oauth/*` and `/.well-known/oauth-*` to Evlet; the files `evlet proxy` and
+`evlet setup --host` write do ([routing.md](routing.md#evlet-proxy)).
 
 | Key | File value | Rule |
 |---|---|---|
@@ -877,6 +879,17 @@ Tool Engine, API routes and permission checks as the browser.
 A stored value that no longer validates fails closed: the switches turn off, the rate becomes
 1, and a list that isn't a list disables every tool or hides every model. Changes are audited
 under `MCP`.
+
+**Reachable from the internet.** Admins see a **Check** button next to the address
+(`POST /api/_controls/mcp/reach`, no two-step code needed). The server makes two requests
+to its own public address, the way an AI client starts: `GET
+https://<domain>/.well-known/oauth-protected-resource/_/mcp`, which must describe this
+instance, then an unsigned `POST https://<domain>/_/mcp`, which must answer 401 with
+`WWW-Authenticate: Bearer resource_metadata=...`. The answer is `{checked, reachable, reason}`,
+shown as Yes or No with the reason, such as "Blocked by the proxy" when `/_/mcp` gets 404.
+It runs only on the button, never when the page opens, and the answer is kept for 30 seconds.
+On loopback or a development server it does not call out and says "Only on a site with a
+domain."; with MCP off it asks you to turn it on first. Other roles get 403.
 
 The page also lists connected clients (who, last call, number of calls) and totals for the
 last 24 hours: reads, writes and calls denied by permissions or by these settings. Admins can sign a client out at
