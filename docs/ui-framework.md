@@ -667,7 +667,8 @@ mount(document.querySelector('#app')!, () => DocFrame({
   icon, mark, title, number and a `footer` such as the form's save bar), focus view keeps a compact
   record header above the table and the save bar below it, outside the rows that scroll; on a phone
   the header is one line. Esc or Back to form returns to the form. Under 480 px the control column
-  and the first column get narrower. The footer and the totals under it come from the parent's calculated
+  and the first column get narrower; the control column drops the row number but keeps a narrow drag
+  handle, so rows and sections still reorder by touch. The footer and the totals under it come from the parent's calculated
   sums over the table (`total = lines.sum("amount")`). A column's sum shows once: in the total line while
   the column shows, and under the table only while it is hidden; totals built from those sums (a grand
   total) stay under the table. Only rows in view are in the DOM.

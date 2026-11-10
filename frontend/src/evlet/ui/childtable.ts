@@ -194,9 +194,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   });
   const arranged = derive(() => arrange(allColumns, prefs.get()), { name: `${table.name} (arranged columns)` });
   const narrow = cell(narrowNow(), { name: `${table.name} (narrow)` });
-  // The control column: checkbox, drag handle and the row's number with Edit (a phone leaves out the handle and the number).
+  // The control column: checkbox, drag handle and the row's number with Edit (a phone keeps a narrow handle, without the number).
   const derived = Boolean(props.derived);
-  const ctl = () => derived ? 44 : narrow.get() ? 64 : 104;
+  const ctl = () => derived ? 44 : narrow.get() ? 72 : 104;
   const baseWidth = (column: ChildColumn) => prefs.get().widths[column.key]
     ?? (narrow.get() && arranged.get()[0]?.key === column.key ? Math.min(column.width, 120) : column.width);
   const allKeys = allColumns.map(column => column.key);

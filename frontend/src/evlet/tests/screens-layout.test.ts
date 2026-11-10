@@ -154,3 +154,12 @@ describe('a board card\'s state icon', () => {
     expect(rule(css('ui/styles.css'), '.card .t>.ev-state-ic:empty')).toContain('display:none');
   });
 });
+
+describe('reordering table rows on a phone', () => {
+  it('keeps a narrow drag handle under 480 px instead of hiding it', () => {
+    const styles = css('ui/styles.css');
+    const phone = /@media \(max-width:480px\)\{\.g-exp\{[^}]*\}[^@]*?\}\}/.exec(styles)![0];
+    expect(phone).toContain('.g-drag{width:12px}');
+    expect(phone).not.toContain('.g-drag{display:none}');
+  });
+});
