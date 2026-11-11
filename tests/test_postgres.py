@@ -840,13 +840,13 @@ def test_dev_signin_link_on_postgresql(pg_dsn):
     db = PostgreSQLDatabase(pg_dsn, registry)
     app = build_app(db, LocalAuth(db, origins=['http://127.0.0.1:8000'], secure_cookies=False, allow_setup=True))
     app.initialize()
-    token, username = issue(db, create_admin=True)
-    assert username == 'demo-admin'
+    token, username = issue(db)
+    assert username == 'administrator'
     wrapped = DevSignIn(app)
     status, headers, _ = call(wrapped, 'GET', f'/_dev/signin?token={token}')
     assert status == 302
     status, _, body = call(wrapped, 'GET', '/api/auth/session', cookie=session_cookie(headers))
-    assert b'demo-admin' in body
+    assert b'administrator' in body
     assert call(wrapped, 'GET', f'/_dev/signin?token={token}')[0] == 403
 
 
@@ -936,7 +936,7 @@ def test_framework_ledger_and_steps_match_sqlite(pg_dsn, monkeypatch):
     app.managed_framework = False
     assert framework.upgrade(db) == ['0099_move'] and seen == [True]
     with db.transaction() as tx:
-        assert [row[0] for row in tx.connection.execute('SELECT tool FROM evlet_moved_calls')] == ['owner']
+        assert sorted(row[0] for row in tx.connection.execute('SELECT tool FROM evlet_moved_calls')) == ['administrator', 'owner']
         assert tx.connection.execute("SELECT to_regclass('evlet_legacy_calls')").fetchone()[0] is None
     # A failing step rolls back its own changes and leaves the ledger as it was.
     def fail(connection, postgres):

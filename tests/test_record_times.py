@@ -242,13 +242,13 @@ def test_postgresql_records_times_and_backfills_them(pg_dsn, clock):
     url = f"/api/note/{note['id']}"
     assert editor('PATCH', url, {'title': 'Second'}, headers=etag(editor, url))[0] == 200
     created_at, created_by, modified_at, modified_by = stamps(app, 'note', note['id'])
-    assert (created_by, modified_by) == (1, 2) and modified_at > created_at
-    assert editor('GET', url)[1]['_audit']['modified_by'] == {'id': 2, 'name': 'editor'}
+    assert (created_by, modified_by) == (2, 3) and modified_at > created_at
+    assert editor('GET', url)[1]['_audit']['modified_by'] == {'id': 3, 'name': 'editor'}
     account = admin('POST', '/api/account', {'title': 'Sales'})[1]['id']
     invoice = books_module.invoice(editor, account)
     assert books_module.move(admin, invoice, 'issued')[0] == 200
-    assert stamps(app, 'invoice', invoice.rsplit('/', 1)[1])[1::2] == (2, 1)
-    assert {entry['evlet_created_by'] for entry in books_module.entries(app)} == {1}
+    assert stamps(app, 'invoice', invoice.rsplit('/', 1)[1])[1::2] == (3, 2)
+    assert {entry['evlet_created_by'] for entry in books_module.entries(app)} == {2}
     # An older database: the columns go, the framework step adds them back and fills them from the journal.
     with app.database.transaction() as tx:
         for column in audit.COLUMNS:
