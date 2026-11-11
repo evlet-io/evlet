@@ -8,6 +8,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Record history shows Links properly.** A Link to a ledger row showed "Invalid amount" in
+  the record page's Activity: the journal turned its integer id into a text record id, which
+  the screen, reading the field as an integer, could not show. The journal now returns the
+  plain integer id, as record responses do, and the schema marks such a field
+  `"grouping": false` so the id shows without thousands separators. Activity also shows any
+  other changed Link as the linked record's title instead of `#id`.
 - **A value `derive()` sets that its field refuses is a field error, never a 500.** A value
   with more decimal places than the field allows, or a fraction for an `Integer`, already
   refused a save with 422, but a preview answered 500 and formulas read the refused value.

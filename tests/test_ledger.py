@@ -458,6 +458,42 @@ def test_a_ledger_model_has_no_public_surface(points):
     assert detail['last_move'] == row
     status, payload, _ = admin('PATCH', f'/api/member/{aisha}', {'last_move': row}, headers={b'if-match': admin('GET', f'/api/member/{aisha}')[2][b'etag']})
     assert status in (403, 422), payload
+    # An id, not a quantity: no thousands separators.
+    assert field['grouping'] is False
+
+
+def test_the_journal_shows_a_link_to_a_ledger_row_as_its_integer_id(tmp_path):
+    """The record history shows a Link to a ledger row as the plain integer id record responses
+    show, not a text record id (which the browser read as a malformed number)."""
+    entry = lean('Entry', {'amount': Decimal(scale=2, required=True)})
+    picked = []
+
+    class Holder(Model):
+        storage_name = 'holder'
+        permissions = FULL
+        label = Text(default='')
+        last_entry = Link(entry)
+
+        class Meta:
+            journal = Journal()
+
+        @action('Pick')
+        def pick(self):
+            # Trusted code sets the ledger row; callers cannot.
+            self.last_entry = picked[-1]
+
+    app, admin = build(Database(tmp_path / 'holder.sqlite3', Registry(Holder, entry)))
+    with app.database.transaction() as tx:
+        first, second = (tx.create(entry, amount=amount).id for amount in ('1.00', '2.00'))
+    with app.business.context(ADMIN) as context:
+        record = context.create(Holder, label='a')['id']
+        for row in (first, second):
+            picked.append(row)
+            context.action(Holder, record, 'pick')
+    items = admin('GET', f'/api/holder/{record}/journal')[1]['items']
+    assert [item['data']['fields']['last_entry'] for item in items if item['kind'] == 'changed'] == [
+        {'old': first, 'new': second}, {'old': None, 'new': first}]
+    assert type(first) is int
 
 
 # Migrations

@@ -66,7 +66,9 @@ Eva, the connector) must reach them.
   tabs, `Meta.status` and every other Meta option not listed below).
 - **Links.** A ledger model may link to a normal model or to another ledger model, with real
   foreign keys. A normal model may link to a ledger row: callers see that field as the plain
-  integer id, read only (the schema describes it as an `integer`), and cannot write it.
+  integer id, read only (the schema describes it as an `integer` with `"grouping": false`, so
+  screens show it without thousands separators), and cannot write it. The record's history
+  (`GET /api/{model}/{id}/journal`) shows that field's old and new values as the same integer ids.
 
 Ledger models are part of the saved schema and the startup check like any model.
 
