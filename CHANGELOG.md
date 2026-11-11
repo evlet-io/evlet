@@ -6,6 +6,17 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **`CreateModel(Model, if_missing=True)`** adopts a table made before the app used migrations.
+  When the table exists it is checked against the frozen class and kept with its rows; a
+  difference fails the batch naming it. A plain `CreateModel` of an existing table now says to
+  use the option. See [Adopting a table made before migrations](docs/model-engine.md#adopting-a-table-made-before-migrations).
+- **`AlterField` can change `required`.** Making a field optional always works. Making it
+  required checks every row and fails naming the first empty one, unless `fill=` gives a value
+  for them. Works on SQLite (in place, inside the migration transaction) and PostgreSQL. See
+  [Making a field required or optional](docs/model-engine.md#making-a-field-required-or-optional).
+
 ### Fixed
 
 - **Record history shows Links properly.** A Link to a ledger row showed "Invalid amount" in

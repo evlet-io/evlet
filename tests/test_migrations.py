@@ -224,6 +224,114 @@ def test_startup_rejects_changed_or_incomplete_declared_history(tmp_path):
         assert connection.execute('SELECT name FROM evlet_migrations').fetchall() == [('one',)]
 
 
+def adopting(tmp_path, name='adopt.sqlite3'):
+    """A database made before the app adopted migrations: Contact exists, with a row; the app now adds
+    Contact.active and a Note model, and its first migration creates Contact as it was."""
+    Old = old_model()
+    path = tmp_path / name
+    Database(path, Registry(Old)).initialize()
+    kept = Database(path, Registry(Old)).create(Old, name='Kept').id
+    New = type('Contact', (Model,), {'name': Text(required=True), 'active': Boolean(default=True)})
+    Note = type('Note', (Model,), {'text': Text(default='')})
+    return path, kept, New, Note
+
+
+def test_create_model_if_missing_adopts_a_table_made_before_migrations(tmp_path):
+    path, kept, New, Note = adopting(tmp_path)
+    plain = [Migration('0001_contact', CreateModel(old_model())), Migration('0002_active', AddField('contact', 'active', Boolean(default=True))),
+             Migration('0003_note', CreateModel(Note))]
+    # A plain CreateModel of a table that is already there fails, pointing at the option.
+    with pytest.raises(SchemaError, match=r'contact already exists in the schema; .*if_missing=True'):
+        Database(path, Registry(New, Note)).migrate(plain)
+    history = [Migration('0001_contact', CreateModel(old_model(), if_missing=True)), *plain[1:]]
+    target = Database(path, Registry(New, Note), migrations=history)
+    assert target.migrate(history) == ['0001_contact', '0002_active', '0003_note']
+    target.initialize()
+    assert target.get(New, kept).name == 'Kept' and target.get(New, kept).active is True
+    assert target.create(Note, text='new').text == 'new'
+    # On a fresh database the same history creates the table.
+    fresh = Database(tmp_path / 'fresh.sqlite3', Registry(New, Note), migrations=history)
+    assert fresh.migrate(history) == ['0001_contact', '0002_active', '0003_note']
+    assert fresh.create(New, name='New').active is True
+    # The option is part of the checksum only when it is set, so existing histories keep theirs.
+    assert 'if_missing' not in CreateModel(old_model()).signature()
+    assert CreateModel(old_model(), if_missing=True).signature()['if_missing'] is True
+    with pytest.raises(SchemaError, match='True or False'):
+        CreateModel(old_model(), if_missing='yes')
+
+
+def test_create_model_if_missing_refuses_a_table_that_differs(tmp_path):
+    path, kept, New, Note = adopting(tmp_path)
+    Other = type('Contact', (Model,), {'name': Text(required=True, max_length=10)})
+    history = [Migration('0001_contact', CreateModel(Other, if_missing=True)),
+               Migration('0002_active', AddField('contact', 'active', Boolean(default=True)))]
+    Target = type('Contact', (Model,), {'name': Text(required=True, max_length=10), 'active': Boolean(default=True)})
+    with pytest.raises(SchemaError, match=r'CreateModel\(Contact, if_missing=True\): the existing contact differs .*\n  contact\.name'):
+        Database(path, Registry(Target)).migrate(history)
+    # The saved schema can agree while the table itself does not: the table is checked too, and nothing is written.
+    with sqlite3.connect(path) as connection:
+        connection.execute('ALTER TABLE contact ADD COLUMN stray TEXT')
+    history = [Migration('0001_contact', CreateModel(old_model(), if_missing=True)),
+               Migration('0002_active', AddField('contact', 'active', Boolean(default=True)))]
+    with pytest.raises(SchemaError, match=r'if_missing=True\): the existing table cannot be adopted: contact: database columns differ'):
+        Database(path, Registry(New)).migrate(history)
+    with sqlite3.connect(path) as connection:
+        assert connection.execute('SELECT count(*) FROM evlet_migrations').fetchone()[0] == 0
+        assert 'active' not in [row[1] for row in connection.execute('PRAGMA table_info(contact)')]
+
+
+def check_required_changes(make):
+    """AlterField changes `required` on a table with rows. make(registry, migrations=None) opens the database."""
+    from evlet import AlterField, Integer
+    Contact = type('Contact', (Model,), {'name': Text(required=True), 'phone': Text(), 'visits': Integer()})
+    database = make(Registry(Contact))
+    database.initialize()
+    empty = database.create(Contact, name='No phone').id
+    database.create(Contact, name='Has phone', phone='+971 4 000 0000', visits=2)
+    Required = type('Contact', (Model,), {'name': Text(required=True), 'phone': Text(required=True), 'visits': Integer()})
+    # Rows with no value refuse the change, naming how many and the first; nothing is written.
+    plain = [Migration('0001_phone', AlterField('contact', 'phone', Text(required=True)))]
+    with pytest.raises(SchemaError, match=rf'contact.phone cannot become required: 1 record has no value, the first #{empty}\. Give AlterField a fill='):
+        make(Registry(Required)).migrate(plain)
+    database = make(Registry(Contact))
+    database.initialize()
+    assert database.get(Contact, empty).phone is None
+    # A fill value goes into the rows with none, then the column refuses empty values.
+    filled = [Migration('0001_phone', AlterField('contact', 'phone', Text(required=True), fill='unknown'))]
+    target = make(Registry(Required), filled)
+    assert target.migrate(filled) == ['0001_phone']
+    target.initialize()
+    assert sorted(record.phone for record in target.list(Required)) == ['+971 4 000 0000', 'unknown']
+    with pytest.raises(Exception, match='(?i)not null|null value|constraint was violated'):
+        with target.transaction() as tx:
+            tx.connection.execute('UPDATE contact SET phone = NULL')
+    # Making a field optional always works, here together with making another required.
+    Optional = type('Contact', (Model,), {'name': Text(), 'phone': Text(required=True), 'visits': Integer(required=True)})
+    history = [*filled, Migration('0002_optional', AlterField('contact', 'name', Text()),
+                                  AlterField('contact', 'visits', Integer(required=True), fill=0))]
+    target = make(Registry(Optional), history)
+    assert target.migrate(history) == ['0002_optional']
+    target.initialize()
+    created = target.create(Optional, phone='1', visits=1)
+    assert created.name is None and target.get(Optional, empty).visits == 0
+    # A fill must suit the field and only goes with required=True.
+    for operation, message in ((AlterField('contact', 'phone', Text(required=True, max_length=3), fill='too long'), 'fill= is not valid'),
+                               (AlterField('contact', 'phone', Text(), fill='x'), 'fill= is for making a field required')):
+        with pytest.raises(SchemaError, match=message):
+            operation.signature()
+    # Without a fill the checksum is the one AlterField had before the option existed.
+    assert 'fill' not in AlterField('contact', 'phone', Text(required=True)).signature()
+
+
+def test_alter_field_changes_required_on_existing_rows(tmp_path):
+    path = tmp_path / 'required.sqlite3'
+    check_required_changes(lambda registry, migrations=None: Database(path, registry, migrations=migrations))
+    # The constraint changes are made in place and leave a consistent file.
+    with sqlite3.connect(path) as connection:
+        assert connection.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+        assert {row[1]: row[3] for row in connection.execute('PRAGMA table_info(contact)')}.items() >= {'name': 0, 'phone': 1, 'visits': 1}.items()
+
+
 def test_baseline_adoption_validates_existing_rows_before_recording_history(tmp_path):
     Current = type('Contact', (Model,), {'name': Text(required=True), 'active': Boolean(default=True)})
     path = tmp_path / 'invalid.sqlite3'

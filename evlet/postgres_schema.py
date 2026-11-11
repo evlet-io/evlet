@@ -235,6 +235,8 @@ def apply(db, op, *arguments):
         db.execute('DELETE FROM evlet_retired_fields WHERE model = ? AND name = ?', (op.table, op.name))
     elif isinstance(op, (AlterField, RunData)):
         op.apply(db, *arguments)  # Values only; RunData runs after the batch's structural changes.
+    elif isinstance(op, CreateModel) and op.if_missing and storage_name(op.model) in tables(db):
+        op.verify(check, db)
     elif isinstance(op, (CreateModel, AddTable)):
         model = op.model() if isinstance(op, AddTable) else op.model
         table = storage_name(model)

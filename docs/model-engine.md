@@ -1021,6 +1021,35 @@ and model definitions in migration files unchanged. Do not point an old
 Migrations compare stored fields only, so a frozen class may have any Python name:
 `CreateModel` uses its `storage_name` (or lowercased class name) and its fields.
 
+### Adopting a table made before migrations
+
+An app that ran without a migration list for a while has tables that no migration created. When
+it adopts migrations in the same release as a model change, its first migration usually creates
+those models, and a plain `CreateModel` then fails because the table already exists. Mark those
+steps `if_missing=True`:
+
+```python
+from evlet import AddField, Boolean, CreateModel, Migration, Model, Text
+
+
+class Contact(Model):            # frozen copy of Contact as the database has it
+    name = Text(required=True)
+
+
+migrations = [
+    Migration("0001_contact", CreateModel(Contact, if_missing=True)),
+    Migration("0002_active", AddField("contact", "active", Boolean(default=True))),
+]
+```
+
+On a database where the table exists, the step checks it against the frozen class (the saved
+schema, then the table's columns, foreign keys and indexes) and keeps it with its rows. Any
+difference fails the whole batch with a message naming it, for example
+`CreateModel(Contact, if_missing=True): the existing contact differs from this definition`, and
+nothing is written. On a new database the step creates the table as `CreateModel` does. The
+option is part of the step's checksum only when it is set, so existing histories keep theirs.
+A plain `CreateModel` of a table that exists still fails, and its message points at this option.
+
 ### Adding a child table
 
 `AddTable(parent, name, ChildClass)` adds an owned table to an existing model. `parent`
@@ -1088,9 +1117,9 @@ also create or adopt the current baseline explicitly. Without a declared list,
 A legacy database without schema metadata must first be initialized with its
 original models, then explicitly upgraded.
 
-Supported operations are deliberately bounded: add a model, add a child table, add a field, rename
-a field, add an index, retire or drop a field, convert a field safely, run a data step, and recalculate
-stored values. Fixed backfills are validated; required added fields need a value. Callable or
+Supported operations are deliberately bounded: add a model (or adopt its existing table), add a child
+table, add a field, rename a field, add an index, retire or drop a field, convert a field safely, make
+a field required or optional, run a data step, and recalculate stored values. Fixed backfills are validated; required added fields need a value. Callable or
 NUL-containing backfills, non-null Link backfills, removing a model, other type changes, narrowing
 changes, and reverse migrations are not supported. They fail instead of rebuilding tables or guessing
 how to transform existing data. Changes to runtime defaults alone do not require a database migration.
@@ -1127,7 +1156,7 @@ defensive mode refuses this, and the migration then fails with a message saying 
 | `Text` | `Text` or `LongText` with the same or a longer `max_length` |
 | `Select` | `Select` with the same choices plus new ones |
 
-`minimum` and `maximum` may change too. `required`, `unique`, `index` and Link targets may not.
+`minimum`, `maximum` and `required` may change too (below). `unique`, `index` and Link targets may not.
 Each stored row is converted and validated against the new definition inside the migration
 transaction; a value that overflows or fails (a bound, a length) names the record and rolls the
 batch back. Revisions and Journal entries keep the values they recorded.
@@ -1137,6 +1166,32 @@ from evlet import AlterField, Decimal, Migration
 
 Migration("0003_half_days", AlterField("leaveapplication", "days", Decimal(scale=1)))
 ```
+
+### Making a field required or optional
+
+`AlterField` changes `required` on a table that has rows, on SQLite and PostgreSQL:
+
+```python
+from evlet import AlterField, Migration, Text
+
+Migration("0004_phone_required", AlterField("contact", "phone", Text(required=True), fill="unknown"))
+Migration("0005_note_optional", AlterField("contact", "note", Text()))
+```
+
+* **Optional.** Making a field optional always works. Stored values stay as they are.
+* **Required.** Every row needs a value. `fill=` is a fixed value, checked against the new field
+  like a backfill, that is stored in the rows that have none. Without it, or if rows are still
+  empty, the batch fails and nothing is written:
+  `contact.phone cannot become required: 3 records have no value, the first #01jk.... Give
+  AlterField a fill= value, or fill them with a RunData step in an earlier migration`. A Link
+  takes no fill (fill those rows with a `RunData` step). `fill=` goes only with `required=True`.
+  A `RunData` step runs after its own migration's operations, so a step that fills the values
+  belongs in an earlier migration.
+* On SQLite the column's `NOT NULL` is added or removed in place, with the same documented
+  procedure as `RetireField`, after the rows are checked inside the migration transaction. On
+  PostgreSQL it is `ALTER COLUMN ... SET NOT NULL` or `DROP NOT NULL`.
+* `evlet migrate --plan` suggests the `AlterField` and notes when `fill=` may be needed. `fill`
+  is part of the step's checksum only when it is given.
 
 ### Data steps
 
