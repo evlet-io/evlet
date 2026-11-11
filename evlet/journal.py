@@ -141,7 +141,10 @@ def actor_of(user):
 
 
 def via(tx, user):
-    """The AI assistant a request came through, or None. The actor stays the person it acts as."""
+    """The AI assistant a request came through, the system name trusted code acted as, or None.
+    The actor stays the person it acts as (the engine for the system)."""
+    if getattr(user, 'system', None):
+        return user.system
     access = getattr(user, 'access', None)
     if access is not None and access.origin in ('eva', 'schedule'):
         return 'Eva'

@@ -8,6 +8,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+### Changed
+
+- `Move` takes `system=False`, and its `roles` default is now written `roles=None`, which still
+  means admin and editor. `User` gains `system=None`. Apps change nothing.
+
 ### Fixed
 
 - **Moves and actions that link a ledger row work over HTTP.** A move `run` method or an
@@ -40,6 +45,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Writing such a field reports the real error.** A write naming a hidden intermediate, or a
   result that reads it, now fails with `COMPUTED_FIELD_WRITE: this value is calculated`
   instead of "One or more values are invalid".
+- An `@action` that returned a `JobReceipt` put the receipt object in `_outcome`, which could not
+  be sent as JSON. It is now `_job`.
 
 ## 0.4.1 (10-11-2026)
 

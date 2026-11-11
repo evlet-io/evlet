@@ -11,6 +11,7 @@ from types import MappingProxyType
 from .auth import AccessError
 from .fields import MISSING, Link, Reference
 from .models import ValidationError
+from .permissions import CALLER
 
 
 @dataclass(frozen=True)
@@ -461,7 +462,11 @@ def checked_move(context, model, field, draft, before, current, to):
     move = field.move(current, to)
     if move is None:
         raise AccessError(409, f'This record cannot move from {current} to {to}')
-    if context.user.role not in move.roles:
+    if move.system:
+        # Only trusted app code (a job, an action or a move's run method) makes a system move; a caller never does.
+        if CALLER.get():
+            raise AccessError(403, f'{move.label} is made by the application only')
+    elif context.user.role not in move.roles:
         raise AccessError(403, f'Your role cannot use {move.label}')
     guard = context._business.registry.guards.get(model, {}).get(move)
     check_guard(context, Guards(context, model, before._values, lambda: before), guard, move.label, 'move')
@@ -580,7 +585,7 @@ def availability(business, context, model, record, loaded=None):
         closed = None if read_only or getattr(context._tx, '_periods_unlocked', False) else periods.closed(context._tx, model, record._values)
         moves = []
         for move in field.moves:
-            if current not in move.sources or current in field.final:
+            if current not in move.sources or current in field.final or move.system:
                 continue
             reason = None
             if user.role not in move.roles:
@@ -637,6 +642,8 @@ def state_schema(business, user, model):
     field, guards = model.__declared_fields__[name], business.registry.guards.get(model, {})
     moves = []
     for move in field.moves:
+        if move.system:
+            continue  # Only the application makes it, so no caller is told about it.
         asks = writable_asks(business, user, model, move)
         moves.append({'from': list(move.sources), 'to': move.to, 'label': move.label, 'roles': list(move.roles), 'guarded': move in guards,
                       'when': guards[move].ir if move in guards and readable(business.policy, user, guards[move]) else None,

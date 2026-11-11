@@ -1,16 +1,17 @@
 """A small durable queue for short single-node SQLite tasks, and long tasks run in committed steps."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import json
 import hashlib
 import logging
 import re
 import secrets
 import sqlite3
+import threading
 import time
 
 from .auth import AccessError, User
-from .identity import text as text_id
+from .identity import RecordId, text as text_id
 from .database import NotFoundError
 from .models import ValidationError
 from .permissions import Policy, trusted
@@ -62,6 +63,53 @@ class JobContext:
     # The value the last committed step of a resumable task returned; None before the first step.
     checkpoint: object = None
     _report: object = field(default=None, init=False, repr=False, compare=False)
+    _business: object = field(default=None, init=False, repr=False, compare=False)
+
+    def business(self, tx, *, user=None, system=None, role=None):
+        """A document context (evlet.documents.Context) in this job's transaction, for moves, actions and
+        document writes with every rule, permission check and Journal entry they have over HTTP.
+
+        * `job.business(tx)` acts as the job's own user: the account that queued it, read again when the
+          job started (or the role a system job was queued with).
+        * `job.business(tx, user=account_id)` acts as that account, read again now: it must be active,
+          and its current role, row scopes and field permissions apply.
+        * `job.business(tx, system="Nightly import", role="admin")` acts as the system under that name.
+          The role's permissions apply (a row scope that names the account matches nothing), writes are
+          recorded under no account, and the Journal names the system as `via`.
+
+        Job handlers are trusted code, so the context may also make system moves (Move(..., system=True)).
+        Writes commit or roll back with the job's own transaction (or the step of a resumable task)."""
+        from .documents import Context
+        business = self._business
+        if business is None:
+            raise ValueError('This job runs without an application, so it has no business context')
+        if not business.database.owns(tx):
+            raise ValueError("Pass the job's own transaction")
+        if sum(value is not None for value in (user, system)) > 1:
+            raise ValueError('Act as a user or as the system, not both')
+        if role is not None and system is None:
+            raise ValueError('role= goes with system=; a user acts with its own role')
+        source, correlation = 'Automation', f'job:{self.id}'
+        if system is not None:
+            if not isinstance(system, str) or not system.strip() or len(system) > 60 or '\x00' in system:
+                raise ValueError('Name the system in 1 to 60 characters, such as system="Nightly import"')
+            if role not in business.policy.roles:
+                raise ValueError('A system context needs role=, one of: ' + ', '.join(business.policy.roles))
+            acting, source = User(0, system.strip(), role, system=system.strip()), 'System'
+        elif user is not None:
+            account_id = user.id if isinstance(user, User) else user
+            if type(account_id) is not int or account_id <= 0:
+                raise ValueError('Pass user= an account id or a User with one')
+            row = tx.connection.execute('SELECT id,username,role FROM evlet_users WHERE id=? AND active=1', (account_id,)).fetchone()
+            if row is None:
+                raise AccessError(403, 'The account this job acts as is not active')
+            acting = User(row['id'], row['username'], row['role'], user_links(tx, account_id))
+        elif self.user is not None:
+            # The job's user keeps any API key or assistant narrowing; its record links are read now for row scopes.
+            acting = replace(self.user, links=user_links(tx, self.user.id)) if self.user.id else self.user
+        else:
+            raise ValueError('This job was queued without a user. Pass user=account_id, or system="Name" with role=')
+        return Context(business, tx, acting, source=source, correlation_id=correlation)
 
     def progress(self, done, total=None, message=''):
         """Record how far the job is. It is saved with the handler's writes, so a rolled-back step leaves the last
@@ -73,6 +121,12 @@ class JobContext:
         if not isinstance(message, str) or len(message) > 200 or '\x00' in message:
             raise ValueError('Use a progress message of at most 200 characters')
         self._report(done, total, message)
+
+
+def user_links(tx, user_id):
+    """The (model, record id) pairs row scopes such as own_customer read for an account."""
+    return tuple((row['model'], RecordId(row['record_id'])) for row in tx.connection.execute(
+        'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (user_id,)))
 
 
 def progress_text(done, total, message=''):
@@ -107,6 +161,8 @@ class JobQueue:
             raise ValueError('Use an explicit tenant slug')
         self.database, self.tenant, self.events = database, tenant, events
         self.policy = policy or Policy(database.registry)
+        # Set when a transaction that queued a job commits (Context.enqueue), so a worker in this process runs it now.
+        self._woken = threading.Event()
         if self.policy.registry is not database.registry or (events and events.database is not database):
             raise ValueError('Jobs must use the same database, event store, and policy')
         self.tasks = {}
@@ -193,6 +249,16 @@ class JobQueue:
         if key_id is not None: tx.connection.execute('INSERT INTO evlet_job_keys(job_id,key_id) VALUES (?,?)', (job_id, key_id))
         if assistant is not None: tx.connection.execute('INSERT INTO evlet_job_assistants(job_id,client_id) VALUES (?,?)', (job_id, assistant))
         return JobReceipt(job_id, 'queued')
+
+    def wake(self):
+        """Tell a worker in this process that a job is due now. Context.enqueue calls it once its transaction commits."""
+        self._woken.set()
+
+    def wait(self, timeout):
+        """Wait up to `timeout` seconds for wake(); True when woken. Workers wait with it between passes."""
+        woken = self._woken.wait(timeout)
+        self._woken.clear()
+        return woken
 
     def schedule(self, schedule, task, payload, *, every, start_at=None, user=None, target=None, calendar=None):
         name(schedule)
@@ -382,6 +448,7 @@ class JobQueue:
                 tx.connection.execute(sql, (job_id, done, total, message, int(time.time())))
         context = JobContext(job_id, self.tenant, row['attempts'], user, stable_key, checkpoint)
         object.__setattr__(context, '_report', report)
+        object.__setattr__(context, '_business', getattr(self, 'business', None))
         return task, context, json.loads(row['payload'])
 
     @staticmethod

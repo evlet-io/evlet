@@ -494,13 +494,24 @@ class Context:
         connection.execute(f'RELEASE SAVEPOINT {name}')
 
     def enqueue(self, task, payload, *, key=None, target=None):
+        """Queue a registered Task in this context's transaction; returns its JobReceipt.
+
+        The job is part of the transaction: it is queued only if the transaction commits, and once it
+        does, the worker in this process is woken to run it at once. It runs as this context's user (read
+        again when it starts), or with this context's role when the context acts as the system. `target`
+        (Model, id) needs update access now and again when the job runs. In an @action, use
+        self.context.enqueue(...); return the receipt to answer 202 with the job."""
         if self.readonly:
             raise AccessError(403, 'This context is read only')
-        if self._business.jobs is None:
+        jobs = self._business.jobs
+        if jobs is None:
             raise ValueError('Jobs are unavailable')
         if target is not None: self._business.policy.record(self._tx, self.user, target[0], target[1], 'update')
-        return self._business.jobs.enqueue(self._tx, task, payload, user=self.user if self.user.id else None,
-                                          system_role=self.user.role if not self.user.id else None, key=key, target=target)
+        receipt = jobs.enqueue(self._tx, task, payload, user=self.user if self.user.id else None,
+                               system_role=self.user.role if not self.user.id else None, key=key, target=target)
+        if jobs.wake not in self._tx._after_commit:
+            self._tx._after_commit.append(jobs.wake)
+        return receipt
 
 
 def load_draft(context, model, record_id, values, *, preview=False):
@@ -1647,6 +1658,16 @@ def handler_context(context, draft):
                 object.__setattr__(part, 'context', previous)
 
 
+def add_outcome(result, outcome):
+    """What a run method or action returned, on its detail: a queued job as `_job` ({id, state}), a
+    presented slip as `_outcome`."""
+    from .jobs import JobReceipt
+    if isinstance(outcome, JobReceipt):
+        result['_job'] = outcome.public()
+    elif outcome is not None:
+        result['_outcome'] = outcome
+
+
 @contextmanager
 def readonly_drafts(context, all_drafts):
     originals = [(part, part.context, part._readonly, part._values, part._rows) for _, part in all_drafts]
@@ -1833,7 +1854,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             record_plan(tx, business.registry.name_for(model), record_id, version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
         result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
-        if outcome is not None: result['_outcome'] = outcome
+        add_outcome(result, outcome)
         return result
     # A closed period (Meta.period) refuses the write whether the saved or the new date is in it.
     from . import periods
@@ -1872,7 +1893,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     business.changed(tx, model, record.id)
     result = business.detail(tx, user, tx.get(model, record.id), row_limit=None)
     if keys: result['_row_ids'] = keys
-    if outcome is not None: result['_outcome'] = outcome
+    add_outcome(result, outcome)
     return result
 
 
