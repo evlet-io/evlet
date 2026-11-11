@@ -105,6 +105,28 @@ describe('change password from the account menu', () => {
 });
 
 describe('personal pages', () => {
+  it('shows the System Administrator a fixed profile and saves its email at once with its password, also on a served instance', async () => {
+    const { host, sent } = start(routes([
+      ['POST', /\/api\/_settings\/me\/email$/, sent => ({ status: 200, etag: null, body: { email: sent.body.email } })],
+    ], me(body => { body.builtin = true; body.development = false; body.profile = { ...body.profile, full_name: 'System Administrator', email: '' }; })), '/settings/profile');
+    await until(() => expect(text(host.querySelector('.set-head h1'))).toBe('Profile'));
+    // Name, title and photo can't change; there is no upload or name field to type in.
+    expect(host.querySelector('#pf-full_name')).toBeNull();
+    expect(host.querySelector('#photo-in')).toBeNull();
+    expect(host.querySelector<HTMLInputElement>('input[aria-label="Full name"]')!.disabled).toBe(true);
+    click(byText(host, 'button', 'Add'));
+    await until(() => expect(document.querySelector('#ae-email')).toBeTruthy());
+    typeInto(document.querySelector<HTMLInputElement>('#ae-email')!, 'ops@example.test');
+    click(byText(document.body, '.modal button', 'Save email'));
+    expect(text(document.querySelector('.modal .err'))).toBe('Enter your current password.');
+    typeInto(document.querySelector<HTMLInputElement>('#ae-password')!, 'my password');
+    click(byText(document.body, '.modal button', 'Save email'));
+    await until(() => expect(document.querySelector('.modal')).toBeNull());
+    expect(requests(sent, 'POST', /email$/)[0].body).toEqual({ email: 'ops@example.test', password: 'my password' });
+    expect(lastToast()).toBe('Notifications now go to ops@example.test');
+    await until(() => expect(host.querySelector<HTMLInputElement>('input[aria-label="Email"]')!.value).toBe('ops@example.test'));
+  });
+
   it('saves the profile as you go and asks for a confirmation link to change the email', async () => {
     const { host, sent } = start(routes([
       ['PATCH', /\/api\/_settings\/me\/profile$/, sent => ({ status: 200, etag: null, body: { ...screen.settings_me.body.profile, ...sent.body } })],

@@ -121,6 +121,8 @@ their `evlet>=0.4.0,<0.5` dependency.
 - `evlet dev` and `evlet playground` no longer create `admin` or `demo-admin`. Their link signs
   in the Administrator, which chooses its password on first use. `DevSignIn(create_admin=...)`
   is ignored with a `DeprecationWarning` and goes in 0.5.
+- Give the Administrator an email address for notifications in Settings, Profile (any
+  instance, with its password) or with `evlet users set-email <instance> administrator <email>`.
 - `evlet setup --host` asks only for the Administrator's password, and `evlet serve` says how to
   set it while it has none.
 

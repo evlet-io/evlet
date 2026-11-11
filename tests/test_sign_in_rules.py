@@ -6,7 +6,7 @@ import pytest
 
 from evlet import Application, Database, LocalAuth, Policy, Rule, Security
 from evlet.auth import ADMINISTRATOR, PROTECTED, password_hash
-from evlet.controls import set_password_from_shell
+from evlet.controls import set_email_from_shell, set_password_from_shell
 from evlet.framework import upgrade
 from evlet.migrations import SchemaError
 from evlet.settings import FIXED_PROFILE
@@ -214,8 +214,7 @@ def test_the_administrator_cannot_be_changed_on_any_surface(secured, tmp_path):
     assert me('PATCH', '/api/_settings/me/prefs', {'theme': 'dark'})[0] == 200
     profile = me('GET', '/api/_settings/me')[1]['profile']
     assert profile['full_name'] == 'System Administrator'
-    sent = me('POST', '/api/_settings/me/email', {'email': 'ops@example.test', 'password': PASSWORD})[1]
-    assert me('POST', '/api/_settings/me/email/confirm', {'token': sent['link'].split('confirm=')[1]})[0] in (200, 204)
+    assert me('POST', '/api/_settings/me/email', {'email': 'ops@example.test', 'password': PASSWORD})[1] == {'email': 'ops@example.test'}
     assert me('GET', '/api/_settings/me')[1]['profile']['email'] == 'ops@example.test'
     # Its password, sessions and two-step can be managed like anyone's.
     assert admin('PATCH', f'/api/_controls/users/{target}', {'sessions': 'end'})[0] == 204
@@ -250,3 +249,44 @@ def test_the_administrator_passes_every_role_permission_check(tmp_path):
     assert builtin('DELETE', f"/api/customer/{created['id']}")[0] == 204
     # It opens Controls like any admin.
     assert builtin('GET', '/api/_controls/state')[0] == 200
+
+
+def test_the_administrator_sets_its_email_on_any_instance_with_its_password(secured, caplog):
+    give_password(secured, ADMINISTRATOR)
+    me = client(secured, ADMINISTRATOR)
+    routes = secured.business.routes
+    # A served instance with a domain: other people still can't change their email here.
+    object.__setattr__(routes, 'primary', '127.0.0.1')
+    try:
+        status, payload, _ = client(secured, 'editor')('POST', '/api/_settings/me/email', {'email': 'x@example.test', 'password': PASSWORD})
+        assert status == 409
+        email = lambda body: me('POST', '/api/_settings/me/email', body)
+        for body, field in (({'email': 'not an address', 'password': PASSWORD}, 'email'), ({'email': 'ops@example.test'}, 'password'),
+                            ({'email': 'ops@example.test', 'password': 'wrong password entirely'}, 'password')):
+            status, payload, _ = email(body)
+            assert status == 422 and field in payload['fields'], (body, payload)
+        with caplog.at_level('INFO', logger='evlet.settings'):
+            status, payload, _ = email({'email': ' ops@example.test ', 'password': PASSWORD})
+            assert status == 200 and payload == {'email': 'ops@example.test'}
+        assert 'confirm=' not in caplog.text
+    finally:
+        object.__setattr__(routes, 'primary', None)
+    assert me('GET', '/api/_settings/me')[1]['profile']['email'].lower() == 'ops@example.test'
+    with secured.database._connection() as connection:
+        row = connection.execute("SELECT actor, detail, before, after FROM evlet_audit WHERE detail LIKE 'Email for notifications%' ORDER BY id DESC").fetchone()
+    assert row['actor'] == ADMINISTRATOR and row['before'] == '{"email": null}' and 'ops@example.test' in row['after'].lower()
+
+
+def test_set_email_from_the_shell(secured, tmp_path):
+    path = tmp_path / 'business.sqlite3'
+    assert set_email_from_shell(path, ADMINISTRATOR, 'ops@example.test') == 'ops@example.test'
+    set_email_from_shell(path, 'editor', 'priya@example.test')
+    with pytest.raises(ValueError, match='not a valid email'):
+        set_email_from_shell(path, 'editor', 'nope')
+    with pytest.raises(ValueError, match='No user'):
+        set_email_from_shell(path, 'nobody', 'a@example.test')
+    with secured.database._connection() as connection:
+        emails = dict(connection.execute('SELECT u.username, p.email FROM evlet_users u JOIN evlet_user_profile p ON p.user_id=u.id').fetchall())
+        audited = [tuple(row) for row in connection.execute("SELECT actor, target, detail FROM evlet_audit WHERE detail='Email set from the server shell'")]
+    assert emails[ADMINISTRATOR] == 'ops@example.test' and emails['editor'] == 'priya@example.test'
+    assert audited == [('cli', ADMINISTRATOR, 'Email set from the server shell'), ('cli', 'editor', 'Email set from the server shell')]
