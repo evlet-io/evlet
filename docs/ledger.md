@@ -66,7 +66,9 @@ Eva, the connector) must reach them.
   tabs, `Meta.status` and every other Meta option not listed below).
 - **Links.** A ledger model may link to a normal model or to another ledger model, with real
   foreign keys. A normal model may link to a ledger row: callers see that field as the plain
-  integer id, read only (the schema describes it as an `integer`), and cannot write it.
+  integer id, read only (the schema describes it as an `integer` with `"grouping": false`, so
+  screens show it without thousands separators), and cannot write it. The record's history
+  (`GET /api/{model}/{id}/journal`) shows that field's old and new values as the same integer ids.
 
 Ledger models are part of the saved schema and the startup check like any model.
 
@@ -103,6 +105,9 @@ with database.transaction() as tx:
   `self.context.session`, its own transaction session, so the rows commit or roll back with the
   move, its Sequence number and the record's changes
   ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+  Such a handler may also set a Link to the row it wrote, such as `self.posting = row.id`. The save
+  does not check that Link against the caller's read access, because the ledger has no surface and
+  callers cannot write the Link themselves. A Link with `filters` is still checked.
 
 ## Ids
 

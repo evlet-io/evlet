@@ -34,6 +34,11 @@ class Member(Model):
     # A normal model may point at a ledger row: callers see the plain integer id, read only.
     last_move = Link('pointmove')
 
+    @action('Award a point')
+    def award(self):
+        # Trusted code writes the ledger row and links it; callers cannot set the Link themselves.
+        self.last_move = self.context.session.create(PointMove, member=self.id, on_date=date(2026, 11, 1), points='1.00').id
+
 
 class PointMove(Model):
     """An append-only movement ledger."""
@@ -458,6 +463,56 @@ def test_a_ledger_model_has_no_public_surface(points):
     assert detail['last_move'] == row
     status, payload, _ = admin('PATCH', f'/api/member/{aisha}', {'last_move': row}, headers={b'if-match': admin('GET', f'/api/member/{aisha}')[2][b'etag']})
     assert status in (403, 422), payload
+    # An id, not a quantity: no thousands separators.
+    assert field['grouping'] is False
+
+
+def test_the_journal_shows_a_link_to_a_ledger_row_as_its_integer_id(tmp_path):
+    """The record history shows a Link to a ledger row as the plain integer id record responses
+    show, not a text record id (which the browser read as a malformed number)."""
+    entry = lean('Entry', {'amount': Decimal(scale=2, required=True)})
+    picked = []
+
+    class Holder(Model):
+        storage_name = 'holder'
+        permissions = FULL
+        label = Text(default='')
+        last_entry = Link(entry)
+
+        class Meta:
+            journal = Journal()
+
+        @action('Pick')
+        def pick(self):
+            # Trusted code sets the ledger row; callers cannot.
+            self.last_entry = picked[-1]
+
+    app, admin = build(Database(tmp_path / 'holder.sqlite3', Registry(Holder, entry)))
+    with app.database.transaction() as tx:
+        first, second = (tx.create(entry, amount=amount).id for amount in ('1.00', '2.00'))
+    with app.business.context(ADMIN) as context:
+        record = context.create(Holder, label='a')['id']
+        for row in (first, second):
+            picked.append(row)
+            context.action(Holder, record, 'pick')
+    items = admin('GET', f'/api/holder/{record}/journal')[1]['items']
+    assert [item['data']['fields']['last_entry'] for item in items if item['kind'] == 'changed'] == [
+        {'old': first, 'new': second}, {'old': None, 'new': first}]
+    assert type(first) is int
+
+
+def test_an_action_may_link_the_ledger_row_it_writes(points):
+    """The ledger has no surface, so a Link to one of its rows is not checked against the caller's read access:
+    only trusted code sets it. Before, every such action or move was refused with 403 over HTTP."""
+    app, admin = points
+    aisha = member(app)
+    etag = admin('GET', f'/api/member/{aisha}')[2][b'etag']
+    status, payload, _ = admin('POST', f'/api/member/{aisha}/actions/award', {}, headers={b'if-match': etag})
+    assert status == 200, payload
+    with app.database.transaction() as tx:
+        linked = tx.get(Member, aisha).last_move
+        assert linked is not None and tx.get(PointMove, linked).member == aisha
+    assert admin('GET', f'/api/member/{aisha}')[1]['last_move'] == linked
 
 
 # Migrations

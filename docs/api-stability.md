@@ -46,7 +46,7 @@ production ready, but the rules below hold from 0.3 on.
   and `Context.unlocked_periods(reason)` are public for trusted code
   ([model-engine.md](model-engine.md#closed-periods)).
 
-- **Compact record pages.** `Meta.cards` (zero to five derived fields or per-record measures),
+- **Compact record pages.** `Meta.cards` (zero to five derived fields, including those `derive()` sets, or per-record measures),
   `Main(fields, *tables)` as the first block of `Meta.layout`, `Section(..., description=None)`, and
   the schema keys they add: `cards` on a model entry, `"compact": true` on `record_layout`,
   `"main": true` on the Main blocks and layout section, and `description` on a layout section
@@ -139,6 +139,16 @@ production ready, but the rules below hold from 0.3 on.
   `Task(..., resumable=True)` with its return-value contract (a JSON checkpoint, or `None` when
   done), `progress` in `GET /api/_jobs/<id>`, and `evlet jobs list`
   ([jobs-realtime.md](jobs-realtime.md#progress-and-long-jobs)).
+
+- **System moves and jobs that act.** `Move(..., system=True)` (a boolean; refused together with
+  `roles=`), its 403 `<label> is made by the application only` to every HTTP caller and its absence
+  from `_moves` and the schema's `state.moves`
+  ([states-actions.md](states-actions.md#system-moves)).
+  `JobContext.business(tx, *, user=None, system=None, role=None)` with the identities and checks
+  in [jobs-realtime.md](jobs-realtime.md#a-jobs-business-context), `User.system`, the Journal's
+  `via` for a system name, `Context.enqueue(task, payload, *, key=None, target=None)` queuing after
+  commit, `_job` on an action's detail, and `JobQueue.wake()` and `JobQueue.wait(timeout)`
+  ([jobs-realtime.md](jobs-realtime.md#queue-a-job-from-an-action)).
 
 - **Workspaces.** `Workspace`, `NavGroup` and `Shortcut` with their arguments, discovery of an app
   package's `workspaces.py`, `Application(workspaces=...)` and `AppDefinition(workspaces=...)`, the

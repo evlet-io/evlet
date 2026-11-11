@@ -36,6 +36,15 @@ columns above the menu's divider stay in place while the table scrolls sideways.
 pinning keep the first column pinned. A child table's Focus view keeps the record's header and its
 save bar in view ([ui-framework.md](ui-framework.md)).
 
+A field declared `column=False` (a currency source, say) starts hidden in a child table's
+Columns menu and is left out of a list's default columns; the form still shows it
+([model-engine.md](model-engine.md#more-field-types)).
+
+Values the record fills itself (`Meta.derives`) show while the person edits: once they pause
+for 600 ms the form asks the server for a preview (`POST /api/_draft/{model}`) and shows what
+`derive()` set, without making it an unsaved change. Formulas (`compute=`) show at once without
+a request.
+
 A Table the record fills itself (`Meta.derives`, [model-engine.md](model-engine.md#derived-values))
 is read only on the record page, in focus view and in the row editor, whatever the state: it reads
 "Filled in by the record when it is saved." and a save never sends its rows. Its fields show read
@@ -375,7 +384,9 @@ class Shipment(Model):
 ```
 
 - **`Meta.cards`** names zero to five derived values: fields with `compute=`, `fetch=` or `query=`
-  (stored or `stored=False`) and per-record measures (`Meta.measures` with `model=` and `link=`). A
+  (stored or `stored=False`), fields `derive()` sets (named in `Meta.derives`), and per-record
+  measures (`Meta.measures` with `model=` and `link=`). A card shows a field the same way whichever
+  of these fills it: money with its currency's places and symbol, other values as the form shows them. A
   count reads as a plain number, never money. A sum of money whose code each record takes from its own
   fields (`currency=` naming a field or a Link) shows without a symbol, since no one code covers it. A
   stored field people fill in, a hidden field, a model-level measure, an unknown name, a name given
@@ -660,7 +671,7 @@ nothing to open yet.
 
 | Path | Screen |
 | --- | --- |
-| `/`, `/login` | Sign-in, or the start page when signed in |
+| `/`, `/login` | Sign-in, or the start page when signed in. `/login?user=NAME` fills in the username, and `Security(admin_sign_in=True)` fills in `administrator`. An account without a password yet sees "Set your password" first |
 | `/docs`, `/docs/<topic>` | Docs |
 | `/app/<model>` | List (and board, when `Meta.board` names the State). Search, sort, page, view and filters are in the query |
 | `/app/<model>/new` | New record. Query values fill writable fields: `?customer=4` |

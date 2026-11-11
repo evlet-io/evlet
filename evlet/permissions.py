@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from types import MappingProxyType, SimpleNamespace
 
-from .auth import AccessError, PORTAL, PUBLIC, ROLES
+from .auth import AccessError, PORTAL, PUBLIC, ROLES, is_administrator
 from .identity import RecordId
 from .naming import title_sources
 from .fields import Link, Reference
@@ -385,8 +385,20 @@ class Policy:
             printers[model] = frozenset(named)
         self.printers = MappingProxyType(printers)
 
+    def administrator_rule(self, model):
+        """Every operation the model supports, on every row and field: the built-in Administrator's rule.
+        Validation, read-only fields, state rules, period locks and foreign keys still apply."""
+        cache = self.__dict__.setdefault('_administrator', {})
+        if model not in cache:
+            operations = ['read', 'create', 'update', 'delete', 'print']
+            if model in self.registry.journals:
+                operations.append('journal')
+            operations += [operation for operation in CORRECTIONS if corrects(model, operation)]
+            cache[model] = Rule(tuple(operations))
+        return cache[model]
+
     def rule(self, user, model):
-        found = self.rules.get((user.role, model))
+        found = self.administrator_rule(model) if is_administrator(user) else self.rules.get((user.role, model))
         if found is None:
             found = default_rule(self.roles.get(user.role))
         access = getattr(user, 'access', None)
@@ -402,6 +414,8 @@ class Policy:
     def allows(self, user, model, operation):
         if not surface(self.registry, model, operation):
             return False
+        if is_administrator(user):
+            return operation in self.rule(user, model).operations
         if operation in CORRECTIONS:
             access = getattr(user, 'access', None)
             if access is not None and (not access.write or access.models is not None and model not in access.models):
@@ -465,7 +479,7 @@ class Policy:
         again, which grew exponentially with chained formulas.
         """
         cache = self.__dict__.setdefault('_derivations', {})
-        key = (user.role, getattr(user, 'access', None), model, name)
+        key = (user.role, is_administrator(user), getattr(user, 'access', None), model, name)
         if key in cache:
             return cache[key]
         if (model, name) in visiting:
@@ -520,7 +534,7 @@ class Policy:
         Finite plans are acyclic and rules depend only on the role, so results are cached.
         """
         cache = self.__dict__.setdefault('_derived', {})
-        key = (user.role, getattr(user, 'access', None), model, name, kind)
+        key = (user.role, is_administrator(user), getattr(user, 'access', None), model, name, kind)
         if key not in cache:
             cache[key] = self.reads_allowed(user, self.registry.finite_reads(model, name, kind))
         return cache[key]
@@ -533,8 +547,23 @@ class Policy:
         return all(
             self.allows(user, target, 'read')
             and not (scope in ('member', 'membership', 'lookup') and self.rule(user, target).scope is not None)
-            and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read))
+            and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read)
+                 or self.intermediate(user, target, read))
             for scope, target, read in reads)
+
+    def intermediate(self, user, model, name):
+        """Whether a field is a hidden intermediate for this role: hidden=True, unstored and finite-calculated,
+        on a governed model, in the role's read fields, and every input it reads readable. It stays out of
+        records, lists and the schema, but formulas that read it are readable, and the browser computes it
+        from the shipped plan (its formula reads only what the role can read already)."""
+        from .calc import is_finite
+        field = model.__declared_fields__.get(name)
+        if field is None or not field.hidden or field.stored or not is_finite(field) or model not in self.governed:
+            return False
+        rule = self.rule(user, model)
+        if rule.read_fields is not None and name not in rule.read_fields:
+            return False
+        return self.expression_allowed(user, model, name)
 
     def scope_sql(self, user, model):
         rule = self.rule(user, model)

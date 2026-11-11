@@ -12,7 +12,7 @@ import re
 from urllib.parse import parse_qs, quote
 
 from .audit import actor_id, detail as audit_detail
-from .auth import AccessError
+from .auth import ADMINISTRATOR, AccessError, has_role
 from .identity import RecordId, checked as item_id, path_id
 from .naming import drop_echoes
 from .database import ROW_LIMIT, Session, using
@@ -471,6 +471,12 @@ class Business:
                                   # A Table that derive() fills (Meta.derives) is read only on the form; the save sends none of its rows.
                                   **({'read_only': True} if child.name in getattr(model, '__derives__', ()) else {})}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
+            # What derive() fills on every save and preview (Meta.derives): "field", "table" or "table.field". The form asks
+            # the server for a preview when the person pauses, so these show before the save. Only readable names are listed.
+            derives = [name for name in getattr(model, '__derives__', ())
+                       if name.split('.')[0] in readable or any(child['name'] == name.split('.')[0] for child in entry['children'])]
+            if derives:
+                entry['derives'] = derives
             # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
             # unknown when the model was defined) stays out of the side panel too.
             panel = entry.get('panel')
@@ -482,7 +488,7 @@ class Business:
             from .states import action_schema, state_schema
             entry['actions'] = [{'name': action.name, 'label': action.label,
                                  **(action_schema(self, user, model, action.name) if hasattr(getattr(model, action.name, None), '__action__') else {})}
-                                for action in self.actions.values() if action.model is model and user.role in action.roles and self.policy.allows(user, model, 'update')]
+                                for action in self.actions.values() if action.model is model and has_role(user, action.roles) and self.policy.allows(user, model, 'update')]
             state = state_schema(self, user, model)
             if state is not None:
                 entry['state'] = state
@@ -541,7 +547,7 @@ class Business:
         routes = getattr(self, 'routes', None)
         if routes is None or not routes.docs or routes.scopes(dict(scope.get('headers', [])).get(b'host', b'')) is not None:
             return None
-        if routes.docs_roles and (user is None or user.role not in routes.docs_roles):
+        if routes.docs_roles and (user is None or not has_role(user, routes.docs_roles)):
             return None
         return routes.docs_path
 
@@ -567,6 +573,9 @@ class Business:
                 if 'docs' in info:
                     info['docs'] = self.docs_path(scope, user)
                 extra = {'application': info} if info else {}
+                # An account without a password yet (the Administrator after a development link) sets one first.
+                if self.auth.password_needed(user):
+                    extra.update(password_needed=True, password_min=self.auth.minimum(user.role))
                 return 200, {'user': user.public(), 'csrf': csrf, **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
             except AccessError as exc:
                 if exc.status != 401:
@@ -574,6 +583,12 @@ class Business:
                 if 'docs' in info:
                     info['docs'] = self.docs_path(scope, None)
                 extra = {'application': info} if info else {}
+                # First-run setup creates an admin, so it asks for config.py's admin minimum.
+                if self.auth.allow_setup and self.auth.setup_needed():
+                    extra['password_min'] = self.auth.minimum('admin')
+                # Security(admin_sign_in=True): the sign-in page starts with the Administrator's username.
+                if getattr(self.auth, 'security', None) is not None and self.auth.security.admin_sign_in and self.auth.realm(scope) == 'desk':
+                    extra['sign_in'] = {'username': ADMINISTRATOR}
                 return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed(), **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
         if path == '/api/auth/setup' and method == 'POST':
             self.auth.setup(scope, body)
@@ -696,6 +711,9 @@ class Business:
             return 200, {'values': result, 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
         if path == '/api/auth/logout' and method == 'POST':
             return 204, None, self.auth.logout(scope)
+        if path == '/api/auth/password' and method == 'POST':
+            payload, headers = self.settings.first_password(scope, user, body)
+            return 200, payload, headers
         if path.startswith('/api/auth/users'):
             return self.accounts(scope, body, user)
         if path == '/api/schema' and method == 'GET':
@@ -760,7 +778,9 @@ class Business:
                         shown = self.policy.allows(user, owner, 'read') and row_visible(owner, parts[1])
                         continue
                     name = parts[0]
-                    shown = name not in owner.__declared_fields__ or name in (readable if owner is model else self.policy.fields(user, owner))
+                    shown = (name not in owner.__declared_fields__ or name in (readable if owner is model else self.policy.fields(user, owner))
+                             # A hidden intermediate's formula ships with the plan, so its errors can name it.
+                             or self.policy.allows(user, owner, 'read') and self.policy.intermediate(user, owner, name))
                     break
                 if shown: visible[key] = message
                 else: hidden = True
@@ -838,7 +858,7 @@ class Business:
                     self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id)
                 extra = self.availability(context, model, context._tx.get(model, result['id']))
                 # The write returns every readable row; the ETag covers them all and the body embeds the first page.
-                etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')})
+                etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome', '_job')})
                 result = {**self.embedded(result), **extra}
                 if result.get('id') is not None and self.virtual_models(model) and self.policy.allows(user, model, 'read'):
                     from .documents import Context
@@ -873,7 +893,7 @@ class Business:
             return self.prints.record_pdf(scope, user, model, record_id, parts[5:], method)
         if len(parts) == 6 and parts[4] == 'actions' and method == 'POST':
             action = self.actions.get((model, parts[5]))
-            if action is None or user.role not in action.roles:
+            if action is None or not has_role(user, action.roles):
                 raise AccessError(403, 'Action is unavailable')
             if body:
                 raise ValidationError({'_form': 'This action takes no arguments'})
@@ -1073,7 +1093,7 @@ class Business:
                 models[tuple(path)] = item
         def readable(target):
             return self.policy.fields(user, target) if target is not None and self.policy.allows(user, target, 'read') else set()
-        capabilities, local, withheld = {}, True, set()
+        capabilities, local, withheld, intermediates = {}, True, set(), {}
         for field in plan['fields']:
             target = models.get(tuple(field['path']))
             if field.get('kind'):
@@ -1089,6 +1109,10 @@ class Business:
             fetchable = all(self.registry.models[name] not in self.child_models for scope, name, _ in field['reads'] if scope == 'lookup')
             if field['field'] in readable(target) and fetchable:
                 capabilities[field['target']] = 'local_universal'
+                continue
+            if target is not None and fetchable and self.policy.allows(user, target, 'read') and self.policy.intermediate(user, target, field['field']):
+                # A hidden intermediate: computed in the browser for the formulas that read it, never shown or named.
+                intermediates.setdefault(tuple(field['path']), set()).add(field['field'])
                 continue
             local = False
             # Fields this role cannot see at all are not named.
@@ -1113,7 +1137,7 @@ class Business:
                 entry['tables'] = [name for name in entry['tables'] if tuple(entry['path']) + (name,) not in hidden_paths]
             for entry in projected['tables'].values():
                 target = models.get(tuple(entry['path']))
-                visible = readable(target)
+                visible = readable(target) | intermediates.get(tuple(entry['path']), set())
                 entry['fields'] = {name: meta for name, meta in entry['fields'].items() if name in visible}
                 # Looked-up fields are named only when this role can read them; withheld rules may read others.
                 if 'lookups' in entry:

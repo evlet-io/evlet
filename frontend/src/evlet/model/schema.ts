@@ -50,6 +50,8 @@ export interface FieldSchema {
   operators?: string[];
   /** copy=False: Duplicate leaves this value out of the new record. Absent means it is copied. */
   copy?: boolean;
+  /** column=False: left out of a list's and a Table's default columns. Absent means it is one. */
+  column?: boolean;
 }
 
 /** row_changes false: the parent's save takes only full row lists without _key (a ChildTable on a plain model). */
@@ -123,6 +125,9 @@ export interface ModelSchema {
   board?: string;
   /** Meta.autosave: false keeps the "Discard your changes?" prompt instead of keeping unsaved changes. */
   autosave?: boolean;
+  /** Meta.derives: what the server's derive() fills ("field", "table" or "table.field"). The form previews them on the
+   * server when the person pauses. Absent when the model derives nothing. */
+  derives?: string[];
   /** Meta.summary: false leaves the record page's summary strip out. Absent means shown when it has values. */
   summary?: boolean;
   /** Meta.side_blocks: the record page's side blocks in order ('key_fields', 'related', 'files', 'info'). Absent means all. */

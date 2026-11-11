@@ -2,6 +2,7 @@
 
 from contextlib import contextmanager
 from pathlib import Path
+import logging
 import sqlite3
 
 from .fields import ACTIVE, EMPTY_LAYER, Image, Link, MISSING, Reference, RichText
@@ -137,6 +138,7 @@ class Database:
             except BaseException:
                 connection.rollback()
                 raise
+        run_after_commit(session)
 
     def create(self, model, /, **values):
         with self.transaction() as session:
@@ -310,6 +312,17 @@ class ReadSession:
         return self._session.aggregate(model, measures=measures, group_by=group_by, filters=filters, limit=limit, after=after)
 
 
+def run_after_commit(session):
+    """Call what the committed transaction asked for, such as waking the job worker. A failure is logged:
+    the transaction has committed, so it cannot fail any more."""
+    for callback in session._after_commit:
+        try:
+            callback()
+        except Exception:
+            logging.getLogger(__name__).exception('An after-commit callback failed')
+    session._after_commit.clear()
+
+
 class Session:
     """Available inside Database.transaction(); do not retain it afterwards."""
     # The application's business, when an application opened this transaction: it settles writes to models that
@@ -328,6 +341,8 @@ class Session:
         self._periods_unlocked = False
         # Ledger ids tx.reserve_ids handed out and insert_many has not used yet, as {model: {id}}.
         self._reserved = {}
+        # Called once the transaction commits, never when it rolls back (run_after_commit).
+        self._after_commit = []
 
     @contextmanager
     def maintenance(self):

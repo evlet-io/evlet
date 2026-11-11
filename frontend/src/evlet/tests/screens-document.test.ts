@@ -249,6 +249,17 @@ describe('transaction document (recorded fixtures)', () => {
     expect(invoice.invoice_attachment_locked.status).toBe(409);
   });
 
+  it('shows a changed Link in the history as the linked record title, never as an amount', async () => {
+    const journal = copy(invoice.invoice_draft_journal);
+    const customer = invoice.invoice_customer.body.id;
+    journal.body.items[1].data.fields = { customer: { old: null, new: customer }, ...journal.body.items[1].data.fields };
+    const { host } = start(routes(invoice.invoice_draft, journal), `/app/invoice/${draft}`);
+    await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(3));
+    const changed = host.querySelectorAll('.tl-item')[1];
+    await until(() => expect([...changed.querySelectorAll('.ev-diff')].map(text)[0]).toBe('Customer empty Al Sahra Trading'));
+    expect(text(changed)).not.toContain('Invalid amount');
+  });
+
   it('shows the issued invoice journal as the engine records it: moves, postings, numbers, actions and people', async () => {
     const { host } = start(routes(invoice.invoice_issued_detail), `/app/invoice/${draft}`);
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_journal.body.items.length));

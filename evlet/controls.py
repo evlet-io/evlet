@@ -9,7 +9,7 @@ import time
 from types import MappingProxyType
 from urllib.parse import parse_qs, quote
 
-from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES, AccessError, LocalAuth, User
+from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES, AccessError, LocalAuth, User, is_administrator
 from .controls_system import System
 from .customization import Customization, activated, instance_fields
 from .fields import Layer
@@ -27,8 +27,9 @@ OVERRIDE_KINDS = "CHECK(kind IN ('perm','field','custom','layout','list','naming
 WORKSPACE_ACCESS = 'Customizing workspaces needs an admin, or a role with "Customize workspaces" on.'
 PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'periods', 'prints', 'currencies', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
+    # Password minimum and two-step sign-in apply to everyone but admins, whose rules come only from config.py.
     'security.password_min': 15, 'security.session_hours': 12, 'security.lockout': 5,
-    'security.two_step_roles': ['admin'], 'security.controls_ips': [],
+    'security.two_step': False, 'security.two_step_roles': [], 'security.controls_ips': [],
     'mcp.enabled': True, 'mcp.allow_writes': False, 'mcp.rate': 60, 'mcp.disabled_tools': [], 'mcp.hidden_models': [],
     'mail.personal': False,
     # Images in rich text (evlet/richtext.py): separate from the general attachment limits.
@@ -180,13 +181,17 @@ def reset_two_step_from_shell(database_path, username):
         connection.close()
 
 
-def set_password_from_shell(database_path, username, password, file_minimum=15):
-    """Set a user's password from the server shell, audited as cli. Ends their sessions, assistants and API keys, like a takeover recovery.
-
-    The minimum is the instance's security.password_min: config.py, raised by a stricter Controls setting."""
-    from .auth import password_hash
+def set_email_from_shell(database_path, username, email):
+    """Set a user's email address from the server shell, audited as cli. It is where notifications go."""
+    from .fields import Email
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
+    try:
+        address = Email().clean(email.strip())
+    except (ValueError, AttributeError):
+        address = None
+    if not address:
+        raise ValueError(f'{email} is not a valid email address.')
     connection = sqlite3.connect(database_path, isolation_level=None)
     connection.row_factory = sqlite3.Row
     try:
@@ -196,10 +201,44 @@ def set_password_from_shell(database_path, username, password, file_minimum=15):
             if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
         if row is None:
             raise ValueError(f'No user is named {username}.')
+        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_user_profile'").fetchone():
+            raise ValueError('This instance has no profiles yet. Start it once first.')
+        connection.execute('INSERT OR IGNORE INTO evlet_user_profile(user_id) VALUES (?)', (row['id'],))
+        before = connection.execute('SELECT email FROM evlet_user_profile WHERE user_id=?', (row['id'],)).fetchone()['email']
+        connection.execute('UPDATE evlet_user_profile SET email=? WHERE user_id=?', (address, row['id']))
+        connection.execute('DELETE FROM evlet_email_tokens WHERE user_id=?', (row['id'],))
+        audit(connection, 'cli', 'Users', row['username'], 'Email set from the server shell', {'email': before or None}, {'email': address})
+        connection.execute('COMMIT')
+    except BaseException:
+        if connection.in_transaction:
+            connection.execute('ROLLBACK')
+        raise
+    finally:
+        connection.close()
+    return address
+
+
+def set_password_from_shell(database_path, username, password, file_minimum=15):
+    """Set a user's password from the server shell, audited as cli. Ends their sessions, assistants and API keys, like a takeover recovery.
+
+    The minimum is config.py's security.password_min for admins, and the Controls setting, when there is one, for everyone else."""
+    from .auth import password_hash
+    if not database_path.is_file():
+        raise ValueError('This instance has no database yet. Start it once first.')
+    connection = sqlite3.connect(database_path, isolation_level=None)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        ensure_schema(connection)
+        row = connection.execute('SELECT id, username, role FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+        if row is None:
+            raise ValueError(f'No user is named {username}.')
         minimum = file_minimum
         stored = connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key='security.password_min'").fetchone()
-        if stored is not None:
-            minimum = strictest('security.password_min', json.loads(stored[0]), None, file_minimum)
+        if stored is not None and row['role'] != 'admin':
+            value = json.loads(stored[0])
+            minimum = value if type(value) is int and 1 <= value <= 64 else strictest('security.password_min', value, None, file_minimum)
         try:
             encoded = password_hash(password, minimum=minimum)
         except ValidationError as exc:
@@ -235,6 +274,8 @@ def strictest(key, value, roles, file=None):
     number = type(value) is int
     if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal'):
         return False
+    if key == 'security.two_step':
+        return True
     if key == 'display.currencies':
         return {}
     if key == 'mcp.rate':
@@ -255,14 +296,14 @@ def strictest(key, value, roles, file=None):
         from .eva import strictest as eva_strictest
         return eva_strictest(key, value)
     if key == 'security.password_min':
-        return min(max(value, file), 64) if number else 64
+        return min(max(value, 1), 64) if number else 64
     if key == 'security.session_hours':
         return min(max(value, 1), file) if number else 1
     if key == 'security.lockout':
         return min(max(value, 3), file) if number else 3
     if key == 'security.two_step_roles':
         listed = [role for role in value if isinstance(role, str) and role in roles] if isinstance(value, list) else []
-        return ['admin', *dict.fromkeys(role for role in listed if role != 'admin')]
+        return list(dict.fromkeys(role for role in listed if role != 'admin'))
     kept = []
     for item in value if isinstance(value, list) else []:
         try:
@@ -363,6 +404,7 @@ class Controls:
             with activated(self.database, layer):
                 workspaces.load_overrides([row for row in stored if row['kind'] == 'workspace'], problems)
         auth = self.business.auth
+        # password_min is for everyone but admins; LocalAuth.minimum gives admins config.py's value.
         auth.password_min, auth.session_hours, auth.lockout = settings['security.password_min'], settings['security.session_hours'], settings['security.lockout']
         self.settings, self.problems, self.version = settings, problems, version
 
@@ -405,8 +447,23 @@ class Controls:
         values = dict(SETTINGS)
         if security is not None:
             values.update({'security.session_hours': security.session_hours, 'security.lockout': security.lockout,
-                           'security.password_min': security.password_min})
+                           'security.password_min': security.password_min, 'security.two_step': security.two_step})
         return values
+
+    def admin_rules(self):
+        security = getattr(self.business.auth, 'security', None)
+        if security is None:
+            from .auth import Security
+            security = Security()
+        return {'password_min': security.password_min, 'two_step': security.admin_two_step, 'sign_in': security.admin_sign_in}
+
+    def two_step_required(self, role):
+        """Whether accounts with role must use two-step sign-in: config.py's admin_two_step for admin, else the
+        Controls settings (everyone, or the roles listed). The secret key and cryptography decide if it can run."""
+        if role == 'admin':
+            security = getattr(self.business.auth, 'security', None)
+            return security.admin_two_step if security is not None else True
+        return bool(self.settings['security.two_step']) or role in self.settings['security.two_step_roles']
 
     @staticmethod
     def role_bases(roles):
@@ -440,7 +497,7 @@ class Controls:
         if not self.allows(scope, user):
             raise AccessError(404, NOT_FOUND)
         # The session must have finished two-step sign-in, not only the account have it on.
-        required = self.routes.controls.require_two_step or user.role in self.settings['security.two_step_roles'] and self.business.settings.possible()
+        required = self.routes.controls.require_two_step or self.two_step_required(user.role) and self.business.settings.possible()
         if required and not user.two_step:
             raise AccessError(403, TWO_STEP)
 
@@ -597,8 +654,10 @@ class Controls:
             raise ValueError('Choose a known setting.')
         file = self.files()[key]
         number = type(value) is int
-        if key == 'security.password_min' and not (number and file <= value <= 64):
-            raise ValueError('Minimum password length can only go up, to 64 at most.')
+        if key == 'security.password_min' and not (number and 1 <= value <= 64):
+            raise ValueError('Use a minimum password length from 1 to 64 characters. 1 means any password.')
+        if key == 'security.two_step' and type(value) is not bool:
+            raise ValueError('Use on or off.')
         if key == 'security.session_hours' and not (number and 1 <= value <= file):
             raise ValueError(f'Session length can only go down, from {file} hours to 1.')
         if key == 'security.lockout' and not (number and 3 <= value <= file):
@@ -606,9 +665,8 @@ class Controls:
         if key == 'security.two_step_roles':
             if not isinstance(value, list) or any(role not in self.roles or self.roles[role]['realm'] != 'desk' for role in value) or len(set(value)) != len(value):
                 raise ValueError('Choose existing roles, each once.')
-            if 'admin' not in value:
-                raise ValueError('Admin always needs two-step sign-in.')
-            value = sorted(value, key=lambda role: (role not in ROLES, ROLES.index(role) if role in ROLES else role))
+            # Admin's rule comes from config.py (Security.admin_two_step); a list saved before 0.4.2 named it, so it is dropped.
+            value = sorted((role for role in value if role != 'admin'), key=lambda role: (role not in ROLES, ROLES.index(role) if role in ROLES else role))
         if key == 'security.controls_ips':
             if not isinstance(value, list) or len(value) > 50:
                 raise ValueError('Use a list of at most 50 addresses.')
@@ -849,7 +907,11 @@ class Controls:
             assistants = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_mcp_clients WHERE revoked_at IS NULL GROUP BY user_id')}
             keys = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_api_keys WHERE revoked_at IS NULL GROUP BY user_id')}
             ai = {row['id']: (bool(row['allow_eva']), bool(row['allow_mcp'])) for row in connection.execute('SELECT id, allow_eva, allow_mcp FROM evlet_users')}
+            unset = {row[0] for row in connection.execute("SELECT id FROM evlet_users WHERE password=''")}
         for item in page['items']:
+            # The built-in Administrator: its role and status cannot change (evlet/auth.py).
+            item['builtin'] = is_administrator(item)
+            item['password_set'] = item['id'] not in unset
             item['active'], item['sessions'] = bool(item['active']), sessions.get(item['id'], 0)
             item['allow_eva'], item['allow_mcp'] = ai.get(item['id'], (False, False))
             item['two_step'] = two_step.get(item['id'])
@@ -1165,6 +1227,8 @@ class Controls:
             'scopes': {key or '': label for key, label in LABELS.items()} | {key: key.replace('_', ' ').capitalize() for key in self.scopes},
             'settings': {key: {'file': file, 'value': self.settings[key]} for key, file in self.files().items()},
             'controls': {'allow_ips': list(controls.allow_ips), 'require_two_step': controls.require_two_step},
+            # Sign-in rules for admin accounts: config.py only, never Controls.
+            'admin_rules': self.admin_rules(),
             'attention': attention, 'overrides': overrides, 'users': {'active': int(active or 0), 'total': total},
             'audit': recent, 'two_step': self.business.settings.possible(), 'client': str(client_ip(scope, self.business.auth) or ''),
             'remove_fields': self.custom.drop, 'instance_fields': True,
@@ -1213,7 +1277,7 @@ class Controls:
             if self.routes is not None and self.allows(scope, user):
                 raise AccessError(403, WORKSPACE_ACCESS)
             raise AccessError(404, NOT_FOUND)
-        required = self.routes.controls.require_two_step or user.role in self.settings['security.two_step_roles'] and self.business.settings.possible()
+        required = self.routes.controls.require_two_step or self.two_step_required(user.role) and self.business.settings.possible()
         if required and not user.two_step:
             raise AccessError(403, TWO_STEP)
         path, method = scope['path'].removeprefix('/api/_controls/workspaces'), scope['method']

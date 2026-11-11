@@ -141,7 +141,10 @@ def actor_of(user):
 
 
 def via(tx, user):
-    """The AI assistant a request came through, or None. The actor stays the person it acts as."""
+    """The AI assistant a request came through, the system name trusted code acted as, or None.
+    The actor stays the person it acts as (the engine for the system)."""
+    if getattr(user, 'system', None):
+        return user.system
     access = getattr(user, 'access', None)
     if access is not None and access.origin in ('eva', 'schedule'):
         return 'Eva'
@@ -534,6 +537,10 @@ def shown_value(business, user, field, value, visibility):
     policy = business.policy
     if value is None:
         return None, False
+    if isinstance(field, Link) and field.ledger_target:
+        # A ledger row id is a plain integer with no text form and no record to read behind it,
+        # shown as record responses show it (permissions.serialize).
+        return int(value), False
     if isinstance(field, Link):
         target = field.target
         if policy.rule(user, target).scope is not None and not visibility(target, RecordId(value)):

@@ -23,7 +23,7 @@ import { NoteComposer } from './composer';
 import { FieldGrid } from '../ui/inline';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, MenuButton, openDrawer, SplitButton, openModal, toast, type MenuItem } from '../ui/layers';
-import { DataTable, emptyPrefs, type Column } from '../ui/table';
+import { DataTable, gridPrefs, type Column } from '../ui/table';
 import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
@@ -843,7 +843,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     heading: { type: model.label, icon: look.icon, title: () => titleText.get(),
       number: numberText ?? (naming ? () => { const value = store.field('name').value.get(); return value && String(value) !== titleText.get() ? String(value) : ''; } : null),
       mark: () => look.person ? Avatar({ name: markName, size: 'sm' }) : RecordMark({ name: markName, size: 'sm', tint: look.tint }), footer: () => saveBarView() },
-    prefs: prefs.cell(`grid.${name}.${child.name}`, emptyPrefs()) });
+    prefs: prefs.cell(`grid.${name}.${child.name}`, gridPrefs(store.table(child.name).model.fields)) });
 
   // ---------- a compact record page ----------
 
@@ -1332,7 +1332,15 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolb
   load();
   const canNote = Boolean(model.journal?.kinds?.includes('note'));
   const label = (field: string) => fieldOf(model, field)?.label ?? humanize(field);
-  const value = (field: string, raw: unknown) => { const meta = fieldOf(model, field); return raw === '[masked]' ? '[masked]' : raw === null || raw === undefined || raw === '' ? 'empty' : meta ? formatOf(meta, raw) : String(raw); };
+  // A Link shows the linked record's title, as on the form; a Link to a ledger row is described as
+  // an integer id (no grouping) by the schema, so it never reads as an amount.
+  const value = (field: string, raw: unknown): Child => {
+    const meta = fieldOf(model, field);
+    if (raw === '[masked]') return '[masked]';
+    if (raw === null || raw === undefined || raw === '') return 'empty';
+    if (meta?.type === 'link' && meta.target) { const title = ctx.links.title(meta.target, String(raw)); return () => title.get() ?? '…'; }
+    return meta ? formatOf(meta, raw) : String(raw);
+  };
   const table = (name: string) => model.children?.find(child => child.name === name)?.label ?? humanize(name);
   const target = (name: string) => { try { return ctx.schema.model(name).plural; } catch { return humanize(name); } };
   const action = (name: string) => model.actions?.find(item => item.name === name)?.label ?? humanize(name);

@@ -21,6 +21,24 @@ by that launcher. An already-running backend must be restarted to load new code.
 There is no application model migration in this milestone. Internal queue, event,
 and storage metadata are added during initialization.
 
+### Background Playground
+
+A second, smaller Playground shows a job that people start from an action and the application
+carries out through system moves. It uses its own database under
+`examples/playground/background/.data/`:
+
+```bash
+.venv/bin/python -m uvicorn examples.playground.background.app:create_app --factory --host 127.0.0.1
+.venv/bin/python -m examples.playground.background.app   # the job worker, in a second terminal
+```
+
+Create a price list and choose **Build**. The action queues `build_price_list` with
+`self.context.enqueue(...)`. The job acts as the system through
+`job.business(tx, system="Price list builder", role="admin")`, makes the system moves Start and
+Finish, and reports progress in five resumable steps. The record never offers Start, Finish or
+Fail as buttons, and posting to `/moves/building` by hand answers 403. Its History says the moves
+were made by the system via Price list builder. Reopen is an ordinary move people make.
+
 For a manually started API, run the worker separately with the same database
 configuration:
 
@@ -91,7 +109,72 @@ For user-initiated jobs, execution reloads the account's current active state an
 role and checks current update access to the target. `context.user` contains that
 fresh user. The handler must check permissions for additional records or operations
 it accesses. `user=None` creates a trusted system job. Trusted Python code remains
-outside HTTP permission enforcement.
+outside HTTP permission enforcement. To run moves, actions and document writes with their
+checks, use the job's [business context](#a-jobs-business-context).
+
+## Queue a job from an action
+
+An `@action` (or a Move `run` method, or any trusted code with a document context) queues a
+registered task with `context.enqueue(task, payload, *, key=None, target=None)`:
+
+```python
+class PriceList(Model):
+    @action("Build", available_when=(F("status") == "draft") & (F("requested") == False))
+    def build(self):
+        self.requested = True
+        return self.context.enqueue("build_price_list", {"price_list": str(self.id)})
+```
+
+* The job is written in the action's own transaction. It is queued only if the action commits;
+  if the action fails, or trusted code rolls the transaction back, there is no job.
+* Once the transaction commits, the worker in the same process (`evlet serve`) is woken and
+  claims the job at once instead of at its next half-second pass. A worker in another process
+  still finds it on its next pass. Nothing else changes: no Redis, no extra worker.
+* The job runs as the context's user, read again when it starts, with any API key or AI
+  assistant narrowing it was queued under. A context acting as the system queues it with that
+  context's role, which must then be admin, editor or viewer. `target=(Model, id)` needs update access now and when the job runs.
+* An action that returns the receipt adds `_job` (`{"id", "state"}`) to its detail. It is not
+  part of the ETag. `GET /api/_jobs/<id>` follows it.
+* `key=` deduplicates as with `JobQueue.enqueue`. The context must not be read only.
+
+`JobQueue.wake()` and `JobQueue.wait(timeout)` are the signal underneath, for app workers that
+run their own loop: `wait` returns True when a committed transaction queued a job since the last
+wait. The Background Playground's worker uses them.
+
+## A job's business context
+
+A handler gets the job's transaction (`tx`) as a trusted `Session`. Writes through it skip
+permissions, rules and the Journal. To run moves, actions and document writes with every check
+they have over HTTP, ask the job for a document context in that same transaction:
+
+```python
+def build_price_list(tx, job, payload):
+    context = job.business(tx, system="Price list builder", role="admin")
+    context.move(PriceList, payload["price_list"], "building")
+```
+
+`job.business(tx, *, user=None, system=None, role=None)` returns an `evlet.documents.Context`.
+Who it acts as is always explicit:
+
+| Call | Acts as | Permissions | Recorded as |
+| --- | --- | --- | --- |
+| `job.business(tx)` | The account that queued the job, read again when the job started, with its API key or assistant narrowing. A job queued with a system role acts with that role. | That account's role, row scopes and field permissions | That account |
+| `job.business(tx, user=7)` | Account 7 (an id or a `User`), read again now. It must be active; its current role applies. | That account's role, row scopes and field permissions | That account |
+| `job.business(tx, system="Price list builder", role="admin")` | The system, under that name (1 to 60 characters) | The named role's rules. A row scope that names the account matches nothing. | No account (`engine`), with `via: "Price list builder"` in the Journal and the name in Controls audit rows |
+
+* There is no silent bypass. A job queued without a user must pass `user=` or `system=` with
+  `role=`; `role` must be one of the application's roles; `user=` and `system=` together are
+  refused. An inactive account fails the job with `AccessError` (no retry).
+* Job handlers are trusted code, so the context may make
+  [system moves](states-actions.md#system-moves). Every other check stays: update permission
+  and row scope, guards, `run` methods, calculations, rules, validation, closed periods and
+  locks. A move's `run` method still gets `self.context.session`.
+* Lifecycle entries carry source `Automation` for a user and `System` for the system, and
+  correlation id `job:<id>`.
+* The context shares the job's transaction. Its writes commit with the job, or with the step of
+  a resumable task, and roll back with it. The context is only valid inside the handler.
+* An external task has no transaction, so it has no business context. Split it into a step
+  that writes and a step that calls out, or open a transaction yourself.
 
 Handlers must be short and bounded. They hold the tenant database's SQLite write
 lock for their whole execution. Split long work into a resumable task

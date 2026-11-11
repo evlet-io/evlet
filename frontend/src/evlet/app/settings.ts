@@ -25,6 +25,8 @@ export interface Me {
   /** May use the workspace override routes (/api/_controls/workspaces): the same check those routes make. */
   customize_workspaces: boolean;
   development: boolean;
+  /** The built-in System Administrator: only its email address can change in its profile. */
+  builtin?: boolean;
   profile: { full_name: string; short_name: string; title: string; phone: string; email: string; signature: string; photo: boolean };
   prefs: { theme: Theme; density: 'comfortable' | 'compact'; text: 'default' | 'large'; start: string; counts: boolean; lang: string; tz: string; date: DateFormat; num: NumberFormat; week: string;
     /** Enter moves to the next field in forms (off by default). */ enter_next?: boolean;
@@ -222,6 +224,24 @@ export function PortalSettings(api: ApiClient): Node {
 
 // ---------- profile ----------
 
+/** What a password shorter than the workspace's minimum gets told. */
+export const tooShort = (minimum: number) => minimum <= 1 ? 'Enter a password.' : `Your workspace needs at least ${minimum} characters.`;
+
+/** The built-in System Administrator's profile: fixed, except the email address used for notifications. */
+function BuiltinProfile(ctx: SettingsContext): Node {
+  const me = ctx.me.peek();
+  const profile = derive(() => ctx.me.get().profile);
+  return html`${head('Profile', 'The System Administrator is built into every instance.')}
+    ${section('About this account', '', html`<div class="set-form">
+      <div class="set-field"><span class="lbl">Full name</span><input class="input" disabled aria-label="Full name" value=${me.profile.full_name || 'System Administrator'}>
+        <span class="hint">Fixed. The username and name of this account never change.</span></div>
+      <div class="set-field"><span class="lbl">Username</span><input class="input mono" disabled aria-label="Username" value=${me.user.username}></div>
+      <div class="set-field"><span class="lbl">Email for notifications</span><div class="set-inline"><input class="input" disabled aria-label="Email" prop:value=${() => profile.get().email || 'Not set'}>
+        ${Button({ label: profile.peek().email ? 'Change' : 'Add', size: 'small', onClick: () => changeEmail(ctx) })}</div>
+        <span class="hint">An extra address where this account gets notifications. Saving it asks for your current password.</span></div>
+    </div>`, true)}`;
+}
+
 function ProfilePage(ctx: SettingsContext): Node {
   const me = ctx.me.peek();
   const profile = derive(() => ctx.me.get().profile);
@@ -234,6 +254,7 @@ function ProfilePage(ctx: SettingsContext): Node {
     } catch (failure) { fail(failure); }
     window.history.replaceState(window.history.state, '', window.location.pathname);
   })();
+  if (me.builtin) return BuiltinProfile(ctx);
   const save = async (key: keyof Me['profile'], value: string) => {
     if (value === profile.peek()[key]) return;
     try {
@@ -289,7 +310,36 @@ function ProfilePage(ctx: SettingsContext): Node {
     ${me.portal ? null : section('Your role', '', row(badge(me.user.role, 'violet'), `Your admin decides what you can see and change. ${me.controls ? 'You can open Controls to manage users and access.' : 'Ask an admin if you need more access.'}`, null))}`;
 }
 
+/** The System Administrator's email for notifications: saved at once on any instance, after its current password (and a code with two-step on). */
+function administratorEmail(ctx: SettingsContext) {
+  const address = cell(ctx.me.peek().profile.email), password = cell(''), code = cell(''), error = cell(''), busy = cell(false);
+  const enrolled = ctx.me.peek().security.two_step.on;
+  const field = (id: string, label: string, value: Cell<string>, type: string, auto: string) => html`<div class="set-field"><label for=${id}>${label}</label>
+    <input class="input" id=${id} type=${type} autocomplete=${auto} prop:value=${value} on:input=${(event: Event) => { value.set((event.target as HTMLInputElement).value); error.set(''); }}></div>`;
+  openModal({ title: 'Email for notifications', narrow: true, icon: 'mail',
+    body: () => html`${field('ae-email', 'Email', address, 'email', 'email')}${field('ae-password', 'Your current password', password, 'password', 'current-password')}
+      ${enrolled ? field('ae-code', 'Code from your app, or a backup code', code, 'text', 'one-time-code') : null}
+      ${() => error.get() ? html`<span class="err" role="alert">${error.get()}</span>` : null}`,
+    footer: close => DialogFooter({ cancel: close, submit: { label: 'Save email', disabled: busy, onClick: async () => {
+      const email = address.peek().trim();
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) { error.set('Enter a valid email address.'); return; }
+      if (!password.peek()) { error.set('Enter your current password.'); return; }
+      if (enrolled && !code.peek().trim()) { error.set('Enter a code from your app, or a backup code.'); return; }
+      busy.set(true);
+      try {
+        const { data } = await ctx.api.request<{ email: string }>('POST', '/api/_settings/me/email',
+          { body: { email, password: password.peek(), ...(enrolled ? { code: code.peek().trim() } : {}) } });
+        ctx.me.set({ ...ctx.me.peek(), profile: { ...ctx.me.peek().profile, email: data.email } });
+        close();
+        toast(`Notifications now go to ${data.email}`);
+      } catch (failure) {
+        error.set(failure instanceof ValidationError ? Object.values(failure.fields ?? {})[0] ?? failure.message : failure instanceof ApiError ? failure.message : 'Try again.');
+      } finally { busy.set(false); }
+    } } }) });
+}
+
 function changeEmail(ctx: SettingsContext) {
+  if (ctx.me.peek().builtin) { administratorEmail(ctx); return; }
   if (!ctx.me.peek().development) { toast("Email is not set up yet, so your address can't be changed here. Ask your admin.", { icon: 'info' }); return; }
   const value = cell('');
   confirmIdentity<{ sent: string; link?: string }>(ctx, { title: 'Change your email', icon: 'mail', yes: 'Send link', path: '/api/_settings/me/email',
@@ -481,7 +531,7 @@ function passwordForm(api: ApiClient, me: Me, done: () => void) {
   const submit = async () => {
     if (busy.peek()) return;
     if (!current.peek()) return show('current', 'Enter your current password.');
-    if (next.peek().length < minimum) return show('new', `Your workspace needs at least ${minimum} characters.`);
+    if (next.peek().length < minimum) return show('new', tooShort(minimum));
     if (next.peek() !== again.peek()) return show('again', "The two new passwords don't match.");
     if (enrolled && !code.peek().trim()) return show('code', 'Enter a code from your app, or a backup code.');
     busy.set(true);
@@ -501,7 +551,7 @@ function passwordForm(api: ApiClient, me: Me, done: () => void) {
     <div class="set-field full"><label for="pw-cur">Current password</label>${input('current', current, 'current-password')}${fieldError('current')}</div>
     <div class="set-field"><label for="pw-new">New password</label>${input('new', next, 'new-password')}
       <div class="set-meter"><i style:width=${() => next.get() ? `${(score.get() + 1) * 20}%` : '0'} class=${() => `s${score.get()}`}></i></div>
-      <span class="hint" id="pw-rules">${() => next.get().length < minimum ? `At least ${minimum} characters.${next.get().length ? ` ${minimum - next.get().length} more to go.` : ''}` : 'Long enough. A short sentence is easy to remember.'}</span>
+      <span class="hint" id="pw-rules">${() => next.get().length < minimum ? `${minimum <= 1 ? 'Any password will do.' : `At least ${minimum} characters.`}${next.get().length ? ` ${minimum - next.get().length} more to go.` : ''}` : 'Long enough. A short sentence is easy to remember.'}</span>
       ${fieldError('new')}</div>
     <div class="set-field"><label for="pw-again">Type it again</label><input class="input" id="pw-again" type="password" autocomplete="new-password" aria-label="Type it again"
       aria-invalid=${() => error.get()?.field === 'again' || (again.get() && again.get() !== next.get()) ? 'true' : null}

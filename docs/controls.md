@@ -6,8 +6,8 @@ Permissions, Security, Connectors, Email, MCP & AI, API keys, Apps, Models, Nami
 
 The Overview lists what needs attention: an app waiting to be migrated or a server that still
 runs the old version, overrides that no longer apply (and what fails closed meanwhile), skipped
-naming series, connectors and email accounts whose last test failed, screen extensions that no longer fit a form layout, failed jobs, and roles in
-`security.two_step_roles` that can't use two-step sign-in because the `cryptography` package is
+naming series, connectors and email accounts whose last test failed, screen extensions that no longer fit a form layout, failed jobs, and roles that
+must use two-step sign-in but can't because the `cryptography` package is
 missing or the secret key file is refused. An application without a secret key (not an instance)
 has no two-step sign-in, and nothing is listed for it.
 
@@ -19,6 +19,8 @@ has no two-step sign-in, and nothing is listed for it.
   the instance accepts counts as primary, except sub-hosts. So each tenant of a
   `TenantApplication` manages its own users on its own host, in its own database.
 - Only desk roles open Controls. Portal roles never do, whatever their settings.
+- Every instance has the built-in **System Administrator** (username `administrator`, role
+  admin), like the Administrator in ERPNext. See [The Administrator](#the-administrator).
 - Open to roles with "Opens Controls" on. `admin` always has it; it can't be turned off.
 - Opening Controls is not the same as being admin. Only admins can give or remove the admin
   role, change admin accounts (role, active, password, sessions), add admin users, create or
@@ -35,8 +37,8 @@ has no two-step sign-in, and nothing is listed for it.
   peer on its own with its `trusted_proxies=(...)` line, to add only if that address is your
   reverse proxy; the header stays ignored until then.
 - `ControlsAccess(require_two_step=True)` opens Controls only to sessions that finished two-step
-  sign-in; others get a message that sends them to Settings and back through sign-in. Roles in
-  `security.two_step_roles` need such a session too, when the instance can keep secrets: they
+  sign-in; others get a message that sends them to Settings and back through sign-in. Roles that
+  must use two-step sign-in (see [Security](#security-rules)) need such a session too, when the instance can keep secrets: they
   can't use anything until two-step sign-in is set up (see [settings.md](settings.md#when-the-code-is-asked)).
 - **Changes ask for a fresh code.** For a person with two-step sign-in on, every request that
   changes something in Controls (any `POST`, `PUT`, `PATCH` or `DELETE` under `/api/_controls/`,
@@ -60,6 +62,42 @@ has no two-step sign-in, and nothing is listed for it.
   setting and writes audit rows by `cli`. It can't change `routes.py`: when `ControlsAccess`
   there limits the networks, the command says so and you edit `routes.py`.
 - Saving allowed networks that leave out your own address asks first.
+
+### The Administrator
+
+Every instance has one account it creates itself: username `administrator`, full name
+"System Administrator", role admin, marked `builtin` in `evlet_users`. New databases get it at
+startup. Older ones get it from the framework step `0008_administrator`, which `evlet migrate`
+runs; if another account already uses the username `administrator`, the step stops with a
+message and changes nothing, so rename that account first.
+
+- It starts with **no password**, so nobody can sign in as it until one is set: through the
+  development sign-in link and the "Set your password" screen ([cli.md](cli.md#development-sign-in-links)),
+  with `evlet users set-password <instance> administrator`, by an admin in Controls, or on first-run
+  setup in the browser by choosing `administrator` as the username.
+- Its username, full name and role never change, and it can't be deactivated or deleted. Every
+  route refuses with 409 "The Administrator account is built in...": Controls Users, the older
+  `/api/auth/users` routes and the profile (`/api/_settings/me/profile` and the photo answer 409
+  "The Administrator profile is fixed..."). Connectors and MCP clients use the same routes.
+  A change made in the database directly is put back at the next start.
+- It may add **one email address** for notifications, on any instance, `evlet serve` included:
+  Settings, Profile asks for its current password (and a code when two-step sign-in is on),
+  checks the address and saves it at once, with an audit row. Mentions and other notifications
+  use it. Other people keep the usual rule (a confirmation link, development only). From the
+  server shell, `evlet users set-email <instance> <username> <email>` sets anyone's address,
+  audited as `cli`. Its password, two-step sign-in,
+  sessions and personal preferences work as for anyone. Sign-in lockout applies too;
+  `evlet users set-password` and `evlet users reset-two-step` recover it.
+- **Unlimited control.** It passes every role check: every model, row and field whatever the
+  admin rules in the app files say, every action, move, report, print design and slip, and every
+  Controls page. It does not skip data rules: validation, read-only fields, state rules, period
+  locks, foreign keys and transactions apply, its requests go through the normal authenticated
+  routes and the audit log names it. API keys it creates still narrow it, and the Controls
+  allowlist still applies.
+- It belongs to its instance's database. Each tenant of a `TenantApplication` has its own,
+  which can't sign in to another tenant, like any other account.
+- With two or more admins, the "only active admin" rule counts admins who can sign in: the
+  Administrator counts once it has a password.
 
 ### Ending access
 
@@ -118,8 +156,9 @@ that users still have can't be deleted; deleting one removes its permission over
 ## Overrides
 
 Overrides are stored in `evlet_overrides(kind, key, value)` and never change app files.
-They can only make a rule stricter than the app files. Instance fields are the exception, since
-Controls owns them: see [Permissions](#overrides) below. Saving sends every change at once
+They can only make a rule stricter than the app files. Instance fields are an exception, since
+Controls owns them: see [Permissions](#overrides) below. The password minimum and two-step sign-in
+for people other than admins are another: they go either way ([Security](#security-rules)). Saving sends every change at once
 (`POST /api/_controls/overrides`, `{"changes": [{kind, key, value}]}`, `null` resets); one
 invalid change saves none, and the reply names each invalid item as `changes.<index>`.
 A value equal to the file value is removed instead of stored. A stored override that no
@@ -159,27 +198,39 @@ no customer links sees no records. Link users with `evlet link-user` or
 fields and Links lead to the hierarchy model
 ([business-capabilities.md](business-capabilities.md#team-and-hierarchy-scopes)).
 
-**Security** (kind `setting`). The file value of the first three comes from the instance's
-`config.py`, beside `instance = Instance(...)`, or from `LocalAuth(security=...)` in an application
-built by hand:
+<a id="security-rules"></a>**Security** (kind `setting`). The sign-in rules start from the instance's `config.py`, beside
+`instance = Instance(...)`, or from `LocalAuth(security=...)` in an application built by hand:
 
 ```python
 from evlet import Instance, Security
 
 instance = Instance(name="acme", domain="erp.acme.com")
-security = Security(session_hours=8, lockout=4, password_min=16)
+security = Security(password_min=8, admin_two_step=True, two_step=False, admin_sign_in=False,
+                    session_hours=8, lockout=4)
 ```
 
-`Security` checks its values: `session_hours` 1 to 168, `lockout` 3 to 50 and `password_min` 15
-to 64. Left out, they are 12 hours, 5 and 15. Controls can only make them stricter than the
-config value. Change config.py and restart to loosen one.
+| Option | Default | What it does |
+|---|---|---|
+| `password_min` | 15 | 1 to 64 characters. 1 means no rule: "1" is a valid password. |
+| `admin_two_step` | `True` | Admin accounts, the Administrator too, must use two-step sign-in. Only config.py decides this. |
+| `two_step` | `False` | Everyone else must use two-step sign-in. Controls can turn it on or off. |
+| `admin_sign_in` | `False` | The sign-in page opens with the username `administrator` filled in, so you type only the password (and a code when needed). |
+| `session_hours` | 12 | 1 to 168. |
+| `lockout` | 5 | 3 to 50. |
+
+**Admins follow config.py only.** An account with the admin role always uses config.py's
+`password_min` and `admin_two_step`; Controls can't change them. Change config.py and restart.
+**Everyone else** starts from the same values, and Controls can change their password minimum and
+two-step sign-in in either direction. Session length and lockout can only be made stricter.
+Controls > Security shows the admin rules read-only above the settings it can change.
 
 | Key | File value | Rule |
 |---|---|---|
-| `security.password_min` | 15, or `Security(password_min=...)` | Up only, 64 at most. Applies to new passwords. |
+| `security.password_min` | 15, or `Security(password_min=...)` | 1 to 64, either direction, for everyone but admins. Applies to new passwords. |
+| `security.two_step` | `False`, or `Security(two_step=...)` | On or off, for everyone but admins. |
 | `security.session_hours` | 12, or `Security(session_hours=...)` | Down only, 1 at least. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
 | `security.lockout` | 5, or `Security(lockout=...)` | Down only, 3 at least. Failed sign-ins per network and account, and wrong current passwords per account in Settings. |
-| `security.two_step_roles` | `["admin"]` | Admin stays. These roles must use two-step sign-in ([settings.md](settings.md#two-step-sign-in)) when the instance can keep secrets: people who have not set it up do so at their next sign-in (trust on first use), and Controls needs a verified session. |
+| `security.two_step_roles` | `[]` | Desk roles other than admin that must use two-step sign-in even with `security.two_step` off. A list saved before 0.4.2 that names admin keeps working; admin is dropped from it, since config.py decides for admin. These roles must use two-step sign-in ([settings.md](settings.md#two-step-sign-in)) when the instance can keep secrets: people who have not set it up do so at their next sign-in (trust on first use), and Controls needs a verified session. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 
 ## Models
@@ -469,7 +520,7 @@ they are removed on the Models page.
 |---|---|---|
 | `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}`. The `own_customer` preset is written as the public `own_customer()`, or `own_customer(field='id')` on the customer model |
 | `field`, `custom`, `naming`, `layout`, `list` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and the `Meta` options: `naming = Naming(...)`, `layout = (Section(...), ...)` with `tabs` and `default_tab`, and `list_fields`, `open_in`, `list_tabs` and `list_tab`. Pasted into the model, they reproduce the layout and list overrides. A model with a [record layout](ui.md#record-layouts) gets its whole `layout = (Tab(...), ...)`, with the Controls sections in place. Field widths (set by the field type) and a list's page size and sort have no `Meta` form, so they are comments. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
-| `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for session length, lockout and minimum password length, which config.py reads (the block keeps what config.py sets today with the overrides on top; restart, then reset the overrides); `two_step_roles = (...)` for `security.two_step_roles`, `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read those three yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
+| `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for session length, lockout, minimum password length and `two_step`, which config.py reads (in config.py `password_min` applies to admins too, as the block's comment says) (the block keeps what config.py sets today with the overrides on top; restart, then reset the overrides); `two_step_roles = (...)` for `security.two_step_roles`, `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read those three yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.
 

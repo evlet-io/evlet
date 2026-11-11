@@ -6,7 +6,7 @@ import os
 import threading
 import sqlite3
 
-from .database import Database, Session, conflict, using
+from .database import Database, Session, conflict, run_after_commit, using
 from .identity import RecordId
 from .models import identifier, ValidationError
 
@@ -243,6 +243,7 @@ class PostgreSQLDatabase(Database):
             except BaseException:
                 connection.rollback()
                 raise
+        run_after_commit(session)
 
     def owns(self, session):
         return isinstance(session.connection, Connection) and session.connection.database is self

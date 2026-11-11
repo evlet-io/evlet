@@ -108,6 +108,7 @@ def fetched_from(root, url):
 
 
 def has_users(path):
+    """Whether someone can sign in: an account with a password. The built-in Administrator has none at first."""
     database = path / 'data/database.sqlite3'
     if not database.is_file():
         return False
@@ -115,48 +116,42 @@ def has_users(path):
     try:
         if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone():
             return False
-        return connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone() is not None
+        return connection.execute("SELECT 1 FROM evlet_users WHERE password<>'' LIMIT 1").fetchone() is not None
     finally:
         connection.close()
 
 
 def ask_admin():
-    """Ask for the first administrator in a terminal; the password is never echoed or shown."""
+    """Ask for the Administrator's password in a terminal; it is never echoed or shown."""
     import getpass
     import sys
     if not sys.stdin.isatty():
-        raise ValueError('The instance has no administrator yet. Run the command in a terminal to create one')
-    print('A public site cannot create its administrator in the browser. Create it now.')
-    username = input('Administrator username: ').strip()
+        raise ValueError('The Administrator has no password yet. Run the command in a terminal to set one')
+    print('A public site cannot set its first password in the browser. Choose a password for the built-in Administrator now.')
     password = getpass.getpass('Password: ')
     if password != getpass.getpass('Repeat the password: '):
         raise ValueError('The two passwords differ. Nothing was changed')
-    return username, password
+    return password
 
 
-def create_admin(root, name, username, password):
-    """Add the first administrator through the instance's own account rules, audited as cli."""
-    from ..controls import audit, ensure_schema
+def create_admin(root, name, password):
+    """Set the built-in Administrator's first password through the instance's own rules, audited as cli."""
+    from ..auth import ADMINISTRATOR
+    from ..controls import set_password_from_shell
     from ..instances import load_runtime
-    from ..models import ValidationError
     from .project import instance_guard
-    with instance_guard(child(root, 'instances', name)):
+    path = child(root, 'instances', name)
+    with instance_guard(path):
         app = load_runtime(root, name)
         try:
             app.initialize()
-            auth = app.business.auth
-            if not auth.setup_needed():
-                raise ValueError('An administrator already exists')
-
-            def record(connection, user):
-                ensure_schema(connection)
-                audit(connection, 'cli', 'Users', user.username, 'First administrator created from the server shell by evlet setup')
-            try:
-                return auth.add_user({'username': username, 'password': password, 'role': 'admin'}, check=record).username
-            except ValidationError as exc:
-                raise ValueError(' '.join(str(value) for value in exc.errors.values())) from None
+            if not app.business.auth.setup_needed():
+                raise ValueError('An administrator already has a password')
+            minimum = app.business.auth.security.password_min
         finally:
             app.database.close()
+        set_password_from_shell(path / 'data/database.sqlite3', ADMINISTRATOR, password, minimum)
+    return ADMINISTRATOR
 
 
 def installed(name):
@@ -262,10 +257,10 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
     path = child(root, 'instances', name)
     with step('administrator'):
         if has_users(path):
-            print(f'Administrator exists. If nobody knows its password, run evlet users set-password {name} USERNAME')
+            print(f'Administrator exists. If nobody knows its password, run evlet users set-password {name} administrator')
         else:
-            username, password = (ask or ask_admin)()
-            print(f'Administrator created: {create_admin(root, name, username, password)}')
+            password = (ask or ask_admin)()
+            print(f'Password set for {create_admin(root, name, password)}')
     with step('domain'):
         changed = set_domain(root, name, host, trusted_proxies_line(proxy.LOCAL))
         print(f'Domain set: {host}' if changed else f'Domain is {host}')

@@ -908,12 +908,12 @@
    "_audit": {
     "created_at": "2026-11-04T10:12:00.000Z",
     "created_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     },
     "modified_at": "2026-11-04T10:12:00.000Z",
     "modified_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     }
    },
@@ -943,12 +943,12 @@
    "_audit": {
     "created_at": "2026-11-04T09:59:00.000Z",
     "created_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     },
     "modified_at": "2026-11-04T09:59:00.000Z",
     "modified_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     }
    },
@@ -967,12 +967,12 @@
    "_audit": {
     "created_at": "2026-11-04T09:59:00.000Z",
     "created_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     },
     "modified_at": "2026-11-04T09:59:00.000Z",
     "modified_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     }
    },
@@ -2664,12 +2664,12 @@
    "_audit": {
     "created_at": "2026-11-04T10:06:00.000Z",
     "created_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     },
     "modified_at": "2026-11-04T10:06:00.000Z",
     "modified_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     }
    },
@@ -2699,12 +2699,12 @@
    "_audit": {
     "created_at": "2026-11-04T10:06:00.000Z",
     "created_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     },
     "modified_at": "2026-11-04T10:06:00.000Z",
     "modified_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     }
    },
@@ -2785,12 +2785,12 @@
    "_audit": {
     "created_at": "2026-11-04T10:00:00.000Z",
     "created_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     },
     "modified_at": "2026-11-04T10:00:00.000Z",
     "modified_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     }
    },
@@ -2809,12 +2809,12 @@
    "_audit": {
     "created_at": "2026-11-04T10:00:00.000Z",
     "created_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     },
     "modified_at": "2026-11-04T10:00:00.000Z",
     "modified_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     }
    },
@@ -3472,7 +3472,7 @@
    },
    "csrf": "fixture-csrf-token",
    "user": {
-    "id": 1,
+    "id": 2,
     "role": "admin",
     "username": "owner"
    }
@@ -5767,6 +5767,7 @@
     "name": "Evlet",
     "playground": false
    },
+   "password_min": 15,
    "setup": true,
    "user": null
   },
@@ -6090,6 +6091,7 @@
      "title": "Sales"
     }
    ],
+   "builtin": false,
    "controls": true,
    "customize_workspaces": true,
    "development": true,
@@ -6226,7 +6228,7 @@
     }
    },
    "user": {
-    "id": 1,
+    "id": 2,
     "role": "admin",
     "username": "owner"
    }
@@ -6647,12 +6649,12 @@
    "_audit": {
     "created_at": "2026-11-04T10:01:00.000Z",
     "created_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     },
     "modified_at": "2026-11-04T10:01:00.000Z",
     "modified_by": {
-     "id": 1,
+     "id": 2,
      "name": "owner"
     }
    },
@@ -7585,7 +7587,7 @@
    },
    "csrf": "fixture-csrf-token",
    "user": {
-    "id": 1,
+    "id": 2,
     "role": "admin",
     "username": "owner"
    }
@@ -7598,12 +7600,12 @@
    "_audit": {
     "created_at": "2026-11-04T09:59:00.000Z",
     "created_by": {
-     "id": 1,
+     "id": 2,
      "name": "Owner"
     },
     "modified_at": "2026-11-04T09:59:00.000Z",
     "modified_by": {
-     "id": 1,
+     "id": 2,
      "name": "Owner"
     }
    },
@@ -9775,7 +9777,7 @@
    },
    "csrf": "fixture-csrf-token",
    "user": {
-    "id": 2,
+    "id": 3,
     "role": "viewer",
     "username": "viewer"
    }

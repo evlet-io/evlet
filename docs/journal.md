@@ -48,7 +48,9 @@ evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash)
   `(model, record_id, id)` serves the history of one record.
 * `actor` is the user id as text, or `engine` for writes without a signed in user (jobs,
   schedules and other system sessions). A write through an AI assistant keeps the person as
-  the actor and adds `"via": "<client name>"` to `data`.
+  the actor and adds `"via": "<client name>"` to `data`. A job that acts as the system
+  (`job.business(tx, system="Price list builder", role="admin")`) writes as `engine` and adds
+  `"via": "Price list builder"` ([jobs-realtime.md](jobs-realtime.md#a-jobs-business-context)).
 * `at` is the UTC time, for example `2026-11-02T08:15:30.125Z`.
 * `data` is canonical JSON (sorted keys, no spaces).
 * `prev_hash` and `hash` are set only with `tamper_evident=True`.
@@ -251,7 +253,7 @@ permissions = {
 * `actor` is a user id, or `null` for the engine. `users` names the actors and assignees on
   the page.
 * `via` names the AI assistant a write came through, when it did (see
-  [Controls](controls.md#mcp-and-ai)). It is taken out of `data`.
+  [Controls](controls.md#mcp-and-ai)), or the system name a job acted as. It is taken out of `data`.
 * `?kind=message` (any entry kind) keeps one kind, such as the emails on a record.
 * A `message` copied from a personal mailbox ([Controls](controls.md#personal-mailboxes)) has
   `"source": "mailbox"`, and its `party` is `null` (the entry `partial`) for a reader who can't
@@ -263,7 +265,9 @@ cannot read is removed, and the entry is marked `"partial": true`:
 
 * Values of fields the caller cannot read are left out, at every depth.
 * A Link or Reference value naming a record the caller cannot see (a row scope) shows as
-  `null`, as in record details.
+  `null`, as in record details. Link values are text record ids, except a Link to a
+  [ledger](ledger.md) row, which is its plain integer id. The record page's Activity shows a
+  Link as the linked record's title.
 * Rows of a collection the caller cannot read are left out. Under a row scope on the rows,
   rows the caller cannot see are left out, and so are all removed rows, because they can no
   longer be checked against the scope. Updated rows with nothing readable left are dropped.

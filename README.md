@@ -30,8 +30,9 @@ evlet install notes --instance acme
 evlet serve acme
 ```
 
-Then open **http://127.0.0.1:8000** and create your first administrator. There is
-no default password. To serve a site on your own domain behind Caddy, see
+Every instance has a built-in **System Administrator** (username `administrator`) with no
+password. `evlet serve` tells you to set one with `evlet users set-password acme administrator`;
+then open **http://127.0.0.1:8000** and sign in. There is no default password. To serve a site on your own domain behind Caddy, see
 [Serve a site on a domain in one go](docs/cli.md#serve-a-site-on-a-domain-in-one-go).
 
 An **app** contains reusable Python code. An **instance** is a site with its own
@@ -89,21 +90,24 @@ evlet docs
 The Playground uses temporary demo data. Use an instance for records you want to keep. Offline documentation
 opens at **http://127.0.0.1:8001**.
 
-`evlet playground` prints a sign-in link when it starts:
+`evlet playground` and `evlet dev` print a sign-in link for the built-in Administrator when they start:
 
 ```text
-Sign in as demo-admin (works once, for 10 minutes):
+The administrator account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):
   http://127.0.0.1:8000/_dev/signin?token=...
 ```
 
-Open it to sign straight in. On an instance with no accounts, `evlet dev` first creates an
-admin named `admin` (`--user NAME` picks another name) with a random password that is never
-shown; on an empty Playground it is `demo-admin`. Set a real password later with
-`evlet users set-password`. Run
-`evlet dev-link` in another terminal for a fresh link once the first one is used or
-expired. Use `--user NAME` to sign in as someone else, or `--no-link` to skip the
-link. Links exist only under `evlet playground` and `evlet dev`, never under
-`evlet serve`; see [development sign-in links](docs/cli.md#development-sign-in-links).
+Open it, choose a password on the "Set your password" screen and, when admins need two-step
+sign-in, set up your authenticator app. Once the Administrator has a password the link just
+signs you in. Run `evlet dev-link` in another terminal for a fresh link once the first one is
+used or expired. Use `--user NAME` to sign in as someone else, or `--no-link` to skip the
+link. Links exist only under `evlet playground` and `evlet dev`, never under `evlet serve`;
+see [development sign-in links](docs/cli.md#development-sign-in-links).
+
+The sign-in rules live in the instance's `config.py`: `Security(password_min=..., admin_two_step=...,
+two_step=..., admin_sign_in=...)`. `password_min=1` allows any password, which is handy on a
+development instance. Admins always follow config.py; Controls can change the rules for everyone
+else ([controls.md](docs/controls.md#security-rules)).
 
 ## Optional capabilities
 

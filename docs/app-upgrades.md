@@ -97,6 +97,35 @@ first applies the steps and the others find them applied. Do not keep data you c
 Main uses a development version between releases; a source build is not the same
 artifact as the last PyPI release.
 
+### From 0.4.1 to 0.4.2
+
+0.4.2 adds the built-in System Administrator and new sign-in rules in config.py. Apps keep
+their `evlet>=0.4.0,<0.5` dependency.
+
+- Run `evlet migrate` for each instance before you serve it. It applies `0008_administrator`,
+  which adds the account `administrator` (full name "System Administrator", role admin) with no
+  password. If an account named `administrator` already exists, the step stops and changes
+  nothing: rename that account in the database first. Set the password with
+  `evlet users set-password <instance> administrator` when you need it. Existing admins, such as
+  `admin` or `demo-admin`, stay as they are.
+- On new databases the Administrator is account 1, so the first account you create is 2. Tests
+  that assume the first person they set up has id 1 (an `owner` value, an `actor`, a
+  `User(1, ...)` checked against the database) look ids up by username instead.
+- The Administrator passes every role check. An app that limits the admin role on a model with
+  `permissions = {"admin": Rule(...)}` still limits other admins, not the Administrator.
+- Admins now follow config.py only: `Security(password_min=...)` and
+  `Security(admin_two_step=...)`. Controls can change the password minimum and two-step sign-in
+  for everyone else, in either direction, and `password_min` takes 1 to 64. A Controls list of
+  two-step roles saved before that names admin keeps working without it; admins still need
+  two-step sign-in because `admin_two_step` is on by default.
+- `evlet dev` and `evlet playground` no longer create `admin` or `demo-admin`. Their link signs
+  in the Administrator, which chooses its password on first use. `DevSignIn(create_admin=...)`
+  is ignored with a `DeprecationWarning` and goes in 0.5.
+- Give the Administrator an email address for notifications in Settings, Profile (any
+  instance, with its password) or with `evlet users set-email <instance> administrator <email>`.
+- `evlet setup --host` asks only for the Administrator's password, and `evlet serve` says how to
+  set it while it has none.
+
 ### From 0.3 to 0.4
 
 Evlet 0.4 stores money at 6 places, removes record tabs and removes code the browser never

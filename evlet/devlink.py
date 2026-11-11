@@ -15,8 +15,6 @@ from urllib.parse import parse_qs
 
 PATH = '/_dev/signin'
 MINUTES = 10
-# The account `evlet playground` creates on an empty database. Its random password is never shown.
-DEMO_ADMIN = 'demo-admin'
 UNAVAILABLE = 'This sign-in link has expired or was already used. Run evlet dev-link for a new one.'
 
 
@@ -30,8 +28,9 @@ def _digest(token):
 
 
 def _choose(connection, username):
-    """The account a link signs in: username, else the only active admin, else the only active user."""
-    rows = connection.execute("SELECT u.id, u.username, u.role FROM evlet_users u JOIN evlet_roles r ON r.id=u.role "
+    """The account a link signs in: username, else the built-in Administrator, else the only active admin or user."""
+    from .auth import ADMINISTRATOR
+    rows = connection.execute("SELECT u.id, u.username, u.role, u.password FROM evlet_users u JOIN evlet_roles r ON r.id=u.role "
                               "WHERE u.active=1 AND r.realm='desk' ORDER BY u.id").fetchall()
     names = ', '.join(row['username'] for row in rows[:10]) or 'none'
     if username is not None:
@@ -39,6 +38,9 @@ def _choose(connection, username):
         if not found:
             raise ValueError(f'No active desk user named {username}. Users here: {names}')
         return found[0]
+    builtin = [row for row in rows if row['username'] == ADMINISTRATOR and row['role'] == 'admin']
+    if builtin:
+        return builtin[0]
     admins = [row for row in rows if row['role'] == 'admin']
     if len(admins) == 1:
         return admins[0]
@@ -47,38 +49,26 @@ def _choose(connection, username):
     raise ValueError(f'Choose a user with --user NAME. Users here: {names}')
 
 
-def issue(database, user=None, *, create_admin=False, minutes=MINUTES):
-    """Store the hash of a new single-use token for user and return (token, username).
+def issue(database, user=None, *, minutes=MINUTES):
+    """Store the hash of a new single-use token for user (the Administrator by default) and return (token, username).
 
-    create_admin adds an administrator when the database has no accounts yet: True names it demo-admin
-    (the Playground), a string names it (evlet dev: admin, or --user NAME). Its random password is never
-    shown. The token itself is never stored."""
-    from .auth import check_username, password_hash
-    from .models import ValidationError
+    The token itself is never stored."""
+    token, username, _ = _issue(database, user, minutes)
+    return token, username
+
+
+def _issue(database, user, minutes=MINUTES):
     with database.transaction() as tx:
         connection = tx.connection
         ensure(connection)
         now = int(time.time())
         connection.execute('DELETE FROM evlet_dev_links WHERE expires<=?', (now,))
-        empty = not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone()
-        if create_admin and empty and (user is None or isinstance(create_admin, str)):
-            name = create_admin if isinstance(create_admin, str) else DEMO_ADMIN
-            try:
-                check_username(name)
-            except ValidationError as exc:
-                raise ValueError(f'Cannot create the first admin: {exc.errors["username"]}') from None
-            connection.execute("INSERT INTO evlet_users(username,password,role) VALUES (?,?,'admin')",
-                               (name.lower(), password_hash(secrets.token_urlsafe(32))))
-            if database.columns(connection, 'evlet_audit'):
-                from .controls import audit
-                audit(connection, 'cli', 'Users', name.lower(), 'Development administrator created by the development server · Random password, never shown')
-            user = name
-        elif empty:
-            raise ValueError('This app has no users yet. Start it with evlet dev to create the first admin, or open it in a browser.')
+        if not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone():
+            raise ValueError('This app has no users yet. Start it with evlet dev, which creates the Administrator.')
         account = _choose(connection, user)
         token = secrets.token_urlsafe(32)
         connection.execute('INSERT INTO evlet_dev_links(hash,user_id,expires) VALUES (?,?,?)', (_digest(token), account['id'], now + minutes * 60))
-    return token, account['username']
+    return token, account['username'], account['password'] == ''
 
 
 def local_origin(auth):
@@ -141,17 +131,17 @@ def sign_in(business, scope):
     return 302, b'', [*headers, (b'location', b'/')]
 
 
-def announce(application, user=None, *, create_admin=False):
-    """Print a fresh link for a started development application; problems are printed, not raised."""
+def announce(application, user=None):
+    """Print a fresh link for a started development application; problems are printed, not raised.
+    When the account has no password yet (the Administrator on a new instance), the link leads to setting one."""
     try:
-        with application.database._connection() as connection:
-            empty = not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone()
-        token, username = issue(application.database, user, create_admin=create_admin)
-        if empty and create_admin:
-            print(f'No accounts yet. Created admin "{username}" (no password set). Sign in (works once, for {MINUTES} minutes):\n  '
-                  + link(local_origin(application.business.auth), token), flush=True)
+        token, username, first = _issue(application.database, user)
+        url = link(local_origin(application.business.auth), token)
+        if first:
+            print(f'The {username} account has no password yet. Open this link to sign in and choose one (works once, for {MINUTES} minutes):\n  {url}',
+                  flush=True)
             return
-        print(f'Sign in as {username} (works once, for {MINUTES} minutes):\n  {link(local_origin(application.business.auth), token)}', flush=True)
+        print(f'Sign in as {username} (works once, for {MINUTES} minutes):\n  {url}', flush=True)
     except ValueError as exc:
         print(f'No sign-in link: {exc}', flush=True)
 
@@ -159,10 +149,15 @@ def announce(application, user=None, *, create_admin=False):
 class DevSignIn:
     """Serve one-time sign-in links at /_dev/signin. Wrap development applications only, never one you serve.
 
-    Other requests and the lifespan pass through unchanged. With announce=True a link is printed once startup completes."""
+    Other requests and the lifespan pass through unchanged. With announce=True a link is printed once startup completes,
+    for user or, by default, the built-in Administrator."""
 
-    def __init__(self, app, *, announce=False, user=None, create_admin=False):
-        self.app, self.announce, self.user, self.create_admin = app, announce, user, create_admin
+    def __init__(self, app, *, announce=False, user=None, create_admin=None):
+        if create_admin is not None:
+            import warnings
+            warnings.warn('DevSignIn(create_admin=...) is ignored and will be removed in 0.5: every instance has the built-in '
+                          'Administrator, and the link signs it in by default.', DeprecationWarning, stacklevel=2)
+        self.app, self.announce, self.user = app, announce, user
 
     def application(self):
         target = self.app
@@ -187,7 +182,7 @@ class DevSignIn:
                 if message['type'] == 'lifespan.startup.complete':
                     application = self.application()
                     if application is not None:
-                        await asyncio.to_thread(announce, application, self.user, create_admin=self.create_admin)
+                        await asyncio.to_thread(announce, application, self.user)
                 await send(message)
             await self.app(scope, receive, started)
             return

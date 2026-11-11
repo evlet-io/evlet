@@ -140,7 +140,7 @@ def read_instance(path):
     from .auth import Security
     security = namespace.get('security', Security())
     if not isinstance(security, Security):
-        raise ValueError('config.py security must be security = Security(session_hours=..., lockout=..., password_min=...)')
+        raise ValueError('config.py security must be security = Security(password_min=..., admin_two_step=..., two_step=..., admin_sign_in=..., session_hours=..., lockout=...)')
     object.__setattr__(value, 'security', security)
     from .eva import AI
     ai = namespace.get('ai')

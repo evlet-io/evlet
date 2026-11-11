@@ -9,7 +9,7 @@ import json
 import re
 import sqlite3
 
-from .auth import AccessError
+from .auth import AccessError, has_role
 from .database import ConflictError, ROW_LIMIT, conflict
 from .declarations import Ref
 from .fields import CurrentUser, MISSING, Link
@@ -494,13 +494,24 @@ class Context:
         connection.execute(f'RELEASE SAVEPOINT {name}')
 
     def enqueue(self, task, payload, *, key=None, target=None):
+        """Queue a registered Task in this context's transaction; returns its JobReceipt.
+
+        The job is part of the transaction: it is queued only if the transaction commits, and once it
+        does, the worker in this process is woken to run it at once. It runs as this context's user (read
+        again when it starts), or with this context's role when the context acts as the system. `target`
+        (Model, id) needs update access now and again when the job runs. In an @action, use
+        self.context.enqueue(...); return the receipt to answer 202 with the job."""
         if self.readonly:
             raise AccessError(403, 'This context is read only')
-        if self._business.jobs is None:
+        jobs = self._business.jobs
+        if jobs is None:
             raise ValueError('Jobs are unavailable')
         if target is not None: self._business.policy.record(self._tx, self.user, target[0], target[1], 'update')
-        return self._business.jobs.enqueue(self._tx, task, payload, user=self.user if self.user.id else None,
-                                          system_role=self.user.role if not self.user.id else None, key=key, target=target)
+        receipt = jobs.enqueue(self._tx, task, payload, user=self.user if self.user.id else None,
+                               system_role=self.user.role if not self.user.id else None, key=key, target=target)
+        if jobs.wake not in self._tx._after_commit:
+            self._tx._after_commit.append(jobs.wake)
+        return receipt
 
 
 def load_draft(context, model, record_id, values, *, preview=False):
@@ -1179,17 +1190,17 @@ def derive(context, draft, internal, errors, targets):
     targets.prefetch(link_values([item for _, item in all_drafts if item.id is None], fetches_only=True))
     for prefix, item in all_drafts:
         if item is draft:
-            apply_inputs(item, prefix, internal(item) | (set(model.__declared_fields__) - fields), errors)
+            apply_inputs(item, prefix, internal(item) | (set(model.__declared_fields__) - fields), errors, clear=True)
             item._caller.update({name: item._values.get(name) for name in fields})
         elif item.parent is draft and prefix.split('.')[0] in row_fields:
             names_here = row_fields[prefix.split('.')[0]]
-            apply_inputs(item, prefix, internal(item) | (set(item._definition.__declared_fields__) - names_here), errors)
+            apply_inputs(item, prefix, internal(item) | (set(item._definition.__declared_fields__) - names_here), errors, clear=True)
             item._caller.update({name: item._values.get(name) for name in names_here})
         elif prefix.split('.')[0] in tables:
             unknown = set(item._values) - set(item._definition.__declared_fields__)
             if unknown:
                 raise ValueError(f'derive() built a {item._definition.__name__} row with unknown fields: {", ".join(sorted(map(str, unknown)))}')
-            apply_inputs(item, prefix, internal(item), errors)
+            apply_inputs(item, prefix, internal(item), errors, clear=True)
             object.__setattr__(item, '_caller', dict(item._values))
             apply_fetches(context, item, prefix, None, errors, targets)
     for name in tables:
@@ -1199,6 +1210,10 @@ def derive(context, draft, internal, errors, targets):
         for row in rows:
             if row.id is None and free:
                 old = free.pop(0)
+                # An error on a rebuilt row follows it to the saved id the preview and response show.
+                before_key, after_key = f'{name}.{row.key}.', f'{name}.{old.id}.'
+                for key in [key for key in errors if key.startswith(before_key)]:
+                    errors[after_key + key[len(before_key):]] = errors.pop(key)
                 object.__setattr__(row, 'id', old.id)
                 object.__setattr__(row, 'key', str(old.id))
     return list(walk(draft))
@@ -1251,8 +1266,10 @@ def current_user(item, field):
     return user.username if field.kind == 'text' else user.id
 
 
-def apply_inputs(item, prefix, internal, errors):
-    """Creation defaults, then type validation of every source (non-calculated) field not in `internal`."""
+def apply_inputs(item, prefix, internal, errors, *, clear=False):
+    """Creation defaults, then type validation of every source (non-calculated) field not in `internal`.
+    With `clear` (values derive() set), a value that fails is emptied after its error is noted, so
+    calculations, previews and responses never read a value the field refuses."""
     for name, field in item._definition.__declared_fields__.items():
         if name in internal: continue
         value = item._values.get(name, MISSING)
@@ -1267,6 +1284,8 @@ def apply_inputs(item, prefix, internal, errors):
                 raise ValueError('Document integers must fit the browser safe range')
         except ValueError as exc:
             errors[prefix + name] = str(exc)
+            if clear:
+                item._values[name] = None
 
 
 def apply_fetches(context, item, prefix, old, errors, targets=None, *, virtual_only=False):
@@ -1415,7 +1434,9 @@ def validate_tree(context, all_drafts, internal, prior, errors, targets=None):
                 if field.required_if is not None and evaluate(plans(item._definition)[name]['required_if'], item.read) and item._values.get(name) in (None, ''):
                     raise ValueError('This field is required')
                 item._values[name] = field.clean(item._values.get(name))
-                if isinstance(field, Link) and item._values[name] is not None:
+                # A ledger row has no public surface and callers never write a Link to one, so only trusted code
+                # sets it: there is no caller access to check, and nothing to compare without filters.
+                if isinstance(field, Link) and item._values[name] is not None and not (field.ledger_target and not field.filters):
                     message = link_mismatch(context, item, name, field, item._values[name], targets)
                     if message: raise ValueError(message)
             except ValueError as exc:
@@ -1637,6 +1658,16 @@ def handler_context(context, draft):
                 object.__setattr__(part, 'context', previous)
 
 
+def add_outcome(result, outcome):
+    """What a run method or action returned, on its detail: a queued job as `_job` ({id, state}), a
+    presented slip as `_outcome`."""
+    from .jobs import JobReceipt
+    if isinstance(outcome, JobReceipt):
+        result['_job'] = outcome.public()
+    elif outcome is not None:
+        result['_outcome'] = outcome
+
+
 @contextmanager
 def readonly_drafts(context, all_drafts):
     originals = [(part, part.context, part._readonly, part._values, part._rows) for _, part in all_drafts]
@@ -1783,7 +1814,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     elif action is not None:
         method = getattr(model, action, None)
         declaration = getattr(method, '__action__', None)
-        if declaration is None or user.role not in declaration['roles']:
+        if declaration is None or not has_role(user, declaration['roles']):
             raise AccessError(403, 'Action is unavailable')
         arguments = states.action_arguments(context, model, method, declaration, arguments, before)
         with trusted(), handler_context(context, draft):
@@ -1823,7 +1854,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             record_plan(tx, business.registry.name_for(model), record_id, version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
         result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
-        if outcome is not None: result['_outcome'] = outcome
+        add_outcome(result, outcome)
         return result
     # A closed period (Meta.period) refuses the write whether the saved or the new date is in it.
     from . import periods
@@ -1862,7 +1893,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     business.changed(tx, model, record.id)
     result = business.detail(tx, user, tx.get(model, record.id), row_limit=None)
     if keys: result['_row_ids'] = keys
-    if outcome is not None: result['_outcome'] = outcome
+    add_outcome(result, outcome)
     return result
 
 

@@ -270,7 +270,7 @@ class System:
                 add('layers', 'naming' if kind == 'naming' else 'models', f'The {key} {kind} override no longer applies. The app file is used.', error)
         reason = self.controls.business.settings.two_step_problem()
         if reason:
-            roles = ', '.join(self.controls.settings['security.two_step_roles'])
+            roles = ', '.join(self.controls.business.settings.required_roles())
             add('lock', 'security', f'Two-step sign-in is unavailable for {roles}', reason)
         if failed:
             add('clock', 'jobs', f"{failed} job{'s' if failed != 1 else ''} failed", 'Retry them from Jobs once the cause is fixed.')

@@ -156,6 +156,14 @@ class Visit(Model):
   row, keyed `table.field` (`lines.net`). `/api/schema` marks derived fields `read_only` (on the
   row model for a row field) and derived Tables `"read_only": true` in `children`, and the record
   page shows those rows without editing and never sends them.
+* **Rounding is the app's job.** A value `derive()` sets is not rounded for it. One with more
+  decimal places than its field allows, or a fraction for an `Integer`, is a field error like a
+  value a caller sent (`longest: Use at most 2 decimal places`, keyed `table.row.field` on a
+  row): the save is a 422 and writes nothing, and a preview returns the error with that value
+  empty, so formulas never read a value the field refuses. Round in `derive()` with
+  `quantize()` (or `round_money` for an amount in a currency), as the examples above do.
+  Formula results are different: they round to the field's scale by its `rounding`
+  ([finite-calculations.md](finite-calculations.md#writers-scales-and-rounding)).
 * **Trusted and read only.** `derive()` is app code. `self.context` is a read-only context
   whose `session` is the write's transaction, read only (`get`, `list`, `count`, `related` and
   `aggregate`; no write methods), for looking up linked records. Reads through it bypass
@@ -305,6 +313,19 @@ metadata only: the field's stored definition, migrations and their checksums ign
 migration copies leave it out, and the Controls code export keeps it as written
 ([ui.md](ui.md#duplicate)).
 
+Every field takes `column=` (default `True`). `column=False` leaves the field out of a list's
+default columns (when the model has no `Meta.list_fields`) and out of a Table grid's default
+columns. The field still shows on the record form and the row editor, a person can show it again
+from the grid's Columns menu, and `Meta.list_fields` may still name it. It is display metadata only,
+like `copy=`: the value still travels with each record and permissions, storage and migrations
+ignore it. The typical use is a currency source, whose code already shows beside each amount:
+
+```python
+class Line(Child):
+    currency_code = Text(compute=parent.currency_code, max_length=3, column=False)
+    net = Currency(currency="currency_code", compute=F("qty") * F("price"))
+```
+
 Any editable field may declare `editable_when_locked=True` so that ordinary writes can still
 change it while its document is in a locked State (for example remarks).
 
@@ -397,6 +418,10 @@ class Invoice(Model):
 | `"field"` | when the registry is built: a `Text` or `Select` field of the model | `"currency_source": {"field"}` | reads the field and follows it as it changes |
 | `"link.field"` | when the registry is built: a `Link` of the model and a `Text` or `Select` field of its target | `"currency_source": {"link", "field", "model"}` | reads the linked record through the list route (batched with Link titles) and follows the Link |
 | `"settings.app.key"` | the app's settings are read on each `/api/schema` request | `"currency": <the setting's value>` | shows it |
+
+The source field must stay readable (not `hidden=True`), since the browser reads the code from each
+record. To keep it out of list and Table columns, declare it with `column=False`
+([More field types](#more-field-types)); the amounts keep showing in its currency.
 
 The schema is resolved for the person asking. A field or linked field they cannot read is left
 out, and so is a setting that is not declared (the server logs it). A value that is not three
@@ -1013,6 +1038,35 @@ and model definitions in migration files unchanged. Do not point an old
 Migrations compare stored fields only, so a frozen class may have any Python name:
 `CreateModel` uses its `storage_name` (or lowercased class name) and its fields.
 
+### Adopting a table made before migrations
+
+An app that ran without a migration list for a while has tables that no migration created. When
+it adopts migrations in the same release as a model change, its first migration usually creates
+those models, and a plain `CreateModel` then fails because the table already exists. Mark those
+steps `if_missing=True`:
+
+```python
+from evlet import AddField, Boolean, CreateModel, Migration, Model, Text
+
+
+class Contact(Model):            # frozen copy of Contact as the database has it
+    name = Text(required=True)
+
+
+migrations = [
+    Migration("0001_contact", CreateModel(Contact, if_missing=True)),
+    Migration("0002_active", AddField("contact", "active", Boolean(default=True))),
+]
+```
+
+On a database where the table exists, the step checks it against the frozen class (the saved
+schema, then the table's columns, foreign keys and indexes) and keeps it with its rows. Any
+difference fails the whole batch with a message naming it, for example
+`CreateModel(Contact, if_missing=True): the existing contact differs from this definition`, and
+nothing is written. On a new database the step creates the table as `CreateModel` does. The
+option is part of the step's checksum only when it is set, so existing histories keep theirs.
+A plain `CreateModel` of a table that exists still fails, and its message points at this option.
+
 ### Adding a child table
 
 `AddTable(parent, name, ChildClass)` adds an owned table to an existing model. `parent`
@@ -1080,9 +1134,9 @@ also create or adopt the current baseline explicitly. Without a declared list,
 A legacy database without schema metadata must first be initialized with its
 original models, then explicitly upgraded.
 
-Supported operations are deliberately bounded: add a model, add a child table, add a field, rename
-a field, add an index, retire or drop a field, convert a field safely, run a data step, and recalculate
-stored values. Fixed backfills are validated; required added fields need a value. Callable or
+Supported operations are deliberately bounded: add a model (or adopt its existing table), add a child
+table, add a field, rename a field, add an index, retire or drop a field, convert a field safely, make
+a field required or optional, run a data step, and recalculate stored values. Fixed backfills are validated; required added fields need a value. Callable or
 NUL-containing backfills, non-null Link backfills, removing a model, other type changes, narrowing
 changes, and reverse migrations are not supported. They fail instead of rebuilding tables or guessing
 how to transform existing data. Changes to runtime defaults alone do not require a database migration.
@@ -1119,7 +1173,7 @@ defensive mode refuses this, and the migration then fails with a message saying 
 | `Text` | `Text` or `LongText` with the same or a longer `max_length` |
 | `Select` | `Select` with the same choices plus new ones |
 
-`minimum` and `maximum` may change too. `required`, `unique`, `index` and Link targets may not.
+`minimum`, `maximum` and `required` may change too (below). `unique`, `index` and Link targets may not.
 Each stored row is converted and validated against the new definition inside the migration
 transaction; a value that overflows or fails (a bound, a length) names the record and rolls the
 batch back. Revisions and Journal entries keep the values they recorded.
@@ -1129,6 +1183,32 @@ from evlet import AlterField, Decimal, Migration
 
 Migration("0003_half_days", AlterField("leaveapplication", "days", Decimal(scale=1)))
 ```
+
+### Making a field required or optional
+
+`AlterField` changes `required` on a table that has rows, on SQLite and PostgreSQL:
+
+```python
+from evlet import AlterField, Migration, Text
+
+Migration("0004_phone_required", AlterField("contact", "phone", Text(required=True), fill="unknown"))
+Migration("0005_note_optional", AlterField("contact", "note", Text()))
+```
+
+* **Optional.** Making a field optional always works. Stored values stay as they are.
+* **Required.** Every row needs a value. `fill=` is a fixed value, checked against the new field
+  like a backfill, that is stored in the rows that have none. Without it, or if rows are still
+  empty, the batch fails and nothing is written:
+  `contact.phone cannot become required: 3 records have no value, the first #01jk.... Give
+  AlterField a fill= value, or fill them with a RunData step in an earlier migration`. A Link
+  takes no fill (fill those rows with a `RunData` step). `fill=` goes only with `required=True`.
+  A `RunData` step runs after its own migration's operations, so a step that fills the values
+  belongs in an earlier migration.
+* On SQLite the column's `NOT NULL` is added or removed in place, with the same documented
+  procedure as `RetireField`, after the rows are checked inside the migration transaction. On
+  PostgreSQL it is `ALTER COLUMN ... SET NOT NULL` or `DROP NOT NULL`.
+* `evlet migrate --plan` suggests the `AlterField` and notes when `fill=` may be needed. `fill`
+  is part of the step's checksum only when it is given.
 
 ### Data steps
 

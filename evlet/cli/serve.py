@@ -22,6 +22,9 @@ class ManagedRuntime:
     def stop(self):
         if self.stopped is not None:
             self.stopped.set()
+            jobs = getattr(getattr(self.app, 'business', None), 'jobs', None)
+            if jobs is not None:
+                jobs.wake()
         if self.app is not None:
             self.app.stop()
 
@@ -73,10 +76,9 @@ class ManagedRuntime:
                 await asyncio.to_thread(self.app.business.jobs.run_one, active=lambda: not stopped.is_set())
             except Exception:
                 logging.getLogger(__name__).exception('Job pass failed')
-            try:
-                await asyncio.wait_for(stopped.wait(), timeout=0.5)
-            except TimeoutError:
-                pass
+            # Half a second between passes, or less: a committed transaction that queued a job wakes it
+            # (Context.enqueue), and so does stopping.
+            await asyncio.to_thread(self.app.business.jobs.wait, 0.5)
 
 
 class InstanceServer(Server):
@@ -141,8 +143,7 @@ def development_factory():
     runtime = ManagedRuntime(lambda: load_runtime(root, name, port=port, development=True),
                              lambda: instance_guard(child(root, 'instances', name), serving=True), jobs=True, debug=os.environ.get('EVLET_CLI_DEBUG') == '1')
     # Development only: one-time sign-in links at /_dev/signin. serve() below never adds them.
-    return DevSignIn(runtime, announce=os.environ.get('EVLET_CLI_LINK') == '1', user=os.environ.get('EVLET_CLI_LINK_USER') or None,
-                     create_admin=(os.environ.get('EVLET_CLI_LINK_USER') or 'admin') if os.environ.get('EVLET_CLI_LINK') == '1' else False)
+    return DevSignIn(runtime, announce=os.environ.get('EVLET_CLI_LINK') == '1', user=os.environ.get('EVLET_CLI_LINK_USER') or None)
 
 
 def framework_source():
@@ -199,6 +200,30 @@ def proxy_warning(root, name, domain, port=8000):
             f'Run {shlex.join(command)} to update it (add --ip with the public address if DNS checks fail).')
 
 
+def administrator_hint(path, name):
+    """One line when the built-in Administrator has no password yet (or will not, on a new database), else None.
+    evlet serve prints it instead of a sign-in link; it only reads the database."""
+    import sqlite3
+    database = path / 'data/database.sqlite3'
+    if database.is_file():
+        try:
+            connection = sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)
+            try:
+                if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone():
+                    row = None
+                else:
+                    row = connection.execute("SELECT password FROM evlet_users WHERE username='administrator'").fetchone()
+                    if row is None:
+                        return None  # A database from before the Administrator; evlet migrate adds it.
+            finally:
+                connection.close()
+        except sqlite3.Error:
+            return None
+        if row is not None and row[0] != '':
+            return None
+    return f'The built-in Administrator has no password yet. Set one with: evlet users set-password {name} administrator'
+
+
 def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=False, debug=False, link=True, user=None):
     from ..instances import read_instance
     path = child(root, 'instances', name)
@@ -226,6 +251,8 @@ def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=Fa
                 else:
                     os.environ[key] = value
     else:
+        if (hint := administrator_hint(path, name)) is not None:
+            print(hint, flush=True)
         application = ManagedRuntime(lambda: load_runtime(root, name, port=port, public=public),
                                      lambda: instance_guard(path, serving=True), jobs=jobs, debug=debug)
         run_server(application, host=host, port=port, lifespan='on', proxy_headers=False)

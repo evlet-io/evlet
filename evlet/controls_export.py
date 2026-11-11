@@ -250,14 +250,18 @@ class Exporter:
         instance = f'instances/{self.controls.system.instance_name() or "<name>"}'
         blocks = []
         # Security(...) in config.py sets the sign-in rules. The block keeps what config.py sets today, with the overrides on top.
-        rules = ('session_hours', 'lockout', 'password_min')
+        rules = ('session_hours', 'lockout', 'password_min', 'two_step')
         if any(f'security.{name}' in values for name in rules):
             from .auth import Security
             current, default = self.controls.business.auth.security, Security()
             security = {name: values.get(f'security.{name}', getattr(current, name)) for name in rules}
+            # config.py's rules that Controls cannot change come along as they are.
+            security |= {name: getattr(current, name) for name in ('admin_two_step', 'admin_sign_in')}
             security = {name: value for name, value in security.items() if value != getattr(default, name)}
-            blocks.append((f'{instance}/config.py', '# Replaces any security = Security(...) in config.py. Restart, then reset these overrides.\n'
-                           f"security = {call('Security', (), security)}"))
+            note = '# Replaces any security = Security(...) in config.py. Restart, then reset these overrides.\n'
+            if 'security.password_min' in values and values['security.password_min'] != current.password_min:
+                note += '# In config.py password_min applies to admins as well; in Controls it was for everyone else.\n'
+            blocks.append((f'{instance}/config.py', note + f"security = {call('Security', (), security)}"))
         if 'security.two_step_roles' in values:
             blocks.append((f'{instance}/config.py', '# Two-step roles are not read from config.py yet. Keep this override until they are.\n'
                            f"two_step_roles = {literal(tuple(values['security.two_step_roles']))}"))

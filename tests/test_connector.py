@@ -150,7 +150,7 @@ def test_sessions_cannot_replay_across_tenants_or_survive_revocation(live_connec
     beta = HTTPClient(f'http://beta.localhost:{port}', cookie=alpha.cookie, csrf=alpha.csrf)
     with pytest.raises(ConnectorError) as failure: beta.get('/api/_discovery')
     assert failure.value.status == 401
-    apps['alpha'].business.auth.update_user(1, {'password': 'replacement long test password'})
+    apps['alpha'].business.auth.update_user(2, {'password': 'replacement long test password'})
     with pytest.raises(ConnectorError) as failure: alpha.get(project_path(live_connector))
     assert failure.value.status == 401
     beta = signed(live_connector, 'beta')

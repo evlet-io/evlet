@@ -7,7 +7,7 @@ import pytest
 
 from evlet import (Database, PostgreSQLDatabase, Model, Registry, Text, Integer,
                    Currency, Link, Migration, AddField, RenameField, AddIndex,
-                   SchemaError, ConflictError, LocalAuth)
+                   SchemaError, ConflictError, LocalAuth, Boolean, CreateModel)
 from evlet.identity import sequential_ids
 from examples.playground.app import build_app
 from examples.playground.models import registry, Project
@@ -162,6 +162,31 @@ def test_postgres_migrations_history_and_rollback(pg_dsn):
     assert db.get(Item, kept).note == "50% ? 'quote' INTEGER PRIMARY KEY AUTOINCREMENT X''"
     with pytest.raises(SchemaError): db.migrate([Migration('changed', AddIndex('item', 'title'))])
     assert db.get(Item, kept).title == 'Keep'
+
+
+def test_postgres_create_model_if_missing_adopts_or_refuses_an_existing_table(pg_dsn):
+    import psycopg
+    Old = type('Contact', (Model,), {'name': Text(required=True)})
+    PostgreSQLDatabase(pg_dsn, Registry(Old)).initialize()
+    kept = PostgreSQLDatabase(pg_dsn, Registry(Old)).create(Old, name='Kept').id
+    New = type('Contact', (Model,), {'name': Text(required=True), 'active': Boolean(default=True)})
+    history = [Migration('0001_contact', CreateModel(type('Contact', (Model,), {'name': Text(required=True)}), if_missing=True)),
+               Migration('0002_active', AddField('contact', 'active', Boolean(default=True)))]
+    with psycopg.connect(pg_dsn, autocommit=True) as connection:
+        connection.execute('ALTER TABLE contact ADD COLUMN stray text')
+    with pytest.raises(SchemaError, match=r'the existing table cannot be adopted: contact: database columns differ'):
+        PostgreSQLDatabase(pg_dsn, Registry(New)).migrate(history)
+    with psycopg.connect(pg_dsn, autocommit=True) as connection:
+        connection.execute('ALTER TABLE contact DROP COLUMN stray')
+    db = PostgreSQLDatabase(pg_dsn, Registry(New), migrations=history)
+    assert db.migrate(history) == ['0001_contact', '0002_active']
+    db.initialize()
+    assert db.get(New, kept).name == 'Kept' and db.get(New, kept).active is True
+
+
+def test_postgres_alter_field_changes_required_on_existing_rows(pg_dsn):
+    from tests.test_migrations import check_required_changes
+    check_required_changes(lambda registry, migrations=None: PostgreSQLDatabase(pg_dsn, registry, migrations=migrations))
 
 
 def test_postgres_actions_children_attachments_jobs_events_and_revocation(secured):
@@ -815,13 +840,13 @@ def test_dev_signin_link_on_postgresql(pg_dsn):
     db = PostgreSQLDatabase(pg_dsn, registry)
     app = build_app(db, LocalAuth(db, origins=['http://127.0.0.1:8000'], secure_cookies=False, allow_setup=True))
     app.initialize()
-    token, username = issue(db, create_admin=True)
-    assert username == 'demo-admin'
+    token, username = issue(db)
+    assert username == 'administrator'
     wrapped = DevSignIn(app)
     status, headers, _ = call(wrapped, 'GET', f'/_dev/signin?token={token}')
     assert status == 302
     status, _, body = call(wrapped, 'GET', '/api/auth/session', cookie=session_cookie(headers))
-    assert b'demo-admin' in body
+    assert b'administrator' in body
     assert call(wrapped, 'GET', f'/_dev/signin?token={token}')[0] == 403
 
 
@@ -911,7 +936,7 @@ def test_framework_ledger_and_steps_match_sqlite(pg_dsn, monkeypatch):
     app.managed_framework = False
     assert framework.upgrade(db) == ['0099_move'] and seen == [True]
     with db.transaction() as tx:
-        assert [row[0] for row in tx.connection.execute('SELECT tool FROM evlet_moved_calls')] == ['owner']
+        assert sorted(row[0] for row in tx.connection.execute('SELECT tool FROM evlet_moved_calls')) == ['administrator', 'owner']
         assert tx.connection.execute("SELECT to_regclass('evlet_legacy_calls')").fetchone()[0] is None
     # A failing step rolls back its own changes and leaves the ledger as it was.
     def fail(connection, postgres):

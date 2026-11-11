@@ -4,6 +4,118 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## 0.4.2 (11-11-2026)
+
+### Added
+
+- **`CreateModel(Model, if_missing=True)`** adopts a table made before the app used migrations.
+  When the table exists it is checked against the frozen class and kept with its rows; a
+  difference fails the batch naming it. A plain `CreateModel` of an existing table now says to
+  use the option. See [Adopting a table made before migrations](docs/model-engine.md#adopting-a-table-made-before-migrations).
+- **`AlterField` can change `required`.** Making a field optional always works. Making it
+  required checks every row and fails naming the first empty one, unless `fill=` gives a value
+  for them. Works on SQLite (in place, inside the migration transaction) and PostgreSQL. See
+  [Making a field required or optional](docs/model-engine.md#making-a-field-required-or-optional).
+- **`column=False` on a field.** It leaves the field out of a list's default columns and a
+  Table grid's default columns, while the form and row editor still show it and the grid's
+  Columns menu can show it again. Use it for a currency source: the amounts keep showing in its
+  currency, because the value still travels with each record. Display only, like `copy=`.
+- **The record form previews `derive()` values while you edit.** A model with `Meta.derives`
+  lists them in its schema (`derives`). When the person pauses for 600 ms, the form sends the
+  draft to `POST /api/_draft/{model}` and shows the derived fields, row values and derived
+  Table rows, without making them unsaved changes. Stale answers are dropped. Models without
+  `Meta.derives` never ask.
+- **System moves.** `Move(..., system=True)` declares a state change only the application makes,
+  such as one a background job takes. It has no roles, is never offered (no button, not in `_moves`
+  or the schema's `state.moves`), and every HTTP caller, API key, AI assistant, the connector and
+  Eva included, gets 403 `<label> is made by the application only`. Trusted Python makes it with
+  `context.move()` under all its other checks: update permission, row scope, guard, `run` method,
+  validation, the Journal and the one transaction. A move with `roles=()` now fails with a pointer
+  to `system=True` ([docs/states-actions.md](docs/states-actions.md#system-moves)).
+- **A business context for jobs.** `job.business(tx)` in a job handler returns a document context
+  in the job's transaction, acting as the job's user, as `user=<account id>` read again now, or as
+  `system="<name>"` with an explicit `role=`. The role's permissions apply; a system's writes are
+  recorded under no account and the Journal names it as `via`. Apps no longer need `tx._business`
+  ([docs/jobs-realtime.md](docs/jobs-realtime.md#a-jobs-business-context)).
+- **Actions queue jobs that run right after they commit.** `self.context.enqueue(task, payload)`
+  is now documented for actions: the job is queued only if the action commits, and the worker of
+  `evlet serve` is woken at once instead of at its next pass. An action that returns the receipt
+  adds `_job` (`{"id", "state"}`) to its detail. `JobQueue.wake()` and `JobQueue.wait(timeout)`
+  serve app workers ([docs/jobs-realtime.md](docs/jobs-realtime.md#queue-a-job-from-an-action)).
+- The Background Playground (`examples/playground/background/app.py`) shows all three.
+- **Built-in System Administrator.** Every instance has the account `administrator` ("System
+  Administrator", role admin), created on new databases and by the framework step
+  `0008_administrator` in `evlet migrate`. It starts with no password. Its username, name and
+  role never change, and it can't be deactivated or deleted on any route. It passes every role
+  check (models, rows, fields, actions, Controls) and still meets every data rule. Its profile
+  takes only an email address for notifications, which it sets on any instance with its current
+  password (audited).
+- `evlet users set-email <instance> <username> <email>` sets a user's email address from the
+  server shell, audited as `cli`.
+- **Sign-in rules in config.py.** `Security(password_min=..., admin_two_step=..., two_step=...,
+  admin_sign_in=...)`. `password_min` takes 1 to 64; 1 allows any password. `admin_two_step`
+  decides two-step sign-in for admins, `two_step` for everyone else. `admin_sign_in` opens the
+  sign-in page with the username `administrator` filled in, and `/login?user=NAME` fills in any
+  name. New instances get the block in `config.py` with short comments.
+- **First password in the browser.** The development link signs in the Administrator and opens
+  "Set your password", then two-step set-up when admins need it. `POST /api/auth/password`
+  sets the first password of an account that has none.
+- Controls, Security shows the admin rules from config.py and a switch for two-step sign-in for
+  everyone. Controls, Users marks the Administrator as built in and locks its role and status.
+
+### Changed
+
+- `Move` takes `system=False`, and its `roles` default is now written `roles=None`, which still
+  means admin and editor. `User` gains `system=None`. Apps change nothing.
+- Admin accounts follow config.py only. Controls can change the password minimum and two-step
+  sign-in for everyone else in either direction (`security.password_min` 1 to 64, the new
+  `security.two_step`, and `security.two_step_roles`, which no longer lists admin).
+- `evlet dev` and `evlet playground` no longer create `admin` or `demo-admin`; links default to
+  the Administrator. `evlet serve` prints how to set the Administrator's password instead.
+  `evlet setup --host` asks for the Administrator's password only.
+- On new databases the Administrator is account 1, so other accounts start at 2.
+
+### Fixed
+
+- **Moves and actions that link a ledger row work over HTTP.** A move `run` method or an
+  `@action` that wrote a ledger row and set a Link to it (`document.posting = row.id`) was
+  refused with 403 "You do not have permission for this operation", even for an admin,
+  because the save checked that Link against the caller's read access and ledger models have
+  no surface. Calls through `business.context()` were not affected, so tests missed it.
+- **Record history shows Links properly.** A Link to a ledger row showed "Invalid amount" in
+  the record page's Activity: the journal turned its integer id into a text record id, which
+  the screen, reading the field as an integer, could not show. The journal now returns the
+  plain integer id, as record responses do, and the schema marks such a field
+  `"grouping": false` so the id shows without thousands separators. Activity also shows any
+  other changed Link as the linked record's title instead of `#id`.
+- **Key cards can show fields `derive()` sets.** `Meta.cards` refused a field named in
+  `Meta.derives` as "not derived". Such a field is now a card like a formula's result, with the
+  same formatting.
+- **A value `derive()` sets that its field refuses is a field error, never a 500.** A value
+  with more decimal places than the field allows, or a fraction for an `Integer`, already
+  refused a save with 422, but a preview answered 500 and formulas read the refused value.
+  The value is now emptied after its error is noted, so a preview returns the error and
+  the save stays a 422 naming the field. On a saved record, the error on a rebuilt derived
+  row is keyed by the row id the preview shows. `derive()` still rounds its own values: see
+  [Derived values](docs/model-engine.md#derived-values).
+- **A hidden unstored intermediate no longer stops the browser calculating.** On a model with
+  `permissions`, a field with `hidden=True, stored=False` and a finite `compute=` that other
+  formulas read withheld those formulas and the whole plan, so every calculated value on the
+  form stayed blank until a save. When the role can read every input of its formula, the plan
+  now ships with it and the browser works out every formula on the row. The intermediate is
+  still never named in the schema or in any response.
+- **Writing such a field reports the real error.** A write naming a hidden intermediate, or a
+  result that reads it, now fails with `COMPUTED_FIELD_WRITE: this value is calculated`
+  instead of "One or more values are invalid".
+- An `@action` that returned a `JobReceipt` put the receipt object in `_outcome`, which could not
+  be sent as JSON. It is now `_job`.
+
+### Deprecated
+
+- `DevSignIn(create_admin=...)` is ignored with a `DeprecationWarning` and goes in 0.5.
+
+See [docs/app-upgrades.md](docs/app-upgrades.md#from-041-to-042) for what to do.
+
 ## 0.4.1 (10-11-2026)
 
 ### Fixed

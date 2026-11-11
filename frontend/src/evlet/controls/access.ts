@@ -3,7 +3,7 @@
 
 import { html, when, type Child } from '../dom';
 import { cell, derive } from '../reactive';
-import { Button, Checkbox, Icon, IconButton } from '../ui/base';
+import { Button, Checkbox, Icon, IconButton, Switch } from '../ui/base';
 import { openDrawer, toast } from '../ui/layers';
 import { Dropdown } from '../ui/pickers';
 import { Callout, Head, type ControlsContext } from './app';
@@ -167,11 +167,12 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
     value: () => String(get<number>(key)), onChange: value => { if (value !== null) drafts.set(id(key), Number(value)); },
     choices: () => [...new Set([...options, file<number>(key)])].filter(option => option <= file<number>(key)).sort((a, b) => a - b)
       .map(option => ({ value: String(option), label: `${option} ${unit}` })) });
+  // Password minimum and two-step sign-in for everyone but admins: either direction, 1 to 64 characters.
   const minimum = (event: Event) => {
-    const input = event.target as HTMLInputElement, low = file<number>('security.password_min');
+    const input = event.target as HTMLInputElement;
     let value = Number.parseInt(input.value, 10);
-    if (Number.isNaN(value)) value = low;
-    if (value < low) { value = low; toast(`Minimum password length can't go below ${low}`, { icon: 'info' }); }
+    if (Number.isNaN(value)) value = file<number>('security.password_min');
+    if (value < 1) { value = 1; toast("Minimum password length can't go below 1", { icon: 'info' }); }
     if (value > 64) { value = 64; toast("Minimum password length can't go above 64", { icon: 'info' }); }
     input.value = String(value);
     drafts.set(id('security.password_min'), value);
@@ -185,23 +186,39 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
   };
   const toggleTwoStep = (role: string) => {
     const now = get<string[]>('security.two_step_roles');
-    drafts.set(id('security.two_step_roles'), desk().map(item => item.id).filter(item => item === role ? !now.includes(role) : now.includes(item)));
+    drafts.set(id('security.two_step_roles'), desk().map(item => item.id).filter(item => item !== 'admin' && (item === role ? !now.includes(role) : now.includes(item))));
   };
+  const admin = () => state.get().admin_rules ?? { password_min: file<number>('security.password_min'), two_step: true, sign_in: false };
+  const everyone = () => get<boolean>('security.two_step');
+  const lengthText = (value: number) => value <= 1 ? 'any password' : `at least ${value} characters`;
   return html`<div>
-    ${Head('Security', 'Sign-in rules for this instance. You can make a rule stricter than the framework default, never looser.')}
+    ${Head('Security', 'Sign-in rules for this instance. Rules for admins come from config.py. Here you set them for everyone else.')}
     <div class="ctl-stack">
+      <section class="ctl-card ctl-admin-rules"><div class="ctl-card-head"><div><h2>Admins ${Icon('lock', { size: 'xs' })}</h2>
+        <p>Set in config.py with Security(...). Change them there and restart.</p></div></div>
+        <div class="ctl-setrow"><div class="grow"><strong>Password length</strong><p>${() => `Admins need ${lengthText(admin().password_min)}.`}</p></div>
+          <div class="ctl-setctl"><span>${() => admin().password_min <= 1 ? 'Any' : `${admin().password_min} chars`}</span>${Icon('lock', { size: 'sm' })}</div></div>
+        <div class="ctl-setrow"><div class="grow"><strong>Two-step sign-in</strong><p>${() => admin().two_step ? 'Admins, the Administrator too, must use an authenticator app.' : 'Admins choose for themselves.'}</p></div>
+          <div class="ctl-setctl"><span>${() => admin().two_step ? 'Required' : 'Optional'}</span>${Icon('lock', { size: 'sm' })}</div></div>
+      </section>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Sign-in</h2></div></div>
-        ${row('security.password_min', 'Minimum password length', () => `Evlet requires at least ${file<number>('security.password_min')} characters. You can raise it.`,
-          html`<span class="ctl-addon"><input class="input num" type="number" min=${String(file<number>('security.password_min'))} max="64" aria-label="Minimum password length"
+        ${row('security.password_min', 'Minimum password length', () => `Everyone but admins needs ${lengthText(get<number>('security.password_min'))}. config.py starts at ${file<number>('security.password_min')}. Use 1 to allow any password.`,
+          html`<span class="ctl-addon"><input class="input num" type="number" min="1" max="64" aria-label="Minimum password length"
             prop:value=${() => String(get<number>('security.password_min'))} on:change=${minimum}><span>chars</span></span>`)}
         ${row('security.session_hours', 'Session length', () => `People sign in again after this long. Default is ${file<number>('security.session_hours')} hours.`, choose('security.session_hours', 'hours', [1, 4, 8, 12]))}
         ${row('security.lockout', 'Failed sign-ins before lockout', 'Sign-in is blocked for 15 minutes after this many wrong passwords from one network.', choose('security.lockout', 'attempts', [3, 4, 5]))}
       </section>
       <section class="ctl-card"><div class="ctl-card-head"><div><h2>Two-step sign-in ${mark('security.two_step_roles')}</h2>
-        <p>People with these roles must set up an authenticator app before they can sign in.</p></div></div>
-        <div class="ctl-pad"><div class="ctl-chips">${() => desk().map(role => html`<button type="button" class="ctl-chip" class:on=${() => get<string[]>('security.two_step_roles').includes(role.id)}
-          aria-pressed=${() => String(get<string[]>('security.two_step_roles').includes(role.id))} disabled=${role.id === 'admin'} title=${role.id === 'admin' ? 'Always required for admin' : null}
-          on:click=${() => toggleTwoStep(role.id)}>${() => get<string[]>('security.two_step_roles').includes(role.id) ? Icon('check', { size: 'xs' }) : null}${role.id}${role.id === 'admin' ? Icon('lock', { size: 'xs' }) : null}</button>`)}</div>
+        <p>People who must set up an authenticator app before they can sign in. Admins follow config.py.</p></div></div>
+        ${row('security.two_step', 'Everyone', () => `Everyone but admins must use two-step sign-in. config.py starts with it ${file<boolean>('security.two_step') ? 'on' : 'off'}.`,
+          Switch({ on: everyone, ariaLabel: 'Two-step sign-in for everyone', onChange: next => drafts.set(id('security.two_step'), next) }))}
+        <div class="ctl-pad"><p class="muted ctl-small">${() => everyone() ? 'Every role below needs it.' : 'Or only these roles:'}</p>
+          <div class="ctl-chips">${() => desk().map(role => {
+          const locked = role.id === 'admin';
+          const on = () => locked ? admin().two_step : everyone() || get<string[]>('security.two_step_roles').includes(role.id);
+          return html`<button type="button" class="ctl-chip" class:on=${on}
+          aria-pressed=${() => String(on())} disabled=${() => locked || everyone()} title=${locked ? 'Set in config.py (admin_two_step)' : null}
+          on:click=${() => toggleTwoStep(role.id)}>${() => on() ? Icon('check', { size: 'xs' }) : null}${role.id}${locked ? Icon('lock', { size: 'xs' }) : null}</button>`; })}</div>
           ${when(() => !state.get().two_step, () => Callout('warn', 'info', 'Two-step sign-in arrives with personal settings. Until then this list is saved, but nobody is asked for a code yet.'))}
           ${when(() => drafts.errors.get().has(id('security.two_step_roles')), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id('security.two_step_roles'))}</span>`)}</div>
       </section>

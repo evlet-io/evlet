@@ -1,9 +1,9 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createClient } from '../api';
 import { effect, scope } from '../reactive';
 import { buildChanges } from '../model/changes';
 import { fingerprint } from '../model/finite';
-import { RecordStore, sameValue, STALE_FORMULAS } from '../model/record';
+import { PREVIEW_PAUSE_MS, RecordStore, sameValue, STALE_FORMULAS } from '../model/record';
 import type { AppSchema } from '../model/schema';
 import { copy, id, responses, server, type Sent } from './server';
 
@@ -431,5 +431,89 @@ describe('values', () => {
     await store.open(id(1));
     line(store, 1).field('qty').set('9');
     expect(responses.detail.body).toEqual(before);
+  });
+});
+
+describe('values the server derives (Meta.derives)', () => {
+  // The recorded order schema, as if derive() filled the remark and each line's rate.
+  const derivedSchema = (derives: string[]) => ({ ...schema, models: schema.models.map(model => model.name === 'order' ? { ...model, derives } : model) });
+  function deriving(derives: string[], reply: (sent: Sent) => any) {
+    const stub = server([
+      ['GET', /\/api\/order\/0000000000001$/, 'detail'],
+      ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, 'lines_page'],
+      ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
+      ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
+      ['POST', /\/api\/_draft\/order$/, sent => ({ status: 200, etag: null, body: reply(sent) })],
+    ]);
+    const store = new RecordStore({ api: createClient({ fetch: stub.fetch }), schema: derivedSchema(derives) as AppSchema, model: 'order', today: () => '2026-11-01' });
+    stores.push(store);
+    return { store, sent: stub.sent };
+  }
+  const drafts = (sent: Sent[]) => sent.filter(item => item.url.includes('/api/_draft/'));
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('asks once the person pauses, and shows the derived values without making them unsaved changes', async () => {
+    vi.useFakeTimers();
+    const values = copy(responses.draft.body.values);
+    const { store, sent } = deriving(['remark', 'lines.rate'], () => ({ values: { ...values, remark: 'Rate of 01-11-2026',
+      children: { lines: [{ id: id(1), _key: id(1), rate: '9.99' }] } }, errors: {}, states: {}, revision: null }));
+    await store.open(id(1));
+    await store.idle();
+    expect(store.field('remark').derived).toBe(true);
+    expect(store.field('remark').editable.peek()).toBe(false);
+    store.field('title').set('A');
+    store.field('title').set('AB');
+    store.field('title').set('ABC');
+    await vi.advanceTimersByTimeAsync(PREVIEW_PAUSE_MS - 50);
+    expect(drafts(sent)).toHaveLength(0);
+    await vi.advanceTimersByTimeAsync(100);
+    await store.idle();
+    expect(drafts(sent)).toHaveLength(1);
+    expect(drafts(sent)[0].body).toMatchObject({ id: id(1), values: { title: 'ABC' } });
+    expect(store.field('remark').value.peek()).toBe('Rate of 01-11-2026');
+    expect(line(store, 1).field('rate').value.peek()).toBe('9.99');
+    expect(store.field('remark').dirty.peek()).toBe(false);
+    expect(buildChanges(store.root)).toEqual({ title: 'ABC' });
+  });
+
+  it('drops an answer that a later change overtook', async () => {
+    vi.useFakeTimers();
+    let answers = 0;
+    const values = copy(responses.draft.body.values);
+    const { store } = deriving(['remark'], () => ({ values: { ...values, remark: `answer ${++answers}` }, errors: {}, states: {}, revision: null }));
+    await store.open(id(1));
+    await store.idle();
+    store.field('title').set('First');
+    const first = store.refreshDerived();
+    const second = store.refreshDerived();
+    await Promise.all([first, second]);
+    expect(store.field('remark').value.peek()).toBe('answer 2');
+  });
+
+  it('drops an answer for a draft the person has changed since, and asks again after the next pause', async () => {
+    vi.useFakeTimers();
+    const values = copy(responses.draft.body.values);
+    const { store, sent } = deriving(['remark'], sent => ({ values: { ...values, remark: `for ${sent.body.values.title}` }, errors: {}, states: {}, revision: null }));
+    await store.open(id(1));
+    await store.idle();
+    store.field('title').set('Old');
+    const pending = store.refreshDerived();
+    store.field('title').set('New');
+    await pending;
+    expect(store.field('remark').value.peek()).not.toBe('for Old');
+    await vi.advanceTimersByTimeAsync(PREVIEW_PAUSE_MS + 10);
+    await store.idle();
+    expect(store.field('remark').value.peek()).toBe('for New');
+    expect(drafts(sent).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('never asks the server for a model that derives nothing', async () => {
+    vi.useFakeTimers();
+    const { store, sent } = backend();
+    await store.open(id(1));
+    await store.idle();
+    store.field('title').set('No preview');
+    await vi.advanceTimersByTimeAsync(PREVIEW_PAUSE_MS * 3);
+    expect(paths(sent).filter(path => path.includes('_draft'))).toEqual([]);
   });
 });

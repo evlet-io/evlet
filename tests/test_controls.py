@@ -293,7 +293,7 @@ def test_an_override_set_is_atomic_and_reports_each_invalid_item(secured):
     admin = client(secured)
     before = version(secured)
     status, payload, _ = save(admin, ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': None}),
-                              ('setting', 'security.password_min', 12), ('perm', 'admin|Customer', {'ops': [], 'read': None, 'write': None, 'scope': None}))
+                              ('setting', 'security.password_min', 65), ('perm', 'admin|Customer', {'ops': [], 'read': None, 'write': None, 'scope': None}))
     assert status == 422 and set(payload['fields']) == {'changes.1', 'changes.2'}
     assert payload['fields']['changes.2'] == 'Admin always has full access. Its rules cannot be changed.'
     assert version(secured) == before
@@ -312,12 +312,13 @@ def test_an_override_set_is_atomic_and_reports_each_invalid_item(secured):
     ('perm', 'editor|Customer', {'ops': ['read', 'update'], 'read': ['customer_name'], 'write': ['email'], 'scope': None}, 'must also be readable'),
     ('perm', 'editor|Customer', {'ops': ['read'], 'read': [], 'write': None, 'scope': None}, 'at least one readable field'),
     ('perm', 'editor|Customer', {'ops': ['read'], 'read': None, 'write': None, 'scope': 'owner'}, 'not available for Customer'),
-    ('setting', 'security.password_min', 14, 'can only go up'),
-    ('setting', 'security.password_min', 65, 'to 64 at most'),
+    ('setting', 'security.password_min', 0, 'from 1 to 64'),
+    ('setting', 'security.password_min', 65, 'from 1 to 64'),
+    ('setting', 'security.two_step', 'yes', 'on or off'),
     ('setting', 'security.session_hours', 13, 'can only go down'),
     ('setting', 'security.lockout', 6, 'can only go down'),
     ('setting', 'security.lockout', 2, 'to 3'),
-    ('setting', 'security.two_step_roles', ['editor'], 'Admin always needs two-step'),
+    ('setting', 'security.two_step_roles', ['nobody'], 'Choose existing roles'),
     ('setting', 'security.controls_ips', ['example.com'], "isn't an IP address or range"),
 ])
 def test_stricter_only_rules_reject_the_looser_value(tmp_path, hashed, kind, key, value, message):

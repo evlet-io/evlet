@@ -36,7 +36,9 @@ export interface RoleRow {
 }
 export interface UserRow { id: number; username: string; role: string; active: boolean; sessions: number; assistants?: number; keys?: number; two_step?: { since: number | null; agent: string } | null;
   /** Allow Eva and Allow MCP: they open Eva or MCP to the person and grant no record access. */
-  allow_eva?: boolean; allow_mcp?: boolean }
+  allow_eva?: boolean; allow_mcp?: boolean;
+  /** The built-in Administrator: its role and status never change. */
+  builtin?: boolean; password_set?: boolean }
 /** A field as models.py declares it: the props Controls can override. */
 export interface FieldProps {
   label: string; help_text: string; tooltip: string; placeholder: string; hidden: boolean; required: boolean; read_only: boolean;
@@ -118,6 +120,8 @@ export interface ControlsState {
   scopes: Record<string, string>;
   settings: Record<string, { file: any; value: any }>;
   controls: { allow_ips: string[]; require_two_step: boolean };
+  /** Sign-in rules for admin accounts, from config.py's Security(...): Controls cannot change them. */
+  admin_rules?: { password_min: number; two_step: boolean; sign_in: boolean };
   attention: Attention[];
   overrides: number;
   users: { active: number; total: number };

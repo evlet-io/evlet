@@ -316,7 +316,12 @@ approved) for the stage bar, or `show="none"`. `Meta.status = "<field>"` shows a
 system sets, such as a calculated payment status, as a badge that is never edited from the
 header ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)). The list offers a
 board, one column per state, only when `Meta.board` names the State field, such as
-`board = "stage"`; any other field fails registration.
+`board = "stage"`; any other field fails registration. A move only the application makes,
+such as one a background job takes, is declared `Move(..., system=True)`: it has no roles, no
+caller can make it, and trusted Python makes it with `context.move()`
+([states-actions.md](states-actions.md#system-moves)). A job gets that context with
+`job.business(tx, ...)`, and an action queues a job with `self.context.enqueue(...)`
+([jobs-realtime.md](jobs-realtime.md#a-jobs-business-context)).
 
 The Playground's invoice shows this: `payment_status` is calculated from `amount_paid` against
 `total` (Unpaid, Partly paid, Paid), named by `Meta.status` and coloured by `colors`. Nobody

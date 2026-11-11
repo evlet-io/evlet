@@ -17,7 +17,7 @@ operation back.
 import json
 
 from .audit import actor_id, touch
-from .auth import AccessError
+from .auth import AccessError, has_role
 from .fields import Link, Reference
 from .identity import RecordId
 from .models import ValidationError, checked_body, identifier
@@ -637,7 +637,7 @@ def availability(business, context, model, record):
         if operation == 'repost':
             # A repost runs the posting move: it is offered only when this caller could run that move without values.
             move = repost_move(context, model, record)
-            if move is None or user.role not in move.roles or asks_values(business, model, move) \
+            if move is None or not has_role(user, move.roles) or asks_values(business, model, move) \
                     or not policy.allows(user, model, 'update') \
                     or policy.rule(user, model).scope is not None and not policy.visible(tx, user, model, [record.id], 'update'):
                 continue

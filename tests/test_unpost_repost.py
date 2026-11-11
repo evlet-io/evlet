@@ -182,7 +182,7 @@ def test_unpost_cancels_postings_keeps_the_number_and_repost_posts_again(books):
     assert ledger(app) == [(10, 0, False), (20, 0, False), (0, 30, False), (0, 10, True), (0, 20, True), (30, 0, True)]
     items = c('GET', f'{url}/journal')[1]['items']
     assert [item['kind'] for item in items[:2]] == ['effects', 'unposted']
-    assert items[1]['data'] == {'from': 'issued', 'to': 'draft', 'reason': 'Wrong customer'} and items[1]['actor'] == 1
+    assert items[1]['data'] == {'from': 'issued', 'to': 'draft', 'reason': 'Wrong customer'} and items[1]['actor'] == 2
     assert items[0]['data'] == {'targets': [{'target': 'ledger', 'rows': 3, 'reversal': True, 'balanced': True}]}
     assert audit_rows(app) == [('admin', 'Records', f"invoice {issued['id']}", 'Unposted from issued to draft · Wrong customer')]
     assert effects.check(app) == []

@@ -423,7 +423,7 @@ def test_routes_proxy_and_link_user_commands(project, capsys, tmp_path, hashed):
     assert 'No account named nobody' in capsys.readouterr().err
     application = runtime(project)
     try:
-        assert application.business.auth.user_links(1) == (('notesitem', item.id),)
+        assert application.business.auth.user_links(2) == (('notesitem', item.id),)
     finally:
         application.database.close()
     main(['link-user', 'acme', 'buyer', 'notesitem', str(item.id), '--remove', '--project', str(project)])
