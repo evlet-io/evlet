@@ -838,7 +838,7 @@ class Business:
                     self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id)
                 extra = self.availability(context, model, context._tx.get(model, result['id']))
                 # The write returns every readable row; the ETag covers them all and the body embeds the first page.
-                etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome')})
+                etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome', '_job')})
                 result = {**self.embedded(result), **extra}
                 if result.get('id') is not None and self.virtual_models(model) and self.policy.allows(user, model, 'read'):
                     from .documents import Context

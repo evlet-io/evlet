@@ -22,6 +22,9 @@ class ManagedRuntime:
     def stop(self):
         if self.stopped is not None:
             self.stopped.set()
+            jobs = getattr(getattr(self.app, 'business', None), 'jobs', None)
+            if jobs is not None:
+                jobs.wake()
         if self.app is not None:
             self.app.stop()
 
@@ -73,10 +76,9 @@ class ManagedRuntime:
                 await asyncio.to_thread(self.app.business.jobs.run_one, active=lambda: not stopped.is_set())
             except Exception:
                 logging.getLogger(__name__).exception('Job pass failed')
-            try:
-                await asyncio.wait_for(stopped.wait(), timeout=0.5)
-            except TimeoutError:
-                pass
+            # Half a second between passes, or less: a committed transaction that queued a job wakes it
+            # (Context.enqueue), and so does stopping.
+            await asyncio.to_thread(self.app.business.jobs.wait, 0.5)
 
 
 class InstanceServer(Server):

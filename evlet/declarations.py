@@ -149,8 +149,12 @@ class Move:
     The first argument is one state or a tuple of states the move may start from. `when` is a finite
     Boolean guard decided on the record as saved; `run` names a model method (taking only self) that runs
     in the same transaction before the record settles.
+
+    `system=True` declares a move only the application makes: it has no roles, is never offered to people
+    (no button, not in `_moves` or the schema) and every HTTP caller is refused it, while trusted Python
+    (jobs, actions, other moves' run methods) makes it with context.move() under all its other checks.
     """
-    def __init__(self, from_, to, /, label=None, *, roles=('admin', 'editor'), when=None, run=None):
+    def __init__(self, from_, to, /, label=None, *, roles=None, when=None, run=None, system=False):
         sources = (from_,) if isinstance(from_, str) else from_
         if not isinstance(sources, (list, tuple)) or not sources or any(not isinstance(item, str) or not item for item in sources) \
                 or len(set(sources)) != len(sources):
@@ -163,9 +167,18 @@ class Move:
             raise ValueError('A move label must be nonempty text')
         if run is not None and (not isinstance(run, str) or not re.fullmatch(NAME, run) or run.startswith('_')):
             raise ValueError('run names a model method')
+        if type(system) is not bool:
+            raise ValueError('Move system must be True or False')
+        if system and roles is not None:
+            raise ValueError('A system move has no roles: only the application makes it. Drop roles, or drop system=True')
+        if not system and isinstance(roles, (list, tuple)) and not roles:
+            raise ValueError('A move needs at least one role. For a move only the application makes, '
+                             'declare Move(..., system=True)')
         self.sources, self.to = tuple(sources), to
         self.label = label or to.replace('_', ' ').capitalize()
-        self.roles, self.when, self.run = check_roles(roles), guard_expression(when, 'when'), run
+        self.system = system
+        self.roles = () if system else check_roles(('admin', 'editor') if roles is None else roles)
+        self.when, self.run = guard_expression(when, 'when'), run
 
     def __repr__(self):
         return f'Move({self.sources!r}, {self.to!r}, {self.label!r})'

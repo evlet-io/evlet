@@ -4,6 +4,34 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Added
+
+- **System moves.** `Move(..., system=True)` declares a state change only the application makes,
+  such as one a background job takes. It has no roles, is never offered (no button, not in `_moves`
+  or the schema's `state.moves`), and every HTTP caller, API key, AI assistant, the connector and
+  Eva included, gets 403 `<label> is made by the application only`. Trusted Python makes it with
+  `context.move()` under all its other checks: update permission, row scope, guard, `run` method,
+  validation, the Journal and the one transaction. A move with `roles=()` now fails with a pointer
+  to `system=True` ([docs/states-actions.md](docs/states-actions.md#system-moves)).
+- **A business context for jobs.** `job.business(tx)` in a job handler returns a document context
+  in the job's transaction, acting as the job's user, as `user=<account id>` read again now, or as
+  `system="<name>"` with an explicit `role=`. The role's permissions apply; a system's writes are
+  recorded under no account and the Journal names it as `via`. Apps no longer need `tx._business`
+  ([docs/jobs-realtime.md](docs/jobs-realtime.md#a-jobs-business-context)).
+- **Actions queue jobs that run right after they commit.** `self.context.enqueue(task, payload)`
+  is now documented for actions: the job is queued only if the action commits, and the worker of
+  `evlet serve` is woken at once instead of at its next pass. An action that returns the receipt
+  adds `_job` (`{"id", "state"}`) to its detail. `JobQueue.wake()` and `JobQueue.wait(timeout)`
+  serve app workers ([docs/jobs-realtime.md](docs/jobs-realtime.md#queue-a-job-from-an-action)).
+- The Background Playground (`examples/playground/background/app.py`) shows all three.
+
+### Fixed
+
+- An `@action` that returned a `JobReceipt` put the receipt object in `_outcome`, which could not
+  be sent as JSON. It is now `_job`.
+
 ## 0.4.1 (10-11-2026)
 
 ### Fixed

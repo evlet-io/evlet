@@ -67,19 +67,55 @@ class Invoice(Model):
 * `show` says how the record page draws the State: `"badge"` (the default), `"bar"` or
   `"none"`. See [How a state and a status show](#how-a-state-and-a-status-show).
 
-`Move(from_, to, label, roles=("admin", "editor"), when=None, run=None)`:
+`Move(from_, to, label, roles=("admin", "editor"), when=None, run=None, system=False)`:
 
 * Write the states positionally: `Move("draft", "issued", "Issue")`. The first
   argument is one state or a tuple of states. `label` defaults to the target name.
 * There is at most one move between two states, so a move is named by its target.
 * `roles` lists the roles that may use the move. Policy rules are not extended with
   move names; the caller also needs update permission on the record within its row scope.
+  A move needs at least one role; `roles=()` fails with a pointer to `system=True`.
+* `system=True` declares a move only the application makes. See
+  [System moves](#system-moves).
 * `when` is a finite-v1 Boolean expression, the same language as `locked_when`. It is
   decided on the record as saved, before the move. A guard that is pending (an input is
   empty) or fails blocks the move, like an undecided lock.
 * `run` names a model method that takes only `self`, like an action. It runs after the
   state changes and before the document settles, so calculations, rules and validation see
   its changes.
+
+### System moves
+
+Some state changes are made by the application, never by a person: a background job starts
+and finishes a build, or an action on one record closes another. Declare them with
+`system=True`:
+
+```python
+class PriceList(Model):
+    status = State(("draft", "building", "ready", "failed"), moves=(
+        Move("draft", "building", "Start", system=True),
+        Move("building", "ready", "Finish", system=True, run="finished"),
+        Move("building", "failed", "Fail", system=True),
+        Move(("ready", "failed"), "draft", "Reopen"),
+    ))
+```
+
+* A system move has no roles. Passing `roles=` with `system=True` fails at declaration.
+* It is never offered: it is left out of `_moves`, of the schema's `state.moves` and of the
+  list's bulk Move, so no button, badge menu or stage bar step offers it.
+* Every HTTP caller is refused it with 403 `Start is made by the application only`: a signed
+  in person (an admin too), an API key, an AI assistant through MCP, the local connector and
+  Eva. A role that cannot read the State gets the usual 409 `This record has no such move now`.
+  A repost through a system move is refused the same way, and `_repost` is not offered.
+* Trusted Python makes it with `context.move(Model, id, to)`: a job through
+  [`job.business(tx)`](jobs-realtime.md#a-jobs-business-context), an `@action` handler or a
+  Move `run` method through `self.context.move(...)` on another record, and
+  `business.context(user)` in a script. Only the role check is left out. Everything else
+  applies: update permission and row scope of the context's user, the guard (`when`), the
+  `run` method, calculations, rules, validation, a closed period, the Journal's `moved` entry
+  and the one transaction.
+
+The [Background Playground](jobs-realtime.md#background-playground) declares these moves.
 
 ## How a state and a status show
 
@@ -281,7 +317,8 @@ context.move(Deal, 7, "lost", lost_reason="Chose another vendor")
   update (403 or 404). Then: a target that is not a state, 404. A final current state:
   409 `This record is paid, which is final; it has no moves`. No declared move from the
   current state: 409 `This record cannot move from draft to paid`. A role the move does
-  not list: 403 `Your role cannot use Mark paid`. A guard that is not true: 409, for
+  not list: 403 `Your role cannot use Mark paid`. A [system move](#system-moves): 403
+  `Start is made by the application only`. A guard that is not true: 409, for
   example `Issue is not available: the condition for this move is not met`.
 * A role that cannot read the State field gets 409 `This record has no such move now` for
   every refused move: a target that is not a state, a final state, no such move, a move
@@ -290,7 +327,8 @@ context.move(Deal, 7, "lost", lost_reason="Chose another vendor")
 * The state change, the `run` method, calculations, rules, validation and the stored
   rows commit in one transaction. Any failure rolls everything back.
 * The response is the permission-filtered detail with a new ETag.
-* From Python, `context.move(Invoice, record_id, "issued")` performs the same checks.
+* From Python, `context.move(Invoice, record_id, "issued")` performs the same checks, except
+  that it may also make a system move.
   The model's `changed()` hook receives the operation `"move"`.
 
 Moves and actions are declared, role-checked code. They may change a record in a locked
@@ -320,6 +358,10 @@ def record_payment(self, amount): ...
   `Record payment is not available: the condition for this action is not met`. 409 is used
   because the record's current state, not the caller's role, is what blocks it; a role the
   action does not list still gets 403.
+* An action may queue a background job with `self.context.enqueue(task, payload)` and return
+  its receipt. The job is queued only if the action commits and runs right after it; the detail
+  carries it as `_job` (`{"id", "state"}`)
+  ([jobs-realtime.md](jobs-realtime.md#queue-a-job-from-an-action)).
 * `POST /api/{model}/{id}/actions/{name}` takes the inputs as its JSON body and requires
   `If-Match`. `context.action(Model, id, "name", **inputs)` does the same from Python.
 * Actions registered with `Action(...)` on `Application` keep working unchanged. They run
@@ -704,7 +746,7 @@ refused with the names of the records that depend on it.
 * `state`: `field`, `states`, `default`, `locked`, `final`, `voidable`, `cancelled` (the
   declared cancelled states plus `"void"` on a voidable State), `show` and `moves`, each
   with `from`, `to`, `label`, `roles`, `guarded`, `when` and, when the move asks for values,
-  `asks`. `when` is the serialized
+  `asks`. System moves are left out. `when` is the serialized
   finite-v1 expression when the role can read every value it reads, otherwise `null`.
 * Each model action gains `roles`, `inputs` (field schemas, as in `fields`),
   `available_when` (the same readability rule), `guarded`, and `arguments` in the scalar
