@@ -179,7 +179,8 @@ def test_save_and_delete_remove_entries_in_their_transaction(secured):
     assert len(rows(secured)) == 2
     # A save removes the saver's own entry only.
     assert editor('PATCH', f'/api/project/{record.id}', {'title': 'Saved'}, headers={b'if-match': opened(editor, record).encode()})[0] == 200
-    assert [row['user_id'] for row in rows(secured)] == [1]
+    # The admin is account 2: account 1 is the built-in Administrator.
+    assert [row['user_id'] for row in rows(secured)] == [2]
     # Deleting the record removes everyone's.
     assert editor('PUT', path(record), {'changes': {'values': {'title': 'Again'}}, 'base_revision': opened(editor, record)})[0] == 200
     assert admin('DELETE', f'/api/project/{record.id}', headers={b'if-match': opened(admin, record).encode()})[0] == 204
@@ -256,25 +257,25 @@ def test_expiry_and_caps_purge_in_batches(secured):
     now = int(time.time())
     unsaved = secured.business.unsaved
     for index in range(12):
-        insert(secured, 1, 1000 + index, now - 31 * DAY - index)
-    insert(secured, 1, 2000, now - 29 * DAY)
+        insert(secured, 2, 1000 + index, now - 31 * DAY - index)
+    insert(secured, 2, 2000, now - 29 * DAY)
     assert unsaved.purge() == 12
     assert [row['record_id'] for row in rows(secured)] == [2000]
     secured.business.controls.settings['unsaved.server_entries'] = 10
     for index in range(14):
-        insert(secured, 2, 3000 + index, now - index)
+        insert(secured, 3, 3000 + index, now - index)
     assert unsaved.purge() == 4
-    kept = sorted(row['record_id'] for row in rows(secured) if row['user_id'] == 2)
+    kept = sorted(row['record_id'] for row in rows(secured) if row['user_id'] == 3)
     assert kept == list(range(3000, 3010))
     # Each PUT applies the cap to the person straight away, dropping the oldest.
     record, _ = project(secured)
     editor = client(secured, 'editor')
     assert editor('PUT', path(record), {'changes': {'values': {'title': 'New'}}, 'base_revision': opened(editor, record)})[0] == 200
-    kept = sorted(row['record_id'] for row in rows(secured) if row['user_id'] == 2)
+    kept = sorted(row['record_id'] for row in rows(secured) if row['user_id'] == 3)
     assert len(kept) == 10 and record.id in kept and 3009 not in kept
     # An expired entry is not offered, and is removed when read.
     old, _ = project(secured)
-    insert(secured, 2, old.id, now - 40 * DAY)
+    insert(secured, 3, old.id, now - 40 * DAY)
     assert editor('GET', path(old))[1] == {'entry': None, 'dropped': []}
     assert old.id not in [row['record_id'] for row in rows(secured)]
     # The daily clean-up is a framework schedule when jobs are on.
@@ -285,9 +286,9 @@ def test_expiry_and_caps_purge_in_batches(secured):
 
 def test_controls_shows_counts_never_contents_and_clears_old_entries(secured):
     now = int(time.time())
-    insert(secured, 2, 1, now - 10 * DAY)
-    insert(secured, 2, 2, now - DAY)
-    insert(secured, 3, 3, now)
+    insert(secured, 3, 1, now - 10 * DAY)
+    insert(secured, 3, 2, now - DAY)
+    insert(secured, 4, 3, now)
     admin = client(secured)
     status, summary, _ = admin('GET', '/api/_controls/unsaved')
     assert status == 200

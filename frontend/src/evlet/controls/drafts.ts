@@ -85,7 +85,7 @@ export class Drafts {
 const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 export const SETTING_LABELS: Record<string, string> = {
   'security.password_min': 'Minimum password length', 'security.session_hours': 'Session length',
-  'security.lockout': 'Failed sign-ins before lockout', 'security.two_step_roles': 'Two-step sign-in required for',
+  'security.lockout': 'Failed sign-ins before lockout', 'security.two_step': 'Two-step sign-in for everyone', 'security.two_step_roles': 'Two-step sign-in required for',
   'security.controls_ips': 'Controls allowed from',
   'mcp.enabled': 'MCP server', 'mcp.allow_writes': 'Allow writes', 'mcp.rate': 'Tool calls per minute',
   'mcp.disabled_tools': 'Disabled tools', 'mcp.hidden_models': 'Hidden models',
@@ -113,7 +113,7 @@ export function settingText(key: string, value: unknown) {
   if (key === 'mcp.rate') return `${value} a minute`;
   if (Array.isArray(value)) return value.length ? value.join(', ') : key === 'security.controls_ips' ? 'any address' : 'none';
   if (key === 'security.session_hours') return `${value} hours`;
-  if (key === 'security.password_min') return `${value} characters`;
+  if (key === 'security.password_min') return value === 1 ? 'Any password' : `${value} characters`;
   if (key === 'security.lockout') return `${value} attempts`;
   if (key === 'unsaved.server_days' || key === 'unsaved.browser_days') return `${value} days`;
   if (key === 'unsaved.entry_kb') return `${value} KB`;

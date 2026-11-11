@@ -30,6 +30,13 @@ RESERVED_ROLES = ('controls', PORTAL, PUBLIC)
 ROLE_ID = re.compile(r'[a-z][a-z0-9_]{1,30}')
 TWO_STEP_FIRST = 'Your role needs two-step sign-in. Sign in again to set it up.'
 LAST_ADMIN = 'This is the only active admin. Make someone else an admin first, so the instance always has one.'
+# The built-in Administrator: every instance has it, with the admin role and unlimited control. Its username,
+# name and role never change, and it cannot be deactivated or deleted. It starts with no password.
+ADMINISTRATOR = 'administrator'
+ADMINISTRATOR_NAME = 'System Administrator'
+PROTECTED = ('The Administrator account is built in. Its username, name and role cannot be changed, '
+             'and it cannot be deactivated or deleted.')
+NO_PASSWORD = 'This account has no password yet.'
 _HASH_SLOTS = BoundedSemaphore(2)
 # API keys: evk_<8-character prefix>_<secret>. Only the SHA-256 of the whole key is stored.
 API_KEY = re.compile(r'(evk_[a-z0-9]{8})_[A-Za-z0-9_-]{43}')
@@ -44,16 +51,41 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class Security:
     """Sign-in rules an instance starts from: `security = Security(...)` in config.py, or LocalAuth(security=...).
-    Controls can only make them stricter."""
+
+    password_min takes 1 to 64 characters; 1 means any password will do. admin_two_step decides whether
+    accounts with the admin role (the Administrator too) must use two-step sign-in, and two_step whether
+    everyone else must. admin_sign_in opens the sign-in page with the administrator username filled in.
+
+    Rules for admin accounts come only from here. Controls can change the password minimum and two-step
+    sign-in for everyone else, in either direction, and can only shorten sessions and the lockout."""
     session_hours: int = 12
     lockout: int = 5
     password_min: int = 15
+    admin_two_step: bool = True
+    two_step: bool = False
+    admin_sign_in: bool = False
 
     def __post_init__(self):
-        for name, low, high, what in (('session_hours', 1, 168, 'hours'), ('lockout', 3, 50, 'failed sign-ins'), ('password_min', 15, 64, 'characters')):
+        for name, low, high, what in (('session_hours', 1, 168, 'hours'), ('lockout', 3, 50, 'failed sign-ins'), ('password_min', 1, 64, 'characters')):
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:
                 raise ValueError(f'Security {name} takes {low} to {high} {what}')
+        for name in ('admin_two_step', 'two_step', 'admin_sign_in'):
+            if type(getattr(self, name)) is not bool:
+                raise ValueError(f'Security {name} takes True or False')
+
+
+def is_administrator(user):
+    """Whether user (a User or an account row) is the built-in Administrator."""
+    if isinstance(user, (dict, sqlite3.Row)) or hasattr(user, 'keys'):
+        return user['username'] == ADMINISTRATOR and user['role'] == 'admin'
+    # A job's system identity (User.system) is never the Administrator, whatever name it is given.
+    return getattr(user, 'username', None) == ADMINISTRATOR and getattr(user, 'role', None) == 'admin' and not getattr(user, 'system', None)
+
+
+def has_role(user, roles):
+    """A role check: the user's role is in roles. The Administrator passes every one."""
+    return is_administrator(user) or user.role in roles
 
 
 class AccessError(Exception):
@@ -235,18 +267,24 @@ class LocalAuth:
             self.realms[authority(origin).encode()] = realm
         self.secure_cookies = secure_cookies
         self.allow_setup = allow_setup
-        # Security settings: the starting values, which Controls overrides can only make stricter.
+        # Security settings: the starting values. Controls overrides change them for everyone but admins (Controls.apply).
         if security is None:
             security = Security()
         if not isinstance(security, Security):
             raise ValueError('LocalAuth security takes Security(...)')
         self.security = security
         self.password_min, self.session_hours, self.lockout = security.password_min, security.session_hours, security.lockout
+        # Admin accounts always use config.py's minimum; password_min above is the one for everyone else.
+        self.admin_password_min = security.password_min
         # Two-step sign-in (evlet.settings): challenge(tx, account, realm) and finish(scope, body).
         self.second_step = None
         # Child model -> parent model, so a key scoped to a model also covers its rows (Business fills it).
         self.owners = {}
         self._key_lock, self._key_window, self._key_counts = Lock(), 0, {}
+
+    def minimum(self, role):
+        """The shortest password an account with role may have."""
+        return self.admin_password_min if role == 'admin' else self.password_min
 
     def client_address(self, scope):
         """The request's client address, through the configured trusted proxies only."""
@@ -303,6 +341,7 @@ class LocalAuth:
             for role, realm, description in (('admin', 'desk', 'Full access to every app. Opens Controls.'), ('editor', 'desk', 'Reads and changes records.'),
                                              ('viewer', 'desk', 'Reads records only.'), (PORTAL, 'portal', 'Signs in on portal hosts. Sees only what an app grants.')):
                 tx.connection.execute("INSERT OR IGNORE INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES (?,'framework',NULL,?,?,?)", (role, realm, int(role == 'admin'), description))
+            ensure_administrator(tx.connection, getattr(self.database, 'driver', None) is not None)
 
     def roles(self):
         """Every role by id, with its kind, base, realm and whether it opens Controls."""
@@ -567,7 +606,7 @@ class LocalAuth:
         check_username(name)
         if role not in ROLES and not ROLE_ID.fullmatch(str(role)):
             raise ValidationError({'role': 'Choose an existing role'})
-        return name.lower(), password_hash(body.get('password'), minimum=self.password_min), role
+        return name.lower(), password_hash(body.get('password'), minimum=self.minimum(role)), role
 
     def create_user(self, **values):
         return self.add_user(values)
@@ -584,9 +623,23 @@ class LocalAuth:
                 check(tx.connection, User(user_id, name, role))
         return User(user_id, name, role)
 
-    def setup_needed(self):
+    @staticmethod
+    def _can_sign_in(connection):
+        """Whether any account has a password. The Administrator has none until someone sets it."""
+        return connection.execute("SELECT 1 FROM evlet_users WHERE password<>'' LIMIT 1").fetchone() is not None
+
+    def password_needed(self, user):
+        """Whether a signed-in account still has no password (the Administrator after a development sign-in link)."""
+        if user.access is not None:
+            return False
         with self.database._connection() as connection:
-            return not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone()
+            row = connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()
+        return row is not None and row['password'] == ''
+
+    def setup_needed(self):
+        """No account can sign in yet: there are no accounts, or only the Administrator without a password."""
+        with self.database._connection() as connection:
+            return not self._can_sign_in(connection)
 
     def setup(self, scope, body):
         try:
@@ -597,9 +650,13 @@ class LocalAuth:
             raise AccessError(403, 'Initial setup is unavailable')
         name, password, _ = self.account_values({**body, 'role': 'admin'})
         with self.database.transaction() as tx:
-            if tx.connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone():
+            if self._can_sign_in(tx.connection):
                 raise AccessError(409, 'An administrator already exists')
-            tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (name, password, 'admin'))
+            # Setting up as administrator gives the built-in Administrator its password.
+            if name == ADMINISTRATOR:
+                tx.connection.execute("UPDATE evlet_users SET password=? WHERE username=? AND role='admin'", (password, ADMINISTRATOR))
+            else:
+                tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (name, password, 'admin'))
 
     def login(self, scope, body):
         if self.second_step is not None and set(body) == {'ticket', 'code'}:
@@ -625,14 +682,16 @@ class LocalAuth:
                 for key in (pair, client):
                     tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (key, now + 900))
                 account = tx.connection.execute('SELECT u.*, r.realm AS role_realm FROM evlet_users u LEFT JOIN evlet_roles r ON r.id=u.role WHERE u.username=?', (username,)).fetchone()
-            stored = account['password'] if account else 'scrypt:' + '00' * 16 + ':' + '00' * 64
+            # An account without a password (the Administrator before it is set) never signs in with one.
+            usable = account is not None and account['password'].startswith('scrypt:')
+            stored = account['password'] if usable else 'scrypt:' + '00' * 16 + ':' + '00' * 64
             try:
-                candidate = _scrypt(_encode(body['password']), stored.split(':')[1])
+                candidate = _scrypt(_encode(body['password'], 1), stored.split(':')[1])
             except (ValueError, UnicodeError):
                 candidate = ''
         # A portal user on a desk host, or a desk user on a portal host, gets the same answer as a wrong password.
         realm = self.realm(scope)
-        if not hmac.compare_digest(candidate, stored) or not account or not account['active'] or account['role_realm'] != realm:
+        if not hmac.compare_digest(candidate, stored) or not usable or not account['active'] or account['role_realm'] != realm:
             raise AccessError(401, 'Invalid username or password')
         with self.database.transaction() as tx:
             # A password/role change during hashing must not revive an old login.
@@ -730,19 +789,53 @@ class LocalAuth:
             raise ValidationError({'active': 'Use true or false'})
         changes = dict(body)
         if 'password' in changes:
-            changes['password'] = password_hash(changes['password'], minimum=self.password_min)
+            with self.database._connection() as connection:
+                found = connection.execute('SELECT role FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            role = changes.get('role', found['role'] if found else 'viewer')
+            changes['password'] = password_hash(changes['password'], minimum=self.minimum(role if isinstance(role, str) else 'admin'))
         with self.database.transaction() as tx:
             if 'role' in changes:
                 self._role(tx.connection, changes['role'])
             row = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user_id,)).fetchone()
             if not row:
                 raise AccessError(404, 'Account not found')
+            if is_administrator(row) and (changes.get('role', 'admin') != 'admin' or changes.get('active', True) is not True):
+                raise AccessError(409, PROTECTED)
             after = check(tx.connection, row, changes) if check is not None else None
             if row['role'] == 'admin' and row['active'] and (changes.get('role', 'admin') != 'admin' or not changes.get('active', True)):
-                if tx.connection.execute("SELECT count(*) FROM evlet_users WHERE role='admin' AND active=1").fetchone()[0] == 1:
+                # Admins who can sign in: the Administrator counts once it has a password.
+                if tx.connection.execute("SELECT count(*) FROM evlet_users WHERE role='admin' AND active=1 AND password<>''").fetchone()[0] <= 1:
                     raise AccessError(409, LAST_ADMIN)
             for key, value in changes.items():
                 tx.connection.execute(f'UPDATE evlet_users SET {key}=? WHERE id=?', (value, user_id))
             self.end_sessions(tx.connection, user_id, keys=changes.get('active') is False)
             if after is not None:
                 after()
+
+
+def _user_columns(connection, postgres):
+    if postgres:
+        return {row[0] for row in connection.execute(
+            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='evlet_users'")}
+    return {row[1] for row in connection.execute('PRAGMA table_info(evlet_users)')}
+
+
+def ensure_administrator(connection, postgres=False):
+    """Create the built-in Administrator when it is missing: role admin, no password, so it cannot sign in until one is set.
+
+    evlet_users.builtin marks it. An account named administrator without the mark belongs to someone else (a database
+    from before 0.4.2): it is refused, never taken over. A changed role or status of the Administrator is put back.
+    """
+    if 'builtin' not in _user_columns(connection, postgres):
+        connection.execute('ALTER TABLE evlet_users ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0')
+    row = connection.execute('SELECT id, role, active, builtin FROM evlet_users WHERE username=?', (ADMINISTRATOR,)).fetchone()
+    if row is None:
+        connection.execute("INSERT INTO evlet_users(username,password,role,builtin) VALUES (?,'','admin',1)", (ADMINISTRATOR,))
+        return True
+    if not row[3]:
+        from .migrations import SchemaError
+        raise SchemaError('An account named administrator already exists. Evlet now keeps that username for its built-in Administrator. '
+                          'Rename that account in the database (for example to administrator-old), then run evlet migrate again.')
+    if row[1] != 'admin' or not row[2]:
+        connection.execute("UPDATE evlet_users SET role='admin', active=1 WHERE id=?", (row[0],))
+    return False

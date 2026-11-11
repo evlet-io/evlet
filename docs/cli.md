@@ -51,8 +51,8 @@ The steps run in this order, each through the code of its own command:
 4. `--instance` creates the instance, as `evlet instance NAME` does.
 5. One `evlet install` installs every app with its dependencies in order. It asks
    once whether you trust them and writes one backup.
-6. `--dev` starts `evlet dev` on 127.0.0.1, which creates the first admin and prints
-   a one-time sign-in link. `--host` prepares a public site
+6. `--dev` starts `evlet dev` on 127.0.0.1, which prints a one-time sign-in link for
+   the built-in Administrator. `--host` prepares a public site
    ([below](#serve-a-site-on-a-domain-in-one-go)). With neither, it stops after
    installing and prints the command that starts the site.
 
@@ -110,7 +110,7 @@ evlet docs --port 8001
 shadowed by files there; run it with `python -P -m evlet` (or set
 `PYTHONSAFEPATH=1`) when working inside an app folder. Project commands that
 delegate to `.venv` already use `-P`. The original `new` command keeps its
-existing contract. `evlet controls grant` makes a user an active admin from the server shell when nobody can open Controls ([controls.md](controls.md)). `evlet users set-password <instance> <username>` asks twice for a new password (no echo, never printed), applies the instance's `security.password_min` and the normal password rules, ends the user's sessions, AI assistants and API keys, and is audited as `cli`. `evlet users reset-two-step` clears a user's two-step sign-in so they set it up again ([settings.md](settings.md#set-up-at-sign-in-trust-on-first-use)). `evlet secrets rotate` re-encrypts connector secrets, mailbox sign-ins, two-step secrets and backup codes under a new `secret.key` ([controls.md](controls.md)). `login`, `logout`, `describe` and `mcp` are the connector
+existing contract. `evlet controls grant` makes a user an active admin from the server shell when nobody can open Controls ([controls.md](controls.md)). `evlet users set-password <instance> <username>` asks twice for a new password (no echo, never printed), applies the password minimum (config.py's `Security(password_min=...)` for admins, the Controls setting for everyone else) and the normal password rules, ends the user's sessions, AI assistants and API keys, and is audited as `cli`. `evlet users reset-two-step` clears a user's two-step sign-in so they set it up again ([settings.md](settings.md#set-up-at-sign-in-trust-on-first-use)). `evlet secrets rotate` re-encrypts connector secrets, mailbox sign-ins, two-step secrets and backup codes under a new `secret.key` ([controls.md](controls.md)). `login`, `logout`, `describe` and `mcp` are the connector
 commands described in the [connector guide](connector.md). Each one shows its
 options with `--help`, for example `evlet login --help`.
 `evlet dev` selects the sole instance in a project. With several instances it
@@ -148,31 +148,33 @@ that process. No worker is mandatory.
 `bench browse --user` in Frappe:
 
 ```text
-Sign in as mariam (works once, for 10 minutes):
+The administrator account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):
   http://127.0.0.1:8000/_dev/signin?token=...
 ```
 
-Open the link and you are signed in, then sent to `/`. `evlet dev` prints a new
-link each time it reloads. Run `evlet dev-link` from
+Every instance has the built-in System Administrator (`administrator`), with no password at
+first ([controls.md](controls.md#the-administrator)). The first link signs it in and opens a
+"Set your password" screen that follows config.py's admin minimum. When admins need two-step
+sign-in (`Security(admin_two_step=True)`, the default), that session then ends and the
+authenticator set-up follows, as at a normal sign-in; finishing it opens the app. Later starts
+print `Sign in as administrator (works once, for 10 minutes): ...` and the link signs straight
+in, sent to `/`. The sign-in page never offers a "Sign in as administrator" button: the link is
+only printed in the terminal of the person who started the server.
+
+`evlet dev` prints a new link each time it reloads. Run `evlet dev-link` from
 another terminal for a fresh link when the first is used or expired. Inside a
 project it serves the project's instance (`--instance` picks one, `--port` matches
 `evlet dev --port`). Outside a project, or with `--playground`, it finds the running
 `evlet playground` (`--port` picks one when several run).
 
 - The link signs in the user named by `--user NAME`. Without it, the link uses
-  the only active admin, or the only active user. With several, pass `--user`.
-- On an instance with no accounts, `evlet dev` creates an active admin named
-  `admin` (or the name given with `--user NAME`, checked by the normal account
-  name rules) and prints its link: `No accounts yet. Created admin "admin" (no
-  password set). Sign in (works once, for 10 minutes): ...`. The password is
-  random and strong, is never printed or logged, and no one knows it. The audit
-  log records the account as created by `cli`. A Playground with no accounts
-  does the same with `demo-admin`. To sign in later without a link, set a real
-  password from the server shell with `evlet users set-password`.
-- `evlet dev-link` never creates accounts. On an instance with no accounts it
-  tells you to start `evlet dev`.
-- `--no-link` on `evlet dev` or `evlet playground` skips the startup link and the
-  account creation. The browser setup page then asks for the first admin.
+  the built-in Administrator.
+- Nothing creates accounts any more: the instance has the Administrator from the start.
+  Instances that already have other admins (such as `admin` or `demo-admin` from 0.4.1 and
+  earlier) keep them unchanged.
+- `--no-link` on `evlet dev` or `evlet playground` skips the startup link. The browser setup
+  page then asks for the first admin; choosing the username `administrator` there gives the
+  Administrator its password.
 - The app itself serves `/_dev/signin` on the same host and port. The route exists
   only under `evlet dev` and `evlet playground`. `evlet serve`, tenant applications
   and deployments answer 404.
@@ -184,7 +186,8 @@ project it serves the project's instance (`--instance` picks one, `--port` match
   usual cookie (HttpOnly, SameSite=Strict), CSRF token and session length. The
   audit log records it as "Signed in with a development link".
 - The session counts as a finished two-step sign-in. Only someone with this
-  instance's files can make a link, which is as strong as a second step.
+  instance's files can make a link, which is as strong as a second step. The first password
+  is the exception above: the account then sets up two-step sign-in when its role needs it.
 - Every account, tenant, row, field and action check still applies to the user.
 - Passwords are never printed. The token is printed because it is single-use,
   local and short-lived.
@@ -380,10 +383,23 @@ is set. See [routing.md](routing.md).
 Behind a reverse proxy, set `trusted_proxies=("127.0.0.1", "::1")` (addresses or
 CIDR ranges) so client addresses come from `X-Forwarded-For`. It is empty by default.
 
-Next to `instance`, config.py may set the sign-in rules the instance starts from:
-`security = Security(session_hours=8, lockout=4, password_min=16)`. Session length is 1 to
-168 hours (12 by default), the lockout 3 to 50 failed sign-ins (5) and the minimum password
-length 15 to 64 (15). Controls can only make them stricter ([controls.md](controls.md#overrides)).
+Next to `instance`, config.py sets the sign-in rules. `evlet instance` writes them with their defaults and a
+short comment:
+
+```python
+security = Security(password_min=15, admin_two_step=True, two_step=False, admin_sign_in=False)
+```
+
+- `password_min`: 1 to 64 characters (15). 1 means no rule: even "1" is a password.
+- `admin_two_step`: admins, the built-in Administrator too, must use two-step sign-in (on).
+- `two_step`: everyone else must use it too (off). Controls can turn it on or off.
+- `admin_sign_in`: the sign-in page opens with the username `administrator` filled in (off).
+- `session_hours` 1 to 168 (12) and `lockout` 3 to 50 failed sign-ins (5).
+
+Admins always follow config.py. Controls can change the password minimum and two-step sign-in
+for everyone else in either direction, and can only shorten sessions and the lockout
+([controls.md](controls.md#security-rules)). A `config.py` from 0.4.1 or earlier without
+`security` keeps the defaults.
 
 `database` and `storage` are reserved and optional. They default to `"sqlite"` and
 `"local"`, the only values accepted today. New `config.py` files leave them out.
@@ -394,6 +410,10 @@ other framework APIs remain available through explicit Python configuration.
 PostgreSQL instance creation is intentionally rejected until its isolation strategy
 is specified. Do not point the new installer at an existing unmanaged database.
 It will reject it rather than adopt it. Existing Playground data stays in place.
+
+`evlet serve` never prints sign-in links. While the built-in Administrator has no password
+it prints `The built-in Administrator has no password yet. Set one with: evlet users set-password
+acme administrator` at start.
 
 For a conventional deployment, provision the administrator locally first, then
 set `domain="app.example.com"`. This selects that exact HTTPS origin, secure
@@ -411,10 +431,10 @@ evlet setup myproject --app notes --instance acme --host erp.example.com
 Run it on the Linux server as the user that will run the service, not as root.
 After installing the apps it:
 
-1. Asks in the terminal for the first administrator's username and password
-   (twice, not shown). A site on a domain cannot create its administrator in the
-   browser, so this happens here, with the instance's password rules. It is audited
-   as `cli` and skipped when the instance already has accounts.
+1. Asks in the terminal for a password for the built-in Administrator (twice, not
+   shown). A site on a domain cannot set its first password in the browser, so this
+   happens here, with the admin password rule from config.py. It is audited as `cli` and
+   skipped when an account can already sign in.
 2. Sets `domain="erp.example.com"` and `trusted_proxies=("127.0.0.1", "::1")` in
    `instances/acme/config.py`. If you edited that file, it stops and asks you to set
    the domain yourself.

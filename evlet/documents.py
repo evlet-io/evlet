@@ -9,7 +9,7 @@ import json
 import re
 import sqlite3
 
-from .auth import AccessError
+from .auth import AccessError, has_role
 from .database import ConflictError, ROW_LIMIT, conflict
 from .declarations import Ref
 from .fields import CurrentUser, MISSING, Link
@@ -1814,7 +1814,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     elif action is not None:
         method = getattr(model, action, None)
         declaration = getattr(method, '__action__', None)
-        if declaration is None or user.role not in declaration['roles']:
+        if declaration is None or not has_role(user, declaration['roles']):
             raise AccessError(403, 'Action is unavailable')
         arguments = states.action_arguments(context, model, method, declaration, arguments, before)
         with trusted(), handler_context(context, draft):

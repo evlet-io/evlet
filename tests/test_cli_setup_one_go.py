@@ -189,14 +189,16 @@ def resolving(address):
 
 def test_host_writes_caddy_site_unit_and_prints_privileged_steps(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(proxy, 'check', resolving('203.0.113.7'))
-    monkeypatch.setattr(site, 'ask_admin', lambda: ('owner', PASSWORD))
+    monkeypatch.setattr(site, 'ask_admin', lambda: PASSWORD)
     target = tmp_path / 'p'
     command = ['setup', str(target), '--app', 'notes', '--instance', 'acme', '--trust', '--host', 'erp.example.com', '--ip', '203.0.113.7', '--port', '8010']
     main(command)
     out = capsys.readouterr().out
     root = target.resolve()
-    assert 'Administrator created: owner' in out and 'Domain set: erp.example.com' in out
-    assert users(root) == [('owner', 'admin')]
+    assert 'Password set for administrator' in out and 'Domain set: erp.example.com' in out
+    assert users(root) == [('administrator', 'admin')]
+    with sqlite3.connect(root / 'instances/acme/data/database.sqlite3') as connection:
+        assert connection.execute("SELECT password FROM evlet_users").fetchone()[0].startswith('scrypt:')
     config = read_instance(root / 'instances/acme')
     assert config.domain == 'erp.example.com'
     assert {str(network) for network in config.trusted_proxies} == {'127.0.0.1/32', '::1/128'}
@@ -221,7 +223,7 @@ def test_host_writes_caddy_site_unit_and_prints_privileged_steps(tmp_path, monke
 
 
 def test_host_stops_only_when_dns_is_surely_wrong_and_never_needs_ip(tmp_path, monkeypatch, capsys):
-    monkeypatch.setattr(site, 'ask_admin', lambda: ('owner', PASSWORD))
+    monkeypatch.setattr(site, 'ask_admin', lambda: PASSWORD)
     target = tmp_path / 'p'
     command = ['setup', str(target), '--app', 'notes', '--instance', 'acme', '--trust', '--host', 'erp.example.com']
     # A private record while this server has a public address: stop.
@@ -266,16 +268,18 @@ def test_site_answers_is_information_only():
 
 def test_host_refuses_a_weak_admin_password_and_an_edited_config(tmp_path, monkeypatch, capsys):
     monkeypatch.setattr(proxy, 'check', resolving('203.0.113.7'))
-    monkeypatch.setattr(site, 'ask_admin', lambda: ('owner', 'short'))
+    monkeypatch.setattr(site, 'ask_admin', lambda: 'short')
     target = tmp_path / 'p'
     command = ['setup', str(target), '--app', 'notes', '--instance', 'acme', '--trust', '--host', 'erp.example.com', '--ip', '203.0.113.7']
     with pytest.raises(SystemExit):
         main(command)
     assert 'Step "administrator" failed' in capsys.readouterr().err
-    assert users(target) == []
+    assert users(target) == [('administrator', 'admin')]
+    with sqlite3.connect(target / 'instances/acme/data/database.sqlite3') as connection:
+        assert connection.execute("SELECT password FROM evlet_users").fetchone()[0] == ''
     config = target / 'instances/acme/config.py'
     config.write_text(config.read_text() + '# edited\n')
-    monkeypatch.setattr(site, 'ask_admin', lambda: ('owner', PASSWORD))
+    monkeypatch.setattr(site, 'ask_admin', lambda: PASSWORD)
     with pytest.raises(SystemExit):
         main(command)
     assert 'config.py was edited' in capsys.readouterr().err
@@ -285,7 +289,7 @@ def test_host_refuses_a_weak_admin_password_and_an_edited_config(tmp_path, monke
 def test_apply_runs_each_privileged_step_after_showing_it(tmp_path, monkeypatch, capsys):
     import shutil
     monkeypatch.setattr(proxy, 'check', resolving('203.0.113.7'))
-    monkeypatch.setattr(site, 'ask_admin', lambda: ('owner', PASSWORD))
+    monkeypatch.setattr(site, 'ask_admin', lambda: PASSWORD)
     monkeypatch.setattr(shutil, 'which', lambda name: '/usr/bin/' + name)
     caddyfile = tmp_path / 'Caddyfile'
     caddyfile.write_text('other.example.com {\n}\n')
@@ -333,7 +337,7 @@ def test_host_remembers_the_public_address_and_replaces_outdated_installed_files
         seen.append(addresses)
         return resolved(routes, addresses)
     monkeypatch.setattr(proxy, 'check', check)
-    monkeypatch.setattr(site, 'ask_admin', lambda: ('owner', PASSWORD))
+    monkeypatch.setattr(site, 'ask_admin', lambda: PASSWORD)
     etc = tmp_path / 'etc'
     (etc / 'caddy').mkdir(parents=True)
     (etc / 'systemd').mkdir()

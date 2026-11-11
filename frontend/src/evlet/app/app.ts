@@ -19,7 +19,7 @@ import { docsOn, goSettings, newPageState, settingsHref, type AppContext, type A
 import { DocsPage } from './docs';
 import { ExplorerPage, isExplorer } from './explorer';
 import { ListPage } from './list-page';
-import { Connecting, LoginScreen, TwoStepScreen, type Challenge } from './login';
+import { Connecting, LoginScreen, SetPasswordScreen, TwoStepScreen, type Challenge } from './login';
 import { rootModels } from './meta';
 import { openPalette } from './palette';
 import { Prefs } from './prefs';
@@ -44,7 +44,7 @@ export interface AppOptions {
   storage?: Storage | null;
 }
 
-type Phase = 'connecting' | 'signin' | 'twostep' | 'ready';
+type Phase = 'connecting' | 'signin' | 'password' | 'twostep' | 'ready';
 
 export function App(options: AppOptions): Node {
   const { router } = options;
@@ -104,7 +104,9 @@ export function App(options: AppOptions): Node {
       const current = await api.session();
       if (!alive) return;
       session.set(current);
-      if (current.user) await enter(current);
+      // Signed in by a development link without a password yet: choose one before anything else.
+      if (current.user && current.password_needed) phase.set('password');
+      else if (current.user) await enter(current);
       else phase.set('signin');
     } catch (failure) {
       if (!alive) return;
@@ -116,7 +118,7 @@ export function App(options: AppOptions): Node {
   const signedIn = async (current: Session & { backup_codes?: string[] }) => {
     challenge.set(null);
     // The login answer carries the user; the session adds the application details.
-    await enter({ ...(session.peek() ?? {}), ...current, setup: false });
+    await enter({ ...(session.peek() ?? {}), ...current, setup: false, password_needed: false });
     if (current.backup_codes?.length) showCodes(current.backup_codes);
   };
 
@@ -135,6 +137,20 @@ export function App(options: AppOptions): Node {
     } finally {
       busy.set(false);
     }
+  };
+
+  /** The first password; then two-step set-up when the role requires it, or straight in. */
+  const setPassword = async (password: string) => {
+    busy.set(true);
+    error.set('');
+    try {
+      const answer = await api.firstPassword(password);
+      if (answer.two_step && answer.ticket) { challenge.set(answer as Challenge); phase.set('twostep'); return; }
+      const current = { ...(session.peek() ?? { user: null }), password_needed: false };
+      await enter(current);
+    } catch (failure) {
+      error.set(failure instanceof ApiError ? failure.message : 'Unable to save the password.');
+    } finally { busy.set(false); }
   };
 
   /** The second step: a code from the authenticator app or a backup code, or the set-up when the role requires it. */
@@ -199,6 +215,7 @@ export function App(options: AppOptions): Node {
 
   return match(phase, {
     connecting: () => Connecting(),
+    password: () => SetPasswordScreen({ session: session.peek(), error, busy, onSubmit: value => void setPassword(value), onCancel: () => void signOut() }),
     twostep: () => TwoStepScreen({ session: session.peek(), challenge: challenge.peek()!, error, busy, onSubmit: code => void sendCode(code),
       onCancel: () => { challenge.set(null); error.set(''); phase.set('signin'); } }),
     signin: () => LoginScreen({ session: session.peek(), error, busy, onSubmit: (username, password, setup) => void signIn(username, password, setup), onRetry: () => void connect() }),

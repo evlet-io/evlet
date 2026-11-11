@@ -1,4 +1,5 @@
-// Sign in and first-run setup. Setup creates the first administrator, then signs in with it.
+// Sign in and first-run setup. Setup creates the first administrator, then signs in with it. An account
+// without a password yet (the built-in Administrator after a development link) chooses one first.
 
 import { html, when } from '../dom';
 import { cell, type Cell } from '../reactive';
@@ -26,7 +27,11 @@ export function LoginScreen(props: LoginProps): HTMLElement {
   const setup = Boolean(props.session?.setup);
   const place = application.playground ? 'your Playground' : application.name || 'your workspace';
   const tenant = (props.session?.tenant as { label?: string } | undefined)?.label;
-  const username = cell(''), password = cell('');
+  const minimum = props.session?.password_min ?? 15;
+  // Security(admin_sign_in=True) fills in the administrator; /login?user=NAME fills in that name.
+  const asked = new URLSearchParams(window.location.search).get('user') ?? '';
+  const start = setup ? '' : props.session?.sign_in?.username || (/^[A-Za-z0-9_.-]{3,64}$/.test(asked) ? asked : '');
+  const username = cell(start), password = cell('');
   const submit = (event: Event) => {
     event.preventDefault();
     if (props.busy.peek()) return;
@@ -42,14 +47,14 @@ export function LoginScreen(props: LoginProps): HTMLElement {
       <p>${setup ? 'Create the first administrator account.' : 'Sign in to your Evlet workspace.'}</p>
       <form on:submit=${submit}>
         <label for="ev-username">Username</label>
-        <input id="ev-username" class="input" autocomplete="username" required minlength="3" maxlength="64"
+        <input id="ev-username" class="input" autocomplete="username" required minlength="3" maxlength="64" autofocus=${start ? null : ''}
           prop:value=${username} disabled=${props.busy} on:input=${(event: Event) => username.set((event.target as HTMLInputElement).value)}>
         <label for="ev-password">Password</label>
         <input id="ev-password" class="input" type="password" autocomplete=${setup ? 'new-password' : 'current-password'} required
-          minlength=${setup ? '15' : null} maxlength="128" prop:value=${password} disabled=${props.busy}
+          minlength=${setup ? String(minimum) : null} maxlength="128" prop:value=${password} disabled=${props.busy} autofocus=${start ? '' : null}
           aria-describedby=${setup ? 'ev-password-hint' : null}
           on:input=${(event: Event) => password.set((event.target as HTMLInputElement).value)}>
-        ${setup ? html`<small id="ev-password-hint">Use at least 15 characters.</small>` : null}
+        ${setup ? html`<small id="ev-password-hint">${minimum <= 1 ? 'Any password will do.' : `Use at least ${minimum} characters.`}</small>` : null}
         ${when(() => Boolean(props.error.get()), () => html`<p class="ev-error" role="alert">${() => props.error.get()}</p>`)}
         ${Button({ label, variant: 'primary', type: 'submit', icon: 'arrow-right', disabled: props.busy, className: 'ev-login-submit' })}
       </form>
@@ -58,6 +63,40 @@ export function LoginScreen(props: LoginProps): HTMLElement {
     </main>
     <p class="ev-login-foot">Evlet · Python applications, thoughtfully put together.</p>
   </div>` as HTMLElement;
+}
+
+/** The first password of an account that has none, such as the built-in Administrator after a development sign-in link. */
+export function SetPasswordScreen(props: { session: Session | null; error: Cell<string>; busy: Cell<boolean>; onSubmit: (password: string) => void; onCancel: () => void }): HTMLElement {
+  const minimum = props.session?.password_min ?? 1;
+  const password = cell(''), again = cell(''), local = cell('');
+  const submit = (event: Event) => {
+    event.preventDefault();
+    if (props.busy.peek()) return;
+    if (password.peek().length < Math.max(minimum, 1)) { local.set(minimum <= 1 ? 'Enter a password.' : `Use at least ${minimum} characters.`); return; }
+    if (password.peek() !== again.peek()) { local.set("The two passwords don't match."); return; }
+    props.onSubmit(password.peek());
+  };
+  const message = () => local.get() || props.error.get();
+  const name = props.session?.user?.username ?? '';
+  return html`<div class="ev-login">
+    <div class="ev-login-brand">${Lockup()}<span>${props.session?.application?.name || 'Your workspace'}</span></div>
+    <main class="ev-login-card" aria-labelledby="ev-login-title">
+      <h1 id="ev-login-title">Set your password</h1>
+      <p>${`You are signed in as ${name}. Choose a password to use from now on.`}</p>
+      <form on:submit=${submit}>
+        <label for="ev-new-password">New password</label>
+        <input id="ev-new-password" class="input" type="password" autocomplete="new-password" required maxlength="128" autofocus
+          minlength=${String(Math.max(minimum, 1))} aria-describedby="ev-new-password-hint" prop:value=${password} disabled=${props.busy}
+          on:input=${(event: Event) => { password.set((event.target as HTMLInputElement).value); local.set(''); }}>
+        <small id="ev-new-password-hint">${minimum <= 1 ? 'Any password will do.' : `Use at least ${minimum} characters.`}</small>
+        <label for="ev-again-password">Repeat it</label>
+        <input id="ev-again-password" class="input" type="password" autocomplete="new-password" required maxlength="128" prop:value=${again} disabled=${props.busy}
+          on:input=${(event: Event) => { again.set((event.target as HTMLInputElement).value); local.set(''); }}>
+        ${when(() => Boolean(message()), () => html`<p class="ev-error" role="alert">${message}</p>`)}
+        ${Button({ label: () => props.busy.get() ? 'Saving…' : 'Save and continue', variant: 'primary', type: 'submit', icon: 'arrow-right', disabled: props.busy, className: 'ev-login-submit' })}
+      </form>
+      <button type="button" class="link" on:click=${props.onCancel}>Sign out</button>
+    </main></div>` as HTMLElement;
 }
 
 /** What login answers when the account needs a second step. */

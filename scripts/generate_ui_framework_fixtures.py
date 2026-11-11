@@ -330,8 +330,9 @@ def documents(out, folder):
     keep('invoice_attachment_locked', editor('POST', f'{url}/attachments', {'name': 'receipt.pdf', 'content': 'JVBERi0='}))
     # People add to the journal of the locked invoice: a note, a follow up that is done, one that stays open.
     keep('invoice_journal_note', editor('POST', f'{url}/journal', {'kind': 'note', 'text': 'Customer asked for a copy by email'}))
+    # Sara is account 3: the built-in Administrator is 1 and admin 2.
     called = keep('invoice_journal_follow_up', editor('POST', f'{url}/journal', {'kind': 'follow_up', 'text': 'Call about the balance',
-                                                                                'due': '2026-11-15', 'assignee': 2}))
+                                                                                'due': '2026-11-15', 'assignee': 3}))
     keep('invoice_journal_follow_up_done', editor('POST', f'{url}/journal', {'kind': 'follow_up_done', 'follow_up': called['id'],
                                                                              'text': 'Balance due by the end of the month'}))
     editor('POST', f'{url}/journal', {'kind': 'follow_up', 'text': 'Send the statement', 'due': '2026-11-30'})

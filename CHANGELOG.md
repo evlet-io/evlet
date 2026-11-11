@@ -43,11 +43,34 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   adds `_job` (`{"id", "state"}`) to its detail. `JobQueue.wake()` and `JobQueue.wait(timeout)`
   serve app workers ([docs/jobs-realtime.md](docs/jobs-realtime.md#queue-a-job-from-an-action)).
 - The Background Playground (`examples/playground/background/app.py`) shows all three.
+- **Built-in System Administrator.** Every instance has the account `administrator` ("System
+  Administrator", role admin), created on new databases and by the framework step
+  `0008_administrator` in `evlet migrate`. It starts with no password. Its username, name and
+  role never change, and it can't be deactivated or deleted on any route. It passes every role
+  check (models, rows, fields, actions, Controls) and still meets every data rule. Its profile
+  takes only an email address for notifications.
+- **Sign-in rules in config.py.** `Security(password_min=..., admin_two_step=..., two_step=...,
+  admin_sign_in=...)`. `password_min` takes 1 to 64; 1 allows any password. `admin_two_step`
+  decides two-step sign-in for admins, `two_step` for everyone else. `admin_sign_in` opens the
+  sign-in page with the username `administrator` filled in, and `/login?user=NAME` fills in any
+  name. New instances get the block in `config.py` with short comments.
+- **First password in the browser.** The development link signs in the Administrator and opens
+  "Set your password", then two-step set-up when admins need it. `POST /api/auth/password`
+  sets the first password of an account that has none.
+- Controls, Security shows the admin rules from config.py and a switch for two-step sign-in for
+  everyone. Controls, Users marks the Administrator as built in and locks its role and status.
 
 ### Changed
 
 - `Move` takes `system=False`, and its `roles` default is now written `roles=None`, which still
   means admin and editor. `User` gains `system=None`. Apps change nothing.
+- Admin accounts follow config.py only. Controls can change the password minimum and two-step
+  sign-in for everyone else in either direction (`security.password_min` 1 to 64, the new
+  `security.two_step`, and `security.two_step_roles`, which no longer lists admin).
+- `evlet dev` and `evlet playground` no longer create `admin` or `demo-admin`; links default to
+  the Administrator. `evlet serve` prints how to set the Administrator's password instead.
+  `evlet setup --host` asks for the Administrator's password only.
+- On new databases the Administrator is account 1, so other accounts start at 2.
 
 ### Fixed
 
@@ -83,6 +106,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   instead of "One or more values are invalid".
 - An `@action` that returned a `JobReceipt` put the receipt object in `_outcome`, which could not
   be sent as JSON. It is now `_job`.
+
+### Deprecated
+
+- `DevSignIn(create_admin=...)` is ignored with a `DeprecationWarning` and goes in 0.5.
+
+See [docs/app-upgrades.md](docs/app-upgrades.md#from-041-to-042) for what to do.
 
 ## 0.4.1 (10-11-2026)
 

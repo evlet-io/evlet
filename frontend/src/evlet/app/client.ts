@@ -68,6 +68,13 @@ export class AppClient extends ApiClient {
     return data;
   }
 
+  /** The first password of an account that has none. With two-step sign-in required, the answer is its set-up ticket. */
+  async firstPassword(password: string): Promise<{ password?: boolean; two_step?: 'code' | 'setup'; ticket?: string; secret?: string; uri?: string }> {
+    const { data } = await this.request<{ password?: boolean; two_step?: 'code' | 'setup'; ticket?: string; secret?: string; uri?: string }>(
+      'POST', '/api/auth/password', { body: { password } });
+    return data;
+  }
+
   /** First-run setup: the first administrator account. */
   async setup(username: string, password: string) {
     await this.request('POST', '/api/auth/setup', { body: { username, password } });

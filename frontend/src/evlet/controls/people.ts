@@ -29,13 +29,27 @@ export const field = (label: string, id: string, control: Node, hint: () => stri
 
 // ---------- users ----------
 
+/** Whether a role must use two-step sign-in: config.py decides for admin, Controls for every other role. */
+export function twoStepRequired(ctx: ControlsContext, role: string) {
+  const state = ctx.state.get();
+  if (role === 'admin') return state.admin_rules?.two_step ?? true;
+  return Boolean(state.settings['security.two_step']?.value) || (state.settings['security.two_step_roles'].value as string[]).includes(role);
+}
+
+/** The shortest password for a role: config.py's for admin, the Controls setting for everyone else. */
+export function passwordMinimum(ctx: ControlsContext, role: string) {
+  const state = ctx.state.peek();
+  return role === 'admin' && state.admin_rules ? state.admin_rules.password_min : state.settings['security.password_min'].value as number;
+}
+
+const lengthHint = (minimum: number) => minimum <= 1 ? 'Any password will do' : `At least ${minimum} characters`;
+
 /** "2 sessions · 1 AI assistant": browser sessions and connected assistants both sign out with the user. */
 const sessionText = (user: UserRow) => [user.sessions ? plural(user.sessions, 'session') : '', user.assistants ? plural(user.assistants, 'AI assistant') : ''].filter(Boolean).join(' · ');
 
 export function UsersPage(ctx: ControlsContext): HTMLElement {
   const users = cell<UserRow[]>([]), total = cell(0), loaded = cell(false);
   const tab = cell<'all' | 'active' | 'inactive'>('all'), query = cell(''), role = cell('');
-  const required = () => ctx.state.get().settings['security.two_step_roles'].value as string[];
   const load = async () => {
     try {
       const page = await ctx.api.users();
@@ -64,9 +78,10 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
     <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>User</th><th>Role</th><th>Two-step sign-in</th><th>Sessions</th><th>AI</th><th>Status</th><th></th></tr></thead>
       <tbody>${() => shown.get().length ? shown.get().map(user => html`<tr class="ctl-click" tabindex="0" on:click=${() => openUser(ctx, user, refresh)}
         on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') openUser(ctx, user, refresh); }}>
-        <td><span class="ctl-user">${Avatar({ name: user.username, size: 'sm' })}<strong>${user.username}</strong></span></td>
+        <td><span class="ctl-user">${Avatar({ name: user.username, size: 'sm' })}<strong>${user.username}</strong>${user.builtin
+          ? [' ', StatusPill({ label: 'Built in', tint: 'slate' })] : null}</span></td>
         <td>${RoleChip(user.role)}</td>
-        <td>${required().includes(user.role) ? StatusPill({ label: 'Off · required', tint: 'rose' }) : html`<span class="muted">Off</span>`}</td>
+        <td>${user.two_step ? StatusPill({ label: 'On', tint: 'green' }) : twoStepRequired(ctx, user.role) ? StatusPill({ label: 'Off · required', tint: 'rose' }) : html`<span class="muted">Off</span>`}</td>
         <td class="muted num">${sessionText(user) || 'None'}</td>
         <td>${user.allow_eva || user.allow_mcp ? [user.allow_eva ? StatusPill({ label: 'Eva', tint: 'violet' }) : null, ' ', user.allow_mcp ? StatusPill({ label: 'MCP', tint: 'blue' }) : null]
           : html`<span class="muted">No</span>`}</td>
@@ -80,8 +95,10 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
 function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<void>) {
   const role = cell(user.role), active = cell(user.active), password = cell(''), error = cell(''), fields = cell<Record<string, string>>({}), busy = cell(false);
   const locked = !isAdmin(ctx) && user.role === 'admin';
-  const roles = locked ? ctx.state.peek().roles.filter(item => item.id === 'admin') : assignable(ctx);
-  const required = ctx.state.peek().settings['security.two_step_roles'].value as string[];
+  // The built-in Administrator keeps its role and stays active; its password, sessions and two-step are managed as anyone's.
+  const builtin = Boolean(user.builtin);
+  const roles = locked || builtin ? ctx.state.peek().roles.filter(item => item.id === 'admin') : assignable(ctx);
+  const required = twoStepRequired(ctx, user.role);
   const save = async (close: () => void) => {
     const body: Record<string, unknown> = {};
     if (role.peek() !== user.role) body.role = role.peek();
@@ -133,16 +150,18 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
   openDrawer({ title: user.username, icon: 'user', tint: 'blue', className: 'ctl-drawer',
     body: () => html`<div class="ctl-form">
       ${locked ? Callout('info', 'lock', 'Only an admin can change an admin account.') : null}
-      ${field('Role', 'ctl-u-role', Select({ id: 'ctl-u-role', value: () => role.get(), options: () => roles.map(item => [item.id, item.id]), disabled: locked,
+      ${builtin ? Callout('info', 'lock', `The System Administrator is built in. Its username, name and role never change, and it can't be deactivated.${
+        user.password_set === false ? ' It has no password yet.' : ''}`) : null}
+      ${field('Role', 'ctl-u-role', Select({ id: 'ctl-u-role', value: () => role.get(), options: () => roles.map(item => [item.id, item.id]), disabled: locked || builtin,
         onChange: value => { role.set(value); error.set(''); } }), () => roles.find(item => item.id === role.get())?.description ?? null, () => fields.get().role ?? null)}
-      <div class="ctl-field"><span class="lbl">Status</span>${Switch({ on: active, disabled: locked, onChange: next => { active.set(next); error.set(''); },
+      <div class="ctl-field"><span class="lbl">Status</span>${Switch({ on: active, disabled: locked || builtin, onChange: next => { active.set(next); error.set(''); },
         label: () => active.get() ? 'Active, can sign in' : "Inactive, can't sign in" })}</div>
       ${when(error, () => Callout('err', 'info', error))}
       <section class="ctl-section"><h3>Two-step sign-in</h3><div class="ctl-line">${user.two_step
         ? [StatusPill({ label: 'On', tint: 'green' }), html`<span class="muted ctl-small grow">Set up ${stamp(user.two_step.since)} from ${user.two_step.agent || 'a browser'}.</span>`,
           ctx.state.peek().me.role === 'admin' ? Button({ label: 'Reset two-step', size: 'small', onClick: () => void resetTwoStep() }) : null]
-        : [required.includes(user.role) ? StatusPill({ label: 'Required, not set up', tint: 'rose' }) : StatusPill({ label: 'Not set up', tint: 'slate' }),
-          html`<span class="muted ctl-small">${required.includes(user.role) ? 'They set it up at their next sign-in.' : 'People set it up in Settings, under Sign-in & security.'}</span>`]}</div></section>
+        : [required ? StatusPill({ label: 'Required, not set up', tint: 'rose' }) : StatusPill({ label: 'Not set up', tint: 'slate' }),
+          html`<span class="muted ctl-small">${required ? 'They set it up at their next sign-in.' : 'People set it up in Settings, under Sign-in & security.'}</span>`]}</div></section>
       <section class="ctl-section"><h3>AI access</h3>
         <div class="ctl-field">${Switch({ on: eva, disabled: locked, label: 'Allow Eva', onChange: next => void allow('allow_eva', next, eva) })}
           <span class="muted ctl-small">Chat with Eva and create scheduled tasks. Eva uses their own permissions, never more.</span></div>
@@ -152,7 +171,7 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
         ${(user.sessions || user.assistants || user.keys) && !locked ? Button({ label: 'Sign out everywhere', size: 'small', icon: 'log-out', onClick: signOut }) : null}</div></section>
       ${locked ? null : html`<section class="ctl-section"><h3>Password</h3>
         ${field('New password', 'ctl-u-pass', html`<input class="input" id="ctl-u-pass" type="password" autocomplete="new-password"
-          placeholder=${`At least ${ctx.state.peek().settings['security.password_min'].value} characters`} prop:value=${password}
+          placeholder=${() => lengthHint(passwordMinimum(ctx, role.get()))} prop:value=${password}
           on:input=${(event: Event) => password.set((event.target as HTMLInputElement).value)}>`,
           () => 'Leave empty to keep the current one. Their sessions end when it changes.', () => fields.get().password ?? null)}</section>`}
     </div>`,
@@ -163,7 +182,6 @@ function openUser(ctx: ControlsContext, user: UserRow, refresh: () => Promise<vo
 function addUser(ctx: ControlsContext, refresh: () => Promise<void>) {
   const username = cell(''), role = cell('viewer'), password = cell(''), fields = cell<Record<string, string>>({}), busy = cell(false);
   const roles = assignable(ctx);
-  const minimum = ctx.state.peek().settings['security.password_min'].value as number;
   const input = (id: string, value: typeof username, type = 'text') => html`<input class="input" id=${id} type=${type} autocomplete="off"
     prop:value=${value} on:input=${(event: Event) => { value.set((event.target as HTMLInputElement).value); fields.set({}); }}>`;
   const submit = async (close: () => void) => {
@@ -183,7 +201,7 @@ function addUser(ctx: ControlsContext, refresh: () => Promise<void>) {
       ${field('Username', 'ctl-n-user', input('ctl-n-user', username), () => '3 to 64 letters, numbers, dots, hyphens or underscores.', () => fields.get().username ?? null)}
       ${field('Role', 'ctl-n-role', Select({ id: 'ctl-n-role', value: () => role.get(), options: () => roles.map(item => [item.id, item.id]), onChange: value => role.set(value) }),
         () => roles.find(item => item.id === role.get())?.description ?? null, () => fields.get().role ?? null)}
-      ${field('Password', 'ctl-n-pass', input('ctl-n-pass', password, 'password'), () => `At least ${minimum} characters. Give it to them in person.`, () => fields.get().password ?? null)}
+      ${field('Password', 'ctl-n-pass', input('ctl-n-pass', password, 'password'), () => `${lengthHint(passwordMinimum(ctx, role.get()))}. Give it to them in person.`, () => fields.get().password ?? null)}
       ${when(() => fields.get()._form, () => Callout('err', 'info', () => fields.get()._form))}
       </div>`,
     footer: close => DialogFooter({ cancel: close, submit: { label: () => busy.get() ? 'Adding…' : 'Add user', icon: 'user-plus', disabled: busy, onClick: () => void submit(close) } }),

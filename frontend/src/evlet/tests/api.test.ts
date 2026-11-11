@@ -13,7 +13,7 @@ describe('session', () => {
     expect(api.csrf).toBe('');
     const session = await api.login('admin', 'secret');
     signedIn = true;
-    expect(session.user).toEqual({ id: 1, role: 'admin', username: 'admin' });
+    expect(session.user).toEqual({ id: 2, role: 'admin', username: 'admin' });
     expect(api.csrf).toBe('fixture-csrf-token');
     expect(sent[1]).toMatchObject({ method: 'POST', body: { username: 'admin', password: 'secret' } });
     expect(sent[1].headers['x-evlet-request']).toBe('1');

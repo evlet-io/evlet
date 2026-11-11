@@ -45,7 +45,8 @@ link and the `evlet.settings` log has it. An instance with a domain answers "Ema
 yet" and records and logs nothing.
 
 **Password.** The current password is needed, plus a current code (`"code"`) when two-step
-sign-in is on, and the instance minimum applies (`security.password_min`). Every other browser
+sign-in is on, and the minimum applies: config.py's `Security(password_min=...)` for admins,
+`security.password_min` in Controls for everyone else (1 allows any password). Every other browser
 session of the person ends, and so do their connected AI assistants and unused authorization
 codes. API keys are kept unless the person ticks "Also revoke API keys (N active)", which sends
 `"revoke_keys": true`; it is unticked by default and shown when they have active keys
@@ -106,7 +107,9 @@ side) and 8 backup codes that each work once.
 - **Verified sessions.** A session that finished the code step (or set the app up while signing
   in) is marked verified in `evlet_sessions.two_step`. Turning two-step on from Settings does not
   verify the session it was done from; signing in again does.
-- **Required roles.** Roles in Controls' `security.two_step_roles` (admin always) must use it.
+- **Required roles.** Admins must use it when config.py's `Security(admin_two_step=True)` is set
+  (the default). Everyone else must when Controls' `security.two_step` is on (`Security(two_step=...)`
+  starts it) or their role is in `security.two_step_roles` ([controls.md](controls.md#security-rules)).
   Someone in such a role who has not set it up gets `{"two_step": "setup", "ticket", "secret",
   "uri"}` and turns it on while signing in. They can't turn it off. Until it is set up they can't
   use the app at all: a browser session of such a role that did not finish two-step sign-in (one
@@ -114,7 +117,7 @@ side) and 8 backup codes that each work once.
   again to set it up." on every route and page, so they sign in again and set it up then. API keys
   are not sessions and keep working.
 - **Controls.** Controls opens only for verified sessions when `ControlsAccess(require_two_step=True)`
-  is set or the person's role is in `security.two_step_roles` (when the instance can keep secrets).
+  is set or the person's role must use two-step sign-in (when the instance can keep secrets).
 
 ### When the code is asked
 
@@ -241,8 +244,9 @@ sign-in, appearance and the other pages answer 404.
 
 | Route | Purpose |
 | --- | --- |
-| `GET /api/_settings/me` | Profile, preferences, notifications, `unsaved` (limits and how many unsaved changes the person has kept; desk only), security (two-step state, sessions, active `api_keys`), pages, apps with their labels, the last page, whether Controls opens |
+| `GET /api/_settings/me` | `builtin` for the System Administrator (its profile and photo answer 409; only the email changes), profile, preferences, notifications, `unsaved` (limits and how many unsaved changes the person has kept; desk only), security (two-step state, sessions, active `api_keys`), pages, apps with their labels, the last page, whether Controls opens |
 | `PATCH /api/_settings/me/profile` | `full_name`, `short_name`, `title`, `phone`, `signature` |
+| `POST /api/auth/password` | `{"password"}`: the first password of an account that has none (the built-in Administrator). Answers `{"password": true}`, or the two-step set-up ticket when the role needs it (this session then ends). 409 once a password is set |
 | `PATCH /api/_settings/me/prefs` | Appearance and region keys, `keep_unsaved`, `notify.<event>` as `[in Evlet, email]`, `quiet` as `{on, from, to}`, `last_page` |
 | `GET/POST/DELETE /api/_settings/me/photo` | `{"type", "data"}` with base64 data |
 | `POST /api/_settings/me/email`, `POST /api/_settings/me/email/confirm` | Ask for a link (`{"email", "code"}` with two-step on, `{"email", "password"}` without); confirm with `{"token"}` |
