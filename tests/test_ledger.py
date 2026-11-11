@@ -34,6 +34,11 @@ class Member(Model):
     # A normal model may point at a ledger row: callers see the plain integer id, read only.
     last_move = Link('pointmove')
 
+    @action('Award a point')
+    def award(self):
+        # Trusted code writes the ledger row and links it; callers cannot set the Link themselves.
+        self.last_move = self.context.session.create(PointMove, member=self.id, on_date=date(2026, 11, 1), points='1.00').id
+
 
 class PointMove(Model):
     """An append-only movement ledger."""
@@ -458,6 +463,20 @@ def test_a_ledger_model_has_no_public_surface(points):
     assert detail['last_move'] == row
     status, payload, _ = admin('PATCH', f'/api/member/{aisha}', {'last_move': row}, headers={b'if-match': admin('GET', f'/api/member/{aisha}')[2][b'etag']})
     assert status in (403, 422), payload
+
+
+def test_an_action_may_link_the_ledger_row_it_writes(points):
+    """The ledger has no surface, so a Link to one of its rows is not checked against the caller's read access:
+    only trusted code sets it. Before, every such action or move was refused with 403 over HTTP."""
+    app, admin = points
+    aisha = member(app)
+    etag = admin('GET', f'/api/member/{aisha}')[2][b'etag']
+    status, payload, _ = admin('POST', f'/api/member/{aisha}/actions/award', {}, headers={b'if-match': etag})
+    assert status == 200, payload
+    with app.database.transaction() as tx:
+        linked = tx.get(Member, aisha).last_move
+        assert linked is not None and tx.get(PointMove, linked).member == aisha
+    assert admin('GET', f'/api/member/{aisha}')[1]['last_move'] == linked
 
 
 # Migrations

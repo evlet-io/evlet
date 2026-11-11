@@ -1415,7 +1415,9 @@ def validate_tree(context, all_drafts, internal, prior, errors, targets=None):
                 if field.required_if is not None and evaluate(plans(item._definition)[name]['required_if'], item.read) and item._values.get(name) in (None, ''):
                     raise ValueError('This field is required')
                 item._values[name] = field.clean(item._values.get(name))
-                if isinstance(field, Link) and item._values[name] is not None:
+                # A ledger row has no public surface and callers never write a Link to one, so only trusted code
+                # sets it: there is no caller access to check, and nothing to compare without filters.
+                if isinstance(field, Link) and item._values[name] is not None and not (field.ledger_target and not field.filters):
                     message = link_mismatch(context, item, name, field, item._values[name], targets)
                     if message: raise ValueError(message)
             except ValueError as exc:

@@ -103,6 +103,9 @@ with database.transaction() as tx:
   `self.context.session`, its own transaction session, so the rows commit or roll back with the
   move, its Sequence number and the record's changes
   ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+  Such a handler may also set a Link to the row it wrote, such as `self.posting = row.id`. The save
+  does not check that Link against the caller's read access, because the ledger has no surface and
+  callers cannot write the Link themselves. A Link with `filters` is still checked.
 
 ## Ids
 

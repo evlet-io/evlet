@@ -4,6 +4,16 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **Moves and actions that link a ledger row work over HTTP.** A move `run` method or an
+  `@action` that wrote a ledger row and set a Link to it (`document.posting = row.id`) was
+  refused with 403 "You do not have permission for this operation", even for an admin,
+  because the save checked that Link against the caller's read access and ledger models have
+  no surface. Calls through `business.context()` were not affected, so tests missed it.
+
 ## 0.4.1 (10-11-2026)
 
 ### Fixed
