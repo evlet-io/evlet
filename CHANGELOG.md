@@ -4,6 +4,18 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **A value `derive()` sets that its field refuses is a field error, never a 500.** A value
+  with more decimal places than the field allows, or a fraction for an `Integer`, already
+  refused a save with 422, but a preview answered 500 and formulas read the refused value.
+  The value is now emptied after its error is noted, so a preview returns the error and
+  the save stays a 422 naming the field. On a saved record, the error on a rebuilt derived
+  row is keyed by the row id the preview shows. `derive()` still rounds its own values: see
+  [Derived values](docs/model-engine.md#derived-values).
+
 ## 0.4.1 (10-11-2026)
 
 ### Fixed

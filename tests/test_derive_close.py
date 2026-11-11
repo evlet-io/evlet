@@ -84,6 +84,11 @@ class Trip(Model):
         self.places = [{'place': place, 'stops': count, 'minutes': f'{minutes}.00'} for place, (count, minutes) in sorted(totals.items())]
         self.place_count = len(totals)
         self.longest = f'{max((stop.minutes or 0 for stop in self.stops), default=0)}.5'
+        if 'precise' in MISBEHAVE:
+            # More decimal places than the fields allow, and a fraction for an Integer: refused like caller input.
+            self.longest = D(1) / D(3)
+            self.place_count = D('2.5')
+            self.places = [{'place': place, 'stops': count, 'minutes': D('1.005')} for place, (count, _) in sorted(totals.items())]
         shares = []
         if self.plan is not None:
             plan = session.get(Plan, self.plan)
@@ -250,6 +255,30 @@ def test_a_preview_runs_derive_before_its_calculations(app):
     assert body['errors'] == {}
     with app.database.transaction() as tx:
         assert tx.count(Trip) == 0
+
+
+def test_derived_values_with_more_decimal_places_than_the_field_allows_are_field_errors(app):
+    app, admin = app
+    saved = create(admin)
+    row = saved['children']['places'][0]['id']
+    MISBEHAVE.append('precise')
+    expected = {'longest': 'Use at most 2 decimal places', 'place_count': 'Expected an integer'}
+    status, body, _ = admin('POST', '/api/trip', {'children': {'stops': STOPS}})
+    assert status == 422 and {key: body['fields'][key] for key in expected} == expected
+    assert any(key.startswith('places.') and key.endswith('.minutes') for key in body['fields'])
+    # A preview reports the same errors and shows the refused values as empty, never a 500.
+    status, body, _ = admin('POST', '/api/_draft/trip', {'values': {'children': {'stops': STOPS}}})
+    assert status == 200, body
+    assert {key: body['errors'][key] for key in expected} == expected
+    assert body['values']['longest'] is None and body['values']['place_count'] is None
+    # On a saved record the error on a rebuilt row is keyed by the saved row the preview shows.
+    status, body, _ = admin('POST', '/api/_draft/trip', {'id': saved['id'], 'values': {}})
+    assert status == 200, body
+    assert body['errors'][f'places.{row}.minutes'] == 'Use at most 2 decimal places'
+    assert body['values']['children']['places'][0]['id'] == row and body['values']['children']['places'][0]['minutes'] is None
+    status, body, _ = patch(admin, saved['id'], {'title_text': 'changed'})
+    assert status == 422 and body['fields'][f'places.{row}.minutes'] == 'Use at most 2 decimal places'
+    assert admin('GET', f"/api/trip/{saved['id']}")[1]['longest'] == '20.50'
 
 
 def test_a_locked_record_keeps_its_derived_values(app):

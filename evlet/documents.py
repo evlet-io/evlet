@@ -1179,17 +1179,17 @@ def derive(context, draft, internal, errors, targets):
     targets.prefetch(link_values([item for _, item in all_drafts if item.id is None], fetches_only=True))
     for prefix, item in all_drafts:
         if item is draft:
-            apply_inputs(item, prefix, internal(item) | (set(model.__declared_fields__) - fields), errors)
+            apply_inputs(item, prefix, internal(item) | (set(model.__declared_fields__) - fields), errors, clear=True)
             item._caller.update({name: item._values.get(name) for name in fields})
         elif item.parent is draft and prefix.split('.')[0] in row_fields:
             names_here = row_fields[prefix.split('.')[0]]
-            apply_inputs(item, prefix, internal(item) | (set(item._definition.__declared_fields__) - names_here), errors)
+            apply_inputs(item, prefix, internal(item) | (set(item._definition.__declared_fields__) - names_here), errors, clear=True)
             item._caller.update({name: item._values.get(name) for name in names_here})
         elif prefix.split('.')[0] in tables:
             unknown = set(item._values) - set(item._definition.__declared_fields__)
             if unknown:
                 raise ValueError(f'derive() built a {item._definition.__name__} row with unknown fields: {", ".join(sorted(map(str, unknown)))}')
-            apply_inputs(item, prefix, internal(item), errors)
+            apply_inputs(item, prefix, internal(item), errors, clear=True)
             object.__setattr__(item, '_caller', dict(item._values))
             apply_fetches(context, item, prefix, None, errors, targets)
     for name in tables:
@@ -1199,6 +1199,10 @@ def derive(context, draft, internal, errors, targets):
         for row in rows:
             if row.id is None and free:
                 old = free.pop(0)
+                # An error on a rebuilt row follows it to the saved id the preview and response show.
+                before_key, after_key = f'{name}.{row.key}.', f'{name}.{old.id}.'
+                for key in [key for key in errors if key.startswith(before_key)]:
+                    errors[after_key + key[len(before_key):]] = errors.pop(key)
                 object.__setattr__(row, 'id', old.id)
                 object.__setattr__(row, 'key', str(old.id))
     return list(walk(draft))
@@ -1251,8 +1255,10 @@ def current_user(item, field):
     return user.username if field.kind == 'text' else user.id
 
 
-def apply_inputs(item, prefix, internal, errors):
-    """Creation defaults, then type validation of every source (non-calculated) field not in `internal`."""
+def apply_inputs(item, prefix, internal, errors, *, clear=False):
+    """Creation defaults, then type validation of every source (non-calculated) field not in `internal`.
+    With `clear` (values derive() set), a value that fails is emptied after its error is noted, so
+    calculations, previews and responses never read a value the field refuses."""
     for name, field in item._definition.__declared_fields__.items():
         if name in internal: continue
         value = item._values.get(name, MISSING)
@@ -1267,6 +1273,8 @@ def apply_inputs(item, prefix, internal, errors):
                 raise ValueError('Document integers must fit the browser safe range')
         except ValueError as exc:
             errors[prefix + name] = str(exc)
+            if clear:
+                item._values[name] = None
 
 
 def apply_fetches(context, item, prefix, old, errors, targets=None, *, virtual_only=False):

@@ -156,6 +156,14 @@ class Visit(Model):
   row, keyed `table.field` (`lines.net`). `/api/schema` marks derived fields `read_only` (on the
   row model for a row field) and derived Tables `"read_only": true` in `children`, and the record
   page shows those rows without editing and never sends them.
+* **Rounding is the app's job.** A value `derive()` sets is not rounded for it. One with more
+  decimal places than its field allows, or a fraction for an `Integer`, is a field error like a
+  value a caller sent (`longest: Use at most 2 decimal places`, keyed `table.row.field` on a
+  row): the save is a 422 and writes nothing, and a preview returns the error with that value
+  empty, so formulas never read a value the field refuses. Round in `derive()` with
+  `quantize()` (or `round_money` for an amount in a currency), as the examples above do.
+  Formula results are different: they round to the field's scale by its `rounding`
+  ([finite-calculations.md](finite-calculations.md#writers-scales-and-rounding)).
 * **Trusted and read only.** `derive()` is app code. `self.context` is a read-only context
   whose `session` is the write's transaction, read only (`get`, `list`, `count`, `related` and
   `aggregate`; no write methods), for looking up linked records. Reads through it bypass
