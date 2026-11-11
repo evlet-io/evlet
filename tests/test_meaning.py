@@ -278,7 +278,7 @@ def test_related_records_need_a_readable_owning_record(tmp_path):
     assert editor('GET', f'/api/account/{hidden}/related/entry.account')[0] == 404
     # Filtering entries by a scoped Link stays refused, as before.
     assert editor('GET', '/api/entry?filters=' + quote(json.dumps({'account': hidden})))[0] == 403
-    mine = editor('POST', '/api/account', {'title': 'Mine', 'owner': 2})[1]['id']
+    mine = editor('POST', '/api/account', {'title': 'Mine', 'owner': 3})[1]['id']
     admin('POST', '/api/entry', {'account': mine, 'memo': 'y'})
     page = editor('GET', f'/api/account/{mine}/related/entry.account')[1]
     assert page['total'] == 1 and page['items'][0]['memo'] == 'y'

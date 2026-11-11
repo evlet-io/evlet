@@ -12,7 +12,7 @@ from html import escape
 from importlib import resources
 import re
 
-from .auth import AccessError
+from .auth import AccessError, has_role
 from .fields import RichText
 from .models import Model, ValidationError
 from .richtext import sanitise
@@ -439,7 +439,7 @@ class Prints:
 
     def for_report(self, user, report):
         return self._listed(design for design in self.current().values()
-                            if design.report is report and user.role in design.roles and user.role in report.roles)
+                            if design.report is report and has_role(user, design.roles) and has_role(user, report.roles))
 
     @staticmethod
     def _listed(designs):
@@ -512,10 +512,10 @@ class Prints:
     def report_pdf(self, report_name, design_name, body, user):
         reports = getattr(getattr(self.business, 'forms', None), 'reports', {})
         report = reports.get(report_name)
-        if report is None or user.role not in report.roles:
+        if report is None or not has_role(user, report.roles):
             raise AccessError(403, 'Report is unavailable')
         design = self.design(design_name, report=report)
-        if user.role not in design.roles:
+        if not has_role(user, design.roles):
             raise AccessError(403, 'You do not have permission for this operation')
         if not available():
             raise AccessError(503, INSTALL)
@@ -1399,7 +1399,7 @@ class Designer:
                 record = business.policy.record(tx, user, model, record_id)
                 content = render(design, document_context(business, tx, user, model, record), business)
         else:
-            if user.role not in design.report.roles:
+            if not has_role(user, design.report.roles):
                 raise AccessError(403, 'Report is unavailable')
             with business.context(user, readonly=True) as context:
                 data = report_context(context, design.report, body.get('filters') or {})

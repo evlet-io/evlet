@@ -39,7 +39,7 @@ def test_team_changes_are_on_record(secured):
     assert status == 200
     # Record info: the demo wrote the records as the engine, the editor changed this one.
     audit = editor('GET', url)[1]['_audit']
-    assert audit['created_by'] is None and audit['modified_by'] == {'id': 2, 'name': 'editor'}
+    assert audit['created_by'] is None and audit['modified_by'] == {'id': 3, 'name': 'editor'}
     assert audit['modified_at'] > audit['created_at']
     history = editor('GET', url + '/history')
     assert history[0] == 200, history[1]

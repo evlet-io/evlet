@@ -34,21 +34,22 @@ export EVLET_FRONTEND_PORT="${EVLET_FRONTEND_PORT:-5173}"
 export EVLET_PLAYGROUND_HOST="${EVLET_PLAYGROUND_HOST:-127.0.0.1}"
 application="${EVLET_APPLICATION:-examples.playground.app:create_dev_app}"
 
-# A one-time sign-in link for the running Playground: it works once, for 10 minutes. On an empty
-# database it first creates demo-admin with a random password that is never shown. EVLET_DEV_USER
-# picks another account. Set EVLET_DEV_LINK=0 to skip the link at startup.
+# A one-time sign-in link for the running Playground: it works once, for 10 minutes. It signs in the
+# built-in Administrator, which chooses its password on first use. EVLET_DEV_USER picks another
+# account. Set EVLET_DEV_LINK=0 to skip the link at startup.
 print_link() {
   .venv/bin/python - <<'PY' || true
 import os
-from evlet.devlink import MINUTES, issue, link
+from evlet.cli.devlink import message
+from evlet.devlink import issue_link, link
 from examples.playground.migrate import configured_database
 try:
-    token, username = issue(configured_database(), os.environ.get('EVLET_DEV_USER') or None, create_admin=True)
+    token, username, first = issue_link(configured_database(), os.environ.get('EVLET_DEV_USER') or None)
 except ValueError as exc:
     print(f'No sign-in link: {exc}')
 else:
     origin = f"http://{os.environ['EVLET_PLAYGROUND_HOST']}:{os.environ['EVLET_FRONTEND_PORT']}"
-    print(f'Sign in as {username} (works once, for {MINUTES} minutes):\n  {link(origin, token)}')
+    print(message(username, link(origin, token), first))
 PY
 }
 

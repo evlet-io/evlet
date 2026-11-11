@@ -1,12 +1,14 @@
 """evlet dev-link: a fresh one-time sign-in link for a running development server."""
 
 from ..database import Database
-from ..devlink import MINUTES, issue, link, running_playgrounds
+from ..devlink import MINUTES, _issue, link, running_playgrounds
 from ..models import Registry
 from .project import project_root
 
 
-def message(username, url):
+def message(username, url, first=False):
+    if first:
+        return f'The {username} account has no password yet. Open this link to sign in and choose one (works once, for {MINUTES} minutes):\n  {url}'
     return f'Sign in as {username} (works once, for {MINUTES} minutes):\n  {url}'
 
 
@@ -19,8 +21,8 @@ def playground_link(port, user):
     if port is None and len({item[0] for item in running}) > 1:
         raise ValueError('Several Playgrounds are running. Choose one with --port ' + ' or --port '.join(str(item[0]) for item in running))
     found, directory = running[0]
-    token, username = issue(Database(directory / 'playground.sqlite3', Registry(), must_exist=True), user)
-    return message(username, link(f'http://127.0.0.1:{found}', token))
+    token, username, first = _issue(Database(directory / 'playground.sqlite3', Registry(), must_exist=True), user)
+    return message(username, link(f'http://127.0.0.1:{found}', token), first)
 
 
 def instance_link(root, name, port, user):
@@ -37,8 +39,8 @@ def instance_link(root, name, port, user):
     if not (path / 'data/database.sqlite3').is_file():
         raise ValueError(f'Instance {name} has no database yet. Start it with evlet dev first')
     with instance_guard(path, serving=True):
-        token, username = issue(Database(path / 'data/database.sqlite3', Registry(), must_exist=True), user)
-    return message(username, link(f'http://127.0.0.1:{port or 8000}', token))
+        token, username, first = _issue(Database(path / 'data/database.sqlite3', Registry(), must_exist=True), user)
+    return message(username, link(f'http://127.0.0.1:{port or 8000}', token), first)
 
 
 def dev_link(project=None, *, playground=False, instance=None, port=None, user=None):

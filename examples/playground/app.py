@@ -85,8 +85,9 @@ def create_app():
     auth = LocalAuth(database, origins=(*routes.origins(), 'http://127.0.0.1:5173', 'http://localhost:5173',
                                        'http://127.0.0.1:4173', 'http://localhost:4173'),
                      realms=routes.realms(), secure_cookies=False, allow_setup=True,
-                     # The sign-in rules this instance starts from (the defaults); Controls can only make them stricter.
-                     security=Security(session_hours=12, lockout=5, password_min=15))
+                     # The sign-in rules this instance starts from (the defaults). Admin accounts follow them only; Controls can
+                     # change the password minimum and two-step sign-in for everyone else. password_min=1 allows any password.
+                     security=Security(session_hours=12, lockout=5, password_min=15, admin_two_step=True, two_step=False, admin_sign_in=False))
     return build_app(database, auth, routes=routes, ai=playground_ai())
 
 

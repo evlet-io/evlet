@@ -5,6 +5,7 @@ import re
 from http.cookies import CookieError, SimpleCookie
 from urllib.parse import parse_qs, parse_qsl, quote
 
+from ..auth import has_role
 from ..business import Download
 from ..identity import path_id
 
@@ -134,7 +135,7 @@ def _docs_access(application, scope):
     user = _user(application, scope)
     if user is None:
         _sign_in(scope)
-    if user.role not in application.routes.docs_roles:
+    if not has_role(user, application.routes.docs_roles):
         raise HTTPError(404, 'Route not found')
 
 
@@ -175,7 +176,7 @@ def _frontend_user(application, scope, definition):
             if definition.auth == 'desk':
                 _sign_in(scope)
             raise HTTPError(401, 'Sign in to continue')
-        if definition.roles and user.role not in definition.roles:
+        if definition.roles and not has_role(user, definition.roles):
             raise HTTPError(404, 'Route not found')
     return user
 

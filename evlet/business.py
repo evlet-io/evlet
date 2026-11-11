@@ -12,7 +12,7 @@ import re
 from urllib.parse import parse_qs, quote
 
 from .audit import actor_id, detail as audit_detail
-from .auth import AccessError
+from .auth import ADMINISTRATOR, AccessError, has_role
 from .identity import RecordId, checked as item_id, path_id
 from .naming import drop_echoes
 from .database import ROW_LIMIT, Session, using
@@ -482,7 +482,7 @@ class Business:
             from .states import action_schema, state_schema
             entry['actions'] = [{'name': action.name, 'label': action.label,
                                  **(action_schema(self, user, model, action.name) if hasattr(getattr(model, action.name, None), '__action__') else {})}
-                                for action in self.actions.values() if action.model is model and user.role in action.roles and self.policy.allows(user, model, 'update')]
+                                for action in self.actions.values() if action.model is model and has_role(user, action.roles) and self.policy.allows(user, model, 'update')]
             state = state_schema(self, user, model)
             if state is not None:
                 entry['state'] = state
@@ -541,7 +541,7 @@ class Business:
         routes = getattr(self, 'routes', None)
         if routes is None or not routes.docs or routes.scopes(dict(scope.get('headers', [])).get(b'host', b'')) is not None:
             return None
-        if routes.docs_roles and (user is None or user.role not in routes.docs_roles):
+        if routes.docs_roles and (user is None or not has_role(user, routes.docs_roles)):
             return None
         return routes.docs_path
 
@@ -567,6 +567,9 @@ class Business:
                 if 'docs' in info:
                     info['docs'] = self.docs_path(scope, user)
                 extra = {'application': info} if info else {}
+                # An account without a password yet (the Administrator after a development link) sets one first.
+                if self.auth.password_needed(user):
+                    extra.update(password_needed=True, password_min=self.auth.minimum(user.role))
                 return 200, {'user': user.public(), 'csrf': csrf, **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
             except AccessError as exc:
                 if exc.status != 401:
@@ -574,6 +577,12 @@ class Business:
                 if 'docs' in info:
                     info['docs'] = self.docs_path(scope, None)
                 extra = {'application': info} if info else {}
+                # First-run setup creates an admin, so it asks for config.py's admin minimum.
+                if self.auth.allow_setup and self.auth.setup_needed():
+                    extra['password_min'] = self.auth.minimum('admin')
+                # Security(admin_sign_in=True): the sign-in page starts with the Administrator's username.
+                if getattr(self.auth, 'security', None) is not None and self.auth.security.admin_sign_in and self.auth.realm(scope) == 'desk':
+                    extra['sign_in'] = {'username': ADMINISTRATOR}
                 return 200, {'user': None, 'setup': self.auth.allow_setup and self.auth.setup_needed(), **({'tenant': self.tenant} if self.tenant else {}), **extra}, []
         if path == '/api/auth/setup' and method == 'POST':
             self.auth.setup(scope, body)
@@ -696,6 +705,9 @@ class Business:
             return 200, {'values': result, 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
         if path == '/api/auth/logout' and method == 'POST':
             return 204, None, self.auth.logout(scope)
+        if path == '/api/auth/password' and method == 'POST':
+            payload, headers = self.settings.first_password(scope, user, body)
+            return 200, payload, headers
         if path.startswith('/api/auth/users'):
             return self.accounts(scope, body, user)
         if path == '/api/schema' and method == 'GET':
@@ -873,7 +885,7 @@ class Business:
             return self.prints.record_pdf(scope, user, model, record_id, parts[5:], method)
         if len(parts) == 6 and parts[4] == 'actions' and method == 'POST':
             action = self.actions.get((model, parts[5]))
-            if action is None or user.role not in action.roles:
+            if action is None or not has_role(user, action.roles):
                 raise AccessError(403, 'Action is unavailable')
             if body:
                 raise ValidationError({'_form': 'This action takes no arguments'})

@@ -16,7 +16,7 @@ def confirm(message):
 
 def add_link_options(command):
     command.add_argument('--no-link', action='store_true', help='Do not print a one-time sign-in link at startup')
-    command.add_argument('--user', help='Sign the startup link in as this user (default: the only admin)')
+    command.add_argument('--user', help='Sign the startup link in as this user (default: the built-in Administrator)')
 
 
 def choose_instance(root, command):
@@ -159,7 +159,7 @@ def parser():
         if name == 'playground':
             add_link_options(command)
     dev_link = commands.add_parser('dev-link', help='Print a fresh one-time sign-in link for a running evlet dev or evlet playground')
-    dev_link.add_argument('--user', help='Sign in as this user (default: the only admin)')
+    dev_link.add_argument('--user', help='Sign in as this user (default: the built-in Administrator)')
     dev_link.add_argument('--instance', help='Required when the project has several instances')
     dev_link.add_argument('--port', type=int, help='The development server port (default: 8000, or the running Playground)')
     dev_link.add_argument('--playground', action='store_true', help='Use the running evlet playground even inside a project')

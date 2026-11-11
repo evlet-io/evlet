@@ -3,7 +3,7 @@
     "status": 200,
     "body": {
       "user": {
-        "id": 1,
+        "id": 2,
         "username": "admin",
         "role": "admin"
       },
@@ -514,12 +514,12 @@
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
         "created_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         },
         "modified_at": "2026-11-04T06:00:00.000Z",
         "modified_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         }
       },
@@ -572,12 +572,12 @@
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
         "created_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         },
         "modified_at": "2026-11-04T06:03:00.000Z",
         "modified_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         }
       },
@@ -599,7 +599,7 @@
       "revision": 1,
       "execution_id": "fixture-execution_id",
       "at": "fixture-at",
-      "actor": "1",
+      "actor": "2",
       "hash": "fixture-hash",
       "document": {
         "id": "0000000000001",
@@ -665,12 +665,12 @@
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
         "created_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         },
         "modified_at": "2026-11-04T06:04:00.000Z",
         "modified_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         }
       },
@@ -719,12 +719,12 @@
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
         "created_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         },
         "modified_at": "2026-11-04T06:05:00.000Z",
         "modified_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         }
       },
@@ -773,12 +773,12 @@
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
         "created_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         },
         "modified_at": "2026-11-04T06:06:00.000Z",
         "modified_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         }
       },
@@ -830,12 +830,12 @@
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
         "created_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         },
         "modified_at": "2026-11-04T06:09:00.000Z",
         "modified_by": {
-          "id": 1,
+          "id": 2,
           "name": "admin"
         }
       },
@@ -859,14 +859,14 @@
           "revision": 1,
           "execution_id": "fixture-execution_id",
           "at": "fixture-at",
-          "actor": "1",
+          "actor": "2",
           "hash": "fixture-hash"
         },
         {
           "revision": 2,
           "execution_id": "fixture-execution_id",
           "at": "fixture-at",
-          "actor": "1",
+          "actor": "2",
           "hash": "fixture-hash"
         }
       ],
@@ -882,7 +882,7 @@
       "revision": 2,
       "execution_id": "fixture-execution_id",
       "at": "fixture-at",
-      "actor": "1",
+      "actor": "2",
       "hash": "fixture-hash",
       "document": {
         "id": "0000000000001",
@@ -975,7 +975,7 @@
         {
           "id": 6,
           "kind": "reconfirmed",
-          "actor": 1,
+          "actor": 2,
           "at": "fixture-at",
           "data": {
             "fields": {
@@ -1016,7 +1016,7 @@
         {
           "id": 5,
           "kind": "changed",
-          "actor": 1,
+          "actor": 2,
           "at": "fixture-at",
           "data": {
             "fields": {
@@ -1157,7 +1157,7 @@
         {
           "id": 4,
           "kind": "reopened",
-          "actor": 1,
+          "actor": 2,
           "at": "fixture-at",
           "data": {
             "event_id": "fixture-event_id",
@@ -1185,7 +1185,7 @@
         {
           "id": 3,
           "kind": "cancelled",
-          "actor": 1,
+          "actor": 2,
           "at": "fixture-at",
           "data": {
             "event_id": "fixture-event_id",
@@ -1213,7 +1213,7 @@
         {
           "id": 2,
           "kind": "confirmed",
-          "actor": 1,
+          "actor": 2,
           "at": "fixture-at",
           "data": {
             "fields": {
@@ -1254,7 +1254,7 @@
         {
           "id": 1,
           "kind": "created",
-          "actor": 1,
+          "actor": 2,
           "at": "fixture-at",
           "data": {
             "fields": {
@@ -1379,7 +1379,7 @@
       "limit": 50,
       "offset": 0,
       "users": {
-        "1": "admin"
+        "2": "admin"
       }
     },
     "etag": null

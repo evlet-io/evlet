@@ -49,22 +49,23 @@ def etag(c, url):
     return {b'if-match': c('GET', url)[2][b'etag']}
 
 
+# The built-in Administrator is account 1, so the admin the tests set up is 2 and the editor 3.
 def test_plain_routes_record_who_and_when_and_details_show_it(app):
     admin, editor = client(app), client(app, 'editor')
     status, note, _ = admin('POST', '/api/note', {'title': 'First'})
     assert status == 201
     url = f"/api/note/{note['id']}"
-    assert stamps(app, 'note', note['id']) == ('2026-11-04T08:00:00.000Z', 1, '2026-11-04T08:00:00.000Z', 1)
-    assert note['_audit'] == {'created_at': '2026-11-04T08:00:00.000Z', 'created_by': {'id': 1, 'name': 'admin'},
-                              'modified_at': '2026-11-04T08:00:00.000Z', 'modified_by': {'id': 1, 'name': 'admin'}}
+    assert stamps(app, 'note', note['id']) == ('2026-11-04T08:00:00.000Z', 2, '2026-11-04T08:00:00.000Z', 2)
+    assert note['_audit'] == {'created_at': '2026-11-04T08:00:00.000Z', 'created_by': {'id': 2, 'name': 'admin'},
+                              'modified_at': '2026-11-04T08:00:00.000Z', 'modified_by': {'id': 2, 'name': 'admin'}}
     assert editor('PATCH', url, {'title': 'Second'}, headers=etag(editor, url))[0] == 200
     created_at, created_by, modified_at, modified_by = stamps(app, 'note', note['id'])
-    assert (created_at, created_by, modified_by) == ('2026-11-04T08:00:00.000Z', 1, 2) and modified_at > created_at
+    assert (created_at, created_by, modified_by) == ('2026-11-04T08:00:00.000Z', 2, 3) and modified_at > created_at
     # The display name is the short name, then the full name, then the username.
     assert editor('PATCH', '/api/_settings/me/profile', {'full_name': 'Priya Sharma', 'short_name': 'Priya S.'})[0] == 200
     before = editor('GET', url)
-    assert before[1]['_audit']['modified_by'] == {'id': 2, 'name': 'Priya S.'}
-    assert before[1]['_audit']['created_by'] == {'id': 1, 'name': 'admin'}
+    assert before[1]['_audit']['modified_by'] == {'id': 3, 'name': 'Priya S.'}
+    assert before[1]['_audit']['created_by'] == {'id': 2, 'name': 'admin'}
     # Times and names are outside the ETag: a new display name does not make open records stale.
     assert editor('PATCH', '/api/_settings/me/profile', {'short_name': 'P. Sharma'})[0] == 200
     after = editor('GET', url)
@@ -103,15 +104,15 @@ def test_the_column_names_are_reserved():
 def test_python_sessions_record_the_engine_or_the_actor_they_are_given(app):
     with app.database.transaction() as tx:
         engine = tx.create(Note, title='Engine')
-        tx.actor = 2
+        tx.actor = 3
         mine = tx.create(Note, title='Mine')
         tx.update(Note, engine.id, title='Touched')
-    assert stamps(app, 'note', engine.id) == ('2026-11-04T08:00:00.000Z', None, '2026-11-04T08:00:02.000Z', 2)
-    assert stamps(app, 'note', mine.id)[1] == 2
+    assert stamps(app, 'note', engine.id) == ('2026-11-04T08:00:00.000Z', None, '2026-11-04T08:00:02.000Z', 3)
+    assert stamps(app, 'note', mine.id)[1] == 3
     # A Python session read shows the engine as no one.
     with app.database.transaction() as tx:
-        detail = app.business.detail(tx, User(1, 'admin', 'admin'), tx.get(Note, engine.id))
-    assert detail['_audit']['created_by'] is None and detail['_audit']['modified_by'] == {'id': 2, 'name': 'editor'}
+        detail = app.business.detail(tx, User(2, 'admin', 'admin'), tx.get(Note, engine.id))
+    assert detail['_audit']['created_by'] is None and detail['_audit']['modified_by'] == {'id': 3, 'name': 'editor'}
     # An update that changes nothing writes nothing, so it keeps the times.
     with app.database.transaction() as tx:
         tx.update(Note, mine.id)
@@ -124,45 +125,45 @@ def test_document_writes_actions_moves_effects_and_void_record_the_person(app):
     url = books_module.invoice(editor, account)
     record_id = url.rsplit('/', 1)[1]
     created = stamps(app, 'invoice', record_id)
-    assert created[1] == created[3] == 2
+    assert created[1] == created[3] == 3
     # A row change is a change of the document.
     rows = editor('GET', url)[1]['children']['lines']
     status, _, _ = editor('PATCH', url, {'children': {'lines': {'update': [{'id': rows[0]['id'], 'qty': '3'}]}}}, headers=etag(editor, url))
     assert status == 200
     changed = stamps(app, 'invoice', record_id)
-    assert changed[:2] == created[:2] and changed[2] > created[2] and changed[3] == 2
+    assert changed[:2] == created[:2] and changed[2] > created[2] and changed[3] == 3
     # A move by admin posts effect rows created by admin, in the same write.
     assert books_module.move(c, url, 'issued')[0] == 200
     moved = stamps(app, 'invoice', record_id)
-    assert moved[3] == 1 and moved[2] > changed[2]
+    assert moved[3] == 2 and moved[2] > changed[2]
     entries = books_module.entries(app)
-    assert entries and all(entry['evlet_created_by'] == 1 and entry['evlet_created_at'] > changed[2] for entry in entries)
+    assert entries and all(entry['evlet_created_by'] == 2 and entry['evlet_created_at'] > changed[2] for entry in entries)
     # A void changes only the state, and still counts as a change by whoever voided.
     assert editor('POST', f'{url}/void', {'reason': 'Wrong'}, headers=etag(editor, url))[0] == 200
     voided = stamps(app, 'invoice', record_id)
-    assert voided[3] == 2 and voided[2] > moved[2] and voided[:2] == created[:2]
+    assert voided[3] == 3 and voided[2] > moved[2] and voided[:2] == created[:2]
 
 
 def test_contexts_and_actions_in_python_record_their_user(tmp_path, clock):
     app = journal_module.seed(start(Database(tmp_path / 'db.sqlite3', Registry(*journal_module.MODELS))))
-    editor = User(2, 'editor', 'editor')
+    editor = User(3, 'editor', 'editor')
     with app.business.context(editor) as context:
         memo = context.create(journal_module.Memo, title='From Python')
-    assert stamps(app, 'memo', memo['id'])[1] == 2
-    admin = User(1, 'admin', 'admin')
+    assert stamps(app, 'memo', memo['id'])[1] == 3
+    admin = User(2, 'admin', 'admin')
     c = client(app)
     record, url = journal_module.new_invoice(c)
     with app.business.context(editor) as context:
         context.action(journal_module.Invoice, record['id'], 'rename', title='Renamed')
-    assert stamps(app, 'invoice', record['id'])[3] == 2
+    assert stamps(app, 'invoice', record['id'])[3] == 3
     # Two contexts in one transaction: each write is recorded under its own context's user.
     with app.database.transaction() as tx:
         from evlet.documents import Context
         first = Context(app.business, tx, admin).create(journal_module.Memo, title='a')
         second = Context(app.business, tx, editor).create(journal_module.Memo, title='b')
         Context(app.business, tx, admin).update(journal_module.Memo, second['id'], title='c')
-    assert stamps(app, 'memo', first['id'])[1] == 1
-    assert stamps(app, 'memo', second['id'])[1::2] == (2, 1)
+    assert stamps(app, 'memo', first['id'])[1] == 2
+    assert stamps(app, 'memo', second['id'])[1::2] == (3, 2)
 
 
 def test_portal_roles_see_times_but_not_who(app):
@@ -199,7 +200,7 @@ def test_upgrade_adds_and_fills_the_columns_from_the_journal_and_the_id(tmp_path
                                (recent + 1, kind, actor, at))
     database = Database(path, Registry(Note))
     database.initialize()  # A table without the time columns is accepted until the framework step runs.
-    assert upgrade(database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale']
+    assert upgrade(database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator']
     with sqlite3.connect(path) as connection:
         rows = {row[0]: row[1:] for row in connection.execute(f'SELECT id, {", ".join(audit.COLUMNS)} FROM note')}
     assert rows[42] == (None, None, None, None)
@@ -257,6 +258,6 @@ def test_postgresql_records_times_and_backfills_them(pg_dsn, clock):
         tx.connection.execute("INSERT INTO evlet_journal (model, record_id, kind, actor, at, data) VALUES ('note', ?, 'created', '2', "
                               "'2026-10-01T10:00:00.000Z', '{}')", (RecordId(note['id']),))
     app.database.initialize()
-    assert upgrade(app.database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale']
+    assert upgrade(app.database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator']
     assert stamps(app, 'note', note['id']) == ('2026-10-01T10:00:00.000Z', 2, '2026-10-01T10:00:00.000Z', 2)
     assert upgrade(app.database) == []

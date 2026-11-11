@@ -13,7 +13,8 @@ from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
 from . import secrets as vault
-from .auth import AccessError, User, _encode, _scrypt, client_network, hashing_slot, password_hash
+from .auth import (ADMINISTRATOR, ADMINISTRATOR_NAME, AccessError, User, _encode, _scrypt, client_network, hashing_slot, is_administrator,
+                   password_hash)
 from .fields import MISSING, Email, Field
 from .models import ValidationError, checked_body
 
@@ -55,6 +56,9 @@ VERIFY = 'VERIFY_TWO_STEP: Enter a code from your authenticator app to make this
 ENTER_CODE = 'Enter a current code from your app, or a backup code.'
 TOO_MANY_CODES = 'Too many wrong codes. Try again in 15 minutes.'
 NO_EMAIL = "Email is not set up yet, so your address can't be changed here. Ask your admin."
+FIXED_PROFILE = 'The Administrator profile is fixed. You can add an email address for notifications.'
+PASSWORD_SET = 'This account already has a password. Change it in Settings, under Sign-in & security.'
+
 
 
 
@@ -213,10 +217,15 @@ class Settings:
         """Two-step sign-in can run here: a secret key is configured and cryptography is installed."""
         return self.key.configured and vault.cryptography_installed()
 
+    def required_roles(self):
+        """The desk roles that must use two-step sign-in now."""
+        controls = self.business.controls
+        return [role for role, row in controls.roles.items() if row.get('realm') == 'desk' and controls.two_step_required(role)]
+
     def two_step_problem(self):
         """Why roles that require two-step sign-in sign in with a password only on this instance, or None.
         An application without a secret key (not an instance) has no two-step sign-in by design."""
-        if not self.key.configured or not self.business.controls.settings['security.two_step_roles']:
+        if not self.key.configured or not self.required_roles():
             return None
         if not vault.cryptography_installed():
             return 'The cryptography package is not installed on the server, so these roles sign in with a password only. Install it and restart.'
@@ -252,11 +261,17 @@ class Settings:
                 tx.connection.execute(statement)
             if 'two_step_agent' not in self.database.columns(tx.connection, 'evlet_user_profile'):
                 tx.connection.execute("ALTER TABLE evlet_user_profile ADD COLUMN two_step_agent TEXT NOT NULL DEFAULT ''")
+            # The Administrator's name never changes.
+            row = tx.connection.execute("SELECT id FROM evlet_users WHERE username=? AND role='admin'", (ADMINISTRATOR,)).fetchone()
+            if row is not None:
+                self.profile(tx.connection, row['id'])
+                tx.connection.execute('UPDATE evlet_user_profile SET full_name=?, short_name=? WHERE user_id=? AND (full_name<>? OR short_name<>?)',
+                                      (ADMINISTRATOR_NAME, 'Administrator', row['id'], ADMINISTRATOR_NAME, 'Administrator'))
         self.business.auth.second_step = self
-        if self.key.configured and self.business.controls.settings['security.two_step_roles']:
+        if self.key.configured and self.required_roles():
             if not vault.cryptography_installed():
                 logger.warning('Roles %s need two-step sign-in, but the cryptography package is not installed. They sign in with a password only '
-                               'until it is.', ', '.join(self.business.controls.settings['security.two_step_roles']))
+                               'until it is.', ', '.join(self.required_roles()))
             else:
                 try:
                     self.key.check()
@@ -346,7 +361,7 @@ class Settings:
         return connection.execute('SELECT * FROM evlet_user_profile WHERE user_id=?', (user_id,)).fetchone()
 
     def required(self, role, realm='desk'):
-        return realm == 'desk' and role in self.business.controls.settings['security.two_step_roles'] and self.possible()
+        return realm == 'desk' and self.business.controls.two_step_required(role) and self.possible()
 
     def two_step_on(self, user_id):
         with self.database._connection() as connection:
@@ -384,13 +399,15 @@ class Settings:
             # still has to give a two-step code reports true; the routes ask for the code.
             'customize_workspaces': not portal and controls.customizes(scope, user),
             'development': getattr(getattr(self.business, 'routes', None), 'primary', None) is None,
+            # The built-in Administrator: only its email address can change in its profile.
+            'builtin': is_administrator(user),
             'profile': {key: row[key] for key in ('full_name', 'short_name', 'title', 'phone', 'email', 'signature')} | {'photo': row['photo_file'] is not None},
             'prefs': {key: prefs.get(key, value) for key, value in APPEARANCE.items()},
             'notifications': {'events': events, 'quiet': prefs.get('quiet', QUIET)},
             # Unsaved changes kept on leave (evlet.unsaved): limits and how many this person has.
             **({} if portal else {'unsaved': self.business.unsaved.info(user)}),
             'security': {
-                'password_min': self.business.auth.password_min,
+                'password_min': self.business.auth.minimum(user.role),
                 'two_step': {'on': row['two_step_secret'] is not None, 'since': row['two_step_since'], 'agent': row['two_step_agent'], 'codes': codes,
                              'required': self.required(user.role, 'portal' if portal else 'desk'), 'available': available,
                              'verified': user.two_step},
@@ -453,6 +470,8 @@ class Settings:
     # ---------- profile ----------
 
     def save_profile(self, scope, user, body):
+        if is_administrator(user):
+            raise AccessError(409, FIXED_PROFILE)
         limits = {'full_name': 120, 'short_name': 40, 'title': 120, 'phone': 32, 'signature': 1000}
         body, errors = self._body(body, limits), {}
         for key, value in body.items():
@@ -481,6 +500,8 @@ class Settings:
         return 200, Download(content), [(b'content-type', kind.encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
 
     def save_photo(self, user, body):
+        if is_administrator(user):
+            raise AccessError(409, FIXED_PROFILE)
         body = self._body(body, ('type', 'data'))
         kind = body.get('type')
         try:
@@ -769,6 +790,8 @@ class Settings:
                 self._miss(tx.connection, key)
                 stored = tx.connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()['password']
             try:
+                if not stored.startswith('scrypt:'):
+                    raise ValueError()
                 candidate = _scrypt(_encode(password, 1), stored.split(':')[1])
             except (ValueError, UnicodeError):
                 candidate = ''
@@ -846,19 +869,20 @@ class Settings:
         if type(revoke) is not bool:
             raise ValidationError({'revoke_keys': 'Use true or false.'})
         auth = self.business.auth
+        minimum = auth.minimum(user.role)
         if not isinstance(current, str) or not current:
             raise ValidationError({'current': 'Enter your current password.'})
-        if not isinstance(new, str) or len(new) < auth.password_min:
-            raise ValidationError({'new': f'Your workspace needs at least {auth.password_min} characters.'})
+        if not isinstance(new, str) or len(new) < minimum:
+            raise ValidationError({'new': too_short(minimum)})
         if new == current:
             raise ValidationError({'new': "Choose a password you haven't used here before."})
         stored = self._check_password(user, current, 'current')
         if self.two_step_on(user.id):
             self.check_code(scope, user, body.get('code'))
         try:
-            hashed = password_hash(new, minimum=auth.password_min)
+            hashed = password_hash(new, minimum=minimum)
         except ValidationError:
-            raise ValidationError({'new': f'Use between {auth.password_min} and 128 characters.'}) from None
+            raise ValidationError({'new': f'Use between {minimum} and 128 characters.'}) from None
         token = auth.token(scope)
         with self.database.transaction() as tx:
             if tx.connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()['password'] != stored:
@@ -869,6 +893,38 @@ class Settings:
             audit(tx.connection, user.username, 'Users', user.username, 'Password changed in Settings · Signed out other devices and AI assistants'
                   + (f' · Revoked {keys} API key{"s" if keys != 1 else ""}' if revoke else ''))
         return {'changed': True, 'revoked_keys': keys}
+
+    def first_password(self, scope, user, body):
+        """POST /api/auth/password {password}: the first password of an account that has none (the Administrator after a
+        development sign-in link). When its role needs two-step sign-in that is not set up yet, this session ends and the
+        answer is the set-up ticket, as at sign-in; finishing it starts a new session."""
+        from .controls import audit
+        auth = self.business.auth
+        if user.access is not None:
+            raise AccessError(403, 'API keys cannot be used here. Sign in instead.')
+        password = self._body(body, ('password',)).get('password')
+        minimum = auth.minimum(user.role)
+        if not isinstance(password, str) or len(password) < minimum:
+            raise ValidationError({'password': too_short(minimum)})
+        hashed = password_hash(password, minimum=minimum)
+        realm = auth.realm(scope)
+        with self.database.transaction() as tx:
+            account = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user.id,)).fetchone()
+            if account is None or account['password'] != '':
+                raise AccessError(409, PASSWORD_SET)
+            tx.connection.execute('UPDATE evlet_users SET password=? WHERE id=?', (hashed, user.id))
+            audit(tx.connection, user.username, 'Users', user.username, 'First password set')
+            account = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user.id,)).fetchone()
+            challenge = self.challenge(tx, account, realm) if not self.two_step_on_row(tx.connection, user.id) else None
+            if challenge is None:
+                return {'password': True}, []
+            tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (auth.token(scope),))
+        return challenge, [auth.cookie('', realm)]
+
+    @staticmethod
+    def two_step_on_row(connection, user_id):
+        row = connection.execute('SELECT two_step_secret FROM evlet_user_profile WHERE user_id=?', (user_id,)).fetchone()
+        return row is not None and row['two_step_secret'] is not None
 
     def end_sessions(self, scope, user, session_id):
         token = self.business.auth.token(scope)
@@ -932,7 +988,7 @@ class Settings:
 
     def turn_off(self, scope, user, body):
         from .controls import audit
-        if user.role in self.business.controls.settings['security.two_step_roles']:
+        if self.business.controls.two_step_required(user.role):
             raise AccessError(409, 'Required for your role')
         self.reauthenticate(scope, user, body or {})
         with self.database.transaction() as tx:
@@ -1010,6 +1066,10 @@ class Settings:
         except vault.SecretKeyError:
             raise AccessError(503, KEY_PROBLEM) from None
         raise AccessError(401, wrong)
+
+
+def too_short(minimum):
+    return 'Enter a password.' if minimum <= 1 else f'Your workspace needs at least {minimum} characters.'
 
 
 def clear_two_step(connection, user_id):

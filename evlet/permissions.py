@@ -5,7 +5,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass
 from types import MappingProxyType, SimpleNamespace
 
-from .auth import AccessError, PORTAL, PUBLIC, ROLES
+from .auth import AccessError, PORTAL, PUBLIC, ROLES, is_administrator
 from .identity import RecordId
 from .naming import title_sources
 from .fields import Link, Reference
@@ -385,8 +385,20 @@ class Policy:
             printers[model] = frozenset(named)
         self.printers = MappingProxyType(printers)
 
+    def administrator_rule(self, model):
+        """Every operation the model supports, on every row and field: the built-in Administrator's rule.
+        Validation, read-only fields, state rules, period locks and foreign keys still apply."""
+        cache = self.__dict__.setdefault('_administrator', {})
+        if model not in cache:
+            operations = ['read', 'create', 'update', 'delete', 'print']
+            if model in self.registry.journals:
+                operations.append('journal')
+            operations += [operation for operation in CORRECTIONS if corrects(model, operation)]
+            cache[model] = Rule(tuple(operations))
+        return cache[model]
+
     def rule(self, user, model):
-        found = self.rules.get((user.role, model))
+        found = self.administrator_rule(model) if is_administrator(user) else self.rules.get((user.role, model))
         if found is None:
             found = default_rule(self.roles.get(user.role))
         access = getattr(user, 'access', None)
@@ -402,6 +414,8 @@ class Policy:
     def allows(self, user, model, operation):
         if not surface(self.registry, model, operation):
             return False
+        if is_administrator(user):
+            return operation in self.rule(user, model).operations
         if operation in CORRECTIONS:
             access = getattr(user, 'access', None)
             if access is not None and (not access.write or access.models is not None and model not in access.models):
@@ -465,7 +479,7 @@ class Policy:
         again, which grew exponentially with chained formulas.
         """
         cache = self.__dict__.setdefault('_derivations', {})
-        key = (user.role, getattr(user, 'access', None), model, name)
+        key = (user.role, is_administrator(user), getattr(user, 'access', None), model, name)
         if key in cache:
             return cache[key]
         if (model, name) in visiting:
@@ -520,7 +534,7 @@ class Policy:
         Finite plans are acyclic and rules depend only on the role, so results are cached.
         """
         cache = self.__dict__.setdefault('_derived', {})
-        key = (user.role, getattr(user, 'access', None), model, name, kind)
+        key = (user.role, is_administrator(user), getattr(user, 'access', None), model, name, kind)
         if key not in cache:
             cache[key] = self.reads_allowed(user, self.registry.finite_reads(model, name, kind))
         return cache[key]

@@ -660,7 +660,7 @@ nothing to open yet.
 
 | Path | Screen |
 | --- | --- |
-| `/`, `/login` | Sign-in, or the start page when signed in |
+| `/`, `/login` | Sign-in, or the start page when signed in. `/login?user=NAME` fills in the username, and `Security(admin_sign_in=True)` fills in `administrator`. An account without a password yet sees "Set your password" first |
 | `/docs`, `/docs/<topic>` | Docs |
 | `/app/<model>` | List (and board, when `Meta.board` names the State). Search, sort, page, view and filters are in the query |
 | `/app/<model>/new` | New record. Query values fill writable fields: `?customer=4` |

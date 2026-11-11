@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 
-from .auth import AccessError
+from .auth import AccessError, has_role
 from .identity import jsonable, path_id
 from .models import Model, ValidationError
 from .documents import Draft, Snapshot, settle
@@ -251,7 +251,7 @@ class Forms:
 
     def offered(self, user, report):
         """Whether this person may list and run the report: its roles decide, also over a model with Meta.api = None."""
-        return user.role in report.roles
+        return has_role(user, report.roles)
 
     def surfaced(self, model):
         """The storage name of a model callers reach, or None for one with Meta.api = None, which a report never names."""

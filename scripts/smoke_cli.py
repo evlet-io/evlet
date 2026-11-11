@@ -125,7 +125,8 @@ def main():
         with server('playground') as url:
             port = url.rsplit(':', 1)[1]
             output = command('dev-link', '--playground', '--port', port).stdout
-            assert 'Sign in as demo-admin' in output and 'password' not in output.lower()
+            # The Playground's built-in Administrator has no password yet: the link leads to choosing one.
+            assert 'The administrator account has no password yet' in output and 'demo-admin' not in output
             target = urlsplit(output.split()[-1])
             connection = HTTPConnection('127.0.0.1', int(port), timeout=10)
             connection.request('GET', target.path + '?' + target.query)
@@ -134,7 +135,8 @@ def main():
             cookie = response.getheader('Set-Cookie').split(';')[0]
             connection.close()
             with urlopen(Request(url + '/api/auth/session', headers={'Cookie': cookie}), timeout=10) as session:
-                assert json.load(session)['user']['username'] == 'demo-admin'
+                answer = json.load(session)
+                assert answer['user']['username'] == 'administrator' and answer['password_needed'] is True
         with server('docs') as url:
             with urlopen(url + '/cli.md') as response:
                 assert b'evlet setup myproject' in response.read()

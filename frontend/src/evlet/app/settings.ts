@@ -25,6 +25,8 @@ export interface Me {
   /** May use the workspace override routes (/api/_controls/workspaces): the same check those routes make. */
   customize_workspaces: boolean;
   development: boolean;
+  /** The built-in System Administrator: only its email address can change in its profile. */
+  builtin?: boolean;
   profile: { full_name: string; short_name: string; title: string; phone: string; email: string; signature: string; photo: boolean };
   prefs: { theme: Theme; density: 'comfortable' | 'compact'; text: 'default' | 'large'; start: string; counts: boolean; lang: string; tz: string; date: DateFormat; num: NumberFormat; week: string;
     /** Enter moves to the next field in forms (off by default). */ enter_next?: boolean;
@@ -222,6 +224,24 @@ export function PortalSettings(api: ApiClient): Node {
 
 // ---------- profile ----------
 
+/** What a password shorter than the workspace's minimum gets told. */
+export const tooShort = (minimum: number) => minimum <= 1 ? 'Enter a password.' : `Your workspace needs at least ${minimum} characters.`;
+
+/** The built-in System Administrator's profile: fixed, except the email address used for notifications. */
+function BuiltinProfile(ctx: SettingsContext): Node {
+  const me = ctx.me.peek();
+  const profile = derive(() => ctx.me.get().profile);
+  return html`${head('Profile', 'The System Administrator is built into every instance.')}
+    ${section('About this account', '', html`<div class="set-form">
+      <div class="set-field"><span class="lbl">Full name</span><input class="input" disabled aria-label="Full name" value=${me.profile.full_name || 'System Administrator'}>
+        <span class="hint">Fixed. The username and name of this account never change.</span></div>
+      <div class="set-field"><span class="lbl">Username</span><input class="input mono" disabled aria-label="Username" value=${me.user.username}></div>
+      <div class="set-field"><span class="lbl">Email for notifications</span><div class="set-inline"><input class="input" disabled aria-label="Email" prop:value=${() => profile.get().email || 'Not set'}>
+        ${Button({ label: profile.peek().email ? 'Change' : 'Add', size: 'small', onClick: () => changeEmail(ctx) })}</div>
+        <span class="hint">An extra address where this account gets notifications. A change needs a confirmation link.</span></div>
+    </div>`, true)}`;
+}
+
 function ProfilePage(ctx: SettingsContext): Node {
   const me = ctx.me.peek();
   const profile = derive(() => ctx.me.get().profile);
@@ -234,6 +254,7 @@ function ProfilePage(ctx: SettingsContext): Node {
     } catch (failure) { fail(failure); }
     window.history.replaceState(window.history.state, '', window.location.pathname);
   })();
+  if (me.builtin) return BuiltinProfile(ctx);
   const save = async (key: keyof Me['profile'], value: string) => {
     if (value === profile.peek()[key]) return;
     try {
@@ -481,7 +502,7 @@ function passwordForm(api: ApiClient, me: Me, done: () => void) {
   const submit = async () => {
     if (busy.peek()) return;
     if (!current.peek()) return show('current', 'Enter your current password.');
-    if (next.peek().length < minimum) return show('new', `Your workspace needs at least ${minimum} characters.`);
+    if (next.peek().length < minimum) return show('new', tooShort(minimum));
     if (next.peek() !== again.peek()) return show('again', "The two new passwords don't match.");
     if (enrolled && !code.peek().trim()) return show('code', 'Enter a code from your app, or a backup code.');
     busy.set(true);
@@ -501,7 +522,7 @@ function passwordForm(api: ApiClient, me: Me, done: () => void) {
     <div class="set-field full"><label for="pw-cur">Current password</label>${input('current', current, 'current-password')}${fieldError('current')}</div>
     <div class="set-field"><label for="pw-new">New password</label>${input('new', next, 'new-password')}
       <div class="set-meter"><i style:width=${() => next.get() ? `${(score.get() + 1) * 20}%` : '0'} class=${() => `s${score.get()}`}></i></div>
-      <span class="hint" id="pw-rules">${() => next.get().length < minimum ? `At least ${minimum} characters.${next.get().length ? ` ${minimum - next.get().length} more to go.` : ''}` : 'Long enough. A short sentence is easy to remember.'}</span>
+      <span class="hint" id="pw-rules">${() => next.get().length < minimum ? `${minimum <= 1 ? 'Any password will do.' : `At least ${minimum} characters.`}${next.get().length ? ` ${minimum - next.get().length} more to go.` : ''}` : 'Long enough. A short sentence is easy to remember.'}</span>
       ${fieldError('new')}</div>
     <div class="set-field"><label for="pw-again">Type it again</label><input class="input" id="pw-again" type="password" autocomplete="new-password" aria-label="Type it again"
       aria-invalid=${() => error.get()?.field === 'again' || (again.get() && again.get() !== next.get()) ? 'true' : null}

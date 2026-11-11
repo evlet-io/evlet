@@ -64,7 +64,13 @@ export interface ClientOptions {
 
 // Shapes from the Python routes.
 export interface User { id: number; username: string; role: string }
-export interface Session { user: User | null; csrf?: string; setup?: boolean; tenant?: unknown; application?: { name?: string; playground?: boolean; docs?: string | null } }
+export interface Session { user: User | null; csrf?: string; setup?: boolean; tenant?: unknown; application?: { name?: string; playground?: boolean; docs?: string | null };
+  /** Security(admin_sign_in=True) in config.py: the username the sign-in page starts with. */
+  sign_in?: { username: string };
+  /** Signed in, but the account has no password yet (the Administrator after a development link). */
+  password_needed?: boolean;
+  /** First-run setup: the shortest password the new administrator may have. */
+  password_min?: number }
 export interface Page<T> { items: T[]; total: number; limit: number; offset: number }
 export type RecordData = Record<string, unknown> & {
   /** The 13-character text id (ids.ts). */

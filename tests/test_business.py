@@ -143,10 +143,11 @@ def test_setup_loopback_once_and_no_account_role_override(tmp_path):
 def test_account_management_revokes_sessions_and_preserves_last_admin(secured):
     admin, viewer = client(secured), client(secured, 'viewer')
     assert viewer('GET', '/api/auth/users')[0] == 403
-    assert admin('PATCH', '/api/auth/users/1', {'active': False})[0] == 409
-    assert admin('PATCH', '/api/auth/users/1', {'role': 'editor'})[0] == 409
+    # Account 1 is the built-in Administrator (no password yet), so the admin set up here is 2 and the viewer 4.
+    assert admin('PATCH', '/api/auth/users/2', {'active': False})[0] == 409
+    assert admin('PATCH', '/api/auth/users/2', {'role': 'editor'})[0] == 409
     assert admin('POST', '/api/auth/users', {'username': 'other', 'password': PASSWORD, 'role': 'editor'})[0] == 201
-    assert admin('PATCH', '/api/auth/users/3', {'role': 'editor'})[0] == 204
+    assert admin('PATCH', '/api/auth/users/4', {'role': 'editor'})[0] == 204
     assert viewer('GET', '/api/schema')[0] == 401
     assert all('password' not in row for row in admin('GET', '/api/auth/users')[1]['items'])
 
@@ -306,7 +307,7 @@ def test_concurrent_completion_commits_once(secured):
 def test_concurrent_admin_changes_keep_one_active_admin(secured, hashed):
     from concurrent.futures import ThreadPoolExecutor
     with secured.database.transaction() as tx:
-        tx.connection.execute("UPDATE evlet_users SET role='admin' WHERE id=2")
+        tx.connection.execute("UPDATE evlet_users SET role='admin' WHERE id=3")
     def disable(user_id):
         from evlet.auth import AccessError
         try:
@@ -315,9 +316,10 @@ def test_concurrent_admin_changes_keep_one_active_admin(secured, hashed):
         except AccessError as exc:
             return exc.status
     with ThreadPoolExecutor(max_workers=2) as executor:
-        results = list(executor.map(disable, [1, 2]))
+        results = list(executor.map(disable, [2, 3]))
     assert sorted(results) == [204, 409]
-    assert sum(user['active'] and user['role'] == 'admin' for user in secured.business.auth.users()) == 1
+    # Besides the built-in Administrator, which has no password yet and so does not count.
+    assert sum(user['active'] and user['role'] == 'admin' and user['username'] != 'administrator' for user in secured.business.auth.users()) == 1
 
 
 def test_child_permissions_rollback_parent_and_do_not_delete_hidden_rows(secured):
@@ -373,7 +375,8 @@ def test_account_listing_pages_without_exposing_passwords(secured, hashed):
     c = client(secured)
     first = c('GET', '/api/auth/users')[1]
     second = c('GET', '/api/auth/users?offset=100')[1]
-    assert len(first['items']) == 100 and len(second['items']) == 5 and second['total'] == 105
+    # 102 viewers, the three accounts the fixture adds and the built-in Administrator.
+    assert len(first['items']) == 100 and len(second['items']) == 6 and second['total'] == 106
     assert first['items'][-1]['id'] < second['items'][0]['id']
     assert all(set(row) == {'id', 'username', 'role', 'active'} for row in second['items'])
     for query in ('offset=-1', 'offset=x', 'offset=1&offset=2', 'other=x'):

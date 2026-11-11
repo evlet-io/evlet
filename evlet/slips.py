@@ -8,7 +8,7 @@ import hashlib
 import json
 import re
 
-from .auth import AccessError
+from .auth import AccessError, has_role
 from .documents import Draft, settle, walk
 from .forms import draft_values, form_draft, metadata
 from .identity import RecordId, jsonable
@@ -211,7 +211,7 @@ class Slips:
     def allowed(self, user, slip):
         """Whether the schema should offer this slip to the role (the routes still check everything)."""
         policy = self.business.policy
-        if user.role not in slip.roles:
+        if not has_role(user, slip.roles):
             return False
         if slip.__source__ is not None:
             model, operation = slip.permission or (slip.__source__, 'update')
@@ -230,7 +230,7 @@ class Slips:
     def require(self, context, slip, source):
         """Check the role, the source record and the target model; returns the source record or None."""
         user, policy, registry = context.user, self.business.policy, self.business.registry
-        if user.role not in slip.roles:
+        if not has_role(user, slip.roles):
             raise AccessError(403, 'Slip is unavailable')
         if slip.becomes is not None:
             policy.require(user, slip.becomes, 'create')
