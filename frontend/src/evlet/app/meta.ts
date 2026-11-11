@@ -165,10 +165,10 @@ export const groupOf = (model: ScreenModel) => model.state || model.children?.le
 
 const visible = (model: ScreenModel) => model.fields.filter(field => !field.hidden);
 
-/** List columns: Meta.list_fields (without id) or the first eight visible fields; the title first. */
+/** List columns: Meta.list_fields (without id) or the first eight visible fields that are not column=False; the title first. */
 export function listFields(model: ScreenModel): FieldSchema[] {
   const named = (model.list_fields ?? []).filter(name => name !== 'id').map(name => fieldOf(model, name)).filter((field): field is FieldSchema => Boolean(field && !field.hidden));
-  let fields = named.length ? named : visible(model).filter(field => field.type !== 'longtext' && field.type !== 'richtext' && field.type !== 'image');
+  let fields = named.length ? named : visible(model).filter(field => field.column !== false && field.type !== 'longtext' && field.type !== 'richtext' && field.type !== 'image');
   const title = fieldOf(model, model.title_field);
   if (title && !title.hidden && !fields.includes(title)) fields = [title, ...fields];
   return fields.slice(0, 8);

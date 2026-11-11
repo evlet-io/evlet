@@ -23,7 +23,7 @@ import { NoteComposer } from './composer';
 import { FieldGrid } from '../ui/inline';
 import { humanize } from '../ui/kinds';
 import { copyText, DialogFooter, MenuButton, openDrawer, SplitButton, openModal, toast, type MenuItem } from '../ui/layers';
-import { DataTable, emptyPrefs, type Column } from '../ui/table';
+import { DataTable, gridPrefs, type Column } from '../ui/table';
 import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
@@ -843,7 +843,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     heading: { type: model.label, icon: look.icon, title: () => titleText.get(),
       number: numberText ?? (naming ? () => { const value = store.field('name').value.get(); return value && String(value) !== titleText.get() ? String(value) : ''; } : null),
       mark: () => look.person ? Avatar({ name: markName, size: 'sm' }) : RecordMark({ name: markName, size: 'sm', tint: look.tint }), footer: () => saveBarView() },
-    prefs: prefs.cell(`grid.${name}.${child.name}`, emptyPrefs()) });
+    prefs: prefs.cell(`grid.${name}.${child.name}`, gridPrefs(store.table(child.name).model.fields)) });
 
   // ---------- a compact record page ----------
 

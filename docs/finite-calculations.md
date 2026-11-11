@@ -495,6 +495,29 @@ entries with `kind` (`initial`, `applies_when`, `required_when`, `locked_when`) 
 suggestion and rules, named `field:kind` in the graph. The record view evaluates the shipped
 plan in the browser and the server checks every write again.
 
+A hidden unstored intermediate is a field declared `hidden=True, stored=False` with a finite
+`compute=` on a model with `permissions` (where `hidden=True` makes a field unreadable), for example
+a line's tax before the document rounds it once:
+
+```python
+class Line(Child):
+    net = Currency(currency="code", compute=F("qty") * F("price"))
+    tax_exact = Decimal(scale=None, stored=False, hidden=True, compute=F("net") * F("tax_code.rate") / 100)
+
+class Bill(Model):
+    tax_total = Currency(currency="code", compute=lines.sum("tax_exact"))
+```
+
+For a role that may read every input of its formula (and whose `read_fields`, if declared,
+name it), the intermediate does not withhold the results that read it: `tax_total` is readable
+and local. The shipped plan carries the intermediate's formula so the browser works out every
+formula on the row, but the intermediate is never named in `capabilities`, never in the model's
+schema fields, and never in a record, list or preview response. Its formula reaches the browser,
+so do not use it to keep a rate or constant secret; for that, keep it out of the role's
+`read_fields`, which withholds the plan as before. A write that names the intermediate (or a
+result that reads it) is refused with its own error, such as `COMPUTED_FIELD_WRITE: this value
+is calculated`, not the general "One or more values are invalid".
+
 ## Browser engine
 
 `frontend/src/evlet/model/finite.ts` evaluates the same plan with no imports and no DOM. A `FiniteDocument` session offers `set`, `addRow`, `removeRow`, `replaceRows`,

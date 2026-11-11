@@ -9769,6 +9769,10 @@
           "read_only": true
         }
       ],
+      "derives": [
+        "skill_count",
+        "skill_levels"
+      ],
       "actions": [
         {
           "name": "recognise",
@@ -9885,8 +9889,8 @@
         "id",
         "price_list",
         "customer",
-        "currency",
-        "rate"
+        "rate",
+        "min_qty"
       ],
       "search_fields": [
         "price_list",
@@ -9977,6 +9981,7 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "column": false,
           "default_kind": "static",
           "default": "AED",
           "stored": true,

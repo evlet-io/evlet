@@ -310,6 +310,9 @@ def test_the_schema_marks_derived_fields_and_tables_read_only(app):
     fields = {field['name']: field for field in trip['fields']}
     assert fields['place_count']['read_only'] is True and fields['longest']['read_only'] is True
     assert fields['amount']['read_only'] is False
+    # The form previews these on the server when the person pauses, so they show before the save.
+    assert trip['derives'] == ['places', 'place_count', 'longest', 'shares']
+    assert all('derives' not in model for model in schema['models'] if model['name'] in ('stop',))
 
 
 def test_declarations_are_checked_when_the_model_is_defined():

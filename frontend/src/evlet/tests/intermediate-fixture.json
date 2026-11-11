@@ -1,0 +1,672 @@
+{
+ "models": [
+  {
+   "calculation": {
+    "capabilities": {
+     "items[*].code": "local_universal",
+     "items[*].gross": "local_universal",
+     "items[*].net": "local_universal",
+     "net_total": "local_universal",
+     "tax_total": "local_universal"
+    },
+    "language": "finite-v1",
+    "model_schema_hash": "sha256:63cf4c27624cdbc248644023ac5271cb442bf7c8af5b4ba9f932b4bf626996ec",
+    "numeric_profile": "finite40-hu18-v1",
+    "plan": {
+     "compiler_version": "evlet-finite-1",
+     "expression_version": 1,
+     "fields": [
+      {
+       "expression": {
+        "$expr": "ref",
+        "field": "code",
+        "scope": "parent"
+       },
+       "field": "code",
+       "path": [
+        "items"
+       ],
+       "reads": [
+        [
+         "parent",
+         null,
+         "code"
+        ]
+       ],
+       "result_type": "text",
+       "rounding": null,
+       "scale": null,
+       "stored": true,
+       "target": "items[*].code",
+       "target_type": "text"
+      },
+      {
+       "currency": {
+        "expression": {
+         "$expr": "ref",
+         "field": "code",
+         "scope": "self"
+        },
+        "reads": [
+         [
+          "self",
+          null,
+          "code"
+         ]
+        ]
+       },
+       "expression": {
+        "$expr": "mul",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "qty",
+          "scope": "self"
+         },
+         {
+          "$expr": "ref",
+          "field": "price",
+          "scope": "self"
+         }
+        ]
+       },
+       "field": "net",
+       "path": [
+        "items"
+       ],
+       "reads": [
+        [
+         "self",
+         null,
+         "qty"
+        ],
+        [
+         "self",
+         null,
+         "price"
+        ],
+        [
+         "self",
+         null,
+         "code"
+        ]
+       ],
+       "result_type": "decimal",
+       "rounding": "half_up",
+       "scale": 6,
+       "stored": true,
+       "target": "items[*].net",
+       "target_type": "currency"
+      },
+      {
+       "expression": {
+        "$expr": "mul",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "net",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "decimal",
+          "value": "0.05"
+         }
+        ]
+       },
+       "field": "tax_exact",
+       "path": [
+        "items"
+       ],
+       "reads": [
+        [
+         "self",
+         null,
+         "net"
+        ]
+       ],
+       "result_type": "decimal",
+       "rounding": "half_even",
+       "scale": null,
+       "stored": false,
+       "target": "items[*].tax_exact",
+       "target_type": "decimal"
+      },
+      {
+       "currency": {
+        "expression": {
+         "$expr": "ref",
+         "field": "code",
+         "scope": "self"
+        },
+        "reads": [
+         [
+          "self",
+          null,
+          "code"
+         ]
+        ]
+       },
+       "expression": {
+        "$expr": "aggregate",
+        "field": "tax_exact",
+        "kind": "sum",
+        "table": "items",
+        "where": null
+       },
+       "field": "tax_total",
+       "path": [],
+       "reads": [
+        [
+         "membership",
+         "items",
+         null
+        ],
+        [
+         "member",
+         "items",
+         "tax_exact"
+        ],
+        [
+         "self",
+         null,
+         "code"
+        ]
+       ],
+       "result_type": "decimal",
+       "rounding": "half_up",
+       "scale": 6,
+       "stored": true,
+       "target": "tax_total",
+       "target_type": "currency"
+      },
+      {
+       "currency": {
+        "expression": {
+         "$expr": "ref",
+         "field": "code",
+         "scope": "self"
+        },
+        "reads": [
+         [
+          "self",
+          null,
+          "code"
+         ]
+        ]
+       },
+       "expression": {
+        "$expr": "aggregate",
+        "field": "net",
+        "kind": "sum",
+        "table": "items",
+        "where": null
+       },
+       "field": "net_total",
+       "path": [],
+       "reads": [
+        [
+         "membership",
+         "items",
+         null
+        ],
+        [
+         "member",
+         "items",
+         "net"
+        ],
+        [
+         "self",
+         null,
+         "code"
+        ]
+       ],
+       "result_type": "decimal",
+       "rounding": "half_up",
+       "scale": 6,
+       "stored": true,
+       "target": "net_total",
+       "target_type": "currency"
+      },
+      {
+       "expression": {
+        "$expr": "add",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "net",
+          "scope": "self"
+         },
+         {
+          "$expr": "ref",
+          "field": "tax_exact",
+          "scope": "self"
+         }
+        ]
+       },
+       "field": "gross",
+       "path": [
+        "items"
+       ],
+       "reads": [
+        [
+         "self",
+         null,
+         "net"
+        ],
+        [
+         "self",
+         null,
+         "tax_exact"
+        ]
+       ],
+       "result_type": "decimal",
+       "rounding": "half_even",
+       "scale": 2,
+       "stored": true,
+       "target": "items[*].gross",
+       "target_type": "decimal"
+      }
+     ],
+     "language": "finite-v1",
+     "limits": {
+      "collection_rows": 1000,
+      "decimal_text": 128,
+      "document_rows": 5000,
+      "evaluation_steps": 1000000,
+      "expression_depth": 32,
+      "expression_nodes": 128,
+      "graph_edges": 250000,
+      "graph_nodes": 50000,
+      "table_depth": 8
+     },
+     "model_schema_hash": "sha256:e82068b56e9e44e18f9b378f451ad8869c139e0984fa1ca78eba3b27d256c250",
+     "numeric_profile": "finite40-hu18-v1",
+     "plan_version": 1,
+     "root_resource": "bill",
+     "source_plan_hash": "sha256:63cf4c27624cdbc248644023ac5271cb442bf7c8af5b4ba9f932b4bf626996ec",
+     "tables": {
+      "$root": {
+       "fields": {
+        "code": {
+         "computed": false,
+         "default": {
+          "value": "KWD"
+         },
+         "kind": "text",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": null,
+         "stored": true,
+         "type": "text"
+        },
+        "name": {
+         "computed": false,
+         "default": null,
+         "kind": "text",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": null,
+         "stored": true,
+         "type": "text"
+        },
+        "net_total": {
+         "computed": true,
+         "default": null,
+         "kind": "currency",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": 6,
+         "stored": true,
+         "type": "decimal"
+        },
+        "tax_total": {
+         "computed": true,
+         "default": null,
+         "kind": "currency",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": 6,
+         "stored": true,
+         "type": "decimal"
+        },
+        "title": {
+         "computed": false,
+         "default": {
+          "value": "Bill"
+         },
+         "kind": "text",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": null,
+         "stored": true,
+         "type": "text"
+        }
+       },
+       "model": "bill",
+       "path": [],
+       "tables": [
+        "items"
+       ]
+      },
+      "items[*]": {
+       "fields": {
+        "code": {
+         "computed": true,
+         "default": null,
+         "kind": "text",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": null,
+         "stored": true,
+         "type": "text"
+        },
+        "gross": {
+         "computed": true,
+         "default": null,
+         "kind": "decimal",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": 2,
+         "stored": true,
+         "type": "decimal"
+        },
+        "net": {
+         "computed": true,
+         "default": null,
+         "kind": "currency",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": 6,
+         "stored": true,
+         "type": "decimal"
+        },
+        "note": {
+         "computed": false,
+         "default": {
+          "value": ""
+         },
+         "kind": "text",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": null,
+         "stored": true,
+         "type": "text"
+        },
+        "price": {
+         "computed": false,
+         "default": {
+          "value": "0"
+         },
+         "kind": "decimal",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": 2,
+         "stored": true,
+         "type": "decimal"
+        },
+        "qty": {
+         "computed": false,
+         "default": {
+          "value": "1"
+         },
+         "kind": "decimal",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": 2,
+         "stored": true,
+         "type": "decimal"
+        },
+        "tax_exact": {
+         "computed": true,
+         "default": null,
+         "kind": "decimal",
+         "maximum": null,
+         "minimum": null,
+         "required": false,
+         "scale": null,
+         "stored": false,
+         "type": "decimal"
+        }
+       },
+       "max_rows": 100,
+       "min_rows": 0,
+       "model": "bill_items",
+       "path": [
+        "items"
+       ],
+       "tables": []
+      }
+     }
+    }
+   },
+   "children": [
+    {
+     "filterable": true,
+     "label": "Items",
+     "link": "evlet_owner",
+     "max_rows": 100,
+     "min_rows": 0,
+     "model": "bill_items",
+     "name": "items",
+     "row_changes": true
+    }
+   ],
+   "fields": [
+    {
+     "compute": null,
+     "default": "Bill",
+     "default_kind": "static",
+     "hidden": false,
+     "label": "Title",
+     "name": "title",
+     "read_only": false,
+     "required": false,
+     "type": "text"
+    },
+    {
+     "column": false,
+     "compute": null,
+     "default": "KWD",
+     "default_kind": "static",
+     "hidden": false,
+     "label": "Code",
+     "name": "code",
+     "read_only": false,
+     "required": false,
+     "type": "text"
+    },
+    {
+     "compute": {
+      "$expr": "aggregate",
+      "field": "tax_exact",
+      "kind": "sum",
+      "table": "items",
+      "where": null
+     },
+     "currency_source": {
+      "field": "code"
+     },
+     "default_kind": "none",
+     "hidden": false,
+     "label": "Tax total",
+     "name": "tax_total",
+     "read_only": true,
+     "required": false,
+     "scale": 6,
+     "type": "currency"
+    },
+    {
+     "compute": {
+      "$expr": "aggregate",
+      "field": "net",
+      "kind": "sum",
+      "table": "items",
+      "where": null
+     },
+     "currency_source": {
+      "field": "code"
+     },
+     "default_kind": "none",
+     "hidden": false,
+     "label": "Net total",
+     "name": "net_total",
+     "read_only": true,
+     "required": false,
+     "scale": 6,
+     "type": "currency"
+    },
+    {
+     "compute": null,
+     "default_kind": "none",
+     "hidden": true,
+     "label": "Name",
+     "name": "name",
+     "read_only": true,
+     "required": false,
+     "type": "text"
+    }
+   ],
+   "label": "Bill",
+   "list_fields": [
+    "id",
+    "title",
+    "tax_total",
+    "net_total"
+   ],
+   "name": "bill",
+   "plural": "Bills",
+   "title_field": "title"
+  },
+  {
+   "children": [],
+   "fields": [
+    {
+     "compute": null,
+     "default": "1.00",
+     "default_kind": "static",
+     "hidden": false,
+     "label": "Qty",
+     "name": "qty",
+     "read_only": false,
+     "required": false,
+     "scale": 2,
+     "type": "decimal"
+    },
+    {
+     "compute": null,
+     "default": "0.00",
+     "default_kind": "static",
+     "hidden": false,
+     "label": "Price",
+     "name": "price",
+     "read_only": false,
+     "required": false,
+     "scale": 2,
+     "type": "decimal"
+    },
+    {
+     "column": false,
+     "compute": {
+      "$expr": "ref",
+      "field": "code",
+      "scope": "parent"
+     },
+     "default_kind": "none",
+     "hidden": false,
+     "label": "Code",
+     "name": "code",
+     "read_only": true,
+     "required": false,
+     "type": "text"
+    },
+    {
+     "compute": {
+      "$expr": "mul",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "qty",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "price",
+        "scope": "self"
+       }
+      ]
+     },
+     "currency_source": {
+      "field": "code"
+     },
+     "default_kind": "none",
+     "hidden": false,
+     "label": "Net",
+     "name": "net",
+     "read_only": true,
+     "required": false,
+     "scale": 6,
+     "type": "currency"
+    },
+    {
+     "compute": {
+      "$expr": "add",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "net",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "tax_exact",
+        "scope": "self"
+       }
+      ]
+     },
+     "default_kind": "none",
+     "hidden": false,
+     "label": "Gross",
+     "name": "gross",
+     "read_only": true,
+     "required": false,
+     "scale": 2,
+     "type": "decimal"
+    },
+    {
+     "compute": null,
+     "default": "",
+     "default_kind": "static",
+     "hidden": false,
+     "label": "Note",
+     "name": "note",
+     "read_only": false,
+     "required": false,
+     "type": "text"
+    }
+   ],
+   "label": "Item",
+   "list_fields": [
+    "id",
+    "qty",
+    "price",
+    "net",
+    "gross"
+   ],
+   "name": "bill_items",
+   "plural": "Items",
+   "title_field": "code"
+  }
+ ]
+}

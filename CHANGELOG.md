@@ -4,6 +4,32 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Added
+
+- **`column=False` on a field.** It leaves the field out of a list's default columns and a
+  Table grid's default columns, while the form and row editor still show it and the grid's
+  Columns menu can show it again. Use it for a currency source: the amounts keep showing in its
+  currency, because the value still travels with each record. Display only, like `copy=`.
+- **The record form previews `derive()` values while you edit.** A model with `Meta.derives`
+  lists them in its schema (`derives`). When the person pauses for 600 ms, the form sends the
+  draft to `POST /api/_draft/{model}` and shows the derived fields, row values and derived
+  Table rows, without making them unsaved changes. Stale answers are dropped. Models without
+  `Meta.derives` never ask.
+
+### Fixed
+
+- **A hidden unstored intermediate no longer stops the browser calculating.** On a model with
+  `permissions`, a field with `hidden=True, stored=False` and a finite `compute=` that other
+  formulas read withheld those formulas and the whole plan, so every calculated value on the
+  form stayed blank until a save. When the role can read every input of its formula, the plan
+  now ships with it and the browser works out every formula on the row. The intermediate is
+  still never named in the schema or in any response.
+- **Writing such a field reports the real error.** A write naming a hidden intermediate, or a
+  result that reads it, now fails with `COMPUTED_FIELD_WRITE: this value is calculated`
+  instead of "One or more values are invalid".
+
 ## 0.4.1 (10-11-2026)
 
 ### Fixed

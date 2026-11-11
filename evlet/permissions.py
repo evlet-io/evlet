@@ -533,8 +533,23 @@ class Policy:
         return all(
             self.allows(user, target, 'read')
             and not (scope in ('member', 'membership', 'lookup') and self.rule(user, target).scope is not None)
-            and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read))
+            and (read is None or read in self.presented(user, target) and self.derivation_allowed(user, target, read)
+                 or self.intermediate(user, target, read))
             for scope, target, read in reads)
+
+    def intermediate(self, user, model, name):
+        """Whether a field is a hidden intermediate for this role: hidden=True, unstored and finite-calculated,
+        on a governed model, in the role's read fields, and every input it reads readable. It stays out of
+        records, lists and the schema, but formulas that read it are readable, and the browser computes it
+        from the shipped plan (its formula reads only what the role can read already)."""
+        from .calc import is_finite
+        field = model.__declared_fields__.get(name)
+        if field is None or not field.hidden or field.stored or not is_finite(field) or model not in self.governed:
+            return False
+        rule = self.rule(user, model)
+        if rule.read_fields is not None and name not in rule.read_fields:
+            return False
+        return self.expression_allowed(user, model, name)
 
     def scope_sql(self, user, model):
         rule = self.rule(user, model)
