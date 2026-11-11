@@ -75,7 +75,7 @@ def test_cards_name_derived_fields_and_per_record_measures():
     ('cost', r'name up to 5 derived fields or per-record measures'),
     (('cost', 3), r'name up to 5 derived fields or per-record measures'),
     (('nothing',), r"Job has no field or measure 'nothing'"),
-    (('hours',), r'hours is not derived; a card shows a field with compute=, fetch= or query=, or a per-record measure'),
+    (('hours',), r'hours is not derived; a card shows a field with compute=, fetch= or query=, a field derive\(\) sets \(Meta.derives\), or a per-record measure'),
     (('lines',), r"Job has no field or measure 'lines'"),
     (('left',), r'left is hidden'),
     (('jobs',), r'jobs is a model-level measure; a card shows a per-record measure'),
@@ -83,6 +83,29 @@ def test_cards_name_derived_fields_and_per_record_measures():
 def test_card_mistakes_fail_registration(cards, message):
     with pytest.raises(ValueError, match=r'Job\.Meta\.cards: ' + message):
         Registry(*job_model(cards=cards))
+
+
+def test_a_card_can_show_a_field_derive_sets(tmp_path):
+    """A field derive() fills (Meta.derives) is a derived value like a formula's result, so it may be a card."""
+    class Quote(Model):
+        permissions = ALL
+        amount = Currency(default='0.00', currency='AED')
+        rate = Integer(default=0)
+        share = Currency(currency='AED')
+
+        class Meta:
+            derives = ('share',)
+            cards = ('share',)
+
+        def derive(self):
+            self.share = self.amount * self.rate
+
+    registry = Registry(Quote)
+    assert registry.cards[Quote] == ('share',)
+    admin = client(serve(Database(tmp_path / 'derived-cards.sqlite3', registry)))
+    assert next(item for item in admin('GET', '/api/schema')[1]['models'] if item['name'] == 'quote')['cards'] == ['share']
+    status, body, _ = admin('POST', '/api/quote', {'amount': '12.50', 'rate': 2})
+    assert status == 201 and body['share'] == '25.00'
 
 
 def test_cards_are_for_root_models_and_a_name_cannot_be_both():

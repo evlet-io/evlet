@@ -214,6 +214,8 @@ class Employee(Model):
         # derive() below sets these on every save and preview; nobody writes them, and the Skill levels
         # table is read only on the form (docs/model-engine.md#derived-values).
         derives = ('skill_count', 'skill_levels')
+        # A key card may show a value derive() sets, like a formula's result.
+        cards = ('skill_count',)
 
     # Moving someone changes every team above them, so each save keeps who changed reports_to and when.
     track_changes = True

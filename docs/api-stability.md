@@ -46,7 +46,7 @@ production ready, but the rules below hold from 0.3 on.
   and `Context.unlocked_periods(reason)` are public for trusted code
   ([model-engine.md](model-engine.md#closed-periods)).
 
-- **Compact record pages.** `Meta.cards` (zero to five derived fields or per-record measures),
+- **Compact record pages.** `Meta.cards` (zero to five derived fields, including those `derive()` sets, or per-record measures),
   `Main(fields, *tables)` as the first block of `Meta.layout`, `Section(..., description=None)`, and
   the schema keys they add: `cards` on a model entry, `"compact": true` on `record_layout`,
   `"main": true` on the Main blocks and layout section, and `description` on a layout section

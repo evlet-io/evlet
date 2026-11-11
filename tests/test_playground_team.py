@@ -116,6 +116,8 @@ def test_employee_skill_levels_are_derived_and_delete_waits_for_their_reports(se
     assert status == 200, body
     assert body['skill_count'] == 3
     assert [(row['level'], row['skills']) for row in body['children']['skill_levels']] == [('learning', 1), ('expert', 2)]
+    # The derived count is the record page's key card.
+    assert next(item for item in editor('GET', '/api/schema')[1]['models'] if item['name'] == 'employee')['cards'] == ['skill_count']
     # Nobody writes them: the field and the table are read only.
     status, refused, _ = editor('PATCH', url, {'skill_count': 9}, headers={b'if-match': editor('GET', url)[2][b'etag']})
     assert status == 422 and refused['fields'] == {'skill_count': 'DERIVED_FIELD_WRITE: this value is set by the record'}

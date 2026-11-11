@@ -40,7 +40,8 @@ the fields the caller may read.
 ## Cards
 
 `Meta.cards` names up to five derived values shown as cards at the top of a compact record
-page: fields with `compute=`, `fetch=` or `query=`, and per-record measures. Like key fields,
+page: fields with `compute=`, `fetch=` or `query=`, fields `derive()` sets (`Meta.derives`),
+and per-record measures. Like key fields,
 the schema lists only the cards the caller may read. See
 [ui.md](ui.md#compact-record-page).
 

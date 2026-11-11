@@ -14,6 +14,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   plain integer id, as record responses do, and the schema marks such a field
   `"grouping": false` so the id shows without thousands separators. Activity also shows any
   other changed Link as the linked record's title instead of `#id`.
+- **Key cards can show fields `derive()` sets.** `Meta.cards` refused a field named in
+  `Meta.derives` as "not derived". Such a field is now a card like a formula's result, with the
+  same formatting.
 - **A value `derive()` sets that its field refuses is a field error, never a 500.** A value
   with more decimal places than the field allows, or a fraction for an `Integer`, already
   refused a save with 422, but a preview answered 500 and formulas read the refused value.
