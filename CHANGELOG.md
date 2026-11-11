@@ -8,6 +8,42 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **`CreateModel(Model, if_missing=True)`** adopts a table made before the app used migrations.
+  When the table exists it is checked against the frozen class and kept with its rows; a
+  difference fails the batch naming it. A plain `CreateModel` of an existing table now says to
+  use the option. See [Adopting a table made before migrations](docs/model-engine.md#adopting-a-table-made-before-migrations).
+- **`AlterField` can change `required`.** Making a field optional always works. Making it
+  required checks every row and fails naming the first empty one, unless `fill=` gives a value
+  for them. Works on SQLite (in place, inside the migration transaction) and PostgreSQL. See
+  [Making a field required or optional](docs/model-engine.md#making-a-field-required-or-optional).
+- **`column=False` on a field.** It leaves the field out of a list's default columns and a
+  Table grid's default columns, while the form and row editor still show it and the grid's
+  Columns menu can show it again. Use it for a currency source: the amounts keep showing in its
+  currency, because the value still travels with each record. Display only, like `copy=`.
+- **The record form previews `derive()` values while you edit.** A model with `Meta.derives`
+  lists them in its schema (`derives`). When the person pauses for 600 ms, the form sends the
+  draft to `POST /api/_draft/{model}` and shows the derived fields, row values and derived
+  Table rows, without making them unsaved changes. Stale answers are dropped. Models without
+  `Meta.derives` never ask.
+- **System moves.** `Move(..., system=True)` declares a state change only the application makes,
+  such as one a background job takes. It has no roles, is never offered (no button, not in `_moves`
+  or the schema's `state.moves`), and every HTTP caller, API key, AI assistant, the connector and
+  Eva included, gets 403 `<label> is made by the application only`. Trusted Python makes it with
+  `context.move()` under all its other checks: update permission, row scope, guard, `run` method,
+  validation, the Journal and the one transaction. A move with `roles=()` now fails with a pointer
+  to `system=True` ([docs/states-actions.md](docs/states-actions.md#system-moves)).
+- **A business context for jobs.** `job.business(tx)` in a job handler returns a document context
+  in the job's transaction, acting as the job's user, as `user=<account id>` read again now, or as
+  `system="<name>"` with an explicit `role=`. The role's permissions apply; a system's writes are
+  recorded under no account and the Journal names it as `via`. Apps no longer need `tx._business`
+  ([docs/jobs-realtime.md](docs/jobs-realtime.md#a-jobs-business-context)).
+- **Actions queue jobs that run right after they commit.** `self.context.enqueue(task, payload)`
+  is now documented for actions: the job is queued only if the action commits, and the worker of
+  `evlet serve` is woken at once instead of at its next pass. An action that returns the receipt
+  adds `_job` (`{"id", "state"}`) to its detail. `JobQueue.wake()` and `JobQueue.wait(timeout)`
+  serve app workers ([docs/jobs-realtime.md](docs/jobs-realtime.md#queue-a-job-from-an-action)).
+- The Background Playground (`examples/playground/background/app.py`) shows all three.
+
 ### Changed
 
 - `Move` takes `system=False`, and its `roles` default is now written `roles=None`, which still
