@@ -292,7 +292,9 @@ def view_for(model):
         # Without Meta.title_field, records show their title column (a template, the name or the text
         # id). With it, that field holds the same text the title does.
         title = "title"
-    columns = getattr(meta, 'list_fields', tuple(name for name, field in visible.items() if not isinstance(field, LongText))[:4])
+    # Without Meta.list_fields: the first four visible fields, leaving out those declared column=False.
+    columns = getattr(meta, 'list_fields', tuple(name for name, field in visible.items()
+                                                 if not isinstance(field, LongText) and getattr(field, 'column', True))[:4])
     search = getattr(meta, 'search_fields', tuple(texts[:8]))
     standard_text = {key for key, field in model.__app_fields__.items() if standard(field)}
     for value, maximum, names in ((columns, 8, {'id', *visible}), (search, 8, {name for name, field in visible.items() if isinstance(field, Text)} | standard_text)):
@@ -711,6 +713,8 @@ def field_schema(field):
               **({'editable_when_locked': True} if getattr(field, 'editable_when_locked', False) else {}),
               # Duplicate leaves this value out of the new record (display only).
               **({'copy': False} if getattr(field, 'copy', True) is False else {}),
+              # Left out of the default list and Table columns (display only).
+              **({'column': False} if getattr(field, 'column', True) is False else {}),
               **({'sequence': field.schema()} if field.kind == 'sequence' else {}),
               'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'user' if field.default is CurrentUser
               else 'callable' if callable(field.default) else 'static'}

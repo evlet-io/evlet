@@ -36,6 +36,15 @@ columns above the menu's divider stay in place while the table scrolls sideways.
 pinning keep the first column pinned. A child table's Focus view keeps the record's header and its
 save bar in view ([ui-framework.md](ui-framework.md)).
 
+A field declared `column=False` (a currency source, say) starts hidden in a child table's
+Columns menu and is left out of a list's default columns; the form still shows it
+([model-engine.md](model-engine.md#more-field-types)).
+
+Values the record fills itself (`Meta.derives`) show while the person edits: once they pause
+for 600 ms the form asks the server for a preview (`POST /api/_draft/{model}`) and shows what
+`derive()` set, without making it an unsaved change. Formulas (`compute=`) show at once without
+a request.
+
 A Table the record fills itself (`Meta.derives`, [model-engine.md](model-engine.md#derived-values))
 is read only on the record page, in focus view and in the row editor, whatever the state: it reads
 "Filled in by the record when it is saved." and a save never sends its rows. Its fields show read

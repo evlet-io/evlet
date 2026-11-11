@@ -18,6 +18,10 @@ import { read, uid, type Prop } from './core';
  */
 export interface TablePrefs { widths: Record<string, number>; order: string[]; hidden: string[]; pinned?: number }
 export const emptyPrefs = (): TablePrefs => ({ widths: {}, order: [], hidden: [] });
+/** A Table grid's preferences before anyone changes them: fields declared column=False start hidden, and the
+ * Columns menu can show them. */
+export const gridPrefs = (fields: Array<{ name: string; column?: boolean; hidden?: boolean }>): TablePrefs =>
+  ({ ...emptyPrefs(), hidden: fields.filter(field => field.column === false && !field.hidden).map(field => field.name) });
 
 /** Columns in the user's order (new columns keep their place at the end), without hidden ones. */
 export function arrange<C extends { key: string }>(columns: C[], prefs: TablePrefs, keepFirst = false): C[] {
@@ -158,6 +162,8 @@ export interface ColumnsMenuProps {
   prefs: Cell<TablePrefs>;
   /** Pinned columns when the prefs say nothing (the table's default). */
   pinned: number;
+  /** What Reset columns goes back to (a grid's column=False fields start hidden). Defaults to emptyPrefs(). */
+  reset?: () => TablePrefs;
   /** A column's width and the table's visible width, to warn when pinned columns crowd the table. */
   widthOf?: (key: string) => number;
   viewWidth?: () => number;
@@ -248,7 +254,7 @@ export function ColumnsMenu(props: ColumnsMenuProps): HTMLElement {
     <p class="muted col-hint" id=${hintId}>${props.note ?? 'Drag a grip to move a column, or focus it and press Space, then the arrow keys.'}</p>
     <div class="col-said" aria-live="polite" role="status">${said}</div>
     ${props.extra ?? null}
-    <hr><button type="button" class="mi" on:click=${() => prefs.set(emptyPrefs())}>${Icon('rotate-ccw', { size: 'sm' })}<span>Reset columns</span></button></div>` as HTMLElement;
+    <hr><button type="button" class="mi" on:click=${() => prefs.set(props.reset?.() ?? emptyPrefs())}>${Icon('rotate-ccw', { size: 'sm' })}<span>Reset columns</span></button></div>` as HTMLElement;
   dragList(menu, { kind: 'column', move, label: nameOf });
   return menu;
 }

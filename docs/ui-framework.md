@@ -238,6 +238,14 @@ await record.save();                       // the server's answer replaces the d
   `_key`, at any depth) and the rest in `formError`. `revert()` and `reload()` discard the
   draft. `runAction()` and `move()` require a clean record. `preview()` asks the server to
   evaluate the draft for plans it does not ship.
+- A model with `Meta.derives` lists them in its schema as `derives` (only names the role can read).
+  Each change to the draft (a field set, a row added, removed or moved) restarts a 600 ms timer
+  (`PREVIEW_PAUSE_MS`); when the person pauses, `refreshDerived()` sends the draft to
+  `POST /api/_draft/{model}`, the same route and permission checks as any preview, and shows what
+  `derive()` set: derived fields, `"table.field"` values on rows (matched by id or `_key`) and the
+  rows of a derived Table. Derived fields are never editable, never an unsaved change and never sent.
+  An answer that a later change overtook is dropped, and only one answer per pause is shown. A model
+  without `Meta.derives` never asks, and formulas the browser runs need no request.
 - `formatMoney('25200')` is `AED 25,200.00` (exact, half up). Money and numbers take decimal
   strings or safe integers only; a JavaScript fraction or text that is not a plain decimal
   shows `Invalid amount`. `formatDate('2026-11-01')` is `01-11-2026`; impossible dates show
@@ -924,7 +932,8 @@ page in a new browser tab.
 |---|---|
 | Fields the role can read | The only fields shown anywhere; the rest are absent, not hidden |
 | `permissions.create`, `update`, `delete` | New buttons and menu entries, editing in place, bulk Delete and the record's Delete |
-| `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields |
+| `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields that are not `column=False` |
+| `column=False` on a field | Out of the list's default columns and the Table grid's default columns (it starts hidden in the Columns menu, and Reset columns hides it again); still on the form and the row editor, and still read for each row, for example as a currency source |
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |
 | `Meta.search_fields` | The list search box and record search in the palette |
 | `Meta.layout` | The record page's sections, the first one its primary area; readable fields it leaves out follow under Other. With `Main` or blocks (`record_layout` in the schema), the primary area and then its sections, tables, Related lists, Html and charts as "more information", in order ([ui.md](ui.md#record-layouts)) |

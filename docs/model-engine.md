@@ -313,6 +313,19 @@ metadata only: the field's stored definition, migrations and their checksums ign
 migration copies leave it out, and the Controls code export keeps it as written
 ([ui.md](ui.md#duplicate)).
 
+Every field takes `column=` (default `True`). `column=False` leaves the field out of a list's
+default columns (when the model has no `Meta.list_fields`) and out of a Table grid's default
+columns. The field still shows on the record form and the row editor, a person can show it again
+from the grid's Columns menu, and `Meta.list_fields` may still name it. It is display metadata only,
+like `copy=`: the value still travels with each record and permissions, storage and migrations
+ignore it. The typical use is a currency source, whose code already shows beside each amount:
+
+```python
+class Line(Child):
+    currency_code = Text(compute=parent.currency_code, max_length=3, column=False)
+    net = Currency(currency="currency_code", compute=F("qty") * F("price"))
+```
+
 Any editable field may declare `editable_when_locked=True` so that ordinary writes can still
 change it while its document is in a locked State (for example remarks).
 
@@ -405,6 +418,10 @@ class Invoice(Model):
 | `"field"` | when the registry is built: a `Text` or `Select` field of the model | `"currency_source": {"field"}` | reads the field and follows it as it changes |
 | `"link.field"` | when the registry is built: a `Link` of the model and a `Text` or `Select` field of its target | `"currency_source": {"link", "field", "model"}` | reads the linked record through the list route (batched with Link titles) and follows the Link |
 | `"settings.app.key"` | the app's settings are read on each `/api/schema` request | `"currency": <the setting's value>` | shows it |
+
+The source field must stay readable (not `hidden=True`), since the browser reads the code from each
+record. To keep it out of list and Table columns, declare it with `column=False`
+([More field types](#more-field-types)); the amounts keep showing in its currency.
 
 The schema is resolved for the person asking. A field or linked field they cannot read is left
 out, and so is a setting that is not declared (the server logs it). A value that is not three

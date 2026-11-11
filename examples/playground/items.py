@@ -81,7 +81,9 @@ class Price(Child):
     price_list = Select(['standard selling', 'wholesale', 'export', 'standard buying'], required=True,
                         default='standard selling', label='Price list')
     customer = Link('customer')
-    currency = Select(CURRENCIES, required=True, default='AED')
+    # The rate shows with its code (AED 12.50), so the code is not a column of its own in the Prices grid
+    # (column=False). It is still on each row's form, and Columns can show it.
+    currency = Select(CURRENCIES, required=True, default='AED', column=False)
     rate = Currency(minimum='0', default='0.00', currency='currency')
     min_qty = Integer(minimum=0, default=0, label='Minimum quantity')
     valid_from = Date(label='Valid from')

@@ -8,15 +8,6 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
-- **`CreateModel(Model, if_missing=True)`** adopts a table made before the app used migrations.
-  When the table exists it is checked against the frozen class and kept with its rows; a
-  difference fails the batch naming it. A plain `CreateModel` of an existing table now says to
-  use the option. See [Adopting a table made before migrations](docs/model-engine.md#adopting-a-table-made-before-migrations).
-- **`AlterField` can change `required`.** Making a field optional always works. Making it
-  required checks every row and fails naming the first empty one, unless `fill=` gives a value
-  for them. Works on SQLite (in place, inside the migration transaction) and PostgreSQL. See
-  [Making a field required or optional](docs/model-engine.md#making-a-field-required-or-optional).
-
 ### Fixed
 
 - **Moves and actions that link a ledger row work over HTTP.** A move `run` method or an
@@ -40,6 +31,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   the save stays a 422 naming the field. On a saved record, the error on a rebuilt derived
   row is keyed by the row id the preview shows. `derive()` still rounds its own values: see
   [Derived values](docs/model-engine.md#derived-values).
+- **A hidden unstored intermediate no longer stops the browser calculating.** On a model with
+  `permissions`, a field with `hidden=True, stored=False` and a finite `compute=` that other
+  formulas read withheld those formulas and the whole plan, so every calculated value on the
+  form stayed blank until a save. When the role can read every input of its formula, the plan
+  now ships with it and the browser works out every formula on the row. The intermediate is
+  still never named in the schema or in any response.
+- **Writing such a field reports the real error.** A write naming a hidden intermediate, or a
+  result that reads it, now fails with `COMPUTED_FIELD_WRITE: this value is calculated`
+  instead of "One or more values are invalid".
 
 ## 0.4.1 (10-11-2026)
 

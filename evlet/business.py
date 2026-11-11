@@ -471,6 +471,12 @@ class Business:
                                   # A Table that derive() fills (Meta.derives) is read only on the form; the save sends none of its rows.
                                   **({'read_only': True} if child.name in getattr(model, '__derives__', ()) else {})}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
+            # What derive() fills on every save and preview (Meta.derives): "field", "table" or "table.field". The form asks
+            # the server for a preview when the person pauses, so these show before the save. Only readable names are listed.
+            derives = [name for name in getattr(model, '__derives__', ())
+                       if name.split('.')[0] in readable or any(child['name'] == name.split('.')[0] for child in entry['children'])]
+            if derives:
+                entry['derives'] = derives
             # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
             # unknown when the model was defined) stays out of the side panel too.
             panel = entry.get('panel')
@@ -760,7 +766,9 @@ class Business:
                         shown = self.policy.allows(user, owner, 'read') and row_visible(owner, parts[1])
                         continue
                     name = parts[0]
-                    shown = name not in owner.__declared_fields__ or name in (readable if owner is model else self.policy.fields(user, owner))
+                    shown = (name not in owner.__declared_fields__ or name in (readable if owner is model else self.policy.fields(user, owner))
+                             # A hidden intermediate's formula ships with the plan, so its errors can name it.
+                             or self.policy.allows(user, owner, 'read') and self.policy.intermediate(user, owner, name))
                     break
                 if shown: visible[key] = message
                 else: hidden = True
@@ -1073,7 +1081,7 @@ class Business:
                 models[tuple(path)] = item
         def readable(target):
             return self.policy.fields(user, target) if target is not None and self.policy.allows(user, target, 'read') else set()
-        capabilities, local, withheld = {}, True, set()
+        capabilities, local, withheld, intermediates = {}, True, set(), {}
         for field in plan['fields']:
             target = models.get(tuple(field['path']))
             if field.get('kind'):
@@ -1089,6 +1097,10 @@ class Business:
             fetchable = all(self.registry.models[name] not in self.child_models for scope, name, _ in field['reads'] if scope == 'lookup')
             if field['field'] in readable(target) and fetchable:
                 capabilities[field['target']] = 'local_universal'
+                continue
+            if target is not None and fetchable and self.policy.allows(user, target, 'read') and self.policy.intermediate(user, target, field['field']):
+                # A hidden intermediate: computed in the browser for the formulas that read it, never shown or named.
+                intermediates.setdefault(tuple(field['path']), set()).add(field['field'])
                 continue
             local = False
             # Fields this role cannot see at all are not named.
@@ -1113,7 +1125,7 @@ class Business:
                 entry['tables'] = [name for name in entry['tables'] if tuple(entry['path']) + (name,) not in hidden_paths]
             for entry in projected['tables'].values():
                 target = models.get(tuple(entry['path']))
-                visible = readable(target)
+                visible = readable(target) | intermediates.get(tuple(entry['path']), set())
                 entry['fields'] = {name: meta for name, meta in entry['fields'].items() if name in visible}
                 # Looked-up fields are named only when this role can read them; withheld rules may read others.
                 if 'lookups' in entry:

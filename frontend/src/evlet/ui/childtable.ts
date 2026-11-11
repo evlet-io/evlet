@@ -19,7 +19,7 @@ import { moneyChild } from './money';
 import { kindOf } from './kinds';
 import { openPopover, toast } from './layers';
 import { dragList } from './draglist';
-import { arrange, byKey, ColumnsMenu, emptyPrefs, pinnedKeys, pinTracker, resizeHandle, virtualWindow, type TablePrefs } from './table';
+import { arrange, byKey, ColumnsMenu, emptyPrefs, gridPrefs, pinnedKeys, pinTracker, resizeHandle, virtualWindow, type TablePrefs } from './table';
 import { tooltip } from './tooltip';
 
 const ROW = 38, HEADER = 36;
@@ -195,7 +195,7 @@ const valueText = (value: FieldLike | Prop<Child>): Child => {
 /** Lines of a record: an editable grid with live totals that locks with the record. */
 export function ChildTable(props: ChildTableProps): HTMLElement {
   const { table } = props, model = table.model, record = table.owner.record;
-  const prefs = props.prefs ?? cell(emptyPrefs(), { name: `${table.name} (columns)` });
+  const prefs = props.prefs ?? cell(props.columns ? emptyPrefs() : gridPrefs(model.fields), { name: `${table.name} (columns)` });
   const metas = new Map(model.fields.map(meta => [meta.name, meta]));
   const allColumns: ChildColumn[] = (props.columns ?? model.fields.filter(meta => !meta.hidden).map(meta => meta.name)).map(name => {
     const meta = metas.get(name);
@@ -767,6 +767,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   };
 
   const columnsMenu = (anchor: HTMLElement) => openPopover(anchor, () => ColumnsMenu({ columns: allColumns, prefs, pinned: 1,
+    reset: () => props.columns ? emptyPrefs() : gridPrefs(model.fields),
     widthOf: key => baseWidth(allColumns.find(column => column.key === key)!), viewWidth: () => scroller.clientWidth - ctl() }),
   { role: 'dialog', label: 'Columns', className: 'cols-pop' });
 
