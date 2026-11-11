@@ -13,7 +13,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `0008_administrator` in `evlet migrate`. It starts with no password. Its username, name and
   role never change, and it can't be deactivated or deleted on any route. It passes every role
   check (models, rows, fields, actions, Controls) and still meets every data rule. Its profile
-  takes only an email address for notifications.
+  takes only an email address for notifications, which it sets on any instance with its current
+  password (audited).
+- `evlet users set-email <instance> <username> <email>` sets a user's email address from the
+  server shell, audited as `cli`.
 - **Sign-in rules in config.py.** `Security(password_min=..., admin_two_step=..., two_step=...,
   admin_sign_in=...)`. `password_min` takes 1 to 64; 1 allows any password. `admin_two_step`
   decides two-step sign-in for admins, `two_step` for everyone else. `admin_sign_in` opens the

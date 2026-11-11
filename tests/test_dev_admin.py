@@ -194,3 +194,16 @@ def test_set_password_unknown_user(empty, monkeypatch, capsys):
     with pytest.raises(SystemExit):
         main(['users', 'set-password', 'acme', 'nobody', '--project', str(project)])
     assert 'No user' in capsys.readouterr().err
+
+
+def test_set_email_command_sets_the_administrators_email(empty, capsys):
+    project, app = empty
+    main(['users', 'set-email', 'acme', 'administrator', 'ops@example.test', '--project', str(project)])
+    assert capsys.readouterr().out == 'Email for administrator is now ops@example.test.\n'
+    with app.database._connection() as connection:
+        assert connection.execute("SELECT p.email FROM evlet_user_profile p JOIN evlet_users u ON u.id=p.user_id "
+                                  "WHERE u.username='administrator'").fetchone()[0] == 'ops@example.test'
+    assert audit_rows(app)[-1] == ('cli', 'administrator', 'Email set from the server shell')
+    with pytest.raises(SystemExit):
+        main(['users', 'set-email', 'acme', 'administrator', 'not-an-email', '--project', str(project)])
+    assert 'not a valid email address' in capsys.readouterr().err

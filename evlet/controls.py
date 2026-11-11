@@ -181,6 +181,43 @@ def reset_two_step_from_shell(database_path, username):
         connection.close()
 
 
+def set_email_from_shell(database_path, username, email):
+    """Set a user's email address from the server shell, audited as cli. It is where notifications go."""
+    from .fields import Email
+    if not database_path.is_file():
+        raise ValueError('This instance has no database yet. Start it once first.')
+    try:
+        address = Email().clean(email.strip())
+    except (ValueError, AttributeError):
+        address = None
+    if not address:
+        raise ValueError(f'{email} is not a valid email address.')
+    connection = sqlite3.connect(database_path, isolation_level=None)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        ensure_schema(connection)
+        row = connection.execute('SELECT id, username FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
+            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+        if row is None:
+            raise ValueError(f'No user is named {username}.')
+        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_user_profile'").fetchone():
+            raise ValueError('This instance has no profiles yet. Start it once first.')
+        connection.execute('INSERT OR IGNORE INTO evlet_user_profile(user_id) VALUES (?)', (row['id'],))
+        before = connection.execute('SELECT email FROM evlet_user_profile WHERE user_id=?', (row['id'],)).fetchone()['email']
+        connection.execute('UPDATE evlet_user_profile SET email=? WHERE user_id=?', (address, row['id']))
+        connection.execute('DELETE FROM evlet_email_tokens WHERE user_id=?', (row['id'],))
+        audit(connection, 'cli', 'Users', row['username'], 'Email set from the server shell', {'email': before or None}, {'email': address})
+        connection.execute('COMMIT')
+    except BaseException:
+        if connection.in_transaction:
+            connection.execute('ROLLBACK')
+        raise
+    finally:
+        connection.close()
+    return address
+
+
 def set_password_from_shell(database_path, username, password, file_minimum=15):
     """Set a user's password from the server shell, audited as cli. Ends their sessions, assistants and API keys, like a takeover recovery.
 

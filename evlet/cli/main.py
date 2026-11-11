@@ -123,6 +123,11 @@ def parser():
     set_password.add_argument('instance')
     set_password.add_argument('username')
     set_password.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
+    set_email = users_commands.add_parser('set-email', help="Set a user's email address for notifications. Audited as cli")
+    set_email.add_argument('instance')
+    set_email.add_argument('username')
+    set_email.add_argument('email')
+    set_email.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     keys = commands.add_parser('secrets', help='Manage the key that seals connector secrets, two-step secrets and backup codes')
     keys_commands = keys.add_subparsers(dest='secrets_command', required=True)
     keys_rotate = keys_commands.add_parser('rotate', help='Re-encrypt saved secrets under a new secret.key')
@@ -364,6 +369,10 @@ def main(argv=None):
                     raise ValueError('The two passwords differ. Nothing was changed.')
                 set_password_from_shell(path / 'data/database.sqlite3', args.username, first, config.security.password_min)
                 print(f'Password set for {args.username}. Their other sessions, AI assistants and API keys ended.')
+            elif args.users_command == 'set-email':
+                from ..controls import set_email_from_shell
+                address = set_email_from_shell(path / 'data/database.sqlite3', args.username, args.email)
+                print(f'Email for {args.username} is now {address}.')
             else:
                 reset_two_step_from_shell(path / 'data/database.sqlite3', args.username)
                 print(f'Two-step sign-in is reset for {args.username}. They set it up again at their next sign-in.')

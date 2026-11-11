@@ -249,7 +249,7 @@ sign-in, appearance and the other pages answer 404.
 | `POST /api/auth/password` | `{"password"}`: the first password of an account that has none (the built-in Administrator). Answers `{"password": true}`, or the two-step set-up ticket when the role needs it (this session then ends). 409 once a password is set |
 | `PATCH /api/_settings/me/prefs` | Appearance and region keys, `keep_unsaved`, `notify.<event>` as `[in Evlet, email]`, `quiet` as `{on, from, to}`, `last_page` |
 | `GET/POST/DELETE /api/_settings/me/photo` | `{"type", "data"}` with base64 data |
-| `POST /api/_settings/me/email`, `POST /api/_settings/me/email/confirm` | Ask for a link (`{"email", "code"}` with two-step on, `{"email", "password"}` without); confirm with `{"token"}` |
+| `POST /api/_settings/me/email`, `POST /api/_settings/me/email/confirm` | Ask for a link (`{"email", "code"}` with two-step on, `{"email", "password"}` without); confirm with `{"token"}`. The System Administrator sends `{"email", "password", "code"?}` (code with two-step on) on any instance and the address is saved at once, answering `{"email"}`, audited |
 | `POST /api/_settings/me/password` | `{"current", "new", "code"?, "revoke_keys"?}`: `code` when two-step is on; `revoke_keys` defaults to false. Answers `{"changed", "revoked_keys"}` |
 | `POST /api/_settings/me/two-step`, `.../two-step/confirm`, `.../two-step/codes`, `.../two-step/off` | Start (`{"password"}`), confirm with `{"code"}`, new backup codes and turn off (`{"code"}`) |
 | `POST /api/_settings/me/two-step/verify` | `{"code"}`: a fresh code for this verified session, so changes in Controls need none for 10 minutes. Answers `{"verified", "until"}` |

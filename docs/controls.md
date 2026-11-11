@@ -80,8 +80,12 @@ message and changes nothing, so rename that account first.
   `/api/auth/users` routes and the profile (`/api/_settings/me/profile` and the photo answer 409
   "The Administrator profile is fixed..."). Connectors and MCP clients use the same routes.
   A change made in the database directly is put back at the next start.
-- It may add **one email address** for notifications (Settings, Profile, the usual
-  confirmation link); mentions and other notifications use it. Its password, two-step sign-in,
+- It may add **one email address** for notifications, on any instance, `evlet serve` included:
+  Settings, Profile asks for its current password (and a code when two-step sign-in is on),
+  checks the address and saves it at once, with an audit row. Mentions and other notifications
+  use it. Other people keep the usual rule (a confirmation link, development only). From the
+  server shell, `evlet users set-email <instance> <username> <email>` sets anyone's address,
+  audited as `cli`. Its password, two-step sign-in,
   sessions and personal preferences work as for anyone. Sign-in lockout applies too;
   `evlet users set-password` and `evlet users reset-two-step` recover it.
 - **Unlimited control.** It passes every role check: every model, row and field whatever the

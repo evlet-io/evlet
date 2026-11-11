@@ -544,7 +544,35 @@ class Settings:
         self._remove_file(removed)
         return {'photo': False}
 
+    def administrator_email(self, scope, user, body):
+        """The Administrator's email for notifications: set at once on any instance, after its current password (and a
+        code when two-step sign-in is on). Audited."""
+        from .controls import audit
+        body = self._body(body, ('email', 'password', 'code'))
+        address = body.get('email')
+        try:
+            address = Email().clean(address.strip() if isinstance(address, str) else address)
+        except ValueError:
+            address = None
+        if not address:
+            raise ValidationError({'email': 'Enter a valid email address.'})
+        password = body.get('password')
+        if not isinstance(password, str) or not password:
+            raise ValidationError({'password': 'Enter your current password.'})
+        self._check_password(user, password, 'password')
+        if self.two_step_on(user.id):
+            self.check_code(scope, user, body.get('code'))
+        with self.database.transaction() as tx:
+            before = self.profile(tx.connection, user.id)['email']
+            tx.connection.execute('UPDATE evlet_user_profile SET email=? WHERE user_id=?', (address, user.id))
+            tx.connection.execute('DELETE FROM evlet_email_tokens WHERE user_id=?', (user.id,))
+            audit(tx.connection, user.username, 'Users', user.username, 'Email for notifications changed in Settings',
+                  {'email': before or None}, {'email': address})
+        return {'email': address}
+
     def change_email(self, scope, user, body):
+        if is_administrator(user):
+            return self.administrator_email(scope, user, body)
         routes = self.business.routes
         if routes.primary is not None:
             raise AccessError(409, NO_EMAIL)
