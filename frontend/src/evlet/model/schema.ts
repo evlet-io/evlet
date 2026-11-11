@@ -123,6 +123,9 @@ export interface ModelSchema {
   board?: string;
   /** Meta.autosave: false keeps the "Discard your changes?" prompt instead of keeping unsaved changes. */
   autosave?: boolean;
+  /** Meta.derives: what the server's derive() fills ("field", "table" or "table.field"). The form previews them on the
+   * server when the person pauses. Absent when the model derives nothing. */
+  derives?: string[];
   /** Meta.summary: false leaves the record page's summary strip out. Absent means shown when it has values. */
   summary?: boolean;
   /** Meta.side_blocks: the record page's side blocks in order ('key_fields', 'related', 'files', 'info'). Absent means all. */

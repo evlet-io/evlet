@@ -30,6 +30,15 @@ const KEY = /^[A-Za-z0-9_-]{1,64}$/;
 const NUMERIC = new Set(['decimal', 'currency', 'integer', 'percent', 'duration']);
 const sameRules = (a: Rules, b: Rules) => a.applies === b.applies && a.required === b.required && a.locked === b.locked;
 const sameOutcome = (a: Outcome, b: Outcome) => a.state === b.state && (a as any).code === (b as any).code;
+/** How long the person must pause before the form asks the server for Meta.derives values. */
+export const PREVIEW_PAUSE_MS = 600;
+
+/** Whether derive() fills this field: "name" on the record, "table.name" on a Table's rows (Meta.derives). */
+export function derivedField(model: ModelSchema, path: string[], name: string): boolean {
+  const key = path.length ? `${path[path.length - 1]}.${name}` : name;
+  return path.length <= 1 && (model.derives ?? []).includes(key);
+}
+
 export const STALE_FORMULAS = 'This record was calculated with older formulas, so it cannot be saved yet. Ask an administrator to recalculate it.';
 
 /** Whether two field values mean the same: '' and null are both empty, '1.50' equals '1.5' for numbers, lists by content. */
@@ -61,12 +70,14 @@ export class Field {
   /** For calculated fields: ready, or pending/error with a code such as COMPUTE_INPUT_MISSING. */
   readonly result: Cell<Outcome>;
   readonly calculated: boolean;
+  /** Filled by the server's derive() (Meta.derives): shown, never edited, and not an unsaved change. */
+  readonly derived: boolean;
   /** Set by the user in this draft, so an empty value is sent rather than left out. */
   touched = false;
   private changed?: Derive<boolean>;
   private open?: Derive<boolean>;
 
-  constructor(readonly row: Row, readonly meta: FieldSchema, value: unknown) {
+  constructor(readonly row: Row, readonly meta: FieldSchema, value: unknown, derived = false) {
     const name = `${row.label}.${meta.name}`;
     this.value = cell(value, { name });
     this.server = cell(value, { name: `${name} (saved)` });
@@ -75,6 +86,7 @@ export class Field {
     this.rules = cell<Rules>({ applies: true, required: meta.required, locked: false }, { name: `${name} (rules)`, equals: sameRules });
     this.result = cell<Outcome>(READY, { name: `${name} (result)`, equals: sameOutcome });
     this.calculated = isCalculated(meta);
+    this.derived = derived;
   }
 
   get name() { return this.meta.name; }
@@ -83,7 +95,7 @@ export class Field {
   /** True while the draft differs from the saved value. */
   get dirty(): Derive<boolean> {
     return this.changed ??= runWithOwner(this.row.owner, () => derive(
-      () => !this.calculated && (this.row.isNew || !sameValue(this.meta, this.value.get(), this.server.get())),
+      () => !this.calculated && !this.derived && (this.row.isNew || !sameValue(this.meta, this.value.get(), this.server.get())),
       { name: `${this.row.label}.${this.name} (dirty)` }));
   }
 
@@ -92,7 +104,7 @@ export class Field {
     return this.open ??= runWithOwner(this.row.owner, () => derive(() => {
       const rules = this.rules.get();
       const record = this.row.record;
-      return !this.calculated && !this.meta.read_only && rules.applies && !rules.locked && record.ready.get() && !record.saving.get();
+      return !this.calculated && !this.derived && !this.meta.read_only && rules.applies && !rules.locked && record.ready.get() && !record.saving.get();
     }, { name: `${this.row.label}.${this.name} (editable)` }));
   }
 
@@ -124,7 +136,7 @@ export class Row {
       const value = Object.prototype.hasOwnProperty.call(data, meta.name) ? data[meta.name]
         : isNew && meta.default_kind === 'static' ? meta.default ?? null
         : isNew && meta.default_kind === 'user' && record.user ? (meta.type === 'integer' ? record.user.id : record.user.username) : null;
-      this.fields.set(meta.name, new Field(this, meta, value));
+      this.fields.set(meta.name, new Field(this, meta, value, derivedField(record.meta, parent ? this.path : [], meta.name)));
     }
     for (const child of model.children ?? []) {
       const table = new Table(this, child, record.index.model(child.model));
@@ -270,6 +282,7 @@ export class Table {
       this.rows.set([...this.rows.peek(), row]);
       return row;
     });
+    record.noteChange();
     // Rows of rows ({children: {parts: [...]}}) join the calculations with a fresh session.
     if (nested) record.recalculate();
     return row;
@@ -285,6 +298,7 @@ export class Table {
       this.rows.set(rows.filter(item => item !== row));
       if (row.isNew) this.dropped.push(row); else this.removed.set([...this.removed.peek(), row]);
     });
+    this.record.noteChange();
   }
 
   /**
@@ -303,6 +317,7 @@ export class Table {
       this.rows.set(rows);
     });
     this.record.recalculate();
+    this.record.noteChange();
   }
 
   private forgetDropped() {
@@ -436,6 +451,27 @@ export class Table {
     this.parked = new Map();
   }
 
+  /**
+   * Rows the server's derive() filled in a preview (a read-only Table in Meta.derives). They replace the shown rows
+   * as saved ones, so they are not an unsaved change and are never sent; the next save brings the stored rows.
+   */
+  showDerived(items: Array<Record<string, any>>) {
+    const record = this.record;
+    batch(() => {
+      for (const row of this.rows.peek()) { record.session?.remove(row); row.dispose(); }
+      const rows = items.filter(item => !(this.meta.sections && isSectionRow(item))).map(item => {
+        const id = typeof item.id === 'string' ? item.id : null;
+        const row = new Row(record, this.model, this.owner, this.name, record.claimKey(item._key ?? id ?? undefined), id, false, item);
+        record.session?.add(this, row, item);
+        return row;
+      });
+      this.saved = rows.slice();
+      this.rows.set(rows);
+      this.total.set(rows.length);
+      this.partial.set(false);
+    });
+  }
+
   revert() {
     this.forgetDropped();
     for (const row of this.rows.peek()) if (row.isNew) row.dispose();
@@ -509,6 +545,9 @@ export class RecordStore {
   // Link filter checks in flight: the latest ticket per field, and their promises for idle().
   private checks = new WeakMap<Field, number>();
   private checking = new Set<Promise<void>>();
+  // The server preview of Meta.derives values: the pending timer and the latest request's ticket.
+  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+  private previewTicket = 0;
   private readonly stop: () => void;
 
   constructor(options: RecordOptions) {
@@ -768,6 +807,55 @@ export class RecordStore {
       this.session?.set(field.row, field.name, value);
     });
     this.checkDependents(field);
+    this.noteChange();
+  }
+
+  /**
+   * The draft changed. A model whose derive() fills values the browser cannot work out (Meta.derives, such as the
+   * day's exchange rate or a tax table) asks the server for a preview once the person pauses, so they show before
+   * the save. Formulas the browser runs need no server call; a model without Meta.derives never asks.
+   */
+  noteChange() {
+    if (!this.meta.derives?.length) return;
+    if (this.previewTimer !== null) clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(() => { this.previewTimer = null; void this.refreshDerived(); }, PREVIEW_PAUSE_MS);
+  }
+
+  /** Ask the server for the derived values of the draft as it stands, and show them. A failed or stale answer is
+   * dropped: the save works them out again and reports any problem. */
+  async refreshDerived() {
+    if (!this.ready.peek() || this.saving.peek() || !this.current.peek()) return;
+    const ticket = ++this.previewTicket;
+    let result: DraftResult;
+    try { result = await this.preview(); } catch { return; }
+    if (ticket !== this.previewTicket || !this.ready.peek() || this.saving.peek()) return;
+    this.applyDerived(result.values as Record<string, any>);
+  }
+
+  private applyDerived(values: Record<string, any>) {
+    const root = this.current.peek();
+    if (!root || !values) return;
+    batch(() => {
+      for (const name of this.meta.derives ?? []) {
+        const [first, rest] = name.split('.', 2);
+        const table = root.tables.get(first);
+        const items: Array<Record<string, any>> | undefined = values.children?.[first];
+        if (rest === undefined && table && table.meta.read_only && items) table.showDerived(items);
+        else if (rest === undefined && root.fields.has(first) && Object.prototype.hasOwnProperty.call(values, first)) this.setDerived(root.field(first), values[first]);
+        else if (rest !== undefined && table && items) {
+          for (const row of table.rows.peek()) {
+            const item = items.find(entry => (row.id !== null && entry.id === row.id) || entry._key === row.key);
+            if (item && row.fields.has(rest) && Object.prototype.hasOwnProperty.call(item, rest)) this.setDerived(row.field(rest), item[rest]);
+          }
+        }
+      }
+    });
+  }
+
+  private setDerived(field: Field, value: unknown) {
+    if (!field.derived || sameValue(field.meta, field.value.peek(), value)) return;
+    field.value.set(value ?? null);
+    this.session?.set(field.row, field.name, value ?? null);
   }
 
   /**
@@ -820,6 +908,8 @@ export class RecordStore {
   }
 
   private detach() {
+    if (this.previewTimer !== null) { clearTimeout(this.previewTimer); this.previewTimer = null; }
+    this.previewTicket++;
     this.ready.set(false);
     this.session?.stop();
   }

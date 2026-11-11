@@ -473,6 +473,13 @@ class Business:
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
             # Meta.panel keeps only what it names: a ChildTable given to the Application (not a Table field, so
             # unknown when the model was defined) stays out of the side panel too.
+            # What derive() fills on every save and preview (Meta.derives): "field", "table" or "table.field". The form asks
+            # the server for a preview when the person pauses, so these show before the save. Only readable names are listed.
+            readable = self.policy.fields(user, model)
+            derives = [name for name in getattr(model, '__derives__', ())
+                       if name.split('.')[0] in readable or any(child['name'] == name.split('.')[0] for child in entry['children'])]
+            if derives:
+                entry['derives'] = derives
             panel = entry.get('panel')
             if panel and 'order' in panel:
                 extra = [child['name'] for child in entry['children'] if child['name'] not in getattr(model, '__tables__', {})

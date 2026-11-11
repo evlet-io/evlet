@@ -719,7 +719,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const cardNames = model.cards;
   const measuredCards = perRecord.some(measure => cardNames?.includes(measure.name));
   if (perRecord.length && !isNew && (cardNames ? measuredCards : model.summary !== false)) effect(() => { options.detail.get(); void api.recordMeasures(name, store.id!).then(values => recordMeasures.set(values), () => recordMeasures.set(null)); });
-  const stats: StatProps[] = summaryFields(model, new Set(factFields.map(meta => meta.name))).filter(meta => has(meta.name)).map(meta => ({
+  // A new record shows only the values the form works out as the person types: its formulas, and what the server's
+  // derive() fills (Meta.derives) once they pause. Measures need a saved record.
+  const liveOnNew = (meta: FieldSchema) => !isNew || Boolean(meta.compute) || (model.derives ?? []).includes(meta.name);
+  const stats: StatProps[] = summaryFields(model, new Set(factFields.map(meta => meta.name))).filter(meta => has(meta.name) && liveOnNew(meta)).map(meta => ({
     label: meta.label, value: () => {
       const value = view(meta.name).value.get();
       if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
@@ -728,19 +731,20 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     empty: 'Not set',
     note: view(meta.name).calculated ? 'Calculated' : undefined,
   }));
-  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' });
+  if (model.summary !== false && !isNew) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' });
   const cardStats = (cardNames ?? []).flatMap((card): StatProps[] => {
     const measure = perRecord.find(item => item.name === card);
+    if (measure && isNew) return [];
     if (measure) return [{ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' }];
     const meta = fieldOf(model, card);
-    if (!meta || !has(card)) return [];
+    if (!meta || !has(card) || !liveOnNew(meta)) return [];
     return [{ label: meta.label, empty: 'Not set', value: () => {
       const value = view(card).value.get();
       if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
       return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(card), ctx.links)(), currencyPlaces(view(card), ctx.links)()) : formatOf(meta, value);
     } }];
   });
-  const summaryShown = !isNew && (!shows || shows.block('summary'));
+  const summaryShown = !shows || shows.block('summary');
   const summary = cardNames ? (cardStats.length && summaryShown ? CardRow(cardStats) : null)
     : stats.length && summaryShown ? SummaryStrip(stats) : null;
 
