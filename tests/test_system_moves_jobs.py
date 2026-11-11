@@ -212,20 +212,22 @@ def test_a_job_acts_as_the_system_under_a_name_the_journal_records(app):
 
 def test_a_job_acts_as_its_user_or_a_stated_account_read_again(app):
     jobs = app.business.jobs
+    with app.database._connection() as db:
+        editor = db.execute("SELECT id FROM evlet_users WHERE username='editor'").fetchone()[0]
     with app.database.transaction() as tx:
-        jobs.enqueue(tx, 'as_user', {}, user=User(2, 'editor', 'editor'))
-    assert jobs.run_one() and SEEN.pop() == User(2, 'editor', 'editor')
+        jobs.enqueue(tx, 'as_user', {}, user=User(editor, 'editor', 'editor'))
+    assert jobs.run_one() and SEEN.pop() == User(editor, 'editor', 'editor')
 
     def stated(tx, job, payload):
         SEEN.append(job.business(tx, user=payload['user']).user)
     jobs.tasks['stated'] = Task('stated', stated, max_attempts=1)
     with app.database.transaction() as tx:
-        tx.connection.execute("UPDATE evlet_users SET role='viewer' WHERE id=2")
-        jobs.enqueue(tx, 'stated', {'user': 2})
-    assert jobs.run_one() and SEEN.pop() == User(2, 'editor', 'viewer')
+        tx.connection.execute("UPDATE evlet_users SET role='viewer' WHERE id=?", (editor,))
+        jobs.enqueue(tx, 'stated', {'user': editor})
+    assert jobs.run_one() and SEEN.pop() == User(editor, 'editor', 'viewer')
     with app.database.transaction() as tx:
-        tx.connection.execute('UPDATE evlet_users SET active=0 WHERE id=2')
-        receipt = jobs.enqueue(tx, 'stated', {'user': 2})
+        tx.connection.execute('UPDATE evlet_users SET active=0 WHERE id=?', (editor,))
+        receipt = jobs.enqueue(tx, 'stated', {'user': editor})
     assert jobs.run_one() and SEEN == []
     with app.database._connection() as db:
         row = db.execute('SELECT state, error FROM evlet_jobs WHERE id=?', (receipt.id,)).fetchone()
