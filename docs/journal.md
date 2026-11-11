@@ -263,7 +263,9 @@ cannot read is removed, and the entry is marked `"partial": true`:
 
 * Values of fields the caller cannot read are left out, at every depth.
 * A Link or Reference value naming a record the caller cannot see (a row scope) shows as
-  `null`, as in record details.
+  `null`, as in record details. Link values are text record ids, except a Link to a
+  [ledger](ledger.md) row, which is its plain integer id. The record page's Activity shows a
+  Link as the linked record's title.
 * Rows of a collection the caller cannot read are left out. Under a row scope on the rows,
   rows the caller cannot see are left out, and so are all removed rows, because they can no
   longer be checked against the scope. Updated rows with nothing readable left are dropped.

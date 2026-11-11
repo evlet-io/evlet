@@ -509,16 +509,59 @@ class SetAppendOnly:
 
 @dataclass(frozen=True)
 class CreateModel:
+    """Add a model's table. `if_missing=True` is for a model whose table existed before the app adopted
+    migrations: when the table is already there, it is checked against this definition (columns, foreign
+    keys, indexes) and kept as it is, and any difference fails the batch naming it."""
     model: type
+    if_missing: bool = False
+
+    def __post_init__(self):
+        if type(self.if_missing) is not bool:
+            raise SchemaError('CreateModel if_missing must be True or False')
 
     def signature(self):
         ledger = ledgers.schema(self.model)
         return {'operation': 'create_model', 'name': storage_name(self.model),
                 'fields': [field.metadata() for field in self.model.__fields__.values() if not standard(field)],
-                **({'ledger': ledger} if ledger is not None else model_indexes.entry(self.model))}
+                **({'ledger': ledger} if ledger is not None else model_indexes.entry(self.model)),
+                # Left out when False, so the checksums of migrations written before the option stay the same.
+                **({'if_missing': True} if self.if_missing else {})}
+
+    def entry(self):
+        """The saved-schema entry this operation produces."""
+        model = self.model
+        entry = {'name': storage_name(model), 'label': model.__name__,
+                 'fields': [field.metadata() for field in model.__fields__.values() if not standard(field)]}
+        if ledgers.schema(model) is not None:
+            entry['ledger'] = ledgers.schema(model)
+        entry.update(model_indexes.entry(model))
+        return entry
+
+    def matches(self, saved):
+        """Refuse a saved-schema entry for this model that differs from this definition (if_missing)."""
+        lines = [text for _, _, text in differences({'models': [saved]}, {'models': [self.entry()]})]
+        if not lines and _comparable({'models': [saved]}) != _comparable({'models': [self.entry()]}):
+            lines = [f'{saved["name"]}: indexes or ledger options differ']
+        if lines:
+            raise SchemaError(f'CreateModel({self.model.__name__}, if_missing=True): the existing {saved["name"]} differs '
+                              'from this definition, so it cannot be adopted:\n  ' + '\n  '.join(
+                                  line.replace('after the migrations', 'in the database').replace('in the models', 'in CreateModel')
+                                  for line in lines))
+
+    def verify(self, check, connection):
+        """Check the existing table against this definition with the adapter's schema check."""
+        from types import SimpleNamespace
+        try:
+            check(connection, SimpleNamespace(models={storage_name(self.model): self.model}))
+        except SchemaError as exc:
+            raise SchemaError(f'CreateModel({self.model.__name__}, if_missing=True): the existing table cannot be adopted: {exc}') from None
 
     def apply(self, connection):
-        _create(connection, storage_name(self.model), self.model)
+        table = storage_name(self.model)
+        if self.if_missing and table in _tables(connection):
+            self.verify(_check, connection)
+            return
+        _create(connection, table, self.model)
 
 
 @dataclass(frozen=True)
@@ -621,6 +664,24 @@ def _relax(connection, table, columns, *, references=False):
             raise SchemaError(f'{table}.{column}: the column definition was not created by Evlet')
         replacement = f'{identifier(column)} {match.group(1)}' + ('' if references else match.group(3) or '')
         edited = edited[:match.start()] + replacement + edited[match.end():]
+    _replace_create(connection, table, sql, edited, 'retiring a required field, dropping a Link field and making a field optional need it')
+
+
+def _require(connection, table, column):
+    """Add NOT NULL to a column of an engine-created SQLite table whose rows all have a value (checked first by
+    the caller, inside the same migration transaction), with the same in-place procedure as _relax."""
+    sql = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
+    pattern = re.compile(re.escape(identifier(column)) + r' (\w+)( NOT NULL)?( REFERENCES "[A-Za-z0-9_]+"\("id"\))?')
+    match = pattern.search(sql)
+    if match is None:
+        raise SchemaError(f'{table}.{column}: the column definition was not created by Evlet')
+    edited = sql[:match.start()] + f'{identifier(column)} {match.group(1)} NOT NULL{match.group(3) or ""}' + sql[match.end():]
+    _replace_create(connection, table, sql, edited, 'making a field required needs it')
+
+
+def _replace_create(connection, table, sql, edited, why):
+    """Store an edited CREATE statement for a table and bump the schema version (SQLite's documented procedure
+    for constraint changes that keep the stored rows), inside the migration transaction."""
     if edited == sql:
         return
     version = connection.execute('PRAGMA schema_version').fetchone()[0]
@@ -630,8 +691,7 @@ def _relax(connection, table, columns, *, references=False):
         connection.execute(f'PRAGMA schema_version = {int(version) + 1}')
     except sqlite3.DatabaseError as exc:
         # SQLite builds in defensive mode (SQLITE_DBCONFIG_DEFENSIVE) refuse schema edits.
-        raise SchemaError(f'{table}: this SQLite build does not allow changing column constraints in place ({exc}); '
-                          'retiring a required field and dropping a Link field need it') from exc
+        raise SchemaError(f'{table}: this SQLite build does not allow changing column constraints in place ({exc}); {why}') from exc
     finally:
         connection.execute('PRAGMA writable_schema = OFF')
 
@@ -699,7 +759,7 @@ class DropField:
 TEXTS = ('text', 'longtext')
 DECIMALS = ('decimal', 'currency', 'percent')
 # Properties AlterField may change; values are then checked row by row in the migration transaction.
-ALTERABLE = {'type', 'scale', 'max_length', 'choices', 'minimum', 'maximum'}
+ALTERABLE = {'type', 'scale', 'max_length', 'choices', 'minimum', 'maximum', 'required'}
 
 
 def conversion(table, name, old, new):
@@ -731,20 +791,46 @@ def conversion(table, name, old, new):
 class AlterField:
     """Change a field's definition where every stored value converts safely: Integer to Decimal (or
     Currency, Percent), a wider decimal scale, longer text, or added Select choices. Bounds may change
-    too. Each stored row is converted and validated inside the migration transaction."""
+    too. Each stored row is converted and validated inside the migration transaction.
+
+    `required` may change as well. Making a field optional always works. Making it required needs every
+    row to have a value: `fill` (a fixed value, validated like a backfill) is stored in the rows that have
+    none, and a row still empty fails the batch, naming it."""
     table: str
     name: str
     field: Field
+    fill: object = None
 
     def signature(self):
         identifier(self.table)
         identifier(self.name)
         if len(self.field.columns(self.name)) != 1 or not self.field.stored:
             raise SchemaError('AlterField changes a stored field with one column')
-        return {'operation': 'alter_field', 'table': self.table, 'name': self.name, 'field': self.field.metadata()}
+        return {'operation': 'alter_field', 'table': self.table, 'name': self.name, 'field': self.field.metadata(),
+                # Left out without a fill, so the checksums of migrations written before it stay the same.
+                **({'fill': self.fill_value()} if self.fill is not None else {})}
 
-    def apply(self, connection, factor=1):
+    def fill_value(self):
+        """The fill as it is stored, after the field's own validation."""
+        if not self.field.required:
+            raise SchemaError(f'{self.table}.{self.name}: AlterField fill= is for making a field required')
+        if isinstance(self.field, (Link, Reference)) or callable(self.fill):
+            raise SchemaError(f'{self.table}.{self.name}: AlterField fill= takes a fixed value, not a Link or a function; '
+                              'fill those rows with a RunData step in an earlier migration')
+        try:
+            value = self.field.to_storage(self.field.validate(self.fill))
+        except (ValueError, TypeError) as exc:
+            raise SchemaError(f'{self.table}.{self.name}: AlterField fill= is not valid: {exc}') from exc
+        if isinstance(value, str) and '\x00' in value:
+            raise SchemaError(f'{self.table}.{self.name}: AlterField fill= cannot contain NUL')
+        return value
+
+    def apply(self, connection, factor=1, was_required=None):
+        postgres = not isinstance(connection, sqlite3.Connection)
         table, column = identifier(self.table), identifier(self.name)
+        if was_required is None:
+            was_required = self.field.required  # Called without the plan: leave the constraint as it is.
+        # Values convert first, so a fill is stored at the new scale.
         if factor != 1:
             limit = MAX_INTEGER // factor
             row = connection.execute(f'SELECT "id" FROM {table} WHERE {column} > ? OR {column} < ? ORDER BY "id" LIMIT 1',
@@ -752,6 +838,24 @@ class AlterField:
             if row is not None:
                 raise SchemaError(f'{self.table} #{RecordId(row[0])}.{self.name}: the value is too large for the new scale')
             connection.execute(f'UPDATE {table} SET {column} = {column} * ? WHERE {column} IS NOT NULL', (factor,))
+        if self.field.required and not was_required:
+            if self.fill is not None:
+                connection.execute(f'UPDATE {table} SET {column} = ? WHERE {column} IS NULL', (self.fill_value(),))
+            empty = connection.execute(f'SELECT "id" FROM {table} WHERE {column} IS NULL ORDER BY "id" LIMIT 1').fetchone()
+            if empty is not None:
+                count = connection.execute(f'SELECT count(*) FROM {table} WHERE {column} IS NULL').fetchone()[0]
+                raise SchemaError(f'{self.table}.{self.name} cannot become required: {count} record{"s have" if count != 1 else " has"} '
+                                  f'no value, the first #{RecordId(empty[0])}. Give AlterField a fill= value, or fill them '
+                                  'with a RunData step in an earlier migration')
+            if postgres:
+                connection.execute(f'ALTER TABLE {table} ALTER COLUMN {column} SET NOT NULL')
+            else:
+                _require(connection, self.table, self.name)
+        elif was_required and not self.field.required:
+            if postgres:
+                connection.execute(f'ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL')
+            else:
+                _relax(connection, self.table, [self.name])
         # Every stored value must pass the new definition (bounds, length, choices), not only its type.
         after = 0
         while True:
@@ -1060,8 +1164,13 @@ def _planned_definition(saved, pending, steps=None):
             if isinstance(operation, (CreateModel, AddTable)):
                 model = operation.model() if isinstance(operation, AddTable) else operation.model
                 name = storage_name(model)
+                if name in models and isinstance(operation, CreateModel) and operation.if_missing:
+                    operation.matches(models[name])
+                    continue
                 if name in models:
-                    raise SchemaError(f'{name} already exists in the schema')
+                    raise SchemaError(f'{name} already exists in the schema'
+                                      + ('; for a table made before the app adopted migrations, use CreateModel(..., if_missing=True)'
+                                         if isinstance(operation, CreateModel) else ''))
                 if isinstance(operation, AddTable) and operation.parent not in models:
                     raise SchemaError(f'AddTable {name}: unknown parent model {operation.parent}')
                 models[name] = {'name': name, 'label': model.__name__,
@@ -1121,7 +1230,8 @@ def _planned_definition(saved, pending, steps=None):
                 if operation.name not in fields:
                     raise SchemaError(f'{operation.table}.{operation.name}: AlterField names a field that does not exist')
                 new = {**operation.field.metadata(), 'name': operation.name}
-                steps[id(operation)] = conversion(operation.table, operation.name, fields[operation.name], new)
+                steps[id(operation)] = (conversion(operation.table, operation.name, fields[operation.name], new),
+                                        bool(fields[operation.name].get('required')))
                 fields[operation.name] = new
             elif isinstance(operation, AddIndex):
                 if operation.field not in fields:
@@ -1216,8 +1326,11 @@ def destructive(migrations, allow_destructive):
 
 
 def step_arguments(operation, steps):
-    """What _planned_definition worked out for applying an operation: AlterField's factor, RetireField's field."""
-    return (steps[id(operation)],) if isinstance(operation, (AlterField, RetireField)) else ()
+    """What _planned_definition worked out for applying an operation: AlterField's factor and whether the field
+    was required, RetireField's field."""
+    if isinstance(operation, AlterField):
+        return steps[id(operation)]
+    return (steps[id(operation)],) if isinstance(operation, RetireField) else ()
 
 
 def maintenance_steps(migrations, allow_maintenance):
@@ -1375,7 +1488,7 @@ class MigrationPlan:
 def describe(operation):
     """One line naming what an operation changes."""
     if isinstance(operation, CreateModel):
-        return f'create model {storage_name(operation.model)}'
+        return f'create model {storage_name(operation.model)}' + (', or check and keep its existing table' if operation.if_missing else '')
     if isinstance(operation, AddTable):
         return f'add table {operation.table()} to {operation.parent} as {operation.name}'
     if isinstance(operation, AddField):
@@ -1395,7 +1508,8 @@ def describe(operation):
     if isinstance(operation, DropField):
         return f'drop field {operation.table}.{operation.name} (deletes its column and values)'
     if isinstance(operation, AlterField):
-        return f'alter field {operation.table}.{operation.name} to {operation.field.kind}'
+        return f'alter field {operation.table}.{operation.name} to {operation.field.kind}' + (
+            f', filling empty values with {operation.fill!r}' if operation.fill is not None else '')
     if isinstance(operation, RunData):
         return f'run data step {operation.name or getattr(operation.function, "__qualname__", "")}'
     return type(operation).__name__
@@ -1531,6 +1645,8 @@ def suggest(registry, planned, name='0002_changes', tables=None):
                     notes.append(f'# {exc}')
                     continue
                 code, used = field_code(model.__app_stored__[key])
+                if new[key].get('required') and not old[key].get('required'):
+                    notes.append(f'# {table}.{key} becomes required: add fill=... to its AlterField if some records have no value')
                 operations.append(f'AlterField({table!r}, {key!r}, {code})')
                 names |= used | {'AlterField'}
     planned_models = {model['name']: model for model in _comparable(planned)['models']}

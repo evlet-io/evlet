@@ -375,7 +375,9 @@ class Shipment(Model):
 ```
 
 - **`Meta.cards`** names zero to five derived values: fields with `compute=`, `fetch=` or `query=`
-  (stored or `stored=False`) and per-record measures (`Meta.measures` with `model=` and `link=`). A
+  (stored or `stored=False`), fields `derive()` sets (named in `Meta.derives`), and per-record
+  measures (`Meta.measures` with `model=` and `link=`). A card shows a field the same way whichever
+  of these fills it: money with its currency's places and symbol, other values as the form shows them. A
   count reads as a plain number, never money. A sum of money whose code each record takes from its own
   fields (`currency=` naming a field or a Link) shows without a symbol, since no one code covers it. A
   stored field people fill in, a hidden field, a model-level measure, an unknown name, a name given

@@ -7,7 +7,7 @@ import pytest
 
 from evlet import (Database, PostgreSQLDatabase, Model, Registry, Text, Integer,
                    Currency, Link, Migration, AddField, RenameField, AddIndex,
-                   SchemaError, ConflictError, LocalAuth)
+                   SchemaError, ConflictError, LocalAuth, Boolean, CreateModel)
 from evlet.identity import sequential_ids
 from examples.playground.app import build_app
 from examples.playground.models import registry, Project
@@ -162,6 +162,31 @@ def test_postgres_migrations_history_and_rollback(pg_dsn):
     assert db.get(Item, kept).note == "50% ? 'quote' INTEGER PRIMARY KEY AUTOINCREMENT X''"
     with pytest.raises(SchemaError): db.migrate([Migration('changed', AddIndex('item', 'title'))])
     assert db.get(Item, kept).title == 'Keep'
+
+
+def test_postgres_create_model_if_missing_adopts_or_refuses_an_existing_table(pg_dsn):
+    import psycopg
+    Old = type('Contact', (Model,), {'name': Text(required=True)})
+    PostgreSQLDatabase(pg_dsn, Registry(Old)).initialize()
+    kept = PostgreSQLDatabase(pg_dsn, Registry(Old)).create(Old, name='Kept').id
+    New = type('Contact', (Model,), {'name': Text(required=True), 'active': Boolean(default=True)})
+    history = [Migration('0001_contact', CreateModel(type('Contact', (Model,), {'name': Text(required=True)}), if_missing=True)),
+               Migration('0002_active', AddField('contact', 'active', Boolean(default=True)))]
+    with psycopg.connect(pg_dsn, autocommit=True) as connection:
+        connection.execute('ALTER TABLE contact ADD COLUMN stray text')
+    with pytest.raises(SchemaError, match=r'the existing table cannot be adopted: contact: database columns differ'):
+        PostgreSQLDatabase(pg_dsn, Registry(New)).migrate(history)
+    with psycopg.connect(pg_dsn, autocommit=True) as connection:
+        connection.execute('ALTER TABLE contact DROP COLUMN stray')
+    db = PostgreSQLDatabase(pg_dsn, Registry(New), migrations=history)
+    assert db.migrate(history) == ['0001_contact', '0002_active']
+    db.initialize()
+    assert db.get(New, kept).name == 'Kept' and db.get(New, kept).active is True
+
+
+def test_postgres_alter_field_changes_required_on_existing_rows(pg_dsn):
+    from tests.test_migrations import check_required_changes
+    check_required_changes(lambda registry, migrations=None: PostgreSQLDatabase(pg_dsn, registry, migrations=migrations))
 
 
 def test_postgres_actions_children_attachments_jobs_events_and_revocation(secured):

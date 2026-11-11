@@ -444,6 +444,14 @@ def leave_registry(days):
     return Registry(type('Leave', (Model,), {'days': days, '__module__': __name__}))
 
 
+def test_the_plan_suggests_alter_field_for_a_field_that_becomes_required(tmp_path):
+    path = tmp_path / 'leave.sqlite3'
+    Database(path, leave_registry(Integer()), migrations=[]).initialize()
+    plan = Database(path, leave_registry(Integer(required=True))).plan([])
+    assert "AlterField('leave', 'days', Integer(required=True))" in plan.suggestion
+    assert '# leave.days becomes required: add fill=... to its AlterField if some records have no value' in plan.suggestion
+
+
 @pytest.mark.parametrize('old,new,message', [
     (Integer(), Integer(minimum=1), None),
     (Text(max_length=20), Text(max_length=200), None),
@@ -454,7 +462,9 @@ def leave_registry(days):
     (__import__('evlet').Decimal(scale=3), __import__('evlet').Decimal(scale=1), 'not narrow it'),
     (Text(max_length=20), Text(max_length=10), 'not shorten it'),
     (__import__('evlet').Select(('a', 'b')), __import__('evlet').Select(('a',)), 'not remove them'),
-    (Integer(), Integer(required=True), 'cannot change required'),
+    (Integer(), Integer(required=True), None),
+    (Integer(required=True), Integer(), None),
+    (Integer(), Integer(unique=True), 'cannot change unique'),
     (Text(), __import__('evlet').Select(('a',)), 'cannot convert text to select'),
 ])
 def test_alter_field_allows_only_safe_conversions(tmp_path, old, new, message):

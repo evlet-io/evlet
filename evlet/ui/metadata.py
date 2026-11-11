@@ -720,7 +720,8 @@ def field_schema(field):
     if getattr(field, 'ledger_target', False):
         # A Link to a ledger row shows its plain integer id and is never written by a caller (evlet/ledger.py).
         result.pop('target', None)
-        result.update(type='integer', read_only=True)
+        # An id, not a quantity: shown without thousands separators.
+        result.update(type='integer', read_only=True, grouping=False)
     return result
 
 

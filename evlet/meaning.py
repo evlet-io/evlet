@@ -10,7 +10,8 @@ Declared on `Model.Meta`:
 
 `status` names a Select or State shown as the record's status badge (and as a badge in lists).
 `cards` (up to five) names derived values shown as cards at the top of a compact record page: fields
-with compute=, fetch= or query= (stored or not) and per-record measures (Meta.measures with model= and link=).
+with compute=, fetch= or query= (stored or not), fields derive() sets (Meta.derives) and per-record measures
+(Meta.measures with model= and link=).
 Relations are reverse Links: every Link on a root model to another root model is discovered
 automatically. `Related` names, orders, limits or hides one of them.
 """
@@ -146,7 +147,8 @@ def key_fields(model, names):
 def cards_for(registry, models, children):
     """{model: names} for every model with Meta.cards, checked once its measures are compiled.
 
-    Each card is a visible field with compute=, fetch= or query= (stored or not), or a per-record measure of
+    Each card is a visible field with compute=, fetch= or query= (stored or not), a field derive() sets
+    (Meta.derives), or a per-record measure of
     the model (Meta.measures with model= and link=). A model-level measure totals many records, so it is not
     a card on one record."""
     result = {}
@@ -172,9 +174,9 @@ def cards_for(registry, models, children):
             if field is not None:
                 if field.hidden:
                     raise ValueError(f'{where}: {name} is hidden')
-                if field.compute is None and field.fetch is None and field.query is None:
+                if field.compute is None and field.fetch is None and field.query is None and name not in getattr(model, '__derives__', ()):
                     raise ValueError(f'{where}: {name} is not derived; a card shows a field with compute=, fetch= or '
-                                     'query=, or a per-record measure')
+                                     'query=, a field derive() sets (Meta.derives), or a per-record measure')
             elif measure is not None:
                 if measure.link is None:
                     raise ValueError(f'{where}: {name} is a model-level measure; a card shows a per-record measure '

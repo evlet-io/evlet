@@ -6,6 +6,17 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **`CreateModel(Model, if_missing=True)`** adopts a table made before the app used migrations.
+  When the table exists it is checked against the frozen class and kept with its rows; a
+  difference fails the batch naming it. A plain `CreateModel` of an existing table now says to
+  use the option. See [Adopting a table made before migrations](docs/model-engine.md#adopting-a-table-made-before-migrations).
+- **`AlterField` can change `required`.** Making a field optional always works. Making it
+  required checks every row and fails naming the first empty one, unless `fill=` gives a value
+  for them. Works on SQLite (in place, inside the migration transaction) and PostgreSQL. See
+  [Making a field required or optional](docs/model-engine.md#making-a-field-required-or-optional).
+
 ### Fixed
 
 - **Moves and actions that link a ledger row work over HTTP.** A move `run` method or an
@@ -13,6 +24,22 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   refused with 403 "You do not have permission for this operation", even for an admin,
   because the save checked that Link against the caller's read access and ledger models have
   no surface. Calls through `business.context()` were not affected, so tests missed it.
+- **Record history shows Links properly.** A Link to a ledger row showed "Invalid amount" in
+  the record page's Activity: the journal turned its integer id into a text record id, which
+  the screen, reading the field as an integer, could not show. The journal now returns the
+  plain integer id, as record responses do, and the schema marks such a field
+  `"grouping": false` so the id shows without thousands separators. Activity also shows any
+  other changed Link as the linked record's title instead of `#id`.
+- **Key cards can show fields `derive()` sets.** `Meta.cards` refused a field named in
+  `Meta.derives` as "not derived". Such a field is now a card like a formula's result, with the
+  same formatting.
+- **A value `derive()` sets that its field refuses is a field error, never a 500.** A value
+  with more decimal places than the field allows, or a fraction for an `Integer`, already
+  refused a save with 422, but a preview answered 500 and formulas read the refused value.
+  The value is now emptied after its error is noted, so a preview returns the error and
+  the save stays a 422 naming the field. On a saved record, the error on a rebuilt derived
+  row is keyed by the row id the preview shows. `derive()` still rounds its own values: see
+  [Derived values](docs/model-engine.md#derived-values).
 
 ## 0.4.1 (10-11-2026)
 

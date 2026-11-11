@@ -534,7 +534,9 @@ stopped. For several customers routed by Host, see
 
 Each app supplies its complete ordered history of existing `Migration` objects.
 Use `CreateModel` for new app models and the existing explicit operations for
-schema changes. Keep published migration schemas frozen. The generated initial
+schema changes. For a model whose table existed before the app adopted migrations, use
+`CreateModel(Model, if_missing=True)`, which checks and keeps the existing table
+([model-engine.md](model-engine.md#adopting-a-table-made-before-migrations)). Keep published migration schemas frozen. The generated initial
 legacy migration contains a frozen copy of its starter model, separate from the live
 model definition. The installer prefixes migration
 names with the app identity and preserves the combined database's applied order.
