@@ -27,6 +27,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   serve app workers ([docs/jobs-realtime.md](docs/jobs-realtime.md#queue-a-job-from-an-action)).
 - The Background Playground (`examples/playground/background/app.py`) shows all three.
 
+### Changed
+
+- `Move` takes `system=False`, and its `roles` default is now written `roles=None`, which still
+  means admin and editor. `User` gains `system=None`. Apps change nothing.
+
 ### Fixed
 
 - An `@action` that returned a `JobReceipt` put the receipt object in `_outcome`, which could not
