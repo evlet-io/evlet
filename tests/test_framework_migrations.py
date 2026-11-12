@@ -8,7 +8,7 @@ import time
 import pytest
 
 from evlet import Application, Database, LocalAuth, SchemaError
-from evlet import framework
+from evlet import framework, writes
 from evlet.cli.install import install
 from evlet.cli.main import main
 from evlet.instances import database_state, read_lock
@@ -43,7 +43,7 @@ def as_release_0_2_0(project):
     lock = json.loads((path / 'apps.lock').read_text())
     del lock['evlet']
     (path / 'apps.lock').write_text(json.dumps(lock))
-    with closing(sqlite3.connect(database(project))) as connection:
+    with closing(writes.connect(database(project))) as connection:
         connection.execute('DROP TABLE evlet_framework_migrations')
         connection.execute('DROP TABLE evlet_tool_calls')
         connection.execute('UPDATE evlet_installed_apps SET manifest=? WHERE id=1', (json.dumps(lock),))
@@ -63,14 +63,15 @@ def as_release_0_2_0(project):
 
 
 def tables(path):
-    with closing(sqlite3.connect(path)) as connection:
-        return {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    """The tables of a database file and of its sessions, logs and Eva files (evlet/writes.py)."""
+    with closing(writes.connect(path)) as connection:
+        return writes.tables(connection)
 
 
 def test_install_records_framework_version_in_lock_manifest_and_ledger(project):
     install(project, 'acme', app_name='notes', trust=True)
     lock = read_lock(project / 'instances/acme')
-    assert lock['evlet'] == framework.state() == {'version': framework.version(), 'schema': '0009_admin_username'}
+    assert lock['evlet'] == framework.state() == {'version': framework.version(), 'schema': '0010_split_files'}
     assert database_state(database(project)) == lock
     with closing(sqlite3.connect(database(project))) as connection:
         rows = connection.execute('SELECT position, name, checksum, evlet_version FROM evlet_framework_migrations').fetchall()
@@ -89,18 +90,18 @@ def test_upgrade_from_0_2_0_instance_backs_up_then_applies_non_additive_step(pro
 
     main(['migrate', 'acme', '--project', str(project)])
     out = capsys.readouterr().out
-    assert 'Framework migrations: 0001_startup_tables, 0002_tool_calls, 0003_record_names, 0004_record_times, 0005_unsaved_changes, 0006_fixed_ids, 0007_money_scale, 0008_administrator, 0009_admin_username, 0099_move_calls' in out
+    assert 'Framework migrations: 0001_startup_tables, 0002_tool_calls, 0003_record_names, 0004_record_times, 0005_unsaved_changes, 0006_fixed_ids, 0007_money_scale, 0008_administrator, 0009_admin_username, 0010_split_files, 0099_move_calls' in out
     backup = out.split('Backup: ')[1].strip()
     # The backup is the instance exactly as 0.2.0 left it.
     assert {'evlet_legacy_calls', 'evlet_mcp_calls'} <= tables(backup) and 'evlet_framework_migrations' not in tables(backup)
     assert {'evlet_moved_calls', 'evlet_tool_calls', 'evlet_framework_migrations'} <= tables(database(project))
     assert not {'evlet_legacy_calls', 'evlet_mcp_calls'} & tables(database(project))
-    with closing(sqlite3.connect(database(project))) as connection:
+    with closing(writes.connect(database(project))) as connection:
         assert connection.execute('SELECT id, tool FROM evlet_moved_calls').fetchall() == [(7, 'describe')]
         assert connection.execute('SELECT at, user_id, origin, client, client_id, tool, model, kind, outcome FROM evlet_tool_calls').fetchall() == \
             [(NOW, 1, 'mcp', 'Desktop client', 3, 'list_records', 'notesitem', 'read', 'ok')]
         assert [row[0] for row in connection.execute('SELECT name FROM evlet_framework_migrations ORDER BY position')] == \
-            ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0099_move_calls']
+            ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0099_move_calls']
     assert read_lock(project / 'instances/acme')['evlet'] == {'version': framework.version(), 'schema': '0099_move_calls'}
     app = runtime(project)
     assert [record.title for record in app.database.list(app.registry.models['notesitem'])] == ['Keep this note']
@@ -121,7 +122,7 @@ def test_failed_framework_step_leaves_database_and_lock_untouched(project, monke
     assert not {'evlet_framework_migrations', 'evlet_tool_calls'} & tables(database(project))
     # A fixed release then upgrades the same instance.
     monkeypatch.setattr(framework, 'STEPS', (*released, MOVE))
-    assert install(project, 'acme')['framework'] == ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0099_move_calls']
+    assert install(project, 'acme')['framework'] == ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0099_move_calls']
 
 
 def test_serve_refuses_a_newer_evlet_until_migrate(project, monkeypatch):
@@ -183,7 +184,7 @@ def test_development_applications_bootstrap_and_apply_steps_automatically(tmp_pa
     app.initialize()
     with closing(sqlite3.connect(tmp_path / 'app.sqlite3')) as connection:
         assert [row[0] for row in connection.execute('SELECT name FROM evlet_framework_migrations ORDER BY position')] == \
-            ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0099_move_calls']
+            ['0001_startup_tables', '0002_tool_calls', '0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0099_move_calls']
 
 
 def test_plan_lists_pending_framework_steps_without_writing(project, capsys):
@@ -214,7 +215,7 @@ def test_tool_calls_step_copes_with_missing_mcp_tables(tmp_path):
         connection.commit()
     Application(Database(path, Registry(Note))).initialize()
     assert 'evlet_mcp_calls' not in tables(path) and 'evlet_tool_calls' in tables(path)
-    with closing(sqlite3.connect(path)) as connection:
+    with closing(writes.connect(path)) as connection:
         assert connection.execute('SELECT count(*) FROM evlet_tool_calls').fetchone()[0] == 0
 
 

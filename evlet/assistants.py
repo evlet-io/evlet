@@ -457,6 +457,8 @@ class Assistants:
 
     def mine(self, user, origin):
         settings = self.settings()
+        # Show the latest counts and times: save the batched ones first (evlet/writes.py LogBuffer).
+        self.database.logs.flush()
         with self.database._connection() as connection:
             clients = [dict(row) for row in connection.execute('SELECT id, client_name, created_at, last_used, calls, allow_changes, apps FROM evlet_mcp_clients '
                                                                 'WHERE user_id=? AND revoked_at IS NULL ORDER BY id DESC', (user.id,))]
@@ -507,6 +509,8 @@ class Assistants:
 
     def overview(self, scope):
         """Controls: the address, connected clients and totals for the last 24 hours. Per-request detail stays with each person."""
+        # Show the latest counts and times: save the batched ones first (evlet/writes.py LogBuffer).
+        self.database.logs.flush()
         with self.database._connection() as connection:
             clients = [dict(row) for row in connection.execute('SELECT m.id, m.client_name, u.username, u.role, m.created_at, m.last_used, m.calls FROM evlet_mcp_clients m '
                                                                 'JOIN evlet_users u ON u.id=m.user_id WHERE m.revoked_at IS NULL ORDER BY m.id DESC LIMIT 500')]

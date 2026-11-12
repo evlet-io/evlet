@@ -7,6 +7,7 @@ import threading
 import sqlite3
 
 from .database import Database, Session, conflict, run_after_commit, using
+from .writes import LogBuffer
 from .identity import RecordId
 from .models import identifier, ValidationError
 
@@ -170,6 +171,8 @@ class PostgreSQLDatabase(Database):
         self._pid = os.getpid()
         self.max_connections = max_connections
         self.registry = registry
+        # Busy log writes are batched here too; PostgreSQL keeps every table in one database (evlet/writes.py).
+        self.logs = LogBuffer(self)
         self.migrations = None if migrations is None else tuple(migrations)
 
     def _configure(self, raw):
@@ -197,7 +200,8 @@ class PostgreSQLDatabase(Database):
             return self._pool
 
     def close(self):
-        """Release pooled connections after requests and workers have stopped."""
+        """Save buffered log writes, then release pooled connections after requests and workers have stopped."""
+        self.logs.flush()
         with self._pool_lock:
             if self._pool is not None:
                 self._pool.close()
@@ -227,7 +231,8 @@ class PostgreSQLDatabase(Database):
             raise sqlite3.OperationalError('PostgreSQL operation failed') from None
 
     @contextmanager
-    def transaction(self, *, timeout=None):
+    def transaction(self, *, timeout=None, store=None):
+        """One database: store= (sessions, logs, eva) is accepted for the same code as SQLite and changes nothing."""
         if timeout is not None and (type(timeout) is not int or not 1 <= timeout <= 86400):
             raise ValueError('Use a transaction timeout between 1 and 86400 seconds')
         with self._connection() as connection:

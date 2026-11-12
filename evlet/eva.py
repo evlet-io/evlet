@@ -574,6 +574,17 @@ class Eva:
                 tx.connection.execute(statement)
             # Runs a stopped process left behind: nobody is working on them any more.
             self.reap(tx.connection)
+            # Eva has its own SQLite file, which cannot refer to accounts in the main one (evlet/writes.py), so
+            # links to accounts are checked here: a person's chats, files and tasks go when the account does,
+            # and the schedule of a task that is gone stops.
+            for table in ('evlet_eva_conversations', 'evlet_eva_files', 'evlet_eva_tasks'):
+                tx.connection.execute(f'DELETE FROM {table} WHERE user_id NOT IN (SELECT id FROM evlet_users)')
+            if self.business.jobs is not None and self.database.columns(tx.connection, 'evlet_schedules'):
+                tasks = {f'eva_task_{row[0]}' for row in tx.connection.execute('SELECT id FROM evlet_eva_tasks')}
+                for (name,) in tx.connection.execute("SELECT name FROM evlet_schedules WHERE name LIKE 'eva_task_%'").fetchall():
+                    if name not in tasks:
+                        tx.connection.execute('DELETE FROM evlet_calendar_schedules WHERE name=?', (name,))
+                        tx.connection.execute('DELETE FROM evlet_schedules WHERE name=?', (name,))
 
     def alive(self, run_id):
         with self.lock:
@@ -908,7 +919,7 @@ class Eva:
         connection.execute('INSERT INTO evlet_eva_events(run_id,at,type,data) VALUES (?,?,?,?)', (run_id, int(time.time()), kind, json.dumps(data, default=str)))
 
     def emit_now(self, run_id, kind, data):
-        with self.database.transaction() as tx:
+        with self.database.transaction(store='eva') as tx:
             self.emit(tx.connection, run_id, kind, data)
             tx.connection.execute('UPDATE evlet_eva_runs SET updated_at=? WHERE id=?', (int(time.time()), run_id))
 
@@ -959,7 +970,7 @@ class Eva:
                 if not calls:
                     self.finish(run_id, 'completed', None, text or 'I have nothing to add.')
                     return
-                with self.database.transaction() as tx:
+                with self.database.transaction(store='eva') as tx:
                     tx.connection.execute("INSERT INTO evlet_eva_messages(conversation_id,run_id,role,content,tool_calls,created_at) VALUES (?,?,'assistant',?,?,?)",
                                           (run['conversation_id'], run_id, text, json.dumps(calls), int(time.time())))
                     tx.connection.execute('UPDATE evlet_eva_runs SET steps=?, updated_at=? WHERE id=?', (steps, int(time.time()), run_id))
@@ -970,7 +981,7 @@ class Eva:
                     if not self.tool_step(run, user, call, scope, remaining=calls[index:]):
                         return
                     tools_used += 1
-                    with self.database.transaction() as tx:
+                    with self.database.transaction(store='eva') as tx:
                         tx.connection.execute('UPDATE evlet_eva_runs SET tool_calls=?, updated_at=? WHERE id=?', (tools_used, int(time.time()), run_id))
         except QuotaError as exc:
             self.finish(run_id, 'failed', f'quota:{exc.scope}:{exc.reset}', None)
@@ -993,13 +1004,13 @@ class Eva:
         if row is None or row['status'] not in ('running',):
             return True
         if row['cancel']:
-            with self.database.transaction() as tx:
+            with self.database.transaction(store='eva') as tx:
                 self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
             return True
         return False
 
     def finish(self, run_id, status, error, message):
-        with self.database.transaction() as tx:
+        with self.database.transaction(store='eva') as tx:
             run = tx.connection.execute('SELECT * FROM evlet_eva_runs WHERE id=?', (run_id,)).fetchone()
             if run is None or run['status'] not in ('running', 'awaiting_approval'):
                 return
@@ -1030,7 +1041,7 @@ class Eva:
                 result = self.business.tools.execute(user, call['name'], values, scope, run_id=run_id, client='Eva')
             except ApprovalNeeded as exc:
                 approval = exc.approval
-                with self.database.transaction() as tx:
+                with self.database.transaction(store='eva') as tx:
                     tx.connection.execute("UPDATE evlet_eva_runs SET status='awaiting_approval', pending=?, updated_at=? WHERE id=?",
                                           (json.dumps({'approval': approval['id'], 'calls': remaining or [call]}), int(time.time()), run_id))
                     self.emit(tx.connection, run_id, 'approval.requested', {'call_id': call['id'], 'tool': call['name'], 'label': title, 'approval': approval})
@@ -1051,7 +1062,7 @@ class Eva:
             content = json.dumps({'error': error, **data}, default=str)
         if len(content) > RESULT_CHARS:
             content = content[:RESULT_CHARS] + '… [cut: ask for a smaller page or a filter]'
-        with self.database.transaction() as tx:
+        with self.database.transaction(store='eva') as tx:
             tx.connection.execute("INSERT INTO evlet_eva_messages(conversation_id,run_id,role,content,tool_call_id,created_at) VALUES (?,?,'tool',?,?,?)",
                                   (run['conversation_id'], run_id, content, call['id'], int(time.time())))
         return True
@@ -1378,7 +1389,7 @@ class Eva:
         if model and rate is None and any(limit['unit'] == 'aed' for _, limit in limits):
             raise RateMissing(NO_RATE)
         now = int(time.time())
-        with self.database.transaction() as tx:
+        with self.database.transaction(store='eva') as tx:
             connection = tx.connection
             # One writer at a time: two requests can't both take the last of an allowance.
             connection.execute('UPDATE evlet_eva_lock SET n=n+1 WHERE id=1')
@@ -1393,7 +1404,7 @@ class Eva:
                                       (user_id, origin, cost, tokens, now + 900)).lastrowid
 
     def release(self, reservation):
-        with self.database.transaction() as tx:
+        with self.database.transaction(store='eva') as tx:
             tx.connection.execute('DELETE FROM evlet_eva_reservations WHERE id=?', (reservation,))
 
     def rate(self, model):
@@ -1402,7 +1413,7 @@ class Eva:
     def settle(self, reservation, run, usage, tool_calls, duration, estimated):
         rate = self.rate(run['model'])
         total = usage.get('input', 0) + usage.get('output', 0)
-        with self.database.transaction() as tx:
+        with self.database.transaction(store='eva') as tx:
             if reservation is not None:
                 tx.connection.execute('DELETE FROM evlet_eva_reservations WHERE id=?', (reservation,))
             task = tx.connection.execute('SELECT task_id FROM evlet_eva_conversations WHERE id=?', (run['conversation_id'],)).fetchone()

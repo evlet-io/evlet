@@ -38,18 +38,31 @@ def _note(instance, trusted=()):
             f'# in instances/{instance}/config.py, then restart Evlet:\n#     {line},\n\n')
 
 
-def caddy(routes, port=8000, instance='<name>', trusted=()):
+# Caddy's global options: refuse a request whose Host differs from the TLS server name (SNI), so a visitor
+# can't reach one host's site through another host's certificate. They must open the Caddyfile, which is why
+# evlet setup --apply installs them as their own file and imports it on the Caddyfile's first line.
+GLOBAL_OPTIONS = '''{
+\tservers :443 {
+\t\tstrict_sni_host on
+\t}
+}
+'''
+
+
+def caddy(routes, port=8000, instance='<name>', trusted=(), global_options=True):
+    """A Caddyfile for the instance's hosts. global_options=False leaves out the global block, for a file
+    another Caddyfile imports (evlet setup --apply installs GLOBAL_OPTIONS on its own)."""
     from ..app import PUBLIC_PATHS
     sites = []
     for host in _hosts(routes):
         # /_/ holds framework routes. The MCP endpoint, its OAuth sign-in and the mailbox sign-in return
         # are public; the rest, such as the on-demand TLS check, are for local callers only.
         lines = [f'{host} {{', '\t@internal {', '\t\tpath /_/*', '\t\tnot path ' + ' '.join(PUBLIC_PATHS), '\t}', '\trespond @internal 404']
-        if host in routes.sub_hosts():
+        if host in routes.sub_hosts() and not routes.public(host):
             lines += [f'\t@primary_only path_regexp (?i)^/({"|".join(PRIMARY_ONLY)})(/|$)', '\trespond @primary_only 404']
         lines += [f'\treverse_proxy 127.0.0.1:{port}', '}']
         sites.append('\n'.join(lines))
-    return _note(instance, trusted) + '\n\n'.join(sites) + '\n'
+    return _note(instance, trusted) + (GLOBAL_OPTIONS + '\n' if global_options else '') + '\n\n'.join(sites) + '\n'
 
 
 def _nginx_proxy(port, body):
@@ -82,9 +95,10 @@ def nginx(routes, port=8000, instance='<name>', trusted=()):
     server_name {host};
     ssl_certificate /etc/letsencrypt/live/{host}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/{host}/privkey.pem;
+    if ($ssl_server_name != $host) {{ return 421; }}
 {public}    location ^~ /_/ {{ return 404; }}
 '''
-        if host in routes.sub_hosts():
+        if host in routes.sub_hosts() and not routes.public(host):
             block += f'    location ~* ^/({"|".join(PRIMARY_ONLY)})(/|$) {{ return 404; }}\n'
         block += f'''    location / {{
         {_nginx_proxy(port, "2m")}
@@ -153,18 +167,20 @@ def server_addresses():
     return found
 
 
-def check(routes, addresses=None, resolve=socket.getaddrinfo):
+def check(routes, addresses=None, resolve=socket.getaddrinfo, hosts=None):
     """One line per host saying where its A/AAAA records point, then any warnings, and whether setup may go on.
 
+    It checks the route table's hosts, or only hosts when given (evlet host add checks a host before adding it).
     It stops (False) only for a host with no record, or with only private records while this server has a public address."""
+    hosts = tuple(hosts) if hosts is not None else _hosts(routes)
     addresses = {str(ipaddress.ip_address(item)) for item in (addresses or server_addresses())}
     lines, ok = [], True
     # Behind NAT (most cloud servers) this server only sees private addresses, so a public record can't be
     # matched. That is a warning, not a stop: Caddy keeps retrying its certificate until DNS is right.
     public_here = any(ipaddress.ip_address(item).is_global for item in addresses)
     warnings = []
-    width = max(len(host) for host in _hosts(routes)) + 3
-    for host in routes.hosts():
+    width = max(len(host) for host in hosts) + 3
+    for host in hosts:
         try:
             records = sorted({str(ipaddress.ip_address(info[4][0].split('%')[0])) for info in resolve(host, None, proto=socket.IPPROTO_TCP)})
         except (OSError, UnicodeError):

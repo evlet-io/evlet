@@ -305,13 +305,36 @@ def test_apply_runs_each_privileged_step_after_showing_it(tmp_path, monkeypatch,
     assert [args for args, _ in ran] == [
         ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.service', '/etc/systemd/system/evlet-acme.service'],
         ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.caddy', '/etc/caddy/evlet-acme.caddy'],
+        ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-global.caddy', '/etc/caddy/evlet-global.caddy'],
         ['sudo', 'tee', '-a', str(caddyfile)],
+        ['sudo', 'sed', '-i', '1i import /etc/caddy/evlet-global.caddy', str(caddyfile)],
         ['sudo', 'systemctl', 'daemon-reload'],
         ['sudo', 'systemctl', 'enable', '--now', 'evlet-acme'],
         ['sudo', 'systemctl', 'reload', 'caddy']]
-    assert ran[2][1] == '\nimport /etc/caddy/evlet-acme.caddy\n'
-    assert out.count('$ sudo') == 5 and 'Serving https://erp.example.com through Caddy' in out
+    assert ran[3][1] == '\nimport /etc/caddy/evlet-acme.caddy\n'
+    # The global options switch on strict SNI; the site file carries none, since Caddy reads them from the first block only.
+    assert 'strict_sni_host on' in (root / 'deploy/evlet-global.caddy').read_text()
+    assert 'strict_sni_host' not in (root / 'deploy/evlet-acme.caddy').read_text()
+    assert 'grep -qxF \'import /etc/caddy/evlet-global.caddy\'' in out
+    assert out.count('$ sudo') == 6 and 'Serving https://erp.example.com through Caddy' in out
     assert out.rstrip().endswith('https://erp.example.com answers (status 200).')
+
+
+def test_strict_sni_import_goes_first_or_stops_at_a_global_block_of_its_own(tmp_path, monkeypatch):
+    import shutil
+    monkeypatch.setattr(shutil, 'which', lambda name: '/usr/bin/' + name)
+    caddyfile = tmp_path / 'Caddyfile'
+    monkeypatch.setattr(site, 'CADDYFILE', str(caddyfile))
+    ran = []
+    step = [('import-first', '/etc/caddy/evlet-global.caddy')]
+    caddyfile.write_text('# my sites\n{\n\temail me@example.com\n}\nexample.com {\n}\n')
+    with pytest.raises(ValueError, match='has its own global options block'):
+        site.run_privileged(step, run=lambda args, **values: ran.append(args))
+    caddyfile.write_text('{\n\tservers :443 {\n\t\tstrict_sni_host on\n\t}\n}\n')
+    site.run_privileged(step, run=lambda args, **values: ran.append(args))
+    caddyfile.write_text('example.com {\n}\n')
+    site.run_privileged(step, run=lambda args, **values: ran.append(args))
+    assert ran == [['sudo', 'sed', '-i', '1i import /etc/caddy/evlet-global.caddy', str(caddyfile)]]
 
 
 def test_apply_needs_systemd(monkeypatch):
@@ -363,7 +386,7 @@ def test_host_remembers_the_public_address_and_replaces_outdated_installed_files
     assert 'sudo systemctl restart evlet-acme' in out
     monkeypatch.setattr(shutil, 'which', lambda name: '/usr/bin/' + name)
     caddyfile = tmp_path / 'Caddyfile'
-    caddyfile.write_text(f'import {etc}/caddy/evlet-acme.caddy\n')
+    caddyfile.write_text(f'import {etc}/caddy/evlet-global.caddy\nimport {etc}/caddy/evlet-acme.caddy\n')
     monkeypatch.setattr(site, 'CADDYFILE', str(caddyfile))
     ran = []
 
@@ -379,6 +402,7 @@ def test_host_remembers_the_public_address_and_replaces_outdated_installed_files
     assert 'is out of date. Installing the new file.' in out
     assert ran == [['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.service', f'{etc}/systemd/evlet-acme.service'],
                    ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-acme.caddy', f'{etc}/caddy/evlet-acme.caddy'],
+                   ['sudo', 'install', '-m', '644', f'{root}/deploy/evlet-global.caddy', f'{etc}/caddy/evlet-global.caddy'],
                    ['sudo', 'systemctl', 'daemon-reload'],
                    ['sudo', 'systemctl', 'enable', '--now', 'evlet-acme'],
                    ['sudo', 'systemctl', 'restart', 'evlet-acme'],

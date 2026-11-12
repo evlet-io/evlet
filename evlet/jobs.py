@@ -15,6 +15,7 @@ from .identity import RecordId, text as text_id
 from .database import NotFoundError
 from .models import ValidationError
 from .permissions import Policy, trusted
+from .writes import WRITE_LABEL, job_writes
 
 logger = logging.getLogger(__name__)
 # Seconds a claim lasts by default, and how far each committed step of a resumable task extends it.
@@ -64,6 +65,16 @@ class JobContext:
     checkpoint: object = None
     _report: object = field(default=None, init=False, repr=False, compare=False)
     _business: object = field(default=None, init=False, repr=False, compare=False)
+    _queue: object = field(default=None, init=False, repr=False, compare=False)
+
+    def follow_up(self, tx, payload=None, *, run_at, key=None):
+        """Queue this job's task again to run at run_at (UTC seconds), in the job's own transaction: it is queued only
+        if this run (or this step of a resumable task) commits. payload defaults to this job's payload.
+
+        The next run has this job's identity: the same account, API key or AI assistant, or the same system role.
+        It never runs as anyone else, such as the Administrator. key defaults to one per job and run_at, so a retried
+        run does not queue the same follow-up twice. Returns its JobReceipt."""
+        return self._queue._follow_up(tx, self, payload, run_at, key)
 
     def business(self, tx, *, user=None, system=None, role=None):
         """A document context (evlet.documents.Context) in this job's transaction, for moves, actions and
@@ -250,6 +261,39 @@ class JobQueue:
         if assistant is not None: tx.connection.execute('INSERT INTO evlet_job_assistants(job_id,client_id) VALUES (?,?)', (job_id, assistant))
         return JobReceipt(job_id, 'queued')
 
+    def _follow_up(self, tx, context, payload, run_at, key):
+        self._bound(tx)
+        row = tx.connection.execute('SELECT * FROM evlet_jobs WHERE id=?', (context.id,)).fetchone()
+        if row is None:
+            raise ValueError('This job is no longer queued')
+        due = timestamp(run_at)
+        encoded = row['payload'] if payload is None else None
+        if payload is not None:
+            if not isinstance(payload, dict):
+                raise ValueError('Use a JSON object task payload')
+            encoded = json.dumps(payload, allow_nan=False, separators=(',', ':'))
+            if len(encoded.encode()) > 16384:
+                raise ValueError('Task payload exceeds 16 KiB')
+        key = f'follow:{context.id}:{due}' if key is None else key
+        if not isinstance(key, str) or not 1 <= len(key) <= 200:
+            raise ValueError('Use an idempotency key of 1 to 200 characters')
+        identity = {table: tx.connection.execute(f'SELECT {column} FROM {table} WHERE job_id=?', (context.id,)).fetchone()
+                    for table, column in (('evlet_job_identities', 'role'), ('evlet_job_keys', 'key_id'), ('evlet_job_assistants', 'client_id'))}
+        old = tx.connection.execute('SELECT * FROM evlet_jobs WHERE dedupe=?', (key,)).fetchone()
+        if old:
+            if (old['task'], old['payload'], old['actor'], old['model'], old['record_id']) != (row['task'], encoded, row['actor'], row['model'], row['record_id']):
+                raise ValueError('Idempotency key was already used for another job')
+            return JobReceipt(old['id'], old['state'])
+        job_id = tx.connection.execute('INSERT INTO evlet_jobs(task,payload,actor,model,record_id,state,max_attempts,run_at,created_at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                                       (row['task'], encoded, row['actor'], row['model'], row['record_id'], 'queued', row['max_attempts'], due, int(time.time()), key)).lastrowid
+        for table, value in identity.items():
+            if value is not None:
+                column = {'evlet_job_identities': 'role', 'evlet_job_keys': 'key_id', 'evlet_job_assistants': 'client_id'}[table]
+                tx.connection.execute(f'INSERT INTO {table}(job_id,{column}) VALUES (?,?)', (job_id, value[0]))
+        if self.wake not in tx._after_commit:
+            tx._after_commit.append(self.wake)
+        return JobReceipt(job_id, 'queued')
+
     def wake(self):
         """Tell a worker in this process that a job is due now. Context.enqueue calls it once its transaction commits."""
         self._woken.set()
@@ -329,7 +373,8 @@ class JobQueue:
         from contextlib import nullcontext
         from .database import using
         business = getattr(self, 'business', None)
-        with business.gate.shared() if business is not None else nullcontext(), using(self.database):
+        # A job's writes queue behind requests for each file, and never wait long (evlet/writes.py).
+        with business.gate.shared() if business is not None else nullcontext(), using(self.database), job_writes(f'job #{claim[0]}'):
             return self._execute(claim, active=active, now=now)
 
     def _execute(self, claim, *, active=lambda: True, now=None):
@@ -353,6 +398,7 @@ class JobQueue:
                         self._release_claim(tx, job_id, token, clock)
                         return steps > 0
                     task, context, payload = self._prepare(tx, row, job_id, token)
+                    WRITE_LABEL.set(f'job #{job_id} {task.name}')
                     running = True
                     tx._business = getattr(self, 'business', None)
                     if task.external:
@@ -448,6 +494,7 @@ class JobQueue:
                 tx.connection.execute(sql, (job_id, done, total, message, int(time.time())))
         context = JobContext(job_id, self.tenant, row['attempts'], user, stable_key, checkpoint)
         object.__setattr__(context, '_report', report)
+        object.__setattr__(context, '_queue', self)
         object.__setattr__(context, '_business', getattr(self, 'business', None))
         return task, context, json.loads(row['payload'])
 
@@ -460,8 +507,9 @@ class JobQueue:
             return False
         if getattr(self, 'business', None) is not None:
             self.business.controls.refresh()
-        self.tick(now=now)
-        claim = self.claim(now=now)
+        with job_writes('job queue'):
+            self.tick(now=now)
+            claim = self.claim(now=now)
         return False if claim is None else self.execute(claim, active=active, now=now)
 
     def status(self, job_id, user):

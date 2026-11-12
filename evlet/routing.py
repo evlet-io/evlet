@@ -15,6 +15,11 @@ RESERVED = MappingProxyType({
     **dict.fromkeys(('report', 'dashboard', 'search', 'print'), PLANNED),
 })
 KINDS = ('evlet', 'static', 'server')
+ROUTINGS = ('app', 'pages')
+# One DNS label, such as www: Frontend(suggested_host=...) offers <label>.<instance domain> at install.
+LABEL = re.compile(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?')
+# A frontend id as Host(root=...) may name it: "<app>.<frontend>".
+IDENTITY = re.compile(r'[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*')
 REALMS = ('desk', 'portal', None)
 NAME = re.compile(r'[a-z][a-z0-9_]*')
 PATH = re.compile(r'/[a-z0-9][a-z0-9_-]*')
@@ -80,6 +85,8 @@ class Frontend:
     dist: str | None = None
     handler: object = None
     csp: dict = field(default_factory=dict)
+    routing: str = 'app'
+    suggested_host: str | None = None
 
     def __post_init__(self):
         if not isinstance(self.name, str) or not NAME.fullmatch(self.name):
@@ -107,19 +114,28 @@ class Frontend:
             if not isinstance(source, str) or not re.fullmatch(r'https://[a-z0-9.-]+(:[0-9]+)?', source):
                 raise ValueError(f'Frontend {self.name}: connect-src takes https origins')
         object.__setattr__(self, 'csp', MappingProxyType({key: tuple(value) for key, value in csp.items()}))
+        if self.routing not in ROUTINGS:
+            raise ValueError(f'Frontend {self.name} routing must be "app" or "pages"')
+        if self.routing == 'pages' and self.kind != 'static':
+            raise ValueError(f'Frontend {self.name}: routing="pages" is for static frontends')
+        if self.suggested_host is not None:
+            if not isinstance(self.suggested_host, str) or not LABEL.fullmatch(self.suggested_host):
+                raise ValueError(f'Frontend {self.name} suggested_host is one lowercase label such as "www": {self.suggested_host!r}')
+            if self.kind == 'evlet':
+                raise ValueError(f'Frontend {self.name}: suggested_host is for static and server frontends, which sub-hosts serve')
 
 
 @dataclass(frozen=True)
 class Host:
     name: str
-    root: Frontend | None = None
+    root: Frontend | str | None = None
     also_on_primary: bool = False
 
     def __post_init__(self):
         if not isinstance(self.name, str) or not HOSTNAME.fullmatch(self.name) or '..' in self.name:
             raise ValueError(f'Host names are lowercase hostnames without a scheme, path or port: {self.name!r}')
-        if self.root is not None and not isinstance(self.root, Frontend):
-            raise ValueError(f'Host {self.name} root must be a Frontend')
+        if self.root is not None and not isinstance(self.root, Frontend) and not (isinstance(self.root, str) and IDENTITY.fullmatch(self.root)):
+            raise ValueError(f'Host {self.name} root must be a Frontend or its id, such as "site.www"')
 
 
 @dataclass(frozen=True)
@@ -268,6 +284,20 @@ class RouteTable:
         root = self._subs.get(host_name(host))
         return 'desk' if root is None else self._frontends[root].auth or 'public'
 
+    def public(self, host):
+        """Whether host is a public sub-host: its root frontend has auth=None. Such a host serves only the
+        site's own files and the public service endpoints its API scopes list; every Evlet path is 404."""
+        root = self._subs.get(host_name(host))
+        return root is not None and self._frontends[root].auth is None and self._known(host)
+
+    def root(self, host):
+        """The id of a sub-host's root frontend, or None."""
+        return self._subs.get(host_name(host))
+
+    def frontends(self):
+        """(id, Frontend) for every app frontend, in app order."""
+        return tuple(self._frontends.items())
+
     def realms(self):
         """Origins whose realm is not desk, for LocalAuth."""
         return {origin: self.realm(origin.split('//', 1)[1]) for origin in self.origins() if self.realm(origin.split('//', 1)[1]) != 'desk'}
@@ -299,6 +329,10 @@ class RouteTable:
         if not self._known(host) or not path.startswith('/'):
             return None
         root = self._subs.get(host_name(host))
+        if root is not None and self._frontends[root].auth is None:
+            # A public host belongs to its site, except the API and framework internals (/_..., /.well-known).
+            segment = path.split('/')[1].lower()
+            return None if segment == 'api' or segment.startswith(('_', '.')) else (root, '/', path)
         if root is not None:
             # Portal hosts serve the personal settings subset at /settings.
             if (path == '/settings' or path.startswith('/settings/')) and self.realm(host) == 'portal':
@@ -416,8 +450,18 @@ def resolve_routes(definitions=(), instance_config=None, routes_module=None, *, 
             raise ValueError(f'{where} moves {getattr(frontend, "name", frontend)!r}, which no installed app registers')
         if not isinstance(path, str) or not PATH.fullmatch(path):
             raise ValueError(f'{where}: move {frontends[frontend]} to a one-segment path such as /sales')
+    by_id = {identity: frontend for frontend, identity in frontends.items()}
+
+    def pick(host):
+        # Host(root="app.frontend") names a frontend by its id, so routes.py needs no import.
+        return by_id.get(host.root) if isinstance(host.root, str) else host.root
+
     subs, off_primary = {}, set()
     for sub in sub_hosts:
+        if isinstance(sub.root, str):
+            if pick(sub) is None:
+                raise ValueError(f'{where}: sub-host {sub.name} names root {sub.root!r}, which no installed app registers')
+            sub = Host(sub.name, pick(sub), sub.also_on_primary)
         if sub.name == host or sub.name in subs:
             raise ValueError(f'{where}: {sub.name} is listed twice')
         if (host is None) != sub.name.endswith('.localhost'):
@@ -438,6 +482,10 @@ def resolve_routes(definitions=(), instance_config=None, routes_module=None, *, 
         segments['/' + path.split('/')[1]] = identity
         rows.append(Route(label, path, identity, frontend.auth or 'public', 'routes.py' if frontend in moves else 'app ' + identity.split('.')[0]))
     root = None
+    if primary and isinstance(primary.root, str):
+        primary = Host(primary.name, pick(primary), primary.also_on_primary)
+        if primary.root is None:
+            raise ValueError(f'{where}: the primary root is not a frontend of an installed app on the primary host')
     if primary and primary.root is not None:
         if primary.root not in frontends or primary.root in off_primary:
             raise ValueError(f'{where}: the primary root is not a frontend of an installed app on the primary host')
@@ -445,12 +493,15 @@ def resolve_routes(definitions=(), instance_config=None, routes_module=None, *, 
         rows.append(Route(label, '/', '-> ' + root, primary.root.auth or 'public', 'routes.py'))
     else:
         rows.append(Route(label, '/', 'evlet.desk', 'desk', FRAMEWORK))
-    by_id = {identity: frontend for frontend, identity in frontends.items()}
     for name, identity in subs.items():
         served = by_id[identity]
         realm = served.auth or 'public'
         rows.append(Route(name, '/', identity, realm, 'routes.py'))
-        rows.append(Route(name, '/api/*', ', '.join(served.api) + ' (scoped)' if served.api else 'sign-in only', realm, 'routes.py'))
+        if served.auth is None:
+            # A public host: only the public service endpoints its scopes list; no sign-in, no records.
+            rows.append(Route(name, '/api/*', ', '.join(served.api) + ' (public endpoints)' if served.api else 'none', realm, 'routes.py'))
+        else:
+            rows.append(Route(name, '/api/*', ', '.join(served.api) + ' (scoped)' if served.api else 'sign-in only', realm, 'routes.py'))
     # 5. Freeze.
     return RouteTable(host, port, docs_on, controls, tuple(rows), MappingProxyType(segments), root, docs_path,
                       docs.roles if docs else (), MappingProxyType(subs), MappingProxyType(by_id), MappingProxyType(dists),

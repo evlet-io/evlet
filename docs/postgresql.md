@@ -110,6 +110,11 @@ keys before retrying a write. Keep handlers short and put external side effects
 behind an explicit idempotency design. Additional external poolers need separate validation of transaction, timeout, and
 connection initialization behavior.
 
+SQLite instances keep sessions, logs and Eva in their own files from 0.4.3
+([performance.md](performance.md#busy-writing-on-sqlite)). PostgreSQL keeps every table in one
+database: `database.transaction(store=...)` is accepted and changes nothing, and framework step
+`0010_split_files` only records itself.
+
 ## Migrations
 
 Migrations use a separate `migration_timeout` of 300 seconds by default. Configure

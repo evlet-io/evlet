@@ -62,7 +62,7 @@ def public_limit(business, scope, endpoint):
     now = int(time.time())
     address = client_network(business.auth.client_address(scope))
     client = hashlib.sha256(f'public:{endpoint.name}:{address}'.encode()).hexdigest()
-    with business.database.transaction() as tx:
+    with business.database.transaction(store='logs') as tx:
         tx.connection.execute('DELETE FROM evlet_public_limits WHERE resets<=?', (now,))
         for window, limit in PUBLIC_LIMITS:
             row = tx.connection.execute('SELECT calls, resets FROM evlet_public_limits WHERE client=? AND period=?', (client, window)).fetchone()

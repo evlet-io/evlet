@@ -5,6 +5,9 @@ Portal users sign in there only, and see the customer they are linked to and its
 
     user = app.business.auth.create_user(username='acme-buyer', password=..., role='portal')
     app.business.auth.link_user(user.id, Customer, customer_id)
+
+The public website (site/) is served at http://site.localhost:8000 with routing="pages": about/index.html
+is /about/, and a missing page gets site/404.html. That host serves nothing else of the instance.
 """
 
 import os
@@ -24,6 +27,9 @@ from .slips import SLIPS
 from .workspaces import WORKSPACES
 
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
+# A public website: auth=None makes its host strict, routing="pages" serves one page per folder,
+# and suggested_host is what evlet install offers on an instance with a domain (www.<domain>).
+website = Frontend('site', kind='static', dist='site', path='/site', title='Website', auth=None, routing='pages', suggested_host='www')
 PORTAL_RULES = {
     ('portal', Customer): Rule(('read',), read_fields=('customer_name', 'title', 'email'), scope=own_customer('id')),
     ('portal', Invoice): Rule(('read',), read_fields=('customer', 'name', 'title', 'reference', 'total', 'status', 'posting_date'), scope=own_customer()),
@@ -33,9 +39,10 @@ PORTAL_RULES = {
 
 
 def playground_routes(port=8000):
-    """The portal on its own host, and at /portal on the main host too."""
-    definition = AppDefinition(frontends=(portal,), api_scopes=(ApiScope('portal', models=(Customer, Invoice)),))
-    return resolve_routes([('playground', definition)], None, {'hosts': (Host('portal.localhost', root=portal, also_on_primary=True),)},
+    """The portal on its own host, and at /portal on the main host too; the public website on its own host only."""
+    definition = AppDefinition(frontends=(portal, website), api_scopes=(ApiScope('portal', models=(Customer, Invoice)),))
+    hosts = (Host('portal.localhost', root=portal, also_on_primary=True), Host('site.localhost', root='playground.site'))
+    return resolve_routes([('playground', definition)], None, {'hosts': hosts},
                           port=port, roots={'playground': Path(__file__).parent})
 
 

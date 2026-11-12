@@ -140,7 +140,8 @@ def test_routing_uses_evlet_proxy_when_it_is_installed(secured, monkeypatch):
                                  check=lambda routes: ('This server has a private address. Pass --ip with its public address.\n'
                                                        '127.0.0.1   127.0.0.1                       points here\n'
                                                        'localhost   -                               no A or AAAA record\n'
-                                                       'portal.localhost   -                        no A or AAAA record', False))
+                                                       'portal.localhost   -                        no A or AAAA record\n'
+                                                       'site.localhost   -                          no A or AAAA record', False))
     monkeypatch.setitem(__import__('sys').modules, 'evlet.cli.proxy', fake)
     monkeypatch.setattr(evlet.cli, 'proxy', fake, raising=False)
     monkeypatch.setattr(system, 'certificate', lambda host: {'certificate': 'valid', 'expires': 1800000000})
@@ -151,7 +152,8 @@ def test_routing_uses_evlet_proxy_when_it_is_installed(secured, monkeypatch):
     assert checked == {'ok': False, 'notes': ['This server has a private address. Pass --ip with its public address.'], 'hosts': [
         {'host': '127.0.0.1', 'records': '127.0.0.1', 'dns': 'points here', 'certificate': 'valid', 'expires': 1800000000},
         {'host': 'localhost', 'records': '', 'dns': 'no A or AAAA record', 'certificate': None, 'expires': None},
-        {'host': 'portal.localhost', 'records': '', 'dns': 'no A or AAAA record', 'certificate': None, 'expires': None}]}
+        {'host': 'portal.localhost', 'records': '', 'dns': 'no A or AAAA record', 'certificate': None, 'expires': None},
+        {'host': 'site.localhost', 'records': '', 'dns': 'no A or AAAA record', 'certificate': None, 'expires': None}]}
 
 
 # ---------- with sub-hosts and realms ----------
@@ -164,7 +166,8 @@ def test_routing_finds_evlet_proxy_and_lists_sub_hosts_with_their_sign_in(hosts)
     routing = admin('GET', '/api/_controls/routing')[1]
     assert routing['hosts'] == [{'host': '127.0.0.1', 'primary': False, 'sub': False, 'realm': 'desk'},
                                 {'host': 'localhost', 'primary': False, 'sub': False, 'realm': 'desk'},
-                                {'host': 'portal.localhost', 'primary': False, 'sub': True, 'realm': 'portal'}]
+                                {'host': 'portal.localhost', 'primary': False, 'sub': True, 'realm': 'portal'},
+                                {'host': 'site.localhost', 'primary': False, 'sub': True, 'realm': 'public'}]
     assert {row['realm'] for row in routing['rows'] if row['host'] == 'portal.localhost'} == {'portal'}
     # Without a primary host the proxy refuses, and the page says why.
     assert routing['proxy'] is None and routing['proxy_error'].startswith('Set a primary host')

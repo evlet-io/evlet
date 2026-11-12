@@ -12,6 +12,7 @@ from .models import ValidationError
 from .permissions import CALLER, CORRECTIONS, read_only
 from .auth import AccessError
 from .business import Business, Download
+from .writes import WRITE_LABEL
 from .storage import StorageError
 
 logger = logging.getLogger(__name__)
@@ -103,9 +104,12 @@ class Application:
     async def __call__(self, scope, receive, send):
         # A request is a caller: Meta.api limits what it reaches (evlet/permissions.py); app code it runs is trusted.
         token = CALLER.set(scope.get("type") == "http")
+        # Slow-write warnings name the request (evlet/writes.py); the value follows the request into its threads.
+        label = WRITE_LABEL.set(f"{scope.get('method', '')} {scope.get('path', '')}".strip() if scope.get("type") == "http" else '')
         try:
             await self._serve(scope, receive, send)
         finally:
+            WRITE_LABEL.reset(label)
             CALLER.reset(token)
 
     async def _serve(self, scope, receive, send):
@@ -118,9 +122,21 @@ class Application:
         if scope["type"] != "http":
             raise ValueError("Unsupported ASGI scope")
         headers = []
+        path = scope['path']
+        # HEAD is GET without the body, for pages and files; the API keeps its own methods.
+        head = scope['method'] == 'HEAD' and path != '/api' and not path.startswith(('/api/', '/_', '/.well-known/'))
+        if head:
+            scope = {**scope, 'method': 'GET'}
+        host = dict(scope.get('headers', [])).get(b'host', b'')
+        # A public host (its root frontend has auth=None) serves its site's files and the public endpoints its
+        # scopes list. Everything else, Evlet's own paths and errors included, gets the site's not-found page.
+        public = self.routes.public(host)
+        service = public and self._public_service(host, path)
         try:
             if self.business is None:
-                self._guard_local(scope)
+                self._guard_local(scope, navigation=public and scope['method'] == 'GET')
+            if public and not service and (scope['method'] != 'GET' or path == '/api' or path.startswith(('/api/', '/_', '/.well-known'))):
+                raise HTTPError(404, 'Route not found')
             self._api_scope(scope)
             if scope['path'] == '/api/_events/stream' and self.business:
                 await self._event_stream(scope, receive, send)
@@ -191,6 +207,9 @@ class Application:
         except Exception:
             logger.exception("Unhandled request failure")
             status, payload = 500, {"error": "Internal server error"}
+        if public and not service and status >= 400:
+            from .ui.routes import site_not_found
+            status, payload, headers = site_not_found(self, host)
         download = isinstance(payload, Download)
         try:
             encoded = payload.content if download else b"" if status == 204 else json.dumps(jsonable(payload), ensure_ascii=True, allow_nan=False).encode("utf-8")
@@ -205,7 +224,15 @@ class Application:
                 response_headers.append((b"content-type", b"application/json; charset=utf-8"))
             response_headers.append((b"content-length", str(len(encoded)).encode()))
         await send({"type": "http.response.start", "status": status, "headers": response_headers})
-        await send({"type": "http.response.body", "body": encoded})
+        await send({"type": "http.response.body", "body": b"" if head else encoded})
+
+    def _public_service(self, host, path):
+        """Whether path is a public service endpoint that a public host's API scopes list."""
+        if not self.business or not path.startswith('/api/_services/'):
+            return False
+        name = path.removeprefix('/api/_services/')
+        return (any(name in item.endpoints for item in self.routes.scopes(host) or ())
+                and any(endpoint.name == name and endpoint.public for endpoint in self.business.apis))
 
     def _api_scope(self, scope):
         """On a sub-host, /api serves sign-in and its frontends' API scopes; everything else is 404."""
@@ -250,7 +277,7 @@ class Application:
             return
         raise HTTPError(404, 'Route not found')
 
-    def _guard_local(self, scope):
+    def _guard_local(self, scope, navigation=False):
         headers = {}
         for key, value in scope.get('headers', []):
             key = key.lower()
@@ -271,7 +298,8 @@ class Application:
                 scheme = scope.get('scheme', 'http')
                 if origin.scheme != scheme or origin.hostname != host.hostname or origin.port != port or origin.username or origin.password or origin.path or origin.query or origin.fragment:
                     raise ValueError()
-            if headers.get(b'sec-fetch-site') == b'cross-site':
+            # A public host's pages may be opened from any other site.
+            if headers.get(b'sec-fetch-site') == b'cross-site' and not navigation:
                 raise ValueError()
         except ValueError:
             raise AccessError(403, 'Unrecognized host or origin') from None
@@ -385,7 +413,7 @@ class Application:
 
     def _dispatch(self, scope, body):
         path, method = scope["path"], scope["method"]
-        if path == "/health":
+        if path == "/health" and not self.routes.public(dict(scope.get('headers', [])).get(b'host', b'')):
             self._method(method, ["GET"])
             self.database.check()
             return 200, {"status": "ok"}, []

@@ -985,3 +985,21 @@ def test_framework_steps_move_mcp_calls_and_serialize_concurrent_starts(pg_dsn, 
             [(now, user, 'mcp', 'Desktop client', 3, 'list_records', 'read', 'ok')]
         assert tx.connection.execute("SELECT to_regclass('evlet_mcp_calls')").fetchone()[0] is None
     app.initialize()
+
+
+def test_postgresql_keeps_one_database_for_sessions_logs_and_eva(secured):
+    """The SQLite file split (evlet/writes.py) is a no-op here: store= is accepted, every table stays in one
+    database, step 0010_split_files only records itself, and batched counters still save."""
+    from evlet import framework
+    db = secured.database
+    with db.transaction(store='sessions') as tx:
+        tx.connection.execute("INSERT INTO evlet_login_limits VALUES ('pg', 1, 0)")
+        # One database: a store transaction may write any table here.
+        tx.connection.execute('UPDATE evlet_users SET active=active WHERE id=1')
+    assert framework.upgrade(db) == []
+    with db._connection() as connection:
+        assert connection.execute("SELECT name FROM evlet_framework_migrations WHERE name='0010_split_files'").fetchone() is not None
+        assert connection.execute("SELECT count(*) FROM evlet_login_limits WHERE client='pg'").fetchone()[0] == 1
+    db.logs.add(None, "UPDATE evlet_users SET active=1 WHERE username='editor'")
+    assert db.logs.flush() == 1
+    assert client(secured)('GET', '/api/project')[0] == 200

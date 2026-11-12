@@ -17,6 +17,7 @@ route, so whoever cannot read the record cannot load its images.
 
 import base64
 import binascii
+import sqlite3
 from contextlib import contextmanager
 from contextvars import ContextVar
 import re
@@ -243,7 +244,7 @@ def remove(session, model, record_id):
 
 
 def _attachments(session):
-    sqlite = session.connection.__class__.__module__.startswith('sqlite3')
+    sqlite = isinstance(session.connection, sqlite3.Connection)
     row = session.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_attachments'" if sqlite
                                      else "SELECT to_regclass('evlet_attachments')").fetchone()
     return bool(row and row[0])

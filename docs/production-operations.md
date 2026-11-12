@@ -43,6 +43,16 @@ writes. Avoid network filesystems and independent replicas of a live file. Inclu
 its WAL state through a consistent backup rather than copying only the main file.
 There is no automatic failover.
 
+From 0.4.3 an instance keeps four SQLite files in `data/`: `database.sqlite3` (records, audit,
+journal, jobs, accounts and settings), `sessions.sqlite3`, `logs.sqlite3` and `eva.sqlite3`.
+They are one set: back them up, restore them and move them together. Writers in one process
+take turns per file, requests before job steps, and a job step never waits long. A write that
+holds a file longer than a second logs a warning naming the request or the job; watch for it
+and split the job into shorter steps. After a crash `database.sqlite3` is atomic as before;
+the other three are best effort for the last moment of writes, so a session started or a log
+line written just before the crash may be missing. Separate processes still wait for each
+other through SQLite. See [Busy writing on SQLite](performance.md#busy-writing-on-sqlite).
+
 PostgreSQL requires a dedicated UTF-8 database and role per application. Give the
 runtime role only the privileges it needs, with no superuser or CREATEDB permission.
 Use a separate migration operator where practical. Configure certificate-verified
@@ -64,8 +74,14 @@ Define and test an acceptable recovery point and recovery time before launch.
 Encrypt backups, limit access, retain multiple generations, and keep a copy outside
 the application host. Retention alone is insufficient without restore tests.
 
-For SQLite, stop writers/workers or use SQLite's online backup API to capture a
-consistent database. For PostgreSQL, use a supported `pg_dump`/`pg_restore` pair
+For SQLite, `evlet backup --instance NAME` copies the four database files as one set into
+`data/backups/` (or `--to DIR`) with SQLite's online backup API, from one read snapshot, so a
+running server may keep working. `evlet restore BACKUP --instance NAME` puts a set back with the
+server stopped, after keeping the files it replaces; it also restores a single-file backup from
+before 0.4.3, which the next `evlet migrate` splits ([cli.md](cli.md#back-up-and-restore)). Backups
+hold only database files: keep `secret.key`, `files/` and the app sources with them.
+
+For PostgreSQL, use a supported `pg_dump`/`pg_restore` pair
 for logical backups, or the provider's tested physical/PITR service. Do not use a
 client older than the server for logical dumps. Avoid secrets in command arguments;
 use a protected service configuration or password file.

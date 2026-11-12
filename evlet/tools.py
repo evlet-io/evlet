@@ -390,7 +390,8 @@ class Tools:
     def admit(self, user, origin, client, client_id, run_id, tool, values):
         """Record the call before it runs. MCP clients get their per-minute rate, counted across processes."""
         now = int(time.time())
-        with self.database.transaction() as tx:
+        # The log has its own file, so a long write elsewhere never holds up a tool call.
+        with self.database.transaction(store='logs') as tx:
             connection = tx.connection
             if origin == 'mcp':
                 rate = min(60, self.business.controls.settings['mcp.rate'])
@@ -399,7 +400,8 @@ class Tools:
                 if recent >= rate:
                     raise ConnectorError(429, f'Use at most {rate} tool calls per minute.')
                 if client_id:
-                    connection.execute('UPDATE evlet_mcp_clients SET calls=calls+1, last_used=? WHERE id=?', (now, client_id))
+                    # A busy count: saved with the next batch (evlet/writes.py LogBuffer).
+                    self.database.logs.add(None, 'UPDATE evlet_mcp_clients SET calls=calls+1, last_used=? WHERE id=?', (now, client_id))
             return self.insert(connection, now, user, origin, client, client_id, run_id, tool, values, 'ok')
 
     def insert(self, connection, now, user, origin, client, client_id, run_id, tool, values, outcome, error=None, model=None, record_id=None, duration=None):
@@ -414,14 +416,16 @@ class Tools:
                                    'write' if tool.writes else 'read', outcome, duration, inputs, None if error is None else str(error)[:500])).lastrowid
 
     def log(self, user, origin, client, client_id, run_id, tool, values, outcome, started, error=None, model=None, record_id=None):
-        with self.database.transaction() as tx:
+        """Log a finished call in its own short write to the logs file, so it never waits on a long write to records.
+        The rate of MCP calls and the order of the log read these rows, so they are not batched."""
+        with self.database.transaction(store='logs') as tx:
             self.insert(tx.connection, int(time.time()), user, origin, client, client_id, run_id, tool, values, outcome, error, model, record_id,
                         int((time.monotonic() - started) * 1000))
 
     def finish(self, call_id, outcome, started, *, record_id=None, error=None):
         if call_id is None:
             return
-        with self.database.transaction() as tx:
+        with self.database.transaction(store='logs') as tx:
             tx.connection.execute('UPDATE evlet_tool_calls SET outcome=?, duration_ms=?, error=?, record_id=COALESCE(record_id, ?) WHERE id=?',
                                   (outcome, int((time.monotonic() - started) * 1000), None if error is None else str(error)[:500], record_id, call_id))
 
