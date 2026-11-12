@@ -4,6 +4,19 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Changed
+
+- **The built-in System Administrator's username is now `admin`**, not `administrator`. Its full
+  name stays "System Administrator". `evlet migrate` runs the new step `0009_admin_username`,
+  which renames the 0.4.2 account and keeps its password, email and two-step sign-in. An instance
+  with an active admin already named `admin` (common before 0.4.2) keeps that account as the
+  Administrator, and the 0.4.2 `administrator` becomes an ordinary admin, disabled when it never
+  had a password. Any other account named `admin` stops the step until it is renamed. Sign in,
+  `evlet users set-password <instance> admin` and `evlet users set-email <instance> admin` use
+  the new name ([docs/app-upgrades.md](docs/app-upgrades.md#from-042-to-043)).
+
 ## 0.4.2 (11-11-2026)
 
 ### Added

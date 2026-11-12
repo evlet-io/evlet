@@ -8,7 +8,7 @@ in the same transaction. An undecided guard (pending or error) blocks, like an u
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from .auth import AccessError, has_role
+from .auth import AccessError, has_role, is_administrator
 from .fields import MISSING, Link, Reference
 from .models import ValidationError
 from .permissions import CALLER
@@ -291,7 +291,7 @@ class Guards:
 def readable(policy, user, guard):
     """Whether this role may read every input of a guard; cached per role like rule expressions."""
     cache = policy.__dict__.setdefault('_guards', {})
-    key = (user.role, user.username == 'administrator', getattr(user, 'access', None), id(guard))
+    key = (user.role, is_administrator(user), getattr(user, 'access', None), id(guard))
     if key not in cache:
         cache[key] = policy.reads_allowed(user, guard.reads)
     return cache[key]

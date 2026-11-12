@@ -103,7 +103,7 @@ def app(tmp_path):
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     with app.database.transaction() as tx:
-        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', ('editor', password_hash(PASSWORD), 'editor'))
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', ('editor', password_hash(PASSWORD), 'editor'))
     return app
 
 

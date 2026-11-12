@@ -257,7 +257,7 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
     path = child(root, 'instances', name)
     with step('administrator'):
         if has_users(path):
-            print(f'Administrator exists. If nobody knows its password, run evlet users set-password {name} administrator')
+            print(f'Administrator exists. If nobody knows its password, run evlet users set-password {name} admin')
         else:
             password = (ask or ask_admin)()
             print(f'Password set for {create_admin(root, name, password)}')

@@ -195,8 +195,8 @@ def test_host_writes_caddy_site_unit_and_prints_privileged_steps(tmp_path, monke
     main(command)
     out = capsys.readouterr().out
     root = target.resolve()
-    assert 'Password set for administrator' in out and 'Domain set: erp.example.com' in out
-    assert users(root) == [('administrator', 'admin')]
+    assert 'Password set for admin' in out and 'Domain set: erp.example.com' in out
+    assert users(root) == [('admin', 'admin')]
     with sqlite3.connect(root / 'instances/acme/data/database.sqlite3') as connection:
         assert connection.execute("SELECT password FROM evlet_users").fetchone()[0].startswith('scrypt:')
     config = read_instance(root / 'instances/acme')
@@ -274,7 +274,7 @@ def test_host_refuses_a_weak_admin_password_and_an_edited_config(tmp_path, monke
     with pytest.raises(SystemExit):
         main(command)
     assert 'Step "administrator" failed' in capsys.readouterr().err
-    assert users(target) == [('administrator', 'admin')]
+    assert users(target) == [('admin', 'admin')]
     with sqlite3.connect(target / 'instances/acme/data/database.sqlite3') as connection:
         assert connection.execute("SELECT password FROM evlet_users").fetchone()[0] == ''
     config = target / 'instances/acme/config.py'

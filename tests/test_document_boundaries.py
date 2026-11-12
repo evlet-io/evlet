@@ -20,6 +20,12 @@ def application(tmp_path, *models):
     return app
 
 
+def ordinary_admin(app):
+    """Sign in an ordinary admin, owner: the built-in Administrator (admin) is not limited by Rules for the admin role."""
+    assert client(app)('POST', '/api/auth/users', {'username': 'owner', 'password': PASSWORD, 'role': 'admin'})[0] == 201
+    return client(app, 'owner')
+
+
 def test_named_query_typed_deduplicated_and_private(tmp_path):
     calls = []
     @depends('qty')
@@ -218,11 +224,12 @@ def test_draft_returns_only_source_outputs_used_by_readable_fields(tmp_path):
         available = Decimal(compute='stock.qty', stored=False)
         margin = Currency(compute='rate - stock.cost', stored=False)
     app = application(tmp_path, Order)
-    status, result, _ = client(app)('POST', '/api/_draft/order', {'values': {'item': 'A', 'rate': '20'}})
+    c = ordinary_admin(app)
+    status, result, _ = c('POST', '/api/_draft/order', {'values': {'item': 'A', 'rate': '20'}})
     assert status == 200, result
     assert result['values']['_sources'] == {'stock': {'qty': '5.0000'}}
     assert 'margin' not in result['values'] and '12.34' not in str(result)
-    order = next(model for model in client(app)('GET', '/api/schema')[1]['models'] if model['name'] == 'order')
+    order = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'order')
     assert set(order['sources']['stock']) == {'qty'}
 
 
@@ -356,7 +363,7 @@ def test_validation_errors_do_not_name_hidden_fields(tmp_path):
             if self.title == 'bad':
                 raise ValidationError({'bonus': 'Bonus exceeds the approved band', 'title': 'Check the name'})
     app = application(tmp_path, Payslip)
-    status, result, _ = client(app)('POST', '/api/payslip', {'title': 'bad'})
+    status, result, _ = ordinary_admin(app)('POST', '/api/payslip', {'title': 'bad'})
     assert status == 422
     assert result['fields'] == {'title': 'Check the name', '_form': 'One or more values are invalid'}
     assert 'bonus' not in str(result) and 'band' not in str(result)
@@ -374,7 +381,7 @@ def test_child_validation_errors_hide_restricted_fields_but_keep_row_messages(tm
                     raise ValidationError({'cost': 'Cost 4.25 is above margin', '_form': 'Reduce the quantity'})
         lines = Table(Line)
     app = application(tmp_path, Quote)
-    c = client(app)
+    c = ordinary_admin(app)
     status, result, _ = c('POST', '/api/quote', {'children': {'lines': [{'_key': 'a.b', 'qty': '9'}]}})
     assert status == 422 and 'margin' not in str(result)
     status, result, _ = c('POST', '/api/quote', {'children': {'lines': [{'_key': 'row-1', 'qty': '9'}]}})
@@ -446,7 +453,7 @@ def test_legacy_child_errors_do_not_name_hidden_child_fields(tmp_path):
     app.initialize()
     app.business.policy = Policy(db.registry, rules={('admin', Line): Rule(('read', 'create', 'update', 'delete'), read_fields=('owner', 'qty'))})
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
-    status, result, _ = client(app)('POST', '/api/parent', {'title': 'p', 'children': {'lines': [{'qty': '1'}]}})
+    status, result, _ = ordinary_admin(app)('POST', '/api/parent', {'title': 'p', 'children': {'lines': [{'qty': '1'}]}})
     assert status == 422 and 'cost' not in str(result) and 'margin' not in str(result)
 
 

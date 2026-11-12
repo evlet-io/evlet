@@ -25,7 +25,7 @@ def tenants(tmp_path, hashed):
         app = tenant_app(tenant); app.initialize()
         with app.database.transaction() as tx:
             for role in ('admin', 'viewer'):
-                tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (role, hashed, role))
+                tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', (role, hashed, role))
         catalog.set_active(slug, True)
     return catalog, TenantApplication(catalog, tenant_app)
 
@@ -250,7 +250,7 @@ def test_each_tenant_manages_its_own_users_through_controls_on_its_own_host(tena
         assert call(router, host, 'POST', '/api/auth/users', {'username': slug + '-old', 'password': PASSWORD, 'role': 'viewer'}, **auth)[0] == 201
         names = {item['username'] for item in call(router, host, path='/api/auth/users', **auth)[1]['items']}
         # Each tenant has its own built-in Administrator too.
-        assert names == {'administrator', 'admin', 'viewer', slug + '-clerk', slug + '-old'}
+        assert names == {'admin', 'admin', 'viewer', slug + '-clerk', slug + '-old'}
         assert {item['username'] for item in call(router, host, path='/api/_controls/users', **auth)[1]['items']} == names
     for slug, other in (('alpha', beta), ('beta', alpha)):
         host = slug + '.localhost:8000'

@@ -4,13 +4,13 @@
    "_audit": {
     "created_at": "2026-11-04T06:02:00.000Z",
     "created_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     },
     "modified_at": "2026-11-04T08:08:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "_calculation": {
@@ -1057,13 +1057,13 @@
    "_audit": {
     "created_at": "2026-11-04T06:02:00.000Z",
     "created_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     },
     "modified_at": "2026-11-04T06:02:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "_calculation": {
@@ -2234,13 +2234,13 @@
    "_audit": {
     "created_at": "2026-11-04T06:00:00.000Z",
     "created_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     },
     "modified_at": "2026-11-04T06:00:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "credit_days": 45,
@@ -2257,13 +2257,13 @@
    "_audit": {
     "created_at": "2026-11-04T06:02:00.000Z",
     "created_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     },
     "modified_at": "2026-11-04T06:02:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "children": {
@@ -4796,12 +4796,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:28:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:36:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -4881,7 +4881,7 @@
    },
    "csrf": "fixture-csrf-token",
    "user": {
-    "id": 2,
+    "id": 1,
     "role": "admin",
     "username": "admin"
    }
@@ -4949,13 +4949,13 @@
    "_audit": {
     "created_at": "2026-11-04T08:09:00.000Z",
     "created_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     },
     "modified_at": "2026-11-04T08:09:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "credit_days": 30,
@@ -4980,12 +4980,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:28:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:29:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -5065,12 +5065,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:28:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:28:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -5127,8 +5127,8 @@
   "body": {
    "items": [
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.654Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.494Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5139,8 +5139,8 @@
      "kind": "file"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.630Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.476Z",
      "data": {
       "fields": {
        "total": {
@@ -5201,8 +5201,8 @@
      "kind": "changed"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.614Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.463Z",
      "data": {
       "fields": {
        "customer": {
@@ -5243,7 +5243,7 @@
    "offset": 0,
    "total": 3,
    "users": {
-    "3": "sara"
+    "2": "sara"
    }
   },
   "etag": null,
@@ -5261,12 +5261,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:28:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:32:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -5349,12 +5349,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:28:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:32:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -5426,7 +5426,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-11T15:25:42.703Z",
+     "at": "2026-11-12T10:28:59.541Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -5437,8 +5437,8 @@
      "kind": "message"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.702Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.539Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -5449,8 +5449,8 @@
      "kind": "follow_up"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.699Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.537Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -5459,10 +5459,10 @@
      "kind": "follow_up_done"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.697Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.535Z",
      "data": {
-      "assignee": 3,
+      "assignee": 2,
       "due": "2026-11-15",
       "text": "Call about the balance"
      },
@@ -5471,8 +5471,8 @@
      "kind": "follow_up"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.695Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.532Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -5480,8 +5480,8 @@
      "kind": "note"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.677Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.514Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5495,8 +5495,8 @@
      "kind": "changed"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.667Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.505Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -5505,8 +5505,8 @@
      "kind": "number"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.667Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.505Z",
      "data": {
       "targets": [
        {
@@ -5521,8 +5521,8 @@
      "kind": "effects"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.667Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.505Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5542,8 +5542,8 @@
      "kind": "moved"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.654Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.494Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5554,8 +5554,8 @@
      "kind": "file"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.630Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.476Z",
      "data": {
       "fields": {
        "total": {
@@ -5616,8 +5616,8 @@
      "kind": "changed"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.614Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.463Z",
      "data": {
       "fields": {
        "customer": {
@@ -5658,7 +5658,7 @@
    "offset": 0,
    "total": 12,
    "users": {
-    "3": "sara"
+    "2": "sara"
    }
   },
   "etag": null,
@@ -5666,10 +5666,10 @@
  },
  "invoice_journal_follow_up": {
   "body": {
-   "actor": 3,
-   "at": "2026-11-11T15:25:42.697Z",
+   "actor": 2,
+   "at": "2026-11-12T10:28:59.535Z",
    "data": {
-    "assignee": 3,
+    "assignee": 2,
     "due": "2026-11-15",
     "text": "Call about the balance"
    },
@@ -5682,8 +5682,8 @@
  },
  "invoice_journal_follow_up_done": {
   "body": {
-   "actor": 3,
-   "at": "2026-11-11T15:25:42.699Z",
+   "actor": 2,
+   "at": "2026-11-12T10:28:59.537Z",
    "data": {
     "follow_up": 19,
     "text": "Balance due by the end of the month"
@@ -5696,8 +5696,8 @@
  },
  "invoice_journal_note": {
   "body": {
-   "actor": 3,
-   "at": "2026-11-11T15:25:42.695Z",
+   "actor": 2,
+   "at": "2026-11-12T10:28:59.532Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5780,13 +5780,13 @@
    "_audit": {
     "created_at": "2026-11-04T08:37:00.000Z",
     "created_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     },
     "modified_at": "2026-11-04T08:37:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "amount": "500.00",
@@ -5850,13 +5850,13 @@
    "_audit": {
     "created_at": "2026-11-04T08:45:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:56:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "_calculation": {
@@ -5940,12 +5940,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:21:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:24:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -6025,12 +6025,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:21:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:38:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -6105,12 +6105,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:42:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:42:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -8278,7 +8278,7 @@
    },
    "csrf": "fixture-csrf-token",
    "user": {
-    "id": 3,
+    "id": 2,
     "role": "editor",
     "username": "sara"
    }
@@ -8299,13 +8299,13 @@
    "_audit": {
     "created_at": "2026-11-04T08:45:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:52:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "_calculation": {
@@ -8391,12 +8391,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:45:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:48:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -8477,12 +8477,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:45:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:48:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -8565,12 +8565,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:28:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:36:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -8636,7 +8636,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-11T15:25:42.703Z",
+     "at": "2026-11-12T10:28:59.541Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -8647,8 +8647,8 @@
      "kind": "message"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.702Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.539Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -8659,8 +8659,8 @@
      "kind": "follow_up"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.699Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.537Z",
      "data": {
       "follow_up": 19,
       "text": "Balance due by the end of the month"
@@ -8669,10 +8669,10 @@
      "kind": "follow_up_done"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.697Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.535Z",
      "data": {
-      "assignee": 3,
+      "assignee": 2,
       "due": "2026-11-15",
       "text": "Call about the balance"
      },
@@ -8681,8 +8681,8 @@
      "kind": "follow_up"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.695Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.532Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8690,8 +8690,8 @@
      "kind": "note"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.677Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.514Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8705,8 +8705,8 @@
      "kind": "changed"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.667Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.505Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8715,16 +8715,16 @@
      "kind": "number"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.667Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.505Z",
      "data": {},
      "id": 15,
      "kind": "changed",
      "partial": true
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.667Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.505Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8744,8 +8744,8 @@
      "kind": "moved"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.654Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.494Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8756,8 +8756,8 @@
      "kind": "file"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.630Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.476Z",
      "data": {
       "fields": {
        "total": {
@@ -8818,8 +8818,8 @@
      "kind": "changed"
     },
     {
-     "actor": 3,
-     "at": "2026-11-11T15:25:42.614Z",
+     "actor": 2,
+     "at": "2026-11-12T10:28:59.463Z",
      "data": {
       "fields": {
        "customer": {
@@ -8860,7 +8860,7 @@
    "offset": 0,
    "total": 12,
    "users": {
-    "3": "sara"
+    "2": "sara"
    }
   },
   "etag": null,
@@ -10547,7 +10547,7 @@
    },
    "csrf": "fixture-csrf-token",
    "user": {
-    "id": 4,
+    "id": 3,
     "role": "viewer",
     "username": "omar"
    }
@@ -10568,12 +10568,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:10:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:17:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -10650,12 +10650,12 @@
    "_audit": {
     "created_at": "2026-11-04T08:10:00.000Z",
     "created_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     },
     "modified_at": "2026-11-04T08:13:00.000Z",
     "modified_by": {
-     "id": 3,
+     "id": 2,
      "name": "sara"
     }
    },
@@ -11235,7 +11235,7 @@
   "body": {
    "csrf": "fixture-csrf-token",
    "user": {
-    "id": 2,
+    "id": 1,
     "role": "admin",
     "username": "admin"
    }
@@ -11293,13 +11293,13 @@
    "_audit": {
     "created_at": "2026-11-04T06:01:00.000Z",
     "created_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     },
     "modified_at": "2026-11-04T06:01:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "id": "0000000000001",
@@ -13113,7 +13113,7 @@
    },
    "csrf": "fixture-csrf-token",
    "user": {
-    "id": 2,
+    "id": 1,
     "role": "admin",
     "username": "admin"
    }
@@ -13153,13 +13153,13 @@
    "_audit": {
     "created_at": "2026-11-04T06:02:00.000Z",
     "created_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     },
     "modified_at": "2026-11-04T08:05:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "admin"
+     "id": 1,
+     "name": "Administrator"
     }
    },
    "_calculation": {

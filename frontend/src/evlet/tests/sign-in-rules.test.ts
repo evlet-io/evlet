@@ -13,23 +13,23 @@ afterEach(() => { running.splice(0).forEach(stop => stop()); stopAll(); });
 const submit = (host: HTMLElement) => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
 const reply = (body: unknown, status = 200) => ({ status, body, etag: null });
 const anonymous = (extra: Record<string, unknown>) => reply({ ...(recorded.session_anonymous.body as object), ...extra });
-const administrator = { id: 1, username: 'administrator', role: 'admin' };
+const administrator = { id: 1, username: 'admin', role: 'admin' };
 
 describe('the sign-in page', () => {
   it('starts with the administrator username when config.py asks for it, and never offers a shortcut', async () => {
     const { host, sent } = start([
-      ['GET', /\/api\/auth\/session$/, () => anonymous({ sign_in: { username: 'administrator' } })],
+      ['GET', /\/api\/auth\/session$/, () => anonymous({ sign_in: { username: 'admin' } })],
       ['POST', /\/api\/auth\/login$/, recorded.login],
       ['GET', /\/api\/schema$/, screen.schema],
       ['GET', /\/api\/customer\?/, screen.customers_page1],
     ], '/login');
-    await until(() => expect(host.querySelector<HTMLInputElement>('#ev-username')?.value).toBe('administrator'));
+    await until(() => expect(host.querySelector<HTMLInputElement>('#ev-username')?.value).toBe('admin'));
     expect(host.querySelector('#ev-password')!.hasAttribute('autofocus')).toBe(true);
     expect(byText(host, 'button', /administrator/i)).toBeFalsy();
     typeInto(host.querySelector<HTMLInputElement>('#ev-password')!, 'a long enough password');
     submit(host);
     await until(() => expect(location.pathname).toBe('/app/customer'));
-    expect(requests(sent, 'POST', /\/api\/auth\/login$/)[0].body).toEqual({ username: 'administrator', password: 'a long enough password' });
+    expect(requests(sent, 'POST', /\/api\/auth\/login$/)[0].body).toEqual({ username: 'admin', password: 'a long enough password' });
   });
 
   it('fills in a username from ?user= and leaves it empty otherwise', async () => {
@@ -61,7 +61,7 @@ describe('the first password', () => {
       ['GET', /\/api\/customer\?/, screen.customers_page1],
     ], '/');
     await until(() => expect(text(host.querySelector('h1'))).toBe('Set your password'));
-    expect(text(host.querySelector('.ev-login-card > p'))).toBe('You are signed in as administrator. Choose a password to use from now on.');
+    expect(text(host.querySelector('.ev-login-card > p'))).toBe('You are signed in as admin. Choose a password to use from now on.');
     expect(text(host.querySelector('#ev-new-password-hint'))).toBe('Use at least 15 characters.');
     // Checked in the browser first: the length, then the repeat.
     typeInto(host.querySelector<HTMLInputElement>('#ev-new-password')!, 'short');
@@ -120,7 +120,7 @@ describe('Controls > Users', () => {
       ['GET', /\/api\/_controls\/state$/, () => reply(state)],
       ['GET', /\/api\/_controls\/overrides$/, () => reply({ version: 1, problems: [], items: [] })],
       ['GET', /\/api\/_controls\/users/, () => reply({ offset: 0, limit: 100, total: 3, items: [
-        { id: 1, username: 'administrator', role: 'admin', active: true, sessions: 0, builtin: true, password_set: false },
+        { id: 1, username: 'admin', role: 'admin', active: true, sessions: 0, builtin: true, password_set: false },
         { id: 2, username: 'owner', role: 'admin', active: true, sessions: 1, builtin: false, password_set: true },
         { id: 3, username: 'rahul', role: 'editor', active: true, sessions: 1, builtin: false, password_set: true }] })],
       ['PATCH', /\/api\/_controls\/users\/\d+$/, () => reply(null, 204)],
@@ -136,13 +136,13 @@ describe('Controls > Users', () => {
 
   it('marks the Administrator as built in and locks its role and status', async () => {
     const { host } = open('/controls/users');
-    await until(() => expect(byText(host, 'tr', /administrator/)).toBeTruthy());
-    expect(text(byText(host, 'tr', /administrator/)!.querySelector('.ctl-user'))).toContain('Built in');
+    await until(() => expect(byText(host, 'tr', /Built in/)).toBeTruthy());
+    expect(text(byText(host, 'tr', /Built in/)!.querySelector('.ctl-user'))).toContain('Built in');
     expect(text(byText(host, 'tr', /rahul/)!.querySelector('.ctl-user'))).not.toContain('Built in');
     // Admins need two-step sign-in from config.py; the editor does not.
-    expect(text(byText(host, 'tr', /administrator/))).toContain('Off · required');
+    expect(text(byText(host, 'tr', /Built in/))).toContain('Off · required');
     expect(text(byText(host, 'tr', /rahul/))).not.toContain('required');
-    click(byText(host, 'tr', /administrator/)!);
+    click(byText(host, 'tr', /Built in/)!);
     await until(() => expect(document.querySelector('.drawer')).toBeTruthy());
     const drawer = document.querySelector('.drawer')!;
     expect(text(drawer)).toContain("The System Administrator is built in. Its username, name and role never change, and it can't be deactivated. It has no password yet.");

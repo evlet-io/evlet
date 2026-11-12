@@ -843,7 +843,7 @@ def test_the_playground_awards_points_into_a_ledger_and_its_balance_cache(tmp_pa
     app.database.initialize()
     app.business.initialize()
     with app.database.transaction() as tx:
-        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', ('admin', password_hash(PASSWORD), 'admin'))
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', ('admin', password_hash(PASSWORD), 'admin'))
     admin = client(app)
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Acme'})
     assert status == 201, customer

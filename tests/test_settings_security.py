@@ -208,7 +208,7 @@ def test_a_replaced_photo_removes_its_old_file(tmp_path, monkeypatch, hashed):
     app = build_app(database, LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False), storage=LocalFileStorage(tmp_path / 'private'))
     app.initialize()
     with database.transaction() as tx:
-        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', ('editor', hashed, 'editor'))
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', ('editor', hashed, 'editor'))
     c = client(app, 'editor')
     files = lambda: sorted(path.read_bytes() for path in (tmp_path / 'private').iterdir() if not path.name.startswith('.'))
     for content in (PNG + b'1', PNG + b'2'):

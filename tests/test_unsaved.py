@@ -179,8 +179,8 @@ def test_save_and_delete_remove_entries_in_their_transaction(secured):
     assert len(rows(secured)) == 2
     # A save removes the saver's own entry only.
     assert editor('PATCH', f'/api/project/{record.id}', {'title': 'Saved'}, headers={b'if-match': opened(editor, record).encode()})[0] == 200
-    # The admin is account 2: account 1 is the built-in Administrator.
-    assert [row['user_id'] for row in rows(secured)] == [2]
+    # The admin here is the built-in Administrator, account 1.
+    assert [row['user_id'] for row in rows(secured)] == [1]
     # Deleting the record removes everyone's.
     assert editor('PUT', path(record), {'changes': {'values': {'title': 'Again'}}, 'base_revision': opened(editor, record)})[0] == 200
     assert admin('DELETE', f'/api/project/{record.id}', headers={b'if-match': opened(admin, record).encode()})[0] == 204
@@ -257,8 +257,8 @@ def test_expiry_and_caps_purge_in_batches(secured):
     now = int(time.time())
     unsaved = secured.business.unsaved
     for index in range(12):
-        insert(secured, 2, 1000 + index, now - 31 * DAY - index)
-    insert(secured, 2, 2000, now - 29 * DAY)
+        insert(secured, 1, 1000 + index, now - 31 * DAY - index)
+    insert(secured, 1, 2000, now - 29 * DAY)
     assert unsaved.purge() == 12
     assert [row['record_id'] for row in rows(secured)] == [2000]
     secured.business.controls.settings['unsaved.server_entries'] = 10

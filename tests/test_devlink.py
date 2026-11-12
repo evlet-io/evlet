@@ -67,7 +67,7 @@ def users(app):
 def test_link_signs_in_once_with_a_normal_session(playground):
     app = DevSignIn(playground)
     token, username = issue(playground.database)
-    assert username == 'administrator' and users(playground) == ['administrator']
+    assert username == 'admin' and users(playground) == ['admin']
     with playground.database._connection() as connection:
         stored = connection.execute('SELECT hash FROM evlet_dev_links').fetchone()['hash']
     assert token not in stored and stored == devlink._digest(token)
@@ -77,12 +77,12 @@ def test_link_signs_in_once_with_a_normal_session(playground):
     cookie = headers[b'set-cookie'].decode()
     assert 'HttpOnly' in cookie and 'SameSite=Strict' in cookie and cookie.startswith('evlet_session=')
     status, _, body = call(app, 'GET', '/api/auth/session', cookie=session_cookie(headers))
-    assert status == 200 and json.loads(body)['user']['username'] == 'administrator'
+    assert status == 200 and json.loads(body)['user']['username'] == 'admin'
     with playground.database._connection() as connection:
         row = connection.execute('SELECT realm, agent, two_step FROM evlet_sessions').fetchone()
         audit = connection.execute("SELECT actor, detail FROM evlet_audit WHERE detail LIKE '%development link%' ORDER BY id").fetchall()
     assert row['realm'] == 'desk' and row['agent'] == 'Browser' and row['two_step'] is not None
-    assert [tuple(item) for item in audit][-1] == ('administrator', 'Signed in with a development link')
+    assert [tuple(item) for item in audit][-1] == ('admin', 'Signed in with a development link')
 
     # Single use: the same link never signs in again.
     status, headers, body = call(app, 'GET', f'/_dev/signin?token={token}')
@@ -119,12 +119,12 @@ def test_links_default_to_the_administrator(playground, tmp_path):
     from evlet.cli.playground import playground_app
     playground.business.auth.create_user(username='owner', password='a long enough password', role='admin')
     _, username = issue(playground.database)
-    assert username == 'administrator' and users(playground) == ['administrator', 'owner']
+    assert username == 'admin' and users(playground) == ['admin', 'owner']
     assert issue(playground.database, 'owner')[1] == 'owner'
     # No demo account: a new Playground has only the Administrator.
     other = playground_app(tmp_path / 'other')
     issue(other.database)
-    assert users(other) == ['administrator']
+    assert users(other) == ['admin']
 
 
 def test_link_user_choice(playground):
@@ -132,14 +132,14 @@ def test_link_user_choice(playground):
     auth.create_user(username='owner', password='a long enough password', role='admin')
     auth.create_user(username='second', password='a long enough password', role='admin')
     auth.create_user(username='client', password='a long enough password', role='portal')
-    assert issue(playground.database)[1] == 'administrator'
+    assert issue(playground.database)[1] == 'admin'
     assert issue(playground.database, 'Second')[1] == 'second'
     # Portal accounts sign in on portal hosts; desk links never name them.
     with pytest.raises(ValueError, match='No active desk user named client'):
         issue(playground.database, 'client')
     with pytest.raises(AccessError, match='built in'):
         auth.update_user(1, {'active': False})
-    assert issue(playground.database)[1] == 'administrator'
+    assert issue(playground.database)[1] == 'admin'
 
 
 def test_linked_session_keeps_every_permission_check(playground):
@@ -196,7 +196,7 @@ def test_dev_link_command_for_an_instance(instance, capsys):
     project, app = instance
     main(['dev-link', '--project', str(project)])
     output = capsys.readouterr().out
-    assert 'The administrator account has no password yet' in output and 'http://127.0.0.1:8000/_dev/signin?token=' in output
+    assert 'The admin account has no password yet' in output and 'http://127.0.0.1:8000/_dev/signin?token=' in output
     main(['dev-link', '--project', str(project), '--user', 'owner'])
     output = capsys.readouterr().out
     assert 'Sign in as owner' in output and 'http://127.0.0.1:8000/_dev/signin?token=' in output
@@ -233,7 +233,7 @@ def test_dev_link_finds_the_running_playground(tmp_path, monkeypatch, capsys):
     assert devlink.running_playgrounds() == [(8000, live)]
     main(['dev-link'])
     output = capsys.readouterr().out
-    assert 'The administrator account has no password yet' in output and 'http://127.0.0.1:8000/_dev/signin?token=' in output
+    assert 'The admin account has no password yet' in output and 'http://127.0.0.1:8000/_dev/signin?token=' in output
     token = output.split('token=')[1].split()[0]
     assert call(DevSignIn(playground), 'GET', f'/_dev/signin?token={token}')[0] == 302
 
@@ -250,7 +250,7 @@ def test_startup_announces_a_link(playground, capsys):
         return sent
     assert asyncio.run(run())[0] == 'lifespan.startup.complete'
     output = capsys.readouterr().out
-    assert 'The administrator account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):' in output
+    assert 'The admin account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):' in output
     assert '/_dev/signin?token=' in output and 'demo-admin' not in output
 
 

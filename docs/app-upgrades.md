@@ -97,6 +97,26 @@ first applies the steps and the others find them applied. Do not keep data you c
 Main uses a development version between releases; a source build is not the same
 artifact as the last PyPI release.
 
+### From 0.4.2 to 0.4.3
+
+0.4.3 renames the built-in System Administrator's username from `administrator` to `admin`.
+
+- Run `evlet migrate` for each instance. It applies `0009_admin_username`, which renames the
+  account and keeps its password, email and two-step sign-in. Sign in as `admin` afterwards.
+- An instance that also has an ordinary active admin named `admin` keeps that account as the
+  Administrator, with its own password. The 0.4.2 `administrator` account becomes an ordinary
+  admin, disabled when it never had a password. Remove it in Controls if you don't need it.
+- An account named `admin` that is not an active admin stops the step: rename it first.
+- Tests and scripts that sign in as `administrator` use `admin`. A test fixture that adds its own
+  account named `admin` now meets the Administrator: give it a password instead of inserting it,
+  for example with `INSERT ... ON CONFLICT(username) DO UPDATE SET password=excluded.password`.
+  Set any other column the fixture needs, such as `allow_mcp`, in the same update.
+- Setting up `admin` through `/api/auth/setup` gives the Administrator its password, so the
+  accounts a test adds after it start at 2 again, as before 0.4.2. Records it writes show
+  "Administrator" or "System Administrator", not "admin".
+- The Administrator passes every role check. A test that checks a Rule limiting the admin role
+  needs an ordinary admin with another username, such as `owner`.
+
 ### From 0.4.1 to 0.4.2
 
 0.4.2 adds the built-in System Administrator and new sign-in rules in config.py. Apps keep

@@ -82,8 +82,8 @@ def test_a_note_stores_html_and_mentions_fill_the_inbox(app):
     status, inbox, _ = editor('GET', '/api/_inbox')
     assert status == 200 and inbox['unread'] == 1
     [item] = inbox['items']
-    assert item['kind'] == 'mention' and item['actor'] == 'admin' and item['read'] is False
-    assert item['record']['title'] == 'Leak in unit 4' and item['text'] == 'admin mentioned you on Case Leak in unit 4'
+    assert item['kind'] == 'mention' and item['actor'] == 'System Administrator' and item['read'] is False
+    assert item['record']['title'] == 'Leak in unit 4' and item['text'] == 'System Administrator mentioned you on Case Leak in unit 4'
     # The journal names mentioned people with their current username.
     page = admin('GET', f'/api/case/{record}/journal')[1]
     assert page['users'][str(ids['editor'])] == 'editor'
@@ -99,7 +99,7 @@ def test_someone_who_cannot_open_the_record_learns_nothing_about_it(app):
     status, inbox, _ = viewer('GET', '/api/_inbox')
     [item] = inbox['items']
     assert item['record'] is None
-    assert item['text'] == "admin mentioned you on a record you can't open"
+    assert item['text'] == "System Administrator mentioned you on a record you can't open"
     flat = repr(inbox)
     assert 'Confidential' not in flat and 'price' not in flat and str(record) not in flat
 
@@ -141,7 +141,7 @@ def test_preferences_decide_the_inbox_and_email(app, monkeypatch):
     record = case(admin, 'Roof repair')
     admin('POST', f'/api/case/{record}/journal', {'kind': 'note', 'html': f'<p>{mention(ids["editor"], "Ed")} secret detail</p>'})
     [(to, subject, text)] = sent
-    assert to == 'ed@example.test' and subject == 'admin mentioned you on Case Roof repair'
+    assert to == 'ed@example.test' and subject == 'System Administrator mentioned you on Case Roof repair'
     assert 'secret detail' not in text
     # In Evlet off, email on: no inbox row, still an email.
     assert editor('PATCH', '/api/_settings/me/prefs', {'notify.mention': [False, True]})[0] == 200

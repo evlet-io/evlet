@@ -40,7 +40,7 @@ def live_connector(tmp_path, hashed):
         with app.database.transaction() as tx:
             for role in ('admin', 'viewer', 'editor'):
                 # Allow MCP (Controls, Users): the connector acts for these people.
-                tx.connection.execute('INSERT INTO evlet_users(username,password,role,allow_mcp) VALUES (?,?,?,1)', (role, hashed, role))
+                tx.connection.execute('INSERT INTO evlet_users(username,password,role,allow_mcp) VALUES (?,?,?,1) ON CONFLICT(username) DO UPDATE SET password=excluded.password, allow_mcp=1', (role, hashed, role))
             # The stdio tests change records, so this workspace lets AI assistants make changes.
             tx.connection.execute("INSERT INTO evlet_overrides(kind,key,value) VALUES ('setting','mcp.allow_writes','true')")
             tx.connection.execute('UPDATE evlet_config SET version=version+1')
@@ -150,7 +150,9 @@ def test_sessions_cannot_replay_across_tenants_or_survive_revocation(live_connec
     beta = HTTPClient(f'http://beta.localhost:{port}', cookie=alpha.cookie, csrf=alpha.csrf)
     with pytest.raises(ConnectorError) as failure: beta.get('/api/_discovery')
     assert failure.value.status == 401
-    apps['alpha'].business.auth.update_user(2, {'password': 'replacement long test password'})
+    with apps['alpha'].database._connection() as connection:
+        admin_id = connection.execute("SELECT id FROM evlet_users WHERE username='admin'").fetchone()[0]
+    apps['alpha'].business.auth.update_user(admin_id, {'password': 'replacement long test password'})
     with pytest.raises(ConnectorError) as failure: alpha.get(project_path(live_connector))
     assert failure.value.status == 401
     beta = signed(live_connector, 'beta')

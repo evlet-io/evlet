@@ -134,7 +134,9 @@ def test_admin_sign_in_fills_in_the_username_on_the_sign_in_page(tmp_path):
 
 # ---------- the built-in Administrator ----------
 
-def test_every_new_instance_has_the_administrator_without_a_password(secured):
+def test_every_new_instance_has_the_administrator_without_a_password(tmp_path):
+    secured = plain_app(tmp_path)
+    secured.business.auth.create_user(username='owner', password=PASSWORD, role='admin')
     with secured.database._connection() as connection:
         row = connection.execute('SELECT u.id, u.role, u.active, u.password, p.full_name FROM evlet_users u '
                                  'LEFT JOIN evlet_user_profile p ON p.user_id=u.id WHERE u.username=?', (ADMINISTRATOR,)).fetchone()
@@ -144,7 +146,7 @@ def test_every_new_instance_has_the_administrator_without_a_password(secured):
     assert status == 401
     status, payload, _ = http(secured, 'POST', '/api/auth/login', {'username': ADMINISTRATOR, 'password': 'anything at all here'})
     assert status == 401 and payload['error'] == 'Invalid username or password'
-    users = client(secured)('GET', '/api/_controls/users')[1]['items']
+    users = client(secured, 'owner')('GET', '/api/_controls/users')[1]['items']
     builtin = [item for item in users if item['builtin']]
     assert [(item['username'], item['password_set']) for item in builtin] == [(ADMINISTRATOR, False)]
 
@@ -167,42 +169,92 @@ def test_migrating_an_older_database_adds_the_administrator(tmp_path):
         connection.execute('DELETE FROM evlet_user_profile')
         connection.execute('DELETE FROM evlet_users')
         connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('owner', ?, 'admin')", (password_hash(PASSWORD),))
-        connection.execute("DELETE FROM evlet_framework_migrations WHERE name='0008_administrator'")
+        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0008_administrator', '0009_admin_username')")
     database = Database(path, registry)
-    assert upgrade(database) == ['0008_administrator']
+    assert upgrade(database) == ['0008_administrator', '0009_admin_username']
     with database._connection() as connection:
         rows = [tuple(row) for row in connection.execute('SELECT username, role, active, password FROM evlet_users ORDER BY id')]
     assert rows[0][0] == 'owner' and rows[1] == (ADMINISTRATOR, 'admin', 1, '')
     database.close()
 
 
-def test_migrating_refuses_to_take_over_someone_elses_administrator_account(tmp_path):
+def older_database(tmp_path, *statements):
+    """A database whose users table holds only what statements add, with steps 0008 and 0009 not yet recorded."""
     app = plain_app(tmp_path)
     path = tmp_path / 'rules.sqlite3'
     app.database.close()
     with sqlite3.connect(path) as connection:
         connection.execute('DELETE FROM evlet_user_profile')
         connection.execute('DELETE FROM evlet_users')
-        connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('administrator', 'x', 'editor')")
-        connection.execute("DELETE FROM evlet_framework_migrations WHERE name='0008_administrator'")
-    database = Database(path, registry)
-    with pytest.raises(SchemaError, match='account named administrator already exists'):
-        upgrade(database)
+        for statement in statements:
+            connection.execute(statement)
+        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0008_administrator', '0009_admin_username')")
+    return Database(path, registry)
+
+
+def accounts(database):
     with database._connection() as connection:
-        assert [tuple(row) for row in connection.execute('SELECT username, role FROM evlet_users')] == [('administrator', 'editor')]
+        return [tuple(row) for row in connection.execute('SELECT username, role, active, builtin FROM evlet_users ORDER BY id')]
+
+
+def test_migrating_refuses_to_take_over_an_admin_account_that_is_not_an_active_admin(tmp_path):
+    for role, active in (('editor', 1), ('admin', 0)):
+        database = older_database(tmp_path / f'{role}{active}', f"INSERT INTO evlet_users(username,password,role,active) VALUES ('admin', 'x', '{role}', {active})")
+        with pytest.raises(SchemaError, match='account named admin exists that is not an active administrator'):
+            upgrade(database)
+        assert [row[:3] for row in accounts(database)] == [('admin', role, active)]
+        database.close()
+
+
+def test_migrating_makes_an_older_active_admin_named_admin_the_administrator(tmp_path):
+    # Before 0.4.2 an instance's first admin was often named admin: it becomes the Administrator and keeps its password.
+    database = older_database(tmp_path, "INSERT INTO evlet_users(username,password,role) VALUES ('admin', 'kept', 'admin')")
+    upgrade(database)
+    assert accounts(database) == [('admin', 'admin', 1, 1)]
+    with database._connection() as connection:
+        assert connection.execute("SELECT password FROM evlet_users WHERE username='admin'").fetchone()[0] == 'kept'
     database.close()
+
+
+def test_migrating_from_0_4_2_renames_administrator_to_admin(tmp_path):
+    app = plain_app(tmp_path)
+    give_password(app, ADMINISTRATOR)
+    with app.database.transaction() as tx:
+        tx.connection.execute("UPDATE evlet_users SET username='administrator' WHERE username=?", (ADMINISTRATOR,))
+        tx.connection.execute("DELETE FROM evlet_framework_migrations WHERE name='0009_admin_username'")
+    app.database.close()
+    database = Database(tmp_path / 'rules.sqlite3', registry)
+    assert upgrade(database) == ['0009_admin_username']
+    assert accounts(database) == [('admin', 'admin', 1, 1)]
+    database.close()
+    app = plain_app(tmp_path)
+    assert http(app, 'POST', '/api/auth/login', {'username': 'admin', 'password': PASSWORD})[0] == 200
+    assert http(app, 'POST', '/api/auth/login', {'username': 'administrator', 'password': PASSWORD})[0] == 401
+
+
+def test_migrating_from_0_4_2_beside_an_admin_account_keeps_that_account_as_the_administrator(tmp_path):
+    # A 0.4.2 instance that also has an ordinary admin named admin: that account becomes the Administrator, and the
+    # 0.4.2 one an ordinary account, disabled when it never had a password.
+    for password, active in (('', 0), ('set', 1)):
+        database = older_database(tmp_path / str(active),
+                                  f"INSERT INTO evlet_users(username,password,role,builtin) VALUES ('administrator', '{password}', 'admin', 1)",
+                                  "INSERT INTO evlet_users(username,password,role) VALUES ('admin', 'x', 'admin')")
+        upgrade(database)
+        assert accounts(database) == [('administrator', 'admin', active, 0), ('admin', 'admin', 1, 1)]
+        database.close()
 
 
 def test_the_administrator_cannot_be_changed_on_any_surface(secured, tmp_path):
     give_password(secured, ADMINISTRATOR)
-    admin = client(secured)
+    secured.business.auth.create_user(username='owner', password=PASSWORD, role='admin')
+    admin = client(secured, 'owner')
     target = user_id(secured, ADMINISTRATOR)
     for body in ({'role': 'editor'}, {'active': False}, {'role': 'viewer', 'active': False}):
         for path in (f'/api/_controls/users/{target}', f'/api/auth/users/{target}'):
             status, payload, _ = admin('PATCH', path, body)
             assert status == 409 and payload['error'] == PROTECTED, (path, body)
     # The username stays its own: no one else can take it.
-    status, payload, _ = admin('POST', '/api/_controls/users', {'username': 'Administrator', 'password': PASSWORD, 'role': 'viewer'})
+    status, payload, _ = admin('POST', '/api/_controls/users', {'username': 'Admin', 'password': PASSWORD, 'role': 'viewer'})
     assert status == 422 and 'already uses' in payload['fields']['username']
     # Its own profile: name, photo and the rest stay as they are; preferences and the email address can change.
     me = client(secured, ADMINISTRATOR)

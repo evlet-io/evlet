@@ -382,9 +382,9 @@ def test_revise_keeps_order_of_saved_rows(quotes):
 def check_permissions(app):
     app, c, account = app
     editor, viewer = add_user(app, 'editor'), add_user(app, 'viewer')
-    editor_id = 3  # After the built-in Administrator (1) and admin (2).
+    editor_id = 2
     _, mine = issued_quote(c, account, owner=editor_id)
-    _, other = issued_quote(c, account, owner=2)
+    _, other = issued_quote(c, account, owner=1)
     # Row scope applies: a record outside the editor's scope is not found.
     assert post(editor, other, 'void', {'reason': 'x'}, headers={b'if-match': b'"x"'})[0] == 404
     assert viewer('POST', f'{mine}/void', {'reason': 'x'}, headers=etag(viewer, mine))[0] == 403

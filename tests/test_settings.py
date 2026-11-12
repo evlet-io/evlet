@@ -181,7 +181,7 @@ def test_photo_is_kept_in_private_file_storage(tmp_path, monkeypatch, hashed):
     app = build_app(database, LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False), storage=LocalFileStorage(tmp_path / 'private'))
     app.initialize()
     with database.transaction() as tx:
-        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', ('editor', hashed, 'editor'))
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', ('editor', hashed, 'editor'))
     c = client(app, 'editor')
     content = PNG + b'\1' * (1024 * 1024 + 10)
     assert c('POST', '/api/_settings/me/photo', {'type': 'image/png', 'data': base64.b64encode(content).decode()})[0] == 200
@@ -301,7 +301,7 @@ def test_portal_hosts_serve_the_portal_subset_of_settings(tmp_path, monkeypatch,
     app = build_app(database, LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False), routes=routes)
     app.initialize()
     with database.transaction() as tx:
-        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', ('buyer', hashed, 'portal'))
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', ('buyer', hashed, 'portal'))
     host = {b'host': b'portal.localhost:8000'}
     status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'buyer', 'password': PASSWORD}, headers=host)
     assert status == 200

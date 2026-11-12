@@ -32,7 +32,7 @@ TWO_STEP_FIRST = 'Your role needs two-step sign-in. Sign in again to set it up.'
 LAST_ADMIN = 'This is the only active admin. Make someone else an admin first, so the instance always has one.'
 # The built-in Administrator: every instance has it, with the admin role and unlimited control. Its username,
 # name and role never change, and it cannot be deactivated or deleted. It starts with no password.
-ADMINISTRATOR = 'administrator'
+ADMINISTRATOR = 'admin'
 ADMINISTRATOR_NAME = 'System Administrator'
 PROTECTED = ('The Administrator account is built in. Its username, name and role cannot be changed, '
              'and it cannot be deactivated or deleted.')
@@ -54,7 +54,7 @@ class Security:
 
     password_min takes 1 to 64 characters; 1 means any password will do. admin_two_step decides whether
     accounts with the admin role (the Administrator too) must use two-step sign-in, and two_step whether
-    everyone else must. admin_sign_in opens the sign-in page with the administrator username filled in.
+    everyone else must. admin_sign_in opens the sign-in page with the username admin filled in.
 
     Rules for admin accounts come only from here. Controls can change the password minimum and two-step
     sign-in for everyone else, in either direction, and can only shorten sessions and the lockout."""
@@ -821,21 +821,39 @@ def _user_columns(connection, postgres):
 
 
 def ensure_administrator(connection, postgres=False):
-    """Create the built-in Administrator when it is missing: role admin, no password, so it cannot sign in until one is set.
+    """Create the built-in Administrator (username admin) when it is missing: role admin, no password, so it cannot sign
+    in until one is set. Returns True when it was created.
 
-    evlet_users.builtin marks it. An account named administrator without the mark belongs to someone else (a database
-    from before 0.4.2): it is refused, never taken over. A changed role or status of the Administrator is put back.
+    evlet_users.builtin marks it. Evlet 0.4.2 named it administrator: that account is renamed to admin. An account
+    already named admin without the mark (from before 0.4.2, or added beside a 0.4.2 Administrator) becomes the
+    Administrator when it is an active admin, and the 0.4.2 one becomes an ordinary account (disabled when it never had
+    a password). Any other admin account is refused, never taken over. A changed role or status is put back.
     """
+    from .migrations import SchemaError
     if 'builtin' not in _user_columns(connection, postgres):
         connection.execute('ALTER TABLE evlet_users ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0')
-    row = connection.execute('SELECT id, role, active, builtin FROM evlet_users WHERE username=?', (ADMINISTRATOR,)).fetchone()
-    if row is None:
+    marked = connection.execute('SELECT id, username, password FROM evlet_users WHERE builtin=1 ORDER BY id').fetchone()
+    named = connection.execute('SELECT id, role, active, builtin FROM evlet_users WHERE username=?', (ADMINISTRATOR,)).fetchone()
+    if marked is not None and marked[1] != ADMINISTRATOR:
+        if named is None:
+            connection.execute('UPDATE evlet_users SET username=? WHERE id=?', (ADMINISTRATOR, marked[0]))
+            named = connection.execute('SELECT id, role, active, builtin FROM evlet_users WHERE username=?', (ADMINISTRATOR,)).fetchone()
+        else:
+            _adoptable(named, SchemaError)
+            connection.execute('UPDATE evlet_users SET builtin=0, active=? WHERE id=?', (1 if marked[2] else 0, marked[0]))
+    if named is None:
         connection.execute("INSERT INTO evlet_users(username,password,role,builtin) VALUES (?,'','admin',1)", (ADMINISTRATOR,))
         return True
-    if not row[3]:
-        from .migrations import SchemaError
-        raise SchemaError('An account named administrator already exists. Evlet now keeps that username for its built-in Administrator. '
-                          'Rename that account in the database (for example to administrator-old), then run evlet migrate again.')
-    if row[1] != 'admin' or not row[2]:
-        connection.execute("UPDATE evlet_users SET role='admin', active=1 WHERE id=?", (row[0],))
+    if not named[3]:
+        _adoptable(named, SchemaError)
+        connection.execute('UPDATE evlet_users SET builtin=1 WHERE id=?', (named[0],))
+    elif named[1] != 'admin' or not named[2]:
+        connection.execute("UPDATE evlet_users SET role='admin', active=1 WHERE id=?", (named[0],))
     return False
+
+
+def _adoptable(row, error):
+    """Refuse to make an unmarked account named admin the Administrator unless it is an active admin already."""
+    if row[1] != 'admin' or not row[2]:
+        raise error('An account named admin exists that is not an active administrator. Evlet keeps that username for its '
+                    'built-in Administrator. Rename that account in the database (for example to admin-old), then run evlet migrate again.')
