@@ -540,6 +540,7 @@ def test_verify_command_reports_breaks(app, tmp_path, capsys):
     instance = root / 'instances' / 'acme'
     (instance / 'data').mkdir(parents=True)
     (instance / 'config.py').write_text("from evlet import Instance\n\ninstance = Instance(name='acme', domain=None)\n")
+    app.database.close()  # the last connection to close folds the write-ahead log into the file it copies
     shutil.copy(app.database.path, instance / 'data' / 'database.sqlite3')
     main(['journal', 'verify', 'acme', '--project', str(root)])
     assert capsys.readouterr().out == 'Journal verified: 3 hashed entries, no breaks\n'

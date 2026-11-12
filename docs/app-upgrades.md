@@ -79,7 +79,9 @@ modified time and user columns to every model table and fills them from the Jour
 unsaved changes people leave on saved records ([ui.md](ui.md#unsaved-changes)). `0006_fixed_ids` adds the
 trigger that refuses an id change to every model table ([model-engine.md](model-engine.md#only-evlet-makes-ids)). `0007_money_scale` records that every
 Currency amount is stored at 6 places; `evlet migrate` moves the amounts before any app migration runs
-([model-engine.md](model-engine.md#decimal-places-per-currency)). Steps never run while an instance is served.
+([model-engine.md](model-engine.md#decimal-places-per-currency)). `0010_split_files` moves sign-in sessions, the
+tool-call log and Eva into their own SQLite files next to the database (see From 0.4.2 to 0.4.3 below).
+Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet
 before restarting.
@@ -99,7 +101,13 @@ artifact as the last PyPI release.
 
 ### From 0.4.2 to 0.4.3
 
-0.4.3 renames the built-in System Administrator's username from `administrator` to `admin`.
+0.4.3 renames the built-in System Administrator's username from `administrator` to `admin`, and splits
+each instance's SQLite database into four files with writers taking turns, so a long job no longer
+makes pages fail with "database is locked". Apps keep their `evlet>=0.4.0,<0.5` dependency.
+
+`evlet migrate` applies both steps in order, after one backup.
+
+The Administrator's username:
 
 - Run `evlet migrate` for each instance. It applies `0009_admin_username`, which renames the
   account and keeps its password, email and two-step sign-in. Sign in as `admin` afterwards.
@@ -116,6 +124,35 @@ artifact as the last PyPI release.
   "Administrator" or "System Administrator", not "admin".
 - The Administrator passes every role check. A test that checks a Rule limiting the admin role
   needs an ordinary admin with another username, such as `owner`.
+
+The four SQLite files:
+
+- Stop the instance and run `evlet migrate` before you serve it. It backs up
+  `data/database.sqlite3` first, then step `0010_split_files` moves these tables out of it:
+  `evlet_sessions`, `evlet_two_step_tickets` and `evlet_login_limits` into `sessions.sqlite3`;
+  `evlet_tool_calls`, `evlet_public_limits` and `evlet_forwarded_peers` into `logs.sqlite3`; and
+  the ten `evlet_eva_*` tables into `eva.sqlite3`. Everything else stays in `database.sqlite3`.
+  People stay signed in and nothing else changes for them.
+- The move copies each table with its rows, indexes and id counter, checks that the row counts
+  match, and only then drops it from the main file. It works on the staged copy `evlet migrate`
+  already uses, so a failure leaves the instance as it was, and it is safe to run again after a
+  crash at any point. It first checks the disk has room for the backup, the staged copy and the
+  moved tables, and stops with a clear message, changing nothing, when it does not.
+- Back up and restore the four files together: `evlet backup --instance NAME` and
+  `evlet restore BACKUP --instance NAME` are new ([cli.md](cli.md#back-up-and-restore)). A
+  single-file backup from 0.4.2 still restores; run `evlet migrate` after it.
+- App code keeps naming tables as before: SQL finds a table in whichever file holds it. A
+  write transaction that touches a sessions, logs or Eva table takes that file's turn too.
+  Code that opens the SQLite file itself with `sqlite3.connect` sees only the main file; use
+  `evlet.writes.connect(path)` to get the others attached.
+- SQLite cannot check a foreign key from one file to another, so the moved tables no longer
+  declare one to `evlet_users`; Evlet checks those links itself. A table in your app should not
+  reference a moved table.
+- New for jobs: `Context.enqueue(..., run_at=...)` delays a job, and a running job queues its
+  own next run with `context.follow_up(tx, payload, run_at=...)`, in the same transaction and
+  with the same identity ([jobs-realtime.md](jobs-realtime.md#follow-up-runs)). An app that
+  polls with an every-minute schedule can use a follow-up run instead.
+- PostgreSQL instances keep one database; the step only records itself there.
 
 ### From 0.4.1 to 0.4.2
 
@@ -213,7 +250,10 @@ requires trust. Keep `apps.lock` and its matching database together.
 ## Keep backups manageable
 
 Changed installs and Evlet upgrades save a timestamped SQLite backup under the
-instance's `data/backups/`. Unchanged migrations do not add one. There is no retention command.
+instance's `data/backups/`: the main file `<time>.sqlite3` and, from 0.4.3, its
+`<time>-sessions.sqlite3`, `<time>-logs.sqlite3` and `<time>-eva.sqlite3`. `evlet backup` writes
+the same kind of set. Keep or remove the files of a set together. Unchanged migrations do not add one. There is no retention command.
 After verifying recovery, remove obsolete backup files according to your own
 retention policy while keeping the source, lock and private files needed to restore
-each retained snapshot. Never delete the active `data/database.sqlite3` file.
+each retained snapshot. Never delete the active `data/database.sqlite3` file or its `sessions`, `logs` and `eva`
+files.

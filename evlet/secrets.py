@@ -222,11 +222,12 @@ def rotate(database_path, key):
     if not old:
         return 0, []
     key.write([secrets.token_bytes(32), *old])
-    connection = sqlite3.connect(Path(database_path).as_uri() + '?mode=rw', uri=True, isolation_level=None)
+    from .writes import connect, tables as all_tables
+    connection = connect(database_path, uri=True, isolation_level=None)
     done, failed = 0, []
     try:
         connection.execute('BEGIN IMMEDIATE')
-        tables = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        tables = all_tables(connection)
         for table, column, id_column, purpose_column, prefix, text, name in SEALED:
             if table not in tables:
                 continue

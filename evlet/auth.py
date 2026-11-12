@@ -315,6 +315,9 @@ class LocalAuth:
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_user ON evlet_sessions(user_id)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_expiry ON evlet_sessions(expires)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_login_reset ON evlet_login_limits(resets)')
+            # Sessions have their own SQLite file, which cannot refer to accounts (evlet/writes.py): a session
+            # of an account that is gone ends here. Sign-in also requires an active account.
+            tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id NOT IN (SELECT id FROM evlet_users)')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_api_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, name TEXT NOT NULL, prefix TEXT NOT NULL UNIQUE, hash TEXT NOT NULL, scope TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER, revoked_at INTEGER)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_api_key_user ON evlet_api_keys(user_id)')
             # AI assistants: registered OAuth clients, each person's connections, their tokens (hashed) and calls.
@@ -401,17 +404,16 @@ class LocalAuth:
             if entry[1] < FORWARDED_REQUESTS or now - entry[2] < FORWARDED_NOTE_SECONDS:
                 return
             entry[2] = now
-        try:
-            with self.database.transaction() as tx:
-                tx.connection.execute('INSERT INTO evlet_forwarded_peers(peer,last_seen) VALUES (?,?) ON CONFLICT(peer) DO UPDATE SET last_seen=excluded.last_seen',
-                                      (address, now))
-                tx.connection.execute('DELETE FROM evlet_forwarded_peers WHERE last_seen<? OR peer NOT IN '
-                                      '(SELECT peer FROM evlet_forwarded_peers ORDER BY last_seen DESC, peer LIMIT ?)', (now - 7 * 86400, FORWARDED_ROWS))
-        except Exception:
-            logger.warning('Could not note that %s sends forwarded headers without being a trusted proxy.', address, exc_info=True)
+        # Saved with the next batch of the logs file (evlet/writes.py LogBuffer).
+        self.database.logs.add('logs', 'INSERT INTO evlet_forwarded_peers(peer,last_seen) VALUES (?,?) ON CONFLICT(peer) DO UPDATE SET last_seen=excluded.last_seen',
+                               (address, now))
+        self.database.logs.add('logs', 'DELETE FROM evlet_forwarded_peers WHERE last_seen<? OR peer NOT IN '
+                               '(SELECT peer FROM evlet_forwarded_peers ORDER BY last_seen DESC, peer LIMIT ?)', (now - 7 * 86400, FORWARDED_ROWS))
 
     def forwarded_peers(self):
         """Peers seen in the last day sending forwarded headers that are still not trusted proxies, newest first."""
+        # The notes are batched (note_forwarded): save them first.
+        self.database.logs.flush()
         with self.database._connection() as connection:
             rows = connection.execute('SELECT peer FROM evlet_forwarded_peers WHERE last_seen>? ORDER BY last_seen DESC, peer LIMIT 20',
                                       (int(time.time()) - 86400,)).fetchall()
@@ -517,8 +519,8 @@ class LocalAuth:
             raise AccessError(429, 'Too many requests with this key. Try again in a minute.')
         now = int(time.time())
         if row['last_used'] is None or row['last_used'] < now - 60:
-            with self.database.transaction() as tx:
-                tx.connection.execute('UPDATE evlet_api_keys SET last_used=? WHERE id=?', (now, row['key_id']))
+            # Saved with the next batch (evlet/writes.py LogBuffer): a key request never waits on it.
+            self.database.logs.add(None, 'UPDATE evlet_api_keys SET last_used=? WHERE id=?', (now, row['key_id']))
         return User(row['id'], row['username'], row['role'], links, access=self.key_access(row['key_id'], row['scope']))
 
     def address(self, scope):
@@ -584,6 +586,8 @@ class LocalAuth:
         return [{**dict(row), 'scope': json.loads(row['scope'])} for row in rows]
 
     def keys(self, user_id=None):
+        # Show the latest counts and times: save the batched ones first (evlet/writes.py LogBuffer).
+        self.database.logs.flush()
         with self.database._connection() as connection:
             return self.key_rows(connection, *(('k.user_id=?', (user_id,)) if user_id is not None else ()))
 
@@ -672,7 +676,8 @@ class LocalAuth:
         pair = hashlib.sha256(('account:' + address + ':' + username).encode()).hexdigest()
         # Take the hashing slot first: a busy 503 is answered before any attempt is recorded.
         with hashing_slot():
-            with self.database.transaction() as tx:
+            # Attempts and sessions share their own file, so a sign-in never waits on a long write to records.
+            with self.database.transaction(store='sessions') as tx:
                 tx.connection.execute('DELETE FROM evlet_login_limits WHERE resets<=?', (now,))
                 tx.connection.execute('DELETE FROM evlet_sessions WHERE expires<=?', (now,))
                 for key, limit in ((pair, self.lockout), (client, 100)):
@@ -724,7 +729,7 @@ class LocalAuth:
         return b'set-cookie', value.encode()
 
     def logout(self, scope):
-        with self.database.transaction() as tx:
+        with self.database.transaction(store='sessions') as tx:
             tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (self.token(scope),))
         return [self.cookie('', self.realm(scope))]
 

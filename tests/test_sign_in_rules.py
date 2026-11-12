@@ -169,9 +169,9 @@ def test_migrating_an_older_database_adds_the_administrator(tmp_path):
         connection.execute('DELETE FROM evlet_user_profile')
         connection.execute('DELETE FROM evlet_users')
         connection.execute("INSERT INTO evlet_users(username,password,role) VALUES ('owner', ?, 'admin')", (password_hash(PASSWORD),))
-        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0008_administrator', '0009_admin_username')")
+        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0008_administrator', '0009_admin_username', '0010_split_files')")
     database = Database(path, registry)
-    assert upgrade(database) == ['0008_administrator', '0009_admin_username']
+    assert upgrade(database) == ['0008_administrator', '0009_admin_username', '0010_split_files']
     with database._connection() as connection:
         rows = [tuple(row) for row in connection.execute('SELECT username, role, active, password FROM evlet_users ORDER BY id')]
     assert rows[0][0] == 'owner' and rows[1] == (ADMINISTRATOR, 'admin', 1, '')
@@ -188,7 +188,7 @@ def older_database(tmp_path, *statements):
         connection.execute('DELETE FROM evlet_users')
         for statement in statements:
             connection.execute(statement)
-        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0008_administrator', '0009_admin_username')")
+        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0008_administrator', '0009_admin_username', '0010_split_files')")
     return Database(path, registry)
 
 
@@ -221,10 +221,10 @@ def test_migrating_from_0_4_2_renames_administrator_to_admin(tmp_path):
     give_password(app, ADMINISTRATOR)
     with app.database.transaction() as tx:
         tx.connection.execute("UPDATE evlet_users SET username='administrator' WHERE username=?", (ADMINISTRATOR,))
-        tx.connection.execute("DELETE FROM evlet_framework_migrations WHERE name='0009_admin_username'")
+        tx.connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0009_admin_username', '0010_split_files')")
     app.database.close()
     database = Database(tmp_path / 'rules.sqlite3', registry)
-    assert upgrade(database) == ['0009_admin_username']
+    assert upgrade(database) == ['0009_admin_username', '0010_split_files']
     assert accounts(database) == [('admin', 'admin', 1, 1)]
     database.close()
     app = plain_app(tmp_path)

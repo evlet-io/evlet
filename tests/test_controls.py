@@ -254,6 +254,7 @@ def test_forwarded_peer_notes_stay_bounded(tmp_path, monkeypatch):
     monkeypatch.setattr(auth_module, 'FORWARDED_REQUESTS', 1)
     for index in range(auth_module.FORWARDED_ROWS + 10):
         auth.note_forwarded(scope(500 + index))
+    database.logs.flush()  # the notes are saved in batches (evlet/writes.py LogBuffer)
     with database._connection() as db:
         assert db.execute('SELECT count(*) FROM evlet_forwarded_peers').fetchone()[0] == auth_module.FORWARDED_ROWS
     database.close()

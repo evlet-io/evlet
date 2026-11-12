@@ -95,6 +95,8 @@ evlet ids check acme
 evlet journal verify acme
 evlet ledger list --instance acme
 evlet jobs list --instance acme
+evlet backup --instance acme
+evlet restore instances/acme/data/backups/20261112T061500000000Z.sqlite3 --instance acme
 evlet routes acme
 evlet proxy acme --caddy --check
 evlet host add acme www.example.com --root site.www --apply
@@ -674,8 +676,34 @@ sources. Recovery reconciles the lock only when the database matches one of the
 recorded states, then retries normal validation. Unknown mismatches fail closed
 and require restoring the matching database, files, lock and app source together.
 
-There are no automatic app update/removal, source checkout, rollback or backup/
-restore commands. Use [App upgrades](app-upgrades.md) for the supported workflow.
+There are no automatic app update/removal, source checkout or rollback commands. Use
+[App upgrades](app-upgrades.md) for the supported workflow.
+
+### Back up and restore
+
+An instance keeps four SQLite files in `data/`: `database.sqlite3`, `sessions.sqlite3`,
+`logs.sqlite3` and `eva.sqlite3` ([performance.md](performance.md#busy-writing-on-sqlite)).
+They are one set.
+
+`evlet backup --instance acme` copies all four into `data/backups/` as
+`<time>.sqlite3`, `<time>-sessions.sqlite3`, `<time>-logs.sqlite3` and `<time>-eva.sqlite3`.
+`--to DIR` writes them somewhere else. It uses SQLite's online backup API from one read
+snapshot of the four files, so the server may keep running. It checks there is room first.
+
+`evlet restore <backup> --instance acme` replaces the four files with a set. Give it the main
+file of the set; it finds the others next to it. Stop the server first: restore holds the
+instance lock and refuses while the instance is in use. It asks you to type the instance name;
+`--yes acme` answers for automation and must name the same instance. The files it replaces are
+copied into `data/backups/` first, named `<time>-before-restore`. `apps.lock` is set to what the
+restored database says was installed, so run `evlet migrate acme` after restoring an older
+backup.
+
+A single-file backup from before 0.4.3, such as one `evlet migrate` wrote, restores too. Its
+sessions, logs and Eva are still inside it, so restore clears the other three files and says to
+run `evlet migrate acme`, which moves them out again before you serve.
+
+Backups hold only the database. Keep `secret.key`, `files/` and the app sources with them.
+Tools that remove or reset an instance can list the set with `evlet.writes.data_files(path)`.
 Do not remove app source used by an instance. Calendar `@cron` schedules reconcile
 changes while preserving operator-disabled state and history. Changing a legacy
 interval schedule's task, payload or interval needs a later explicit

@@ -149,6 +149,110 @@ round trip, not complete application/storage recovery, PITR, or a production RTO
 CI additionally runs the PostgreSQL integration suite on versions 14 and 18. Check
 the PR's current results before accepting cross-version support.
 
+## Busy writing on SQLite
+
+SQLite lets one writer at a time change a file. Before 0.4.3 every other writer waited inside
+SQLite, which retries at random rather than in order, so a long job could keep requests waiting
+for seconds and then fail them with "database is locked". From 0.4.3 an instance keeps four
+SQLite files and its writers take turns.
+
+**Four files.** `data/database.sqlite3` keeps records, the audit trail, the journal, the job
+queue (with job progress and checkpoints), accounts, roles and settings: everything that must
+save in the same transaction as a record. `data/sessions.sqlite3` keeps sign-in sessions,
+two-step tickets and sign-in attempts. `data/logs.sqlite3` keeps the tool-call log, public rate
+counts and proxy header notes. `data/eva.sqlite3` keeps Eva's chats, messages, files, usage and
+tasks. All four use WAL. Every connection attaches the other three, so SQL names tables as before
+and joins across files work. A database file with another name, such as `app.sqlite3`, has
+`app-sessions.sqlite3` and so on next to it.
+
+A write locks only the file it changes. `database.transaction()` writes the main file, and
+takes the turn of a side file only when it touches one of its tables.
+`database.transaction(store="sessions")` (or `"logs"`, `"eva"`) writes that file only; changing
+any other file there is refused. Sign-in, sign-out, the tool-call log and Eva's run writes use
+these, so a long job step on the main file never holds them up.
+
+SQLite cannot enforce a foreign key from one file to another, so Evlet checks those links
+itself: sign-in requires an active account, and at startup sessions, Eva chats, files and tasks
+of an account that no longer exists are removed, along with the schedule of an Eva task that is
+gone. After a crash the main file is atomic as before. The other files are best effort for the
+last moment of writes: a session started or a log line written just before the crash may be
+missing.
+
+**Turns.** Inside one process each file has a line of writers (`evlet/writes.py`). Requests
+wait in one queue and job steps in another, each first come first served. When the file is
+free the oldest request goes next, unless the oldest job step has waited 0.25 seconds: then it
+goes, so a job is never starved by a stream of requests. A resumable job gives up its turn after
+every step and joins the back of the line. While people are writing (someone waited during the
+step, or wrote to the file in the last second), a job rests after each step for as long as the step
+held the file, and requests that arrive meanwhile go at once. So under load a job gets about half
+of the file's time and keeps going; a job on its own runs at full speed. A writer that waits more than 5 seconds
+(`Database.write_wait`) gets the usual "database is locked" error, answered as before. Other
+processes, such as a CLI command or a second server process, are not in the line: against them
+SQLite's own busy wait still applies.
+
+**Slow writes.** A write transaction that holds a file longer than 1 second logs a warning
+naming the file and the request (`POST /api/...`) or the job (`job #12 import_invoices`). Set
+`Database.slow_write` to another number of seconds, or to `None` to turn it off.
+
+**Batched counters.** Busy last-seen writes (an API key's last use, an AI assistant's call count
+and last use, proxy header notes) are added to a list in memory and saved by one background
+thread about every 250 ms, in one short transaction per file. Adding never touches SQLite, so a
+request never waits on them. They are saved on shutdown (`Database.close()`, the ASGI lifespan
+and at process exit); a crash loses at most the last quarter second of them. Pages that show
+these numbers save the batch first. Tool-call rows are not batched: the per-minute MCP rate and
+the order of the log read them, so each is one short write to `logs.sqlite3`.
+
+**Connections.** Opening a connection and attaching three files costs about a millisecond, so each
+thread keeps its last connection for its next operation. It is used again only while the four
+files are the same files on disk (a restore or a replaced file opens a new one); any open
+transaction is rolled back before it is kept. `Database.close()` closes them.
+
+PostgreSQL keeps one database and is unchanged: `store=` is accepted and does nothing there.
+
+### Local results, 12-11-2026
+
+Apple M3, Python 3.12, SQLite 3.54.1. 0.4.2 is release `de25c03`.
+
+`scripts/busy_queue_benchmark.py` is the owner's acceptance check. Eight people each open a list of
+customers and save a customer, then pause 0.2 s, for 20 s. Run A has the people alone. Run B adds a
+background job writing customers in back-to-back transactions of 0.1 s or 1 s, like a data
+generator. Run C is run B while sign-in attempts, the tool-call log and Eva write their own files.
+
+| Run | Release | Saves | Failed | Save wait median / p95 | Side files p95 |
+| --- | --- | ---: | ---: | --- | --- |
+| A, people only | 0.4.2 | 768 | 0 | 1 ms / 11 ms | |
+| A, people only | 0.4.3 | 779 | 0 | 0.9 ms / 3.0 ms | |
+| B, 0.1 s steps | 0.4.2 | 42 | 16 ("database is locked") | 3,163 ms / 5,071 ms | |
+| B, 0.1 s steps | 0.4.3 | 768 | 0 | 1.0 ms / 5.9 ms | |
+| C, 0.1 s steps | 0.4.3 | 776 | 0 | 0.8 ms / 4.6 ms | sign-in 2.9 ms, tool log 1.6 ms, Eva 1.0 ms |
+| B, 1 s steps | 0.4.2 | 40 | 19 ("database is locked") | 2,851 ms / 4,718 ms | |
+| B, 1 s steps | 0.4.3 | 394 | 0 | 2.6 ms / 975 ms | |
+| C, 1 s steps | 0.4.3 | 394 | 0 | 2.2 ms / 983 ms | sign-in 4.0 ms, tool log 2.1 ms, Eva 1.4 ms |
+
+On 0.4.2 people managed about one save in twenty and half of those failed. On 0.4.3 nothing
+fails. With 0.1 s steps people work as fast as without the job, and the job still writes about
+half as many rows as it does alone (249,162 in 20 s, against 447,700 before jobs rested). With
+1 s steps a save waits at most the step in progress, and each step logs `A write held
+database.sqlite3 for 1.02 s (job #1 data generator)`. Sign-in, the tool log and Eva never wait on
+the job. Reads never take a turn; under load they slow only by sharing the processor with the job.
+
+`scripts/benchmark_busy_writes.py` runs a resumable job of 20 steps, each saving 50 records and
+holding the database for `--step` seconds, while six threads save one record every 10 ms:
+
+| Step | Release | Saves | Failed | Median wait | 95th percentile | Longest wait | Job |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0.1 s | 0.4.2 | 13 | 0 | 12 ms | 2,222 ms | 2,222 ms | 2.2 s |
+| 0.1 s | 0.4.3 | 1,082 | 0 | 0.8 ms | 104 ms | 112 ms | 4.4 s |
+| 1.0 s | 0.4.2 | 10 | 18 ("database is locked") | 3,568 ms | 4,620 ms | 4,620 ms | 20.2 s |
+| 1.0 s | 0.4.3 | 9,660 | 0 | 0.5 ms | 1.4 ms | 1,014 ms | 40.3 s |
+
+A step that holds the file for a second still makes a save that arrives during it wait up to a
+second: keep job steps short. `tests/test_sqlite_files.py` checks both cases in a shorter form.
+
+One record read with `database.get` and one update with `database.update`, 500 times each on one
+thread: 0.4.2 took 680 µs and 957 µs; 0.4.3 takes 67 µs and 164 µs, since it no longer opens a
+new connection for each.
+
 ## Owned tables
 
 Documents with owned tables (`Table(Child)`) load, save and page with a bounded number
