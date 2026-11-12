@@ -493,14 +493,15 @@ class Context:
             raise
         connection.execute(f'RELEASE SAVEPOINT {name}')
 
-    def enqueue(self, task, payload, *, key=None, target=None):
+    def enqueue(self, task, payload, *, key=None, target=None, run_at=None):
         """Queue a registered Task in this context's transaction; returns its JobReceipt.
 
         The job is part of the transaction: it is queued only if the transaction commits, and once it
         does, the worker in this process is woken to run it at once. It runs as this context's user (read
         again when it starts), or with this context's role when the context acts as the system. `target`
-        (Model, id) needs update access now and again when the job runs. In an @action, use
-        self.context.enqueue(...); return the receipt to answer 202 with the job."""
+        (Model, id) needs update access now and again when the job runs. `run_at` (UTC seconds) delays it;
+        until then the job waits in the queue. In an @action, use self.context.enqueue(...); return the
+        receipt to answer 202 with the job. A running job queues its own next run with JobContext.follow_up."""
         if self.readonly:
             raise AccessError(403, 'This context is read only')
         jobs = self._business.jobs
@@ -508,7 +509,7 @@ class Context:
             raise ValueError('Jobs are unavailable')
         if target is not None: self._business.policy.record(self._tx, self.user, target[0], target[1], 'update')
         receipt = jobs.enqueue(self._tx, task, payload, user=self.user if self.user.id else None,
-                               system_role=self.user.role if not self.user.id else None, key=key, target=target)
+                               system_role=self.user.role if not self.user.id else None, key=key, target=target, run_at=run_at)
         if jobs.wake not in self._tx._after_commit:
             self._tx._after_commit.append(jobs.wake)
         return receipt

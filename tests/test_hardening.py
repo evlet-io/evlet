@@ -5,6 +5,8 @@ import sqlite3
 
 import pytest
 
+from evlet import writes
+
 from evlet import Database, Integer, Model, Registry
 from tests.test_tenancy import tenants, hashed, call, login
 
@@ -49,7 +51,8 @@ def test_concurrent_tenant_cookie_replay_and_warmed_route_revocation(tenants):
 
 def test_session_cleanup_and_revocation_use_indexes(tenants):
     catalog, _ = tenants
-    with sqlite3.connect(catalog.get('alpha').database_path) as db:
+    # Sessions and sign-in attempts are in the sessions file; writes.connect attaches it (evlet/writes.py).
+    with writes.connect(catalog.get('alpha').database_path) as db:
         for query, expected in [('DELETE FROM evlet_sessions WHERE user_id=42', 'evlet_session_user'),
                                 ('DELETE FROM evlet_sessions WHERE expires<100', 'evlet_session_expiry'),
                                 ('DELETE FROM evlet_login_limits WHERE resets<100', 'evlet_login_reset')]:

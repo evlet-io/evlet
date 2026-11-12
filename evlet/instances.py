@@ -129,7 +129,7 @@ class AppDefinition:
 def read_instance(path):
     if not path.is_dir() or not (path / 'config.py').is_file() or (path / 'config.py').is_symlink():
         raise ValueError(f'Instance does not exist or has invalid configuration: {path.name}')
-    for relative in ('data', 'data/database.sqlite3', 'data/backups', 'files', 'files/private', 'apps.lock', '.evlet.lock', 'routes.py', 'secret.key'):
+    for relative in ('data', 'data/database.sqlite3', 'data/sessions.sqlite3', 'data/logs.sqlite3', 'data/eva.sqlite3', 'data/backups', 'files', 'files/private', 'apps.lock', '.evlet.lock', 'routes.py', 'secret.key'):
         target = path / relative
         if target.is_symlink() or not target.resolve().is_relative_to(path.resolve()):
             raise ValueError(f'Instance path cannot escape through a symbolic link: {relative}')

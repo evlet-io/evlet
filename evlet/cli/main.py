@@ -158,6 +158,13 @@ def parser():
     jobs_list = jobs_commands.add_parser('list', help='Print the newest jobs with their state, attempts and progress')
     jobs_list.add_argument('--instance', help='Required when the project has several instances')
     jobs_list.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
+    backup = commands.add_parser('backup', help="Copy an instance's four database files into data/backups as one set")
+    backup.add_argument('--instance', help='Required when the project has several instances')
+    backup.add_argument('--to', help='Write the set into this directory instead of data/backups')
+    restore = commands.add_parser('restore', help="Replace an instance's database files with a backup set, with the server stopped")
+    restore.add_argument('backup', help='The main file of the set, such as data/backups/20261112T101500000000Z.sqlite3')
+    restore.add_argument('--instance', help='Required when the project has several instances')
+    restore.add_argument('--yes', metavar='NAME', help='Restore without asking; give the instance name to confirm')
     for name, port in (('playground', 8000), ('docs', 8001)):
         command = commands.add_parser(name, help='Launch bundled ' + name + ' without a project')
         command.add_argument('--port', type=int, default=port)
@@ -420,6 +427,25 @@ def main(argv=None):
             from .ledger import list_instance
             from ..ledger import table
             print(table(list_instance(root, args.instance or choose_instance(root, 'ledger list'))))
+        elif args.command == 'backup':
+            from .backup import backup
+            written = backup(root, args.instance or choose_instance(root, 'backup'), args.to)
+            print('Backup: ' + str(written[0]))
+            print('With: ' + ', '.join(item.name for item in written[1:]))
+        elif args.command == 'restore':
+            from .backup import restore
+            name = args.instance or choose_instance(root, 'restore')
+            if args.yes is not None:
+                if args.yes != name:
+                    raise ValueError(f'--yes must name the instance being restored: {name}')
+            elif not sys.stdin.isatty() or input(f'This replaces every database file of {name}. Type the instance name to restore: ').strip() != name:
+                raise ValueError('Restore cancelled; nothing was changed')
+            safety, single = restore(root, name, args.backup)
+            print(f'Instance {name}: restored from {args.backup}')
+            if safety:
+                print(f'The files it replaced are kept in {safety}')
+            if single:
+                print(f'This backup is from before sessions, logs and Eva had their own files. Run evlet migrate {name} to move them before serving.')
         elif args.command == 'jobs':
             from .jobs import list_instance
             from ..jobs import table

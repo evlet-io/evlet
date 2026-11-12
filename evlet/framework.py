@@ -119,6 +119,9 @@ STEPS = (
     FrameworkStep('0007_money_scale', 'Store every Currency amount at 6 decimal places, so each currency can have its own decimals.'),
     FrameworkStep('0008_administrator', 'Add the built-in Administrator account, with no password until one is set.', _administrator),
     FrameworkStep('0009_admin_username', 'Rename the built-in Administrator from administrator to admin.', _administrator),
+    # Recorded only: on SQLite, upgrade() moves the tables before the steps' transaction (evlet.writes.split_files),
+    # since a file cannot be attached inside a transaction. PostgreSQL keeps one database, so nothing moves there.
+    FrameworkStep('0010_split_files', 'Move sign-in sessions, the tool-call log and Eva into their own SQLite files next to the database.'),
 )
 
 LEDGER = ('CREATE TABLE IF NOT EXISTS evlet_framework_migrations (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, '
@@ -154,6 +157,10 @@ def pending(database):
 def upgrade(database, *, apply=True):
     """Run pending steps in one transaction and record each one, or refuse when apply is false."""
     postgres = getattr(database, 'driver', None) is not None
+    if apply and not postgres:
+        from .writes import split_files
+        # Before the steps' transaction and before any is recorded: a failure leaves 0010 pending.
+        split_files(database)
     # Processes starting together take turns: write transactions hold BEGIN IMMEDIATE on SQLite
     # and the database-wide advisory lock on PostgreSQL, so later ones find the steps applied.
     with database.transaction() as tx:

@@ -6,6 +6,36 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **Four SQLite files per instance.** `data/database.sqlite3` keeps records, the audit trail, the
+  journal, jobs, accounts and settings. Sign-in sessions, two-step tickets and sign-in attempts
+  move to `sessions.sqlite3`; the tool-call log, public rate counts and proxy header notes to
+  `logs.sqlite3`; Eva's chats, messages, files, usage and tasks to `eva.sqlite3`. All four use
+  WAL, and a write locks only the file it changes, so a long job no longer holds up sign-in, the
+  tool log or Eva. SQL names tables as before. `database.transaction(store="sessions")` (or
+  `"logs"`, `"eva"`) writes one side file only. See
+  [Busy writing on SQLite](docs/performance.md#busy-writing-on-sqlite).
+- **Writers take turns.** Within a process each file has a line of writers: requests first, in
+  order, and a waiting job step goes next once it has waited 0.25 s, so jobs are never starved.
+  A resumable job gives up its turn after every step, and while people are writing it rests as
+  long as each step, so it gets about half of the file's time. With a job writing in 0.1 s
+  transactions, eight people completed 42 saves in 20 s on 0.4.2 (16 failed with "database is
+  locked") and 768 on 0.4.3 with none failed, against 779 with no job at all. The wait limit stays 5 s.
+- **Slow write warning.** A write that holds a file longer than 1 s (`Database.slow_write`) logs
+  a warning naming the request or the job.
+- **Batched counters.** API key last use, AI assistant call counts and proxy header notes are
+  saved by one background thread about every 250 ms, and on shutdown.
+- **Delayed and follow-up jobs.** `Context.enqueue(..., run_at=...)` delays a job, and
+  `JobContext.follow_up(tx, payload=None, *, run_at, key=None)` queues a job's next run in its
+  own transaction with the same identity. See [Follow-up runs](docs/jobs-realtime.md#follow-up-runs).
+- **`evlet backup` and `evlet restore`** copy and put back an instance's four files as one set.
+  Restore asks for the instance name (or `--yes NAME`), keeps the files it replaces, and also
+  takes a single-file backup from 0.4.2. See [Back up and restore](docs/cli.md#back-up-and-restore).
+- `evlet.writes.data_files(path)` lists an instance's database files, and `evlet.writes.connect(path)`
+  opens a main file with the others attached, for tools that open SQLite themselves.
+- `scripts/busy_queue_benchmark.py` and `scripts/benchmark_busy_writes.py` measure saves while a job writes.
+
 ### Changed
 
 - **The built-in System Administrator's username is now `admin`**, not `administrator`. Its full
@@ -16,6 +46,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   had a password. Any other account named `admin` stops the step until it is renamed. Sign in,
   `evlet users set-password <instance> admin` and `evlet users set-email <instance> admin` use
   the new name ([docs/app-upgrades.md](docs/app-upgrades.md#from-042-to-043)).
+- Framework step `0010_split_files` moves the tables on `evlet migrate`, after the backup, on the
+  staged copy. It checks row counts before dropping each table from the main file, is safe to run
+  again after a crash, and stops early when the disk is short. A no-op on PostgreSQL. See
+  [From 0.4.2 to 0.4.3](docs/app-upgrades.md#from-042-to-043).
+- The moved tables no longer declare foreign keys to `evlet_users` (SQLite cannot check them
+  across files); Evlet removes sessions and Eva data of accounts that no longer exist at startup.
+  After a crash the side files are best effort for the last moment of writes.
+- `evlet migrate` backs up and stages all four files, and checks free disk space first.
 
 ## 0.4.2 (11-11-2026)
 

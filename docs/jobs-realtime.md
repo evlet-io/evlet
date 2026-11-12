@@ -115,7 +115,7 @@ checks, use the job's [business context](#a-jobs-business-context).
 ## Queue a job from an action
 
 An `@action` (or a Move `run` method, or any trusted code with a document context) queues a
-registered task with `context.enqueue(task, payload, *, key=None, target=None)`:
+registered task with `context.enqueue(task, payload, *, key=None, target=None, run_at=None)`:
 
 ```python
 class PriceList(Model):
@@ -136,6 +136,7 @@ class PriceList(Model):
 * An action that returns the receipt adds `_job` (`{"id", "state"}`) to its detail. It is not
   part of the ETag. `GET /api/_jobs/<id>` follows it.
 * `key=` deduplicates as with `JobQueue.enqueue`. The context must not be read only.
+* `run_at=` (UTC seconds) delays the job: it stays queued until then.
 
 `JobQueue.wake()` and `JobQueue.wait(timeout)` are the signal underneath, for app workers that
 run their own loop: `wait` returns True when a committed transaction queued a job since the last
@@ -225,7 +226,13 @@ jobs = JobQueue(database, [Task('rebuild_balances', rebuild_balances, resumable=
 The handler is called again and again until it returns `None`. Any other return value is the
 checkpoint: JSON of at most 16 KiB, committed with that step's writes and progress, and given
 to the next step as `context.checkpoint`. Each step is short, so it holds the database write
-lock only briefly and other requests run between steps. Every step reloads the job, checks the
+lock only briefly and other requests run between steps. On SQLite, writers in one process take
+turns: a job step waits behind requests that came first, but never more than about a quarter of a
+second, and after each step the job gives up its turn and joins the back of the line. While people
+are writing, the job rests after each step for as long as the step took, so it gets about half of the
+database's time and runs at full speed again when they stop. So a request
+waits at most about one step, and a step that holds the database longer than a second logs a
+warning naming the job ([performance.md](performance.md#busy-writing-on-sqlite)). Every step reloads the job, checks the
 lease and rechecks the account and the target record, like the first one. Each committed step
 also extends the claim's lease to at least 300 seconds from that step.
 
@@ -253,6 +260,32 @@ attempts and progress ([cli.md](cli.md)).
 The Playground's **Rebuild all points balances** action on a customer queues `rebuild_points`,
 which recomputes every customer's balance from the points ledger 20 customers per step
 ([ledger.md](ledger.md)).
+
+## Follow-up runs
+
+A job can queue its own next run with `context.follow_up(tx, payload=None, *, run_at, key=None)`.
+Use it for work that comes back later, such as checking a payment provider again in ten minutes,
+instead of a schedule that runs every minute whether or not there is work:
+
+```python
+import time
+
+def check_payment(tx, context, payload):
+    # Payment belongs to this application.
+    payment = tx.get(Payment, payload['payment'])
+    if payment.status == 'pending':
+        context.follow_up(tx, run_at=int(time.time()) + 600)
+```
+
+* The next run is written in the job's own transaction (the step's, for a resumable task). It is
+  queued only if this run commits; a run that fails and is retried does not leave one behind.
+* `payload` defaults to this run's payload. `run_at` is UTC seconds; the worker claims it then.
+* It runs with this job's identity: the same account (read again when it starts), the same API
+  key or AI assistant narrowing, or the same system role. It never runs as anyone else, such as
+  the Administrator.
+* `key` defaults to one per job and `run_at`, so the same run queues the same follow-up only once.
+  Pass your own key to merge follow-ups from several runs.
+* The next run is a new job with its own attempts and its own entry in Controls > Jobs.
 
 ## Schedules and operator commands
 

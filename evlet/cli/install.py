@@ -11,6 +11,7 @@ import tempfile
 from ..instances import (read_instance, require_consistent, database_state,
                          build_instance, register_schedules)
 from ..packages import resolve_packages, portable_lock_entry
+from ..writes import files, release_idle, require_space
 from .project import child, instance_guard, atomic_json, json_text, sync_directory
 
 
@@ -18,6 +19,23 @@ def snapshot(source, target):
     with closing(sqlite3.connect(source)) as old, closing(sqlite3.connect(target)) as new:
         old.backup(new)
     os.chmod(target, 0o600)
+
+
+def snapshot_set(source, target):
+    """Copy a main SQLite file and each of its side files that exists (evlet/writes.py) with the online backup API."""
+    for old, new in zip(files(source), files(target)):
+        if old.exists():
+            snapshot(old, new)
+
+
+def settle(target):
+    """Fold a SQLite file's write-ahead log into it and leave it in rollback mode, ready to move into place.
+    Refuses when another process is still writing it."""
+    with closing(sqlite3.connect(target)) as connection:
+        busy, _, _ = connection.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()
+        if busy:
+            raise ValueError('Database is busy; stop all writers before installation')
+        connection.execute('PRAGMA journal_mode=DELETE').fetchone()
 
 
 def recover(path):
@@ -78,11 +96,14 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
         with tempfile.TemporaryDirectory(prefix='.install-', dir=data) as directory:
             stage = Path(directory) / 'database.sqlite3'
             if database.exists():
+                # A backup and a staged copy of every file, then the tables that move: fail before writing anything.
+                size = sum(item.stat().st_size for item in files(database) if item.exists())
+                require_space(data, 3 * size + 16 * 2**20, 'back up and migrate this instance')
                 backups = data / 'backups'
                 backups.mkdir(mode=0o700, exist_ok=True)
                 backup = backups / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
-                snapshot(database, backup)
-                snapshot(backup, stage)
+                snapshot_set(database, backup)
+                snapshot_set(backup, stage)
             app, schedules = build_instance(config, path, packages, database_path=stage, storage_path=Path(directory) / 'private')
             # A backup of the current database is written above before any migration runs, including DropField.
             applied = app.database.migrate(app.database.migrations, recompute_posted=recompute_posted, allow_destructive=allow_destructive,
@@ -98,19 +119,24 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
             # Detect source edits during registration before publishing the result.
             if {'apps': {package.name: package.locked() for package in packages}, 'evlet': state()} != after:
                 raise ValueError('App sources changed during installation; retry with stable sources')
-            with closing(sqlite3.connect(stage)) as connection:
-                connection.execute('PRAGMA wal_checkpoint(TRUNCATE)')
-                connection.execute('PRAGMA journal_mode=DELETE')
-            os.chmod(stage, 0o600)
-            with stage.open('rb') as stream:
-                os.fsync(stream.fileno())
-            if database.exists():
-                with closing(sqlite3.connect(database)) as connection:
-                    busy, _, _ = connection.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()
-                    if busy:
-                        raise ValueError('Database is busy; stop all writers before installation')
-                    connection.execute('PRAGMA journal_mode=DELETE').fetchone()
+            # Connections this process keeps for reuse would keep the files from settling.
+            release_idle()
+            for staged in files(stage):
+                if not staged.exists():
+                    continue
+                settle(staged)
+                os.chmod(staged, 0o600)
+                with staged.open('rb') as stream:
+                    os.fsync(stream.fileno())
+            for current in files(database):
+                if current.exists():
+                    settle(current)
             atomic_json(path / '.install-journal.json', {'before': before, 'after': after})
+            # Side files first: until the main file is replaced it still holds any table that moved, and SQL
+            # finds it there, so a crash in between leaves the old instance working and the next migrate moves again.
+            for staged, current in list(zip(files(stage), files(database)))[1:]:
+                if staged.exists():
+                    os.replace(staged, current)
             os.replace(stage, database)
             sync_directory(data)
             atomic_json(path / 'apps.lock', after)
@@ -149,7 +175,7 @@ def plan(root, name, *, trust=False, confirm=None, label='changes'):
         with tempfile.TemporaryDirectory(prefix='evlet-plan-') as directory:
             stage = Path(directory) / 'database.sqlite3'
             if database.exists():
-                snapshot(database, stage)
+                snapshot_set(database, stage)
             app, _ = build_instance(config, path, packages, database_path=stage, storage_path=Path(directory) / 'private')
             try:
                 result = app.database.plan(app.database.migrations)

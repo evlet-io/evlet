@@ -180,7 +180,7 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     assert status == 200 and len(detail['children']['lines']) == 100 and detail['children']['lines'][0]['product'] == product
     assert detail['children_pages']['lines']['total'] == 1000
     if make_app.backend == 'sqlite':
-        assert statements <= 12, statements  # 607 for 100 rows before batching; one reads the config version, one names who wrote it.
+        assert statements <= 13, statements  # 607 for 100 rows before batching; one reads the config version, one names who wrote it, one claims the write lock of the main file only.
 
     status, rows, _ = page(c, url, limit=100, offset=900)
     assert status == 200 and rows['total'] == 1000 and (rows['limit'], rows['offset']) == (100, 900)
@@ -194,14 +194,14 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
         # 2,021 for 100 rows before batching; two of these open and release the operation savepoint,
         # one names who created and changed the record, and one removes the saver's unsaved changes
         # (evlet/unsaved.py).
-        assert statements <= 36, statements
+        assert statements <= 37, statements  # one claims the write lock of the main file only
 
     last = order['_row_ids']['l999']
     headers = {b'if-match': c('GET', url)[2][b'etag']}
     (status, saved, _), statements = counted(c, 'PATCH', url, {'children': {'lines': {'update': [{'id': last, 'qty': '3'}]}}}, headers=headers)
     assert status == 200 and saved['total'] == '2505.00' and saved['line_count'] == 1000
     if make_app.backend == 'sqlite':
-        assert statements <= 38, statements
+        assert statements <= 39, statements  # one claims the write lock of the main file only
     assert page(c, url, limit=1, offset=999)[1]['items'][0]['qty'] == '3.0000'
 
     status, error, _ = edit(c, url, {'children': {'lines': {'create': [{'qty': '1'}]}}})
@@ -219,11 +219,11 @@ def test_nested_rows_load_with_a_bounded_statement_count(make_app):
     assert status == 200 and len(detail['children']['lines']) == 100 and 'children_pages' not in detail
     assert all(len(line['children']['parts']) == 9 and line['hours'] == '9.0000' for line in detail['children']['lines'])
     if make_app.backend == 'sqlite':
-        assert statements <= 10, statements  # 2,407 before batching.
+        assert statements <= 11, statements  # 2,407 before batching; one claims the write lock of the main file only.
     (status, saved, _), statements = counted(c, 'PATCH', url, {'title': 'nested'}, headers={b'if-match': headers[b'etag']})
     assert status == 200, saved
     if make_app.backend == 'sqlite':
-        assert statements <= 32, statements  # 9,221 before batching.
+        assert statements <= 33, statements  # 9,221 before batching; one claims the write lock of the main file only.
     first = detail['children']['lines'][0]
     status, parts, _ = page(c, url, f"lines/{first['id']}/parts", limit=5)
     assert status == 200 and parts['total'] == 9 and [part['id'] for part in parts['items']] == [part['id'] for part in first['children']['parts'][:5]]

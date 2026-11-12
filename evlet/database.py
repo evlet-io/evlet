@@ -3,7 +3,9 @@
 from contextlib import contextmanager
 from pathlib import Path
 import logging
+import os
 import sqlite3
+import threading
 
 from .fields import ACTIVE, EMPTY_LAYER, Image, Link, MISSING, Reference, RichText
 from . import audit
@@ -16,6 +18,7 @@ from . import images, ledger, periods
 from .ledger import is_ledger
 from .permissions import CALLER
 from .sequences import name_new, raw_write
+from . import writes
 
 # Most rows one list call returns, and most rows one child collection may hold in an editor.
 ROW_LIMIT = 100
@@ -67,6 +70,9 @@ class Database:
     timezone = 'UTC'
     # Set by the application's Business: its sessions settle writes to models that declare derive().
     business = None
+    # Seconds a writer waits for its turn, and seconds a write may hold a file before a warning (evlet/writes.py).
+    write_wait = writes.WRITE_WAIT
+    slow_write = writes.SLOW_WRITE
 
     def __init__(self, path, registry, *, migrations=None, must_exist=False):
         if str(path) == ":memory:":
@@ -76,22 +82,117 @@ class Database:
         self.must_exist = must_exist
         self.registry = registry
         self.migrations = None if migrations is None else tuple(migrations)
+        # A table of the main file a write transaction claims with a no-op write (claim()).
+        self._claim_table = None
+        # Busy log and last-seen writes, saved by one background thread (evlet/writes.py).
+        self.logs = writes.LogBuffer(self)
+        writes.DATABASES.add(self)
+
+    def files(self):
+        """This database's SQLite files, main first, then sessions, logs and eva (evlet/writes.py)."""
+        return writes.files(self.path)
 
     @contextmanager
     def _connection(self):
-        if self.must_exist and (self.path.is_symlink() or self.path.absolute().resolve() != self.path.absolute()):
+        sides = {store: writes.side_path(self.path, store) for store in writes.STORES}
+        if self.must_exist and any(path.is_symlink() or path.absolute().resolve() != path.absolute()
+                                   for path in (self.path, *sides.values()) if path.exists() or path.is_symlink()):
             raise sqlite3.OperationalError('Database paths must not use symbolic links')
+        connection = self._reuse()
+        if connection is None:
+            connection = self._open(sides)
+        try:
+            with using(self):
+                yield connection
+        finally:
+            self._put_back(connection)
+
+    def _open(self, sides):
         target = self.path.absolute().as_uri() + '?mode=rw' if self.must_exist else self.path
-        connection = sqlite3.connect(target, timeout=5, uri=self.must_exist)
+        connection = sqlite3.connect(target, timeout=self.write_wait, uri=self.must_exist, factory=writes.Connection,
+                                     check_same_thread=False)
         connection.row_factory = sqlite3.Row
         try:
             connection.execute("PRAGMA foreign_keys = ON")
             # REPLACE then fires DELETE triggers, so append-only tables refuse it too (evlet/ledger.py).
             connection.execute("PRAGMA recursive_triggers = ON")
-            with using(self):
-                yield connection
-        finally:
+            for store, path in sides.items():
+                connection.execute(f'ATTACH DATABASE ? AS {store}', (path.absolute().as_uri() + '?mode=rwc' if self.must_exist else str(path),))
+            writes.prepare(connection, sides)
+            connection.evlet_files = self._identity()
+        except BaseException:
             connection.close()
+            raise
+        return connection
+
+    # Opening a connection and attaching three files costs about a millisecond, so each thread keeps its last
+    # connection for the next operation. It is used again only while the four files are the same files.
+    _IDLE = 64
+
+    def _identity(self):
+        try:
+            return tuple((item.st_dev, item.st_ino) for item in map(os.stat, self.files()))
+        except OSError:
+            return None
+
+    def _reuse(self):
+        idle = self.__dict__.setdefault('_idle', {})
+        with writes.IDLE_LOCK:
+            connection = idle.pop(threading.get_ident(), None)
+        if connection is not None and (connection.evlet_files is None or connection.evlet_files != self._identity()):
+            connection.close()
+            connection = None
+        return connection
+
+    def _put_back(self, connection):
+        try:
+            # Hooks set for one use (an authorizer, a test's statement trace) go before the connection is kept.
+            connection.set_authorizer(None)
+            connection.set_trace_callback(None)
+            if connection.in_transaction:
+                connection.rollback()
+        except sqlite3.Error:
+            connection.close()
+            return
+        idle = self.__dict__.setdefault('_idle', {})
+        with writes.IDLE_LOCK:
+            if len(idle) < self._IDLE and threading.get_ident() not in idle:
+                idle[threading.get_ident()] = connection
+                return
+        connection.close()
+
+    def _close_idle(self):
+        idle = self.__dict__.setdefault('_idle', {})
+        with writes.IDLE_LOCK:
+            connections = list(idle.values())
+            idle.clear()
+        for connection in connections:
+            connection.close()
+
+    def _claim(self, connection, store):
+        """Begin a write transaction holding the write lock of one file only. BEGIN IMMEDIATE would lock every
+        attached file, so the transaction begins deferred and makes a no-op write to the file it writes."""
+        if store is not None:
+            connection.execute('BEGIN')
+            connection.execute(f'DELETE FROM {store}.evlet_turn WHERE 0')
+            return
+        if self._claim_table is None:
+            row = connection.execute("SELECT name FROM main.sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' "
+                                     "ORDER BY name='evlet_users' DESC, name LIMIT 1").fetchone()
+            self._claim_table = row[0] if row else None
+        if self._claim_table is None:
+            # A new, empty database: lock every file, once.
+            connection.execute('BEGIN IMMEDIATE')
+            return
+        connection.execute('BEGIN')
+        try:
+            connection.execute(f'DELETE FROM main."{self._claim_table}" WHERE 0')
+        except sqlite3.OperationalError as exc:
+            if 'no such table' not in str(exc):
+                raise
+            connection.rollback()
+            self._claim_table = None
+            connection.execute('BEGIN IMMEDIATE')
 
     def activated(self):
         """Make this database's instance fields and added options active for code outside a transaction,
@@ -124,20 +225,40 @@ class Database:
         return plan(self, migrations)
 
     @contextmanager
-    def transaction(self):
-        with self._connection() as connection:
-            try:
-                connection.execute("BEGIN IMMEDIATE")
-                session = Session(connection, self.registry, self.timezone)
-                session._business = self.business
-                yield session
-                connection.commit()
-            except sqlite3.IntegrityError as exc:
-                connection.rollback()
-                raise conflict(self.registry, exc) from exc
-            except BaseException:
-                connection.rollback()
-                raise
+    def transaction(self, *, store=None):
+        """A write transaction on the main file, or with store='sessions', 'logs' or 'eva' on that file only.
+
+        A writer first takes its turn on the file (evlet/writes.py): requests before job steps, first come first
+        served, and a job step never waits long. A main transaction that touches a side table takes that file's
+        turn as well. A store transaction reads every file but changes only its own."""
+        if store is not None and store not in writes.STORES:
+            raise ValueError('Use store=' + ', '.join(repr(name) for name in writes.STORES))
+        turns = writes.Turns(self, store)
+        try:
+            with self._connection() as connection:
+                try:
+                    turns.take(store or 'main')
+                    connection.set_authorizer(turns.authorize)
+                    self._claim(connection, store)
+                    session = Session(connection, self.registry, self.timezone)
+                    session._business = self.business
+                    yield session
+                    connection.commit()
+                except sqlite3.IntegrityError as exc:
+                    connection.rollback()
+                    raise conflict(self.registry, exc) from exc
+                except sqlite3.DatabaseError as exc:
+                    connection.rollback()
+                    if turns.failed == 'busy':
+                        raise writes.Busy() from exc
+                    if turns.failed:
+                        raise sqlite3.OperationalError(turns.failed) from exc
+                    raise
+                except BaseException:
+                    connection.rollback()
+                    raise
+        finally:
+            turns.release()
         run_after_commit(session)
 
     def create(self, model, /, **values):
@@ -193,7 +314,9 @@ class Database:
             return records, total
 
     def close(self):
-        """SQLite connections already close at the end of each operation."""
+        """Save buffered log writes and close the connections kept for the next operation."""
+        self.logs.flush()
+        self._close_idle()
 
     def check(self):
         with self._connection() as connection:

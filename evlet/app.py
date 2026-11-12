@@ -12,6 +12,7 @@ from .models import ValidationError
 from .permissions import CALLER, CORRECTIONS, read_only
 from .auth import AccessError
 from .business import Business, Download
+from .writes import WRITE_LABEL
 from .storage import StorageError
 
 logger = logging.getLogger(__name__)
@@ -103,9 +104,12 @@ class Application:
     async def __call__(self, scope, receive, send):
         # A request is a caller: Meta.api limits what it reaches (evlet/permissions.py); app code it runs is trusted.
         token = CALLER.set(scope.get("type") == "http")
+        # Slow-write warnings name the request (evlet/writes.py); the value follows the request into its threads.
+        label = WRITE_LABEL.set(f"{scope.get('method', '')} {scope.get('path', '')}".strip() if scope.get("type") == "http" else '')
         try:
             await self._serve(scope, receive, send)
         finally:
+            WRITE_LABEL.reset(label)
             CALLER.reset(token)
 
     async def _serve(self, scope, receive, send):

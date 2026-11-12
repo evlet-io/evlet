@@ -18,6 +18,7 @@ from .database import NotFoundError
 from .identity import path_id
 from .models import ValidationError, checked_body, identifier
 from .periods import TABLE as PERIOD_LOCKS
+from . import writes
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
@@ -127,7 +128,7 @@ def grant(database_path, username):
     """Break glass from the server shell: make a user an active admin and clear the Controls allowlist, audited as cli."""
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
-    connection = sqlite3.connect(database_path, isolation_level=None)
+    connection = writes.connect(database_path, isolation_level=None)
     try:
         connection.execute('BEGIN IMMEDIATE')
         if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone():
@@ -160,7 +161,7 @@ def reset_two_step_from_shell(database_path, username):
     from .settings import reset_two_step
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
-    connection = sqlite3.connect(database_path, isolation_level=None)
+    connection = writes.connect(database_path, isolation_level=None)
     connection.row_factory = sqlite3.Row
     try:
         connection.execute('BEGIN IMMEDIATE')
@@ -192,7 +193,7 @@ def set_email_from_shell(database_path, username, email):
         address = None
     if not address:
         raise ValueError(f'{email} is not a valid email address.')
-    connection = sqlite3.connect(database_path, isolation_level=None)
+    connection = writes.connect(database_path, isolation_level=None)
     connection.row_factory = sqlite3.Row
     try:
         connection.execute('BEGIN IMMEDIATE')
@@ -225,7 +226,7 @@ def set_password_from_shell(database_path, username, password, file_minimum=15):
     from .auth import password_hash
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
-    connection = sqlite3.connect(database_path, isolation_level=None)
+    connection = writes.connect(database_path, isolation_level=None)
     connection.row_factory = sqlite3.Row
     try:
         connection.execute('BEGIN IMMEDIATE')
