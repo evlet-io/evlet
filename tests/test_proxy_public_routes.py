@@ -80,9 +80,17 @@ def test_generated_caddy_and_nginx_pass_exactly_the_public_routes():
     caddy = proxy.caddy(table)
     assert sorted(proxy.caddy_refuses(caddy, probes)) == blocked
     assert nginx_refuses(proxy.nginx(table), probes) == blocked
-    # The site paths stay with Evlet, and the sub-host still refuses Controls and Docs.
-    assert proxy.caddy_refuses(caddy, ['/', '/app', '/.well-known/oauth-protected-resource/_/mcp']) == []
-    assert proxy.caddy_refuses(caddy, ['/controls']) == ['/controls']
+    # The site paths stay with Evlet. A public sub-host leaves /controls and /docs to Evlet, which answers
+    # them with the site's own 404; a portal sub-host refuses them in the proxy too.
+    assert proxy.caddy_refuses(caddy, ['/', '/app', '/controls', '/.well-known/oauth-protected-resource/_/mcp']) == []
+    portal = Frontend('portal', kind='static', dist='dist', path='/portal', auth='portal')
+    portal_table = resolve_routes([('shop', AppDefinition(frontends=(portal,)))], None,
+                                  {'primary': Host('erp.acme.com'), 'hosts': (Host('portal.acme.com', root=portal),)})
+    assert proxy.caddy_refuses(proxy.caddy(portal_table), ['/controls']) == ['/controls']
+    # Caddy refuses a request whose Host differs from the TLS server name; nginx answers it with 421.
+    assert caddy.index('servers :443 {\n\t\tstrict_sni_host on\n\t}') < caddy.index('erp.acme.com {')
+    assert 'strict_sni_host' not in proxy.caddy(table, global_options=False)
+    assert proxy.nginx(table).count('if ($ssl_server_name != $host) { return 421; }') == 2
     nginx = proxy.nginx(table, port=8010)
     assert nginx.count('location = /_/mcp {') == 2 and nginx.count('location ^~ /_/ { return 404; }') == 2
     assert nginx.index('location = /_/mail/continue.js {') < nginx.index('location ^~ /_/ { return 404; }')

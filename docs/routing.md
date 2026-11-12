@@ -34,6 +34,8 @@ app = AppDefinition(..., frontends=(crm, customer_portal))
 | `api` | API scopes the frontend may call from a sub-host. |
 | `title`, `icon` | Navigation labels. |
 | `csp` | Static frontends only: `{"connect-src": ("https://...",)}`. |
+| `routing` | Static frontends: `"app"` (default) or `"pages"`. See below. |
+| `suggested_host` | Static and server frontends: one label such as `"www"`, which `evlet install` offers as `www.<instance domain>`. |
 
 The framework has its own frontends: `evlet.desk` at `/app` (the generated screens),
 `evlet.docs` at `/docs`, `evlet.controls` at `/controls` and `evlet.settings` at
@@ -49,12 +51,14 @@ How each kind is served:
   that is neither, or a text id past 63 bits, gets the not-found page with a 404.
   Narrowing the shell to the app's own models comes later.
 - `static`: files from `dist`, a folder inside the app package, copied into the build
-  generation with the app source. Only html, js, css, svg, png, jpg, webp, ico, woff2,
-  json and map files are served; other types, dotfiles, `..` and links that leave the
-  folder answer 404. Any path without a file type gets `index.html`, so the app can
-  route in the browser. Evlet adds `<base href="<base>/">` to `index.html` unless it
-  has one, so relative asset paths work at any mount. The CSP is the desk's, plus the
-  frontend's `connect-src` origins.
+  generation with the app source. Only html, js, css, svg, png, jpg, gif, webp, avif, ico,
+  woff, woff2, json, map, txt, xml, webmanifest and pdf files are served, so `robots.txt` and
+  `sitemap.xml` work; other types, dotfiles, `..` and links that leave the folder answer 404.
+  With `routing="app"` (the default), any path without a file type gets `index.html`, so the
+  app can route in the browser. Evlet adds `<base href="<base>/">` to `index.html` unless it
+  has one, so relative asset paths work at any mount. With `routing="pages"`, see
+  [Multi-page sites](#multi-page-sites). The CSP is the desk's, plus the frontend's
+  `connect-src` origins.
 - `server`: `handler(request)` returns a `Response(body, status=200,
   content_type="text/html; charset=utf-8")` or HTML text. It runs in the worker
   thread pool, never on the event loop. Server frontends answer GET only. `request` has
@@ -74,6 +78,7 @@ Every page the framework serves gets one non-executable block in `<head>`:
 <script id="evlet-config" type="application/json">{"frontend":"crm.customer_portal","base":"/","api":"/api","realm":"portal","host":"portal.acme.com","docs":null,"theme":"system","version":"0.4.0"}</script>
 ```
 
+Pages on a public host carry no block at all ([Public websites](#public-websites)).
 The desk shell's router and API client read `base`, `docs` and `api` from it, so one
 build runs at `/customer-portal` on the primary host and at `/` on a sub-host. `realm` is
 the host's realm, which decides the session cookie: a portal frontend also mounted on
@@ -101,7 +106,8 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
 - A sub-host serves its root frontend at `/`. That frontend leaves the primary host
   unless `also_on_primary=True`. Sub-hosts serve `static` and `server` frontends; the
   framework pages (`/controls`, `/docs`, `/app`, `/settings` and the other reserved
-  paths except `/assets`, `/login` and `/logout`) answer 404 there. A portal host also
+  paths except `/assets`, `/login` and `/logout`) answer 404 there. A public host, whose root
+  frontend has `auth=None`, is stricter ([Public websites](#public-websites)). A portal host also
   serves the portal subset of `/settings` (profile, password, notifications) and
   `/api/_settings/me/...`, and loads the framework's own assets when its root frontend has
   no file of that name.
@@ -117,7 +123,7 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
 - **Cookies** are host-only, with no `Domain`, and named per realm: `evlet_session`
   for the desk and `evlet_portal_session` for portals. Sessions and cookies in every
   realm last `security.session_hours` from Controls (12 hours, or `Security(session_hours=...)` in config.py, unless lowered).
-- **API scope.** `/api` on a sub-host serves `/api/auth/session`, `login` and `logout`,
+- **API scope.** `/api` on a portal sub-host serves `/api/auth/session`, `login` and `logout`,
   plus exactly what its frontend's `api` scopes list. Everything else answers 404 there,
   and permissions and row scopes still apply to every call:
 
@@ -138,6 +144,60 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
 - The `portal` role, roles based on it and the `public` role have no access to any model
   unless an app grants it in its permission rules. Controls, `/api/_controls/*` and
   `/api/auth/users` answer 404 on every sub-host.
+
+### Multi-page sites
+
+`Frontend(..., kind="static", routing="pages")` serves a site with one HTML file per page,
+as most static site generators write it:
+
+| Request | Serves |
+| --- | --- |
+| `/` | `index.html` |
+| `/about/` | `about/index.html` |
+| `/pricing` | `pricing.html` |
+| `/about` when only `about/index.html` exists | a 301 redirect to `/about/` |
+| `/pricing/` when only `pricing.html` exists | a 301 redirect to `/pricing` |
+| `/style.css`, `/robots.txt` and other files | the file |
+| anything else | the frontend's own `404.html` with status 404, or a plain `Not found` |
+
+Each page has one address. A folder page ends in `/`, so its relative links (`../style.css`)
+resolve from its own folder; a `.html` page has none. A redirect keeps the query string. Evlet
+adds no `<base>` element in this mode, so a page's relative links stay its own. `routing="pages"`
+is for static frontends only.
+
+### Public websites
+
+A sub-host whose root frontend has `auth=None` is a public host. It serves only the site's own
+files and the public service endpoints its API scopes list, so a visitor can't tell which
+instance, application or domain is behind it:
+
+- Every path belongs to the site, except `/api/*`, paths starting with `/_` and `/.well-known/`.
+  `/login`, `/assets/...`, `/controls` or `/docs` are the site's own files, or not found.
+- `/api/*` serves only `/api/_services/<name>` for a `public=True` endpoint that one of the
+  frontend's `api` scopes lists. `/api/auth/session`, sign-in, records, schema, events, `/_/mcp`,
+  OAuth, `/.well-known/...` and `/health` answer 404 there.
+- Every refusal and error answers like a missing page: the site's `404.html` with status 404, or a
+  plain `Not found`. No Evlet message, header or cookie names the instance.
+- Pages carry no `evlet-config` block, and Evlet removes one a page carries. A public site has no
+  sign-in, so it needs none.
+- Only GET and HEAD reach the site's files. HEAD answers with the headers and no body.
+
+```python
+# apps/site/site/frontends.py
+from evlet import ApiScope, Frontend
+www = Frontend("www", kind="static", dist="www/dist", path="/www", auth=None, routing="pages",
+               suggested_host="www", api=("site.public",))
+
+# instances/acme/routes.py
+from evlet import Host
+hosts = (Host("www.acme.com", root="site.www"),)
+```
+
+`Host(root=...)` takes the frontend or its id, `"<app>.<frontend>"`, so `routes.py` needs no
+import. `evlet install` offers `suggested_host` as `www.<instance domain>` and writes this line;
+`evlet host add` writes it, checks DNS and updates Caddy ([cli.md](cli.md#serve-a-website-on-its-own-host)).
+
+The Playground serves a public website at `http://site.localhost:8000` (`examples/playground/site`).
 
 ### Portal users and their customer
 
@@ -315,7 +375,8 @@ loopback origins.
 
 `evlet proxy acme --caddy` (or `--nginx`) prints a reverse proxy configuration for
 the instance's primary host and sub-hosts, forwarding to `127.0.0.1:<port>`. It
-answers 404 for `/controls*` and `/docs*` on sub-hosts, as the instance does, and for
+answers 404 for `/controls*` and `/docs*` on portal sub-hosts, as the instance does (a
+public host leaves them to the instance, which answers with the site's own page), and for
 `/_/*` on every host except the framework routes that must reach the internet:
 
 | Path | Used by |
@@ -334,6 +395,12 @@ callers only. The list is `evlet.app.PUBLIC_PATHS`; a test fails if the framewor
 # Evlet reads client addresses from X-Forwarded-For only from trusted proxies. Add this line to Instance(...)
 # in instances/acme/config.py, then restart Evlet:
 #     trusted_proxies=("127.0.0.1", "::1"),
+
+{
+	servers :443 {
+		strict_sni_host on
+	}
+}
 
 erp.acme.com {
 	@internal {
@@ -356,6 +423,14 @@ portal.acme.com {
 }
 ```
 
+- The global options block at the top turns on Caddy's `strict_sni_host`: a request whose
+  `Host` header differs from the TLS server name (SNI) is refused, so a visitor can't reach one
+  host through another host's connection. Caddy reads global options only from the first block
+  of the Caddyfile. Use the output as the whole Caddyfile, or move those lines into the global
+  options block you have. `evlet setup --apply` and `evlet host add --apply` install them as
+  `/etc/caddy/evlet-global.caddy`, imported on the Caddyfile's first line
+  ([cli.md](cli.md#serve-a-site-on-a-domain-in-one-go)). The nginx output answers such a
+  request with 421 (`if ($ssl_server_name != $host) { return 421; }`).
 - `--write PATH` writes it to that file. Without it nothing is written, and the
   command never reloads Caddy or nginx; review the file and reload it yourself.
 - `--check` resolves each host's A and AAAA records and compares them with this server's
@@ -396,6 +471,11 @@ https:// {
 	reverse_proxy 127.0.0.1:8000
 }
 ```
+
+With on-demand TLS, adding a host needs no Caddy change: run
+`evlet host add acme www.acme.com --root site.www --routes-only`, which only edits `routes.py`, then
+restart the instance. Caddy asks `/_/tls-allowed` on the first visit and gets the certificate then.
+Add the `strict_sni_host` global option to this Caddyfile too.
 
 Caddy takes one `ask` URL, so with several instances on different ports, keep one site
 block per instance (the `evlet proxy` output) or put a small script in front that asks

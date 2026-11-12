@@ -19,7 +19,9 @@ def dispatch(application, scope):
     if path == TLS_CHECK:
         return _tls_allowed(application, scope)
     if not path.startswith('/api/') and method == 'GET':
-        if application.business: application.business.auth.guard(scope)
+        # A public host's pages are opened from search results and other sites' links (Sec-Fetch-Site:
+        # cross-site); they hold no session or data, so only the Host check applies (RouteTable.public).
+        if application.business and not application.routes.public(host): application.business.auth.guard(scope)
         from .serving import static_response
         target = application.routes.redirect(host, path)
         if target:
@@ -145,14 +147,16 @@ def _frontend(application, scope, host, identity, base, rest):
     from .serving import frontend_response, static_response
     definition = application.routes.frontend(identity)
     user = _frontend_user(application, scope, definition)
-    config = _config(application, scope, host, identity, base)
+    # A public host's pages carry no config block: nothing about the instance, its apps or its version.
+    config = None if application.routes.public(host) else _config(application, scope, host, identity, base)
     if definition.kind == 'evlet':
         match = MODEL_PATH.fullmatch(rest)
         if match is None or match[1] and match[1] not in application.registry.exposed or not _record_segment(match[2]):
             raise HTTPError(404, 'Route not found')
         response = static_response('/', config)
     elif definition.kind == 'static':
-        response = frontend_response(application.routes.dist(identity), rest, config, base, definition.csp.get('connect-src', ()))
+        response = frontend_response(application.routes.dist(identity), rest, config, base, definition.csp.get('connect-src', ()),
+                                     definition.routing, scope.get('query_string', b''))
         if response is None and rest.startswith('/assets/') and application.routes.realm(host) == 'portal':
             # The settings pages on a portal host load the framework's own assets.
             response = static_response(rest)
@@ -161,6 +165,15 @@ def _frontend(application, scope, host, identity, base, rest):
     if response is None:
         raise HTTPError(404, 'Route not found')
     return response
+
+
+def site_not_found(application, host):
+    """The not-found page of a public host's site: its own 404.html, or a plain 404."""
+    from .serving import not_found_page
+    identity = application.routes.root(host)
+    definition = application.routes.frontend(identity)
+    folder = application.routes.dist(identity) if definition.kind == 'static' else None
+    return not_found_page(folder, None, definition.csp.get('connect-src', ()))
 
 
 def _frontend_user(application, scope, definition):

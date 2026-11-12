@@ -18,6 +18,7 @@ class BuildPy(build_py):
         for name in ('app.py', 'items.py', 'models.py', 'migrate.py', 'prints.py', 'reports.py', 'settings.py', 'slips.py', 'workspaces.py'):
             shutil.copy2(root / 'examples/playground' / name, playground / name)
         shutil.copytree(root / 'examples/playground/portal', playground / 'portal', dirs_exist_ok=True)
+        shutil.copytree(root / 'examples/playground/site', playground / 'site', dirs_exist_ok=True)
         docs = resources / 'docs'
         docs.mkdir(parents=True, exist_ok=True)
         for path in (root / 'docs').glob('*.md'):
