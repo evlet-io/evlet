@@ -14,7 +14,7 @@ SECURITY = """
 #   password_min: 1 to 64 characters. 1 means no rule: even "1" is a password.
 #   admin_two_step: admins, the built-in Administrator too, must use two-step sign-in.
 #   two_step: everyone else must use it too. Controls can turn this on or off.
-#   admin_sign_in: the sign-in page opens with the username administrator filled in.
+#   admin_sign_in: the sign-in page opens with the username admin filled in.
 security = Security(password_min=15, admin_two_step=True, two_step=False, admin_sign_in=False)
 """
 

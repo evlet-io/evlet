@@ -19,7 +19,7 @@ has no two-step sign-in, and nothing is listed for it.
   the instance accepts counts as primary, except sub-hosts. So each tenant of a
   `TenantApplication` manages its own users on its own host, in its own database.
 - Only desk roles open Controls. Portal roles never do, whatever their settings.
-- Every instance has the built-in **System Administrator** (username `administrator`, role
+- Every instance has the built-in **System Administrator** (username `admin`, role
   admin), like the Administrator in ERPNext. See [The Administrator](#the-administrator).
 - Open to roles with "Opens Controls" on. `admin` always has it; it can't be turned off.
 - Opening Controls is not the same as being admin. Only admins can give or remove the admin
@@ -65,16 +65,16 @@ has no two-step sign-in, and nothing is listed for it.
 
 ### The Administrator
 
-Every instance has one account it creates itself: username `administrator`, full name
+Every instance has one account it creates itself: username `admin`, full name
 "System Administrator", role admin, marked `builtin` in `evlet_users`. New databases get it at
 startup. Older ones get it from the framework step `0008_administrator`, which `evlet migrate`
-runs; if another account already uses the username `administrator`, the step stops with a
+runs; if another account already uses the username `admin`, the step stops with a
 message and changes nothing, so rename that account first.
 
 - It starts with **no password**, so nobody can sign in as it until one is set: through the
   development sign-in link and the "Set your password" screen ([cli.md](cli.md#development-sign-in-links)),
-  with `evlet users set-password <instance> administrator`, by an admin in Controls, or on first-run
-  setup in the browser by choosing `administrator` as the username.
+  with `evlet users set-password <instance> admin`, by an admin in Controls, or on first-run
+  setup in the browser by choosing `admin` as the username.
 - Its username, full name and role never change, and it can't be deactivated or deleted. Every
   route refuses with 409 "The Administrator account is built in...": Controls Users, the older
   `/api/auth/users` routes and the profile (`/api/_settings/me/profile` and the photo answer 409
@@ -214,7 +214,7 @@ security = Security(password_min=8, admin_two_step=True, two_step=False, admin_s
 | `password_min` | 15 | 1 to 64 characters. 1 means no rule: "1" is a valid password. |
 | `admin_two_step` | `True` | Admin accounts, the Administrator too, must use two-step sign-in. Only config.py decides this. |
 | `two_step` | `False` | Everyone else must use two-step sign-in. Controls can turn it on or off. |
-| `admin_sign_in` | `False` | The sign-in page opens with the username `administrator` filled in, so you type only the password (and a code when needed). |
+| `admin_sign_in` | `False` | The sign-in page opens with the username `admin` filled in, so you type only the password (and a code when needed). |
 | `session_hours` | 12 | 1 to 168. |
 | `lockout` | 5 | 3 to 50. |
 

@@ -30,8 +30,8 @@ evlet install notes --instance acme
 evlet serve acme
 ```
 
-Every instance has a built-in **System Administrator** (username `administrator`) with no
-password. `evlet serve` tells you to set one with `evlet users set-password acme administrator`;
+Every instance has a built-in **System Administrator** (username `admin`) with no
+password. `evlet serve` tells you to set one with `evlet users set-password acme admin`;
 then open **http://127.0.0.1:8000** and sign in. There is no default password. To serve a site on your own domain behind Caddy, see
 [Serve a site on a domain in one go](docs/cli.md#serve-a-site-on-a-domain-in-one-go).
 
@@ -93,7 +93,7 @@ opens at **http://127.0.0.1:8001**.
 `evlet playground` and `evlet dev` print a sign-in link for the built-in Administrator when they start:
 
 ```text
-The administrator account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):
+The admin account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):
   http://127.0.0.1:8000/_dev/signin?token=...
 ```
 

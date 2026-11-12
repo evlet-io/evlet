@@ -46,7 +46,7 @@ def make(tmp_path, monkeypatch, hashed, script=None, *, ai=True, enabled=True):
     app.initialize()
     with app.database.transaction() as tx:
         for role in ('admin', 'editor', 'viewer'):
-            tx.connection.execute('INSERT INTO evlet_users(username,password,role,allow_eva) VALUES (?,?,?,1)', (role, hashed, role))
+            tx.connection.execute('INSERT INTO evlet_users(username,password,role,allow_eva) VALUES (?,?,?,1) ON CONFLICT(username) DO UPDATE SET password=excluded.password, allow_eva=1', (role, hashed, role))
         if enabled:
             for key, value in (('eva.enabled', True), ('eva.rates', {'Standard': {'input': '7.35', 'cached': '1.84', 'output': '29.38'}})):
                 tx.connection.execute("INSERT INTO evlet_overrides(kind,key,value) VALUES ('setting',?,?)", (key, json.dumps(value)))

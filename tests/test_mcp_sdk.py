@@ -87,7 +87,7 @@ def remote_server(tmp_path, monkeypatch, hashed):
     monkeypatch.setenv('EVLET_TEST_PORT', str(port))
     app = remote_app(); app.initialize()
     with app.database.transaction() as tx:
-        tx.connection.execute('INSERT INTO evlet_users(username,password,role,allow_mcp) VALUES (?,?,?,1)', ('editor', hashed, 'editor'))
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role,allow_mcp) VALUES (?,?,?,1) ON CONFLICT(username) DO UPDATE SET password=excluded.password, allow_mcp=1', ('editor', hashed, 'editor'))
     app.database.close()
     with (tmp_path / 'server.log').open('w') as log:
         process = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'tests.test_mcp_sdk:remote_app', '--factory', '--no-proxy-headers', '--host', '127.0.0.1', '--port', str(port)],

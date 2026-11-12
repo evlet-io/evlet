@@ -99,8 +99,8 @@ def _fixed_ids(connection, postgres, registry):
 
 def _administrator(connection, postgres):
     """Add the built-in Administrator (evlet/auth.py) to a database from before it existed, with no password.
-    A new database has no users table yet; startup creates the Administrator there. Refuses when another
-    account already uses the username administrator."""
+    A new database has no users table yet; startup creates the Administrator there. Also renames the 0.4.2
+    Administrator to admin; refuses when another account named admin is not an active admin."""
     from .auth import ensure_administrator
     if _exists(connection, postgres, 'evlet_users'):
         ensure_administrator(connection, postgres)
@@ -118,6 +118,7 @@ STEPS = (
     # Recorded only: migrate() moves the amounts before any app migration runs (evlet.migrations.money_scale).
     FrameworkStep('0007_money_scale', 'Store every Currency amount at 6 decimal places, so each currency can have its own decimals.'),
     FrameworkStep('0008_administrator', 'Add the built-in Administrator account, with no password until one is set.', _administrator),
+    FrameworkStep('0009_admin_username', 'Rename the built-in Administrator from administrator to admin.', _administrator),
 )
 
 LEDGER = ('CREATE TABLE IF NOT EXISTS evlet_framework_migrations (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, '

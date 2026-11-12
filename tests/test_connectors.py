@@ -47,7 +47,7 @@ def build(path, hashed, **options):
     app.initialize()
     with database.transaction() as tx:
         for role in ('admin', 'editor', 'viewer'):
-            tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (role, hashed, role))
+            tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', (role, hashed, role))
     return app
 
 

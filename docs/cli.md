@@ -100,7 +100,7 @@ evlet link-user acme buyer customer 42
 evlet controls grant acme mariam
 evlet users reset-two-step acme mariam
 evlet users set-password acme mariam
-evlet users set-email acme administrator ops@example.com
+evlet users set-email acme admin ops@example.com
 evlet secrets rotate acme
 evlet playground --port 8000
 evlet docs --port 8001
@@ -149,16 +149,16 @@ that process. No worker is mandatory.
 `bench browse --user` in Frappe:
 
 ```text
-The administrator account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):
+The admin account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):
   http://127.0.0.1:8000/_dev/signin?token=...
 ```
 
-Every instance has the built-in System Administrator (`administrator`), with no password at
+Every instance has the built-in System Administrator (`admin`), with no password at
 first ([controls.md](controls.md#the-administrator)). The first link signs it in and opens a
 "Set your password" screen that follows config.py's admin minimum. When admins need two-step
 sign-in (`Security(admin_two_step=True)`, the default), that session then ends and the
 authenticator set-up follows, as at a normal sign-in; finishing it opens the app. Later starts
-print `Sign in as administrator (works once, for 10 minutes): ...` and the link signs straight
+print `Sign in as admin (works once, for 10 minutes): ...` and the link signs straight
 in, sent to `/`. The sign-in page never offers a "Sign in as administrator" button: the link is
 only printed in the terminal of the person who started the server.
 
@@ -174,7 +174,7 @@ project it serves the project's instance (`--instance` picks one, `--port` match
   Instances that already have other admins (such as `admin` or `demo-admin` from 0.4.1 and
   earlier) keep them unchanged.
 - `--no-link` on `evlet dev` or `evlet playground` skips the startup link. The browser setup
-  page then asks for the first admin; choosing the username `administrator` there gives the
+  page then asks for the first admin; choosing the username `admin` there gives the
   Administrator its password.
 - The app itself serves `/_dev/signin` on the same host and port. The route exists
   only under `evlet dev` and `evlet playground`. `evlet serve`, tenant applications
@@ -394,7 +394,7 @@ security = Security(password_min=15, admin_two_step=True, two_step=False, admin_
 - `password_min`: 1 to 64 characters (15). 1 means no rule: even "1" is a password.
 - `admin_two_step`: admins, the built-in Administrator too, must use two-step sign-in (on).
 - `two_step`: everyone else must use it too (off). Controls can turn it on or off.
-- `admin_sign_in`: the sign-in page opens with the username `administrator` filled in (off).
+- `admin_sign_in`: the sign-in page opens with the username `admin` filled in (off).
 - `session_hours` 1 to 168 (12) and `lockout` 3 to 50 failed sign-ins (5).
 
 Admins always follow config.py. Controls can change the password minimum and two-step sign-in
@@ -414,7 +414,7 @@ It will reject it rather than adopt it. Existing Playground data stays in place.
 
 `evlet serve` never prints sign-in links. While the built-in Administrator has no password
 it prints `The built-in Administrator has no password yet. Set one with: evlet users set-password
-acme administrator` at start.
+acme admin` at start.
 
 For a conventional deployment, provision the administrator locally first, then
 set `domain="app.example.com"`. This selects that exact HTTPS origin, secure

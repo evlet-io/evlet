@@ -105,7 +105,9 @@ def test_report_roles_and_permissions_alias_grant_the_same_access(tmp_path):
     app = Application(db, auth=auth, reports=(ByRoles, ViewerOnly, ByAlias))
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
-    c = client(app)
+    # An ordinary admin: the built-in Administrator (admin) may open every report.
+    assert client(app)('POST', '/api/auth/users', {'username': 'owner', 'password': PASSWORD, 'role': 'admin'})[0] == 201
+    c = client(app, 'owner')
     for name in ('ByRoles', 'ByAlias'):
         assert c('POST', '/api/_reports/' + name, {'filters': {}, 'revision': 1})[0] == 200
     assert c('POST', '/api/_reports/ViewerOnly', {'filters': {}, 'revision': 1})[0] == 403

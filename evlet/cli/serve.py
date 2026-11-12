@@ -212,7 +212,8 @@ def administrator_hint(path, name):
                 if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone():
                     row = None
                 else:
-                    row = connection.execute("SELECT password FROM evlet_users WHERE username='administrator'").fetchone()
+                    row = connection.execute("SELECT password FROM evlet_users WHERE username IN ('admin','administrator') AND role='admin' "
+                                             "ORDER BY username='admin' DESC").fetchone()
                     if row is None:
                         return None  # A database from before the Administrator; evlet migrate adds it.
             finally:
@@ -221,7 +222,7 @@ def administrator_hint(path, name):
             return None
         if row is not None and row[0] != '':
             return None
-    return f'The built-in Administrator has no password yet. Set one with: evlet users set-password {name} administrator'
+    return f'The built-in Administrator has no password yet. Set one with: evlet users set-password {name} admin'
 
 
 def serve(root, name, *, host='127.0.0.1', port=8000, development=False, jobs=False, debug=False, link=True, user=None):

@@ -145,7 +145,7 @@ def history(c, url, query=''):
 
 
 def new_invoice(c, **values):
-    body = {'title': 'First', 'cost': '5', 'owner': 3, 'account': ACCOUNTS['Private'], 'children': {'lines': [
+    body = {'title': 'First', 'cost': '5', 'owner': 2, 'account': ACCOUNTS['Private'], 'children': {'lines': [
         {'_key': 'a', 'qty': '2', 'rate': '5', 'secret': 's1', 'children': {'remarks': [{'_key': 'r1', 'text': 'x'}]}},
         {'_key': 'b', 'qty': '1', 'rate': '3', 'shared': False}]}, **values}
     status, record, _ = c('POST', '/api/invoice', body)
@@ -202,7 +202,7 @@ def check_engine(app):
     record, url = new_invoice(c)
     rows = {row['qty']: row['id'] for row in record['children']['lines']}
     created = history(c, url)['items'][0]
-    assert (created['kind'], created['actor']) == ('created', 2)
+    assert (created['kind'], created['actor']) == ('created', 1)
     fields = created['data']['fields']
     assert fields['title'] == {'old': None, 'new': 'First'} and fields['total'] == {'old': None, 'new': '13.00'}
     assert fields['status'] == {'old': None, 'new': 'draft'} and fields['account'] == {'old': None, 'new': ACCOUNTS['Private']}
@@ -296,7 +296,7 @@ def check_reading(app):
     number, moved, created = seen['items']
     # The viewer reads title, owner and account; the private account's id is hidden; so is the State.
     assert created['partial'] and created['data']['fields'] == {
-        'title': {'old': None, 'new': 'First'}, 'owner': {'old': None, 'new': 3}, 'account': {'old': None, 'new': None}}
+        'title': {'old': None, 'new': 'First'}, 'owner': {'old': None, 'new': 2}, 'account': {'old': None, 'new': None}}
     # Rows outside the viewer's row scope are left out; row fields it cannot read are removed.
     added = created['data']['rows']['lines']['added']
     assert [item['id'] for item in added] == [rows['2.0000']]
@@ -305,11 +305,11 @@ def check_reading(app):
     # Entries about a State or a number the caller cannot read show as changes with nothing in them.
     assert moved == {**moved, 'kind': 'changed', 'data': {}, 'partial': True}
     assert number['kind'] == 'changed' and number['data'] == {} and number['partial']
-    assert seen['total'] == 3 and seen['users'] == {'2': 'admin'}
+    assert seen['total'] == 3 and seen['users'] == {'1': 'admin'}
     # The editor reads everything of its own invoices, and nothing of others.
     mine = history(editor, url)['items']
     assert mine[1]['data'] == {'from': 'draft', 'to': 'issued', 'move': 'Issue'} and 'partial' not in mine[2]
-    _, theirs = new_invoice(c, owner=2)
+    _, theirs = new_invoice(c, owner=1)
     assert editor('GET', theirs + '/journal')[0] == 404
     assert editor('POST', theirs + '/journal', {'kind': 'note', 'text': 'Hi'})[0] == 404
     # An action's name is left out for roles that cannot read the State.
@@ -344,13 +344,13 @@ def check_user_entries(app):
     assert editor('GET', url)[1]['_journal'] == {'count': 1, 'open_follow_ups': 0}
     write = lambda body, who=editor: who('POST', url + '/journal', body)
     status, note, _ = write({'kind': 'note', 'text': '  Called back  '})
-    assert status == 201 and (note['kind'], note['actor'], note['data']) == ('note', 3, {'text': 'Called back'})
+    assert status == 201 and (note['kind'], note['actor'], note['data']) == ('note', 2, {'text': 'Called back'})
     assert write({'kind': 'message', 'text': 'Sent prices', 'subject': 'Prices', 'party': 'Acme'})[1]['data'] == {
         'text': 'Sent prices', 'subject': 'Prices', 'party': 'Acme', 'direction': 'out'}
     assert write({'kind': 'call', 'text': 'Asked for terms', 'direction': 'in', 'minutes': 12})[1]['data'] == {
         'text': 'Asked for terms', 'party': None, 'direction': 'in', 'minutes': 12}
-    status, follow_up, _ = write({'kind': 'follow_up', 'text': 'Send the contract', 'due': '2026-11-10', 'assignee': 4})
-    assert status == 201 and follow_up['data'] == {'text': 'Send the contract', 'due': '2026-11-10', 'assignee': 4}
+    status, follow_up, _ = write({'kind': 'follow_up', 'text': 'Send the contract', 'due': '2026-11-10', 'assignee': 3})
+    assert status == 201 and follow_up['data'] == {'text': 'Send the contract', 'due': '2026-11-10', 'assignee': 3}
     assert follow_up['done'] is None
     for body, key in (({'kind': 'note'}, 'text'), ({'kind': 'note', 'text': '   '}, 'text'), ({'kind': 'note', 'text': 'x' * 10001}, 'text'),
                       ({'kind': 'note', 'text': 'Hi', 'due': '2026-01-01'}, '_form'), ({'kind': 'created', 'text': 'Hi'}, 'kind'),
@@ -366,8 +366,8 @@ def check_user_entries(app):
         status, error, _ = write(body)
         assert status == 422 and key in error['fields'], (body, error)
     # The assignee must be able to read the record.
-    _, theirs = new_invoice(c, owner=2)
-    assert c('POST', theirs + '/journal', {'kind': 'follow_up', 'text': 'Hi', 'assignee': 3})[1]['fields'] == {
+    _, theirs = new_invoice(c, owner=1)
+    assert c('POST', theirs + '/journal', {'kind': 'follow_up', 'text': 'Hi', 'assignee': 2})[1]['fields'] == {
         'assignee': 'This user cannot read this record'}
     assert editor('GET', url)[1]['_journal'] == {'count': 5, 'open_follow_ups': 1}
     # A follow up is completed once, by a role that may write the journal.
@@ -377,7 +377,7 @@ def check_user_entries(app):
     assert write({'kind': 'follow_up_done', 'follow_up': follow_up['id']})[0] == 409
     page = history(viewer, url)
     assert [item['kind'] for item in page['items']] == ['follow_up_done', 'follow_up', 'call', 'message', 'note', 'created']
-    assert page['items'][1]['done'] == done['id'] and page['users'] == {'2': 'admin', '3': 'editor', '4': 'viewer'}
+    assert page['items'][1]['done'] == done['id'] and page['users'] == {'1': 'admin', '2': 'editor', '3': 'viewer'}
     assert viewer('GET', url)[1]['_journal'] == {'count': 6, 'open_follow_ups': 0}
     # Viewers cannot post; entries can be added on a locked or void record; nothing edits or deletes them.
     assert write({'kind': 'note', 'text': 'Hi'}, viewer)[0] == 403
@@ -416,11 +416,11 @@ def test_python_api_posts_and_reads_with_the_same_checks(app):
     c = client(app)
     _, url = new_invoice(c)
     record_id = RecordId(url.rsplit('/', 1)[1])
-    with app.business.context(User(4, 'viewer', 'viewer')) as context:
+    with app.business.context(User(3, 'viewer', 'viewer')) as context:
         with pytest.raises(Exception, match='cannot write'):
             journal_module.post(context, Invoice, record_id, 'note', text='Hi')
         assert journal_module.entries(context, 'invoice', record_id)['total'] == 1
-    with app.business.context(User(3, 'editor', 'editor')) as context:
+    with app.business.context(User(2, 'editor', 'editor')) as context:
         entry = journal_module.post(context, Invoice, record_id, 'note', text='From code')
     assert history(c, url)['items'][0]['id'] == entry['id']
 
@@ -516,7 +516,7 @@ def test_post_runs_in_its_own_savepoint_with_the_recursion_guard(app, monkeypatc
     real = journal_module.shown
     def fail(*args):
         raise RuntimeError('reading the entry back failed')
-    with app.business.context(User(3, 'editor', 'editor')) as context:
+    with app.business.context(User(2, 'editor', 'editor')) as context:
         monkeypatch.setattr(journal_module, 'shown', fail)
         with pytest.raises(RuntimeError):
             journal_module.post(context, Invoice, record['id'], 'note', text='Lost')
@@ -561,7 +561,7 @@ def check_rollback(app, monkeypatch):
     record, url = new_invoice(c)
     def fail(*args):
         raise RuntimeError('number entry failed')
-    with app.business.context(User(2, 'admin', 'admin')) as context:
+    with app.business.context(User(1, 'admin', 'admin')) as context:
         monkeypatch.setattr(journal_module, 'number', fail)
         with pytest.raises(RuntimeError):
             context.move(Invoice, record['id'], 'issued')

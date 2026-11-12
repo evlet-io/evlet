@@ -422,16 +422,16 @@ describe('the record footer', () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date('2026-11-04T08:02:30Z'));
     const { host } = start([...orderRoutes(), ['GET', /\/api\/_settings\/me$/, screen.settings_me]], '/app/order/0000000000001', { storage: localStorage });
-    await until(() => expect(part(host, 'created')).toBe('Created admin · 2 hours ago'));
-    expect(part(host, 'modified')).toBe('Modified admin · 2 hours ago');
+    await until(() => expect(part(host, 'created')).toBe('Created Administrator · 2 hours ago'));
+    expect(part(host, 'modified')).toBe('Modified Administrator · 2 hours ago');
     const times = [...foot(host).querySelectorAll<HTMLButtonElement>('button.ev-time-toggle')];
     expect(times.map(button => button.querySelector('time')!.getAttribute('datetime'))).toEqual(['2026-11-04T06:02:00.000Z', '2026-11-04T06:02:00.000Z']);
     expect(times[0].getAttribute('aria-label')).toBe('2 hours ago, 04-11-2026 10:02 GST. Show exact times');
     // Who links to Controls Users for a person who may open Controls.
     await until(() => expect(foot(host).querySelectorAll('a.ev-rf-who[href="/controls/users"]').length).toBe(2));
     click(times[0]);
-    await until(() => expect(part(host, 'created')).toBe('Created admin · 04-11-2026 10:02 GST'));
-    expect(part(host, 'modified')).toBe('Modified admin · 04-11-2026 10:02 GST');
+    await until(() => expect(part(host, 'created')).toBe('Created Administrator · 04-11-2026 10:02 GST'));
+    expect(part(host, 'modified')).toBe('Modified Administrator · 04-11-2026 10:02 GST');
     expect(times.map(button => button.getAttribute('aria-pressed'))).toEqual(['true', 'true']);
     expect(localStorage.getItem('evlet.admin.exactTimes')).toBe('true');
   });
@@ -439,7 +439,7 @@ describe('the record footer', () => {
   it('opens with exact times when the person chose them before', async () => {
     localStorage.setItem('evlet.admin.exactTimes', 'true');
     const { host } = start(orderRoutes(), '/app/order/0000000000001', { storage: localStorage });
-    await until(() => expect(part(host, 'created')).toBe('Created admin · 04-11-2026 10:02 GST'));
+    await until(() => expect(part(host, 'created')).toBe('Created Administrator · 04-11-2026 10:02 GST'));
     // Without Controls, who is plain text.
     expect(foot(host).querySelector('a.ev-rf-who')).toBeNull();
   });

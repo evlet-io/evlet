@@ -68,7 +68,7 @@ retried while it has no accounts. If provisioning succeeded but activation was
 interrupted, `enable <slug>` checks the schema and accounts before enabling it.
 There is no default password and no public first-administrator setup route.
 Each tenant database also has its own built-in System Administrator
-(`administrator`, no password until one is set), which signs in only to its own tenant
+(`admin`, no password until one is set), which signs in only to its own tenant
 like any other account ([controls.md](controls.md#the-administrator)).
 
 ## Managed and custom domains

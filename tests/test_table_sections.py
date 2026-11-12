@@ -123,7 +123,7 @@ def app(tmp_path):
 def add_user(app, role):
     from evlet.auth import password_hash
     with app.database.transaction() as tx:
-        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (role, password_hash(PASSWORD), role))
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', (role, password_hash(PASSWORD), role))
     return client(app, role)
 
 
@@ -291,7 +291,9 @@ def test_row_permissions_gate_section_writes(tmp_path):
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
-    admin = client(app)
+    # An ordinary admin: the built-in Administrator (admin) passes every role check.
+    assert client(app)('POST', '/api/auth/users', {'username': 'owner', 'password': PASSWORD, 'role': 'admin'})[0] == 201
+    admin = client(app, 'owner')
     status, data, _ = admin('POST', '/api/limited', {})
     assert status == 201, data
     # The row model has no create permission, so no section row can be added either.

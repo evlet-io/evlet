@@ -60,14 +60,14 @@ def test_dev_prints_a_link_for_the_administrator_who_then_sets_a_password_and_tw
     _, app = empty
     out, err = start(app, capsys)
     # Nothing new is created: the instance already has its Administrator, without a password.
-    assert accounts(app) == [('administrator', 'admin', 1)]
-    assert 'The administrator account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):' in out
+    assert accounts(app) == [('admin', 'admin', 1)]
+    assert 'The admin account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):' in out
     token = out.split('token=')[1].split()[0]
     status, headers, _ = call(DevSignIn(app), 'GET', f'/_dev/signin?token={token}')
     assert status == 302
     cookie = session_cookie(headers)
     session = json.loads(call(app, 'GET', '/api/auth/session', cookie=cookie)[2])
-    assert session['user']['username'] == 'administrator' and session['password_needed'] is True
+    assert session['user']['username'] == 'admin' and session['password_needed'] is True
     csrf = session['csrf']
     # Admin accounts follow config.py's minimum, 15 by default.
     status, _, body = post(app, '/api/auth/password', {'password': 'short'}, cookie, csrf)
@@ -82,28 +82,28 @@ def test_dev_prints_a_link_for_the_administrator_who_then_sets_a_password_and_tw
     status, headers, body = call(app, 'POST', '/api/auth/login', body={'ticket': answer['ticket'], 'code': totp(raw, int(time.time() // 30))}, headers=ORIGIN)
     assert status == 200 and json.loads(body)['backup_codes']
     session = json.loads(call(app, 'GET', '/api/auth/session', cookie=session_cookie(headers))[2])
-    assert session['user']['username'] == 'administrator' and 'password_needed' not in session
+    assert session['user']['username'] == 'admin' and 'password_needed' not in session
     # Only a first password: setting another goes through Settings with the current one.
     status, _, body = post(app, '/api/auth/password', {'password': 'yet another long password'}, session_cookie(headers), session['csrf'])
     assert status == 409 and b'already has a password' in body
-    assert ('administrator', 'administrator', 'First password set') in audit_rows(app)
+    assert ('admin', 'admin', 'First password set') in audit_rows(app)
     # A second start prints a plain link.
     out, _ = start(app, capsys)
-    assert 'Sign in as administrator (works once' in out and 'no password' not in out
+    assert 'Sign in as admin (works once' in out and 'no password' not in out
 
 
 def test_without_required_two_step_the_first_password_keeps_the_session(empty, capsys):
     _, app = empty
     app.business.controls.two_step_required = lambda role: False
     token, username = issue(app.database)
-    assert username == 'administrator'
+    assert username == 'admin'
     status, headers, _ = call(DevSignIn(app), 'GET', f'/_dev/signin?token={token}')
     cookie = session_cookie(headers)
     csrf = json.loads(call(app, 'GET', '/api/auth/session', cookie=cookie)[2])['csrf']
     status, headers, body = post(app, '/api/auth/password', {'password': GOOD}, cookie, csrf)
     assert status == 200 and json.loads(body) == {'password': True} and b'set-cookie' not in headers
     session = json.loads(call(app, 'GET', '/api/auth/session', cookie=cookie)[2])
-    assert session['user']['username'] == 'administrator' and 'password_needed' not in session
+    assert session['user']['username'] == 'admin' and 'password_needed' not in session
 
 
 def test_dev_user_names_another_account(empty, capsys):
@@ -124,7 +124,7 @@ def test_no_link_prints_nothing_and_setup_stays_in_the_browser(empty, monkeypatc
         monkeypatch.setenv('EVLET_CLI_' + key, value)
     factory = serving.development_factory()
     assert factory.announce is False
-    assert start(app, capsys, announce=False)[0] == '' and accounts(app) == [('administrator', 'admin', 1)]
+    assert start(app, capsys, announce=False)[0] == '' and accounts(app) == [('admin', 'admin', 1)]
     assert app.business.auth.setup_needed()
 
 
@@ -144,11 +144,11 @@ def test_serve_never_prints_a_link_and_says_how_to_set_the_password(empty, monke
         assert not isinstance(target, DevSignIn)
         target = getattr(target, 'app', None)
     out = capsys.readouterr().out
-    assert 'The built-in Administrator has no password yet. Set one with: evlet users set-password acme administrator' in out
+    assert 'The built-in Administrator has no password yet. Set one with: evlet users set-password acme admin' in out
     assert '_dev/signin' not in out
     # Once it has one, serve says nothing about it.
     monkeypatch.setattr(getpass, 'getpass', lambda prompt='': GOOD)
-    main(['users', 'set-password', 'acme', 'administrator', '--project', str(project)])
+    main(['users', 'set-password', 'acme', 'admin', '--project', str(project)])
     capsys.readouterr()
     serving.serve(project, 'acme')
     assert 'no password' not in capsys.readouterr().out
@@ -198,12 +198,12 @@ def test_set_password_unknown_user(empty, monkeypatch, capsys):
 
 def test_set_email_command_sets_the_administrators_email(empty, capsys):
     project, app = empty
-    main(['users', 'set-email', 'acme', 'administrator', 'ops@example.test', '--project', str(project)])
-    assert capsys.readouterr().out == 'Email for administrator is now ops@example.test.\n'
+    main(['users', 'set-email', 'acme', 'admin', 'ops@example.test', '--project', str(project)])
+    assert capsys.readouterr().out == 'Email for admin is now ops@example.test.\n'
     with app.database._connection() as connection:
         assert connection.execute("SELECT p.email FROM evlet_user_profile p JOIN evlet_users u ON u.id=p.user_id "
-                                  "WHERE u.username='administrator'").fetchone()[0] == 'ops@example.test'
-    assert audit_rows(app)[-1] == ('cli', 'administrator', 'Email set from the server shell')
+                                  "WHERE u.username='admin'").fetchone()[0] == 'ops@example.test'
+    assert audit_rows(app)[-1] == ('cli', 'admin', 'Email set from the server shell')
     with pytest.raises(SystemExit):
-        main(['users', 'set-email', 'acme', 'administrator', 'not-an-email', '--project', str(project)])
+        main(['users', 'set-email', 'acme', 'admin', 'not-an-email', '--project', str(project)])
     assert 'not a valid email address' in capsys.readouterr().err

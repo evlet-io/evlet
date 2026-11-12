@@ -31,7 +31,7 @@ def password(hashed):
 
 def add_user(app, username, role):
     with app.database.transaction() as tx:
-        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (username, add_user.hashed, role))
+        tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', (username, add_user.hashed, role))
 
 
 def save(c, *changes):
@@ -416,9 +416,13 @@ def test_deleting_a_role_still_assigned_is_refused_and_removes_its_overrides(sec
 
 
 def test_users_wrap_local_auth_with_the_last_admin_guard(secured):
-    admin = client(secured)
+    # An ordinary admin, the only one that counts: the built-in Administrator has no password here.
+    add_user(secured, 'owner', 'admin')
+    with secured.database.transaction() as tx:
+        tx.connection.execute("UPDATE evlet_users SET password='' WHERE username='admin'")
+    admin = client(secured, 'owner')
     users = admin('GET', '/api/_controls/users')[1]['items']
-    me = next(user for user in users if user['username'] == 'admin')
+    me = next(user for user in users if user['username'] == 'owner')
     assert me['sessions'] == 1 and me['active'] is True
     assert admin('PATCH', f"/api/_controls/users/{me['id']}", {'role': 'viewer'})[:2] == (409, {'error': LAST_ADMIN})
     assert admin('PATCH', f"/api/_controls/users/{me['id']}", {'role': 'nobody'})[0] == 422

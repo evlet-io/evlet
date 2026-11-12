@@ -39,7 +39,7 @@ def portal(tmp_path, monkeypatch, hashed):
     app.initialize()
     with app.database.transaction() as tx:
         for name, role in (('admin', 'admin'), ('viewer', 'viewer'), ('buyer', 'portal')):
-            tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (name, hashed, role))
+            tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', (name, hashed, role))
     yield app
     app.database.close()
 
@@ -413,7 +413,7 @@ def test_routes_proxy_and_link_user_commands(project, capsys, tmp_path, hashed):
         from notes.models import NotesItem
         item = application.database.create(NotesItem, title='First')
         with application.database.transaction() as tx:
-            tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', ('buyer', hashed, 'portal'))
+            tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?) ON CONFLICT(username) DO UPDATE SET password=excluded.password', ('buyer', hashed, 'portal'))
     finally:
         application.database.close()
     main(['link-user', 'acme', 'buyer', 'notesitem', str(item.id), '--project', str(project)])

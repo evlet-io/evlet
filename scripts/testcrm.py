@@ -152,8 +152,14 @@ def seed(app, password, *, big_lines=150):
     """Fictional users and data. Deals reach their stage through their moves, so won deals post their
     bookings and create their kick-off tasks exactly as the app does. Returns {username: User}."""
     m = models(app)
-    users = {name: app.business.auth.create_user(username=name, password=password, role=role) for name, role in USERS}
-    admin = users['admin']
+    from evlet.auth import ADMINISTRATOR, User
+    auth = app.business.auth
+    users = {name: auth.create_user(username=name, password=password, role=role) for name, role in USERS if name != ADMINISTRATOR}
+    # admin is the built-in Administrator every instance has: it only needs its password.
+    with app.database.transaction() as tx:
+        admin_id = tx.connection.execute('SELECT id FROM evlet_users WHERE username=?', (ADMINISTRATOR,)).fetchone()[0]
+    auth.update_user(admin_id, {'password': password})
+    admin = users['admin'] = User(admin_id, ADMINISTRATOR, 'admin')
     with app.business.context(admin) as context:
         organizations = [context.create(m['Organization'], title=name, industry=industry, emirate=emirate,
                                         website=f'https://{site}', phone=phone, payment_days=terms,
