@@ -4,6 +4,23 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Added
+
+- **`evlet reset <instance>`** wipes one instance back to a fresh install: it deletes the
+  database, private files and `secret.key`, keeps `config.py`, `routes.py` and
+  `data/backups/`, and installs the same apps again with a built-in Administrator that has
+  no password. It shows what goes, offers a backup into `data/backups/`, refuses while the
+  instance is served, and asks for the instance name typed back. `--plan` changes nothing.
+- **`evlet remove <project>`** deletes an Evlet project: `apps/`, `instances/`, `.evlet/`,
+  `deploy/` and `.venv/`, and with `--sudo` the systemd unit and Caddy site that this project
+  installed. It shows what goes, offers a backup next to the project, and asks for the project
+  name typed back. `--plan`, `--keep-data` and `--keep-backups` are available. Files it did
+  not make, and units of other projects, are left alone.
+- Both refuse without a terminal unless `--yes NAME` gives the same name, and never follow a
+  symbolic link out of the project. See [Start again](docs/cli.md#start-again-reset-an-instance-or-remove-a-project).
+
 ## 0.4.2 (11-11-2026)
 
 ### Added

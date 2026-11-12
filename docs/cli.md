@@ -102,6 +102,10 @@ evlet users reset-two-step acme mariam
 evlet users set-password acme mariam
 evlet users set-email acme administrator ops@example.com
 evlet secrets rotate acme
+evlet reset acme --plan
+evlet reset acme
+evlet remove ~/myproject --plan
+evlet remove ~/myproject --sudo
 evlet playground --port 8000
 evlet docs --port 8001
 ```
@@ -550,6 +554,88 @@ so every request appears to come from `127.0.0.1`. Login rate limits therefore
 count all clients together. Back up `instances/acme/` while the service is
 stopped. For several customers routed by Host, see
 [Tenants and single-server deployment](tenancy-deployment.md).
+
+## Start again: reset an instance or remove a project
+
+Two commands delete things so you can try again from scratch. Both show exactly what
+goes first, offer a backup, and go ahead only when you type the name back.
+
+```sh
+evlet reset acme --plan          # show what would be wiped, change nothing
+evlet reset acme                 # wipe acme and install its apps again
+evlet remove ~/myproject --plan  # show what would be deleted, change nothing
+evlet remove ~/myproject         # delete the whole project
+```
+
+Every run prints the plan first. `--plan` stops there. Without `--plan` the command:
+
+1. refuses while the instance or project is in use;
+2. asks `Write a backup first? [Y/n]` (Enter means yes);
+3. asks you to type the instance or project name, and stops with nothing changed if it
+   does not match;
+4. writes the backup, then deletes.
+
+Without a terminal both refuse, unless `--yes NAME` names the same instance or project.
+Then a backup is written unless you pass `--no-backup`. `--backup` writes one without
+asking. Neither command follows a symbolic link: a link is removed as a link, and what it
+points to stays.
+
+### evlet reset
+
+`evlet reset <instance>` puts one instance back to a fresh install. It deletes the
+database, the private files, `secret.key` and everything else in the instance folder
+except `config.py`, `routes.py`, `apps.lock` and `data/backups/`. It then installs the
+same apps again, so the instance has a new built-in Administrator with no password. Set
+its password at the first sign-in of `evlet dev`, or, on an instance with a domain, with
+the `evlet users set-password` command the reset prints.
+
+The backup goes to `instances/acme/data/backups/<time>-before-reset/`. It holds a
+consistent copy of the database, `config.py`, `routes.py`, `apps.lock`, `secret.key` and
+`files/`. Installing the apps again runs their code, so it needs `--trust` or a yes in the
+terminal, as `evlet install` does.
+
+The reset refuses while `evlet serve` or `evlet dev` holds the instance, and while the
+systemd service `evlet-acme` is active. Stop it with `sudo systemctl stop evlet-acme`
+first and start it again afterwards. If the reset stops after wiping, for example when
+trust is refused, `instances/acme/.reset.json` keeps the app list. Run the same command
+again to install them.
+
+### evlet remove
+
+`evlet remove <project>` deletes an Evlet project. It removes only what Evlet made:
+
+- `apps/`, `instances/`, `.evlet/`, `deploy/` and `.venv/` in the project;
+- the systemd unit `/etc/systemd/system/evlet-<instance>.service` when its
+  `WorkingDirectory` is this project;
+- the Caddy site `/etc/caddy/evlet-<instance>.caddy` when it is this project's (its unit
+  is, or it matches `deploy/`), and its `import` line in `/etc/caddy/Caddyfile`.
+
+Anything else in the project folder, such as `README.md` or `.git`, is kept, and the
+folder stays. A unit or site with the same name that runs another project is listed as
+left alone. The plan warns when an app checkout has uncommitted changes or commits that
+were not pushed.
+
+The backup goes next to the project, to `<project>-backup-<time>/`. It holds each
+instance as `evlet reset` backs it up, and a copy of `apps/`.
+
+| Option | Effect |
+| --- | --- |
+| `--plan` | Show what would be deleted and change nothing |
+| `--keep-data` | Keep `instances/` with its databases, files and keys |
+| `--keep-backups` | Keep each instance's `data/backups/` |
+| `--sudo` | Also stop and remove the systemd units and Caddy sites listed in the plan |
+| `--yes NAME` | Confirm without a terminal; `NAME` must be the project folder's name |
+| `--backup`, `--no-backup` | Write a backup first, or not, without asking |
+
+System files need root. Without `--sudo`, `evlet remove` lists the exact `sudo` steps
+and refuses to delete the project while those files exist, so systemd never keeps
+restarting a service whose project is gone. With `--sudo` it runs them: it stops and
+disables each service before the backup, then removes the unit, the `import` line and the
+site, reloads systemd and reloads Caddy. Each step is printed before it runs and `sudo`
+asks for your password. Run it as the user that runs the service, not as root.
+
+`evlet remove` runs in the Python you start it with, never in the project's `.venv`,
+since it deletes that environment.
 
 ## Migrations, lockfiles and recovery
 

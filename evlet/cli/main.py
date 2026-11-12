@@ -168,6 +168,20 @@ def parser():
     dev_link.add_argument('--instance', help='Required when the project has several instances')
     dev_link.add_argument('--port', type=int, help='The development server port (default: 8000, or the running Playground)')
     dev_link.add_argument('--playground', action='store_true', help='Use the running evlet playground even inside a project')
+    remove = commands.add_parser('remove', help='Delete an Evlet project: shows what goes, offers a backup, asks for the name typed back')
+    remove.add_argument('target', metavar='project', help='Path of the project to delete')
+    remove.add_argument('--plan', action='store_true', help='Only show what would be deleted')
+    remove.add_argument('--keep-data', action='store_true', help='Keep instances/ with its databases, files and keys')
+    remove.add_argument('--keep-backups', action='store_true', help="Keep each instance's data/backups")
+    remove.add_argument('--sudo', action='store_true', help='Also stop and remove the systemd units and Caddy sites this project installed; each sudo step is shown first')
+    reset = commands.add_parser('reset', help='Wipe one instance back to a fresh install: shows what goes, offers a backup, asks for the name typed back')
+    reset.add_argument('instance')
+    reset.add_argument('--plan', action='store_true', help='Only show what would be wiped')
+    reset.add_argument('--trust', action='store_true', help='Trust the local app code when installing it again instead of asking')
+    for command in (remove, reset):
+        command.add_argument('--yes', metavar='NAME', help='Confirm without a terminal; NAME must be the project or instance name')
+        command.add_argument('--backup', action=argparse.BooleanOptionalAction, default=None,
+                             help='Write a backup first, or not, without asking (default: ask; yes without a terminal)')
     for command in commands.choices.values():
         command.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     from .connector import add_commands
@@ -212,6 +226,12 @@ def main(argv=None):
         if args.command == 'dev-link':
             from .devlink import dev_link
             print(dev_link(args.project, playground=args.playground, instance=args.instance, port=args.port, user=args.user))
+            return
+        if args.command == 'remove':
+            # Runs in the current Python, never the project's .venv, since it deletes that environment.
+            from .wipe import remove
+            remove(args.target, plan=args.plan, keep_data=args.keep_data, keep_backups=args.keep_backups, backup=args.backup,
+                   yes=args.yes, sudo=args.sudo)
             return
         root = project_root(args.project)
         if argv is None:
@@ -424,6 +444,9 @@ def main(argv=None):
             from .jobs import list_instance
             from ..jobs import table
             print(table(list_instance(root, args.instance or choose_instance(root, 'jobs list'))))
+        elif args.command == 'reset':
+            from .wipe import reset
+            reset(root, args.instance, plan=args.plan, backup=args.backup, yes=args.yes, trust=args.trust, confirm=confirm)
         elif args.command in ('serve', 'dev'):
             from .serve import serve
             name = args.instance or choose_instance(root, 'dev')
