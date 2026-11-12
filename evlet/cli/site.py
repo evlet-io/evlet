@@ -16,6 +16,8 @@ from .project import child, valid_name
 
 CADDYFILE = '/etc/caddy/Caddyfile'
 CADDY_DIR = '/etc/caddy'
+# Caddy's global options (strict SNI), shared by every instance on the server; the Caddyfile imports it first.
+GLOBAL_FILE = 'evlet-global.caddy'
 SYSTEMD_DIR = '/etc/systemd/system'
 # This server's public addresses, saved by the first DNS check that passed with --ip.
 SERVER_FILE = 'server.json'
@@ -174,10 +176,13 @@ def privileged_steps(root, name, restart=False):
     Caddy reloads it. restart also restarts a service that was already running with an older unit."""
     deploy = root / 'deploy'
     unit, site = installed(name)
+    options = Path(CADDY_DIR) / GLOBAL_FILE
     return [
         ['sudo', 'install', '-m', '644', str(deploy / unit.name), str(unit)],
         ['sudo', 'install', '-m', '644', str(deploy / site.name), str(site)],
+        ['sudo', 'install', '-m', '644', str(deploy / GLOBAL_FILE), str(options)],
         ('import', str(site)),
+        ('import-first', str(options)),
         ['sudo', 'systemctl', 'daemon-reload'],
         ['sudo', 'systemctl', 'enable', '--now', f'evlet-{name}'],
         *([['sudo', 'systemctl', 'restart', f'evlet-{name}']] if restart else []),
@@ -225,7 +230,19 @@ def site_answers(host, fetch=None, attempts=4, pause=5.0, sleep=None):
             'Check the A record and that ports 80 and 443 are open, then open the address again in a few minutes.')
 
 
+def global_block(text):
+    """Whether a Caddyfile starts with a global options block of its own (a lone { before any site)."""
+    for raw in text.splitlines():
+        line = raw.split('#', 1)[0].strip()
+        if line:
+            return line == '{'
+    return False
+
+
 def describe(command):
+    if command[0] == 'import-first':
+        line, caddyfile = 'import ' + command[1], CADDYFILE
+        return f'grep -qxF {shlex.quote(line)} {caddyfile} || sudo sed -i {shlex.quote("1i " + line)} {caddyfile}'
     if command[0] == 'import':
         line, caddyfile = 'import ' + command[1], CADDYFILE
         return f'grep -qxF {shlex.quote(line)} {caddyfile} || echo {shlex.quote(line)} | sudo tee -a {caddyfile}'
@@ -243,6 +260,18 @@ def run_privileged(commands, run=None):
             caddyfile, line = Path(CADDYFILE), 'import ' + command[1]
             if line not in caddyfile.read_text(encoding='utf-8').splitlines():
                 run(['sudo', 'tee', '-a', str(caddyfile)], input='\n' + line + '\n', text=True, check=True, stdout=subprocess.DEVNULL)
+        elif command[0] == 'import-first':
+            # Caddy reads global options only from the first block, so the import goes on line 1.
+            caddyfile, line = Path(CADDYFILE), 'import ' + command[1]
+            text = caddyfile.read_text(encoding='utf-8')
+            if line in text.splitlines():
+                continue
+            if global_block(text):
+                if 'strict_sni_host' in text:
+                    continue
+                raise ValueError(f'{CADDYFILE} has its own global options block. Add these lines inside it, then reload Caddy:\n'
+                                 '\tservers :443 {\n\t\tstrict_sni_host on\n\t}')
+            run(['sudo', 'sed', '-i', '1i ' + line, str(caddyfile)], check=True)
         else:
             run(command, check=True)
 
@@ -269,7 +298,8 @@ def public_site(root, name, host, *, port=8000, ips=None, apply=False, ask=None,
         app.database.close()
         trusted = app.business.auth.trusted_proxies
         (root / 'deploy').mkdir(mode=0o755, exist_ok=True)
-        site = proxy.write(root / 'deploy' / f'evlet-{name}.caddy', proxy.caddy(app.routes, port, name, trusted))
+        site = proxy.write(root / 'deploy' / f'evlet-{name}.caddy', proxy.caddy(app.routes, port, name, trusted, global_options=False))
+        proxy.write(root / 'deploy' / GLOBAL_FILE, proxy.GLOBAL_OPTIONS)
         unit = proxy.write(root / 'deploy' / f'evlet-{name}.service', proxy.systemd_unit(root, name, port, user or getpass.getuser()))
         print(f'Wrote {site}\nWrote {unit}')
         line = proxy.trust_line(trusted)

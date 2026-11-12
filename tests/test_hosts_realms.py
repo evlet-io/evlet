@@ -169,7 +169,7 @@ def static_app(tmp_path, *, routes_module=None, frontends=(), roots=True):
     (dist / 'index.html').write_text('<!doctype html><html><head><title>Shop</title><script id="evlet-config" type="application/json">{"base":"/old"}</script></head><body></body></html>')
     (dist / 'app.js').write_text('console.log(1)')
     (dist / 'logo.png').write_bytes(b'\x89PNG')
-    (dist / 'notes.txt').write_text('private')
+    (dist / 'notes.md').write_text('private')
     (dist / '.env').write_text('SECRET=1')
     (tmp_path / 'shop/secret.js').write_text('outside')
     (dist / 'link.js').symlink_to(tmp_path / 'shop/secret.js')
@@ -187,7 +187,7 @@ def test_static_frontend_files_types_traversal_and_fallback(tmp_path):
     assert http(app, 'GET', '/shop')[1] == page
     assert http(app, 'GET', '/shop/app.js')[2][b'content-type'] == b'text/javascript; charset=utf-8'
     assert http(app, 'GET', '/shop/logo.png')[2][b'content-type'] == b'image/png'
-    for path in ('/shop/notes.txt', '/shop/.env', '/shop/../shop/dist/app.js', '/shop/../secret.js', '/shop/link.js',
+    for path in ('/shop/notes.md', '/shop/.env', '/shop/../shop/dist/app.js', '/shop/../secret.js', '/shop/link.js',
                  '/shop/missing.js', '/shop/a\\b', '/shop/%2e%2e/secret.js', '/shop/app.py'):
         assert http(app, 'GET', path)[0] == 404, path
     assert http(static_app(tmp_path / 'unbuilt', roots=False), 'GET', '/shop')[0] == 404
@@ -329,6 +329,12 @@ portal.acme.com   /api/*      notes.items (scoped)   portal    routes.py
 CADDY = '''# Evlet reads client addresses from X-Forwarded-For only from trusted proxies. Add this line to Instance(...)
 # in instances/acme/config.py, then restart Evlet:
 #     trusted_proxies=("127.0.0.1", "::1"),
+
+{
+\tservers :443 {
+\t\tstrict_sni_host on
+\t}
+}
 
 erp.acme.com {
 \t@internal {

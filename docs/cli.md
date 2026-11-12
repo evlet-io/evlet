@@ -82,6 +82,7 @@ evlet build --trust
 evlet instance acme
 evlet instance --list
 evlet install notes --instance acme --trust
+evlet install site --instance acme --trust --yes
 evlet serve acme --port 8000
 evlet dev --instance acme
 evlet dev-link
@@ -96,6 +97,9 @@ evlet ledger list --instance acme
 evlet jobs list --instance acme
 evlet routes acme
 evlet proxy acme --caddy --check
+evlet host add acme www.example.com --root site.www --apply
+evlet host remove acme www.example.com --apply
+evlet host list acme
 evlet link-user acme buyer customer 42
 evlet controls grant acme mariam
 evlet users reset-two-step acme mariam
@@ -224,13 +228,22 @@ it exits with status 1 when there is any difference. See [effects.md](effects.md
 does, then prints the resolved hosts and paths, marking locked rows and where each
 row came from. See [routing.md](routing.md).
 `proxy` prints a Caddy (`--caddy`) or nginx (`--nginx`) configuration for the
-instance hosts, refusing `/controls` and `/docs` on sub-hosts and framework `/_/`
-paths other than the MCP, OAuth and mailbox sign-in routes. `--write PATH` writes
-it to that file instead; nothing else is written and no service is reloaded.
+instance hosts, refusing `/controls` and `/docs` on portal sub-hosts and framework `/_/`
+paths other than the MCP, OAuth and mailbox sign-in routes. It refuses a request whose
+`Host` differs from the TLS server name: the Caddy file starts with a global options block
+that turns on `strict_sni_host`, and each nginx server answers such a request with 421.
+`--write PATH` writes it to that file instead; nothing else is written and no service is reloaded.
 `--check` reports where each host's A and AAAA records point. It warns when a host
 points at a public address this server cannot see as its own (behind NAT), and exits
 with status 1 only when a host has no record, or points only at private addresses while
 this server has a public one. `--ip` names this server's public address.
+`install` offers a host for each frontend of a newly installed app that sets
+`suggested_host` ([routing.md](routing.md#public-websites)), when the instance has a domain:
+`<label>.<instance domain>`, such as `www.erp.example.com`, or a domain you type. `--yes`
+takes the suggestion without asking, and `--no-host` offers nothing. Without a terminal and
+without `--yes`, it only prints the `evlet host add` command. It writes the `Host(...)` line
+into `instances/<name>/routes.py` and nothing else; run the printed `evlet host add ... --apply`
+to check DNS, update Caddy and restart the service.
 `link-user` links an account to a record, such as a portal user to their customer,
 for row scopes like `own_customer`, or a staff user to their employee record for a
 team scope (`Hierarchy.team`). `--remove` removes the link. Both are written to the Controls
@@ -453,9 +466,22 @@ After installing the apps it:
    check passes with it, the address is kept in `deploy/server.json` and used by later
    runs; a new `--ip` replaces it.
 5. Prints the privileged steps: copy the two files into `/etc/systemd/system/`
-   and `/etc/caddy/`, add an `import` line to `/etc/caddy/Caddyfile`, then
-   `systemctl daemon-reload`, `systemctl enable --now evlet-acme` and
+   and `/etc/caddy/`, copy `deploy/evlet-global.caddy` to `/etc/caddy/`, add an `import`
+   line for the site to the end of `/etc/caddy/Caddyfile` and one for the global options
+   to its first line, then `systemctl daemon-reload`, `systemctl enable --now evlet-acme` and
    `systemctl reload caddy`, each with `sudo`.
+
+`deploy/evlet-global.caddy` holds Caddy's global options, which turn on `strict_sni_host`
+so that Caddy refuses a request whose `Host` differs from the TLS server name. Caddy reads
+global options only from the first block of the Caddyfile, so this file is imported on line 1
+and the site file has none. If your Caddyfile already starts with a global options block of its
+own, `--apply` stops and asks you to add these lines inside it:
+
+```text
+	servers :443 {
+		strict_sni_host on
+	}
+```
 
 Review the two files, then run those steps yourself, or run the same command again
 with `--apply`. Every run writes both files again from the current Evlet. When the copy
@@ -490,6 +516,42 @@ service again.
 `/etc/caddy/evlet-acme.caddy` still blocks one of those routes. It only reads that file;
 nothing outside `--apply` changes `/etc` or calls `sudo`. Controls, AI, MCP has a
 **Check** button that tests the public address from the server.
+
+### Serve a website on its own host
+
+A static or server frontend can have its own host, such as a public website on
+`www.example.com` next to the ERP on `erp.example.com`:
+
+```sh
+evlet host add acme www.example.com --root site.www
+evlet host add acme www.example.com --root site.www --apply
+```
+
+`host add` refuses a host that is not a public lowercase name, the primary host, or a root
+that is not a static or server frontend of an installed app. The instance needs a domain. Then:
+
+1. It checks the host's DNS like `evlet proxy --check` (with `--ip` or the address saved in
+   `deploy/server.json`). When the check fails, nothing is changed.
+2. It adds `Host("www.example.com", root="site.www")` to `hosts` in `instances/acme/routes.py`,
+   creating the file if needed, and checks that the instance still starts with it. It edits only a
+   `hosts = (...)` tuple of `Host(...)` entries without comments; when `routes.py` sets `hosts` any
+   other way, it changes nothing and prints the line to add yourself.
+3. It writes `deploy/evlet-acme.caddy`, the service unit and `deploy/evlet-global.caddy` again,
+   keeping the port of the unit in `deploy/` (or `--port`).
+4. It prints the same `sudo` steps as `evlet setup --host`, plus a restart of the service, since the
+   instance reads `routes.py` when it starts. `--apply` runs them, each shown first.
+
+`host remove` takes a host out of `routes.py` and rewrites the Caddy file the same way. `host list`
+prints the primary host and each sub-host with its root frontend and sign-in realm.
+
+With Caddy's on-demand TLS ([routing.md](routing.md#many-instances-on-one-server)) no Caddy file
+changes: Caddy asks the instance before it gets a certificate. Then only `routes.py` and a restart
+are needed:
+
+```sh
+evlet host add acme www.example.com --root site.www --routes-only
+sudo systemctl restart evlet-acme
+```
 
 ### Serve an instance behind Caddy
 
@@ -533,7 +595,9 @@ app.example.com {
 }
 ```
 
-`evlet proxy acme --caddy` prints this block for your hosts.
+`evlet proxy acme --caddy` prints this block for your hosts, after a global options block
+that turns on `strict_sni_host`. Put that block first in `/etc/caddy/Caddyfile`, or add its
+`servers :443 { strict_sni_host on }` lines to the global options block you have.
 
 Caddy obtains the certificate and passes the original Host header, which must
 match `domain`. Then run:

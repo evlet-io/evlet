@@ -2,6 +2,7 @@ include README.md CHANGELOG.md build_support.py
 include docs/*.md
 include examples/playground/*.py
 recursive-include examples/playground/portal *.html *.css *.js
+recursive-include examples/playground/site *.html *.css *.txt *.xml
 include frontend/package.json frontend/package-lock.json frontend/index.html frontend/vite.config.js
 include frontend/.node-version frontend/.npmrc frontend/tsconfig.json
 recursive-include frontend/src *.ts *.css *.json

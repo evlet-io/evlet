@@ -6,6 +6,30 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **Public websites from app frontends.** A sub-host whose root frontend has `auth=None` is a
+  public host. It serves only the site's own files and the `public=True` service endpoints its
+  API scopes list. `/login`, `/api/auth/session` and the rest of `/api`, `/_/...`,
+  `/.well-known/...` and `/health` answer 404 there, every refusal looks like the site's own
+  missing page, and pages carry no `evlet-config` block, so nothing names the instance, its
+  application or its version. The site owns every other path, `/docs` and `/assets` included.
+  See [Public websites](docs/routing.md#public-websites).
+- **`Frontend(..., routing="pages")`** for multi-page static sites: `/about/` serves
+  `about/index.html`, `/pricing` serves `pricing.html`, the other form redirects (301) to the one
+  that exists, and an unknown path gets the frontend's `404.html` with status 404. `"app"` is the
+  default and keeps the single-page behaviour. See [Multi-page sites](docs/routing.md#multi-page-sites).
+- **More file types for static frontends:** `txt`, `xml`, `webmanifest`, `pdf`, `gif`, `avif` and
+  `woff`, so `robots.txt` and `sitemap.xml` are served. HEAD works for pages and files.
+- **`Frontend(..., suggested_host="www")`.** When `evlet install` adds the app to an instance with a
+  domain, it offers `www.<domain>` or your own domain and writes the `Host(...)` line into
+  `routes.py`. `--yes` takes the suggestion and `--no-host` skips it.
+- **`evlet host add | remove | list`.** `host add acme www.example.com --root site.www` checks DNS,
+  edits `routes.py` safely, rewrites the Caddy site and, with `--apply`, installs it, reloads Caddy
+  and restarts the service. `--routes-only` suits Caddy with on-demand TLS. See
+  [Serve a website on its own host](docs/cli.md#serve-a-website-on-its-own-host).
+- **`Host(root="app.frontend")`** names a frontend by its id, so `routes.py` needs no import.
+
 ### Changed
 
 - **The built-in System Administrator's username is now `admin`**, not `administrator`. Its full
@@ -16,6 +40,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   had a password. Any other account named `admin` stops the step until it is renamed. Sign in,
   `evlet users set-password <instance> admin` and `evlet users set-email <instance> admin` use
   the new name ([docs/app-upgrades.md](docs/app-upgrades.md#from-042-to-043)).
+- **Caddy refuses a `Host` that differs from the TLS server name.** `evlet proxy --caddy` starts
+  with a global options block that turns on `strict_sni_host`. `evlet setup --host --apply`
+  installs it as `/etc/caddy/evlet-global.caddy` and imports it on the first line of the
+  Caddyfile; if your Caddyfile has its own global options block, it asks you to add the option
+  there. The nginx output answers such a request with 421. Run `evlet setup ... --host ... --apply`
+  again to update an existing site.
+- `evlet proxy` no longer refuses `/controls` and `/docs` on a public host; the instance answers
+  them with the site's page or its 404.
 
 ## 0.4.2 (11-11-2026)
 
