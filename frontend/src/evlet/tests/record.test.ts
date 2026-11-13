@@ -2,7 +2,6 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createClient } from '../api';
 import { effect, scope } from '../reactive';
 import { buildChanges } from '../model/changes';
-import { fingerprint } from '../model/finite';
 import { PREVIEW_PAUSE_MS, RecordStore, sameValue, STALE_FORMULAS } from '../model/record';
 import type { AppSchema } from '../model/schema';
 import { copy, id, responses, server, type Sent } from './server';
@@ -99,7 +98,6 @@ describe('opening a record', () => {
       (order.calculation as any).plan.tables.$root.fields[name] = { computed: false, default: null, kind: type, maximum: null, minimum: null, required: false, scale: null, stored: true, type };
     }
     const plan = (order.calculation as any).plan;
-    plan.model_schema_hash = fingerprint(plan);
     const values = { tags: ['vip', 'gulf'], kinds: ['build'], about: { model: 'customer', id: id(1) } };
     const detail = copy(responses.detail);
     Object.assign(detail.body, values);

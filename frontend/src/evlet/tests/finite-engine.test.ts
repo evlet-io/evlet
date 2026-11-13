@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fixtures from './finite-fixtures.json';
 import engineSource from '../model/finite.ts?raw';
 import fixtureSource from './finite-fixtures.json?raw';
-import { FiniteDocument, CalcError, parse, text, add, sub, mul, div, quantize, fingerprint, sha256, canonical, dayNumber, dayText } from '../model/finite';
+import { FiniteDocument, CalcError, parse, text, add, sub, mul, div, quantize, dayNumber, dayText } from '../model/finite';
 
 const plans = fixtures.plans as Record<string, any>;
 
@@ -13,13 +13,18 @@ function apply(document: FiniteDocument, command: any[]) {
   if (kind === 'set') document.set(handle(document, args[0]), args[1], args[2]);
   else if (kind === 'add') document.addRow(handle(document, args[0]), args[1], args[2]);
   else if (kind === 'remove') document.removeRow(handle(document, args[0]));
-  else if (kind === 'move') document.moveRow(handle(document, args[0]), handle(document, args[1]), args[2], args[3]);
   else if (kind === 'reorder') document.reorder(handle(document, args[0]), args[1], args[2].map((label: string) => handle(document, label)));
-  else if (kind === 'replace') document.replaceRows(handle(document, args[0]), args[1], args[2]);
   else if (kind === 'today') document.setToday(args[0]);
   else if (kind === 'lookup') document.setLookups(args[0], args[1], args[2]);
   else if (kind === 'batch') document.batch(() => { for (const item of args[0]) apply(document, item); });
-  else if (kind === 'rebase') document.rebase();
+}
+
+// A row's source values, to rebuild the document from scratch and compare with the incremental result.
+function sources(row: any): any {
+  const result: any = {...row.values, ...(row.id !== null ? {id: row.id} : {}), ...(row.parent ? {_key: row.key} : {})};
+  if (Object.keys(row.children).length)
+    result.children = Object.fromEntries(Object.entries(row.children).map(([table, items]: [string, any]) => [table, items.map(sources)]));
+  return result;
 }
 
 // Rule states of every row that declares rules, by row label.
@@ -34,7 +39,7 @@ function ruleMap(document: FiniteDocument) {
 
 // A rebuilt session receives the same host inputs (currencies, today and lookups) as the original.
 function rebuild(document: FiniteDocument, plan: any) {
-  const fresh = new FiniteDocument(plan, document.sources(), undefined, document.currencies);
+  const fresh = new FiniteDocument(plan, sources(document.root), undefined, document.currencies);
   fresh.batch(commands => {
     if (document.today !== null) commands.setToday(document.today);
     for (const [model, records] of document.lookups) for (const [id, values] of records) commands.setLookups(model, id, {...values});
@@ -49,12 +54,6 @@ function strip(value: any): any {
 }
 
 describe('finite-v1 browser evaluator against the Python plans', () => {
-  it('fingerprints plans exactly like Python', () => {
-    for (const plan of Object.values(plans)) expect(fingerprint(plan)).toBe(plan.model_schema_hash);
-    expect(sha256('abc')).toBe('ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad');
-    expect(canonical({b: ['é', '\u007f', null], a: true})).toBe('{"a":true,"b":["\\u00e9","\\u007f",null]}');
-  });
-
   it('agrees with Python on edge inputs and malformed documents', () => {
     // JSON.parse keeps "__proto__" as an own key, as a network response would; the module import does not.
     const inputs = JSON.parse(fixtureSource).invalid_inputs;
@@ -141,18 +140,17 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     expect(seen).toHaveLength(1);
     const broken = structuredClone(plans.offer);
     broken.fields[0].kind = 'compute';
-    broken.model_schema_hash = fingerprint(broken);
     expect(() => new FiniteDocument(broken)).toThrow('UNSUPPORTED_EXPRESSION');
   });
 
   it('rejects unknown plans, operations and async batches', () => {
     const plan = plans.invoice;
     expect(() => new FiniteDocument({...plan, numeric_profile: 'decimal28-half-up-v1'})).toThrow('SCHEMA_VERSION_MISMATCH');
-    expect(() => new FiniteDocument({...plan, fields: plan.fields.slice(1)})).toThrow('SCHEMA_VERSION_MISMATCH');
+    expect(() => new FiniteDocument({...plan, limits: {...plan.limits, evaluation_steps: 5}})).toThrow('SCHEMA_VERSION_MISMATCH');
+    expect(() => new FiniteDocument({...plan, model_schema_hash: undefined})).toThrow('SCHEMA_VERSION_MISMATCH');
     for (const invalid of fixtures.invalid_plans as any[]) {
       const broken = structuredClone(plan);
       broken.fields[broken.fields.length - 1].expression = invalid.expression;
-      broken.model_schema_hash = fingerprint(broken);
       expect(() => new FiniteDocument(broken, {})).toThrow('UNSUPPORTED_EXPRESSION');
     }
     const document = new FiniteDocument(plan, {children: {items: []}});
@@ -165,8 +163,8 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     const document = new FiniteDocument(plan, {inclusive: false, children: {items: [{_key: 'a', qty: '1', rate: '10'}, {_key: 'b', qty: '2', rate: '10'}]}});
     const before = JSON.stringify(document.snapshot()), rows = document.rows.size, a = document.find('items.a');
     document.batch(commands => {
-      expect(() => commands.moveRow(a, document.root.handle, 'items', 99)).toThrow(CalcError);
-      expect(() => commands.moveRow(a, document.root.handle, 'items', 2)).toThrow(CalcError);
+      expect(() => commands.reorder(document.root.handle, 'items', [a])).toThrow(CalcError);
+      expect(() => commands.reorder(document.root.handle, 'items', [a, a])).toThrow(CalcError);
       expect(() => commands.addRow(document.root.handle, 'items', {_key: 'b', qty: '5'})).toThrow(CalcError);
     });
     expect(JSON.stringify(document.snapshot())).toBe(before);
@@ -180,12 +178,10 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
       literal('decimal', 'NaN')]) {
       const broken = structuredClone(plan);
       broken.fields[0].expression = expression;
-      broken.model_schema_hash = fingerprint(broken);
       expect(() => new FiniteDocument(broken, {})).toThrow(CalcError);
     }
     const bounded = structuredClone(plan);
     bounded.tables.$root.fields.grand_total.minimum = '1000';
-    bounded.model_schema_hash = fingerprint(bounded);
     const small = new FiniteDocument(bounded, {inclusive: false, children: {items: [{qty: '1', rate: '10'}]}});
     expect(small.snapshot()._states.grand_total.code).toBe('COMPUTE_RANGE_ERROR');
   });
@@ -201,16 +197,13 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     for (const value of [1001, -1, 1.5, '2']) {
       const broken = structuredClone(plan);
       broken.tables['lines[*]'].max_rows = value;
-      broken.model_schema_hash = fingerprint(broken);
       expect(() => new FiniteDocument(broken, {})).toThrow('SCHEMA_VERSION_MISMATCH');
     }
     const inverted = structuredClone(plan);
     inverted.tables['lines[*]'].min_rows = 3;
-    inverted.model_schema_hash = fingerprint(inverted);
     expect(() => new FiniteDocument(inverted, {})).toThrow('SCHEMA_VERSION_MISMATCH');
     const wide = structuredClone(plan);
     wide.tables['lines[*]'].max_rows = 1000;
-    wide.model_schema_hash = fingerprint(wide);
     expect(new FiniteDocument(wide, {children: {lines: Array.from({length: 1000}, () => ({qty: '1'}))}}).snapshot().total).toBe('1000.0000');
   });
 
@@ -226,7 +219,6 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     expect(document.snapshot().inclusive).toBe(false);
     const bounded = structuredClone(plans.invoice);
     bounded.tables.$root.fields.grand_total.maximum = '1E+3';
-    bounded.model_schema_hash = fingerprint(bounded);
     expect(() => new FiniteDocument(bounded, {})).toThrow(CalcError);
   });
 
@@ -244,7 +236,6 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     stop(); stop();
     expect(document.snapshot().inclusive).toBe(false);
     document.dispose();
-    expect(document.subscriptions()).toBe(0);
     expect(() => document.set('h1', 'inclusive', true)).toThrow('DOCUMENT_STRUCTURE_ERROR');
   });
 
@@ -256,11 +247,9 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     const snap = document.snapshot();
     expect([snap.due, snap.discount, snap.net, snap.loyal]).toEqual(['2026-11-27', '2.50', '97.55', '27']);
     expect(snap._states.grace_due.state).toBe('pending');
-    const evaluations = document.explain(document.root.handle, 'due').evaluations;
     document.setLookups('customer', 7, {rate: '5'});
-    expect(document.explain(document.root.handle, 'due').evaluations).toBe(evaluations);
+    expect(document.trace.changed).toEqual(['discount', 'net']);
     expect(document.snapshot().discount).toBe('5.00');
-    expect(document.explain(document.root.handle, 'discount').inputs).toContain('@customer.rate');
     // Rejected lookups and a failed batch leave the session unchanged.
     expect(() => document.setLookups('customer', 7, {secret: 1})).toThrow('DOCUMENT_STRUCTURE_ERROR');
     expect(() => document.setLookups('customer', -1, {rate: '1'})).toThrow('DOCUMENT_STRUCTURE_ERROR');
@@ -275,7 +264,6 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
   it('validates rounding in plans and matches Python ordinals for dates', () => {
     const broken = structuredClone(plans.rounding);
     broken.fields[0].rounding = 'down';
-    broken.model_schema_hash = fingerprint(broken);
     expect(() => new FiniteDocument(broken, {})).toThrow('UNSUPPORTED_EXPRESSION');
     expect([dayNumber('0001-01-01'), dayNumber('1970-01-01'), dayNumber('2024-02-29'), dayNumber('9999-12-31')]).toEqual([1, 719163, 738945, 3652059]);
     for (let day = 1; day <= 3652059; day += 997) expect(dayNumber(dayText(day))).toBe(day);
