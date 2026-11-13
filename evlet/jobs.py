@@ -334,38 +334,46 @@ class JobQueue:
         now = int(time.time()) if now is None else timestamp(now)
         with self.database.transaction() as tx:
             self._bound(tx)
-            rows = tx.connection.execute('SELECT * FROM evlet_schedules WHERE enabled=1 AND next_run<=? ORDER BY next_run,name LIMIT 100', (now,)).fetchall()
-            for row in rows:
-                # One occurrence after downtime; missed intervals are coalesced.
-                definition = self.tasks.get(row['task'])
-                if definition is None:
-                    tx.connection.execute('UPDATE evlet_schedules SET enabled=0 WHERE name=?', (row['name'],))
-                    logger.error('Disabled schedule %s: its task is not registered', row['name'])
-                    continue
-                key = f"schedule:{row['name']}:{row['next_run']}"
-                tx.connection.execute('INSERT OR IGNORE INTO evlet_jobs(task,payload,actor,model,record_id,state,max_attempts,run_at,created_at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', (row['task'], row['payload'], row['actor'], row['model'], row['record_id'], 'queued', definition.max_attempts, now, now, key))
-                calendar = tx.connection.execute('SELECT expression,timezone FROM evlet_calendar_schedules WHERE name=?', (row['name'],)).fetchone()
-                if calendar:
-                    from .services import Calendar
-                    next_run = Calendar(calendar['expression'], calendar['timezone']).next(now)
-                else:
-                    next_run = row['next_run'] + ((now - row['next_run']) // row['interval'] + 1) * row['interval']
-                tx.connection.execute('UPDATE evlet_schedules SET next_run=? WHERE name=?', (next_run, row['name']))
-            return len(rows)
+            return self._tick(tx, now)
 
-    def claim(self, *, now=None, lease_seconds=300):
+    def _tick(self, tx, now):
+        """Queue one job for each schedule that is due, inside the caller's write transaction."""
+        rows = tx.connection.execute('SELECT * FROM evlet_schedules WHERE enabled=1 AND next_run<=? ORDER BY next_run,name LIMIT 100', (now,)).fetchall()
+        for row in rows:
+            # One occurrence after downtime; missed intervals are coalesced.
+            definition = self.tasks.get(row['task'])
+            if definition is None:
+                tx.connection.execute('UPDATE evlet_schedules SET enabled=0 WHERE name=?', (row['name'],))
+                logger.error('Disabled schedule %s: its task is not registered', row['name'])
+                continue
+            key = f"schedule:{row['name']}:{row['next_run']}"
+            tx.connection.execute('INSERT OR IGNORE INTO evlet_jobs(task,payload,actor,model,record_id,state,max_attempts,run_at,created_at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', (row['task'], row['payload'], row['actor'], row['model'], row['record_id'], 'queued', definition.max_attempts, now, now, key))
+            calendar = tx.connection.execute('SELECT expression,timezone FROM evlet_calendar_schedules WHERE name=?', (row['name'],)).fetchone()
+            if calendar:
+                from .services import Calendar
+                next_run = Calendar(calendar['expression'], calendar['timezone']).next(now)
+            else:
+                next_run = row['next_run'] + ((now - row['next_run']) // row['interval'] + 1) * row['interval']
+            tx.connection.execute('UPDATE evlet_schedules SET next_run=? WHERE name=?', (next_run, row['name']))
+        return len(rows)
+
+    def claim(self, *, now=None, lease_seconds=LEASE):
         now = int(time.time()) if now is None else timestamp(now)
         if type(lease_seconds) is not int or not 1 <= lease_seconds <= 3600:
             raise ValueError('Use a lease of 1 to 3600 seconds')
         with self.database.transaction() as tx:
             self._bound(tx)
-            tx.connection.execute("UPDATE evlet_jobs SET state='failed',error='Worker attempts exhausted',lease=NULL,lease_until=NULL,completed_at=? WHERE state='running' AND lease_until<=? AND attempts>=max_attempts", (now, now))
-            row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE (state='queued' AND run_at<=?) OR (state='running' AND lease_until<=? AND attempts<max_attempts) ORDER BY run_at,id LIMIT 1", (now, now)).fetchone()
-            if row is None:
-                return None
-            token = secrets.token_hex(24)
-            tx.connection.execute("UPDATE evlet_jobs SET state='running',attempts=attempts+1,lease=?,lease_until=?,error=NULL WHERE id=?", (token, now + lease_seconds, row['id']))
-            return row['id'], token
+            return self._claim(tx, now, lease_seconds)
+
+    def _claim(self, tx, now, lease_seconds):
+        """Fail jobs whose attempts ran out, then lease the next due job, inside the caller's write transaction."""
+        tx.connection.execute("UPDATE evlet_jobs SET state='failed',error='Worker attempts exhausted',lease=NULL,lease_until=NULL,completed_at=? WHERE state='running' AND lease_until<=? AND attempts>=max_attempts", (now, now))
+        row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE (state='queued' AND run_at<=?) OR (state='running' AND lease_until<=? AND attempts<max_attempts) ORDER BY run_at,id LIMIT 1", (now, now)).fetchone()
+        if row is None:
+            return None
+        token = secrets.token_hex(24)
+        tx.connection.execute("UPDATE evlet_jobs SET state='running',attempts=attempts+1,lease=?,lease_until=?,error=NULL WHERE id=?", (token, now + lease_seconds, row['id']))
+        return row['id'], token
 
     def execute(self, claim, *, active=lambda: True, now=None):
         """Run a claimed job. A job passes the business's gate like a request, so adding or removing an
@@ -507,10 +515,24 @@ class JobQueue:
             return False
         if getattr(self, 'business', None) is not None:
             self.business.controls.refresh()
-        with job_writes('job queue'):
-            self.tick(now=now)
-            claim = self.claim(now=now)
+        at = int(time.time()) if now is None else timestamp(now)
+        # An idle worker only reads. It takes a write turn when a job, an expired lease or a schedule is due.
+        if not self._due(at):
+            return False
+        with job_writes('job queue'), self.database.transaction() as tx:
+            self._bound(tx)
+            self._tick(tx, at)
+            claim = self._claim(tx, at, LEASE)
         return False if claim is None else self.execute(claim, active=active, now=now)
+
+    def _due(self, now):
+        """True when a worker pass has something to write: a queued job that is due, a running job whose
+        lease ran out, or a schedule that is due. One read on a plain connection."""
+        with self.database._connection() as connection:
+            jobs = connection.execute("SELECT 1 FROM evlet_jobs WHERE (state='queued' AND run_at<=?) OR (state='running' AND lease_until<=?) LIMIT 1", (now, now)).fetchone()
+            if jobs is not None:
+                return True
+            return connection.execute('SELECT 1 FROM evlet_schedules WHERE enabled=1 AND next_run<=? LIMIT 1', (now,)).fetchone() is not None
 
     def status(self, job_id, user):
         with self.database.transaction() as tx:
