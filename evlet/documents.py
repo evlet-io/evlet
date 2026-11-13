@@ -1774,18 +1774,18 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             check_close(context, model, record_id, 'cancelled')
     else:
         lifecycle_engine.check_write(context, model, draft, before)
-    # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
-    lifecycle_locked = before is not None and getattr(model, 'confirmable', False) and lifecycle_engine.metadata(context, model, record_id)['state'] != 'draft'
-    locked_write = action is None and move is None and before is not None and (states.locked_state(model, before._values) is not None or lifecycle_locked)
+    ordinary = action is None and move is None
+    kept_by = keeps_saved_results(context, model, before, ordinary=ordinary)
+    kept = bool(kept_by)
     # A record with postings keeps its stored calculated values for every writer.
-    from .effects import has_postings
-    posted = before is not None and has_postings(tx.connection, business.registry, model, before)
+    posted = 'posted' in kept_by
+    # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
+    locked_write = ordinary and bool(kept_by & {'confirmed', 'locked'})
     if context._recalculate == (model, record_id) and before is not None:
         if posted:
             raise AccessError(409, 'This record has postings. To change its totals, void or revise it.')
         if locked_write:
             states.check_recalculate(context, model, before)
-    kept = locked_write or posted or lifecycle_locked
     plan = business.registry.plan_for(model)
     version = business.registry.formula_hashes.get(business.registry.root_of(model))
     # A write that keeps saved results does not recalculate, so it neither checks nor updates the recorded formula version.
@@ -1889,6 +1889,31 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     return result
 
 
+def keeps_saved_results(context, model, before, *, ordinary=True):
+    """Why a write to a saved document keeps its stored results instead of recalculating them.
+
+    This is the one rule for the save, the draft preview, a record's detail and a trusted settle. It returns
+    the reasons that apply, and an empty set when the write recalculates:
+    - 'posted': the record has posted effects. Every writer keeps its results.
+    - 'confirmed': a confirmable document is confirmed or cancelled.
+    - 'locked': the record is in a locked State. Only an `ordinary` write keeps them; a move or an
+      action settles normally.
+    A new record (`before` is None) keeps nothing.
+    """
+    if before is None or before.id is None:
+        return frozenset()
+    from .effects import has_postings
+    from . import lifecycle, states
+    reasons = set()
+    if has_postings(context._tx.connection, context._business.registry, model, before):
+        reasons.add('posted')
+    if getattr(model, 'confirmable', False) and lifecycle.metadata(context, model, before.id)['state'] != 'draft':
+        reasons.add('confirmed')
+    if ordinary and states.locked_state(model, before._values) is not None:
+        reasons.add('locked')
+    return frozenset(reasons)
+
+
 def owner_of(tx, model, record_id):
     """The id of the document a saved Table row belongs to, through every level of rows; None when it is gone."""
     owners = {child.model: child for child in tx.registry.children}
@@ -1909,12 +1934,17 @@ def settle_saved(tx, model, record_id, children=None):
     effects keeps its stored results, as on every other write. derive() reads through a read-only session, so it
     cannot write and start another settlement. `children` are the document's Table rows the write sends with it,
     merged like the rows of an HTTP write."""
-    from .effects import EngineBusiness, ENGINE, SessionPolicy, has_postings
+    from .effects import EngineBusiness, ENGINE, SessionPolicy
     business = EngineBusiness(tx._business)
     business.policy = SessionPolicy(tx._business.policy)
     context = Context(business, tx, ENGINE)
     current = tx.get(model, record_id)
-    if has_postings(tx.connection, business.registry, model, current):
+    # The shared rule, read for trusted code: only postings keep the saved results here. A confirmed or cancelled
+    # document and a locked State do not, because lifecycle handlers and app code write to a document while it is
+    # confirmed (a cancel handler runs before the state changes) and its derived values must follow those writes.
+    kept_by = keeps_saved_results(context, model, Draft(model, dict(current._values), context=context, record_id=current.id),
+                                  ordinary=False)
+    if 'posted' in kept_by:
         if children:
             raise ValidationError({'children': 'This record has postings. To change its rows, void or revise it.'})
         return

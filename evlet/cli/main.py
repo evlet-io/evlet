@@ -1,6 +1,7 @@
 """Create apps, manage isolated instances, and use the bundled development tools."""
 
 import argparse
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -28,9 +29,31 @@ def choose_instance(root, command):
     raise ValueError(f'Select an instance with evlet {command} --instance NAME. Create and install an app first')
 
 
+class ShowVersion(argparse.Action):
+    """evlet --version: this evlet, and the Evlet in the project's .venv when run inside a project."""
+
+    def __init__(self, option_strings, dest, **values):
+        super().__init__(option_strings, dest, nargs=0, default=argparse.SUPPRESS, help='Print the Evlet version and exit')
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        from ..framework import version
+        from .setup import environment_version
+        lines = [f'evlet {version()}']
+        try:
+            root = project_root(getattr(namespace, 'project', None))
+        except (ValueError, OSError):
+            root = None
+        found = environment_version(root) if root is not None else None
+        if found:
+            lines.append(f'Project {root}: Evlet {found} in .venv')
+        print('\n'.join(lines))
+        parser.exit()
+
+
 def parser():
     result = argparse.ArgumentParser(prog='evlet', description=__doc__)
     result.add_argument('--project', help='Project path; also accepted after the command')
+    result.add_argument('--version', action=ShowVersion)
     commands = result.add_subparsers(dest='command', required=True)
     setup = commands.add_parser('setup', help='Create apps/, instances/ and an isolated .venv')
     setup.add_argument('directory')
@@ -92,6 +115,17 @@ def parser():
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
         command.add_argument('--port', type=int, default=8000)
+    restart = commands.add_parser('restart', help="Check an instance, then restart its systemd service and wait until it answers")
+    restart.add_argument('instance')
+    restart.add_argument('--check', action='store_true', help='Run the checks only; restart nothing')
+    restart.add_argument('--yes', action='store_true', help='Restart without asking')
+    restart.add_argument('--service', metavar='NAME', help='The systemd unit to restart (default: evlet-<instance>)')
+    restart.add_argument('--timeout', type=float, default=30.0, help='Seconds to wait for /health after the restart (default: 30)')
+    upgrade = commands.add_parser('upgrade', help="Install a newer Evlet in the project's .venv, then plan, back up, stop, migrate and restart an instance")
+    upgrade.add_argument('instance')
+    upgrade.add_argument('--to', metavar='VERSION', help='Install this version (default: the newest 0.x.* of the current minor, or of the current major from 1.0)')
+    upgrade.add_argument('--yes', action='store_true', help='Upgrade without asking')
+    upgrade.add_argument('--service', metavar='NAME', help='The systemd unit to stop and restart (default: evlet-<instance>)')
     routes = commands.add_parser('routes', help='Print the resolved hosts and paths of an instance')
     routes.add_argument('instance')
     routes.add_argument('--port', type=int, default=8000, help='Development port shown in loopback origins')
@@ -119,7 +153,7 @@ def parser():
     for command in (host_add, host_remove):
         command.add_argument('--port', type=int, help='Port the service listens on (default: the one in deploy/, else 8000)')
         command.add_argument('--apply', action='store_true', help='Run the printed sudo steps: install the Caddy site, reload Caddy, restart the service')
-        command.add_argument('--routes-only', action='store_true', help='Change routes.py only, for Caddy with on-demand TLS; then restart the service')
+        command.add_argument('--routes-only', action='store_true', help='Change routes.py only, for Caddy with on-demand TLS; then run evlet restart')
     link = commands.add_parser('link-user', help='Link an account to a record, such as a portal user to their customer')
     link.add_argument('instance')
     link.add_argument('username')
@@ -131,6 +165,8 @@ def parser():
     controls_grant = controls_commands.add_parser('grant', help='Make a user an active admin; audited as cli')
     controls_grant.add_argument('instance')
     controls_grant.add_argument('username')
+    controls_grant.add_argument('--clear-allowlist', action='store_true',
+                                help='Also clear the allowed networks set in Controls')
     controls_grant.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     users = commands.add_parser('users', help='Account recovery from the server shell')
     users_commands = users.add_subparsers(dest='users_command', required=True)
@@ -288,7 +324,9 @@ def main(argv=None):
                 raise ValueError('--plan writes nothing; run migrate without --plan to use --recompute-posted, '
                                  '--allow-destructive or --allow-maintenance')
             result, suggestions, packages, steps = plan(root, args.instance, trust=args.trust, confirm=confirm)
+            from ..framework import version
             print(f'Instance {args.instance}: plan only; nothing was written')
+            print(f'Planned with Evlet {version()}')
             print(result.text(suggestion=False))
             if steps:
                 print('Pending framework migrations (run after a backup):')
@@ -342,6 +380,16 @@ def main(argv=None):
                 hosts.add(root, args.instance, args.host, args.root, apply=args.apply, ips=args.ip, port=args.port, routes_only=args.routes_only)
             else:
                 hosts.remove(root, args.instance, args.host, apply=args.apply, port=args.port, routes_only=args.routes_only)
+        elif args.command == 'restart':
+            from .restart import restart
+            if not 1 <= args.timeout <= 3600:
+                raise ValueError('Use a --timeout between 1 and 3600 seconds')
+            if not restart(root, args.instance, service=args.service, check_only=args.check, yes=args.yes, timeout=args.timeout):
+                raise SystemExit(1)
+        elif args.command == 'upgrade':
+            from .upgrade import upgrade
+            if not upgrade(root, args.instance, to=args.to, service=args.service, yes=args.yes):
+                raise SystemExit(1)
         elif args.command == 'routes':
             from ..instances import load_runtime
             app = load_runtime(root, args.instance, port=args.port)
@@ -360,7 +408,7 @@ def main(argv=None):
                 print(f'Wrote {proxy.write(args.write, text)}. Reload the proxy yourself after reviewing it.')
                 line = proxy.trust_line(trusted)
                 if line:
-                    print(f'Add this line to Instance(...) in instances/{args.instance}/config.py, then restart Evlet:\n    {line},')
+                    print(f'Add this line to Instance(...) in instances/{args.instance}/config.py, then run evlet restart {args.instance}:\n    {line},')
             else:
                 print(text, end='')
             if args.check:
@@ -388,12 +436,27 @@ def main(argv=None):
                 app.database.close()
         elif args.command == 'controls':
             from .project import child
-            from ..controls import grant
+            from ..controls import grant, shell_address, within
             from ..instances import read_instance, read_routes
             path = child(root, 'instances', args.instance)
             read_instance(path)
-            grant(path / 'data/database.sqlite3', args.username)
-            print(f'{args.username} is now an active admin. Allowed networks set in Controls were cleared.')
+            networks = grant(path / 'data/database.sqlite3', args.username, clear_allowlist=args.clear_allowlist)
+            print(f'{args.username} is now an active admin.')
+            if networks and args.clear_allowlist:
+                print(f'Allowed networks set in Controls were cleared: {", ".join(map(str, networks))}.')
+            elif networks:
+                listed = ", ".join(map(str, networks))
+                address = shell_address(os.environ)
+                if address is None:
+                    print(f'Controls still opens only from {listed} (allowed networks set in Controls). '
+                          f'If you open it from another address you are still locked out: run this again with --clear-allowlist.')
+                elif within(address, networks):
+                    print(f'Controls still opens only from {listed} (allowed networks set in Controls). '
+                          f'Your SSH address {address} is in them.')
+                else:
+                    print(f'Controls still opens only from {listed} (allowed networks set in Controls), '
+                          f'and your SSH address {address} is not in them, so you are still locked out. '
+                          f'Run this again with --clear-allowlist to clear them.')
             try:
                 limits = getattr((read_routes(path) or {}).get('controls'), 'allow_ips', ())
             except Exception:

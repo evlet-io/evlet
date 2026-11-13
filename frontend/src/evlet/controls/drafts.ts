@@ -86,6 +86,7 @@ const cap = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 export const SETTING_LABELS: Record<string, string> = {
   'security.password_min': 'Minimum password length', 'security.session_hours': 'Session length',
   'security.lockout': 'Failed sign-ins before lockout', 'security.two_step': 'Two-step sign-in for everyone', 'security.two_step_roles': 'Two-step sign-in required for',
+  'security.controls_two_step': 'Two-step sign-in for roles that open Controls',
   'security.controls_ips': 'Controls allowed from',
   'mcp.enabled': 'MCP server', 'mcp.allow_writes': 'Allow writes', 'mcp.rate': 'Tool calls per minute',
   'mcp.disabled_tools': 'Disabled tools', 'mcp.hidden_models': 'Hidden models',

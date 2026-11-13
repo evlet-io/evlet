@@ -270,7 +270,10 @@ is longer is refused when saved, and a field value that makes a name longer is r
 **Conditions** are text, parsed by `evlet/expressions.py`: `field op value`, `field in (a, b)`,
 `and`, `or`, `not` and brackets, with `==`, `!=`, `>`, `>=`, `<`, `<=`. Values are quoted text,
 numbers, `true`, `false` or `empty` (matches null and ""). Numbers compare as decimals, dates as ISO
-text, a Link by its id. No functions, attributes, arithmetic or other names; 500 characters and 10
+text, a Link by its id number (`customer == 7`). A condition is always true or false: a comparison
+with an empty field is false, so `total > 5` does not match a record without a total. Conditions
+compile to the same expression nodes as finite-v1 formulas and run on the same evaluator
+([finite-calculations.md](finite-calculations.md)). No functions, attributes, arithmetic or other names; 500 characters and 10
 levels of brackets and `not` at most. Values must suit the field: an option of a choice field, a
 date as `"2026-01-31"`, and `empty` only with `==` or `!=`. Errors read like `Use == to compare, not =.`,
 `totl isn't a field on this model. Did you mean total?`, `Put text values in quotes, like "export".`

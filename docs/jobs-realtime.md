@@ -297,7 +297,10 @@ Calendar schedules pass `calendar=(expression, timezone)` so the schedule and it
 calendar are written in one transaction; apps normally declare `CalendarSchedule`
 instead of calling this directly.
 
-The worker calls `tick()` before claiming work. Each tick processes at most 100 due
+Each worker pass first reads, on a plain connection, whether anything is due: a queued job,
+a running job whose lease ran out, or a schedule. When nothing is due the pass writes nothing,
+so an idle instance never takes the write turn. When something is due, the worker ticks the
+schedules and claims the next job in one write transaction. Each tick processes at most 100 due
 schedules. An occurrence and its next due time commit together. After downtime,
 missed intervals coalesce into one job and the next time advances to the next
 anchored interval. An unknown task disables its schedule and writes a private log

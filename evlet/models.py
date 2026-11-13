@@ -145,6 +145,20 @@ def declared_hooks(cls, name, meta, fields, tables, row):
     return derives
 
 
+def refuse_finite_expressions(name, fields, tables, prefix=''):
+    """Slips, Report filter forms and Dialogs run the string rules and have no finite plan yet, so a finite
+    expression on them (F(...) in compute, initial or a *_when rule) would be ignored or fail when the form is
+    checked. Refuse it when the form is declared, naming the field, including fields of its table rows."""
+    from .calc import uses_finite
+    for key, field in fields.items():
+        if uses_finite(field):
+            raise ValueError(f"{name}.{prefix}{key}: dialogs, reports and slips do not run finite expressions yet; "
+                             "use the string rules visible_if, required_if, read_only_if and compute='...' for now")
+    for key, table in tables.items():
+        child = table.child
+        refuse_finite_expressions(name, child.__app_fields__, child.__tables__, f'{prefix}{key}.')
+
+
 class ModelType(type):
     def __new__(mcls, name, bases, namespace):
         fields = {}
@@ -224,6 +238,8 @@ class ModelType(type):
         if getattr(cls, '__transient__', False) and any(getattr(table, 'sections', False) for table in tables.values()):
             raise ValueError(f'{name}: section rows (Table(..., sections=True)) are for Tables of saved records, '
                              'not dialogs, reports or slips')
+        if getattr(cls, '__transient__', False):
+            refuse_finite_expressions(name, fields, tables)
         cls.__sources__ = MappingProxyType(sources)
         states = [key for key, value in fields.items() if isinstance(value, State)]
         if len(states) > 1:

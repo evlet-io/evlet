@@ -214,7 +214,7 @@ def add(root, name, host, frontend, *, apply=False, ips=None, port=None, routes_
     changed, app = _checked(root, name, lambda: add_host_line(path, host, frontend))
     print(f'Added {host} to instances/{name}/routes.py, served by {frontend}' if changed else f'instances/{name}/routes.py already serves {host} with {frontend}')
     if routes_only:
-        print(f'Restart the instance to serve it, such as: sudo systemctl restart evlet-{name}. '
+        print(f'Restart the instance to serve it: evlet restart {name}. '
               'Caddy with on-demand TLS gets its certificate on the first visit.')
         return
     _finish(root, name, _port(root, name, port), apply, run, user, app)
@@ -230,7 +230,7 @@ def remove(root, name, host, *, apply=False, port=None, routes_only=False, run=N
         raise ValueError(f'instances/{name}/routes.py does not list {host}')
     print(f'Removed {host} from instances/{name}/routes.py')
     if routes_only:
-        print(f'Restart the instance to stop serving it, such as: sudo systemctl restart evlet-{name}')
+        print(f'Restart the instance to stop serving it: evlet restart {name}')
         return
     _finish(root, name, _port(root, name, port), apply, run, user, app)
 

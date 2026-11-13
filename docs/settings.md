@@ -101,7 +101,8 @@ side) and 8 backup codes that each work once.
 - **Signing in.** After a correct password, `POST /api/auth/login` answers
   `{"two_step": "code", "ticket": ...}` with no session. The browser sends `{"ticket", "code"}`
   to the same route; a code from the app or an unused backup code starts the session. A ticket
-  lasts 5 minutes and allows 5 tries; a code is accepted once. Wrong codes also count per
+  lasts 5 minutes and allows 5 tries; a code is accepted once, also when two requests send the
+  same code at the same moment (app codes and backup codes alike). Wrong codes also count per
   account, from any network: after 10 in 15 minutes the answer is "Too many wrong codes. Try
   again in 15 minutes."
 - **Verified sessions.** A session that finished the code step (or set the app up while signing
@@ -109,7 +110,9 @@ side) and 8 backup codes that each work once.
   verify the session it was done from; signing in again does.
 - **Required roles.** Admins must use it when config.py's `Security(admin_two_step=True)` is set
   (the default). Everyone else must when Controls' `security.two_step` is on (`Security(two_step=...)`
-  starts it) or their role is in `security.two_step_roles` ([controls.md](controls.md#security-rules)).
+  starts it), their role is in `security.two_step_roles`, or their role opens Controls while
+  `security.controls_two_step` is on (the default; only an admin can switch it off)
+  ([controls.md](controls.md#security-rules)).
   Someone in such a role who has not set it up gets `{"two_step": "setup", "ticket", "secret",
   "uri"}` and turns it on while signing in. They can't turn it off. Until it is set up they can't
   use the app at all: a browser session of such a role that did not finish two-step sign-in (one

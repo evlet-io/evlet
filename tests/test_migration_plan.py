@@ -6,6 +6,7 @@ import sys
 import pytest
 
 from evlet.audit import COLUMNS as AUDIT_COLUMNS
+from evlet.framework import version as framework_version
 
 from evlet import (AddTable, Child, CreateModel, Database, Integer, Migration, Model, Registry, SchemaError, Table, Text,
                    User)
@@ -120,6 +121,7 @@ def test_plan_names_each_difference_writes_nothing_and_its_suggestion_migrates(p
     main(['migrate', 'acme', '--plan', '--trust'])
     output = capsys.readouterr().out
     assert 'plan only; nothing was written' in output
+    assert f'Planned with Evlet {framework_version()}' in output
     assert 'employee.nationality: field is in the models but not in the migrations' in output
     assert "AddTable('employee', 'dependents', Dependent)" in output
     assert "AddField('employee', 'nationality', Text(default='AE'))" in output

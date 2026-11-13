@@ -71,6 +71,63 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - New SQLite databases write the CREATE statements of framework tables and the append-only guards
   of `evlet_journal`, `evlet_audit` and `evlet_document_revisions` in a slightly different text with
   the same rules. Existing databases keep theirs.
+
+## 0.4.4 (13-11-2026)
+
+### Added
+
+- **Formula helpers: `choose`, `isin`, `is_empty`, `has_value`, `least`, `greatest` and
+  `absolute`** (from `evlet.calc`). `choose(F("stage"), {"won": 100, "lost": 0}, default=10)`
+  replaces a chain of nested `when()`, and `F("status").isin("new", "failed")` replaces
+  several `==` joined with `|`. `is_empty(x)` and `has_value(x)` replace `x == None` and
+  `x != None`, which needed `# noqa` comments. Each helper builds exactly the formula of its
+  long form, so rewriting a model with them changes no formula hash and needs no
+  recalculation. The testCRM deal's stage probability now uses `choose`. See
+  [docs/finite-calculations.md](docs/finite-calculations.md#helpers).
+- **`evlet restart <instance>` checks before it restarts.** On a server set up with
+  `evlet setup --host --apply`, it checks that the instance loads, its apps match `apps.lock`
+  and import, its routes resolve, no framework or app migration is pending, and the
+  `evlet-<instance>` unit serves this instance. Only then does it show and run
+  `sudo systemctl restart`, wait for `/health` and say the site is back up. When a check
+  fails, the running service is left alone; pending migrations are refused with
+  `Run evlet migrate <instance> first`. When the site does not come back in 30 seconds, it
+  prints the last 20 journal lines. `--check` runs the checks only, `--yes` skips the
+  question, `--service` names another unit and `--timeout` changes the wait
+  ([docs/cli.md](docs/cli.md#restart-a-site-safely)).
+- **`evlet upgrade <instance>` moves an instance to a newer Evlet.** It runs pip in the project's
+  `.venv`, prints `evlet migrate --plan`, and after one question runs `evlet backup`,
+  `sudo systemctl stop`, `evlet migrate` and `evlet restart --yes`. Every step after pip runs as
+  its own `.venv/bin/python -P -m evlet` process, so none mixes old and new code. On 0.x it stays
+  within the current minor (0.4.\*); `--to VERSION` picks another. When a step fails it prints
+  the rollback commands ([docs/cli.md](docs/cli.md#upgrade-evlet-on-a-server)).
+- **`evlet --version`** prints the Evlet version and, inside a project, the one in its `.venv`.
+  When the two differ, every project command says so before it runs with the `.venv` one.
+- **`evlet migrate --plan` says `Planned with Evlet X`.**
+
+### Changed
+
+- **Roles that open Controls must use two-step sign-in.** A new Controls setting,
+  `security.controls_two_step`, is on by default: every desk role other than admin with "Opens
+  Controls" turned on must use two-step sign-in, as admins already do. Only an admin can switch
+  it off, in Controls > Security. See [Security](docs/controls.md#security-rules).
+- **Passwords set by a role that is not admin are named in the audit log.** A Controls role can
+  still set the password of someone who is not an admin, but the audit row now reads
+  `Password set by <username> (role <role>), who is not an admin`. Admin accounts stay refused.
+- **Hints say `evlet restart`.** `evlet host add` and `host remove` with `--routes-only`, and
+  `evlet proxy --write`, now suggest `evlet restart <instance>` instead of
+  `sudo systemctl restart`.
+- **Naming-series conditions run on the formula evaluator.** A condition such as
+  `total >= 250000 and status == "sent"` is still parsed by the same rules with the same error
+  messages, but it now compiles to finite-v1 expression nodes and runs on the finite-v1
+  evaluator, instead of a third evaluator of its own. Every condition decides exactly as
+  before; a test compares both over many conditions and records. Nothing to change.
+- **`evlet controls grant` keeps the allowed networks set in Controls.** It used to clear them
+  every time and only its output said so. Now it clears them only with `--clear-allowlist`. When
+  networks remain, it lists them, and on an SSH session it says whether the address you
+  connected from is outside them and you are still locked out. **What to change:** if you rely
+  on the command to reopen Controls from anywhere, add `--clear-allowlist`
+  ([docs/controls.md](docs/controls.md#access)).
+
 - **Personal mailboxes reach only public mail servers.** A mailbox a person connects with a
   password must use a public address, SSL/TLS or STARTTLS, and the standard mail ports. Private
   ranges such as 10.x, 192.168.x, 100.64.x and fc00::, and servers on this machine, are refused
@@ -79,8 +136,51 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   an admin now sets it up as an Email sending or Email receiving connector in Controls. Admin
   connectors still accept private addresses. `evlet.connectors.safe_address` takes a new
   `public=True` argument for addresses typed in by people who are not admins.
+- **The shared formula fixtures check results, not internal counters.** The browser and
+  server engines must still agree on values, states, causes, rule states, Link lookup
+  requests, refused commands and which results changed. They no longer have to evaluate
+  formulas in the same order or count the same steps. Nothing changes for apps.
+- **The browser formula engine is smaller.** `FiniteDocument` no longer has `explain`,
+  `subscriptions`, `moveRow`, `replaceRows`, `sources`, `observeTable` or `rebase`, and Python's
+  `calc.Document` no longer has `move_row` or `rebase`. No app or framework code called them.
+  The browser also stops hashing each plan again with its own SHA-256 code; it still checks
+  the plan's shape, and the server still refuses a save made against a different plan. Code
+  that called one of these methods directly should rebuild the session instead (after a save,
+  for `rebase`) or use `addRow`, `removeRow` and `reorder`.
+- **Formula batches no longer copy the whole document.** Both formula engines used to copy
+  every row and result at the start of each batch so a failure could be undone, which made
+  each keystroke on a large document cost more. Every command now checks its input before it
+  changes anything, so a refused command still changes nothing. What changes: if code inside
+  a `batch` callback throws after some commands ran, those commands are now kept and settled
+  before the error is raised again, instead of being undone. If a batch cannot settle (an
+  engine limit), the document refuses further commands, and an open record starts a new
+  calculation session. Apps only call these engines through records, so nothing changes for
+  them.
+- **Eva asks before every change once a chat has read stored data.** Records, journals,
+  reports and files can hold text written to steer Eva. After a chat has read any of them,
+  every create, update, move or action asks first, even when Controls → AI → Eva says "Never
+  asks" for that kind of change. Scheduled tasks skip such changes. A chat that only creates
+  records follows the settings. See [When Eva asks first](docs/eva.md#when-eva-asks-first).
+- **`change_state` moves State documents.** It now takes `{model, id, to, values?, reason?}` and
+  calls `POST /api/{model}/{id}/moves/{to}` with every role, guard and state check, so Eva and MCP
+  clients can post a document or move a record. For confirmable documents `to` is `confirm`,
+  `cancel` or `reopen`. Clients that sent `operation` send `to` instead. See
+  [tools.md](docs/tools.md#tools).
+- A tool approval is no longer requested for a field the role can't write: the call is refused
+  at once, as the route would refuse it.
 
 ### Fixed
+
+- **A backup code works only once, also under a race.** Two sign-ins sending the same backup
+  code at the same moment (on PostgreSQL, say) could both succeed. The remaining codes are now
+  written back only if nobody changed them since they were read, like app codes.
+- **Connector commands after logout say you're signed out.** `evlet describe` and `evlet mcp`
+  with a removed session file printed a raw `[Errno 2] No such file` error. They now say you're
+  signed out and show the `evlet login` command to run; `evlet logout` again says you're already
+  signed out.
+- **The upgrade docs mention `evlet backup` and `evlet restore`.** `docs/app-upgrades.md` still
+  said there was no restore command. It now shows both commands and how to go back after a
+  migration.
 
 - **The draft preview no longer shows records you can't read.** `POST /api/_draft/{Model}`
   returned the id behind a Link or Reference even when a row rule hid that record, while a
@@ -96,10 +196,43 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   fields were cached per role only. When a job, a schedule or start-up code checked a field
   first, a later request reused that answer, even for a field built from a `Meta.api = None`
   model that requests may not reach. Requests and trusted code now get separate answers.
-
+- **A PDF render no longer blocks saves.** Printing a record and the designer's preview read the
+  record first and render with no write transaction open. Before, the render ran inside the main
+  file's write transaction, so a heavy PDF made everyone else's saves wait or fail with Busy.
+  File a copy now keeps the PDF in a short write afterwards that checks `update` and `print`
+  again, and answers 409 when the record changed while it was printing.
+- **An idle job worker no longer writes.** Each pass first reads whether a job, an expired lease
+  or a schedule is due, and skips both writes when nothing is. When something is due, ticking
+  schedules and claiming the next job share one write transaction instead of two. A queued job
+  is still picked up on the next pass, and `wake()` still starts it at once.
+- **Opening kept unsaved changes is a read.** `GET /api/_unsaved/{model}/{id}` no longer opens two
+  write transactions. It writes only when an entry can no longer be used and is removed.
+- **Mention emails on PostgreSQL.** A mention that should send an email now sends it. The
+  PostgreSQL adapter did not return the new inbox row's id, so every mention email was skipped
+  without an error. SQLite was not affected.
 - **Eva's provider client no longer follows redirects.** A redirect from the AI provider (or
   from the Controls connector test) is now an error, so the API key is never sent to another
   address.
+- **One rule for kept results.** The save, the draft preview (`/api/_draft`), a record's detail
+  and a trusted Session settle now use one internal rule to decide whether a saved document
+  keeps its stored results. Before, the preview and the detail left out confirmed and
+  cancelled confirmable documents, so they could show recalculated values (for example a price
+  read through a Link that changed after confirmation) that the save would not keep. A trusted
+  Session write still keeps only posted results, as before; the reason is written next to it.
+- **Slips, report filters and dialogs refuse finite expressions.** They run the string rules and
+  have no finite plan yet, so `applies_when=` and the other finite rules were silently ignored and
+  `compute=F(...)` failed with a server error when the form was checked. Declaring one now raises
+  `ValueError` when the class is defined, naming the field and pointing to `visible_if`,
+  `required_if`, `read_only_if` and `compute='...'`. Move any such field to the string rules.
+
+### Upgrading
+
+- People in a role that opens Controls (not admin) who have not set up two-step sign-in are
+  asked to set it up at their next sign-in, the same flow admins use. Their current browser
+  sessions stop working until they sign in again; API keys keep working. This needs the
+  instance to keep secrets (a secret key and the cryptography package); without them nothing
+  changes. To keep the old behaviour, an admin switches off "Roles that open Controls" under
+  Controls > Security > Two-step sign-in.
 
 ## 0.4.3 (12-11-2026)
 

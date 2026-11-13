@@ -83,7 +83,7 @@ export function EvaSettingsPage(ctx: ControlsContext): HTMLElement {
             return html`<div class="eva-rate"><b>${name}</b>${(['input', 'cached', 'output'] as const).map(part => html`<label>${part}<input class="input num" aria-label=${`${name} ${part} rate`}
               prop:value=${() => rate()[part] ?? ''} on:change=${(event: Event) => change(part, (event.target as HTMLInputElement).value.trim())}></label>`)}</div>`; })}</div>`)}
         </section>
-        <section class="ctl-card"><div class="ctl-card-head"><div><h2>When Eva asks first ${mark('confirm')}</h2><p>Allowed changes can still need a click. Formal approvals in your apps always apply as well.</p></div></div>
+        <section class="ctl-card"><div class="ctl-card-head"><div><h2>When Eva asks first ${mark('confirm')}</h2><p>Allowed changes can still need a click. Once a chat has read records, history or files, every change asks. Formal approvals in your apps always apply as well.</p></div></div>
           ${error('confirm')}
           <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Kind of change</th><th>Eva</th><th>MCP clients</th></tr></thead><tbody>
             <tr><td>Read, search, totals, files</td><td class="muted">Never asks</td><td class="muted">Never asks</td></tr>
