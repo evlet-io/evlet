@@ -348,7 +348,10 @@ class LogBuffer:
         self._thread = None
         _buffers.add(self)
 
-    def add(self, store, sql, values=()):
+    def add(self, store, statement):
+        """Queue one query builder statement (evlet/qb.py) for the store's file (None: the main file)."""
+        from .sqlite import compile_statement
+        sql, values = compile_statement(statement)
         with self._lock:
             self._pending.append((store, sql, tuple(values)))
             if self._thread is None or not self._thread.is_alive():

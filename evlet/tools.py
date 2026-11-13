@@ -20,6 +20,7 @@ import re
 import time
 from urllib.parse import urlencode
 
+from . import qb
 from .auth import AccessError
 from .connector import ConnectorError
 from .database import ConflictError, NotFoundError
@@ -401,7 +402,7 @@ class Tools:
                     raise ConnectorError(429, f'Use at most {rate} tool calls per minute.')
                 if client_id:
                     # A busy count: saved with the next batch (evlet/writes.py LogBuffer).
-                    self.database.logs.add(None, 'UPDATE evlet_mcp_clients SET calls=calls+1, last_used=? WHERE id=?', (now, client_id))
+                    self.database.logs.add(None, qb.update('evlet_mcp_clients', calls=qb.col('calls') + 1, last_used=now).where(id=client_id))
             return self.insert(connection, now, user, origin, client, client_id, run_id, tool, values, 'ok')
 
     def insert(self, connection, now, user, origin, client, client_id, run_id, tool, values, outcome, error=None, model=None, record_id=None, duration=None):

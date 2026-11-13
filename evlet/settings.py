@@ -12,13 +12,60 @@ import time
 from urllib.parse import quote
 from zoneinfo import ZoneInfo
 
-from . import secrets as vault
+from . import qb, secrets as vault
+from .adapter import Column, TableDefinition
 from .auth import (ADMINISTRATOR, ADMINISTRATOR_NAME, AccessError, User, _encode, _scrypt, client_network, hashing_slot, is_administrator,
                    password_hash)
 from .fields import MISSING, Email, Field
 from .models import ValidationError, checked_body
 
 logger = logging.getLogger(__name__)
+
+_USER = {'references': 'evlet_users', 'on_delete': 'cascade'}
+TABLES = (
+    TableDefinition('evlet_user_profile', (
+        Column('user_id', 'INTEGER', primary=True, **_USER),
+        Column('full_name', 'TEXT', required=True, default=''),
+        Column('short_name', 'TEXT', required=True, default=''),
+        Column('title', 'TEXT', required=True, default=''),
+        Column('phone', 'TEXT', required=True, default=''),
+        Column('email', 'TEXT', required=True, default=''),
+        Column('photo_file', 'INTEGER'),
+        Column('signature', 'TEXT', required=True, default=''),
+        Column('two_step_secret', 'BLOB'),
+        Column('backup_codes', 'TEXT'),
+        Column('two_step_since', 'INTEGER'),
+        Column('two_step_last', 'INTEGER'),
+        Column('two_step_pending', 'BLOB'),
+    )),
+    TableDefinition('evlet_user_prefs', (
+        Column('user_id', 'INTEGER', required=True, **_USER),
+        Column('scope', 'TEXT', required=True),
+        Column('key', 'TEXT', required=True),
+        Column('value', 'TEXT', required=True),
+    ), primary_key=('user_id', 'scope', 'key')),
+    TableDefinition('evlet_email_tokens', (
+        Column('token_hash', 'TEXT', primary=True),
+        Column('user_id', 'INTEGER', required=True, **_USER),
+        Column('new_email', 'TEXT', required=True),
+        Column('expires', 'INTEGER', required=True),
+    )),
+    TableDefinition('evlet_app_settings', (
+        Column('app', 'TEXT', required=True),
+        Column('key', 'TEXT', required=True),
+        Column('value', 'TEXT', required=True),
+        Column('changed_by', 'INTEGER'),
+        Column('changed_at', 'INTEGER'),
+    ), primary_key=('app', 'key')),
+    TableDefinition('evlet_two_step_tickets', (
+        Column('token_hash', 'TEXT', primary=True),
+        Column('user_id', 'INTEGER', required=True, **_USER),
+        Column('realm', 'TEXT', required=True),
+        Column('expires', 'INTEGER', required=True),
+        Column('attempts', 'INTEGER', required=True, default=0),
+        Column('secret', 'BLOB'),
+    )),
+)
 
 PAGES = ('profile', 'appearance', 'security', 'notifications', 'email', 'ai', 'keys')
 PORTAL_PAGES = ('profile', 'security', 'notifications')
@@ -173,7 +220,7 @@ class Preferences:
         if field is None:
             raise KeyError(f'{app} has no preference {key}')
         with self._settings.database._connection() as connection:
-            row = connection.execute('SELECT value FROM evlet_user_prefs WHERE user_id=? AND scope=? AND key=?', (self._user.id, app, key)).fetchone()
+            row = connection.run(qb.select('evlet_user_prefs', 'value').where(user_id=self._user.id, scope=app, key=key)).one()
         return _default(field) if row is None else _stored(field, row['value'])
 
 
@@ -244,29 +291,16 @@ class Settings:
 
     def initialize(self):
         with self.database.transaction() as tx:
-            for statement in (
-                'CREATE TABLE IF NOT EXISTS evlet_user_profile (user_id INTEGER PRIMARY KEY REFERENCES evlet_users(id) ON DELETE CASCADE, '
-                "full_name TEXT NOT NULL DEFAULT '', short_name TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', phone TEXT NOT NULL DEFAULT '', "
-                "email TEXT NOT NULL DEFAULT '', photo_file INTEGER, signature TEXT NOT NULL DEFAULT '', two_step_secret BLOB, backup_codes TEXT, "
-                'two_step_since INTEGER, two_step_last INTEGER, two_step_pending BLOB)',
-                'CREATE TABLE IF NOT EXISTS evlet_user_prefs (user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, scope TEXT NOT NULL, '
-                'key TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY (user_id, scope, key))',
-                'CREATE TABLE IF NOT EXISTS evlet_email_tokens (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
-                'new_email TEXT NOT NULL, expires INTEGER NOT NULL)',
-                'CREATE TABLE IF NOT EXISTS evlet_app_settings (app TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL, changed_by INTEGER, changed_at INTEGER, '
-                'PRIMARY KEY (app, key))',
-                'CREATE TABLE IF NOT EXISTS evlet_two_step_tickets (token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
-                'realm TEXT NOT NULL, expires INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, secret BLOB)',
-            ):
-                tx.connection.execute(statement)
+            for table in TABLES:
+                tx.connection.ensure_table(table)
             if 'two_step_agent' not in tx.connection.columns('evlet_user_profile'):
-                tx.connection.execute("ALTER TABLE evlet_user_profile ADD COLUMN two_step_agent TEXT NOT NULL DEFAULT ''")
+                tx.connection.add_column('evlet_user_profile', Column('two_step_agent', 'TEXT', required=True), default='')
             # The Administrator's name never changes.
-            row = tx.connection.execute("SELECT id FROM evlet_users WHERE username=? AND role='admin'", (ADMINISTRATOR,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_users', 'id').where(username=ADMINISTRATOR, role='admin')).one()
             if row is not None:
                 self.profile(tx.connection, row['id'])
-                tx.connection.execute('UPDATE evlet_user_profile SET full_name=?, short_name=? WHERE user_id=? AND (full_name<>? OR short_name<>?)',
-                                      (ADMINISTRATOR_NAME, 'Administrator', row['id'], ADMINISTRATOR_NAME, 'Administrator'))
+                tx.connection.run(qb.update('evlet_user_profile', full_name=ADMINISTRATOR_NAME, short_name='Administrator')
+                                  .where(qb.or_(qb.ne('full_name', ADMINISTRATOR_NAME), qb.ne('short_name', 'Administrator')), user_id=row['id']))
         self.business.auth.second_step = self
         if self.key.configured and self.required_roles():
             if not vault.cryptography_installed():
@@ -287,7 +321,7 @@ class Settings:
         if version is None or version != controls.version:
             cache = {}
             with self.database._connection() as connection:
-                for row in connection.execute('SELECT app, key, value FROM evlet_app_settings'):
+                for row in connection.run(qb.select('evlet_app_settings', 'app', 'key', 'value')):
                     declared = self.apps.get(row['app'], {}).get('settings')
                     if declared is not None and row['key'] in declared.__fields__:
                         cache.setdefault(row['app'], {})[row['key']] = _stored(declared.__fields__[row['key']], row['value'])
@@ -350,22 +384,22 @@ class Settings:
 
     def core(self, user_id, connection=None):
         def read(db):
-            return {row['key']: json.loads(row['value']) for row in db.execute("SELECT key, value FROM evlet_user_prefs WHERE user_id=? AND scope='core'", (user_id,))}
+            return {row['key']: json.loads(row['value']) for row in db.run(qb.select('evlet_user_prefs', 'key', 'value').where(user_id=user_id, scope='core'))}
         if connection is not None:
             return read(connection)
         with self.database._connection() as db:
             return read(db)
 
     def profile(self, connection, user_id):
-        connection.execute('INSERT OR IGNORE INTO evlet_user_profile(user_id) VALUES (?)', (user_id,))
-        return connection.execute('SELECT * FROM evlet_user_profile WHERE user_id=?', (user_id,)).fetchone()
+        connection.run(qb.insert('evlet_user_profile', user_id=user_id).on_conflict().do_nothing())
+        return connection.run(qb.select('evlet_user_profile').where(user_id=user_id)).one()
 
     def required(self, role, realm='desk'):
         return realm == 'desk' and self.business.controls.two_step_required(role) and self.possible()
 
     def two_step_on(self, user_id):
         with self.database._connection() as connection:
-            row = connection.execute('SELECT two_step_secret FROM evlet_user_profile WHERE user_id=?', (user_id,)).fetchone()
+            row = connection.run(qb.select('evlet_user_profile', 'two_step_secret').where(user_id=user_id)).one()
         return row is not None and row['two_step_secret'] is not None
 
     def me(self, scope, user):
@@ -373,10 +407,10 @@ class Settings:
         with self.database.transaction() as tx:
             row = self.profile(tx.connection, user.id)
             prefs = self.core(user.id, tx.connection)
-            sessions = tx.connection.execute('SELECT token, realm, started, expires, agent FROM evlet_sessions WHERE user_id=? AND expires>? ORDER BY started DESC',
-                                             (user.id, int(time.time()))).fetchall()
+            sessions = tx.connection.run(qb.select('evlet_sessions', 'token', 'realm', 'started', 'expires', 'agent')
+                                         .where(qb.gt('expires', int(time.time())), user_id=user.id).order_by('-started')).all()
             available = self.ready(tx.connection)
-            keys = 0 if portal else tx.connection.execute('SELECT count(*) FROM evlet_api_keys WHERE user_id=? AND revoked_at IS NULL', (user.id,)).fetchone()[0]
+            keys = 0 if portal else tx.connection.run(qb.select('evlet_api_keys', qb.count()).where(user_id=user.id, revoked_at=None)).value()
             try:
                 codes = len(self.codes(row)) if row['backup_codes'] and available else 0
             except vault.SecretKeyError:
@@ -486,13 +520,15 @@ class Settings:
         with self.database.transaction() as tx:
             self.profile(tx.connection, user.id)
             for key, value in body.items():
-                tx.connection.execute(f'UPDATE evlet_user_profile SET {key}=? WHERE user_id=?', (value if key == 'signature' else value.strip(), user.id))
+                tx.connection.run(qb.update('evlet_user_profile', **{key: value if key == 'signature' else value.strip()}).where(user_id=user.id))
         return self.me(scope, user)['profile']
 
     def photo(self, user):
         from .business import Download
         with self.database._connection() as connection:
-            row = connection.execute('SELECT a.* FROM evlet_user_profile p JOIN evlet_attachments a ON a.id=p.photo_file WHERE p.user_id=?', (user.id,)).fetchone()
+            row = connection.run(qb.select(qb.table('evlet_user_profile', 'p'), qb.all_columns('a'))
+                                 .join(qb.table('evlet_attachments', 'a'), qb.eq('a.id', qb.col('p.photo_file')))
+                                 .where(qb.eq('p.user_id', user.id))).one()
         if row is None:
             raise AccessError(404, 'No photo')
         content = self.business.storage.read(row)
@@ -515,7 +551,7 @@ class Settings:
         with self.database.transaction() as tx:
             old = self.profile(tx.connection, user.id)['photo_file']
             file = self.business.storage.add(tx, 'evlet_user_photo', user.id, 'photo' + {'image/png': '.png', 'image/jpeg': '.jpg', 'image/webp': '.webp'}[kind], content)
-            tx.connection.execute('UPDATE evlet_user_profile SET photo_file=? WHERE user_id=?', (file, user.id))
+            tx.connection.run(qb.update('evlet_user_profile', photo_file=file).where(user_id=user.id))
             removed = self._drop_photo(tx.connection, old)
         self._remove_file(removed)
         return {'photo': True}
@@ -523,8 +559,8 @@ class Settings:
     def _drop_photo(self, connection, file):
         if file is None:
             return None
-        row = connection.execute("SELECT storage_key, storage_kind FROM evlet_attachments WHERE id=? AND model='evlet_user_photo'", (file,)).fetchone()
-        connection.execute("DELETE FROM evlet_attachments WHERE id=? AND model='evlet_user_photo'", (file,))
+        row = connection.run(qb.select('evlet_attachments', 'storage_key', 'storage_kind').where(id=file, model='evlet_user_photo')).one()
+        connection.run(qb.delete('evlet_attachments').where(id=file, model='evlet_user_photo'))
         return row
 
     def _remove_file(self, row):
@@ -539,7 +575,7 @@ class Settings:
     def remove_photo(self, user):
         with self.database.transaction() as tx:
             old = self.profile(tx.connection, user.id)['photo_file']
-            tx.connection.execute('UPDATE evlet_user_profile SET photo_file=NULL WHERE user_id=?', (user.id,))
+            tx.connection.run(qb.update('evlet_user_profile', photo_file=None).where(user_id=user.id))
             removed = self._drop_photo(tx.connection, old)
         self._remove_file(removed)
         return {'photo': False}
@@ -564,8 +600,8 @@ class Settings:
             self.check_code(scope, user, body.get('code'))
         with self.database.transaction() as tx:
             before = self.profile(tx.connection, user.id)['email']
-            tx.connection.execute('UPDATE evlet_user_profile SET email=? WHERE user_id=?', (address, user.id))
-            tx.connection.execute('DELETE FROM evlet_email_tokens WHERE user_id=?', (user.id,))
+            tx.connection.run(qb.update('evlet_user_profile', email=address).where(user_id=user.id))
+            tx.connection.run(qb.delete('evlet_email_tokens').where(user_id=user.id))
             audit(tx.connection, user.username, 'Users', user.username, 'Email for notifications changed in Settings',
                   {'email': before or None}, {'email': address})
         return {'email': address}
@@ -587,9 +623,9 @@ class Settings:
         self.reauthenticate(scope, user, body)
         token, now = secrets.token_urlsafe(32), int(time.time())
         with self.database.transaction() as tx:
-            tx.connection.execute('DELETE FROM evlet_email_tokens WHERE user_id=? OR expires<=?', (user.id, now))
-            tx.connection.execute('INSERT INTO evlet_email_tokens(token_hash,user_id,new_email,expires) VALUES (?,?,?,?)',
-                                  (hashlib.sha256(token.encode()).hexdigest(), user.id, address, now + 86400))
+            tx.connection.run(qb.delete('evlet_email_tokens').where(qb.or_(qb.eq('user_id', user.id), qb.le('expires', now))))
+            tx.connection.run(qb.insert('evlet_email_tokens', token_hash=hashlib.sha256(token.encode()).hexdigest(), user_id=user.id,
+                                        new_email=address, expires=now + 86400))
         from .routing import host_name
         host = host_name(dict(scope.get('headers', [])).get(b'host', b'')) or 'localhost'
         link = f'http://{host}:{routes.port}/settings/profile?confirm={token}'
@@ -601,13 +637,13 @@ class Settings:
         token = self._body(body, ('token',)).get('token')
         now = int(time.time())
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT * FROM evlet_email_tokens WHERE token_hash=? AND user_id=? AND expires>?',
-                                        (hashlib.sha256(str(token).encode()).hexdigest(), user.id, now)).fetchone()
+            row = tx.connection.run(qb.select('evlet_email_tokens').where(qb.gt('expires', now), token_hash=hashlib.sha256(str(token).encode()).hexdigest(),
+                                                                          user_id=user.id)).one()
             if row is None:
                 raise ValidationError({'token': 'This link has expired or was already used. Ask for a new one.'})
             self.profile(tx.connection, user.id)
-            tx.connection.execute('UPDATE evlet_user_profile SET email=? WHERE user_id=?', (row['new_email'], user.id))
-            tx.connection.execute('DELETE FROM evlet_email_tokens WHERE user_id=?', (user.id,))
+            tx.connection.run(qb.update('evlet_user_profile', email=row['new_email']).where(user_id=user.id))
+            tx.connection.run(qb.delete('evlet_email_tokens').where(user_id=user.id))
         return {'email': row['new_email']}
 
     # ---------- appearance, region and notifications ----------
@@ -627,8 +663,8 @@ class Settings:
             raise ValidationError(errors)
         with self.database.transaction() as tx:
             for key, value in clean.items():
-                tx.connection.execute("INSERT INTO evlet_user_prefs(user_id,scope,key,value) VALUES (?,'core',?,?) ON CONFLICT(user_id,scope,key) DO UPDATE SET value=excluded.value",
-                                      (user.id, key, json.dumps(value)))
+                tx.connection.run(qb.insert('evlet_user_prefs', user_id=user.id, scope='core', key=key, value=json.dumps(value))
+                                  .on_conflict('user_id', 'scope', 'key').do_update(value=qb.col('excluded.value')))
             if clean.get('keep_unsaved') is False:
                 # Turning it off forgets what was kept, in the same transaction.
                 from .unsaved import Unsaved
@@ -674,7 +710,7 @@ class Settings:
         declared, mine = entry['settings'], entry['preferences']
         values = self.shared(app) if declared else {}
         with self.database._connection() as connection:
-            stored = {row['key']: row['value'] for row in connection.execute('SELECT key, value FROM evlet_user_prefs WHERE user_id=? AND scope=?', (user.id, app))}
+            stored = {row['key']: row['value'] for row in connection.run(qb.select('evlet_user_prefs', 'key', 'value').where(user_id=user.id, scope=app))}
         sections = [{'title': title, 'fields': [{**_schema(name, declared.__fields__[name]),
                                                  'value': declared.__fields__[name].serialize(values.get(name, _default(declared.__fields__[name])))} for name in names]}
                     for title, names in declared.__sections__.items()] if declared else []
@@ -713,16 +749,17 @@ class Settings:
         with self.database.transaction() as tx:
             for key, value in clean.items():
                 field = declared.__fields__[key]
-                row = tx.connection.execute('SELECT value FROM evlet_app_settings WHERE app=? AND key=?', (app, key)).fetchone()
+                row = tx.connection.run(qb.select('evlet_app_settings', 'value').where(app=app, key=key)).one()
                 before = None if row is None else json.loads(row['value'])
                 after = None if value is None or value == _default(field) else field.serialize(value)
                 if before == after:
                     continue
                 if after is None:
-                    tx.connection.execute('DELETE FROM evlet_app_settings WHERE app=? AND key=?', (app, key))
+                    tx.connection.run(qb.delete('evlet_app_settings').where(app=app, key=key))
                 else:
-                    tx.connection.execute('INSERT INTO evlet_app_settings(app,key,value,changed_by,changed_at) VALUES (?,?,?,?,?) ON CONFLICT(app,key) DO UPDATE SET '
-                                          'value=excluded.value, changed_by=excluded.changed_by, changed_at=excluded.changed_at', (app, key, json.dumps(after), user.id, now))
+                    tx.connection.run(qb.insert('evlet_app_settings', app=app, key=key, value=json.dumps(after), changed_by=user.id, changed_at=now)
+                                      .on_conflict('app', 'key').do_update(value=qb.col('excluded.value'), changed_by=qb.col('excluded.changed_by'),
+                                                                            changed_at=qb.col('excluded.changed_at')))
                 audit(tx.connection, user.username, 'Settings', f'{app}.{key}', 'Reset to the default' if after is None else 'Changed', before, after)
                 saved += 1
             if saved:
@@ -738,10 +775,10 @@ class Settings:
         with self.database.transaction() as tx:
             for key, value in clean.items():
                 if value is None:
-                    tx.connection.execute('DELETE FROM evlet_user_prefs WHERE user_id=? AND scope=? AND key=?', (user.id, app, key))
+                    tx.connection.run(qb.delete('evlet_user_prefs').where(user_id=user.id, scope=app, key=key))
                 else:
-                    tx.connection.execute('INSERT INTO evlet_user_prefs(user_id,scope,key,value) VALUES (?,?,?,?) ON CONFLICT(user_id,scope,key) DO UPDATE SET value=excluded.value',
-                                          (user.id, app, key, json.dumps(declared.__fields__[key].serialize(value))))
+                    tx.connection.run(qb.insert('evlet_user_prefs', user_id=user.id, scope=app, key=key, value=json.dumps(declared.__fields__[key].serialize(value)))
+                                      .on_conflict('user_id', 'scope', 'key').do_update(value=qb.col('excluded.value')))
         return {'saved': sorted(clean)}
 
     # ---------- two-step: settings ----------
@@ -754,7 +791,7 @@ class Settings:
         codes = [] if hashes is not None else ['-'.join(''.join(secrets.choice(CODE_ALPHABET) for _ in range(4)) for _ in range(2)) for _ in range(8)]
         hashes = hashes if hashes is not None else [_code_hash(user_id, code) for code in codes]
         sealed = self.seal(connection, json.dumps(hashes).encode(), f'backup_codes:{user_id}')
-        connection.execute('UPDATE evlet_user_profile SET backup_codes=? WHERE user_id=?', (base64.b64encode(sealed).decode(), user_id))
+        connection.run(qb.update('evlet_user_profile', backup_codes=base64.b64encode(sealed).decode()).where(user_id=user_id))
         return codes
 
     def _need_vault(self):
@@ -777,14 +814,14 @@ class Settings:
     @staticmethod
     def _tries(connection, key):
         now = int(time.time())
-        connection.execute('DELETE FROM evlet_login_limits WHERE resets<=?', (now,))
-        row = connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (key,)).fetchone()
+        connection.run(qb.delete('evlet_login_limits').where(qb.le('resets', now)))
+        row = connection.run(qb.select('evlet_login_limits', 'attempts').where(client=key)).one()
         return row['attempts'] if row else 0
 
     @staticmethod
     def _miss(connection, key):
-        connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1',
-                           (key, int(time.time()) + CODE_WINDOW))
+        connection.run(qb.insert('evlet_login_limits', client=key, attempts=1, resets=int(time.time()) + CODE_WINDOW)
+                       .on_conflict('client').do_update(attempts=qb.col('evlet_login_limits.attempts') + 1))
 
     @staticmethod
     def _code_key(user_id):
@@ -797,8 +834,8 @@ class Settings:
         if re.fullmatch(r'[0-9]{6}', code):
             counter = check_totp(raw, code, profile['two_step_last'] if profile['two_step_last'] is not None else -1)
             # Conditional, so two requests racing with the same code cannot both use it.
-            if counter is not None and connection.execute('UPDATE evlet_user_profile SET two_step_last=? WHERE user_id=? AND (two_step_last IS NULL OR two_step_last<?)',
-                                                          (counter, user_id, counter)).rowcount == 1:
+            if counter is not None and connection.run(qb.update('evlet_user_profile', two_step_last=counter).where(
+                    qb.or_(qb.is_null('two_step_last'), qb.lt('two_step_last', counter)), user_id=user_id)).rowcount == 1:
                 return True
         elif re.fullmatch(r'[a-z0-9]{4}-?[a-z0-9]{4}', code) and profile['backup_codes']:
             hashes = self.codes(profile)
@@ -816,7 +853,7 @@ class Settings:
                 if self._tries(tx.connection, key) >= auth.lockout:
                     raise AccessError(429, 'Too many tries. Try again in 15 minutes.')
                 self._miss(tx.connection, key)
-                stored = tx.connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()['password']
+                stored = tx.connection.run(qb.select('evlet_users', 'password').where(id=user.id)).one()['password']
             try:
                 if not stored.startswith('scrypt:'):
                     raise ValueError()
@@ -826,7 +863,7 @@ class Settings:
         if not hmac.compare_digest(candidate, stored):
             raise ValidationError({field: 'Your current password is not right.' if field == 'current' else 'Your password is not right.'})
         with self.database.transaction() as tx:
-            tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (key,))
+            tx.connection.run(qb.delete('evlet_login_limits').where(client=key))
         return stored
 
     def reauthenticate(self, scope, user, body):
@@ -854,7 +891,7 @@ class Settings:
                 raise AccessError(429, TOO_MANY_CODES)
             right = self._use_code(tx.connection, user.id, profile, code)
             if right:
-                tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (key,))
+                tx.connection.run(qb.delete('evlet_login_limits').where(client=key))
                 self._mark_verified(tx.connection, scope, user)
             else:
                 self._miss(tx.connection, key)
@@ -863,8 +900,8 @@ class Settings:
 
     def _mark_verified(self, connection, scope, user):
         """Only a session that finished two-step sign-in is refreshed; a password-only session stays one until the person signs in again."""
-        connection.execute('UPDATE evlet_sessions SET two_step=? WHERE token=? AND user_id=? AND two_step IS NOT NULL',
-                           (int(time.time()), self.business.auth.token(scope), user.id))
+        connection.run(qb.update('evlet_sessions', two_step=int(time.time()))
+                       .where(qb.not_null('two_step'), token=qb.value(self.business.auth.token(scope)), user_id=user.id))
 
     def verify(self, scope, user, body):
         """POST /api/_settings/me/two-step/verify {code}: a fresh code for this session, asked before changes in Controls.
@@ -913,10 +950,10 @@ class Settings:
             raise ValidationError({'new': f'Use between {minimum} and 128 characters.'}) from None
         token = auth.token(scope)
         with self.database.transaction() as tx:
-            if tx.connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()['password'] != stored:
+            if tx.connection.run(qb.select('evlet_users', 'password').where(id=user.id)).one()['password'] != stored:
                 raise AccessError(409, 'Your password changed meanwhile. Reload the page.')
-            keys = tx.connection.execute('SELECT count(*) FROM evlet_api_keys WHERE user_id=? AND revoked_at IS NULL', (user.id,)).fetchone()[0] if revoke else 0
-            tx.connection.execute('UPDATE evlet_users SET password=? WHERE id=?', (hashed, user.id))
+            keys = tx.connection.run(qb.select('evlet_api_keys', qb.count()).where(user_id=user.id, revoked_at=None)).value() if revoke else 0
+            tx.connection.run(qb.update('evlet_users', password=hashed).where(id=user.id))
             auth.end_sessions(tx.connection, user.id, keep=token, keys=revoke)
             audit(tx.connection, user.username, 'Users', user.username, 'Password changed in Settings · Signed out other devices and AI assistants'
                   + (f' · Revoked {keys} API key{"s" if keys != 1 else ""}' if revoke else ''))
@@ -937,32 +974,32 @@ class Settings:
         hashed = password_hash(password, minimum=minimum)
         realm = auth.realm(scope)
         with self.database.transaction() as tx:
-            account = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user.id,)).fetchone()
+            account = tx.connection.run(qb.select('evlet_users').where(id=user.id)).one()
             if account is None or account['password'] != '':
                 raise AccessError(409, PASSWORD_SET)
-            tx.connection.execute('UPDATE evlet_users SET password=? WHERE id=?', (hashed, user.id))
+            tx.connection.run(qb.update('evlet_users', password=hashed).where(id=user.id))
             audit(tx.connection, user.username, 'Users', user.username, 'First password set')
-            account = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user.id,)).fetchone()
+            account = tx.connection.run(qb.select('evlet_users').where(id=user.id)).one()
             challenge = self.challenge(tx, account, realm) if not self.two_step_on_row(tx.connection, user.id) else None
             if challenge is None:
                 return {'password': True}, []
-            tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (auth.token(scope),))
+            tx.connection.run(qb.delete('evlet_sessions').where(token=qb.value(auth.token(scope))))
         return challenge, [auth.cookie('', realm)]
 
     @staticmethod
     def two_step_on_row(connection, user_id):
-        row = connection.execute('SELECT two_step_secret FROM evlet_user_profile WHERE user_id=?', (user_id,)).fetchone()
+        row = connection.run(qb.select('evlet_user_profile', 'two_step_secret').where(user_id=user_id)).one()
         return row is not None and row['two_step_secret'] is not None
 
     def end_sessions(self, scope, user, session_id):
         token = self.business.auth.token(scope)
         with self.database.transaction() as tx:
             if session_id is None:
-                ended = tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=? AND token<>?', (user.id, token)).rowcount
+                ended = tx.connection.run(qb.delete('evlet_sessions').where(qb.ne('token', qb.value(token)), user_id=user.id)).rowcount
             else:
                 if token.startswith(session_id):
                     raise ValidationError({'session': 'Use Sign out to end this session.'})
-                ended = tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id=? AND substr(token,1,16)=?', (user.id, session_id)).rowcount
+                ended = tx.connection.run(qb.delete('evlet_sessions').where(qb.eq(qb.substr('token', 1, 16), session_id), user_id=user.id)).rowcount
         return {'ended': ended}
 
     # ---------- two-step: settings ----------
@@ -976,18 +1013,18 @@ class Settings:
         raw = secrets.token_bytes(20)
         with self.database.transaction() as tx:
             self.profile(tx.connection, user.id)
-            tx.connection.execute('UPDATE evlet_user_profile SET two_step_pending=? WHERE user_id=?', (self.seal(tx.connection, raw, f'two_step_pending:{user.id}'), user.id))
+            tx.connection.run(qb.update('evlet_user_profile', two_step_pending=self.seal(tx.connection, raw, f'two_step_pending:{user.id}')).where(user_id=user.id))
         return {'secret': _b32(raw), 'uri': self._uri(user, raw)}
 
     @staticmethod
     def profile_read(connection, user_id):
-        return connection.execute('SELECT * FROM evlet_user_profile WHERE user_id=?', (user_id,)).fetchone() or {'two_step_secret': None}
+        return connection.run(qb.select('evlet_user_profile').where(user_id=user_id)).one() or {'two_step_secret': None}
 
     def _enrol(self, connection, scope, account, raw, counter):
         from .controls import audit
         agent = self._agent(scope)
-        connection.execute('UPDATE evlet_user_profile SET two_step_secret=?, two_step_pending=NULL, two_step_since=?, two_step_last=?, two_step_agent=? WHERE user_id=?',
-                           (self.seal(connection, raw, f'two_step:{account["id"]}'), int(time.time()), counter, agent, account['id']))
+        connection.run(qb.update('evlet_user_profile', two_step_secret=self.seal(connection, raw, f'two_step:{account["id"]}'), two_step_pending=None,
+                                 two_step_since=int(time.time()), two_step_last=counter, two_step_agent=agent).where(user_id=account['id']))
         audit(connection, account['username'], 'Users', account['username'], f'Two-step sign-in set up from {agent}')
         return self._store_codes(connection, account['id'])
 
@@ -1042,9 +1079,9 @@ class Settings:
             secret = self.seal(tx.connection, raw, f'two_step_ticket:{account["id"]}')
             user = User(account['id'], account['username'], account['role'])
             answer = {'two_step': 'setup', 'ticket': ticket, 'secret': _b32(raw), 'uri': self._uri(user, raw)}
-        tx.connection.execute('DELETE FROM evlet_two_step_tickets WHERE expires<=? OR user_id=?', (now, account['id']))
-        tx.connection.execute('INSERT INTO evlet_two_step_tickets(token_hash,user_id,realm,expires,attempts,secret) VALUES (?,?,?,?,0,?)',
-                              (hashlib.sha256(ticket.encode()).hexdigest(), account['id'], realm, now + TICKET_SECONDS, secret))
+        tx.connection.run(qb.delete('evlet_two_step_tickets').where(qb.or_(qb.le('expires', now), qb.eq('user_id', account['id']))))
+        tx.connection.run(qb.insert('evlet_two_step_tickets', token_hash=hashlib.sha256(ticket.encode()).hexdigest(), user_id=account['id'], realm=realm,
+                                    expires=now + TICKET_SECONDS, attempts=0, secret=secret))
         return answer
 
     def finish(self, scope, body):
@@ -1057,8 +1094,11 @@ class Settings:
         realm, wrong = auth.realm(scope), None
         try:
             with self.database.transaction() as tx:
-                row = tx.connection.execute('SELECT * FROM evlet_two_step_tickets WHERE token_hash=? AND expires>?', (hashlib.sha256(ticket.encode()).hexdigest(), now)).fetchone()
-                account = row and tx.connection.execute('SELECT u.*, r.realm AS role_realm FROM evlet_users u LEFT JOIN evlet_roles r ON r.id=u.role WHERE u.id=?', (row['user_id'],)).fetchone()
+                row = tx.connection.run(qb.select('evlet_two_step_tickets').where(qb.gt('expires', now), token_hash=hashlib.sha256(ticket.encode()).hexdigest())).one()
+                account = row and tx.connection.run(
+                    qb.select(qb.table('evlet_users', 'u'), qb.all_columns('u'), qb.named('r.realm', 'role_realm'))
+                    .join(qb.table('evlet_roles', 'r'), qb.eq('r.id', qb.col('u.role')), left=True)
+                    .where(qb.eq('u.id', row['user_id']))).one()
                 if row is None or row['realm'] != realm or not account or not account['active'] or account['role_realm'] != realm:
                     raise AccessError(401, SIGN_IN_AGAIN)
                 limit = self._code_key(account['id'])
@@ -1077,16 +1117,16 @@ class Settings:
                     self._miss(tx.connection, limit)
                     attempts = row['attempts'] + 1
                     if attempts >= TICKET_TRIES:
-                        tx.connection.execute('DELETE FROM evlet_two_step_tickets WHERE token_hash=?', (row['token_hash'],))
+                        tx.connection.run(qb.delete('evlet_two_step_tickets').where(token_hash=row['token_hash']))
                         wrong = 'That code is not right. Sign in again.'
                     else:
-                        tx.connection.execute('UPDATE evlet_two_step_tickets SET attempts=? WHERE token_hash=?', (attempts, row['token_hash']))
+                        tx.connection.run(qb.update('evlet_two_step_tickets', attempts=attempts).where(token_hash=row['token_hash']))
                         wrong = 'That code is not right. Try again.'
                 else:
-                    tx.connection.execute('DELETE FROM evlet_two_step_tickets WHERE token_hash=?', (row['token_hash'],))
+                    tx.connection.run(qb.delete('evlet_two_step_tickets').where(token_hash=row['token_hash']))
                     address = client_network(auth.client_address(scope))
                     pair = hashlib.sha256(('account:' + address + ':' + account['username']).encode()).hexdigest()
-                    tx.connection.execute('DELETE FROM evlet_login_limits WHERE client IN (?,?)', (pair, limit))
+                    tx.connection.run(qb.delete('evlet_login_limits').where(qb.in_('client', (pair, limit))))
                     payload, headers = auth.start_session(tx, scope, account, realm, verified=True)
                     if codes:
                         payload['backup_codes'] = codes
@@ -1101,9 +1141,9 @@ def too_short(minimum):
 
 
 def clear_two_step(connection, user_id):
-    connection.execute("UPDATE evlet_user_profile SET two_step_secret=NULL, backup_codes=NULL, two_step_since=NULL, two_step_last=NULL, "
-                       "two_step_pending=NULL, two_step_agent='' WHERE user_id=?", (user_id,))
-    connection.execute('DELETE FROM evlet_two_step_tickets WHERE user_id=?', (user_id,))
+    connection.run(qb.update('evlet_user_profile', two_step_secret=None, backup_codes=None, two_step_since=None, two_step_last=None,
+                             two_step_pending=None, two_step_agent='').where(user_id=user_id))
+    connection.run(qb.delete('evlet_two_step_tickets').where(user_id=user_id))
 
 
 def reset_two_step(connection, actor, user_id, username):
