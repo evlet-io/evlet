@@ -29,6 +29,26 @@ def test_cli_login_describe_and_logout_keep_credentials_private(live_connector, 
     assert failure.value.status == 401
 
 
+def test_connector_commands_after_logout_say_you_are_signed_out(live_connector, tmp_path, monkeypatch, capsys):
+    file = tmp_path / 'session.json'
+    monkeypatch.setattr('getpass.getpass', lambda prompt: PASSWORD)
+    main(['login', '--url', f'http://alpha.localhost:{live_connector[2]}', '--username', 'admin', '--session', str(file)])
+    main(['logout', '--session', str(file)])
+    capsys.readouterr()
+    for command in (['describe'], ['describe', '--model', 'project'], ['mcp']):
+        with pytest.raises(SystemExit) as exit:
+            main([*command, '--session', str(file)])
+        assert exit.value.code == 1
+        output = capsys.readouterr()
+        assert output.out == ''
+        assert output.err.strip() == (f"You're signed out: there is no session file at {file}. "
+                                      f"Run evlet login --url <url> --username <username> --session {file} first.")
+        assert 'Errno' not in output.err
+    with pytest.raises(SystemExit):
+        main(['logout', '--session', str(file)])
+    assert capsys.readouterr().err.strip() == f"You're already signed out: there is no session file at {file}."
+
+
 @pytest.mark.parametrize('invalidate', ['expiry', 'revocation'])
 def test_logout_clears_ended_session_and_allows_sign_in_at_same_path(live_connector, tmp_path, monkeypatch, capsys, invalidate):
     client = signed(live_connector)

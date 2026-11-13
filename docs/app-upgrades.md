@@ -1,8 +1,21 @@
 # Upgrade or retire an app
 
-Apps are shared source code; instances hold separate data. There is no automated
-`upgrade`, `uninstall`, `restore` or backup-cleanup command yet. Use the explicit
-workflow below.
+Apps are shared source code; instances hold separate data. Evlet has no automated
+app `upgrade` or `uninstall` command and does not clean up old backups. Use the
+explicit workflow below.
+
+`evlet backup` and `evlet restore` save and put back an instance's database
+([cli.md](cli.md#back-up-and-restore)):
+
+```sh
+evlet backup --instance acme
+evlet restore instances/acme/data/backups/20261112T061500000000Z.sqlite3 --instance acme
+```
+
+`evlet backup` copies the instance's four SQLite files into `data/backups/` while the
+server may keep running. `evlet restore` puts a set back with the server stopped,
+after keeping a copy of the files it replaces. Both hold only the database: keep
+`secret.key`, `files/` and the app sources with them.
 
 ## Upgrade an app
 
@@ -10,8 +23,10 @@ workflow below.
    version, its dependency changes and appended migrations.
 2. Keep a copy of the project while it is stopped, including app source,
    `instances/*/config.py`, `apps.lock`, databases and private files. Keep the Python
-   environment's dependency lock too. An automatic SQLite backup contains only
-   database data, not uploaded files or app source.
+   environment's dependency lock too. `evlet backup --instance acme` makes a
+   database backup you can put back with `evlet restore`. It, like the automatic
+   backup `evlet migrate` writes, contains only database data, not uploaded files,
+   `secret.key` or app source.
 3. Update the app's source to the reviewed revision. For an app fetched from Git,
    fetch the remote and check out the app's reviewed tag or commit. For example:
 
@@ -37,7 +52,9 @@ workflow below.
 
 A changed installation is staged and checked before publication. On a migration
 failure the current database and lock remain intact. Restore the matching old
-source before restarting an instance whose migration failed. An unchanged
+source before restarting an instance whose migration failed. To go back to the
+database as it was before a migration that succeeded, stop the instance, restore
+the old source and run `evlet restore` with the backup `evlet migrate` printed. An unchanged
 `migrate`, with the same apps and the same Evlet version, validates the current
 instance without making another full backup.
 

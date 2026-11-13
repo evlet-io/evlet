@@ -124,8 +124,12 @@ def bump(connection):
     return connection.execute('SELECT version FROM evlet_config WHERE id=1').fetchone()[0]
 
 
-def grant(database_path, username):
-    """Break glass from the server shell: make a user an active admin and clear the Controls allowlist, audited as cli."""
+def grant(database_path, username, clear_allowlist=False):
+    """Break glass from the server shell: make a user an active admin, audited as cli.
+
+    Returns the allowed networks set in Controls, as they were. They are kept unless clear_allowlist is true;
+    the caller tells the person running it whether they still limit Controls.
+    """
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
     connection = writes.connect(database_path, isolation_level=None)
@@ -141,13 +145,15 @@ def grant(database_path, username):
         LocalAuth.end_sessions(connection, row[0], keys=True)
         audit(connection, 'cli', 'Users', username.lower(), 'Made an active admin from the server shell · Sessions, AI assistants and API keys ended',
               {'role': row[1], 'active': bool(row[2])}, {'role': 'admin', 'active': True})
-        # An allowlist that shuts everyone out is cleared too; routes.py stays as it is.
+        # An allowlist that shuts everyone out is cleared only when asked; routes.py stays as it is.
         ips = connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key='security.controls_ips'").fetchone()
-        if ips is not None:
+        networks = json.loads(ips[0]) if ips is not None else []
+        if ips is not None and clear_allowlist:
             connection.execute("DELETE FROM evlet_overrides WHERE kind='setting' AND key='security.controls_ips'")
-            audit(connection, 'cli', 'Security', 'security.controls_ips', 'Allowed networks cleared from the server shell', json.loads(ips[0]), None)
+            audit(connection, 'cli', 'Security', 'security.controls_ips', 'Allowed networks cleared from the server shell', networks, None)
         bump(connection)
         connection.execute('COMMIT')
+        return networks if isinstance(networks, list) else []
     except BaseException:
         if connection.in_transaction:
             connection.execute('ROLLBACK')
@@ -254,6 +260,30 @@ def set_password_from_shell(database_path, username, password, file_minimum=15):
         raise
     finally:
         connection.close()
+
+
+def shell_address(environ):
+    """The address an SSH session came from, if the server shell is one; None otherwise."""
+    for name in ('SSH_CONNECTION', 'SSH_CLIENT'):
+        value = (environ.get(name) or '').split()
+        if value:
+            try:
+                address = ipaddress.ip_address(value[0].split('%')[0])
+            except ValueError:
+                continue
+            return (address.ipv4_mapped or address) if address.version == 6 else address
+    return None
+
+
+def within(address, networks):
+    """True when an address is in one of the networks; values that are not networks are skipped."""
+    for value in networks:
+        try:
+            if address in ipaddress.ip_network(value, strict=False):
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
 
 
 def client_ip(scope, auth):

@@ -57,7 +57,9 @@ per customer, with a chart, run as it opens). See
 These names (and `group_by`) cannot also be filter fields. Filters are the report's own fields: any field type,
 with defaults, `required`, `Ref` filters on Links and `visible_if`, `required_if`, `read_only_if`
 and `compute` rules. The server settles them as you type; editing a filter never runs a report
-that is not `autorun`.
+that is not `autorun`. Filters do not run finite expressions yet: a filter that declares
+`F(...)` in `compute`, `initial`, `applies_when`, `required_when` or `locked_when` is refused when
+the class is defined, with a message that names the field. Use the string rules for now.
 
 `Column(name, type='text', label=None, link=None, total=False, unit=None, source=None)`:
 

@@ -58,9 +58,20 @@ has no two-step sign-in, and nothing is listed for it.
   evlet controls grant <instance> <username>
   ```
 
-  It makes the user an active admin, revokes all their access including API keys, clears the `security.controls_ips`
-  setting and writes audit rows by `cli`. It can't change `routes.py`: when `ControlsAccess`
-  there limits the networks, the command says so and you edit `routes.py`.
+  It makes the user an active admin, revokes all their access including API keys and writes an
+  audit row by `cli`. It keeps the allowed networks set in Controls (`security.controls_ips`).
+  When there are some, it says so. On an SSH session it also checks the address you connected
+  from: if that address is not in them, you are still locked out, and it tells you to run it again
+  with `--clear-allowlist`. Your browser may reach the server from another address than your SSH
+  session, so check the list it prints either way.
+
+  ```
+  evlet controls grant <instance> <username> --clear-allowlist
+  ```
+
+  `--clear-allowlist` also clears the allowed networks set in Controls, with a second audit row.
+  Running the command again revokes the user's sessions again. It can't change `routes.py`: when
+  `ControlsAccess` there limits the networks, the command says so and you edit `routes.py`.
 - Saving allowed networks that leave out your own address asks first.
 
 ### The Administrator
