@@ -42,7 +42,7 @@ def test_side_tables_live_in_their_own_files_in_wal_mode(full):
     assert {'evlet_users', 'evlet_jobs', 'evlet_job_progress', 'evlet_events', 'evlet_audit'} <= set(kept)
     # References across files are dropped (Evlet checks them); references inside one file stay.
     assert 'REFERENCES' not in schema(sessions)['evlet_sessions']
-    assert 'REFERENCES evlet_eva_conversations' in schema(eva)['evlet_eva_runs']
+    assert 'REFERENCES "evlet_eva_conversations"' in schema(eva)['evlet_eva_runs']
     for path in (main, sessions, logs, eva):
         with closing(sqlite3.connect(path)) as connection:
             assert connection.execute('PRAGMA journal_mode').fetchone()[0] == 'wal'
