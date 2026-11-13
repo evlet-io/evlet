@@ -807,3 +807,130 @@ def test_orphans_are_ignored_and_other_processes_follow_the_version(app, tmp_pat
     other.initialize()
     assert overrides(c, ('rule', 'Ticket.submit', {'label': 'Propose'}))[0] == 200
     assert next(rule['label'] for rule in schema_state(client(other))['rules'] if rule['key'] == 'submit') == 'Propose'
+
+
+# Review fixes: approvals and content changes, restore permissions, the framework step
+
+from evlet import action  # noqa: E402
+
+
+class Spend(Model):
+    """An approval out of a state that is not locked, so the record can change while it waits."""
+    permissions = APPROVERS
+    total = Integer(default=0)
+    approver = Integer()
+    note = Text(versioned=False)
+    status = State(
+        State.Step('draft'), State.Step('review'), State.Step('approved', lock=True, final=True),
+        rules=(State.Rule('draft', 'review', 'Submit', key='submit', by=('editor', 'manager')),
+               State.Rule('review', 'approved', 'Approve', key='approve',
+                          levels=(Level(by=('manager', F('approver')), pending='Pending first approval'),
+                                  Level(by=('cfo',), when=F('total') >= 10000, pending='Pending CFO approval')))))
+
+    @action('Double', roles=('admin', 'editor'))
+    def double(self):
+        self.total = self.total * 2
+
+
+@pytest.fixture
+def spends(tmp_path):
+    app = start(Database(tmp_path / 'spends.sqlite3', Registry(Spend)))
+    admin = client(app)
+    for role in ('manager', 'cfo', 'director'):
+        assert admin('POST', '/api/_controls/roles', {'id': role, 'base': 'editor'})[0] == 201
+    people = {role: add_user(app, role) for role in ('editor', 'manager', 'cfo', 'director')}
+    with app.database.transaction() as tx:
+        ids = {row[0]: row[1] for row in tx.connection.execute('SELECT username, id FROM evlet_users')}
+    return app, people, ids
+
+
+def spend(people, total, **values):
+    url = f"/api/spend/{people['editor']('POST', '/api/spend', {'total': total, **values})[1]['id']}"
+    assert move(people['editor'], url, 'submit')[0] == 200
+    return url
+
+
+def patch(user, url, body):
+    status, result, _ = user('PATCH', url, body, headers=etag(user, url))
+    assert status == 200, result
+    return result
+
+
+def test_a_raise_after_entry_brings_back_the_levels_it_needs(spends):
+    app, people, ids = spends
+    url = spend(people, 5000)
+    assert approval(people['manager'], url)['level'] == 1
+    patch(people['editor'], url, {'total': 100000})
+    # The CFO level now applies: the manager's approval is no longer the last.
+    assert move(people['manager'], url, 'approve')[1]['status'] == 'review'
+    assert approval(people['cfo'], url)['level'] == 2 and move(people['cfo'], url, 'approve')[1]['status'] == 'approved'
+
+
+def test_a_versioned_change_voids_earlier_approvals_and_an_unversioned_one_does_not(spends):
+    app, people, ids = spends
+    url = spend(people, 20000)
+    assert move(people['manager'], url, 'approve')[0] == 200
+    patch(people['editor'], url, {'note': 'Quote attached'})
+    assert approval(people['cfo'], url)['level'] == 2
+    patch(people['editor'], url, {'total': 30000})
+    assert approval(people['manager'], url)['level'] == 1 and approval(people['cfo'], url)['can_approve'] is False
+    # An action that changes the content does the same.
+    assert move(people['manager'], url, 'approve')[0] == 200
+    assert people['editor']('POST', url + '/actions/double', {}, headers=etag(people['editor'], url))[0] == 200
+    assert approval(people['manager'], url)['level'] == 1
+
+
+def test_pointing_the_approver_field_elsewhere_voids_the_approval(spends):
+    app, people, ids = spends
+    url = spend(people, 20000, approver=ids['director'])
+    assert move(people['director'], url, 'approve')[0] == 200 and approval(people['cfo'], url)['level'] == 2
+    patch(people['editor'], url, {'approver': ids['editor']})
+    assert approval(people['cfo'], url)['level'] == 1 and move(people['cfo'], url, 'approve')[0] == 403
+
+
+class Line(Child):
+    text = Text(default='')
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'clerk': Rule(('read', 'update')),
+                   'scribe': Rule(('read', 'create', 'update'), read_fields=('text',), write_fields=())}
+
+
+class Offer(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'restore')),
+                   'clerk': Rule(('read', 'update', 'restore')), 'scribe': Rule(('read', 'update', 'restore'))}
+    title = Text(default='')
+    lines = Table(Line)
+    status = State(State.Step('draft'), State.Step('sent', lock=True, release=True),
+                   rules=(State.Rule('draft', 'sent', 'Send', key='send'), State.Rule('sent', 'draft', 'Reopen', key='reopen')))
+
+
+@pytest.mark.parametrize('role, message', [('clerk', 'You do not have permission'), ('scribe', 'Your role cannot write text')])
+def test_restore_re_creates_rows_only_with_create_and_write_permission(tmp_path, role, message):
+    app = start(Database(tmp_path / 'offers.sqlite3', Registry(Offer)))
+    admin = client(app)
+    assert admin('POST', '/api/_controls/roles', {'id': role, 'base': 'editor'})[0] == 201
+    user = add_user(app, role)
+    url = f"/api/offer/{admin('POST', '/api/offer', {'children': {'lines': [{'text': 'a'}, {'text': 'b'}]}})[1]['id']}"
+    move(admin, url, 'send')
+    move(admin, url, 'reopen')
+    kept = admin('GET', url)[1]['children']['lines'][1]['id']
+    patch(admin, url, {'children': {'lines': [{'id': kept}]}})
+    status, body, _ = restore(user, url, {'version': 0, 'remark': 'Back'})
+    assert status == 403 and body['error'].startswith(message), body
+    assert len(admin('GET', url)[1]['children']['lines']) == 1
+    assert restore(admin, url, {'version': 0, 'remark': 'Back'})[0] == 200
+
+
+def test_the_framework_step_names_revisions_it_cannot_convert(tmp_path):
+    import sqlite3
+    from evlet import framework
+    from evlet.migrations import SchemaError
+    app = start(Database(tmp_path / 'old.sqlite3', Registry(Bill, Note)))
+    with sqlite3.connect(tmp_path / 'old.sqlite3') as raw:
+        raw.execute('CREATE TABLE evlet_document_revisions (model TEXT NOT NULL, record_id INTEGER NOT NULL, revision INTEGER NOT NULL, '
+                    'execution_id TEXT NOT NULL, at TEXT NOT NULL, actor TEXT NOT NULL, data TEXT NOT NULL, hash TEXT NOT NULL, '
+                    'PRIMARY KEY (model, record_id, revision))')
+        for model in ('gone', 'note'):
+            raw.execute("INSERT INTO evlet_document_revisions VALUES (?, 1, 1, ?, 'now', '1', '{\"document\": {}}', 'h')", (model, model))
+    with pytest.raises(SchemaError, match='gone or have no State: gone, note'):
+        with app.database.schema_transaction() as connection:
+            framework._state_manager(connection, app.database.registry)

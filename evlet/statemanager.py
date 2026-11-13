@@ -594,7 +594,10 @@ def entering(context, model, record):
 
 def stay(context, model, record):
     """(approvals, levels) of the record's stay in its state: the `approved` entries since the entry that brought
-    it there (approvals expire when it leaves) and the levels that entry logged; one statement per record."""
+    it there (approvals expire when it leaves) and the levels that entry logged; one statement per record.
+
+    A change to versioned content during the stay (an edit, an action, a restore, a Recompute) ends it too: the
+    approvals before it no longer count, and the levels are decided again from the current values (None)."""
     import json
     from . import qb
     cache = context.__dict__.setdefault('_stays', {})
@@ -602,15 +605,20 @@ def stay(context, model, record):
         return [], None
     if record.id not in cache:
         rows = context._tx.connection.run(qb.select('evlet_journal', 'kind', 'actor', 'level', 'rule', 'data')
-                                          .where(qb.in_('kind', ('created', 'moved', 'restored', 'approved')),
+                                          .where(qb.in_('kind', ('created', 'moved', 'restored', 'approved', 'changed', 'recomputed')),
                                                  model=context._business.registry.name_for(model), record_id=record.id)
                                           .order_by('-id').limit(STAY)).all()
         approvals = []
         for row in rows:
-            if row['kind'] != 'approved':
-                cache[record.id] = approvals, json.loads(row['data']).get('levels')
+            data = json.loads(row['data'])
+            if row['kind'] in ('changed', 'recomputed', 'restored') and touches_versioned(model, data):
+                cache[record.id] = approvals, None
                 break
-            approvals.append(row)
+            if row['kind'] in ('created', 'moved'):
+                cache[record.id] = approvals, data.get('levels')
+                break
+            if row['kind'] == 'approved':
+                approvals.append(row)
         else:
             cache[record.id] = approvals, None
     return cache[record.id]
@@ -689,9 +697,20 @@ def awaiting(context, model):
     """Ids of the records whose waiting approval level this user may approve now ("Awaiting my approval")."""
     from . import qb
     from .permissions import CHUNK
+    from .guards import Guards, check_guard
     rules = [rule for rule in rules_of(context, model) if rule.levels] if model.__state__ else []
+    if not context._business.policy.allows(context.user, model, 'update'):
+        return []
     states = sorted({source for rule in rules for source in rule.sources})
     ids, last = [], 0
+
+    def offered(record, rule):
+        try:
+            check_guard(context, Guards(context, model, record._values, lambda: saved(context, model, record.id)),
+                        guards_of(context, model).get('rule:' + rule.key), rule.label, 'move')
+        except AccessError:
+            return False
+        return True
     while states:
         batch = [model._from_row(row) for row in context._tx.connection.run(
             qb.select(context._business.registry.name_for(model)).where(qb.in_(model.__state__, states), qb.gt('id', last))
@@ -701,8 +720,9 @@ def awaiting(context, model):
         last = batch[-1].id
         ids += [record.id for record in batch if any(
             record._values.get(model.__state__) in rule.sources and who_may(context, model, record, rule) is not False
-            and waiting(context, model, record, rule)[0] is not None for rule in rules)]
-    return ids
+            and waiting(context, model, record, rule)[0] is not None and offered(record, rule) for rule in rules)]
+    # Row scopes: only the records this user may change.
+    return sorted(context._business.policy.visible(context._tx, context.user, model, ids, 'update')) if ids else []
 
 
 # Values a move asks for
@@ -1013,12 +1033,17 @@ def version_of(context, model, record):
     return {'number': last['number'], 'released': changed is None, 'state': last['state']}
 
 
-def changes_base(connection, registry, model, record_id, data):
-    """`base` of a journal entry: the latest release's number when the entry changes versioned content (a field
-    that is not versioned=False, or Table rows), else None. "Changes after v2" are the entries with base 2."""
+def touches_versioned(model, data):
+    """Whether a journal entry's changes touch versioned content: a field that is not versioned=False, or rows."""
     fields = model.__fields__
-    if not releasing(model) or not data.get('rows') and not any(
-            name in fields and fields[name].versioned and name != model.__state__ for name in data.get('fields', {})):
+    return bool(data.get('rows')) or any(name in fields and fields[name].versioned and name != model.__state__
+                                         for name in data.get('fields', {}))
+
+
+def changes_base(connection, registry, model, record_id, data):
+    """`base` of a journal entry: the latest release's number when the entry changes versioned content, else None.
+    "Changes after v2" are the entries with base 2."""
+    if not releasing(model) or not touches_versioned(model, data):
         return None
     last = latest(connection, registry.name_for(model), record_id)
     return None if last is None else last['number']
@@ -1203,18 +1228,27 @@ def restorable(model, data, current, registry):
 
 
 def recreate(context, model, data, current):
-    """Insert the Table rows the release held that were deleted since, under their original ids."""
+    """Insert the Table rows the release held that were deleted since, under their original ids, with the checks of
+    a normal create: the row model's create permission, the fields this role may write, and readable Links."""
     from . import qb
     from .audit import created
     from .database import storage_columns
+    from .fields import Link
     from .identity import RecordId
-    registry = context._business.registry
+    registry, policy, user = context._business.registry, context._business.policy, context.user
     for child in (child for child in registry.children if child.parent is model):
         saved = {str(row.id): row for row in current._rows.get(child.name, ())}
         for index, row in enumerate(data.get('children', {}).get(child.name, ())):
             if row['id'] not in saved:
                 fields = {name: child.model.__fields__[name].clean(value) for name, value in row.items()
                           if name in child.model.__fields__ and value is not None}
+                policy.require(user, child.model, 'create')
+                denied = sorted(set(fields) - policy.fields(user, child.model, write=True))
+                if denied:
+                    raise AccessError(403, f'Your role cannot write {", ".join(denied)} on {child.label or child.name}, which the restore re-creates')
+                for name, value in fields.items():
+                    if isinstance(child.model.__fields__[name], Link):
+                        policy.record(context._tx, user, child.model.__fields__[name].target, value)
                 if 'evlet_position' in child.model.__fields__:
                     fields['evlet_position'] = index  # The write then places every row as the release listed them.
                 names, stored = storage_columns(child.model, {**fields, child.link: current.id}, child.model.__fields__)

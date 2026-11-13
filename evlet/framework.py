@@ -134,10 +134,18 @@ def _state_manager(connection, registry):
         raise SchemaError('These models have confirmable lifecycle rows but no State with those steps (draft, confirmed, '
                           'cancelled): ' + ', '.join(sorted(lost)) + '. Declare the State first, then migrate.')
     if connection.table_exists('evlet_document_revisions'):
-        for row in connection.run(qb.select('evlet_document_revisions').order_by('model', 'record_id', 'revision')).all():
+        rows = connection.run(qb.select('evlet_document_revisions').order_by('model', 'record_id', 'revision')).all()
+        missing = sorted({row['model'] for row in rows if getattr(registry.models.get(row['model']), '__state__', None) is None})
+        if missing:
+            raise SchemaError('These models have confirmable revisions but are gone or have no State: ' + ', '.join(missing)
+                              + '. Declare each with a State whose confirmed step is a release step, then migrate.')
+        for row in rows:
             model = registry.models[row['model']]
             document = versioned(model, json.loads(row['data'])['document'], registry)
-            current = connection.run(qb.select(registry.name_for(model), model.__state__).where(id=row['record_id'])).value() or 'draft'
+            # Every revision was a confirmation, so its release is in the confirmed step when the State has one.
+            choices = model.__declared_fields__[model.__state__].choices
+            current = 'confirmed' if 'confirmed' in choices else \
+                connection.run(qb.select(registry.name_for(model), model.__state__).where(id=row['record_id'])).value() or choices[0]
             for snapshot in (False, True):
                 store(connection, registry, model, row['record_id'], row['revision'] - 1, snapshot=snapshot, state=current, data=document
                       if snapshot else {'approvals': [], 'remark': None}, hash=digest(model, document, registry), actor=row['actor'])

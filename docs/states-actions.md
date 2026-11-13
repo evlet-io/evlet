@@ -134,7 +134,10 @@ State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="requi
 * Someone who approved a level cannot approve a later level of the same rule. The record's creator
   cannot approve unless the rule says `self_approve=True`.
 * Approvals belong to one stay in the state: leaving it (a reject, a withdraw) clears them, and a
-  resubmit starts at level 1.
+  resubmit starts at level 1. A change to versioned content while the record waits (an edit, an
+  action, a restore, a Recompute) clears them too, and the levels are decided again from the new
+  values: approvers always approve what the record says now. Changes to `versioned=False` fields
+  keep them.
 * A `reject=True` rule is offered only to the waiting level's approvers. Any other rule out of
   the state (such as a Withdraw by the submitter) follows its own `by`.
 * A rule whose levels all do not apply is an ordinary move for whoever may change the record.
@@ -142,7 +145,8 @@ State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="requi
   with a required remark).
 * `_moves` shows, for an approval, `level` (1 for the first), `pending` and `can_approve`; the
   schema's rule lists `levels` (`by`, `pending`, `guarded`) and `self_approve`.
-* `GET /api/{model}?awaiting=me` lists the records whose waiting level this user may approve now
+* `GET /api/{model}?awaiting=me` lists the records whose waiting level this user may approve now,
+  when the rule's `when` holds and the user may change the record
   ("Awaiting my approval"). It is computed from the rules and the journal, so approvals need the
   journal: `Meta.journal = None` with `levels` is refused.
 
@@ -345,7 +349,8 @@ entry (`data.number`, the remark), and the next release takes the next number.
 * It is refused while another record links to this one (a Link or a Reference, from it or its
   rows), naming them.
 * Table rows come back as the version had them: rows deleted since are created again under their
-  original ids, and rows added since are removed.
+  original ids (with the row model's create permission, the fields the role may write and readable
+  Links, as any create), and rows added since are removed.
 * `versioned=False` fields keep their current values. A field the model no longer has is dropped,
   and one added since takes its default. A unique value another record took since keeps the
   current value. The detail's `_restore` lists them: `{"version", "dropped", "kept"}`.
