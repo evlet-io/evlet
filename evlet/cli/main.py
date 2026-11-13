@@ -93,6 +93,12 @@ def parser():
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
         command.add_argument('--port', type=int, default=8000)
+    restart = commands.add_parser('restart', help="Check an instance, then restart its systemd service and wait until it answers")
+    restart.add_argument('instance')
+    restart.add_argument('--check', action='store_true', help='Run the checks only; restart nothing')
+    restart.add_argument('--yes', action='store_true', help='Restart without asking')
+    restart.add_argument('--service', metavar='NAME', help='The systemd unit to restart (default: evlet-<instance>)')
+    restart.add_argument('--timeout', type=float, default=30.0, help='Seconds to wait for /health after the restart (default: 30)')
     routes = commands.add_parser('routes', help='Print the resolved hosts and paths of an instance')
     routes.add_argument('instance')
     routes.add_argument('--port', type=int, default=8000, help='Development port shown in loopback origins')
@@ -345,6 +351,12 @@ def main(argv=None):
                 hosts.add(root, args.instance, args.host, args.root, apply=args.apply, ips=args.ip, port=args.port, routes_only=args.routes_only)
             else:
                 hosts.remove(root, args.instance, args.host, apply=args.apply, port=args.port, routes_only=args.routes_only)
+        elif args.command == 'restart':
+            from .restart import restart
+            if not 1 <= args.timeout <= 3600:
+                raise ValueError('Use a --timeout between 1 and 3600 seconds')
+            if not restart(root, args.instance, service=args.service, check_only=args.check, yes=args.yes, timeout=args.timeout):
+                raise SystemExit(1)
         elif args.command == 'routes':
             from ..instances import load_runtime
             app = load_runtime(root, args.instance, port=args.port)

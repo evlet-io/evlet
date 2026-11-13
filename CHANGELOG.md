@@ -6,6 +6,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **`evlet restart <instance>` checks before it restarts.** On a server set up with
+  `evlet setup --host --apply`, it checks that the instance loads, its apps match `apps.lock`
+  and import, its routes resolve, no framework or app migration is pending, and the
+  `evlet-<instance>` unit serves this instance. Only then does it show and run
+  `sudo systemctl restart`, wait for `/health` and say the site is back up. When a check
+  fails, the running service is left alone; pending migrations are refused with
+  `Run evlet migrate <instance> first`. When the site does not come back in 30 seconds, it
+  prints the last 20 journal lines. `--check` runs the checks only, `--yes` skips the
+  question, `--service` names another unit and `--timeout` changes the wait
+  ([docs/cli.md](docs/cli.md#restart-a-site-safely)).
+
 ### Changed
 
 - **`evlet controls grant` keeps the allowed networks set in Controls.** It used to clear them
