@@ -22,6 +22,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   fields were cached per role only. When a job, a schedule or start-up code checked a field
   first, a later request reused that answer, even for a field built from a `Meta.api = None`
   model that requests may not reach. Requests and trusted code now get separate answers.
+- **Mention emails on PostgreSQL.** A mention that should send an email now sends it. The
+  PostgreSQL adapter did not return the new inbox row's id, so every mention email was skipped
+  without an error. SQLite was not affected.
 
 ## 0.4.3 (12-11-2026)
 
