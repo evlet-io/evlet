@@ -223,32 +223,41 @@ class Unsaved:
         return 200, {'saved_at': now, 'size': size, 'dropped': dropped}, []
 
     def get(self, user, model, name, record_id):
-        key = (user.id, name, record_id)
-        with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT changes, base_revision, saved_at, size FROM evlet_unsaved WHERE user_id=? AND model=? AND record_id=?',
-                                        key).fetchone()
-            policy = self.business.policy
+        """The person's kept changes for one record, from a plain read. An entry that can no longer be used is
+        removed afterwards, in a short write of its own."""
+        answer, forget = self.read_entry(user, model, name, record_id)
+        if forget:
+            with self.database.transaction() as tx:
+                self.record_saved(tx.connection, user, name, record_id)
+        if isinstance(answer, AccessError):
+            raise answer
+        return 200, answer, []
+
+    def read_entry(self, user, model, name, record_id):
+        """(answer, forget) from one read snapshot. The answer is the response body, or the AccessError to raise
+        when the person can't read the record any more. `forget` is True when the stored entry should go."""
+        from .database import Session
+        business, policy = self.business, self.business.policy
+        nothing = {'entry': None, 'dropped': []}
+        with self.database._connection() as connection:
+            connection.execute('BEGIN')
+            tx = Session(connection, self.database.registry, self.database.timezone)
+            tx._business = business
+            row = connection.execute('SELECT changes, base_revision, saved_at, size FROM evlet_unsaved WHERE user_id=? AND model=? AND record_id=?',
+                                     (user.id, name, record_id)).fetchone()
             try:
                 record = policy.record(tx, user, model, record_id, 'read')
             except AccessError as exc:
                 # The person can't see the record any more: the entry goes, and the answer is the record's.
-                refused = exc
-                self.record_saved(tx.connection, user, name, record_id)
-            else:
-                refused = None
-        if refused is not None:
-            raise refused
-        with self.database.transaction() as tx:
+                return exc, row is not None
             if row is None:
-                return 200, {'entry': None, 'dropped': []}, []
+                return nothing, False
             if row['saved_at'] < int(time.time()) - self.limit('unsaved.server_days') * DAY:
-                self.record_saved(tx.connection, user, name, record_id)
-                return 200, {'entry': None, 'dropped': []}, []
+                return nothing, True
             try:
                 policy.record(tx, user, model, record_id, 'update')
             except AccessError:
-                self.record_saved(tx.connection, user, name, record_id)
-                return 200, {'entry': None, 'dropped': 'record'}, []
+                return {'entry': None, 'dropped': 'record'}, True
             dropped = []
             try:
                 stored = json.loads(row['changes'])
@@ -256,11 +265,10 @@ class Unsaved:
                 stored = {}
             changes = self.clean(user, model, stored, '', dropped, strict=False)
             if empty(changes):
-                self.record_saved(tx.connection, user, name, record_id)
-                return 200, {'entry': None, 'dropped': dropped or 'record'}, []
-            stale = row['base_revision'].encode() != self.business.record_revision(tx, user, record)
-        return 200, {'entry': {'changes': changes, 'base_revision': row['base_revision'], 'saved_at': row['saved_at'],
-                               'size': row['size'], 'stale': stale}, 'dropped': dropped}, []
+                return {'entry': None, 'dropped': dropped or 'record'}, True
+            stale = row['base_revision'].encode() != business.record_revision(tx, user, record)
+        entry = {'changes': changes, 'base_revision': row['base_revision'], 'saved_at': row['saved_at'], 'size': row['size'], 'stale': stale}
+        return {'entry': entry, 'dropped': dropped}, False
 
     def clean(self, user, model, node, prefix, dropped, *, strict, added=False):
         """Only the fields and rows the person may write now. Unknown names are refused (strict) or dropped."""
