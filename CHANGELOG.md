@@ -36,6 +36,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   an admin now sets it up as an Email sending or Email receiving connector in Controls. Admin
   connectors still accept private addresses. `evlet.connectors.safe_address` takes a new
   `public=True` argument for addresses typed in by people who are not admins.
+- **The shared formula fixtures check results, not internal counters.** The browser and
+  server engines must still agree on values, states, causes, rule states, Link lookup
+  requests, refused commands and which results changed. They no longer have to evaluate
+  formulas in the same order or count the same steps. Nothing changes for apps.
 - **Eva asks before every change once a chat has read stored data.** Records, journals,
   reports and files can hold text written to steer Eva. After a chat has read any of them,
   every create, update, move or action asks first, even when Controls → AI → Eva says "Never
