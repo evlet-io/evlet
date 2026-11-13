@@ -79,6 +79,14 @@ field people fill in`. The surface carries it as `"focus"` only when it is set.
 `source` is the source record inside the slip (`self.source`), not a field. Every slip defines
 `hand_in()` or sets `becomes`, not both. Definitions are checked when the application starts.
 
+Slip fields use the string rules: `visible_if`, `required_if`, `read_only_if` and
+`compute="..."`. Slips do not run finite expressions yet ([finite-calculations.md](finite-calculations.md)).
+A slip field, or a field of its table rows, that declares `F(...)` in `compute`, `initial`,
+`applies_when`, `required_when` or `locked_when` is refused when the class is defined, for
+example `StartJob.rate: dialogs, reports and slips do not run finite expressions yet; use the
+string rules visible_if, required_if, read_only_if and compute='...' for now`. The same holds for
+report filters and dialogs.
+
 ## Outcomes
 
 `hand_in()` returns an `Outcome`, `present(...)`, a dict or `None`:

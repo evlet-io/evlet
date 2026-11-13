@@ -54,6 +54,17 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Eva's provider client no longer follows redirects.** A redirect from the AI provider (or
   from the Controls connector test) is now an error, so the API key is never sent to another
   address.
+- **One rule for kept results.** The save, the draft preview (`/api/_draft`), a record's detail
+  and a trusted Session settle now use one internal rule to decide whether a saved document
+  keeps its stored results. Before, the preview and the detail left out confirmed and
+  cancelled confirmable documents, so they could show recalculated values (for example a price
+  read through a Link that changed after confirmation) that the save would not keep. A trusted
+  Session write still keeps only posted results, as before; the reason is written next to it.
+- **Slips, report filters and dialogs refuse finite expressions.** They run the string rules and
+  have no finite plan yet, so `applies_when=` and the other finite rules were silently ignored and
+  `compute=F(...)` failed with a server error when the form was checked. Declaring one now raises
+  `ValueError` when the class is defined, naming the field and pointing to `visible_if`,
+  `required_if`, `read_only_if` and `compute='...'`. Move any such field to the string rules.
 
 ## 0.4.3 (12-11-2026)
 
