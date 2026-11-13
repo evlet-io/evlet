@@ -8,6 +8,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **`evlet controls grant` keeps the allowed networks set in Controls.** It used to clear them
+  every time and only its output said so. Now it clears them only with `--clear-allowlist`. When
+  networks remain, it lists them, and on an SSH session it says whether the address you
+  connected from is outside them and you are still locked out. **What to change:** if you rely
+  on the command to reopen Controls from anywhere, add `--clear-allowlist`
+  ([docs/controls.md](docs/controls.md#access)).
+
 - **Personal mailboxes reach only public mail servers.** A mailbox a person connects with a
   password must use a public address, SSL/TLS or STARTTLS, and the standard mail ports. Private
   ranges such as 10.x, 192.168.x, 100.64.x and fc00::, and servers on this machine, are refused
@@ -18,6 +25,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `public=True` argument for addresses typed in by people who are not admins.
 
 ### Fixed
+
+- **Connector commands after logout say you're signed out.** `evlet describe` and `evlet mcp`
+  with a removed session file printed a raw `[Errno 2] No such file` error. They now say you're
+  signed out and show the `evlet login` command to run; `evlet logout` again says you're already
+  signed out.
+- **The upgrade docs mention `evlet backup` and `evlet restore`.** `docs/app-upgrades.md` still
+  said there was no restore command. It now shows both commands and how to go back after a
+  migration.
 
 - **The draft preview no longer shows records you can't read.** `POST /api/_draft/{Model}`
   returned the id behind a Link or Reference even when a row rule hid that record, while a

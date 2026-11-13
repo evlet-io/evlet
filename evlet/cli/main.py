@@ -1,6 +1,7 @@
 """Create apps, manage isolated instances, and use the bundled development tools."""
 
 import argparse
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -131,6 +132,8 @@ def parser():
     controls_grant = controls_commands.add_parser('grant', help='Make a user an active admin; audited as cli')
     controls_grant.add_argument('instance')
     controls_grant.add_argument('username')
+    controls_grant.add_argument('--clear-allowlist', action='store_true',
+                                help='Also clear the allowed networks set in Controls')
     controls_grant.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     users = commands.add_parser('users', help='Account recovery from the server shell')
     users_commands = users.add_subparsers(dest='users_command', required=True)
@@ -387,12 +390,27 @@ def main(argv=None):
                 app.database.close()
         elif args.command == 'controls':
             from .project import child
-            from ..controls import grant
+            from ..controls import grant, shell_address, within
             from ..instances import read_instance, read_routes
             path = child(root, 'instances', args.instance)
             read_instance(path)
-            grant(path / 'data/database.sqlite3', args.username)
-            print(f'{args.username} is now an active admin. Allowed networks set in Controls were cleared.')
+            networks = grant(path / 'data/database.sqlite3', args.username, clear_allowlist=args.clear_allowlist)
+            print(f'{args.username} is now an active admin.')
+            if networks and args.clear_allowlist:
+                print(f'Allowed networks set in Controls were cleared: {", ".join(map(str, networks))}.')
+            elif networks:
+                listed = ", ".join(map(str, networks))
+                address = shell_address(os.environ)
+                if address is None:
+                    print(f'Controls still opens only from {listed} (allowed networks set in Controls). '
+                          f'If you open it from another address you are still locked out: run this again with --clear-allowlist.')
+                elif within(address, networks):
+                    print(f'Controls still opens only from {listed} (allowed networks set in Controls). '
+                          f'Your SSH address {address} is in them.')
+                else:
+                    print(f'Controls still opens only from {listed} (allowed networks set in Controls), '
+                          f'and your SSH address {address} is not in them, so you are still locked out. '
+                          f'Run this again with --clear-allowlist to clear them.')
             try:
                 limits = getattr((read_routes(path) or {}).get('controls'), 'allow_ips', ())
             except Exception:

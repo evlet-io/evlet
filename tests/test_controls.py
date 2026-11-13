@@ -290,6 +290,68 @@ def test_break_glass_grant_makes_an_active_admin_with_a_cli_audit_row(project):
         assert db.execute('SELECT actor, area, target FROM evlet_audit').fetchall() == [('cli', 'Users', 'mariam')]
 
 
+def _allowlisted(project):
+    install(project, 'acme', app_name='notes', trust=True)
+    app = runtime(project)
+    try:
+        app.business.auth.create_user(username='mariam', password=PASSWORD, role='viewer')
+    finally:
+        app.database.close()
+    with sqlite3.connect(project / 'instances/acme/data/database.sqlite3') as db:
+        db.execute("INSERT INTO evlet_overrides (kind, key, value) VALUES ('setting', 'security.controls_ips', ?)",
+                   (json.dumps(['10.0.0.0/8']),))
+
+
+def _stored_networks(project):
+    with sqlite3.connect(project / 'instances/acme/data/database.sqlite3') as db:
+        row = db.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key='security.controls_ips'").fetchone()
+        audit = db.execute("SELECT area FROM evlet_audit WHERE actor='cli'").fetchall()
+    return (json.loads(row[0]) if row else None), [area for (area,) in audit]
+
+
+@pytest.mark.parametrize('ssh,expected', [
+    ('203.0.113.9 50000 10.0.0.2 22', 'your SSH address 203.0.113.9 is not in them, so you are still locked out. Run this again with --clear-allowlist'),
+    ('10.1.2.3 50000 10.0.0.2 22', 'Your SSH address 10.1.2.3 is in them.'),
+    (None, 'If you open it from another address you are still locked out: run this again with --clear-allowlist.'),
+])
+def test_grant_keeps_allowed_networks_and_says_whether_they_lock_you_out(project, monkeypatch, capsys, ssh, expected):
+    _allowlisted(project)
+    monkeypatch.delenv('SSH_CLIENT', raising=False)
+    if ssh is None:
+        monkeypatch.delenv('SSH_CONNECTION', raising=False)
+    else:
+        monkeypatch.setenv('SSH_CONNECTION', ssh)
+    capsys.readouterr()
+    main(['controls', 'grant', 'acme', 'mariam', '--project', str(project)])
+    output = capsys.readouterr().out
+    assert 'mariam is now an active admin.' in output
+    assert 'Controls still opens only from 10.0.0.0/8' in output and expected in output
+    assert 'cleared' not in output
+    assert _stored_networks(project) == (['10.0.0.0/8'], ['Users'])
+
+
+def test_grant_clears_allowed_networks_only_with_the_flag(project, capsys):
+    _allowlisted(project)
+    capsys.readouterr()
+    main(['controls', 'grant', 'acme', 'mariam', '--clear-allowlist', '--project', str(project)])
+    output = capsys.readouterr().out
+    assert 'Allowed networks set in Controls were cleared: 10.0.0.0/8.' in output
+    assert 'still' not in output.replace('routes.py still', '')
+    assert _stored_networks(project) == (None, ['Users', 'Security'])
+
+
+def test_grant_without_allowed_networks_says_nothing_about_them(project, capsys):
+    install(project, 'acme', app_name='notes', trust=True)
+    app = runtime(project)
+    try:
+        app.business.auth.create_user(username='mariam', password=PASSWORD, role='viewer')
+    finally:
+        app.database.close()
+    capsys.readouterr()
+    main(['controls', 'grant', 'acme', 'mariam', '--project', str(project)])
+    assert capsys.readouterr().out.strip() == 'mariam is now an active admin.'
+
+
 def test_an_override_set_is_atomic_and_reports_each_invalid_item(secured):
     admin = client(secured)
     before = version(secured)

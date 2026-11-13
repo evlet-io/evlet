@@ -44,7 +44,13 @@ def run(args):
                 raise
             print('Signed in. Session saved privately; password was not stored.')
             return
-        client = HTTPClient.load(args.session)
+        try:
+            client = HTTPClient.load(args.session)
+        except FileNotFoundError:
+            if args.command == 'logout':
+                raise ValueError(f"You're already signed out: there is no session file at {args.session}.") from None
+            raise ValueError(f"You're signed out: there is no session file at {args.session}. "
+                             f"Run evlet login --url <url> --username <username> --session {args.session} first.") from None
         if args.command == 'mcp':
             MCPServer(client, allow_writes=args.allow_writes).serve()
         elif args.command == 'describe':
