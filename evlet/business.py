@@ -800,7 +800,7 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         method = scope['method']
-        if len(parts) >= 5 and parts[4] in ('release', 'versions'):
+        if len(parts) >= 5 and parts[4] in ('release', 'restore', 'versions'):
             from .statemanager import route
             return route(self, scope, body, user, model, parts)
         if len(parts) == 5 and parts[4] == 'history':

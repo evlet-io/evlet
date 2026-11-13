@@ -369,7 +369,12 @@ class Context:
         from .statemanager import version_diff
         return version_diff(self, self._model(model), known_id(record_id), first, second)
 
-    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, release=False):
+    def restore(self, model, record_id, *, version, remark):
+        """Restore a release's content as a new change; the same checks as POST /api/{model}/{id}/restore."""
+        from .statemanager import restore
+        return restore(self, self._model(model), known_id(record_id), version, remark)
+
+    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, release=False, restored=None):
         if self.readonly:
             raise AccessError(403, 'This context is read only')
         model = self._model(model)
@@ -383,7 +388,8 @@ class Context:
         self._active.append(key)
         try:
             with self._savepoint():
-                return operate(self, model, record_id, values, action=action, arguments=arguments, move=move, remark=remark, release=release)
+                return operate(self, model, record_id, values, action=action, arguments=arguments, move=move, remark=remark, release=release,
+                               restored=restored)
         except ValidationError as exc:
             raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:
@@ -1637,7 +1643,7 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     return tx.get(model, draft.id) if reload else None
 
 
-def operate(context, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, release=False):
+def operate(context, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, release=False, restored=None):
     """Create, update, run an action or make a move through the document pipeline, in one transaction.
 
     Ordinary writes respect a locked State. Actions and moves are declared, role-checked code: they may
@@ -1780,7 +1786,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     elif release:
         pass
     else:
-        journal.written(context, model, record.id, before, draft, action=action,
+        journal.written(context, model, record.id, before, draft, action=action, restored=restored,
                         entering=statemanager.entering(context, model, record) if before is None else None)
     for name, number in numbers:
         sequences.assigned(context, model, record.id, name, number)

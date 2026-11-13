@@ -67,6 +67,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   are lazy and drift is detected. `_version` in details; `GET .../versions`, `.../versions/{n}`
   and `.../versions/{a}/diff/{b|current}`. Framework step `0011_state_manager` converts
   confirmable lifecycle and revision rows and backfills v0 for records already in a release step.
+- Restore: `POST /api/{model}/{id}/restore` with `{version, remark}` (`restore` permission, unlocked
+  steps only) writes a release's content back as a new change, re-creating deleted rows under their
+  ids; it is refused while other records link to the document.
 - Approval levels: `State.Rule(..., levels=(State.Level(by=, when=, pending=), ...),
   self_approve=)` moves once the last level that applies is approved; each approval is an
   `approved` journal entry. `reject=True` rules are for the waiting level's approvers.

@@ -280,16 +280,21 @@ def journals(context, model):
     return model in context._business.journals
 
 
-def written(context, model, record_id, before, after, *, action=None, entering=None):
+def written(context, model, record_id, before, after, *, action=None, entering=None, restored=None):
     """`created` or `changed` after a document write (create, update, action, revision copy)."""
     if not journals(context, model):
         return
     data = tree_changes(context._business, model, before, after)
     if action is not None:
         data['action'] = action
-    if before is None or data:
-        from .statemanager import changes_base
-        base = None if before is None else changes_base(context._tx.connection, context._business.registry, model, record_id, data)
+    from .statemanager import changes_base
+    base = None if before is None else changes_base(context._tx.connection, context._business.registry, model, record_id, data)
+    if restored is not None:
+        # A restore: {"number": the version restored} with the remark, building on the latest release.
+        number, remark = restored
+        append(context._business, context._tx, context.user, model, record_id, 'restored', {**data, 'number': number}, remark=remark,
+               base=base)
+    elif before is None or data:
         data.update(entering or {})
         append(context._business, context._tx, context.user, model, record_id, 'created' if before is None else 'changed', data, base=base)
 

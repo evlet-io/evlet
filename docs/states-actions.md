@@ -332,6 +332,26 @@ or deleted.
   confirmable revisions into releases with their snapshots and gives every record already in a
   release step a v0 release.
 
+### Restore
+
+`POST /api/{model}/{id}/restore` with `{"version": 1, "remark": "..."}` (If-Match;
+`context.restore(model, id, version=1, remark=...)`) writes version 1's content onto the
+document as a new change, then recalculates, so values read from linked records stay current. It
+moves forward: nothing in the history or the releases changes, the journal gets a `restored`
+entry (`data.number`, the remark), and the next release takes the next number.
+
+* It needs the `restore` permission (admin by default) and a remark, and the record must be in an
+  unlocked step; otherwise it answers 409 "Move back to an editable state first".
+* It is refused while another record links to this one (a Link or a Reference, from it or its
+  rows), naming them.
+* Table rows come back as the version had them: rows deleted since are created again under their
+  original ids, and rows added since are removed.
+* `versioned=False` fields keep their current values. A field the model no longer has is dropped,
+  and one added since takes its default. A unique value another record took since keeps the
+  current value. The detail's `_restore` lists them: `{"version", "dropped", "kept"}`.
+* Sequence numbers, the name and calculated values are not restored; calculations run again.
+* Attachments are not versioned.
+
 Effects are not tied to releases: rows post when the record enters the effect's `on` step and are
 reversed when a rule leaves it, so an unchanged reissue posts again after its reversal and the
 rows always match the record. A `@release` hook runs only for a real release.
@@ -599,6 +619,6 @@ include keys that are not part of the ETag:
 
 ## Not yet
 
-* Restore (0.4.6, PR 4); rules changed on an instance (PR 5).
+* Rules changed on an instance (0.4.6, PR 5).
 * Draft previews (`/api/_draft`) do not report the State lock; the save does. A preview of a
   locked or posted record shows the calculated values it keeps, like the save.

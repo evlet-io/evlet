@@ -1109,22 +1109,23 @@ def version_diff(context, model, record_id, first, second):
 
 
 def route(business, scope, body, user, model, parts):
-    """POST /api/{model}/{id}/release, GET .../versions, .../versions/{n} and .../versions/{a}/diff/{b or current}."""
+    """POST /api/{model}/{id}/release and .../restore ({version, remark}), GET .../versions, .../versions/{n} and .../versions/{a}/diff/{b or current}."""
     from .identity import path_id
     from .models import ValidationError, checked_body
     record_id = path_id(parts[3]) if len(parts) > 3 else None
     if record_id is None:
         raise AccessError(404, 'Record not found')
-    if parts[4] == 'release':
+    if parts[4] in ('release', 'restore'):
         if len(parts) != 5 or scope['method'] != 'POST':
             raise AccessError(405, 'Method not allowed')
-        checked_body(body, {'remark'}, 'Send only a remark')
+        checked_body(body, {'remark', 'version'} if parts[4] == 'restore' else {'remark'}, 'Send only a remark and, to restore, a version')
         with business.context(user) as context:
             record = business.policy.record(context._tx, user, model, record_id, 'update')
             if b'if-match' not in dict(scope.get('headers', [])):
                 raise AccessError(428, 'A current If-Match revision is required')
             business.check_revision(scope, context._tx, user, record)
-            result = context.release(model, record_id, remark=body.get('remark'))
+            result = context.release(model, record_id, remark=body.get('remark')) if parts[4] == 'release' else \
+                context.restore(model, record_id, version=body.get('version'), remark=body.get('remark'))
             extra = business.availability(context, model, context._tx.get(model, record_id))
         return 200, {**business.embedded(result), **extra}, [(b'etag', business.revision(result))]
     if scope['method'] != 'GET':
@@ -1142,3 +1143,105 @@ def route(business, scope, body, user, model, parts):
         if len(tail) == 3 and tail[1] == 'diff':
             return 200, context.version_diff(model, record_id, numbers[0], 'current' if tail[2] == 'current' else numbers[1]), []
     raise AccessError(404, 'Route not found')
+
+
+# Restore: a release's content written onto the document as a new change, forward only
+
+def dependents(context, model, record_id):
+    """Live documents that link to this one (a Link or a Reference, from them or their Table rows), as [(model, id)]."""
+    from . import qb
+    from .documents import owner_of
+    from .fields import Link, Reference
+    registry, connection = context._business.registry, context._tx.connection
+    owners = {child.model for child in registry.children}
+    found = {}
+    for other in registry.models.values():
+        table = registry.name_for(other)
+        for name, field in other.__declared_fields__.items():
+            if field.stored and isinstance(field, Link) and field.target is model:
+                query = qb.select(table, 'id').where(**{name: record_id})
+            elif field.stored and isinstance(field, Reference):
+                query = qb.select(table, 'id').where(**{name + '_model': registry.name_for(model), name + '_id': qb.value(record_id)})
+            else:
+                continue
+            for (found_id,) in connection.run(query).all():
+                root, root_id = (registry.root_of(other), owner_of(context._tx, other, found_id)) if other in owners else (other, found_id)
+                if root_id is not None and (root, root_id) != (model, record_id):
+                    found[root, root_id] = None
+    return list(found)
+
+
+def restorable(model, data, current, registry):
+    """(values, dropped): the release's source values for a write (Table rows as full lists) and the fields it held
+    that the model no longer has. A field added since takes its default; versioned=False fields are left out."""
+    from .calc import is_finite
+    from .naming import standard
+    values, dropped = {}, sorted(key for key in data if key not in ('id', 'children') and key not in model.__fields__)
+    for name, field in model.__fields__.items():
+        if not field.versioned or name == model.__state__ or field.compute is not None or field.query is not None or field.fetch \
+                or is_finite(field) or field.kind == 'sequence' or standard(field) or name in getattr(model, '__internal_fields__', ()):
+            continue
+        values[name] = data.get(name, None if field.default is MISSING or callable(field.default) else field.serialize(field.default))
+    tables = {child.name: child.model for child in registry.children if child.parent is model}
+    children = {}
+    for name, rows in data.get('children', {}).items():
+        if name in tables:
+            saved = {str(row.id): row for row in current._rows.get(name, ())}
+            children[name] = [{'id': row['id'], **restorable(tables[name], row, saved.get(row['id']) or current, registry)[0]} for row in rows]
+    if children:
+        values['children'] = children
+    return values, dropped
+
+
+def recreate(context, model, data, current):
+    """Insert the Table rows the release held that were deleted since, under their original ids."""
+    from . import qb
+    from .audit import created
+    from .database import storage_columns
+    from .identity import RecordId
+    registry = context._business.registry
+    for child in (child for child in registry.children if child.parent is model):
+        saved = {str(row.id): row for row in current._rows.get(child.name, ())}
+        for index, row in enumerate(data.get('children', {}).get(child.name, ())):
+            if row['id'] not in saved:
+                fields = {name: child.model.__fields__[name].clean(value) for name, value in row.items()
+                          if name in child.model.__fields__ and value is not None}
+                if 'evlet_position' in child.model.__fields__:
+                    fields['evlet_position'] = index  # The write then places every row as the release listed them.
+                names, stored = storage_columns(child.model, {**fields, child.link: current.id}, child.model.__fields__)
+                stamp_names, stamp_values = created(context._tx.actor)
+                context._tx.connection.run(qb.insert(registry.name_for(child.model), id=int(RecordId(row['id'])),
+                                                     **dict(zip([*names, *stamp_names], [*stored, *stamp_values]))))
+
+
+def restore(context, model, record_id, number, remark):
+    """Write release `number`'s content onto the record as a new change (logged `restored`), then recalculate."""
+    from .models import ValidationError
+    business, user = context._business, context.user
+    if not releasing(model) or not business.policy.allows(user, model, 'restore'):
+        raise AccessError(403, 'Your role cannot restore this record')
+    record = business.policy.record(context._tx, user, model, record_id, 'update')
+    if type(number) is not int:
+        raise ValidationError({'version': 'Use a version number'})
+    remark = clean_remark(remark)
+    if remark is None:
+        raise ValidationError({'remark': 'Restore needs a remark'})
+    if locked_state(model, record._values) is not None:
+        raise AccessError(409, 'Move back to an editable state first')
+    data = content_of(context, model, record_id, number)
+    found = dependents(context, model, record_id)
+    if found:
+        names = ', '.join(f'{other.__name__} {other_id}' for other, other_id in found[:5])
+        raise AccessError(409, f'Restore is blocked while other records depend on this one: {names}')
+    current = saved(context, model, record_id)
+    values, dropped = restorable(model, data, current, business.registry)
+    # A unique value another record has taken since stays as it is now, and is reported.
+    from . import qb
+    kept = [name for name, field in model.__fields__.items() if field.unique and values.get(name) is not None
+            and values[name] != field.serialize(current._values.get(name)) and context._tx.connection.run(
+                qb.select(business.registry.name_for(model), 'id').where(qb.ne('id', record_id), **{name: field.clean(values[name])})).one()]
+    for name in kept:
+        del values[name]
+    recreate(context, model, data, current)
+    result = context._write(model, record_id, values, restored=(number, remark))
+    return {**result, '_restore': {'version': number, 'dropped': dropped, 'kept': kept}}

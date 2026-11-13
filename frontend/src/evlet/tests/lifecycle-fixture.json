@@ -286,7 +286,8 @@
             "create": true,
             "update": true,
             "delete": true,
-            "release": true
+            "release": true,
+            "restore": true
           },
           "child_only": false,
           "children": [

@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from evlet import Child, Database, Integer, Model, Registry, Rule, State, Table, Text, ValidationError, release, state, validate
+from evlet import Child, Database, Integer, Link, Model, Registry, Rule, State, Table, Text, ValidationError, release, state, validate
 from evlet.identity import RecordId
 from evlet.auth import User
 from evlet.calc import F
@@ -631,3 +631,91 @@ def test_the_framework_step_converts_old_rows_and_backfills_v0(tmp_path):
     with pytest.raises(SchemaError, match='no State with those steps'):
         with app.database.schema_transaction() as connection:
             framework._state_manager(connection, app.database.registry)
+
+
+# Restore
+
+class Clause(Child):
+    text = Text(default='')
+
+
+class Contract(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'restore')), 'editor': Rule(('read', 'create', 'update'))}
+    code = Text(unique=True)
+    title = Text(default='')
+    note = Text(versioned=False)
+    days = Integer(default=30)
+    clauses = Table(Clause)
+    status = State(State.Step('draft'), State.Step('signed', lock=True, release=True),
+                   rules=(State.Rule('draft', 'signed', 'Sign', key='sign'), State.Rule('signed', 'draft', 'Reopen', key='reopen')))
+
+
+class Delivery(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+    contract = Link(Contract)
+
+
+@pytest.fixture
+def contracts(tmp_path):
+    app = start(Database(tmp_path / 'contracts.sqlite3', Registry(Contract, Delivery)))
+    c = client(app)
+    status, body, _ = c('POST', '/api/contract', {'code': 'C-1', 'title': 'First', 'note': 'n0',
+                                                  'children': {'clauses': [{'text': 'a'}, {'text': 'b'}]}})
+    assert status == 201, body
+    url = f"/api/contract/{body['id']}"
+    move(c, url, 'sign')
+    move(c, url, 'reopen')
+    return app, c, url
+
+
+def restore(c, url, body):
+    return c('POST', url + '/restore', body, headers=etag(c, url))
+
+
+def test_restore_moves_forward_with_the_release_content(contracts):
+    app, c, url = contracts
+    first = c('GET', url)[1]['children']['clauses']
+    c('PATCH', url, {'title': 'Second', 'note': 'n1', 'days': 60, 'children': {'clauses': [{'id': first[1]['id']}, {'text': 'c'}]}},
+      headers=etag(c, url))
+    status, body, _ = restore(c, url, {'version': 0, 'remark': 'Back to the signed terms'})
+    assert status == 200, body
+    assert (body['title'], body['days'], body['note']) == ('First', 30, 'n1')
+    # The clause deleted since comes back under its own id; the one added since is gone.
+    assert [(row['id'], row['text']) for row in body['children']['clauses']] == [(first[0]['id'], 'a'), (first[1]['id'], 'b')]
+    # A restore is a change after the latest release (v0 here), so the record reads as modified, with v0's content.
+    assert body['_restore'] == {'version': 0, 'dropped': [], 'kept': []} and body['_version'] == {'number': 0, 'released': False, 'state': 'signed'}
+    entry = c('GET', url + '/journal')[1]['items'][0]
+    assert (entry['kind'], entry['remark'], entry['data']['number']) == ('restored', 'Back to the signed terms', 0)
+    # Numbers only increase: v0's content signed again is no new release; changed and signed it is v1.
+    c('PATCH', url, {'title': 'Third'}, headers=etag(c, url))
+    assert move(c, url, 'sign')[1]['_version']['number'] == 1
+
+
+def test_restore_refusals(contracts):
+    app, c, url = contracts
+    editor = add_user(app, 'editor')
+    assert restore(editor, url, {'version': 0, 'remark': 'x'})[0] == 403
+    assert restore(c, url, {'version': 0})[1]['fields'] == {'remark': 'Restore needs a remark'}
+    assert restore(c, url, {'version': 4, 'remark': 'x'})[0] == 404
+    assert restore(c, url, {'version': 'v0', 'remark': 'x'})[0] == 422
+    move(c, url, 'sign')
+    assert restore(c, url, {'version': 0, 'remark': 'x'})[:2] == (409, {'error': 'Move back to an editable state first'})
+    move(c, url, 'reopen')
+    c('POST', '/api/delivery', {'contract': url.rsplit('/', 1)[1]})
+    status, body, _ = restore(c, url, {'version': 0, 'remark': 'x'})
+    assert status == 409 and body['error'].startswith('Restore is blocked while other records depend on this one: Delivery')
+
+
+def test_restore_keeps_a_unique_value_taken_since_and_reports_fields(contracts):
+    app, c, url = contracts
+    c('PATCH', url, {'code': 'C-2'}, headers=etag(c, url))
+    c('POST', '/api/contract', {'code': 'C-1'})
+    body = restore(c, url, {'version': 0, 'remark': 'x'})[1]
+    assert body['code'] == 'C-2' and body['_restore']['kept'] == ['code']
+    # A field the release held that the model lost is dropped and listed; one added since takes its default.
+    from evlet.statemanager import restorable
+    with app.business.context(ADMIN) as context:
+        current = context._tx.get(Contract, url.rsplit('/', 1)[1])
+        current._rows = {}
+        values, dropped = restorable(Contract, {'id': 'x', 'gone': 1, 'title': 'T', 'children': {}}, current, app.database.registry)
+    assert dropped == ['gone'] and values['title'] == 'T' and values['days'] == 30 and 'note' not in values
