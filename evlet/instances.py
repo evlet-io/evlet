@@ -10,13 +10,14 @@ from importlib.machinery import PathFinder, SourceFileLoader, SourcelessFileLoad
 import json
 import re
 import runpy
-import sqlite3
 import sys
 from zoneinfo import ZoneInfo
 from types import SimpleNamespace
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .app import Application
-from .database import Database
+from .database import Database, POSTGRESQL_REMOVED
 from .events import EventStore
 from .jobs import JobQueue
 from .auth import LocalAuth
@@ -25,6 +26,7 @@ from .migrations import Migration
 from .permissions import Policy
 from .models import Registry
 from .routing import resolve_routes
+from .writes import read_file
 
 
 @dataclass(frozen=True)
@@ -47,8 +49,10 @@ class Instance:
         valid_name(self.name)
         object.__setattr__(self, 'trusted_proxies', proxy_networks(self.trusted_proxies))
         ZoneInfo(self.timezone)
+        if self.database in ('postgres', 'postgresql'):
+            raise ValueError(POSTGRESQL_REMOVED)
         if self.database != 'sqlite':
-            raise ValueError('The instance CLI supports isolated SQLite databases; use the existing PostgreSQL API for separately configured databases')
+            raise ValueError('The instance CLI supports isolated SQLite databases')
         if self.storage != 'local':
             raise ValueError('The instance CLI supports local private file storage')
         if self.domain is not None and (not isinstance(self.domain, str) or not re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?', self.domain) or '..' in self.domain):
@@ -184,17 +188,21 @@ def read_lock(path):
     return value
 
 
+# The installed apps and Evlet version, one row written by evlet install and evlet migrate (evlet/cli/install.py).
+INSTALLED_APPS = TableDefinition('evlet_installed_apps', (Column('id', 'INTEGER', primary=True), Column('manifest', 'TEXT', required=True)),
+                                 checks=(qb.eq('id', 1),))
+
+
 def database_state(database):
     if not database.exists():
         return {'apps': {}}
-    with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as connection:
-        exists = connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_installed_apps'").fetchone()
-        if not exists:
+    with closing(read_file(database)) as connection:
+        if not connection.table_exists('evlet_installed_apps'):
             raise ValueError('Database is not managed by this instance installer; do not adopt existing customer databases implicitly')
-        row = connection.execute('SELECT manifest FROM evlet_installed_apps WHERE id=1').fetchone()
-        if not row:
+        manifest = connection.run(qb.select('evlet_installed_apps', 'manifest').where(id=1)).value()
+        if manifest is None:
             raise ValueError('Instance installation record is missing')
-        return json.loads(row[0])
+        return json.loads(manifest)
 
 
 def require_consistent(path):
@@ -327,9 +335,9 @@ def migration_plan(definitions, database):
             available[key] = Migration(key, *migration.operations)
     existing = []
     if database.exists():
-        with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as connection:
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_migrations'").fetchone():
-                existing = [row[0] for row in connection.execute('SELECT name FROM evlet_migrations ORDER BY position')]
+        with closing(read_file(database)) as connection:
+            if connection.table_exists('evlet_migrations'):
+                existing = [row[0] for row in connection.run(qb.select('evlet_migrations', 'name').order_by('position'))]
     if set(existing) - available.keys():
         raise ValueError('An installed app removed migration history')
     # Interleaved releases of several apps retain the database's applied prefix.
@@ -406,19 +414,21 @@ def register_schedules(app, schedules):
     import time
     calendar_names = {schedule.name for schedule in schedules if isinstance(schedule, CalendarSchedule)}
     with app.database.transaction() as tx:
-        for row in tx.connection.execute('SELECT name FROM evlet_calendar_schedules').fetchall():
+        for row in tx.connection.run(qb.select('evlet_calendar_schedules', 'name')).all():
             # Eva's scheduled tasks belong to people, not to an app release (evlet.eva).
             if row['name'] not in calendar_names and not row['name'].startswith('eva_task_'):
                 # Only an active schedule is retired, so an operator-disabled one stays disabled when restored.
-                tx.connection.execute('UPDATE evlet_calendar_schedules SET retired=1 WHERE name=? AND retired=0 AND EXISTS (SELECT 1 FROM evlet_schedules WHERE name=? AND enabled=1)', (row['name'], row['name']))
-                tx.connection.execute('UPDATE evlet_schedules SET enabled=0 WHERE name=?', (row['name'],))
+                tx.connection.run(qb.update('evlet_calendar_schedules', retired=1).where(
+                    qb.eq('name', row['name']), qb.eq('retired', 0),
+                    qb.exists(qb.select('evlet_schedules', qb.value(1)).where(name=row['name'], enabled=1))))
+                tx.connection.run(qb.update('evlet_schedules', enabled=0).where(name=row['name']))
     for schedule in schedules:
         if isinstance(schedule, CalendarSchedule):
             zone = schedule.timezone or getattr(app.business, 'timezone', 'UTC')
             calendar = Calendar(schedule.expression, zone)
             with app.database.transaction() as tx:
-                old = tx.connection.execute('SELECT * FROM evlet_calendar_schedules WHERE name=?', (schedule.name,)).fetchone()
-                existing = tx.connection.execute('SELECT name FROM evlet_schedules WHERE name=?', (schedule.name,)).fetchone()
+                old = tx.connection.run(qb.select('evlet_calendar_schedules').where(name=schedule.name)).one()
+                existing = tx.connection.run(qb.select('evlet_schedules', 'name').where(name=schedule.name)).one()
             if not existing:
                 app.business.jobs.schedule(schedule.name, schedule.task, {}, every=60, start_at=calendar.next(int(time.time())),
                                            calendar=(schedule.expression, zone))
@@ -427,16 +437,17 @@ def register_schedules(app, schedules):
                 raise ValueError('Calendar schedule collides with an interval schedule')
             with app.database.transaction() as tx:
                 if old['retired']:
-                    tx.connection.execute('UPDATE evlet_schedules SET enabled=1 WHERE name=?', (schedule.name,))
+                    tx.connection.run(qb.update('evlet_schedules', enabled=1).where(name=schedule.name))
                 if old['retired'] or (old['expression'], old['timezone']) != (schedule.expression, zone):
-                    tx.connection.execute('UPDATE evlet_calendar_schedules SET expression=?, timezone=?, retired=0 WHERE name=?', (schedule.expression, zone, schedule.name))
-                    tx.connection.execute('UPDATE evlet_schedules SET next_run=? WHERE name=?', (calendar.next(int(time.time())), schedule.name))
-                tx.connection.execute('UPDATE evlet_schedules SET task=? WHERE name=? AND task<>?', (schedule.task, schedule.name, schedule.task))
+                    tx.connection.run(qb.update('evlet_calendar_schedules', expression=schedule.expression, timezone=zone, retired=0)
+                                      .where(name=schedule.name))
+                    tx.connection.run(qb.update('evlet_schedules', next_run=calendar.next(int(time.time()))).where(name=schedule.name))
+                tx.connection.run(qb.update('evlet_schedules', task=schedule.task).where(qb.eq('name', schedule.name), qb.ne('task', schedule.task)))
             continue
         if not isinstance(schedule, Schedule):
             raise ValueError('Register Schedule definitions')
         with app.database.transaction() as tx:
-            row = tx.connection.execute('SELECT task,payload,interval FROM evlet_schedules WHERE name=?', (schedule.name,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_schedules', 'task', 'payload', 'interval').where(name=schedule.name)).one()
         if row:
             if (row['task'], json.loads(row['payload']), row['interval']) != (schedule.task, schedule.payload, schedule.every):
                 raise ValueError(f'Schedule {schedule.name} changed; explicit schedule updates are not supported yet')

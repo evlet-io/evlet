@@ -14,16 +14,17 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
 import logging
-import sqlite3
 from types import MappingProxyType
 from zoneinfo import ZoneInfo
 
 from .fields import Link
 from .models import ValidationError
+from . import qb
+from .adapter import Column, TableDefinition
 
 logger = logging.getLogger('evlet.periods')
-TABLE = ('CREATE TABLE IF NOT EXISTS evlet_period_locks (scope TEXT PRIMARY KEY, lock_date TEXT NOT NULL, '
-         'changed_by INTEGER, changed_at INTEGER NOT NULL)')
+TABLE = TableDefinition('evlet_period_locks', (Column('scope', 'TEXT', primary=True), Column('lock_date', 'TEXT', required=True),
+                                              Column('changed_by', 'INTEGER'), Column('changed_at', 'INTEGER', required=True)))
 
 
 @dataclass(frozen=True)
@@ -52,9 +53,7 @@ def compile_periods(registry):
 
 
 def exists(connection, table):
-    if isinstance(connection, sqlite3.Connection):
-        return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
-    return bool(connection.execute('SELECT to_regclass(?) IS NOT NULL', (table,)).fetchone()[0])
+    return connection.table_exists(table)
 
 
 def saved(session):
@@ -63,7 +62,7 @@ def saved(session):
     if found is None:
         found = {}
         if exists(session.connection, 'evlet_period_locks'):
-            found = {row[0]: date.fromisoformat(row[1]) for row in session.connection.execute('SELECT scope, lock_date FROM evlet_period_locks')}
+            found = {row[0]: date.fromisoformat(row[1]) for row in session.connection.run(qb.select('evlet_period_locks', 'scope', 'lock_date'))}
         session._period_locks = found
     return found
 
@@ -155,17 +154,17 @@ def set_lock(connection, scope, value, actor):
     """Save (value is a date) or clear (None) one lock and write its audit row; returns the earlier date."""
     from .controls import audit
     import time as clock
-    row = connection.execute('SELECT lock_date FROM evlet_period_locks WHERE scope=?', (scope,)).fetchone()
+    row = connection.run(qb.select('evlet_period_locks', 'lock_date').where(scope=scope)).one()
     before = None if row is None else row[0]
     after = None if value is None else value.isoformat()
     if before == after:
         return before
     if after is None:
-        connection.execute('DELETE FROM evlet_period_locks WHERE scope=?', (scope,))
+        connection.run(qb.delete('evlet_period_locks').where(scope=scope))
     else:
-        connection.execute('INSERT INTO evlet_period_locks(scope,lock_date,changed_by,changed_at) VALUES (?,?,?,?) '
-                           'ON CONFLICT(scope) DO UPDATE SET lock_date=excluded.lock_date, changed_by=excluded.changed_by, '
-                           'changed_at=excluded.changed_at', (scope, after, actor.id, int(clock.time())))
+        changed_at = int(clock.time())
+        connection.run(qb.insert('evlet_period_locks', scope=scope, lock_date=after, changed_by=actor.id, changed_at=changed_at)
+                       .on_conflict('scope').do_update(lock_date=after, changed_by=actor.id, changed_at=changed_at))
     audit(connection, actor.username, 'Periods', scope or 'All records', 'Opened' if after is None else 'Locked up to ' + value.strftime('%d-%m-%Y'),
           before, after)
     return before

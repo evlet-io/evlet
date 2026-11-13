@@ -7,8 +7,8 @@ from contextlib import contextmanager
 import inspect
 import json
 import re
-import sqlite3
 
+from . import qb
 from .auth import AccessError, has_role
 from .database import ConflictError, ROW_LIMIT, conflict
 from .declarations import Ref
@@ -16,7 +16,7 @@ from .fields import CurrentUser, MISSING, Link
 from .identity import RecordId
 from .naming import drop_echoes
 from .permissions import trusted
-from .models import ASSIGNED_ID, ValidationError, identifier, refuse_id
+from .models import ASSIGNED_ID, ValidationError, refuse_id
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
 from .calc import CalcError, Document, LIMITS, MAX_HOPS, is_finite, to_decimal
@@ -275,14 +275,11 @@ class Context:
         if type(limit) is not int or not 1 <= limit <= ROW_LIMIT or type(offset) is not int or not 0 <= offset <= 2**63-1:
             raise ValidationError({'page': f'Use a page of 1 to {ROW_LIMIT} rows and a nonnegative offset'})
         query = SqlQuery(business.registry, model, children=business.children.values())
-        where, values = query.where(filters)
-        scoped, scope_values = business.policy.scope_sql(self.user, model)
-        if scoped:
-            where += (' AND ' if where else ' WHERE ') + scoped.removeprefix(' WHERE ')
-            values.extend(scope_values)
-        table = identifier(business.registry.name_for(model))
-        rows = tx.connection.execute(f'SELECT record.* FROM {table} AS record{where}{query.ordering(order_by)} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()
-        total = tx.connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
+        where = qb.and_(query.where(filters), business.policy.scope(self.user, model))
+        source = qb.table(business.registry.name_for(model), 'record')
+        page = qb.select(source).where(where).order_by(*query.ordering(order_by)).limit(limit).offset(offset)
+        rows = tx.connection.run(page).all()
+        total = tx.connection.run(qb.select(source, qb.count()).where(where)).value()
         return {'rows': business.policy.serialize_many(tx, self.user, [model._from_row(row) for row in rows]),
                 'total': total, 'limit': limit, 'offset': offset}
 
@@ -434,8 +431,8 @@ class Context:
         with tx.maintenance():
             tx.delete(model, record.id)
         if business.registry.plan_for(model) is not None:
-            tx.connection.execute('DELETE FROM evlet_calculation_versions WHERE resource=? AND record_id=?', (business.registry.name_for(model), record.id))
-        tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (business.registry.name_for(model), record_id))
+            tx.connection.run(qb.delete('evlet_calculation_versions').where(resource=business.registry.name_for(model), record_id=record.id))
+        tx.connection.run(qb.delete('evlet_attachments').where(model=business.registry.name_for(model), record_id=record_id))
         from .unsaved import Unsaved
         Unsaved.record_deleted(tx.connection, business.registry.name_for(model), record_id)
         reaction = getattr(model, 'changed', None)
@@ -476,22 +473,15 @@ class Context:
         """One document operation is all or nothing even when trusted code catches its failure and the
         outer transaction commits: any exception rolls back to a savepoint taken before it. A unique or
         foreign key violation surfaces as ConflictError, a unique Meta.indexes entry as ValidationError."""
-        connection, name = self._tx.connection, f'evlet_operation_{len(self._active)}'
-        connection.execute(f'SAVEPOINT {name}')
+        connection = self._tx.connection
         try:
-            yield
+            with connection.savepoint(f'evlet_operation_{len(self._active)}'):
+                yield
         except BaseException as exc:
-            try:
-                connection.execute(f'ROLLBACK TO SAVEPOINT {name}')
-                connection.execute(f'RELEASE SAVEPOINT {name}')
-            except Exception:
-                # The connection itself failed; the enclosing transaction rolls back.
-                raise exc from None
-            driver = getattr(self._business.database, 'driver', None)
-            if isinstance(exc, sqlite3.IntegrityError) or driver is not None and isinstance(exc, driver.IntegrityError):
-                raise conflict(self._business.registry, exc) from exc
+            failure = connection.integrity_failure(exc)
+            if failure is not None:
+                raise conflict(self._business.registry, failure) from exc
             raise
-        connection.execute(f'RELEASE SAVEPOINT {name}')
 
     def enqueue(self, task, payload, *, key=None, target=None, run_at=None):
         """Queue a registered Task in this context's transaction; returns its JobReceipt.
@@ -592,27 +582,28 @@ def row_bounds(business, child):
 def owned_rows(tx, child, owner_ids, *, scope=None, limit=None):
     """Rows of one owned collection for many owners, in position order: {owner_id: (records, total)}.
 
-    One statement per chunk of owner IDs. `scope` is a (where, values) row-scope clause from the
+    One statement per chunk of owner IDs. `scope` is a row-scope condition (Policy.scope) from the
     policy. With a limit each owner keeps its first `limit` rows while `total` counts them all.
     """
     from .permissions import CHUNK
     model = child.model
-    table, link = identifier(tx.registry.name_for(model)), identifier(child.link)
-    order = 'record."evlet_position", record.id' if 'evlet_position' in model.__fields__ else 'record.id'
-    where, values = scope or ('', [])
+    link = f'record.{child.link}'
+    order = ('record.evlet_position', 'record.id') if 'evlet_position' in model.__fields__ else ('record.id',)
+    scope = qb.TRUE if scope is None else scope
+    source = qb.table(tx.registry.name_for(model), 'record')
     ids, result = list(dict.fromkeys(owner_ids)), {}
     for start in range(0, len(ids), CHUNK):
         part = ids[start:start + CHUNK]
-        condition = f'{where} {"AND" if where else "WHERE"} record.{link} IN ({", ".join("?" for _ in part)})'
         if limit is None:
-            sql, parameters = f'SELECT record.* FROM {table} AS record{condition} ORDER BY record.{link}, {order}', [*values, *part]
+            query = qb.select(source).where(scope, qb.in_(link, part)).order_by(link, *order)
         else:
-            # Window functions (SQLite 3.25+, PostgreSQL) keep the first rows per owner and count them all.
-            sql = (f'SELECT * FROM (SELECT record.*, ROW_NUMBER() OVER (PARTITION BY record.{link} ORDER BY {order}) AS evlet_rank, '
-                   f'COUNT(*) OVER (PARTITION BY record.{link}) AS evlet_total FROM {table} AS record{condition}) AS ranked '
-                   f'WHERE ranked.evlet_rank <= ? ORDER BY ranked.{link}, ranked.evlet_rank')
-            parameters = [*values, *part, limit]
-        for row in tx.connection.execute(sql, parameters).fetchall():
+            # Window functions (SQLite 3.25+) keep the first rows per owner and count them all.
+            ranked = qb.select(source, qb.all_columns('record'),
+                               qb.named(qb.over(qb.row_number(), partition_by=[link], order_by=order), 'evlet_rank'),
+                               qb.named(qb.over(qb.count(), partition_by=[link]), 'evlet_total')).where(scope, qb.in_(link, part))
+            query = (qb.select(qb.from_query(ranked, 'ranked')).where(qb.le('ranked.evlet_rank', limit))
+                     .order_by(f'ranked.{child.link}', 'ranked.evlet_rank'))
+        for row in tx.connection.run(query).all():
             record = model._from_row(row)
             records, total = result.setdefault(getattr(record, child.link), ([], [0]))
             records.append(record)
@@ -1729,14 +1720,14 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     if has_title(model):
         draft._values['title'] = stored_values(model, draft._values, draft.id)['title']
     names, values = storage_columns(model, draft._values, model.__fields__)
-    table = identifier(tx.registry.name_for(model))
+    table = tx.registry.name_for(model)
     if draft.id is None:
         object.__setattr__(draft, 'id', insert(tx.connection, table, names, values, id_title=has_title(model), actor=tx.actor))
     else:
         from .audit import modified
         stamp_names, stamp_values = modified(tx.actor)
         names, values = [*names, *stamp_names], [*values, *stamp_values]
-        tx.connection.execute(f'UPDATE {table} SET {", ".join(identifier(name) + "=?" for name in names)} WHERE id=?', [*values, draft.id])
+        tx.connection.run(qb.update(table, **dict(zip(names, values))).where(id=draft.id))
     # Rich text and Image fields: link held images, refuse other records' and delete the ones no longer used.
     from . import images
     holders = images.holders(model)
@@ -1801,8 +1792,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if kept:
         plan = None
     if plan is not None and record_id:
-        row = tx.connection.execute('SELECT plan_hash FROM evlet_calculation_versions WHERE resource=? AND record_id=?',
-                                    (business.registry.name_for(model), record_id)).fetchone()
+        row = tx.connection.run(qb.select('evlet_calculation_versions', 'plan_hash')
+                                .where(resource=business.registry.name_for(model), record_id=record_id)).one()
         # No recorded version (saved outside the pipeline or before tracking) adopts the active plan.
         if row is not None and row[0] != version and context._recalculate != (model, record_id):
             raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
@@ -1928,8 +1919,7 @@ def owner_of(tx, model, record_id):
     owners = {child.model: child for child in tx.registry.children}
     while model in owners:
         child = owners[model]
-        row = tx.connection.execute(f'SELECT {identifier(child.link)} FROM {identifier(tx.registry.name_for(model))} WHERE id = ?',
-                                    (record_id,)).fetchone()
+        row = tx.connection.run(qb.select(tx.registry.name_for(model), child.link).where(id=record_id)).one()
         if row is None or row[0] is None:
             return None
         model, record_id = child.parent, row[0]
@@ -1970,9 +1960,8 @@ def settle_saved(tx, model, record_id, children=None):
 
 
 def record_plan(tx, resource, record_id, version):
-    tx.connection.execute('INSERT INTO evlet_calculation_versions(resource,record_id,plan_hash) VALUES (?,?,?) '
-                          'ON CONFLICT(resource, record_id) DO UPDATE SET plan_hash=excluded.plan_hash',
-                          (resource, record_id, version))
+    tx.connection.run(qb.insert('evlet_calculation_versions', resource=resource, record_id=record_id, plan_hash=version)
+                      .on_conflict('resource', 'record_id').do_update(plan_hash=qb.col('excluded.plan_hash')))
 
 
 def persist_rows(context, model, draft, before, owner_id, keys):
@@ -2041,12 +2030,10 @@ def persist_rows(context, model, draft, before, owner_id, keys):
 def write_positions(tx, model, positions):
     """Store new row positions, one statement per chunk of rows."""
     from .permissions import CHUNK
-    items, table = list(positions.items()), identifier(tx.registry.name_for(model))
+    items, table = list(positions.items()), tx.registry.name_for(model)
     for start in range(0, len(items), CHUNK):
-        part = items[start:start + CHUNK]
-        cases = ' '.join('WHEN ? THEN ?' for _ in part)
-        tx.connection.execute(f'UPDATE {table} SET "evlet_position" = CASE id {cases} END WHERE id IN ({", ".join("?" for _ in part)})',
-                              [value for item in part for value in item] + [row_id for row_id, _ in part])
+        part = dict(items[start:start + CHUNK])
+        tx.connection.run(qb.update(table, evlet_position=qb.case('id', part)).where(qb.in_('id', list(part))))
 
 
 def delete_rows(business, tx, model, record_ids):
@@ -2061,17 +2048,16 @@ def delete_rows(business, tx, model, record_ids):
     sections.forget(tx.connection, business.registry, model, ids)
     for child in business.children.values():
         if child.parent is model:
-            table, link = identifier(business.registry.name_for(child.model)), identifier(child.link)
+            table = business.registry.name_for(child.model)
             below = []
             for start in range(0, len(ids), CHUNK):
                 part = ids[start:start + CHUNK]
-                below.extend(row[0] for row in tx.connection.execute(
-                    f'SELECT id FROM {table} WHERE {link} IN ({", ".join("?" for _ in part)})', part).fetchall())
+                below.extend(row[0] for row in tx.connection.run(qb.select(table, 'id').where(qb.in_(child.link, part))))
             delete_rows(business, tx, child.model, below)
-    table = identifier(business.registry.name_for(model))
+    table = business.registry.name_for(model)
     for start in range(0, len(ids), CHUNK):
         part = ids[start:start + CHUNK]
-        tx.connection.execute(f'DELETE FROM {table} WHERE id IN ({", ".join("?" for _ in part)})', part)
+        tx.connection.run(qb.delete(table).where(qb.in_('id', part)))
 
 
 def typed_arguments(function, values, *, skip=0):

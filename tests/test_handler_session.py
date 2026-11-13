@@ -1,7 +1,7 @@
 """self.context.session: a Move run method or an @action handler writes through the move or action's own
 transaction (tx.lock, tx.insert_many, tx.reserve_ids, tx.aggregate), so the State, its Sequence number and
 every row written commit or roll back together. Every other context refuses it, including everything Eva,
-assistants, tools, MCP and the connector reach. Real SQLite and PostgreSQL, through the ASGI routes."""
+assistants, tools, MCP and the connector reach. Real SQLite, through the ASGI routes."""
 
 import pytest
 
@@ -9,11 +9,9 @@ from evlet import (Application, Column, Database, Integer, Link, Model, Move, Re
                    ValidationError, action, api)
 from evlet.auth import AccessError, KeyAccess, LocalAuth, User
 from evlet.connector import ConnectorError
-from evlet.postgres import PostgreSQLDatabase
 from evlet.services import Endpoint
 from evlet.tools import ApprovalNeeded
 from test_business import PASSWORD, client, http
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 # Contexts a handler gave away (kept by app code past its return); each must be closed afterwards.
@@ -121,13 +119,11 @@ def build(database):
     return app, client(app)
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def app(request, tmp_path):
+@pytest.fixture
+def app(tmp_path):
     KEPT.clear()
     registry = Registry(Transfer, Movement)
-    if request.param == 'sqlite':
-        return build(Database(tmp_path / 'handler.sqlite3', registry))
-    return build(PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry))
+    return build(Database(tmp_path / 'handler.sqlite3', registry))
 
 
 def stock(database, item='bolt', place='store', quantity=10):

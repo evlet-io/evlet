@@ -212,14 +212,21 @@ def test_declarations_are_checked_when_the_policy_is_built():
 
 
 def test_scope_conditions_compile_to_parameterized_sql():
+    from evlet import qb
+    from evlet.sqlite import Compiler
+
+    def compiled(condition):
+        compiler = Compiler()
+        return compiler.expression(condition), compiler.values
+
     registry = Registry(*MODELS)
     team = TEAM.team('employee')(User(1, 'u', 'viewer', (('employee', 4), ('employee', 2), ('customer', 9))))
-    sql, values = scope_condition(registry, Leave, team)
+    sql, values = compiled(scope_condition(registry, Leave, team))
     assert 'WITH RECURSIVE' in sql and values == [2, 4]
-    assert scope_condition(registry, Leave, {}) == (None, [])
-    assert scope_condition(registry, Leave, any_of({}, TEAM.team('employee'))(User(1, 'u', 'viewer'))) == (None, [])
-    assert scope_condition(registry, Leave, any_of(TEAM.team('employee'))(User(1, 'u', 'viewer'))) == ('(1=0)', [])
-    sql, values = scope_condition(registry, Leave, any_of({'days__gt': 3, 'public': True}, {'note': 'x'})(User(1, 'u', 'viewer')))
+    assert qb.always(scope_condition(registry, Leave, {}))
+    assert qb.always(scope_condition(registry, Leave, any_of({}, TEAM.team('employee'))(User(1, 'u', 'viewer'))))
+    assert compiled(scope_condition(registry, Leave, any_of(TEAM.team('employee'))(User(1, 'u', 'viewer')))) == ('(1=0)', [])
+    sql, values = compiled(scope_condition(registry, Leave, any_of({'days__gt': 3, 'public': True}, {'note': 'x'})(User(1, 'u', 'viewer'))))
     assert sql == '(("record"."days" > ? AND "record"."public" = ?) OR ("record"."note" = ?))'
     assert values[0] == 3 and values[1] in (1, True) and values[2] == 'x'
     with pytest.raises(ValueError, match='filter object'):
@@ -230,9 +237,11 @@ def test_sqlite_plan_walks_the_parent_index(tmp_path):
     app = serve(Database(tmp_path / 'plan.sqlite3', Registry(*MODELS)))
     people(app, reports=20)
     user = User(99, 'manager', 'viewer', (('employee', 2),))
-    where, values = app.business.policy.scope_sql(user, Payslip)
+    from evlet import qb
+    from evlet.sqlite import compile_statement
+    sql, values = compile_statement(qb.select(qb.table('payslip', 'record'), qb.count()).where(app.business.policy.scope(user, Payslip)))
     with app.database.transaction() as tx:
-        plan = [row[-1] for row in tx.connection.execute(f'EXPLAIN QUERY PLAN SELECT count(*) FROM payslip AS record{where}', values)]
+        plan = [row[-1] for row in tx.connection.execute('EXPLAIN QUERY PLAN ' + sql, values)]
     # The team is computed once (not per row), each level is an index lookup on reports_to, and the
     # team's payslips are found through the employee index.
     assert 'MATERIALIZE evlet_team' in plan, plan

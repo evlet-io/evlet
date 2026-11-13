@@ -1,14 +1,13 @@
-"""List page tabs (Meta.list_tabs, Meta.list_tab): validation, schema, and counts on real SQLite and PostgreSQL."""
+"""List page tabs (Meta.list_tabs, Meta.list_tab): validation, schema, and counts on real SQLite."""
 
 import json
 from urllib.parse import quote
 
 import pytest
 
-from evlet import Database, Link, Model, Move, PostgreSQLDatabase, Registry, Rule, Select, State, Text
+from evlet import Database, Link, Model, Move, Registry, Rule, Select, State, Text
 from evlet.ui.metadata import view_for
 from test_business import client
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 from test_rules_types import add_user, start
 
 ALL = Rule(('read', 'create', 'update', 'delete'))
@@ -59,13 +58,10 @@ class Note(Model):
 MODELS = (Team, Member, Ticket, Note)
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def app(request, tmp_path):
+@pytest.fixture
+def app(tmp_path):
     registry = Registry(*MODELS)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'tabs.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'tabs.sqlite3', registry)
     application = start(database)
     for role in ('viewer', 'editor'):
         add_user(application, role)

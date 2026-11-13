@@ -85,7 +85,7 @@ def test_eva_does_not_exist_until_config_controls_and_the_person_allow_it(tmp_pa
     person = client(plain, 'editor')
     assert person('GET', '/api/_eva')[0] == 404
     with plain.database._connection() as connection:
-        assert not plain.database.columns(connection, 'evlet_eva_conversations')
+        assert not connection.columns('evlet_eva_conversations')
     assert client(plain)('GET', '/api/_controls/eva')[1]['configured'] is False
     # Turned on in config.py but not yet in Controls.
     app = make(tmp_path / 'b', monkeypatch, hashed, enabled=False)

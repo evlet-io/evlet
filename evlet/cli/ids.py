@@ -16,6 +16,6 @@ def check_instance(root, name):
         app = load_runtime(root, name)
         try:
             with activate_generation(app), app.database.transaction() as tx:
-                return check_ids(tx.connection, getattr(app.database, 'driver', None) is not None, app.database.registry)
+                return check_ids(tx.connection, app.database.registry)
         finally:
             app.database.close()

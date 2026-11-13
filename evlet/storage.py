@@ -6,6 +6,9 @@ import re
 import secrets
 import stat
 
+from . import qb
+from .adapter import Column, TableDefinition
+
 
 # The largest private file read back: a rich text image of 8 MiB at most (Controls, files.image_max_kb).
 # Attachments and profile photos have their own lower limits.
@@ -16,20 +19,34 @@ class StorageError(RuntimeError):
     pass
 
 
+ATTACHMENTS = TableDefinition('evlet_attachments', (
+    Column('model', 'TEXT', required=True),
+    Column('record_id', 'INTEGER', required=True),
+    Column('name', 'TEXT', required=True),
+    Column('content', 'BLOB', required=True),
+), numbered=True)
+# Added after the first release; existing tables gain them on start.
+ADDED = (Column('storage_key', 'TEXT'), Column('file_size', 'INTEGER'), Column('storage_kind', 'TEXT'))
+FILE_STORE = TableDefinition('evlet_file_store', (
+    Column('id', 'INTEGER', primary=True),
+    Column('namespace', 'TEXT', required=True),
+), checks=(qb.eq('id', 1),))
+
+
 class SQLiteStorage:
     """Store bytes in the same SQLite transaction as attachment metadata."""
 
     def initialize(self, database):
         with database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, name TEXT NOT NULL, content BLOB NOT NULL)')
-            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_attachment_owner ON evlet_attachments(model,record_id)')
-            columns = database.columns(tx.connection, 'evlet_attachments')
-            for name, kind in (('storage_key', 'TEXT'), ('file_size', 'INTEGER'), ('storage_kind', 'TEXT')):
-                if name not in columns:
-                    tx.connection.execute(f'ALTER TABLE evlet_attachments ADD COLUMN {name} {kind}')
+            tx.connection.ensure_table(ATTACHMENTS)
+            tx.connection.ensure_index('evlet_attachment_owner', 'evlet_attachments', ('model', 'record_id'))
+            columns = tx.connection.columns('evlet_attachments')
+            for column in ADDED:
+                if column.name not in columns:
+                    tx.connection.add_column('evlet_attachments', column)
 
     def add(self, tx, model, record_id, name, content):
-        return tx.connection.execute('INSERT INTO evlet_attachments(model,record_id,name,content) VALUES (?,?,?,?)', (model, record_id, name, content)).lastrowid
+        return tx.connection.run(qb.insert('evlet_attachments', model=model, record_id=record_id, name=name, content=content).returning_id()).id
 
     def read(self, row):
         if row['storage_key'] is not None:
@@ -53,9 +70,9 @@ class LocalFileStorage(SQLiteStorage):
     def initialize(self, database):
         super().initialize(database)
         with database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_file_store (id INTEGER PRIMARY KEY CHECK(id=1), namespace TEXT NOT NULL)')
-            tx.connection.execute('INSERT OR IGNORE INTO evlet_file_store VALUES (1,?)', (secrets.token_hex(32),))
-            namespace = tx.connection.execute('SELECT namespace FROM evlet_file_store WHERE id=1').fetchone()[0]
+            tx.connection.ensure_table(FILE_STORE)
+            tx.connection.run(qb.insert('evlet_file_store', id=1, namespace=secrets.token_hex(32)).on_conflict().do_nothing())
+            namespace = tx.connection.run(qb.select('evlet_file_store', 'namespace').where(id=1)).value()
         try:
             self.root.mkdir(parents=True, mode=0o700, exist_ok=True)
             if self.root.is_symlink() or self.root.resolve() != self.root:
@@ -105,7 +122,8 @@ class LocalFileStorage(SQLiteStorage):
                 os.close(directory)
         except (OSError, UnicodeError) as exc:
             raise StorageError('Private file storage is unavailable') from exc
-        return tx.connection.execute('INSERT INTO evlet_attachments(model,record_id,name,content,storage_key,file_size) VALUES (?,?,?,X\'\',?,?)', (model, record_id, name, key, len(content))).lastrowid
+        return tx.connection.run(qb.insert('evlet_attachments', model=model, record_id=record_id, name=name, content=b'',
+                                           storage_key=key, file_size=len(content)).returning_id()).id
 
     def read(self, row):
         if row['storage_key'] is None:
@@ -128,7 +146,7 @@ class LocalFileStorage(SQLiteStorage):
         try:
             self._check_binding()
             with self.database._connection() as connection:
-                if connection.execute('SELECT 1 FROM evlet_attachments WHERE storage_key=?', (key,)).fetchone():
+                if connection.run(qb.select('evlet_attachments', qb.value(1)).where(qb.eq('storage_key', qb.value(key)))).one():
                     return
             self._path(key).unlink(missing_ok=True)
         except (OSError, UnicodeError) as exc:
@@ -139,7 +157,7 @@ class LocalFileStorage(SQLiteStorage):
         try:
             self._check_binding()
             with self.database.transaction() as tx:
-                referenced = {row[0] for row in tx.connection.execute('SELECT storage_key FROM evlet_attachments WHERE storage_key IS NOT NULL')}
+                referenced = {row[0] for row in tx.connection.run(qb.select('evlet_attachments', 'storage_key').where(qb.not_null('storage_key')))}
                 removed = 0
                 for path in self.root.iterdir():
                     if re.fullmatch('[0-9a-f]{64}', path.name) and path.name not in referenced:

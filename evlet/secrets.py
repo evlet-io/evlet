@@ -26,6 +26,8 @@ import secrets
 import stat
 import threading
 
+from . import qb
+
 KEY_ENV = 'EVLET_SECRET_KEY'
 UNREADABLE = 'Saved secrets could not be read. The secret key changed or the stored data was altered.'
 MISSING = 'The secret key is missing. Restore secret.key from a backup, or set EVLET_SECRET_KEY, then start again.'
@@ -201,8 +203,12 @@ SEALED = (
 
 def sealed_exists(connection):
     """Whether any SEALED column holds a value; then a missing key is an error, never a new key."""
-    query = ' UNION ALL '.join(f'SELECT 1 FROM {table} WHERE {column} IS NOT NULL' for table, column, *_ in SEALED)
-    return connection.execute(f'SELECT 1 FROM ({query}) AS sealed LIMIT 1').fetchone() is not None
+    columns = {}
+    for table, column, *_ in SEALED:
+        columns.setdefault(table, []).append(qb.not_null(column))
+    # One query per table (five), each stopping at its first match, in SEALED order.
+    return any(connection.run(qb.select(table, qb.value(1)).where(qb.or_(*conditions)).limit(1)).one() is not None
+               for table, conditions in columns.items())
 
 
 def rotate(database_path, key):
@@ -212,7 +218,6 @@ def rotate(database_path, key):
     any point leaves every secret readable. A row that can't be read is skipped and reported, and the
     old key is then kept for it. Returns (re-encrypted count, names of unreadable rows).
     """
-    import sqlite3
     key = secret_key(key)
     if key.from_environment:
         raise SecretKeyError(f'{KEY_ENV} is set, so the key is kept outside Evlet. Rotation works on a secret.key file.')
@@ -222,33 +227,29 @@ def rotate(database_path, key):
     if not old:
         return 0, []
     key.write([secrets.token_bytes(32), *old])
-    from .writes import connect, tables as all_tables
-    connection = connect(database_path, uri=True, isolation_level=None)
+    from .database import Database
+    from .models import Registry
+    database = Database(database_path, Registry(), must_exist=True)
     done, failed = 0, []
     try:
-        connection.execute('BEGIN IMMEDIATE')
-        tables = all_tables(connection)
-        for table, column, id_column, purpose_column, prefix, text, name in SEALED:
-            if table not in tables:
-                continue
-            rows = connection.execute(f'SELECT {id_column}, {purpose_column}, {column} FROM {table} WHERE {column} IS NOT NULL').fetchall()
-            for row_id, owner, value in rows:
-                purpose = (prefix + str(owner)).encode()
-                try:
-                    plain = key.decrypt(base64.b64decode(value) if text else value, purpose)
-                except (SecretKeyError, ValueError):
-                    failed.append(name.format(owner))
+        with database.schema_transaction() as connection:
+            tables = connection.tables()
+            for table, column, id_column, purpose_column, prefix, text, name in SEALED:
+                if table not in tables:
                     continue
-                sealed = key.encrypt(plain, purpose, create=False)
-                connection.execute(f'UPDATE {table} SET {column}=? WHERE {id_column}=?', (base64.b64encode(sealed).decode() if text else sealed, row_id))
-                done += 1
-        connection.execute('COMMIT')
-    except BaseException:
-        if connection.in_transaction:
-            connection.execute('ROLLBACK')
-        raise
+                rows = connection.run(qb.select(table, id_column, purpose_column, column).where(qb.not_null(column))).all()
+                for row_id, owner, value in rows:
+                    purpose = (prefix + str(owner)).encode()
+                    try:
+                        plain = key.decrypt(base64.b64decode(value) if text else value, purpose)
+                    except (SecretKeyError, ValueError):
+                        failed.append(name.format(owner))
+                        continue
+                    sealed = key.encrypt(plain, purpose, create=False)
+                    connection.run(qb.update(table, **{column: base64.b64encode(sealed).decode() if text else sealed}).where(**{id_column: row_id}))
+                    done += 1
     finally:
-        connection.close()
+        database.close()
     if not failed:
         key.write(key.keys()[:1])
     return done, failed

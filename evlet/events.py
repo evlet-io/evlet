@@ -3,10 +3,18 @@
 import re
 import secrets
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .auth import AccessError
 from .database import Session, NotFoundError
 from .identity import RecordId, text as text_id
 from .models import ValidationError
+
+
+TABLE = TableDefinition('evlet_events', (
+    Column('token', 'TEXT', required=True), Column('model', 'TEXT', required=True),
+    Column('record_id', 'INTEGER', required=True), Column('deleted', 'INTEGER', required=True),
+), numbered=True, unique=(('token',),))
 
 
 class EventStore:
@@ -17,7 +25,7 @@ class EventStore:
 
     def initialize(self):
         with self.database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_events (id INTEGER PRIMARY KEY AUTOINCREMENT, token TEXT NOT NULL UNIQUE, model TEXT NOT NULL, record_id INTEGER NOT NULL, deleted INTEGER NOT NULL)')
+            tx.connection.ensure_table(TABLE)
 
     def publish(self, tx, model, record_id, *, deleted=False, journal=False):
         """Record that a record changed (or was deleted), or with journal=True that its journal gained an
@@ -29,43 +37,43 @@ class EventStore:
         except ValueError:
             raise ValueError('Use a valid record ID') from None
         token = secrets.token_hex(24)
-        event_id = tx.connection.execute('INSERT INTO evlet_events(token,model,record_id,deleted) VALUES (?,?,?,?)', (token, self.database.registry.name_for(model), record_id, 1 if deleted else 2 if journal else 0)).lastrowid
-        tx.connection.execute('DELETE FROM evlet_events WHERE id<=?', (event_id - self.retention,))
+        event_id = tx.connection.run(qb.insert('evlet_events', token=token, model=self.database.registry.name_for(model), record_id=record_id,
+                                               deleted=1 if deleted else 2 if journal else 0).returning_id()).id
+        tx.connection.run(qb.delete('evlet_events').where(qb.le('id', event_id - self.retention)))
         return token
 
     def publish_config(self, tx, version):
         """Tell open browsers that Controls saved a change (config.changed), with the new config version."""
         token = secrets.token_hex(24)
-        event_id = tx.connection.execute("INSERT INTO evlet_events(token,model,record_id,deleted) VALUES (?,'_config',?,0)", (token, version)).lastrowid
-        tx.connection.execute('DELETE FROM evlet_events WHERE id<=?', (event_id - self.retention,))
+        event_id = tx.connection.run(qb.insert('evlet_events', token=token, model='_config', record_id=version, deleted=0).returning_id()).id
+        tx.connection.run(qb.delete('evlet_events').where(qb.le('id', event_id - self.retention)))
         return token
 
     def publish_user(self, tx, channel, user_id):
         """Tell one person's open browsers that something of theirs changed (their inbox): only they
         receive it, as {"type": "<channel without _>.changed"}, with no other detail."""
         token = secrets.token_hex(24)
-        event_id = tx.connection.execute('INSERT INTO evlet_events(token,model,record_id,deleted) VALUES (?,?,?,0)', (token, channel, user_id)).lastrowid
-        tx.connection.execute('DELETE FROM evlet_events WHERE id<=?', (event_id - self.retention,))
+        event_id = tx.connection.run(qb.insert('evlet_events', token=token, model=channel, record_id=user_id, deleted=0).returning_id()).id
+        tx.connection.run(qb.delete('evlet_events').where(qb.le('id', event_id - self.retention)))
         return token
 
     def page(self, user, policy, *, after=None):
         if after is not None and after != '0' and (not isinstance(after, str) or not re.fullmatch('[0-9a-f]{48}', after)):
             raise ValidationError({'cursor': 'Invalid event cursor'})
         with self.database._connection() as db:
-            db.execute('BEGIN')
+            db.snapshot()
             tx = Session(db, self.database.registry)
-            latest = db.execute('SELECT id,token FROM evlet_events ORDER BY id DESC LIMIT 1').fetchone()
+            latest = db.run(qb.select('evlet_events', 'id', 'token').order_by('-id').limit(1)).one()
             end = latest['token'] if latest else '0'
             if after is None:
                 return {'items': [], 'cursor': end, 'reset': False, 'more': False}
-            current = 0 if after == '0' else db.execute('SELECT id FROM evlet_events WHERE token=?', (after,)).fetchone()
+            current = 0 if after == '0' else db.run(qb.select('evlet_events', 'id').where(token=after)).value()
             if current is None:
                 return {'items': [], 'cursor': end, 'reset': True, 'more': False}
-            current = current if current == 0 else current[0]
-            oldest = db.execute('SELECT min(id) FROM evlet_events').fetchone()[0]
+            oldest = db.run(qb.select('evlet_events', qb.min('id'))).value()
             if oldest is not None and current < oldest - 1:
                 return {'items': [], 'cursor': end, 'reset': True, 'more': False}
-            rows = db.execute('SELECT * FROM evlet_events WHERE id>? ORDER BY id LIMIT 100', (current,)).fetchall()
+            rows = db.run(qb.select('evlet_events').where(qb.gt('id', current)).order_by('id').limit(100)).all()
             items = []
             for row in rows:
                 if row['model'] == '_config':

@@ -15,7 +15,6 @@ file it changes, so a long job step on database.sqlite3 does not hold up a sign-
 
 SQLite cannot enforce a foreign key from one file to another; Evlet checks those links itself. After a crash,
 the main file is atomic as before, while the other files are best effort for the last moment of writes.
-PostgreSQL keeps one database: the split applies to SQLite only.
 """
 
 from collections import deque
@@ -79,12 +78,17 @@ def data_files(path):
     return files(Path(path) / 'data' / 'database.sqlite3')
 
 
-def connect(main, *, uri=False, **options):
-    """A plain sqlite3 connection to a main file with its side files attached, for server-shell commands that
-    open the database themselves. uri=True opens the main file with mode=rw (it must exist)."""
+def connect(main, *, uri=False, named_rows=False, **options):
+    """A SQLite connection to a main file with its side files attached, for server-shell commands that open the
+    database themselves. uri=True opens the main file with mode=rw (it must exist); named_rows=True reads rows
+    by column name as well as by index."""
+    from .sqlite import SQLiteConnection
     main = Path(main)
     sides = {store: side_path(main, store) for store in STORES}
-    connection = sqlite3.connect(main.absolute().as_uri() + '?mode=rw' if uri else str(main), uri=uri, **options)
+    connection = sqlite3.connect(main.absolute().as_uri() + '?mode=rw' if uri else str(main), uri=uri,
+                                 factory=SQLiteConnection, **options)
+    if named_rows:
+        connection.row_factory = sqlite3.Row
     try:
         for store, path in sides.items():
             connection.execute(f'ATTACH DATABASE ? AS {store}', (path.absolute().as_uri() + '?mode=rwc' if uri else str(path),))
@@ -93,6 +97,120 @@ def connect(main, *, uri=False, **options):
         connection.close()
         raise
     return connection
+
+
+@contextmanager
+def shell_transaction(main):
+    """A write transaction on the database at main, for server-shell commands: it holds the write lock from the
+    start, commits when the block ends and rolls back on an error. Rows read by name and by index."""
+    connection = connect(main, isolation_level=None, named_rows=True)
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        yield connection
+        connection.commit()
+    except BaseException:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
+# SQLite file tools for the instance commands (backup, restore, install, the tenant catalog): they open one
+# file themselves, without its side files, and hand framework code a connection that runs qb statements.
+
+def read_file(path):
+    """A read-only connection to one SQLite file, rows by name and by index. A WAL file whose shared memory
+    file cannot be created read only (no -shm file next to it yet) is opened normally with writes refused."""
+    from .sqlite import SQLiteConnection
+    path = Path(path).resolve()
+    try:
+        connection = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, factory=SQLiteConnection)
+        connection.execute('SELECT count(*) FROM sqlite_master').fetchone()
+    except sqlite3.OperationalError:
+        connection = sqlite3.connect(path, timeout=5, factory=SQLiteConnection)
+        connection.execute('PRAGMA query_only = ON')
+    connection.row_factory = sqlite3.Row
+    return connection
+
+
+@contextmanager
+def file_transaction(path, *, write=False):
+    """A transaction on one existing SQLite file with foreign keys on (the tenant catalog): write=True holds
+    the write lock from the start. It commits when the block ends; an error leaves nothing written."""
+    from .sqlite import SQLiteConnection
+    connection = sqlite3.connect(Path(path).as_uri() + '?mode=rw', uri=True, timeout=5, factory=SQLiteConnection)
+    connection.row_factory = sqlite3.Row
+    try:
+        connection.execute('PRAGMA foreign_keys=ON')
+        connection.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
+        yield connection
+        connection.commit()
+    finally:
+        connection.close()
+
+
+def copy_set(source_main, target_main):
+    """Copy the main file and every side file of source_main into the set named by target_main, from one
+    read snapshot of all of them, with SQLite's online backup API. A running server may keep writing.
+    Returns the written paths."""
+    with closing(connect(source_main, uri=True, isolation_level=None)) as connection:
+        connection.execute('BEGIN')
+        for schema in ('main', *STORES):
+            connection.execute(f'SELECT count(*) FROM {schema}.sqlite_master').fetchone()
+        written = []
+        for schema, target in zip(('main', *STORES), files(target_main)):
+            with closing(sqlite3.connect(target)) as copy:
+                connection.backup(copy, name=schema)
+                copy.execute('PRAGMA journal_mode=DELETE').fetchone()
+            Path(target).chmod(0o600)
+            written.append(target)
+        connection.execute('COMMIT')
+    return written
+
+
+def snapshot(source, target):
+    """Copy one SQLite file into target with the online backup API, readable only by its owner."""
+    with closing(sqlite3.connect(source)) as old, closing(sqlite3.connect(target)) as new:
+        old.backup(new)
+    Path(target).chmod(0o600)
+
+
+def snapshot_set(source, target):
+    """Copy a main SQLite file and each of its side files that exists with the online backup API."""
+    for old, new in zip(files(source), files(target)):
+        if old.exists():
+            snapshot(old, new)
+
+
+def copy_file(source, target):
+    """Copy one SQLite file, read only, into target in rollback mode, with the online backup API."""
+    with closing(sqlite3.connect(Path(source).absolute().as_uri() + '?mode=ro', uri=True)) as reader, \
+            closing(sqlite3.connect(target)) as copy:
+        reader.backup(copy)
+        copy.execute('PRAGMA journal_mode=DELETE').fetchone()
+    Path(target).chmod(0o600)
+
+
+def check_file(path):
+    """(problem, table names) for a SQLite file: problem is None when its quick check passes."""
+    with closing(sqlite3.connect(Path(path).absolute().as_uri() + '?mode=ro', uri=True)) as check:
+        try:
+            ok = check.execute('PRAGMA quick_check').fetchone()[0]
+            names = {row[0] for row in check.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        except sqlite3.DatabaseError:
+            return 'not a SQLite database', set()
+    return (None if ok == 'ok' else ok), names
+
+
+def settle(path):
+    """Fold a SQLite file's write-ahead log into it and leave it in rollback mode, ready to move into place.
+    Refuses when another process is still writing it."""
+    with closing(sqlite3.connect(path)) as connection:
+        busy, _, _ = connection.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()
+        if busy:
+            raise ValueError('Database is busy; stop all writers before installation')
+        connection.execute('PRAGMA journal_mode=DELETE').fetchone()
 
 
 def tables(connection):
@@ -331,13 +449,6 @@ def placed(statement):
     return statement
 
 
-class Connection(sqlite3.Connection):
-    """A SQLite connection that creates side tables in their own files."""
-
-    def execute(self, sql, *args):
-        return super().execute(placed(sql) if sql.lstrip()[:6].upper() == 'CREATE' else sql, *args)
-
-
 class LogBuffer:
     """Busy log and last-seen writes, saved together by one background thread about every FLUSH_EVERY seconds.
 
@@ -351,7 +462,10 @@ class LogBuffer:
         self._thread = None
         _buffers.add(self)
 
-    def add(self, store, sql, values=()):
+    def add(self, store, statement):
+        """Queue one query builder statement (evlet/qb.py) for the store's file (None: the main file)."""
+        from .sqlite import compile_statement
+        sql, values = compile_statement(statement)
         with self._lock:
             self._pending.append((store, sql, tuple(values)))
             if self._thread is None or not self._thread.is_alive():

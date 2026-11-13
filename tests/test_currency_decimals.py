@@ -15,7 +15,6 @@ from evlet.currencies import MONEY_SCALE, check, decimals_table, stored_excess
 from evlet.identity import RecordId
 from evlet.migrations import SchemaError, money_scale
 from test_business import PASSWORD, client, http
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 
 ALL = Rule(('read', 'create', 'update', 'delete'))
 FULL = {'admin': ALL, 'editor': ALL}
@@ -219,6 +218,23 @@ def test_raising_is_free_lowering_is_refused_until_an_explicit_step_rounds(app):
     assert save(admin, {'KWD': {'decimals': 2}})[0] == 409
 
 
+def test_rounding_stored_amounts_is_half_up_away_from_zero_for_negatives(app):
+    admin = login(app)
+    assert save(admin, {'AED': {'decimals': 3}})[0] == 200
+    with app.database.transaction() as tx:
+        client = tx.create(Client, currency='AED')
+        ids = [tx.create(Deposit, client=client.id, dirhams=dirhams, amount=amount, billed=billed).id for dirhams, amount, billed in (
+            ('-0.005', '-0.004', '-1.006'), ('0.005', '0.004', '-0.001'), ('-10.995', '-10.994', '-0.01'))]
+    with app.database._connection() as connection:
+        assert stored_excess(connection, app.database.registry, 'AED', 2)[0] == 8
+    assert round_stored_money(app, 'AED', 2) == 8
+    with app.database.transaction() as tx:
+        rows = [(row.dirhams, row.amount, row.billed) for row in (tx.get(Deposit, item) for item in ids)]
+    assert rows == [(D('-0.01'), D('0.00'), D('-1.01')), (D('0.01'), D('0.00'), D('0.00')), (D('-11.00'), D('-10.99'), D('-0.01'))]
+    with app.database._connection() as connection:
+        assert stored_excess(connection, app.database.registry, 'AED', 2) == (0, None)
+
+
 # ---- calculations ------------------------------------------------------------------------------
 
 def test_finite_formulas_round_to_each_rows_currency_and_follow_a_change_of_currency(app):
@@ -338,15 +354,15 @@ def legacy_database(app):
     with app.database._connection() as connection:
         definition = json.loads(connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()[0])
         for model in definition['models']:
-            locked = 'ledger' in model and ledger.has_triggers(connection, False, model['name'])
+            locked = 'ledger' in model and ledger.has_triggers(connection, model['name'])
             if locked:
-                ledger.drop_triggers(connection, False, model['name'])
+                ledger.drop_triggers(connection, model['name'])
             for field in model['fields']:
                 if field['type'] == 'currency':
                     connection.execute(f'UPDATE "{model["name"]}" SET "{field["name"]}" = "{field["name"]}" / 10000')
                     field['scale'] = 2
             if locked:
-                ledger.add_triggers(connection, False, model['name'])
+                ledger.add_triggers(connection, model['name'])
         connection.execute('UPDATE evlet_schema SET definition = ? WHERE id = 1', (json.dumps(definition, sort_keys=True, separators=(',', ':')),))
         connection.execute('DROP TABLE evlet_money')
         connection.commit()
@@ -464,7 +480,7 @@ def test_append_only_ledgers_are_moved_and_keep_their_triggers(tmp_path):
     with moved.database.transaction() as tx:
         assert [tx.get(Entry, item).amount for item in ids] == [D('10.50'), D('-0.01')]
     with moved.database._connection() as connection:
-        assert ledger.has_triggers(connection, False, 'entry')
+        assert ledger.has_triggers(connection, 'entry')
         with pytest.raises(Exception, match='append'):
             connection.execute('UPDATE entry SET amount = 0')
 
@@ -545,46 +561,6 @@ def test_money_scale_is_a_no_op_on_a_new_database(tmp_path):
         assert money_scale(connection, database.registry, None) is None
         assert connection.execute('SELECT scale FROM evlet_money').fetchone()[0] == MONEY_SCALE
 
-
-def test_postgresql_databases_move_to_six_places_too(pg_dsn):
-    """The same move on PostgreSQL: app amounts, an append-only ledger and the saved definition, exactly once."""
-    from evlet import PostgreSQLDatabase, ledger
-
-    class Entry(Model):
-        permissions = {'admin': Rule(('read', 'create'))}
-        amount = Currency(currency='KWD', required=True)
-
-        class Meta:
-            ledger = True
-            append_only = True
-
-    database = PostgreSQLDatabase(pg_dsn, Registry(Client, Deposit, Entry))
-    database.initialize()
-    with database.transaction() as tx:
-        deposit = tx.create(Deposit, dinars='1.25', amount='-0.05')
-        entries = tx.insert_many(Entry, [{'amount': '10.12'}])
-        connection = tx.connection
-        ledger.drop_triggers(connection, True, 'entry')
-        connection.execute('UPDATE deposit SET dinars = dinars / 10000, amount = amount / 10000')
-        connection.execute('UPDATE entry SET amount = amount / 10000')
-        ledger.add_triggers(connection, True, 'entry')
-        definition = json.loads(connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()[0])
-        for model in definition['models']:
-            for field in model['fields']:
-                if field['type'] == 'currency':
-                    field['scale'] = 2
-        connection.execute('UPDATE evlet_schema SET definition = ? WHERE id = 1', (json.dumps(definition),))
-        connection.execute('DROP TABLE evlet_money')
-    database.initialize()
-    database.initialize()
-    with database.transaction() as tx:
-        moved = tx.get(Deposit, deposit.id)
-        assert (moved.dinars, moved.amount) == (D('1.25'), D('-0.05'))
-        assert tx.get(Entry, entries[0]).amount == D('10.12')
-        assert tx.connection.execute('SELECT scale FROM evlet_money').fetchone()[0] == MONEY_SCALE
-
-
-# ---- what an app like Finance uses -------------------------------------------------------------
 
 def test_an_app_syncs_its_currency_list_and_scales_tolerances_with_the_unit(app):
     from evlet import currency_unit, set_currency_decimals

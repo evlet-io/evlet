@@ -148,7 +148,7 @@ def read_package(path):
     if set(options) - {'app', 'title'}:
         raise ValueError('Unknown tool.evlet option; supported options are app and title')
     name = valid_name(project.get('name'))
-    reserved = {'evlet', 'uvicorn', 'packaging', 'psycopg', 'psycopg_pool', 'boto3', 'botocore'}
+    reserved = {'evlet', 'uvicorn', 'packaging', 'boto3', 'botocore'}
     if name in reserved or name in sys.stdlib_module_names or (name in metadata.packages_distributions() and not owned_distribution(name, path)):
         raise ValueError('Application name conflicts with the framework, Python standard library or an installed Python package')
     version = project.get('version')

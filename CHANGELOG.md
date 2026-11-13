@@ -4,6 +4,74 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased (0.4.5)
+
+### Upgrading to 0.4.5
+
+- **Sites on PostgreSQL: stay on 0.4.4.** 0.4.5 runs on SQLite only, and `evlet upgrade` and app
+  pins such as `evlet>=0.4.3,<0.5` pick it up on their own. Before upgrading a site whose app builds
+  a `PostgreSQLDatabase`, pin `evlet==0.4.4` in that app (or in the environment that runs it) and
+  keep it there until its data has moved to SQLite. On 0.4.5, `from evlet import PostgreSQLDatabase`,
+  a PostgreSQL DSN given to `Database(...)` and `Instance(database="postgresql")` each stop at
+  startup with a message that names 0.4.4 as the last version supporting PostgreSQL. SQLite sites
+  upgrade as usual.
+- **PostgreSQL is removed.** SQLite, with the four-file layout and fair write line-up from 0.4.3,
+  is the only built-in database. `evlet.PostgreSQLDatabase`, the `evlet.postgres` and
+  `evlet.postgres_schema` modules, the `evlet[postgres]` extra, `requirements-postgres.lock`,
+  `docs/postgresql.md`, and the `--postgres` option of `scripts/benchmark.py` and
+  `scripts/benchmark_hierarchy.py` are gone. This removal skips the usual deprecation release:
+  it is an owner decision for 0.4.5.
+- **Apps and tools that import `evlet.postgres` or `PostgreSQLDatabase` must stop.** Remove the
+  import and the code path that builds a PostgreSQL database. For example, an app CLI option such
+  as Finance's `EVLET_FINANCE_POSTGRES_DSN` must be dropped, along with any `psycopg` dependency
+  the app added for it. The Playground no longer reads `EVLET_POSTGRES_DSN`.
+- **SQLite instances need no migration.** Stored data, schema and migration checksums are
+  unchanged. A test opens a database written by 0.4.3 and checks that nothing in it changes.
+- **Moving data off PostgreSQL.** An app that ran on PostgreSQL in 0.4 should export its records
+  (for example through the HTTP API) into a new SQLite instance before
+  upgrading, or stay on 0.4.4 until a PostgreSQL adapter exists again.
+
+### Changed
+
+- **A query builder in front of the database.** Framework code describes what it reads and writes
+  with `evlet/qb.py` (select, insert, update, delete, upserts, conditions, joins, aggregates,
+  windows) and runs it with `connection.run(statement)`. A dialect compiles the statements to SQL;
+  SQLite (`evlet/sqlite.py`) is the one dialect. Schema changes go through named connection methods
+  (`inspect`, `create_table`, `set_required`, `ensure_table`, `make_append_only`, `guard_id` and a
+  few more), and migrations compare models against one neutral table shape. PostgreSQL, MariaDB or
+  another database can be added later as a dialect: a compiler, a connection class and a `Database`
+  subclass, passed explicitly where the app builds its database. See
+  [docs/database-adapters.md](docs/database-adapters.md). The query builder and the adapter
+  interface are provisional.
+- **Every framework module is on the query builder:** the record API, queries, migrations, row
+  scopes and record helpers, accounts and sign-in, Controls and customization, jobs, events, mail,
+  connectors and tools, Eva and assistants, reports (measures), printing, storage and the rest.
+  Framework tables are `TableDefinition`s created with `connection.ensure_table`. The instance
+  tools (backup, restore, install, `evlet journal verify`, the tenant catalog, the Administrator
+  checks of `evlet serve` and `evlet site`) open SQLite files with small file tools in
+  `evlet/writes.py` and run query builder statements on the connection they get.
+  `tests/test_query_builder_boundary.py` fails on SQL text anywhere outside the dialect.
+  Query plans and the number of statements per operation are unchanged.
+- `Column(referenced_column=...)`: a framework table's reference may point at a key other than
+  `id` (the tenant catalog's domains point at tenants by slug).
+- `database.logs.add(store, statement)` (the batched log writes) takes a query builder statement
+  instead of SQL text and values.
+- **Conformance tests.** `tests/test_database_adapter.py` is the checklist a new dialect must pass:
+  every query builder statement and condition, value round trips, exact amounts, foreign keys, ids,
+  the table shape, every schema change, framework table rules, append-only tables, the id guard,
+  error mapping, busy writers, savepoints and rollback, and a database written by 0.4.3.
+- Internal helpers changed shape. They lost their `postgres` argument (for example
+  `ledger.add_triggers`, `identity.add_id_guard`, `identity.check_ids`, `naming.add_columns`,
+  `audit.add_columns`, `journal.ensure_table`, framework step functions).
+  `Database.columns(connection, table)` is now `connection.columns(table)`.
+  `SqlQuery.where()` and `ordering()` return query builder objects, and `Policy.scope()` returns a row
+  scope as a condition. The text forms (`SqlQuery.where_sql`, `ordering_sql`, `reference_sql`,
+  `Policy.scope_sql`) and `evlet.sqlite.compile_condition` are removed. These are internal names; apps
+  that used them build a statement with `evlet.qb` and pass the condition to `.where(...)`.
+- New SQLite databases write the CREATE statements of framework tables and the append-only guards
+  of `evlet_journal`, `evlet_audit` and `evlet_document_revisions` in a slightly different text with
+  the same rules. Existing databases keep theirs.
+
 ## 0.4.4 (13-11-2026)
 
 ### Added

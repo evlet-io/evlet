@@ -9,6 +9,7 @@ import ssl
 from threading import Lock
 import time
 
+from . import qb
 from .auth import AccessError, User
 from .models import ValidationError
 
@@ -167,9 +168,9 @@ class System:
         if self.controls.business.jobs is None:
             return []
         with self.controls.database._connection() as connection:
-            if not self.controls.database.columns(connection, 'evlet_schedules'):
+            if not connection.columns('evlet_schedules'):
                 return []
-            return [row[0] for row in connection.execute('SELECT name FROM evlet_schedules ORDER BY name')]
+            return [row[0] for row in connection.run(qb.select('evlet_schedules', 'name').order_by('name'))]
 
     def apply_schedule(self, name, active):
         """Pause or resume a schedule after its override is saved. A schedule that is gone has nothing to apply."""
@@ -182,7 +183,7 @@ class System:
         if self.controls.business.jobs is None:
             return 0
         with self.controls.database._connection() as connection:
-            return connection.execute("SELECT count(*) FROM evlet_jobs WHERE state='failed'").fetchone()[0]
+            return connection.run(qb.select('evlet_jobs', qb.count()).where(state='failed')).value()
 
     def jobs(self):
         jobs = self.controls.business.jobs
@@ -190,8 +191,9 @@ class System:
             return {'available': False, 'schedules': [], 'jobs': []}
         owner = {name: app['id'] for app in self.controls.apps for name in app['schedules']}
         with self.controls.database._connection() as connection:
-            rows = connection.execute('SELECT s.name, s.task, s.interval, s.next_run, s.enabled, c.expression, c.timezone FROM evlet_schedules s '
-                                      'LEFT JOIN evlet_calendar_schedules c ON c.name = s.name WHERE c.retired IS NULL OR c.retired = 0 ORDER BY s.name').fetchall()
+            rows = connection.run(qb.select(qb.table('evlet_schedules', 's'), 's.name', 's.task', 's.interval', 's.next_run', 's.enabled', 'c.expression', 'c.timezone')
+                                  .join('evlet_calendar_schedules', qb.eq('c.name', qb.col('s.name')), alias='c', left=True)
+                                  .where(qb.or_(qb.is_null('c.retired'), qb.eq('c.retired', 0))).order_by('s.name')).all()
         settings = self.controls.settings
         schedules = [{'name': row['name'], 'task': row['task'], 'every': None if row['expression'] else row['interval'],
                       'expression': row['expression'], 'timezone': row['timezone'], 'next_run': row['next_run'], 'active': bool(row['enabled']),
@@ -213,7 +215,7 @@ class System:
         """Run now: one job for the schedule's task, as the schedule would enqueue it."""
         jobs = self.queue()
         with self.controls.database.transaction() as tx:
-            row = tx.connection.execute('SELECT * FROM evlet_schedules WHERE name=?', (name,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_schedules').where(name=name)).one()
             if row is None:
                 raise AccessError(404, 'Schedule not found')
             if not row['enabled']:
@@ -285,22 +287,16 @@ class System:
             raise ValidationError({'area': 'Choose an area from the list.'})
         if len(text) > 100:
             raise ValidationError({'q': 'Search with at most 100 characters.'})
-        clauses, values = [], []
+        query = qb.select('evlet_audit', 'id', 'at', 'actor', 'area', 'target', 'detail')
         if area:
-            clauses.append('area = ?')
-            values.append(area)
+            query = query.where(area=area)
         if text:
-            like = '%' + re.sub(r'([\\%_])', r'\\\1', text) + '%'
-            clauses.append("(lower(actor) LIKE ? ESCAPE '\\' OR lower(target) LIKE ? ESCAPE '\\' OR lower(detail) LIKE ? ESCAPE '\\')")
-            values += [like] * 3
+            query = query.where(qb.or_(qb.contains_ci('actor', text), qb.contains_ci('target', text), qb.contains_ci('detail', text)))
         if before is not None:
             if not re.fullmatch(r'[1-9][0-9]{0,18}', before) or int(before) > 2**63 - 1:
                 raise ValidationError({'before': 'Use the next value from the previous page.'})
-            clauses.append('id < ?')
-            values.append(int(before))
-        where = ' WHERE ' + ' AND '.join(clauses) if clauses else ''
+            query = query.where(qb.lt('id', int(before)))
         with self.controls.database._connection() as connection:
-            rows = [dict(row) for row in connection.execute(f'SELECT id, at, actor, area, target, detail FROM evlet_audit{where} ORDER BY id DESC LIMIT ?',
-                                                            (*values, PAGE + 1))]
-            areas = [row[0] for row in connection.execute('SELECT DISTINCT area FROM evlet_audit ORDER BY area')]
+            rows = [dict(row) for row in connection.run(query.order_by('-id').limit(PAGE + 1))]
+            areas = [row[0] for row in connection.run(qb.select('evlet_audit', 'area').distinct().order_by('area'))]
         return {'items': rows[:PAGE], 'next': rows[PAGE - 1]['id'] if len(rows) > PAGE else None, 'areas': areas}

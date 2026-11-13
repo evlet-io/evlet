@@ -29,6 +29,8 @@ import zipfile
 from zoneinfo import ZoneInfo
 from xml.etree import ElementTree
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .auth import AccessError, KeyAccess, User
 from .identity import checked as record_id, text as text_id
 from .connector import ConnectorError, NoRedirect
@@ -298,7 +300,8 @@ def configuration(business):
     eva = business.eva
     settings = business.controls.settings
     with business.database._connection() as connection:
-        counts = connection.execute('SELECT count(*) AS active, sum(CASE WHEN allow_eva=1 THEN 1 ELSE 0 END) AS allowed FROM evlet_users WHERE active=1').fetchone()
+        counts = connection.run(qb.select('evlet_users', qb.named(qb.count(), 'active'), qb.named(qb.sum(qb.when((qb.eq('allow_eva', 1), 1), otherwise=0)), 'allowed'))
+                                .where(active=1)).one()
     result = {'configured': eva is not None, 'active_users': counts['active'] or 0, 'allowed_users': counts['allowed'] or 0,
               'settings': {key: settings[key] for key in settings if key.startswith('eva.')}, 'jobs': business.jobs is not None}
     if eva is None:
@@ -521,6 +524,57 @@ How to work:
 - Answer in plain English, briefly. Use a Markdown table for lists of records. To give the person a file, use create_file."""
 
 
+# ---------- Eva's tables ----------
+
+LOCK = TableDefinition('evlet_eva_lock', (Column('id', 'INTEGER', primary=True), Column('n', 'INTEGER', required=True)),
+                       checks=(qb.eq('id', 1),))
+CONVERSATIONS = TableDefinition('evlet_eva_conversations', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'), Column('title', 'TEXT', required=True),
+    Column('created_at', 'INTEGER', required=True), Column('updated_at', 'INTEGER', required=True), Column('archived_at', 'INTEGER'),
+    Column('task_id', 'INTEGER'), Column('context_model', 'TEXT'), Column('context_id', 'INTEGER')), numbered=True)
+RUNS = TableDefinition('evlet_eva_runs', (
+    Column('conversation_id', 'INTEGER', required=True, references='evlet_eva_conversations', on_delete='cascade'),
+    Column('user_id', 'INTEGER', required=True), Column('origin', 'TEXT', required=True), Column('model', 'TEXT', required=True),
+    Column('status', 'TEXT', required=True), Column('started_at', 'INTEGER', required=True), Column('updated_at', 'INTEGER', required=True),
+    Column('finished_at', 'INTEGER'), Column('error', 'TEXT'), Column('pending', 'TEXT'), Column('steps', 'INTEGER', required=True, default=0),
+    Column('tool_calls', 'INTEGER', required=True, default=0), Column('process', 'TEXT'), Column('host', 'TEXT'),
+    Column('cancel', 'INTEGER', required=True, default=0), Column('writes', 'INTEGER', required=True, default=1)), numbered=True,
+    checks=(qb.in_('origin', ('eva', 'schedule')), qb.in_('status', ('running', 'awaiting_approval', 'completed', 'failed', 'cancelled'))))
+MESSAGES = TableDefinition('evlet_eva_messages', (
+    Column('conversation_id', 'INTEGER', required=True, references='evlet_eva_conversations', on_delete='cascade'), Column('run_id', 'INTEGER'),
+    Column('role', 'TEXT', required=True), Column('content', 'TEXT', required=True), Column('tool_calls', 'TEXT'), Column('tool_call_id', 'TEXT'),
+    Column('files', 'TEXT'), Column('created_at', 'INTEGER', required=True)), numbered=True,
+    checks=(qb.in_('role', ('user', 'assistant', 'tool')),))
+EVENTS = TableDefinition('evlet_eva_events', (
+    Column('run_id', 'INTEGER', required=True, references='evlet_eva_runs', on_delete='cascade'), Column('at', 'INTEGER', required=True),
+    Column('type', 'TEXT', required=True), Column('data', 'TEXT', required=True)), numbered=True)
+FILES = TableDefinition('evlet_eva_files', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
+    Column('conversation_id', 'INTEGER', references='evlet_eva_conversations', on_delete='cascade'), Column('name', 'TEXT', required=True),
+    Column('kind', 'TEXT', required=True), Column('source', 'TEXT'), Column('size', 'INTEGER', required=True),
+    Column('content', 'BLOB', required=True), Column('created_at', 'INTEGER', required=True)), numbered=True,
+    checks=(qb.in_('kind', ('upload', 'evlet', 'generated')),))
+USAGE = TableDefinition('evlet_eva_usage', (
+    Column('at', 'INTEGER', required=True), Column('user_id', 'INTEGER', required=True), Column('conversation_id', 'INTEGER'), Column('run_id', 'INTEGER'),
+    Column('task_id', 'INTEGER'), Column('origin', 'TEXT', required=True), Column('provider', 'TEXT', required=True), Column('model', 'TEXT', required=True),
+    Column('input_tokens', 'INTEGER', required=True), Column('cached_tokens', 'INTEGER', required=True), Column('output_tokens', 'INTEGER', required=True),
+    Column('reasoning_tokens', 'INTEGER', required=True), Column('total_tokens', 'INTEGER', required=True), Column('requests', 'INTEGER', required=True),
+    Column('tool_calls', 'INTEGER', required=True, default=0), Column('duration_ms', 'INTEGER'), Column('cost_micro', 'INTEGER', required=True),
+    Column('rate', 'TEXT'), Column('estimated', 'INTEGER', required=True, default=0)), numbered=True)
+RESERVATIONS = TableDefinition('evlet_eva_reservations', (
+    Column('user_id', 'INTEGER', required=True), Column('origin', 'TEXT', required=True), Column('cost_micro', 'INTEGER', required=True),
+    Column('tokens', 'INTEGER', required=True), Column('requests', 'INTEGER', required=True), Column('expires_at', 'INTEGER', required=True)), numbered=True)
+TASKS = TableDefinition('evlet_eva_tasks', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'), Column('name', 'TEXT', required=True),
+    Column('instructions', 'TEXT', required=True), Column('cron', 'TEXT', required=True), Column('timezone', 'TEXT', required=True),
+    Column('active', 'INTEGER', required=True, default=1), Column('allow_changes', 'INTEGER', required=True, default=0),
+    Column('created_at', 'INTEGER', required=True), Column('last_run_at', 'INTEGER'), Column('last_status', 'TEXT')), numbered=True)
+TASK_RUNS = TableDefinition('evlet_eva_task_runs', (
+    Column('task_id', 'INTEGER', required=True, references='evlet_eva_tasks', on_delete='cascade'), Column('at', 'INTEGER', required=True),
+    Column('status', 'TEXT', required=True), Column('run_id', 'INTEGER'), Column('conversation_id', 'INTEGER'), Column('error', 'TEXT')), numbered=True,
+    checks=(qb.in_('status', ('running', 'done', 'failed', 'skipped')),))
+
+
 class Eva:
     def __init__(self, business, ai):
         self.business, self.database, self.ai = business, business.database, ai
@@ -539,57 +593,39 @@ class Eva:
 
     def initialize(self):
         with self.database.transaction() as tx:
-            for statement in (
-                'CREATE TABLE IF NOT EXISTS evlet_eva_lock (id INTEGER PRIMARY KEY CHECK(id=1), n INTEGER NOT NULL)',
-                'INSERT OR IGNORE INTO evlet_eva_lock(id,n) VALUES (1,0)',
-                'CREATE TABLE IF NOT EXISTS evlet_eva_conversations (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
-                'title TEXT NOT NULL, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, archived_at INTEGER, task_id INTEGER, context_model TEXT, context_id INTEGER)',
-                'CREATE INDEX IF NOT EXISTS evlet_eva_conversation_user ON evlet_eva_conversations(user_id, updated_at)',
-                "CREATE TABLE IF NOT EXISTS evlet_eva_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL REFERENCES evlet_eva_conversations(id) ON DELETE CASCADE, "
-                "user_id INTEGER NOT NULL, origin TEXT NOT NULL CHECK(origin IN ('eva','schedule')), model TEXT NOT NULL, "
-                "status TEXT NOT NULL CHECK(status IN ('running','awaiting_approval','completed','failed','cancelled')), "
-                'started_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, finished_at INTEGER, error TEXT, pending TEXT, steps INTEGER NOT NULL DEFAULT 0, '
-                'tool_calls INTEGER NOT NULL DEFAULT 0, process TEXT, host TEXT, cancel INTEGER NOT NULL DEFAULT 0, writes INTEGER NOT NULL DEFAULT 1)',
-                'CREATE INDEX IF NOT EXISTS evlet_eva_run_conversation ON evlet_eva_runs(conversation_id)',
-                "CREATE TABLE IF NOT EXISTS evlet_eva_messages (id INTEGER PRIMARY KEY AUTOINCREMENT, conversation_id INTEGER NOT NULL REFERENCES evlet_eva_conversations(id) ON DELETE CASCADE, "
-                "run_id INTEGER, role TEXT NOT NULL CHECK(role IN ('user','assistant','tool')), content TEXT NOT NULL, tool_calls TEXT, tool_call_id TEXT, files TEXT, created_at INTEGER NOT NULL)",
-                'CREATE INDEX IF NOT EXISTS evlet_eva_message_conversation ON evlet_eva_messages(conversation_id, id)',
-                'CREATE TABLE IF NOT EXISTS evlet_eva_events (id INTEGER PRIMARY KEY AUTOINCREMENT, run_id INTEGER NOT NULL REFERENCES evlet_eva_runs(id) ON DELETE CASCADE, '
-                'at INTEGER NOT NULL, type TEXT NOT NULL, data TEXT NOT NULL)',
-                'CREATE INDEX IF NOT EXISTS evlet_eva_event_run ON evlet_eva_events(run_id, id)',
-                "CREATE TABLE IF NOT EXISTS evlet_eva_files (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, "
-                "conversation_id INTEGER REFERENCES evlet_eva_conversations(id) ON DELETE CASCADE, name TEXT NOT NULL, kind TEXT NOT NULL CHECK(kind IN ('upload','evlet','generated')), "
-                'source TEXT, size INTEGER NOT NULL, content BLOB NOT NULL, created_at INTEGER NOT NULL)',
-                'CREATE INDEX IF NOT EXISTS evlet_eva_file_user ON evlet_eva_files(user_id, id)',
-                "CREATE TABLE IF NOT EXISTS evlet_eva_usage (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, user_id INTEGER NOT NULL, conversation_id INTEGER, run_id INTEGER, "
-                "task_id INTEGER, origin TEXT NOT NULL, provider TEXT NOT NULL, model TEXT NOT NULL, input_tokens INTEGER NOT NULL, cached_tokens INTEGER NOT NULL, "
-                'output_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL, total_tokens INTEGER NOT NULL, requests INTEGER NOT NULL, tool_calls INTEGER NOT NULL DEFAULT 0, '
-                'duration_ms INTEGER, cost_micro INTEGER NOT NULL, rate TEXT, estimated INTEGER NOT NULL DEFAULT 0)',
-                'CREATE INDEX IF NOT EXISTS evlet_eva_usage_at ON evlet_eva_usage(at)',
-                'CREATE INDEX IF NOT EXISTS evlet_eva_usage_user ON evlet_eva_usage(user_id, at)',
-                'CREATE TABLE IF NOT EXISTS evlet_eva_reservations (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, origin TEXT NOT NULL, '
-                'cost_micro INTEGER NOT NULL, tokens INTEGER NOT NULL, requests INTEGER NOT NULL, expires_at INTEGER NOT NULL)',
-                "CREATE TABLE IF NOT EXISTS evlet_eva_tasks (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, "
-                'name TEXT NOT NULL, instructions TEXT NOT NULL, cron TEXT NOT NULL, timezone TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, '
-                'allow_changes INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, last_run_at INTEGER, last_status TEXT)',
-                "CREATE TABLE IF NOT EXISTS evlet_eva_task_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, task_id INTEGER NOT NULL REFERENCES evlet_eva_tasks(id) ON DELETE CASCADE, "
-                "at INTEGER NOT NULL, status TEXT NOT NULL CHECK(status IN ('running','done','failed','skipped')), run_id INTEGER, conversation_id INTEGER, error TEXT)",
-                'CREATE INDEX IF NOT EXISTS evlet_eva_task_run_task ON evlet_eva_task_runs(task_id, id)',
-            ):
-                tx.connection.execute(statement)
+            connection = tx.connection
+            connection.ensure_table(LOCK)
+            connection.run(qb.insert('evlet_eva_lock', id=1, n=0).on_conflict().do_nothing())
+            connection.ensure_table(CONVERSATIONS)
+            connection.ensure_index('evlet_eva_conversation_user', 'evlet_eva_conversations', ('user_id', 'updated_at'))
+            connection.ensure_table(RUNS)
+            connection.ensure_index('evlet_eva_run_conversation', 'evlet_eva_runs', ('conversation_id',))
+            connection.ensure_table(MESSAGES)
+            connection.ensure_index('evlet_eva_message_conversation', 'evlet_eva_messages', ('conversation_id', 'id'))
+            connection.ensure_table(EVENTS)
+            connection.ensure_index('evlet_eva_event_run', 'evlet_eva_events', ('run_id', 'id'))
+            connection.ensure_table(FILES)
+            connection.ensure_index('evlet_eva_file_user', 'evlet_eva_files', ('user_id', 'id'))
+            connection.ensure_table(USAGE)
+            connection.ensure_index('evlet_eva_usage_at', 'evlet_eva_usage', ('at',))
+            connection.ensure_index('evlet_eva_usage_user', 'evlet_eva_usage', ('user_id', 'at'))
+            connection.ensure_table(RESERVATIONS)
+            connection.ensure_table(TASKS)
+            connection.ensure_table(TASK_RUNS)
+            connection.ensure_index('evlet_eva_task_run_task', 'evlet_eva_task_runs', ('task_id', 'id'))
             # Runs a stopped process left behind: nobody is working on them any more.
-            self.reap(tx.connection)
+            self.reap(connection)
             # Eva has its own SQLite file, which cannot refer to accounts in the main one (evlet/writes.py), so
             # links to accounts are checked here: a person's chats, files and tasks go when the account does,
             # and the schedule of a task that is gone stops.
             for table in ('evlet_eva_conversations', 'evlet_eva_files', 'evlet_eva_tasks'):
-                tx.connection.execute(f'DELETE FROM {table} WHERE user_id NOT IN (SELECT id FROM evlet_users)')
-            if self.business.jobs is not None and self.database.columns(tx.connection, 'evlet_schedules'):
-                tasks = {f'eva_task_{row[0]}' for row in tx.connection.execute('SELECT id FROM evlet_eva_tasks')}
-                for (name,) in tx.connection.execute("SELECT name FROM evlet_schedules WHERE name LIKE 'eva_task_%'").fetchall():
+                connection.run(qb.delete(table).where(qb.not_in('user_id', qb.select('evlet_users', 'id'))))
+            if self.business.jobs is not None and connection.columns('evlet_schedules'):
+                tasks = {f'eva_task_{row[0]}' for row in connection.run(qb.select('evlet_eva_tasks', 'id'))}
+                for (name,) in connection.run(qb.select('evlet_schedules', 'name').where(qb.starts_with('name', 'eva_task_'))).all():
                     if name not in tasks:
-                        tx.connection.execute('DELETE FROM evlet_calendar_schedules WHERE name=?', (name,))
-                        tx.connection.execute('DELETE FROM evlet_schedules WHERE name=?', (name,))
+                        connection.run(qb.delete('evlet_calendar_schedules').where(name=name))
+                        connection.run(qb.delete('evlet_schedules').where(name=name))
 
     def alive(self, run_id):
         with self.lock:
@@ -600,12 +636,13 @@ class Eva:
         """Close runs nobody is working on: not running here and silent for STALE_SECONDS (a restart, a crashed worker).
         Called at start and before anything that would wait for a run, so a chat never stays blocked."""
         stale = int(time.time()) - STALE_SECONDS
-        where, args = ("status='running' AND updated_at<?", [stale]) if conversation_id is None else \
-            ("status='running' AND updated_at<? AND conversation_id=?", [stale, conversation_id])
-        for row in connection.execute(f'SELECT id FROM evlet_eva_runs WHERE {where}', args).fetchall():
+        stuck = qb.select('evlet_eva_runs', 'id').where(status='running').where(qb.lt('updated_at', stale))
+        if conversation_id is not None:
+            stuck = stuck.where(conversation_id=conversation_id)
+        for row in connection.run(stuck).all():
             if not self.alive(row['id']):
                 self.close(connection, row['id'], 'failed', 'Evlet stopped while this answer was being written. Ask again to continue.')
-                connection.execute("UPDATE evlet_eva_task_runs SET status='failed', error='Evlet stopped during this run.' WHERE run_id=? AND status='running'", (row['id'],))
+                connection.run(qb.update('evlet_eva_task_runs', status='failed', error='Evlet stopped during this run.').where(run_id=row['id'], status='running'))
 
     # ---------- who may use Eva ----------
 
@@ -617,10 +654,11 @@ class Eva:
         if not self.enabled():
             raise AccessError(403, 'Eva is turned off for this workspace.')
         def read(db):
-            row = db.execute("SELECT u.id, u.username, u.role, u.allow_eva FROM evlet_users u JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' "
-                             'WHERE u.id=? AND u.active=1', (user_id,)).fetchone()
-            links = tuple((item['model'], item['record_id']) for item in db.execute(
-                'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (user_id,)))
+            row = db.run(qb.select(qb.table('evlet_users', 'u'), 'u.id', 'u.username', 'u.role', 'u.allow_eva')
+                         .join(qb.table('evlet_roles', 'r'), qb.and_(qb.eq('r.id', qb.col('u.role')), qb.eq('r.realm', 'desk')))
+                         .where(qb.eq('u.id', qb.value(user_id)), qb.eq('u.active', 1))).one()
+            links = tuple((item['model'], item['record_id']) for item in db.run(
+                qb.select('evlet_user_links', 'model', 'record_id').where(qb.eq('user_id', qb.value(user_id))).order_by('model', 'record_id')))
             return row, links
         row, links = read(connection) if connection is not None else self._read(read)
         if row is None:
@@ -726,8 +764,8 @@ class Eva:
     def status(self, user):
         settings = self.business.controls.settings
         with self.database._connection() as connection:
-            pending = connection.execute("SELECT count(*) FROM evlet_tool_approvals WHERE user_id=? AND status='pending' AND expires_at>?",
-                                         (user.id, int(time.time()))).fetchone()[0]
+            pending = connection.run(qb.select('evlet_tool_approvals', qb.count())
+                                     .where(qb.gt('expires_at', int(time.time())), user_id=user.id, status='pending')).value()
         return {'models': list(self.ai.models), 'model': self.default_model(), 'choose_model': settings['eva.choose_model'],
                 'allowance': self.allowance(user.id), 'tasks': self.business.jobs is not None, 'pending_approvals': pending,
                 'files': {'max_size': MAX_FILE, 'max_files': MAX_FILES, 'kinds': sorted(KINDS)}}
@@ -739,7 +777,7 @@ class Eva:
     # ---------- conversations ----------
 
     def own(self, connection, user, conversation_id):
-        row = connection.execute('SELECT * FROM evlet_eva_conversations WHERE id=? AND user_id=?', (conversation_id, user.id)).fetchone()
+        row = connection.run(qb.select('evlet_eva_conversations').where(id=conversation_id, user_id=user.id)).one()
         if row is None:
             # Another person's chat is not found, whoever asks: admins don't read private chats.
             raise AccessError(404, 'Conversation not found')
@@ -752,17 +790,17 @@ class Eva:
                 'context': {'model': row['context_model'], 'id': text_id(row['context_id'])} if row['context_model'] else None}
 
     def conversations(self, user, params):
-        clauses, args = ['user_id=?'], [user.id]
-        clauses.append('archived_at IS NOT NULL' if params.get('archived') == '1' else 'archived_at IS NULL')
+        listing = qb.select('evlet_eva_conversations').where(
+            user_id=user.id).where(qb.not_null('archived_at') if params.get('archived') == '1' else qb.is_null('archived_at'))
         if params.get('q'):
-            text = '%' + params['q'][:100].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
-            clauses.append("(title LIKE ? ESCAPE '\\' OR id IN (SELECT conversation_id FROM evlet_eva_messages WHERE role IN ('user','assistant') AND content LIKE ? ESCAPE '\\'))")
-            args.extend([text, text])
+            text = params['q'][:100]
+            listing = listing.where(qb.or_(qb.contains_ci('title', text), qb.in_('id', qb.select('evlet_eva_messages', 'conversation_id').where(
+                qb.in_('role', ('user', 'assistant')), qb.contains_ci('content', text)))))
         if params.get('before', '').isdigit():
-            clauses.append('updated_at<?'); args.append(int(params['before']))
+            listing = listing.where(qb.lt('updated_at', int(params['before'])))
         with self.database._connection() as connection:
-            rows = connection.execute('SELECT * FROM evlet_eva_conversations WHERE ' + ' AND '.join(clauses) + ' ORDER BY updated_at DESC, id DESC LIMIT 51', args).fetchall()
-            archived = connection.execute('SELECT count(*) FROM evlet_eva_conversations WHERE user_id=? AND archived_at IS NOT NULL', (user.id,)).fetchone()[0]
+            rows = connection.run(listing.order_by('-updated_at', '-id').limit(51)).all()
+            archived = connection.run(qb.select('evlet_eva_conversations', qb.count()).where(qb.not_null('archived_at'), user_id=user.id)).value()
         items = [self.public_conversation(row) for row in rows[:50]]
         return {'items': items, 'next': items[-1]['updated_at'] if len(rows) > 50 else None, 'archived': archived}
 
@@ -787,9 +825,9 @@ class Eva:
                 raise AccessError(exc.status, exc.message) from None
         now = int(time.time())
         def insert(db):
-            new = db.execute('INSERT INTO evlet_eva_conversations(user_id,title,created_at,updated_at,task_id,context_model,context_id) VALUES (?,?,?,?,?,?,?)',
-                             (user.id, title.strip(), now, now, task_id, context and context['model'], context and context['id'])).lastrowid
-            return db.execute('SELECT * FROM evlet_eva_conversations WHERE id=?', (new,)).fetchone()
+            new = db.run(qb.insert('evlet_eva_conversations', user_id=user.id, title=title.strip(), created_at=now, updated_at=now, task_id=task_id,
+                                   context_model=context and context['model'], context_id=context and context['id']).returning_id()).id
+            return db.run(qb.select('evlet_eva_conversations').where(id=new)).one()
         if connection is not None:
             return self.public_conversation(insert(connection))
         with self.database.transaction() as tx:
@@ -799,17 +837,19 @@ class Eva:
         """One chat, rebuilt from what Evlet stored: messages, each run's activity rows, approvals and files."""
         with self.database._connection() as connection:
             row = self.own(connection, user, conversation_id)
-            messages = connection.execute("SELECT id, run_id, role, content, files, created_at FROM evlet_eva_messages WHERE conversation_id=? AND role IN ('user','assistant') "
-                                          "AND content<>'' ORDER BY id", (conversation_id,)).fetchall()
-            runs = connection.execute('SELECT * FROM evlet_eva_runs WHERE conversation_id=? ORDER BY id', (conversation_id,)).fetchall()
-            events = connection.execute("SELECT e.run_id, e.type, e.data FROM evlet_eva_events e JOIN evlet_eva_runs r ON r.id=e.run_id "
-                                        "WHERE r.conversation_id=? AND e.type IN ('tool.started','tool.completed','tool.failed','approval.requested','approval.answered') ORDER BY e.id",
-                                        (conversation_id,)).fetchall()
-            files = connection.execute('SELECT id, name, kind, size, created_at FROM evlet_eva_files WHERE conversation_id=? ORDER BY id', (conversation_id,)).fetchall()
-            usage = connection.execute('SELECT coalesce(sum(total_tokens),0) AS tokens, coalesce(sum(cost_micro),0) AS cost FROM evlet_eva_usage WHERE conversation_id=?',
-                                       (conversation_id,)).fetchone()
-            approvals = {item['id']: item for item in connection.execute(
-                'SELECT id, status FROM evlet_tool_approvals WHERE user_id=? AND run_id IN (SELECT id FROM evlet_eva_runs WHERE conversation_id=?)', (user.id, conversation_id))}
+            messages = connection.run(qb.select('evlet_eva_messages', 'id', 'run_id', 'role', 'content', 'files', 'created_at').where(
+                qb.in_('role', ('user', 'assistant')), qb.ne('content', ''), conversation_id=conversation_id).order_by('id')).all()
+            runs = connection.run(qb.select('evlet_eva_runs').where(conversation_id=conversation_id).order_by('id')).all()
+            events = connection.run(qb.select(qb.table('evlet_eva_events', 'e'), 'e.run_id', 'e.type', 'e.data')
+                                    .join(qb.table('evlet_eva_runs', 'r'), qb.eq('r.id', qb.col('e.run_id')))
+                                    .where(qb.eq('r.conversation_id', conversation_id),
+                                           qb.in_('e.type', ('tool.started', 'tool.completed', 'tool.failed', 'approval.requested', 'approval.answered')))
+                                    .order_by('e.id')).all()
+            files = connection.run(qb.select('evlet_eva_files', 'id', 'name', 'kind', 'size', 'created_at').where(conversation_id=conversation_id).order_by('id')).all()
+            usage = connection.run(qb.select('evlet_eva_usage', qb.named(qb.coalesce(qb.sum('total_tokens'), 0), 'tokens'),
+                                             qb.named(qb.coalesce(qb.sum('cost_micro'), 0), 'cost')).where(conversation_id=conversation_id)).one()
+            approvals = {item['id']: item for item in connection.run(qb.select('evlet_tool_approvals', 'id', 'status').where(
+                qb.in_('run_id', qb.select('evlet_eva_runs', 'id').where(conversation_id=conversation_id)), user_id=user.id))}
         activities = {}
         for event in events:
             activity(activities.setdefault(event['run_id'], {}), event['type'], json.loads(event['data']))
@@ -836,25 +876,25 @@ class Eva:
         with self.database.transaction() as tx:
             self.own(tx.connection, user, conversation_id)
             if 'title' in body:
-                tx.connection.execute('UPDATE evlet_eva_conversations SET title=? WHERE id=?', (body['title'].strip(), conversation_id))
+                tx.connection.run(qb.update('evlet_eva_conversations', title=body['title'].strip()).where(id=conversation_id))
             if 'archived' in body:
-                tx.connection.execute('UPDATE evlet_eva_conversations SET archived_at=? WHERE id=?', (int(time.time()) if body['archived'] else None, conversation_id))
-            row = tx.connection.execute('SELECT * FROM evlet_eva_conversations WHERE id=?', (conversation_id,)).fetchone()
+                tx.connection.run(qb.update('evlet_eva_conversations', archived_at=int(time.time()) if body['archived'] else None).where(id=conversation_id))
+            row = tx.connection.run(qb.select('evlet_eva_conversations').where(id=conversation_id)).one()
         return self.public_conversation(row)
 
     def delete_conversation(self, user, conversation_id):
         with self.database.transaction() as tx:
             self.own(tx.connection, user, conversation_id)
             self.reap(tx.connection, conversation_id)
-            if tx.connection.execute("SELECT 1 FROM evlet_eva_runs WHERE conversation_id=? AND status='running'", (conversation_id,)).fetchone():
+            if tx.connection.run(qb.select('evlet_eva_runs', 'id').where(conversation_id=conversation_id, status='running')).one():
                 raise AccessError(409, 'Wait for Eva to finish, or stop it, before deleting this chat.')
             # Usage rows stay for the totals; they lose the link to the deleted chat.
-            tx.connection.execute('UPDATE evlet_eva_usage SET conversation_id=NULL WHERE conversation_id=?', (conversation_id,))
-            for table in ('evlet_eva_events',):
-                tx.connection.execute(f'DELETE FROM {table} WHERE run_id IN (SELECT id FROM evlet_eva_runs WHERE conversation_id=?)', (conversation_id,))
+            tx.connection.run(qb.update('evlet_eva_usage', conversation_id=None).where(conversation_id=conversation_id))
+            tx.connection.run(qb.delete('evlet_eva_events').where(qb.in_('run_id', qb.select('evlet_eva_runs', 'id').where(conversation_id=conversation_id))))
             for table in ('evlet_eva_messages', 'evlet_eva_runs', 'evlet_eva_files'):
-                tx.connection.execute(f'DELETE FROM {table} WHERE conversation_id=?', (conversation_id,))
-            tx.connection.execute('DELETE FROM evlet_eva_conversations WHERE id=?', (conversation_id,))
+                tx.connection.run(qb.delete(table).where(conversation_id=conversation_id))
+            tx.connection.run(qb.delete('evlet_eva_conversations').where(id=conversation_id))
+
 
     # ---------- sending a message and running Eva ----------
 
@@ -880,14 +920,14 @@ class Eva:
         with self.database.transaction() as tx:
             conversation = self.own(tx.connection, user, conversation_id)
             self.reap(tx.connection, conversation_id)
-            if tx.connection.execute("SELECT 1 FROM evlet_eva_runs WHERE conversation_id=? AND status IN ('running','awaiting_approval')", (conversation_id,)).fetchone():
+            if tx.connection.run(qb.select('evlet_eva_runs', 'id').where(qb.in_('status', ('running', 'awaiting_approval')), conversation_id=conversation_id)).one():
                 raise AccessError(409, 'Eva is still working on this chat. Wait, answer the approval, or stop it first.')
             named = []
             for file_id in files:
-                row = tx.connection.execute('SELECT id, name, size, kind FROM evlet_eva_files WHERE id=? AND user_id=?', (file_id, user.id)).fetchone()
+                row = tx.connection.run(qb.select('evlet_eva_files', 'id', 'name', 'size', 'kind').where(id=file_id, user_id=user.id)).one()
                 if row is None:
                     raise ValidationError({'files': 'Attach your own uploaded files'})
-                tx.connection.execute('UPDATE evlet_eva_files SET conversation_id=? WHERE id=? AND conversation_id IS NULL', (conversation_id, file_id))
+                tx.connection.run(qb.update('evlet_eva_files', conversation_id=conversation_id).where(qb.is_null('conversation_id'), id=file_id))
                 named.append({'id': row['id'], 'name': row['name'], 'size': row['size'], 'kind': row['kind']})
             run_id, message = self.begin(tx.connection, user, conversation, text, named, model, 'eva', host)
         self.spawn(run_id)
@@ -896,14 +936,14 @@ class Eva:
     def begin(self, connection, user, conversation, text, files, model, origin, host):
         now = int(time.time())
         writes = int(user.access is None or user.access.write)
-        run_id = connection.execute("INSERT INTO evlet_eva_runs(conversation_id,user_id,origin,model,status,started_at,updated_at,process,host,writes) "
-                                    "VALUES (?,?,?,?,'running',?,?,?,?,?)", (conversation['id'], user.id, origin, model, now, now, self.process, host, writes)).lastrowid
-        message_id = connection.execute("INSERT INTO evlet_eva_messages(conversation_id,run_id,role,content,files,created_at) VALUES (?,?,'user',?,?,?)",
-                                        (conversation['id'], run_id, text, json.dumps(files) if files else None, now)).lastrowid
+        run_id = connection.run(qb.insert('evlet_eva_runs', conversation_id=conversation['id'], user_id=user.id, origin=origin, model=model, status='running',
+                                          started_at=now, updated_at=now, process=self.process, host=host, writes=writes).returning_id()).id
+        message_id = connection.run(qb.insert('evlet_eva_messages', conversation_id=conversation['id'], run_id=run_id, role='user', content=text,
+                                              files=json.dumps(files) if files else None, created_at=now).returning_id()).id
         title = conversation['title']
         if title == 'New chat':
             title = re.sub(r'\s+', ' ', text)[:60].rstrip() + ('…' if len(text) > 60 else '')
-        connection.execute('UPDATE evlet_eva_conversations SET updated_at=?, title=?, archived_at=NULL WHERE id=?', (now, title, conversation['id']))
+        connection.run(qb.update('evlet_eva_conversations', updated_at=now, title=title, archived_at=None).where(id=conversation['id']))
         self.emit(connection, run_id, 'run.started', {'run_id': run_id, 'model': model})
         return run_id, {'id': message_id, 'role': 'user', 'content': text, 'files': files, 'created_at': now, 'run_id': run_id}
 
@@ -921,20 +961,20 @@ class Eva:
             thread.join(timeout)
 
     def emit(self, connection, run_id, kind, data):
-        connection.execute('INSERT INTO evlet_eva_events(run_id,at,type,data) VALUES (?,?,?,?)', (run_id, int(time.time()), kind, json.dumps(data, default=str)))
+        connection.run(qb.insert('evlet_eva_events', run_id=run_id, at=int(time.time()), type=kind, data=json.dumps(data, default=str)))
 
     def emit_now(self, run_id, kind, data):
         with self.database.transaction(store='eva') as tx:
             self.emit(tx.connection, run_id, kind, data)
-            tx.connection.execute('UPDATE evlet_eva_runs SET updated_at=? WHERE id=?', (int(time.time()), run_id))
+            tx.connection.run(qb.update('evlet_eva_runs', updated_at=int(time.time())).where(id=run_id))
 
     def close(self, connection, run_id, status, error=None, message=None):
         now = int(time.time())
-        connection.execute('UPDATE evlet_eva_runs SET status=?, error=?, finished_at=?, updated_at=?, pending=NULL WHERE id=?', (status, error, now, now, run_id))
+        connection.run(qb.update('evlet_eva_runs', status=status, error=error, finished_at=now, updated_at=now, pending=None).where(id=run_id))
         kind = {'completed': 'run.completed', 'failed': 'run.failed', 'cancelled': 'run.cancelled'}[status]
         self.emit(connection, run_id, kind, {'run_id': run_id, 'status': status, 'error': error, 'message': message})
         # Streaming pieces are only for a live reader; the finished message is stored.
-        connection.execute("DELETE FROM evlet_eva_events WHERE run_id=? AND type='message.delta'", (run_id,))
+        connection.run(qb.delete('evlet_eva_events').where(run_id=run_id, type='message.delta'))
 
     def execute(self, run_id, resume=None):
         """Run Eva on a run until it answers, needs an approval, is stopped or fails. Runs on its own thread."""
@@ -946,7 +986,7 @@ class Eva:
         try:
             self.business.controls.refresh()
             with self.database._connection() as connection:
-                run = connection.execute('SELECT * FROM evlet_eva_runs WHERE id=?', (run_id,)).fetchone()
+                run = connection.run(qb.select('evlet_eva_runs').where(id=run_id)).one()
             if run is None:
                 return
             started = time.monotonic()
@@ -976,9 +1016,9 @@ class Eva:
                     self.finish(run_id, 'completed', None, text or 'I have nothing to add.')
                     return
                 with self.database.transaction(store='eva') as tx:
-                    tx.connection.execute("INSERT INTO evlet_eva_messages(conversation_id,run_id,role,content,tool_calls,created_at) VALUES (?,?,'assistant',?,?,?)",
-                                          (run['conversation_id'], run_id, text, json.dumps(calls), int(time.time())))
-                    tx.connection.execute('UPDATE evlet_eva_runs SET steps=?, updated_at=? WHERE id=?', (steps, int(time.time()), run_id))
+                    tx.connection.run(qb.insert('evlet_eva_messages', conversation_id=run['conversation_id'], run_id=run_id, role='assistant', content=text,
+                                                tool_calls=json.dumps(calls), created_at=int(time.time())))
+                    tx.connection.run(qb.update('evlet_eva_runs', steps=steps, updated_at=int(time.time())).where(id=run_id))
                 for index, call in enumerate(calls):
                     if self.cancelled(run_id):
                         return
@@ -987,7 +1027,7 @@ class Eva:
                         return
                     tools_used += 1
                     with self.database.transaction(store='eva') as tx:
-                        tx.connection.execute('UPDATE evlet_eva_runs SET tool_calls=?, updated_at=? WHERE id=?', (tools_used, int(time.time()), run_id))
+                        tx.connection.run(qb.update('evlet_eva_runs', tool_calls=tools_used, updated_at=int(time.time())).where(id=run_id))
         except QuotaError as exc:
             self.finish(run_id, 'failed', f'quota:{exc.scope}:{exc.reset}', None)
         except AccessError as exc:
@@ -1005,7 +1045,7 @@ class Eva:
 
     def cancelled(self, run_id):
         with self.database._connection() as connection:
-            row = connection.execute('SELECT cancel, status FROM evlet_eva_runs WHERE id=?', (run_id,)).fetchone()
+            row = connection.run(qb.select('evlet_eva_runs', 'cancel', 'status').where(id=run_id)).one()
         if row is None or row['status'] not in ('running',):
             return True
         if row['cancel']:
@@ -1016,13 +1056,13 @@ class Eva:
 
     def finish(self, run_id, status, error, message):
         with self.database.transaction(store='eva') as tx:
-            run = tx.connection.execute('SELECT * FROM evlet_eva_runs WHERE id=?', (run_id,)).fetchone()
+            run = tx.connection.run(qb.select('evlet_eva_runs').where(id=run_id)).one()
             if run is None or run['status'] not in ('running', 'awaiting_approval'):
                 return
             if message:
-                tx.connection.execute("INSERT INTO evlet_eva_messages(conversation_id,run_id,role,content,created_at) VALUES (?,?,'assistant',?,?)",
-                                      (run['conversation_id'], run_id, message, int(time.time())))
-            tx.connection.execute('UPDATE evlet_eva_conversations SET updated_at=? WHERE id=?', (int(time.time()), run['conversation_id']))
+                tx.connection.run(qb.insert('evlet_eva_messages', conversation_id=run['conversation_id'], run_id=run_id, role='assistant', content=message,
+                                            created_at=int(time.time())))
+            tx.connection.run(qb.update('evlet_eva_conversations', updated_at=int(time.time())).where(id=run['conversation_id']))
             self.close(tx.connection, run_id, status, error, message)
 
     def tool_step(self, run, user, call, scope, remaining=None, declined=False):
@@ -1047,8 +1087,8 @@ class Eva:
             except ApprovalNeeded as exc:
                 approval = exc.approval
                 with self.database.transaction(store='eva') as tx:
-                    tx.connection.execute("UPDATE evlet_eva_runs SET status='awaiting_approval', pending=?, updated_at=? WHERE id=?",
-                                          (json.dumps({'approval': approval['id'], 'calls': remaining or [call]}), int(time.time()), run_id))
+                    tx.connection.run(qb.update('evlet_eva_runs', status='awaiting_approval', pending=json.dumps({'approval': approval['id'], 'calls': remaining or [call]}),
+                                                updated_at=int(time.time())).where(id=run_id))
                     self.emit(tx.connection, run_id, 'approval.requested', {'call_id': call['id'], 'tool': call['name'], 'label': title, 'approval': approval})
                 return False
             except ConnectorError as exc:
@@ -1068,8 +1108,8 @@ class Eva:
         if len(content) > RESULT_CHARS:
             content = content[:RESULT_CHARS] + '… [cut: ask for a smaller page or a filter]'
         with self.database.transaction(store='eva') as tx:
-            tx.connection.execute("INSERT INTO evlet_eva_messages(conversation_id,run_id,role,content,tool_call_id,created_at) VALUES (?,?,'tool',?,?,?)",
-                                  (run['conversation_id'], run_id, content, call['id'], int(time.time())))
+            tx.connection.run(qb.insert('evlet_eva_messages', conversation_id=run['conversation_id'], run_id=run_id, role='tool', content=content,
+                                        tool_call_id=call['id'], created_at=int(time.time())))
         return True
 
     def model_step(self, run, user):
@@ -1129,10 +1169,10 @@ class Eva:
     def request(self, run, user):
         """The provider request: instructions, as much recent conversation as fits, and the tools this person has."""
         with self.database._connection() as connection:
-            conversation = connection.execute('SELECT * FROM evlet_eva_conversations WHERE id=?', (run['conversation_id'],)).fetchone()
-            rows = connection.execute('SELECT * FROM evlet_eva_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 400', (run['conversation_id'],)).fetchall()
-            profile = connection.execute('SELECT full_name FROM evlet_user_profile WHERE user_id=?', (user.id,)).fetchone() \
-                if self.database.columns(connection, 'evlet_user_profile') else None
+            conversation = connection.run(qb.select('evlet_eva_conversations').where(id=run['conversation_id'])).one()
+            rows = connection.run(qb.select('evlet_eva_messages').where(conversation_id=run['conversation_id']).order_by('-id').limit(400)).all()
+            profile = connection.run(qb.select('evlet_user_profile', 'full_name').where(user_id=user.id)).one() \
+                if connection.columns('evlet_user_profile') else None
         zone = self.zone()
         now = datetime.now(zone)
         system = SYSTEM.format(app=(getattr(self.business, 'application', None) or {}).get('name', 'Evlet'), person=(profile and profile['full_name']) or user.username,
@@ -1180,7 +1220,7 @@ class Eva:
         parts = [{'type': 'text', 'text': row['content']}]
         with self.database._connection() as connection:
             for item in files:
-                stored = connection.execute('SELECT name, content FROM evlet_eva_files WHERE id=? AND user_id=?', (item['id'], user.id)).fetchone()
+                stored = connection.run(qb.select('evlet_eva_files', 'name', 'content').where(qb.eq('id', qb.value(item['id'])), user_id=user.id)).one()
                 if stored is None:
                     continue
                 name, content = stored['name'], bytes(stored['content'])
@@ -1196,35 +1236,35 @@ class Eva:
 
     def cancel(self, user, run_id):
         with self.database.transaction() as tx:
-            run = tx.connection.execute('SELECT r.* FROM evlet_eva_runs r JOIN evlet_eva_conversations c ON c.id=r.conversation_id WHERE r.id=? AND c.user_id=?',
-                                        (run_id, user.id)).fetchone()
+            run = tx.connection.run(qb.select(qb.table('evlet_eva_runs', 'r')).join(qb.table('evlet_eva_conversations', 'c'), qb.eq('c.id', qb.col('r.conversation_id')))
+                                    .where(qb.eq('r.id', run_id), qb.eq('c.user_id', user.id))).one()
             if run is None:
                 raise AccessError(404, 'Run not found')
             if run['status'] == 'awaiting_approval':
                 pending = json.loads(run['pending'] or '{}')
                 if pending.get('approval'):
-                    tx.connection.execute("UPDATE evlet_tool_approvals SET status='declined', decided_at=? WHERE id=? AND status='pending'", (int(time.time()), pending['approval']))
+                    tx.connection.run(qb.update('evlet_tool_approvals', status='declined', decided_at=int(time.time())).where(id=pending['approval'], status='pending'))
                 self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
             elif run['status'] == 'running' and not self.alive(run_id) and run['process'] != self.process:
                 # No thread here and another (perhaps stopped) process started it: stop it now rather than wait for that process.
                 if run['updated_at'] < int(time.time()) - STALE_SECONDS:
                     self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
                 else:
-                    tx.connection.execute('UPDATE evlet_eva_runs SET cancel=1 WHERE id=?', (run_id,))
+                    tx.connection.run(qb.update('evlet_eva_runs', cancel=1).where(id=run_id))
             elif run['status'] == 'running' and not self.alive(run_id):
                 # Started in this process, but its thread is gone: nothing will read the flag.
                 self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
             elif run['status'] == 'running':
-                tx.connection.execute('UPDATE evlet_eva_runs SET cancel=1 WHERE id=?', (run_id,))
+                tx.connection.run(qb.update('evlet_eva_runs', cancel=1).where(id=run_id))
         return {'id': run_id, 'status': 'cancelled' if run['status'] in ('running', 'awaiting_approval') else run['status']}
 
     def answered(self, user, approval, scope):
         """The Tool Engine tells Eva a person answered an approval: continue the run that waits for it."""
         with self.database.transaction() as tx:
-            run = tx.connection.execute("SELECT * FROM evlet_eva_runs WHERE id=? AND user_id=? AND status='awaiting_approval'", (approval['run_id'], user.id)).fetchone()
+            run = tx.connection.run(qb.select('evlet_eva_runs').where(qb.eq('id', qb.value(approval['run_id'])), user_id=user.id, status='awaiting_approval')).one()
             if run is None or json.loads(run['pending'] or '{}').get('approval') != approval['id']:
                 return
-            tx.connection.execute("UPDATE evlet_eva_runs SET status='running', updated_at=?, process=? WHERE id=?", (int(time.time()), self.process, run['id']))
+            tx.connection.run(qb.update('evlet_eva_runs', status='running', updated_at=int(time.time()), process=self.process).where(id=run['id']))
             self.emit(tx.connection, run['id'], 'approval.answered', {'approval': approval['id'], 'status': approval['status']})
         thread = threading.Thread(target=self.execute, args=(run['id'], 'approved' if approval['status'] == 'approved' else 'declined'),
                                   name=f"eva-run-{run['id']}", daemon=True)
@@ -1235,11 +1275,13 @@ class Eva:
     def events(self, user, run_id, after=0):
         """Stored events of one of my runs after an event id: the SSE stream and its polling fallback read these."""
         with self.database._connection() as connection:
-            run = connection.execute('SELECT r.id, r.status FROM evlet_eva_runs r JOIN evlet_eva_conversations c ON c.id=r.conversation_id WHERE r.id=? AND c.user_id=?',
-                                     (run_id, user.id)).fetchone()
+            run = connection.run(qb.select(qb.table('evlet_eva_runs', 'r'), 'r.id', 'r.status')
+                                 .join(qb.table('evlet_eva_conversations', 'c'), qb.eq('c.id', qb.col('r.conversation_id')))
+                                 .where(qb.eq('r.id', run_id), qb.eq('c.user_id', user.id))).one()
             if run is None:
                 raise AccessError(404, 'Run not found')
-            rows = connection.execute('SELECT id, at, type, data FROM evlet_eva_events WHERE run_id=? AND id>? ORDER BY id LIMIT 200', (run_id, after)).fetchall()
+            rows = connection.run(qb.select('evlet_eva_events', 'id', 'at', 'type', 'data').where(qb.gt('id', after), run_id=run_id).order_by('id').limit(200)).all()
+
         items = [{'id': row['id'], 'type': row['type'], 'at': row['at'], **json.loads(row['data'])} for row in rows]
         return {'items': items, 'status': run['status'], 'done': run['status'] in ('completed', 'failed', 'cancelled') and len(rows) < 200}
 
@@ -1267,8 +1309,8 @@ class Eva:
 
     def store(self, user_id, conversation_id, name, kind, source, content, connection=None):
         def insert(db):
-            file_id = db.execute('INSERT INTO evlet_eva_files(user_id,conversation_id,name,kind,source,size,content,created_at) VALUES (?,?,?,?,?,?,?,?)',
-                                 (user_id, conversation_id, name, kind, source, len(content), content, int(time.time()))).lastrowid
+            file_id = db.run(qb.insert('evlet_eva_files', user_id=user_id, conversation_id=conversation_id, name=name, kind=kind, source=source,
+                                       size=len(content), content=content, created_at=int(time.time())).returning_id()).id
             return {'id': file_id, 'name': name, 'kind': kind, 'size': len(content)}
         if connection is not None:
             return insert(connection)
@@ -1278,18 +1320,18 @@ class Eva:
     def library(self, user, search):
         """Files this person may attach: on records they can read, and from their earlier chats."""
         search = search[:100]
-        text = '%' + search.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
         found = []
         person = self.person(user.id)
         from .database import Session
         with self.database._connection() as connection:
             # One read snapshot for the search and the permission checks.
-            connection.execute('BEGIN')
+            connection.snapshot()
             session = Session(connection, self.business.registry)
-            rows = connection.execute("SELECT id, model, record_id, name, COALESCE(file_size,length(content)) AS size FROM evlet_attachments WHERE name LIKE ? ESCAPE '\\' "
-                                      'ORDER BY id DESC LIMIT 200', (text,)).fetchall() if self.database.columns(connection, 'evlet_attachments') else []
-            own = connection.execute("SELECT f.id, f.name, f.size, f.created_at, c.title FROM evlet_eva_files f LEFT JOIN evlet_eva_conversations c ON c.id=f.conversation_id "
-                                     "WHERE f.user_id=? AND f.name LIKE ? ESCAPE '\\' ORDER BY f.id DESC LIMIT 20", (user.id, text)).fetchall()
+            rows = connection.run(qb.select('evlet_attachments', 'id', 'model', 'record_id', 'name', qb.named(qb.coalesce('file_size', qb.length('content')), 'size'))
+                                  .where(qb.contains_ci('name', search)).order_by('-id').limit(200)).all() if connection.columns('evlet_attachments') else []
+            own = connection.run(qb.select(qb.table('evlet_eva_files', 'f'), 'f.id', 'f.name', 'f.size', 'f.created_at', 'c.title')
+                                 .join(qb.table('evlet_eva_conversations', 'c'), qb.eq('c.id', qb.col('f.conversation_id')), left=True)
+                                 .where(qb.eq('f.user_id', user.id), qb.contains_ci('f.name', search)).order_by('-f.id').limit(20)).all()
             for row in rows:
                 model = self.business.registry.models.get(row['model'])
                 if model is None or model not in self.business.attachments:
@@ -1327,7 +1369,7 @@ class Eva:
         from .business import Download
         from urllib.parse import quote
         with self.database._connection() as connection:
-            row = connection.execute('SELECT name, content FROM evlet_eva_files WHERE id=? AND user_id=?', (file_id, user.id)).fetchone()
+            row = connection.run(qb.select('evlet_eva_files', 'name', 'content').where(id=file_id, user_id=user.id)).one()
         if row is None:
             raise AccessError(404, 'File not found')
         return 200, Download(bytes(row['content'])), [(b'content-type', b'application/octet-stream'),
@@ -1353,7 +1395,7 @@ class Eva:
         if not re.fullmatch(r'[^/\\\x00-\x1f]{1,120}', name) or len(content) > MAX_FILE:
             raise ConnectorError(422, 'Use a plain file name and keep the file under 1 MB')
         with self.database.transaction() as tx:
-            conversation = tx.connection.execute('SELECT conversation_id FROM evlet_eva_runs WHERE id=? AND user_id=?', (run_id, user.id)).fetchone() if run_id else None
+            conversation = tx.connection.run(qb.select('evlet_eva_runs', 'conversation_id').where(id=run_id, user_id=user.id)).one() if run_id else None
             stored = self.store(user.id, conversation and conversation[0], name, 'generated', None, content, tx.connection)
         return {**stored, 'download': f"/api/_eva/files/{stored['id']}"}
 
@@ -1376,10 +1418,11 @@ class Eva:
         start, reset = period_bounds(limit['period'], self.zone(), now)
         column = {'aed': 'cost_micro', 'tokens': 'total_tokens', 'requests': 'requests'}[limit['unit']]
         reserved = {'aed': 'cost_micro', 'tokens': 'tokens', 'requests': 'requests'}[limit['unit']]
-        who, args = ('', ()) if scope == 'instance' else (' AND user_id=?', (user_id,))
-        spent = connection.execute(f'SELECT coalesce(sum({column}),0) FROM evlet_eva_usage WHERE at>=?{who}', (start, *args)).fetchone()[0]
-        held = connection.execute(f'SELECT coalesce(sum({reserved}),0) FROM evlet_eva_reservations WHERE expires_at>?{who}', (now, *args)).fetchone()[0]
-        return spent, held, reset
+        spent = qb.select('evlet_eva_usage', qb.coalesce(qb.sum(column), 0)).where(qb.ge('at', start))
+        held = qb.select('evlet_eva_reservations', qb.coalesce(qb.sum(reserved), 0)).where(qb.gt('expires_at', now))
+        if scope != 'instance':
+            spent, held = spent.where(user_id=user_id), held.where(user_id=user_id)
+        return connection.run(spent).value(), connection.run(held).value(), reset
 
     @staticmethod
     def allowed_amount(limit):
@@ -1397,7 +1440,7 @@ class Eva:
         with self.database.transaction(store='eva') as tx:
             connection = tx.connection
             # One writer at a time: two requests can't both take the last of an allowance.
-            connection.execute('UPDATE evlet_eva_lock SET n=n+1 WHERE id=1')
+            connection.run(qb.update('evlet_eva_lock', n=qb.col('n') + 1).where(id=1))
             for scope, limit in limits:
                 spent, held, reset = self.used(connection, scope, limit, user_id, now)
                 need = {'aed': cost, 'tokens': tokens, 'requests': 1}[limit['unit']] if not check_only else 0
@@ -1405,12 +1448,12 @@ class Eva:
                     raise QuotaError(scope, reset)
             if check_only:
                 return None
-            return connection.execute('INSERT INTO evlet_eva_reservations(user_id,origin,cost_micro,tokens,requests,expires_at) VALUES (?,?,?,?,1,?)',
-                                      (user_id, origin, cost, tokens, now + 900)).lastrowid
+            return connection.run(qb.insert('evlet_eva_reservations', user_id=user_id, origin=origin, cost_micro=cost, tokens=tokens, requests=1,
+                                            expires_at=now + 900).returning_id()).id
 
     def release(self, reservation):
         with self.database.transaction(store='eva') as tx:
-            tx.connection.execute('DELETE FROM evlet_eva_reservations WHERE id=?', (reservation,))
+            tx.connection.run(qb.delete('evlet_eva_reservations').where(qb.eq('id', qb.value(reservation))))
 
     def rate(self, model):
         return self.business.controls.settings['eva.rates'].get(model) if model else None
@@ -1420,14 +1463,14 @@ class Eva:
         total = usage.get('input', 0) + usage.get('output', 0)
         with self.database.transaction(store='eva') as tx:
             if reservation is not None:
-                tx.connection.execute('DELETE FROM evlet_eva_reservations WHERE id=?', (reservation,))
-            task = tx.connection.execute('SELECT task_id FROM evlet_eva_conversations WHERE id=?', (run['conversation_id'],)).fetchone()
-            tx.connection.execute('INSERT INTO evlet_eva_usage(at,user_id,conversation_id,run_id,task_id,origin,provider,model,input_tokens,cached_tokens,output_tokens,'
-                                  'reasoning_tokens,total_tokens,requests,tool_calls,duration_ms,cost_micro,rate,estimated) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?,?,?,?)',
-                                  (int(time.time()), run['user_id'], run['conversation_id'], run['id'], task and task[0], run['origin'],
-                                   'openai' if self.ai.provider == 'openai' else type(self.ai.provider).__name__, run['model'],
-                                   usage.get('input', 0), usage.get('cached', 0), usage.get('output', 0), usage.get('reasoning', 0), total,
-                                   tool_calls, duration, cost_micro(rate, usage), json.dumps(rate) if rate else None, int(estimated)))
+                tx.connection.run(qb.delete('evlet_eva_reservations').where(id=reservation))
+            task = tx.connection.run(qb.select('evlet_eva_conversations', 'task_id').where(id=run['conversation_id'])).one()
+            tx.connection.run(qb.insert('evlet_eva_usage', at=int(time.time()), user_id=run['user_id'], conversation_id=run['conversation_id'], run_id=run['id'],
+                                        task_id=task and task[0], origin=run['origin'],
+                                        provider='openai' if self.ai.provider == 'openai' else type(self.ai.provider).__name__, model=run['model'],
+                                        input_tokens=usage.get('input', 0), cached_tokens=usage.get('cached', 0), output_tokens=usage.get('output', 0),
+                                        reasoning_tokens=usage.get('reasoning', 0), total_tokens=total, requests=1, tool_calls=tool_calls, duration_ms=duration,
+                                        cost_micro=cost_micro(rate, usage), rate=json.dumps(rate) if rate else None, estimated=int(estimated)))
             self.emit(tx.connection, run['id'], 'usage.updated', {'tokens': total, 'cost': aed(cost_micro(rate, usage))})
 
     def allowance(self, user_id):
@@ -1438,7 +1481,7 @@ class Eva:
         with self.database._connection() as connection:
             if limit.get('amount') is None:
                 start, reset = period_bounds('month', self.zone(), now)
-                spent = connection.execute('SELECT coalesce(sum(cost_micro),0) FROM evlet_eva_usage WHERE user_id=? AND at>=?', (user_id, start)).fetchone()[0]
+                spent = connection.run(qb.select('evlet_eva_usage', qb.coalesce(qb.sum('cost_micro'), 0)).where(qb.ge('at', start), user_id=user_id)).value()
                 return {'limit': None, 'unit': 'aed', 'period': 'month', 'used': aed(spent), 'resets': reset, 'exhausted': False}
             spent, held, reset = self.used(connection, 'person', limit, user_id, now)
             exhausted = False
@@ -1455,7 +1498,7 @@ class Eva:
     @staticmethod
     def held(connection, task_id):
         """Whether an administrator paused this task in Controls, under Jobs (an override the owner can't lift)."""
-        row = connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key=?", (f'schedule.eva_task_{task_id}.active',)).fetchone()
+        row = connection.run(qb.select('evlet_overrides', 'value').where(kind='setting', key=f'schedule.eva_task_{task_id}.active')).one()
         return row is not None and json.loads(row['value']) is False
 
     def public_task(self, row, connection):
@@ -1464,7 +1507,7 @@ class Eva:
             upcoming = Calendar(row['cron'], row['timezone']).next(int(time.time()))
         except ValueError:
             upcoming = None
-        schedule = connection.execute('SELECT enabled, next_run FROM evlet_schedules WHERE name=?', (f"eva_task_{row['id']}",)).fetchone() \
+        schedule = connection.run(qb.select('evlet_schedules', 'enabled', 'next_run').where(name=f"eva_task_{row['id']}")).one() \
             if self.business.jobs is not None else None
         held = self.held(connection, row['id'])
         return {'id': row['id'], 'name': row['name'], 'instructions': row['instructions'], 'cron': row['cron'], 'timezone': row['timezone'],
@@ -1475,19 +1518,20 @@ class Eva:
 
     def tasks(self, user):
         with self.database._connection() as connection:
-            rows = connection.execute('SELECT * FROM evlet_eva_tasks WHERE user_id=? ORDER BY id', (user.id,)).fetchall()
+            rows = connection.run(qb.select('evlet_eva_tasks').where(user_id=user.id).order_by('id')).all()
             return {'items': [self.public_task(row, connection) for row in rows], 'limit': MAX_TASKS, 'jobs': self.business.jobs is not None}
 
     def task(self, user, task_id):
         with self.database._connection() as connection:
             row = self.own_task(connection, user, task_id)
-            runs = connection.execute('SELECT r.*, coalesce((SELECT sum(cost_micro) FROM evlet_eva_usage u WHERE u.run_id=r.run_id),0) AS cost FROM evlet_eva_task_runs r '
-                                      'WHERE task_id=? ORDER BY id DESC LIMIT 30', (task_id,)).fetchall()
+            cost = qb.select(qb.table('evlet_eva_usage', 'u'), qb.sum('u.cost_micro')).where(qb.eq('u.run_id', qb.col('r.run_id')))
+            runs = connection.run(qb.select(qb.table('evlet_eva_task_runs', 'r'), qb.all_columns('r'), qb.named(qb.coalesce(cost, 0), 'cost'))
+                                  .where(qb.eq('r.task_id', task_id)).order_by('-r.id').limit(30)).all()
             return {**self.public_task(row, connection), 'runs': [{'id': item['id'], 'at': item['at'], 'status': item['status'], 'conversation_id': item['conversation_id'],
                                                                   'error': item['error'], 'cost': aed(item['cost'])} for item in runs]}
 
     def own_task(self, connection, user, task_id):
-        row = connection.execute('SELECT * FROM evlet_eva_tasks WHERE id=? AND user_id=?', (task_id, user.id)).fetchone()
+        row = connection.run(qb.select('evlet_eva_tasks').where(id=task_id, user_id=user.id)).one()
         if row is None:
             raise AccessError(404, 'Task not found')
         return row
@@ -1527,11 +1571,11 @@ class Eva:
             raise AccessError(409, 'Scheduled tasks need background jobs, which this workspace does not run.')
         values = self.task_values(body)
         with self.database.transaction() as tx:
-            if tx.connection.execute('SELECT count(*) FROM evlet_eva_tasks WHERE user_id=?', (user.id,)).fetchone()[0] >= MAX_TASKS:
+            if tx.connection.run(qb.select('evlet_eva_tasks', qb.count()).where(user_id=user.id)).value() >= MAX_TASKS:
                 raise AccessError(409, f'You have {MAX_TASKS} scheduled tasks. Delete one first.')
-            task_id = tx.connection.execute('INSERT INTO evlet_eva_tasks(user_id,name,instructions,cron,timezone,active,allow_changes,created_at) VALUES (?,?,?,?,?,?,?,?)',
-                                            (user.id, values['name'].strip(), values['instructions'].strip(), values['cron'], values['timezone'],
-                                             int(values.get('active', True)), int(values.get('allow_changes', False)), int(time.time()))).lastrowid
+            task_id = tx.connection.run(qb.insert('evlet_eva_tasks', user_id=user.id, name=values['name'].strip(), instructions=values['instructions'].strip(),
+                                                  cron=values['cron'], timezone=values['timezone'], active=int(values.get('active', True)),
+                                                  allow_changes=int(values.get('allow_changes', False)), created_at=int(time.time())).returning_id()).id
         self.schedule(user, task_id, values['cron'], values['timezone'], values.get('active', True))
         return self.task(user, task_id)
 
@@ -1540,8 +1584,8 @@ class Eva:
         from .services import Calendar
         name = f'eva_task_{task_id}'
         with self.database.transaction() as tx:
-            tx.connection.execute('DELETE FROM evlet_calendar_schedules WHERE name=?', (name,))
-            tx.connection.execute('DELETE FROM evlet_schedules WHERE name=?', (name,))
+            tx.connection.run(qb.delete('evlet_calendar_schedules').where(name=name))
+            tx.connection.run(qb.delete('evlet_schedules').where(name=name))
         self.business.jobs.schedule(name, 'eva_task', {'task': task_id}, every=86400, start_at=Calendar(cron, zone).next(int(time.time())),
                                     user=User(user.id, user.username, user.role), calendar=(cron, zone))
         with self.database._connection() as connection:
@@ -1560,7 +1604,7 @@ class Eva:
             for key in ('name', 'instructions', 'cron', 'timezone', 'allow_changes', 'active'):
                 if key in values:
                     value = values[key].strip() if isinstance(values[key], str) else int(values[key])
-                    tx.connection.execute(f'UPDATE evlet_eva_tasks SET {key}=? WHERE id=?', (value, task_id))
+                    tx.connection.run(qb.update('evlet_eva_tasks', **{key: value}).where(id=task_id))
             row = self.own_task(tx.connection, user, task_id)
         if self.business.jobs is not None:
             if {'cron', 'timezone'} & set(body):
@@ -1577,11 +1621,11 @@ class Eva:
     def delete_task(self, user, task_id):
         with self.database.transaction() as tx:
             self.own_task(tx.connection, user, task_id)
-            tx.connection.execute('DELETE FROM evlet_eva_task_runs WHERE task_id=?', (task_id,))
-            tx.connection.execute('DELETE FROM evlet_eva_tasks WHERE id=?', (task_id,))
+            tx.connection.run(qb.delete('evlet_eva_task_runs').where(task_id=task_id))
+            tx.connection.run(qb.delete('evlet_eva_tasks').where(id=task_id))
             if self.business.jobs is not None:
-                tx.connection.execute('DELETE FROM evlet_calendar_schedules WHERE name=?', (f'eva_task_{task_id}',))
-                tx.connection.execute('DELETE FROM evlet_schedules WHERE name=?', (f'eva_task_{task_id}',))
+                tx.connection.run(qb.delete('evlet_calendar_schedules').where(name=f'eva_task_{task_id}'))
+                tx.connection.run(qb.delete('evlet_schedules').where(name=f'eva_task_{task_id}'))
 
     def parse(self, user, body):
         if not isinstance(body, dict) or set(body) - {'text', 'timezone'} or not isinstance(body.get('text'), str) or len(body['text']) > 4000:
@@ -1619,7 +1663,7 @@ class Eva:
         task_id = payload.get('task') if isinstance(payload, dict) else None
         self.business.controls.refresh()
         with self.database._connection() as connection:
-            row = connection.execute('SELECT * FROM evlet_eva_tasks WHERE id=?', (task_id,)).fetchone()
+            row = connection.run(qb.select('evlet_eva_tasks').where(qb.eq('id', qb.value(task_id)))).one()
         if row is None or job.user is None or job.user.id != row['user_id']:
             return
         if not row['active'] and not payload.get('manual'):
@@ -1632,18 +1676,17 @@ class Eva:
         def record(status, error=None, run_id=None, conversation_id=None, run_row=None):
             with self.database.transaction() as tx:
                 if run_row is None:
-                    tx.connection.execute('INSERT INTO evlet_eva_task_runs(task_id,at,status,run_id,conversation_id,error) VALUES (?,?,?,?,?,?)',
-                                          (task_id, now, status, run_id, conversation_id, error))
+                    tx.connection.run(qb.insert('evlet_eva_task_runs', task_id=task_id, at=now, status=status, run_id=run_id, conversation_id=conversation_id, error=error))
                 else:
-                    tx.connection.execute('UPDATE evlet_eva_task_runs SET status=?, error=? WHERE id=?', (status, error, run_row))
-                tx.connection.execute('UPDATE evlet_eva_tasks SET last_run_at=?, last_status=? WHERE id=?', (now, status, task_id))
+                    tx.connection.run(qb.update('evlet_eva_task_runs', status=status, error=error).where(id=run_row))
+                tx.connection.run(qb.update('evlet_eva_tasks', last_run_at=now, last_status=status).where(id=task_id))
         try:
             user = self.person(row['user_id'], 'schedule')
         except AccessError as exc:
             # Lost Eva (or the account): the task stops here and says why.
             record('skipped', exc.message)
             with self.database.transaction() as tx:
-                tx.connection.execute('UPDATE evlet_eva_tasks SET active=0 WHERE id=?', (task_id,))
+                tx.connection.run(qb.update('evlet_eva_tasks', active=0).where(id=task_id))
             try:
                 self.business.jobs.set_schedule_active(f'eva_task_{task_id}', False)
             except ValueError:
@@ -1662,22 +1705,22 @@ class Eva:
         with self.database.transaction() as tx:
             # Checked in the transaction that starts the run, so two workers can't both start one.
             self.reap(tx.connection)
-            busy = tx.connection.execute("SELECT 1 FROM evlet_eva_task_runs WHERE task_id=? AND status='running'", (task_id,)).fetchone()
+            busy = tx.connection.run(qb.select('evlet_eva_task_runs', 'id').where(task_id=task_id, status='running')).one()
             if busy:
-                tx.connection.execute("INSERT INTO evlet_eva_task_runs(task_id,at,status,error) VALUES (?,?,'skipped',?)", (task_id, now, 'The previous run was still going.'))
-                tx.connection.execute('UPDATE evlet_eva_tasks SET last_run_at=?, last_status=? WHERE id=?', (now, 'skipped', task_id))
+                tx.connection.run(qb.insert('evlet_eva_task_runs', task_id=task_id, at=now, status='skipped', error='The previous run was still going.'))
+                tx.connection.run(qb.update('evlet_eva_tasks', last_run_at=now, last_status='skipped').where(id=task_id))
         if busy:
             return
         with self.database.transaction() as tx:
             title = f"{row['name']} · {datetime.fromtimestamp(now, self.zone()).strftime('%d-%m-%Y')}"
             conversation = self.create_conversation(user, {'title': title}, task_id=task_id, connection=tx.connection)
-            conversation_row = tx.connection.execute('SELECT * FROM evlet_eva_conversations WHERE id=?', (conversation['id'],)).fetchone()
+            conversation_row = tx.connection.run(qb.select('evlet_eva_conversations').where(id=conversation['id'])).one()
             run_id, _ = self.begin(tx.connection, user, conversation_row, row['instructions'], [], self.default_model(), 'schedule', None)
-            run_row = tx.connection.execute('INSERT INTO evlet_eva_task_runs(task_id,at,status,run_id,conversation_id) VALUES (?,?,?,?,?)',
-                                            (task_id, now, 'running', run_id, conversation['id'])).lastrowid
+            run_row = tx.connection.run(qb.insert('evlet_eva_task_runs', task_id=task_id, at=now, status='running', run_id=run_id,
+                                                  conversation_id=conversation['id']).returning_id()).id
         self.execute(run_id)
         with self.database._connection() as connection:
-            result = connection.execute('SELECT status, error FROM evlet_eva_runs WHERE id=?', (run_id,)).fetchone()
+            result = connection.run(qb.select('evlet_eva_runs', 'status', 'error').where(id=run_id)).one()
         status = 'done' if result['status'] == 'completed' else 'failed'
         error = result['error']
         if error and error.startswith('quota:'):
@@ -1788,19 +1831,26 @@ def usage_report(eva, scope):
     end = (start + timedelta(days=32)).replace(day=1) if period != '7d' else period_start('day', zone, now) + timedelta(days=1)
     start_ts, end_ts = int(start.timestamp()), int(end.replace(tzinfo=None).replace(tzinfo=zone).timestamp())
     with eva.database._connection() as connection:
-        totals = connection.execute('SELECT coalesce(sum(cost_micro),0) AS cost, coalesce(sum(input_tokens),0) AS input, coalesce(sum(cached_tokens),0) AS cached, '
-                                    'coalesce(sum(output_tokens),0) AS output, coalesce(sum(reasoning_tokens),0) AS reasoning, coalesce(sum(total_tokens),0) AS tokens, '
-                                    'coalesce(sum(requests),0) AS requests, count(DISTINCT run_id) AS runs FROM evlet_eva_usage WHERE at>=? AND at<?', (start_ts, end_ts)).fetchone()
-        rows = connection.execute('SELECT at, origin, cost_micro FROM evlet_eva_usage WHERE at>=? AND at<?', (start_ts, end_ts)).fetchall()
-        people = connection.execute('SELECT u.user_id, x.username, sum(u.requests) AS requests, sum(u.input_tokens) AS input, sum(u.output_tokens) AS output, '
-                                    'sum(u.cost_micro) AS cost FROM evlet_eva_usage u LEFT JOIN evlet_users x ON x.id=u.user_id WHERE u.at>=? AND u.at<? '
-                                    'GROUP BY u.user_id, x.username ORDER BY sum(u.cost_micro) DESC LIMIT 100', (start_ts, end_ts)).fetchall()
-        largest = connection.execute('SELECT u.conversation_id, u.task_id, x.username, sum(u.total_tokens) AS tokens, sum(u.cost_micro) AS cost, '
-                                     "(SELECT count(*) FROM evlet_eva_messages m WHERE m.conversation_id=u.conversation_id AND m.role IN ('user','assistant')) AS messages "
-                                     'FROM evlet_eva_usage u LEFT JOIN evlet_users x ON x.id=u.user_id WHERE u.at>=? AND u.at<? AND u.conversation_id IS NOT NULL '
-                                     'GROUP BY u.conversation_id, u.task_id, x.username ORDER BY sum(u.cost_micro) DESC LIMIT 10', (start_ts, end_ts)).fetchall()
-        tools = connection.execute("SELECT count(*) AS calls, sum(CASE WHEN outcome='denied' THEN 1 ELSE 0 END) AS denied FROM evlet_tool_calls "
-                                   "WHERE origin IN ('eva','schedule') AND at>=? AND at<?", (start_ts, end_ts)).fetchone()
+        totals = connection.run(qb.select('evlet_eva_usage', *(qb.named(qb.coalesce(qb.sum(column), 0), name) for column, name in (
+            ('cost_micro', 'cost'), ('input_tokens', 'input'), ('cached_tokens', 'cached'), ('output_tokens', 'output'), ('reasoning_tokens', 'reasoning'),
+            ('total_tokens', 'tokens'), ('requests', 'requests'))), qb.named(qb.count_distinct('run_id'), 'runs'))
+            .where(qb.ge('at', start_ts), qb.lt('at', end_ts))).one()
+        rows = connection.run(qb.select('evlet_eva_usage', 'at', 'origin', 'cost_micro').where(qb.ge('at', start_ts), qb.lt('at', end_ts))).all()
+        by_person = qb.select(qb.table('evlet_eva_usage', 'u'), 'u.user_id', 'x.username', qb.named(qb.sum('u.requests'), 'requests'),
+                              qb.named(qb.sum('u.input_tokens'), 'input'), qb.named(qb.sum('u.output_tokens'), 'output'), qb.named(qb.sum('u.cost_micro'), 'cost'))
+        people = connection.run(by_person.join(qb.table('evlet_users', 'x'), qb.eq('x.id', qb.col('u.user_id')), left=True)
+                                .where(qb.ge('u.at', start_ts), qb.lt('u.at', end_ts)).group_by('u.user_id', 'x.username')
+                                .order_by(qb.desc(qb.sum('u.cost_micro'))).limit(100)).all()
+        messages = qb.select(qb.table('evlet_eva_messages', 'm'), qb.count()).where(
+            qb.eq('m.conversation_id', qb.col('u.conversation_id')), qb.in_('m.role', ('user', 'assistant')))
+        largest = connection.run(qb.select(qb.table('evlet_eva_usage', 'u'), 'u.conversation_id', 'u.task_id', 'x.username', qb.named(qb.sum('u.total_tokens'), 'tokens'),
+                                           qb.named(qb.sum('u.cost_micro'), 'cost'), qb.named(messages, 'messages'))
+                                 .join(qb.table('evlet_users', 'x'), qb.eq('x.id', qb.col('u.user_id')), left=True)
+                                 .where(qb.ge('u.at', start_ts), qb.lt('u.at', end_ts), qb.not_null('u.conversation_id'))
+                                 .group_by('u.conversation_id', 'u.task_id', 'x.username').order_by(qb.desc(qb.sum('u.cost_micro'))).limit(10)).all()
+        tools = connection.run(qb.select('evlet_tool_calls', qb.named(qb.count(), 'calls'), qb.named(qb.sum(qb.when((qb.eq('outcome', 'denied'), 1), otherwise=0)), 'denied'))
+                               .where(qb.in_('origin', ('eva', 'schedule')), qb.ge('at', start_ts), qb.lt('at', end_ts))).one()
+
     days = {}
     for row in rows:
         day = datetime.fromtimestamp(row['at'], zone).strftime('%d-%m-%Y')

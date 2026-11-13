@@ -31,6 +31,8 @@ import threading
 import time
 from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .auth import AccessError, User
 from . import secrets as vault
 from .connectors import (ADDRESS, NOT_ALLOWED, PUBLIC_ONLY, REJECTED, TIMEOUT, UNREACHABLE, ConnectionFailed, Connector, ConnectorField,
@@ -38,7 +40,7 @@ from .connectors import (ADDRESS, NOT_ALLOWED, PUBLIC_ONLY, REJECTED, TIMEOUT, U
                          safe_address, scrub, state_context)
 from .controls import NOT_FOUND, audit
 from .fields import Email
-from .models import ValidationError, checked_body, identifier
+from .models import ValidationError, checked_body
 
 logger = logging.getLogger(__name__)
 SETTING = 'mail.personal'
@@ -117,6 +119,20 @@ def _provider_fields(tenant):
             ConnectorField('smtp_port', 'SMTP port', 'number', required=False))
 
 
+MAILBOXES = TableDefinition('evlet_mailboxes', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'), Column('provider', 'TEXT', required=True),
+    Column('address', 'TEXT', required=True), Column('settings', 'TEXT', required=True), Column('secrets', 'BLOB'),
+    Column('status', 'TEXT', required=True), Column('error', 'TEXT'), Column('cursor', 'TEXT'),
+    Column('linking', 'INTEGER', required=True, default=1), Column('created_at', 'INTEGER', required=True), Column('attempted_at', 'INTEGER'),
+    Column('synced_at', 'INTEGER')), numbered=True, unique=(('user_id',),))
+STATES = TableDefinition('evlet_mail_states', (
+    Column('hash', 'TEXT', primary=True), Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
+    Column('provider', 'TEXT', required=True), Column('secrets', 'BLOB', required=True), Column('expires', 'INTEGER', required=True)))
+# Messages themselves are Journal entries; this index keeps one per record and finds a thread's records.
+LINKS = TableDefinition('evlet_mail_links', (
+    Column('model', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True), Column('message_key', 'TEXT', required=True),
+    Column('entry_id', 'INTEGER', required=True)), primary_key=('model', 'record_id', 'message_key', 'entry_id'))
+
 CONNECTORS = (
     Connector('mail_microsoft', title='Microsoft 365 mail', category='Email', fields=_provider_fields(True),
               description='Lets people connect their Microsoft 365 mailbox. Register an app in Microsoft Entra and paste its client ID and secret.'),
@@ -156,13 +172,15 @@ def link_message(business, tx, user, model, record_id, key, data, field=None):
         return None
     entry = {**data, 'source': 'mailbox', **({'field': field} if field else {})}
     same = journal.canonical({name: value for name, value in entry.items() if name != 'field'})
-    for row in tx.connection.execute('SELECT j.data FROM evlet_mail_links l JOIN evlet_journal j ON j.id=l.entry_id '
-                                     'WHERE l.model=? AND l.record_id=? AND l.message_key=?', (business.registry.name_for(model), record_id, key)):
+    for row in tx.connection.run(qb.select(qb.table('evlet_mail_links', 'l'), 'j.data')
+                                 .join(qb.table('evlet_journal', 'j'), qb.eq('j.id', qb.col('l.entry_id')))
+                                 .where(qb.eq('l.model', business.registry.name_for(model)), qb.eq('l.record_id', record_id),
+                                        qb.eq('l.message_key', key))):
         if journal.canonical({name: value for name, value in json.loads(row[0]).items() if name not in ('field', 'via')}) == same:
             return None
     entry_id = journal.append(business, tx, user, model, record_id, 'message', entry)
-    tx.connection.execute('INSERT INTO evlet_mail_links(model,record_id,message_key,entry_id) VALUES (?,?,?,?)',
-                          (business.registry.name_for(model), record_id, key, entry_id))
+    tx.connection.run(qb.insert('evlet_mail_links', model=business.registry.name_for(model), record_id=record_id, message_key=key,
+                                entry_id=entry_id))
     business.changed(tx, model, record_id, journal=True)
     return entry_id
 
@@ -311,18 +329,9 @@ class Mailboxes:
 
     def initialize(self):
         with self.database.transaction() as tx:
-            for statement in (
-                'CREATE TABLE IF NOT EXISTS evlet_mailboxes (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL UNIQUE REFERENCES evlet_users(id) ON DELETE CASCADE, '
-                'provider TEXT NOT NULL, address TEXT NOT NULL, settings TEXT NOT NULL, secrets BLOB, status TEXT NOT NULL, error TEXT, cursor TEXT, '
-                'linking INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL, attempted_at INTEGER, synced_at INTEGER)',
-                'CREATE TABLE IF NOT EXISTS evlet_mail_states (hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
-                'provider TEXT NOT NULL, secrets BLOB NOT NULL, expires INTEGER NOT NULL)',
-                # Messages themselves are Journal entries; this index keeps one per record and finds a thread's records.
-                'CREATE TABLE IF NOT EXISTS evlet_mail_links (model TEXT NOT NULL, record_id INTEGER NOT NULL, message_key TEXT NOT NULL, '
-                'entry_id INTEGER NOT NULL, PRIMARY KEY (model, record_id, message_key, entry_id))',
-                'CREATE INDEX IF NOT EXISTS evlet_mail_links_key ON evlet_mail_links(message_key)',
-            ):
-                tx.connection.execute(statement)
+            for definition in (MAILBOXES, STATES, LINKS):
+                tx.connection.ensure_table(definition)
+            tx.connection.ensure_index('evlet_mail_links_key', 'evlet_mail_links', ('message_key',))
 
     def enabled(self):
         return bool(self.business.controls.settings[SETTING])
@@ -332,7 +341,7 @@ class Mailboxes:
             raise AccessError(403, OFF)
 
     def row(self, connection, user_id):
-        return connection.execute('SELECT * FROM evlet_mailboxes WHERE user_id=?', (user_id,)).fetchone()
+        return connection.run(qb.select('evlet_mailboxes').where(user_id=user_id)).one()
 
     def enqueue(self, tx, mailbox_id, key):
         if self.business.jobs is not None:
@@ -343,7 +352,7 @@ class Mailboxes:
     def state(self, user):
         with self.database._connection() as connection:
             row = self.row(connection, user.id)
-            set_up = {item['id'] for item in connection.execute("SELECT id FROM evlet_connectors WHERE id IN ('mail_microsoft','mail_google')")}
+            set_up = {item['id'] for item in connection.run(qb.select('evlet_connectors', 'id').where(qb.in_('id', ('mail_microsoft', 'mail_google'))))}
         shared = next((item for item in self.business.connectors.accounts('smtp') if item['default']), None)
         mailbox = None
         if row is not None:
@@ -410,17 +419,18 @@ class Mailboxes:
             old = self.row(tx.connection, user.id)
             if old is not None:
                 settings.update({name: json.loads(old['settings'])[name] for name in OPTIONS})
-            tx.connection.execute('DELETE FROM evlet_mailboxes WHERE user_id=?', (user.id,))
-            tx.connection.execute('INSERT INTO evlet_mailboxes(user_id,provider,address,settings,secrets,status,linking,created_at) VALUES (?,?,?,?,?,?,?,?)',
-                                  (user.id, provider, address, json.dumps(settings, sort_keys=True), seal(self.business, tx.connection, secret, mailbox_context(user.id)),
-                                   'connected', int(settings['link_replies']), int(time.time())))
+            tx.connection.run(qb.delete('evlet_mailboxes').where(user_id=user.id))
+            tx.connection.run(qb.insert('evlet_mailboxes', user_id=user.id, provider=provider, address=address,
+                                        settings=json.dumps(settings, sort_keys=True),
+                                        secrets=seal(self.business, tx.connection, secret, mailbox_context(user.id)), status='connected',
+                                        linking=int(settings['link_replies']), created_at=int(time.time())))
             audit(tx.connection, user.username, AREA, f'{user.username} · own mailbox', f'Connected ({TITLES[provider]})')
             mailbox_id = self.row(tx.connection, user.id)['id']
             if self.business.jobs is not None:
                 # Sync now, then every connected mailbox every five minutes.
                 self.enqueue(tx, mailbox_id, f'mail:{mailbox_id}:first')
-                tx.connection.execute('INSERT INTO evlet_schedules(name,task,payload,actor,model,record_id,interval,next_run) VALUES (?,?,?,?,?,?,?,?) '
-                                      'ON CONFLICT(name) DO NOTHING', (TASK, TASK, '{}', None, None, None, EVERY, int(time.time()) + EVERY))
+                tx.connection.run(qb.insert('evlet_schedules', name=TASK, task=TASK, payload='{}', actor=None, model=None, record_id=None,
+                                            interval=EVERY, next_run=int(time.time()) + EVERY).on_conflict('name').do_nothing())
 
     def change(self, user, body):
         if not isinstance(body, dict) or not body or any(name not in OPTIONS or body[name] not in OPTIONS[name] or type(body[name]) is not type(OPTIONS[name][0])
@@ -435,8 +445,8 @@ class Mailboxes:
             settings.update(body)
             after = {name: settings[name] for name in OPTIONS}
             if before != after:
-                tx.connection.execute('UPDATE evlet_mailboxes SET settings=?, linking=? WHERE id=?',
-                                      (json.dumps(settings, sort_keys=True), int(settings['link_replies']), row['id']))
+                tx.connection.run(qb.update('evlet_mailboxes', settings=json.dumps(settings, sort_keys=True), linking=int(settings['link_replies']))
+                                  .where(id=row['id']))
                 audit(tx.connection, user.username, AREA, f'{user.username} · own mailbox', 'Settings changed', before, after)
         return self.state(user)
 
@@ -448,10 +458,10 @@ class Mailboxes:
         with self.lock(found['id'] if found else None):
             with self.database.transaction() as tx:
                 row = self.row(tx.connection, user.id)
-                tx.connection.execute('DELETE FROM evlet_mail_states WHERE user_id=?', (user.id,))
+                tx.connection.run(qb.delete('evlet_mail_states').where(user_id=user.id))
                 if row is None:
                     raise AccessError(404, 'No mailbox is connected.')
-                tx.connection.execute('DELETE FROM evlet_mailboxes WHERE id=?', (row['id'],))
+                tx.connection.run(qb.delete('evlet_mailboxes').where(id=row['id']))
                 audit(tx.connection, user.username, AREA, f'{user.username} · own mailbox', 'Disconnected; saved sign-in deleted')
         revoke = json.loads(row['settings']).get('revoke_url')
         if revoke and row['secrets'] is not None:
@@ -502,11 +512,11 @@ class Mailboxes:
         redirect = origin + '/_/mail/callback'
         now = int(time.time())
         with self.database.transaction() as tx:
-            tx.connection.execute('DELETE FROM evlet_mail_states WHERE expires<=? OR user_id=?', (now, user.id))
+            tx.connection.run(qb.delete('evlet_mail_states').where(qb.or_(qb.le('expires', now), qb.eq('user_id', user.id))))
             hashed = digest(state)
-            tx.connection.execute('INSERT INTO evlet_mail_states(hash,user_id,provider,secrets,expires) VALUES (?,?,?,?,?)',
-                                  (hashed, user.id, body['provider'], seal(self.business, tx.connection, {'verifier': verifier, 'redirect': redirect}, state_context(hashed)),
-                                   now + STATE_SECONDS))
+            tx.connection.run(qb.insert('evlet_mail_states', hash=hashed, user_id=user.id, provider=body['provider'],
+                                        secrets=seal(self.business, tx.connection, {'verifier': verifier, 'redirect': redirect}, state_context(hashed)),
+                                        expires=now + STATE_SECONDS))
         params = {'client_id': config['client_id'], 'response_type': 'code', 'redirect_uri': redirect, 'scope': config['scope'],
                   'state': state, 'code_challenge': challenge, 'code_challenge_method': 'S256',
                   **({'access_type': 'offline', 'prompt': 'consent'} if body['provider'] == 'google' else {'prompt': 'select_account'})}
@@ -547,11 +557,11 @@ class Mailboxes:
         now = int(time.time())
         hashed = digest(query.get('state', ''))
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT * FROM evlet_mail_states WHERE hash=?', (hashed,)).fetchone()
-            tx.connection.execute('DELETE FROM evlet_mail_states WHERE expires<=?', (now,))
+            row = tx.connection.run(qb.select('evlet_mail_states').where(hash=hashed)).one()
+            tx.connection.run(qb.delete('evlet_mail_states').where(qb.le('expires', now)))
             if row is None or row['user_id'] != user.id or row['expires'] <= now:
                 return back('expired')
-            tx.connection.execute('DELETE FROM evlet_mail_states WHERE hash=?', (hashed,))
+            tx.connection.run(qb.delete('evlet_mail_states').where(hash=hashed))
         if 'error' in query or not query.get('code'):
             return back('denied')
         if not self.enabled():
@@ -594,7 +604,7 @@ class Mailboxes:
         says the sign-in itself is no longer valid (invalid_grant); anything else can be tried again."""
         with self.lock(mailbox_id):
             with self.database._connection() as connection:
-                row = connection.execute('SELECT * FROM evlet_mailboxes WHERE id=?', (mailbox_id,)).fetchone()
+                row = connection.run(qb.select('evlet_mailboxes').where(id=mailbox_id)).one()
             if row is None or row['secrets'] is None:
                 raise Ended('Connect your mailbox again.')
             secret = unseal(self.business, row['secrets'], mailbox_context(row['user_id']))
@@ -613,7 +623,7 @@ class Mailboxes:
                                            if answer.get('error') in ('invalid_client', 'unauthorized_client') else UNREACHABLE)
                 # Another process may have refreshed it first with the same refresh token.
                 with self.database._connection() as connection:
-                    now = connection.execute('SELECT secrets FROM evlet_mailboxes WHERE id=?', (mailbox_id,)).fetchone()
+                    now = connection.run(qb.select('evlet_mailboxes', 'secrets').where(id=mailbox_id)).one()
                 latest = None if now is None or now['secrets'] is None else unseal(self.business, now['secrets'], mailbox_context(row['user_id']))
                 if latest and latest['refresh_token'] != secret['refresh_token']:
                     return latest['access_token']
@@ -622,8 +632,8 @@ class Mailboxes:
                      'expires': int(time.time()) + min(max(int(answer.get('expires_in') or 3600), 60), 86400)}
             with self.database.transaction() as tx:
                 # Disconnected meanwhile: the row is gone, so nothing is written back.
-                tx.connection.execute('UPDATE evlet_mailboxes SET secrets=? WHERE id=? AND secrets IS NOT NULL',
-                                      (seal(self.business, tx.connection, fresh, mailbox_context(row['user_id'])), mailbox_id))
+                tx.connection.run(qb.update('evlet_mailboxes', secrets=seal(self.business, tx.connection, fresh, mailbox_context(row['user_id'])))
+                                  .where(qb.not_null('secrets'), id=mailbox_id))
             return fresh['access_token']
 
     def values(self, row, kind):
@@ -644,11 +654,12 @@ class Mailboxes:
     def end(self, mailbox_id, message):
         """Delete a sign-in that stopped working; syncing stops until the person connects again."""
         with self.database.transaction() as tx:
-            tx.connection.execute("UPDATE evlet_mailboxes SET status='reconnect', error=?, secrets=NULL WHERE id=?", (message, mailbox_id))
+            tx.connection.run(qb.update('evlet_mailboxes', status='reconnect', error=message, secrets=None).where(id=mailbox_id))
 
     def failed(self, mailbox_id, message):
         with self.database.transaction() as tx:
-            tx.connection.execute("UPDATE evlet_mailboxes SET status='error', error=? WHERE id=? AND status IN ('connected','error')", (message, mailbox_id))
+            tx.connection.run(qb.update('evlet_mailboxes', status='error', error=message)
+                              .where(qb.in_('status', ('connected', 'error')), id=mailbox_id))
 
     # ---------- sending ----------
 
@@ -696,9 +707,10 @@ class Mailboxes:
             return
         # Only mailboxes that read mail, of active people, the longest unattempted first, so failing ones can't hold the others back.
         with self.database._connection() as connection:
-            due = [row[0] for row in connection.execute(
-                "SELECT m.id FROM evlet_mailboxes m JOIN evlet_users u ON u.id=m.user_id WHERE m.status IN ('connected','error') "
-                'AND m.linking=1 AND u.active=1 ORDER BY COALESCE(m.attempted_at,0), m.id LIMIT ?', (PER_RUN,))]
+            due = [row[0] for row in connection.run(
+                qb.select(qb.table('evlet_mailboxes', 'm'), 'm.id').join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('m.user_id')))
+                .where(qb.in_('m.status', ('connected', 'error')), qb.eq('m.linking', 1), qb.eq('u.active', 1))
+                .order_by(qb.coalesce('m.attempted_at', 0), 'm.id').limit(PER_RUN))]
         for mailbox_id in due:
             self.sync(mailbox_id)
 
@@ -722,12 +734,12 @@ class Mailboxes:
         if not self.enabled():
             return 0
         with self.database._connection() as connection:
-            row = connection.execute('SELECT m.*, u.username, u.role, u.active FROM evlet_mailboxes m JOIN evlet_users u ON u.id=m.user_id WHERE m.id=?',
-                                     (mailbox_id,)).fetchone()
+            row = connection.run(qb.select(qb.table('evlet_mailboxes', 'm'), qb.all_columns('m'), 'u.username', 'u.role', 'u.active')
+                                 .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('m.user_id'))).where(qb.eq('m.id', mailbox_id))).one()
         if row is None or not row['active'] or row['status'] not in ('connected', 'error') or not row['linking']:
             return 0
         with self.database.transaction() as tx:
-            tx.connection.execute('UPDATE evlet_mailboxes SET attempted_at=? WHERE id=?', (int(time.time()), row['id']))
+            tx.connection.run(qb.update('evlet_mailboxes', attempted_at=int(time.time())).where(id=row['id']))
         settings = json.loads(row['settings'])
         user = User(row['user_id'], row['username'], row['role'])
         deadline = time.monotonic() + RUN_SECONDS
@@ -755,13 +767,13 @@ class Mailboxes:
                 client.watchdog.cancel()
         with self.database.transaction() as tx:
             # Disconnected (or connected again) while reading: nothing is kept.
-            if tx.connection.execute("SELECT 1 FROM evlet_mailboxes WHERE id=? AND status IN ('connected','error')", (row['id'],)).fetchone() is None:
+            if tx.connection.run(qb.select('evlet_mailboxes', 'id').where(qb.in_('status', ('connected', 'error')), id=row['id'])).one() is None:
                 return 0
             for key, data, targets in copied:
                 for model, record_id, field in targets:
                     link_message(self.business, tx, user, model, record_id, key, data, field)
-            tx.connection.execute("UPDATE evlet_mailboxes SET cursor=?, synced_at=?, status='connected', error=NULL WHERE id=?",
-                                  (json.dumps(cursor), int(time.time()), row['id']))
+            tx.connection.run(qb.update('evlet_mailboxes', cursor=json.dumps(cursor), synced_at=int(time.time()), status='connected', error=None)
+                              .where(id=row['id']))
             if more:
                 self.enqueue(tx, row['id'], f"mail:{row['id']}:{cursor['validity']}:{cursor['uid']}")
         return len(copied)
@@ -864,17 +876,14 @@ class Mailboxes:
         wanted = sorted(wanted)
         with self.database._connection() as connection:
             for model, fields in self.models(user, only_crm):
-                where, values = self.business.policy.scope_sql(user, model)
-                columns = [f'record.{identifier(name)}' for name in fields]
-                table = identifier(self.business.registry.name_for(model))
+                scope = self.business.policy.scope(user, model)
+                columns = ['record.' + name for name in fields]
+                query = qb.select(qb.table(self.business.registry.name_for(model), 'record'), 'record.id', *columns)
                 size = max(1, 400 // len(fields))  # well under every database's limit on SQL values
                 for start in range(0, len(wanted), size):
                     part = wanted[start:start + size]
-                    marks = ', '.join('?' for _ in part)
-                    condition = ' OR '.join(f'lower({column}) IN ({marks})' for column in columns)
-                    sql = (f'SELECT record.id, {", ".join(columns)} FROM {table} AS record{where} {"AND" if where else "WHERE"} ({condition}) '
-                           f'ORDER BY record.id LIMIT 500')
-                    for row in connection.execute(sql, [*values, *(part * len(fields))]).fetchall():
+                    matched = qb.or_(*(qb.in_(qb.lower(column), part) for column in columns))
+                    for row in connection.run(query.where(scope, matched).order_by('record.id').limit(500)).all():
                         for name, value in zip(fields, tuple(row)[1:]):
                             if isinstance(value, str) and value.lower() in part:
                                 found.setdefault(value.lower(), []).append((model, row[0], name))
@@ -888,8 +897,9 @@ class Mailboxes:
         keys = [key_of(item) for item in references]
         found = {}
         with self.database.transaction() as tx:
-            rows = tx.connection.execute('SELECT DISTINCT l.message_key, l.model, l.record_id FROM evlet_mail_links l JOIN evlet_journal j ON j.id=l.entry_id '
-                                         f'WHERE j.actor=? AND l.message_key IN ({", ".join("?" for _ in keys)})', [str(user.id), *keys]).fetchall()
+            rows = tx.connection.run(qb.select(qb.table('evlet_mail_links', 'l'), 'l.message_key', 'l.model', 'l.record_id').distinct()
+                                     .join(qb.table('evlet_journal', 'j'), qb.eq('j.id', qb.col('l.entry_id')))
+                                     .where(qb.eq('j.actor', str(user.id)), qb.in_('l.message_key', keys))).all()
             by_model = {}
             for row in rows:
                 model = self.business.registry.models.get(row['model'])

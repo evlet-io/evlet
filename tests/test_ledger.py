@@ -1,4 +1,4 @@
-"""Ledger models (Meta.ledger = True) and named transaction locks (tx.lock), on real SQLite and PostgreSQL."""
+"""Ledger models (Meta.ledger = True) and named transaction locks (tx.lock), on real SQLite."""
 
 from datetime import date, datetime, timezone
 from decimal import Decimal as D
@@ -17,10 +17,8 @@ from evlet.auth import LocalAuth, User
 from evlet.database import Session
 from evlet.ledger import describe, lock_hash, table as ledger_table
 from evlet.periods import set_lock
-from evlet.postgres import PostgreSQLDatabase
 from evlet.sequences import Sequence
 from test_business import PASSWORD, client, http
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 from test_rules_types import ALL
 
 FULL = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'))}
@@ -110,18 +108,11 @@ def build(database):
     return app, admin
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def points(request, tmp_path):
+@pytest.fixture
+def points(tmp_path):
     registry = Registry(*MODELS)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'points.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'points.sqlite3', registry)
     return build(database)
-
-
-def postgres(app):
-    return isinstance(app.database, PostgreSQLDatabase)
 
 
 def member(app, name='Aisha', team='north'):
@@ -131,9 +122,6 @@ def member(app, name='Aisha', team='north'):
 
 def columns(app, table):
     with app.database.transaction() as tx:
-        if postgres(app):
-            return [row[0] for row in tx.connection.execute(
-                "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=? ORDER BY ordinal_position", (table,))]
         return [row[1] for row in tx.connection.execute(f'PRAGMA table_info({table})')]
 
 
@@ -289,27 +277,21 @@ def test_triggers_refuse_raw_update_delete_and_replace(points):
     aisha = member(app)
     with app.database.transaction() as tx:
         row = tx.create(PointMove, **move(member=aisha)).id
-    statements = [('UPDATE pointmove SET points = 5', ()), ('DELETE FROM pointmove', ())]
-    if postgres(app):
-        statements.append(("INSERT INTO pointmove (id, member, on_date, reason, points, team) VALUES (?, ?, '2026-11-02', 'x', 5, 'n') "
-                           'ON CONFLICT (id) DO UPDATE SET points = 5', (row, aisha)))
-        statements.append(('TRUNCATE pointmove', ()))
-    else:
-        statements.append(("INSERT OR REPLACE INTO pointmove (id, member, on_date, reason, points, team) VALUES (?, ?, '2026-11-02', 'x', 5, 'n')",
-                           (row, aisha)))
-        statements.append(("INSERT INTO pointmove (id, member, on_date, reason, points, team) VALUES (?, ?, '2026-11-02', 'x', 5, 'n') "
-                           'ON CONFLICT (id) DO UPDATE SET points = 5', (row, aisha)))
+    statements = [('UPDATE pointmove SET points = 5', ()), ('DELETE FROM pointmove', ()),
+                  ("INSERT OR REPLACE INTO pointmove (id, member, on_date, reason, points, team) VALUES (?, ?, '2026-11-02', 'x', 5, 'n')",
+                   (row, aisha)),
+                  ("INSERT INTO pointmove (id, member, on_date, reason, points, team) VALUES (?, ?, '2026-11-02', 'x', 5, 'n') "
+                   'ON CONFLICT (id) DO UPDATE SET points = 5', (row, aisha))]
     for sql, values in statements:
         with pytest.raises(Exception) as error:
             with app.database.transaction() as tx:
                 tx.connection.execute(sql, values)
         assert 'append only' in str(error.value) or isinstance(error.value, (ConflictError, sqlite3.OperationalError)), sql
-    if not postgres(app):
-        # A connection that is not Evlet's (no recursive triggers) is refused too.
-        with sqlite3.connect(app.database.path) as connection:
-            for sql, values in statements:
-                with pytest.raises(sqlite3.IntegrityError, match='pointmove is append only'):
-                    connection.execute(sql, values)
+    # A connection that is not Evlet's (no recursive triggers) is refused too.
+    with sqlite3.connect(app.database.path) as connection:
+        for sql, values in statements:
+            with pytest.raises(sqlite3.IntegrityError, match='pointmove is append only'):
+                connection.execute(sql, values)
     assert [(item.id, item.points) for item in app.database.list(PointMove)] == [(row, D('1.00'))]
 
 
@@ -359,8 +341,6 @@ def test_the_journal_records_ledger_rows_and_detects_tampering(points):
     assert [(row[0], row[1], row[2]) for row in rows] == [(first, 'created', '1'), (second, 'created', '1')]
     assert '"points":{"new":"3.00","old":null}' in rows[1][3]
     assert journal.verify(app.database) == (2, [])
-    if postgres(app):
-        return
     with sqlite3.connect(app.database.path) as connection:
         connection.execute('DROP TRIGGER evlet_journal_no_update')
         connection.execute("UPDATE evlet_journal SET data = replace(data, '3.00', '30.00') WHERE record_id = ?", (second,))
@@ -602,31 +582,6 @@ def test_the_schema_check_finds_missing_triggers_and_indexes(tmp_path):
         Database(path, registry).initialize()
 
 
-def test_postgres_migrations_create_add_and_toggle(pg_dsn):
-    first = lean('Meter', {'reading': Integer(required=True)}, append_only=True)
-    history = [Migration('0001_meter', CreateModel(first))]
-    PostgreSQLDatabase(pg_dsn, Registry(first)).migrate(history)
-    database = PostgreSQLDatabase(pg_dsn, Registry(first))
-    with database.transaction() as tx:
-        assert tx.insert_many(first, [{'reading': 1}, {'reading': 2}]) == [1, 2]
-    second = lean('Meter', {'reading': Integer(required=True), 'site': Text(default='main')}, indexes=[(('site', 'reading'), {'unique': True})])
-    history.append(Migration('0002', AddField('meter', 'site', Text(default='main')), AddIndex('meter', ('site', 'reading'), unique=True),
-                             SetAppendOnly('meter', False)))
-    database = PostgreSQLDatabase(pg_dsn, Registry(second), migrations=history)
-    database.migrate(history)
-    database.initialize()
-    with database.transaction() as tx:
-        assert tx.update(second, 1, reading=5).reading == 5
-    with pytest.raises(ValidationError, match='Another record already has the same site and reading'):
-        with database.transaction() as tx:
-            tx.create(second, reading=5)
-    with pytest.raises(SchemaError, match='append only'):
-        third = lean('Meter', {'value': Integer(required=True), 'site': Text(default='main')}, append_only=True,
-                     indexes=[(('site', 'value'), {'unique': True})])
-        PostgreSQLDatabase(pg_dsn, Registry(third)).migrate(
-            [*history, Migration('0003', SetAppendOnly('meter', True)), Migration('0004', RenameField('meter', 'reading', 'value'))])
-
-
 def test_plans_suggest_frozen_ledger_classes(tmp_path):
     from evlet.migrations import suggest
     registry = Registry(*MODELS)
@@ -732,107 +687,6 @@ def test_check_then_write_under_a_lock_never_overdraws(points):
     assert errors == [] and len(refused) == 3
     assert app.database.list(PointBalance)[0].points == D('0.00')
 
-
-# tx.lock on PostgreSQL, against a second real connection
-
-@pytest.fixture
-def locks(pg_dsn):
-    import psycopg
-    database = PostgreSQLDatabase(pg_dsn, Registry(Reading))
-    database.initialize()
-    other = psycopg.connect(pg_dsn)
-    try:
-        yield database, other
-    finally:
-        other.rollback()
-        other.close()
-
-
-def hold(other, *keys):
-    """Take the keys' locks on another connection's open transaction, as a second writer would."""
-    for key in keys:
-        other.execute('SELECT pg_advisory_xact_lock(%s)', (lock_hash(key),))
-
-
-def test_postgres_locks_wait_for_commit_and_rollback(locks):
-    database, other = locks
-    for finish in (other.commit, other.rollback):
-        hold(other, ('stock', 1))
-        acquired = threading.Event()
-
-        def take():
-            with database.transaction() as tx:
-                tx.lock(('stock', 1), timeout=10)
-                acquired.set()
-        thread = threading.Thread(target=take)
-        thread.start()
-        assert not acquired.wait(0.5)
-        finish()
-        assert acquired.wait(5)
-        thread.join()
-
-
-def test_postgres_locks_on_other_keys_do_not_wait(locks):
-    database, other = locks
-    hold(other, ('stock', 1))
-    with database.transaction() as tx:
-        tx.lock(('stock', 2), ('open_item', 1), timeout=1)
-
-
-def test_postgres_locks_in_opposite_orders_do_not_deadlock(locks, pg_dsn):
-    database, other = locks
-    database.close()
-    results, barrier = [], threading.Barrier(2)
-
-    def run(keys):
-        # Two sessions that are not serialized by Evlet's write lock: each locks through Session.lock.
-        import psycopg
-        from evlet.postgres import Connection, _row_factory
-        with psycopg.connect(pg_dsn, row_factory=_row_factory) as raw:
-            raw.execute('BEGIN')
-            session = Session(Connection(raw, database), database.registry)
-            barrier.wait()
-            session.lock(*keys, timeout=5)
-            raw.execute('SELECT pg_sleep(0.2)')
-            results.append(keys)
-            raw.rollback()
-    threads = [threading.Thread(target=run, args=(keys,)) for keys in ((('a',), ('b',)), (('b',), ('a',)))]
-    for thread in threads:
-        thread.start()
-    for thread in threads:
-        thread.join()
-    assert len(results) == 2
-
-
-def test_postgres_lock_timeout_raises_and_rolls_back(locks):
-    database, other = locks
-    hold(other, ('stock', 1))
-    with pytest.raises(LockTimeout, match='busy with the same records; try again'):
-        with database.transaction() as tx:
-            tx.create(Reading, count=7)
-            tx.lock(('stock', 1), timeout=0.2)
-    assert database.count(Reading) == 0
-    other.rollback()
-    # The timeout is restored: a later wait in the same transaction uses the database's own limit again.
-    with database.transaction() as tx:
-        tx.lock(('stock', 1), timeout=0.2)
-        assert tx.connection.execute("SELECT current_setting('lock_timeout')").fetchone()[0] == '5s'
-
-
-def test_postgres_locks_validate_keys_and_need_a_write_transaction(locks):
-    database, _ = locks
-    with pytest.raises(ValueError, match='lock key'):
-        with database.transaction() as tx:
-            tx.lock(('stock', None))
-    with database._connection() as connection:
-        with pytest.raises(ValueError, match='inside database.transaction'):
-            Session(connection, database.registry).lock(('stock', 1))
-        connection.execute('BEGIN')
-        with pytest.raises(ValueError, match='inside database.transaction'):
-            Session(connection, database.registry).lock(('stock', 1))
-
-
-# Playground
 
 def test_the_playground_awards_points_into_a_ledger_and_its_balance_cache(tmp_path, monkeypatch):
     from examples.playground.app import create_app

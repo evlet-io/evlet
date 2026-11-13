@@ -13,14 +13,20 @@ import tempfile
 import time
 from urllib.parse import parse_qs
 
+from . import qb
+from .adapter import Column, TableDefinition
+
 PATH = '/_dev/signin'
 MINUTES = 10
 UNAVAILABLE = 'This sign-in link has expired or was already used. Run evlet dev-link for a new one.'
 
+LINKS = TableDefinition('evlet_dev_links', (
+    Column('hash', 'TEXT', primary=True), Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
+    Column('expires', 'INTEGER', required=True)))
+
 
 def ensure(connection):
-    connection.execute('CREATE TABLE IF NOT EXISTS evlet_dev_links (hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
-                       'expires INTEGER NOT NULL)')
+    connection.ensure_table(LINKS)
 
 
 def _digest(token):
@@ -30,8 +36,9 @@ def _digest(token):
 def _choose(connection, username):
     """The account a link signs in: username, else the built-in Administrator, else the only active admin or user."""
     from .auth import ADMINISTRATOR
-    rows = connection.execute("SELECT u.id, u.username, u.role, u.password FROM evlet_users u JOIN evlet_roles r ON r.id=u.role "
-                              "WHERE u.active=1 AND r.realm='desk' ORDER BY u.id").fetchall()
+    rows = connection.run(qb.select(qb.table('evlet_users', 'u'), 'u.id', 'u.username', 'u.role', 'u.password')
+                          .join(qb.table('evlet_roles', 'r'), qb.eq('r.id', qb.col('u.role')))
+                          .where(qb.eq('u.active', 1), qb.eq('r.realm', 'desk')).order_by('u.id')).all()
     names = ', '.join(row['username'] for row in rows[:10]) or 'none'
     if username is not None:
         found = [row for row in rows if row['username'] == username.lower()]
@@ -62,12 +69,12 @@ def _issue(database, user, minutes=MINUTES):
         connection = tx.connection
         ensure(connection)
         now = int(time.time())
-        connection.execute('DELETE FROM evlet_dev_links WHERE expires<=?', (now,))
-        if not connection.execute('SELECT 1 FROM evlet_users LIMIT 1').fetchone():
+        connection.run(qb.delete('evlet_dev_links').where(qb.le('expires', now)))
+        if connection.run(qb.select('evlet_users', 'id').limit(1)).one() is None:
             raise ValueError('This app has no users yet. Start it with evlet dev, which creates the Administrator.')
         account = _choose(connection, user)
         token = secrets.token_urlsafe(32)
-        connection.execute('INSERT INTO evlet_dev_links(hash,user_id,expires) VALUES (?,?,?)', (_digest(token), account['id'], now + minutes * 60))
+        connection.run(qb.insert('evlet_dev_links', hash=_digest(token), user_id=account['id'], expires=now + minutes * 60))
     return token, account['username'], account['password'] == ''
 
 
@@ -115,14 +122,15 @@ def sign_in(business, scope):
         connection = tx.connection
         ensure(connection)
         now = int(time.time())
-        connection.execute('DELETE FROM evlet_dev_links WHERE expires<=?', (now,))
+        connection.run(qb.delete('evlet_dev_links').where(qb.le('expires', now)))
         digest = _digest(token)
-        row = connection.execute('SELECT hash, user_id FROM evlet_dev_links WHERE hash=?', (digest,)).fetchone() if token else None
+        row = connection.run(qb.select('evlet_dev_links', 'hash', 'user_id').where(hash=digest)).one() if token else None
         if row is None or not hmac.compare_digest(row['hash'], digest):
             return 403, UNAVAILABLE.encode(), []
-        connection.execute('DELETE FROM evlet_dev_links WHERE hash=?', (row['hash'],))
-        account = connection.execute('SELECT u.*, r.realm AS role_realm FROM evlet_users u LEFT JOIN evlet_roles r ON r.id=u.role WHERE u.id=?',
-                                     (row['user_id'],)).fetchone()
+        connection.run(qb.delete('evlet_dev_links').where(hash=row['hash']))
+        account = connection.run(qb.select(qb.table('evlet_users', 'u'), qb.all_columns('u'), qb.named('r.realm', 'role_realm'))
+                                 .join(qb.table('evlet_roles', 'r'), qb.eq('r.id', qb.col('u.role')), left=True)
+                                 .where(qb.eq('u.id', row['user_id']))).one()
         if account is None or not account['active'] or account['role_realm'] != realm:
             return 403, UNAVAILABLE.encode(), []
         # The link comes from someone with this development instance's files, as strong as a finished second step.

@@ -423,8 +423,9 @@ def main(argv=None):
             try:
                 auth = app.business.auth
                 auth.initialize()
+                from .. import qb
                 with app.database._connection() as connection:
-                    row = connection.execute('SELECT id FROM evlet_users WHERE username=?', (args.username.lower(),)).fetchone()
+                    row = connection.run(qb.select('evlet_users', 'id').where(username=args.username.lower())).one()
                 if row is None:
                     raise ValueError(f'No account named {args.username}')
                 (auth.unlink_user if args.remove else auth.link_user)(row['id'], args.model, args.record_id, actor='cli')

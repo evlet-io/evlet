@@ -17,7 +17,6 @@ route, so whoever cannot read the record cannot load its images.
 
 import base64
 import binascii
-import sqlite3
 from contextlib import contextmanager
 from contextvars import ContextVar
 import re
@@ -25,6 +24,8 @@ import time
 
 from .fields import Image, RichText
 from .models import ValidationError
+from . import qb
+from .adapter import Column
 
 HOLDING = 0
 HOLD_SECONDS = 24 * 3600
@@ -103,11 +104,11 @@ def size_text(size):
 def initialize(database):
     """Columns for images on evlet_attachments (created by the storage adapter first)."""
     with database.transaction() as tx:
-        columns = database.columns(tx.connection, 'evlet_attachments')
+        columns = tx.connection.columns('evlet_attachments')
         for name, kind in (('purpose', 'TEXT'), ('owner', 'INTEGER'), ('created_at', 'INTEGER')):
             if name not in columns:
-                tx.connection.execute(f'ALTER TABLE evlet_attachments ADD COLUMN {name} {kind}')
-        tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_attachment_held ON evlet_attachments(purpose,record_id,created_at)')
+                tx.connection.add_column('evlet_attachments', Column(name, kind))
+        tx.connection.ensure_index('evlet_attachment_held', 'evlet_attachments', ('purpose', 'record_id', 'created_at'))
 
 
 def upload(business, tx, user, model, record_id, body):
@@ -137,23 +138,22 @@ def upload(business, tx, user, model, record_id, body):
     purge(tx, now)
     owner_record = HOLDING if record_id is None else int(record_id)
     if record_id is None:
-        count = tx.connection.execute("SELECT count(*) FROM evlet_attachments WHERE purpose='image' AND model=? AND record_id=0 AND owner=?",
-                                      (name, user.id)).fetchone()[0]
+        count = tx.connection.run(qb.select('evlet_attachments', qb.count())
+                                  .where(purpose='image', model=name, record_id=HOLDING, owner=user.id)).value()
     else:
-        count = tx.connection.execute("SELECT count(*) FROM evlet_attachments WHERE purpose='image' AND model=? AND record_id=?",
-                                      (name, owner_record)).fetchone()[0]
+        count = tx.connection.run(qb.select('evlet_attachments', qb.count()).where(purpose='image', model=name, record_id=owner_record)).value()
     if count >= max_count:
         raise ValidationError({'image': f'Use at most {max_count} images per record'})
     stem = re.sub(r'\.[A-Za-z0-9]{1,5}$', '', filename) or 'image'
     image_id = business.storage.add(tx, name, owner_record, f'{stem}.{EXTENSIONS[kind]}', content)
-    tx.connection.execute('UPDATE evlet_attachments SET purpose=?, owner=?, created_at=? WHERE id=?', ('image', user.id, now, image_id))
+    tx.connection.run(qb.update('evlet_attachments', purpose='image', owner=user.id, created_at=now).where(id=image_id))
     return {'id': str(image_id), 'type': kind, 'size': len(content), 'held': record_id is None}
 
 
 def held(business, tx, user, model, image_id):
     """A held image of this person, for showing it before the record is saved."""
-    row = tx.connection.execute("SELECT * FROM evlet_attachments WHERE id=? AND purpose='image' AND model=? AND record_id=0 AND owner=?",
-                                (image_id, business.registry.name_for(model), user.id)).fetchone()
+    row = tx.connection.run(qb.select('evlet_attachments').where(id=image_id, purpose='image', model=business.registry.name_for(model),
+                                                                 record_id=HOLDING, owner=user.id)).one()
     if row is None:
         from .auth import AccessError
         raise AccessError(404, 'Image not found')
@@ -197,14 +197,12 @@ def settle(session, model, record_id, values):
     user_id, (_, max_count) = (writer[0], writer[1]) if writer else (None, (None, 200))
     if len(referenced) > max_count:
         raise ValidationError({next(iter(referenced.values())): f'Use at most {max_count} images per record'})
-    rows = session.connection.execute("SELECT id FROM evlet_attachments WHERE purpose='image' AND model=? AND record_id=?",
-                                      (table, record_id)).fetchall()
+    rows = session.connection.run(qb.select('evlet_attachments', 'id').where(purpose='image', model=table, record_id=record_id)).all()
     own = {row[0] for row in rows}
     for image_id, field in referenced.items():
         if image_id in own:
             continue
-        found = session.connection.execute("SELECT owner, record_id FROM evlet_attachments WHERE id=? AND purpose='image' AND model=?",
-                                           (image_id, table)).fetchone()
+        found = session.connection.run(qb.select('evlet_attachments', 'owner', 'record_id').where(id=image_id, purpose='image', model=table)).one()
         if found is None:
             # Purged: images of an unsaved record are held for a day (HOLD_SECONDS).
             raise ValidationError({field: 'This image is no longer available. Upload it again.' if field in pictures else
@@ -213,9 +211,9 @@ def settle(session, model, record_id, values):
         if found[1] != HOLDING or (user_id is not None and found[0] != user_id):
             raise ValidationError({field: 'This image belongs to another record. Upload it again.' if field in pictures else
                                    'An image in this text belongs to another record. Add it again.'})
-        session.connection.execute('UPDATE evlet_attachments SET record_id=? WHERE id=?', (record_id, image_id))
+        session.connection.run(qb.update('evlet_attachments', record_id=record_id).where(id=image_id))
     for image_id in own - set(referenced):
-        session.connection.execute('DELETE FROM evlet_attachments WHERE id=?', (image_id,))
+        session.connection.run(qb.delete('evlet_attachments').where(id=image_id))
 
 
 def clone(business, tx, user, model, values):
@@ -225,36 +223,32 @@ def clone(business, tx, user, model, values):
     for field in image_fields(model):
         if values.get(field) is None:
             continue
-        row = tx.connection.execute("SELECT * FROM evlet_attachments WHERE id=? AND purpose='image' AND model=?",
-                                    (values[field], name)).fetchone()
+        row = tx.connection.run(qb.select('evlet_attachments').where(id=values[field], purpose='image', model=name)).one()
         if row is None:
             values[field] = None
             continue
         image_id = business.storage.add(tx, name, HOLDING, row['name'], business.storage.read(row))
-        tx.connection.execute('UPDATE evlet_attachments SET purpose=?, owner=?, created_at=? WHERE id=?',
-                              ('image', getattr(user, 'id', None), int(time.time()), image_id))
+        tx.connection.run(qb.update('evlet_attachments', purpose='image', owner=getattr(user, 'id', None), created_at=int(time.time()))
+                          .where(id=image_id))
         values[field] = image_id
 
 
 def remove(session, model, record_id):
     """When a record is deleted: delete its images. Their files are reclaimed by the storage's collect()."""
     if holders(model) and _attachments(session):
-        session.connection.execute("DELETE FROM evlet_attachments WHERE purpose='image' AND model=? AND record_id=?",
-                                   (session.registry.name_for(model), int(record_id)))
+        session.connection.run(qb.delete('evlet_attachments').where(purpose='image', model=session.registry.name_for(model),
+                                                                    record_id=int(record_id)))
 
 
 def _attachments(session):
-    sqlite = isinstance(session.connection, sqlite3.Connection)
-    row = session.connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_attachments'" if sqlite
-                                     else "SELECT to_regclass('evlet_attachments')").fetchone()
-    return bool(row and row[0])
+    return session.connection.table_exists('evlet_attachments')
 
 
 def purge(tx, now=None):
     """Delete held images older than a day. Returns how many went."""
     now = int(time.time()) if now is None else now
-    return tx.connection.execute("DELETE FROM evlet_attachments WHERE purpose='image' AND record_id=0 AND created_at<?",
-                                 (now - HOLD_SECONDS,)).rowcount
+    held = qb.delete('evlet_attachments').where(qb.lt('created_at', now - HOLD_SECONDS), purpose='image', record_id=HOLDING)
+    return tx.connection.run(held).rowcount
 
 
 def purge_job(business):
@@ -284,8 +278,7 @@ def _owned(business, tx, model, record_id, html):
     name = business.registry.name_for(model)
     found = {}
     for image_id in ids:
-        row = tx.connection.execute("SELECT * FROM evlet_attachments WHERE id=? AND purpose='image' AND model=? AND record_id=?",
-                                    (image_id, name, int(record_id))).fetchone()
+        row = tx.connection.run(qb.select('evlet_attachments').where(id=image_id, purpose='image', model=name, record_id=int(record_id))).one()
         if row is not None:
             content = business.storage.read(row)
             kind = image_type(content)

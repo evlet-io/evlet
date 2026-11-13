@@ -5,14 +5,12 @@ Builds 10,000 employees with 10 leave rows each: a manager over a 500-level chai
 list page, a count and an aggregate. Run from the checkout:
 
     .venv/bin/python scripts/benchmark_hierarchy.py
-    EVLET_BENCHMARK_DSN=... .venv/bin/python scripts/benchmark_hierarchy.py --postgres   # an empty database
 """
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from urllib.parse import quote
 import argparse
 import json
-import os
 import platform
 import statistics
 import sys
@@ -52,18 +50,13 @@ def organisation():
     return rows
 
 
-def load(db, postgres):
+def load(db):
     employees = organisation()
     with db.transaction() as tx:
         tx.connection.executemany('INSERT INTO employee (id, name, reports_to) VALUES (?, ?, ?)',
                                   [(identity, f'Employee {identity}', parent) for identity, parent in employees])
         tx.connection.executemany('INSERT INTO leave (employee, days) VALUES (?, ?)',
                                   [(identity, 1 + day % 3) for identity, _ in employees for day in range(LEAVES)])
-    if postgres:
-        with db.transaction() as tx:
-            tx.connection.execute("SELECT setval(pg_get_serial_sequence('employee', 'id'), ?)", (TOTAL,))
-            tx.connection.execute('ANALYZE employee')
-            tx.connection.execute('ANALYZE leave')
     return employees
 
 
@@ -80,11 +73,11 @@ def measure(label, call, repeats):
             'p95_ms': float(f'{timings[max(0, int(len(timings) * 0.95) - 1)] * 1000:.2f}'), 'runs': repeats, 'result': body}
 
 
-def run(db, repeats, postgres):
+def run(db, repeats):
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
-    load(db, postgres)
+    load(db)
     admin, results = client(app), []
     for name, employee, team in (('deep', 2, DEEP + 1), ('wide', 3, WIDE + 1), ('leaf', 4 + DEEP - 1, 1)):
         user = admin('POST', '/api/auth/users', {'username': name, 'password': PASSWORD, 'role': 'viewer'})[1]
@@ -104,28 +97,15 @@ def run(db, repeats, postgres):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--postgres', action='store_true', help='Read EVLET_BENCHMARK_DSN; the database must be empty')
     parser.add_argument('--repeats', type=int, default=20)
     args = parser.parse_args()
     registry = Registry(Employee, Leave)
     with TemporaryDirectory() as directory:
-        if args.postgres:
-            from evlet import PostgreSQLDatabase
-            db = PostgreSQLDatabase(os.environ['EVLET_BENCHMARK_DSN'], registry, timeout=120)
-            with db._connection() as connection:
-                if connection.execute("SELECT 1 FROM pg_tables WHERE schemaname='public' LIMIT 1").fetchone():
-                    raise SystemExit('Benchmark requires an empty PostgreSQL database')
-            version = None
-        else:
-            import sqlite3
-            db = Database(Path(directory) / 'hierarchy.sqlite3', registry)
-            version = sqlite3.sqlite_version
-        results = run(db, args.repeats, args.postgres)
-        if args.postgres:
-            with db._connection() as connection:
-                version = connection.execute('SHOW server_version').fetchone()[0]
-            db.close()
-    print(json.dumps({'database': 'postgresql' if args.postgres else 'sqlite', 'version': version, 'python': platform.python_version(),
+        import sqlite3
+        db = Database(Path(directory) / 'hierarchy.sqlite3', registry)
+        version = sqlite3.sqlite_version
+        results = run(db, args.repeats)
+    print(json.dumps({'database': 'sqlite', 'version': version, 'python': platform.python_version(),
                       'machine': platform.machine(), 'system': platform.system(), 'employees': TOTAL, 'leave_rows': TOTAL * LEAVES,
                       'results': results}, indent=1))
 

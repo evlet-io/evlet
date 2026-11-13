@@ -1,4 +1,4 @@
-"""Phase 9: measures and the aggregate API on real SQLite and, when configured, PostgreSQL."""
+"""Phase 9: measures and the aggregate API on real SQLite."""
 
 from datetime import date
 from decimal import Decimal as D_
@@ -9,12 +9,11 @@ from urllib.parse import quote
 import pytest
 
 from evlet import (Boolean, Child, Count, CountDistinct, Currency, Database, Date, Day, Decimal, Integer, Link, LongText, Max, Min,
-                   Model, Month, Move, NotFoundError, PostgreSQLDatabase, Registry, Rule, Select, Sequence, State, Sum, Tags, Text,
+                   Model, Month, Move, NotFoundError, Registry, Rule, Select, Sequence, State, Sum, Tags, Text,
                    Table, ValidationError, Year)
 from evlet.auth import AccessError, User
 from evlet.calc import D, F, days, month_start, today, when
 from test_business import client, http
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 from test_rules_types import add_user, start
 
 ALL = Rule(('read', 'create', 'update', 'delete'))
@@ -73,13 +72,10 @@ class Payment(Model):
 MODELS = (Customer, Invoice, Payment)
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def app(request, tmp_path):
+@pytest.fixture
+def app(tmp_path):
     registry = Registry(*MODELS)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'measures.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'measures.sqlite3', registry)
     application = start(database)
     add_user(application, 'editor')
     add_user(application, 'viewer')
@@ -592,13 +588,10 @@ class NumberedQuote(Model):
                    locked=('issued', 'void'), final=('void',), voidable=('issued',))
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def numbered(request, tmp_path):
+@pytest.fixture
+def numbered(tmp_path):
     registry = Registry(NumberedQuote)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'numbered.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'numbered.sqlite3', registry)
     return start(database)
 
 
@@ -666,13 +659,10 @@ class Visit(Model):
         }
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def visits(request, tmp_path):
+@pytest.fixture
+def visits(tmp_path):
     registry = Registry(Visit)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'visits.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'visits.sqlite3', registry)
     application = start(database)
     add_user(application, 'editor')
     add_user(application, 'viewer')

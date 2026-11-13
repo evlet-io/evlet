@@ -8,9 +8,10 @@ import hashlib
 import json
 import re
 
+from . import qb
 from .auth import AccessError, has_role
 from .documents import Draft, settle, walk
-from .forms import draft_values, form_draft, metadata
+from .forms import OPERATIONS, draft_values, form_draft, metadata
 from .identity import RecordId, jsonable
 from .models import Model, ValidationError, checked_body, storage_name
 from .reactivity import evaluate, plans
@@ -206,7 +207,7 @@ class Slips:
 
     def initialize(self):
         with self.business.database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_operations (key TEXT PRIMARY KEY, actor INTEGER NOT NULL, request TEXT NOT NULL, result TEXT NOT NULL)')
+            tx.connection.ensure_table(OPERATIONS)
 
     def allowed(self, user, slip):
         """Whether the schema should offer this slip to the role (the routes still check everything)."""
@@ -275,7 +276,7 @@ class Slips:
                     raise ValidationError({'key': 'Supply an idempotency key of 8 to 128 characters'})
                 key = f'slip:{user.id}:{parts[0]}:{key}'
                 signature = json.dumps({'path': scope['path'], 'body': body}, sort_keys=True, separators=(',', ':'))
-                old = context._tx.connection.execute('SELECT * FROM evlet_operations WHERE key=?', (key,)).fetchone()
+                old = context._tx.connection.run(qb.select('evlet_operations').where(key=key)).one()
                 if old:
                     if old['request'] != signature or old['actor'] != user.id:
                         raise AccessError(409, 'Idempotency key has different input')
@@ -310,8 +311,7 @@ class Slips:
             encoded = json.dumps(jsonable(outcome), allow_nan=False)
             if len(encoded) > RESULT_LIMIT:
                 raise ValueError('Slip outcome exceeds 64 KiB')
-            context._tx.connection.execute('INSERT INTO evlet_operations(key,actor,request,result) VALUES (?,?,?,?)',
-                                           (key, user.id, signature, encoded))
+            context._tx.connection.run(qb.insert('evlet_operations', key=key, actor=user.id, request=signature, result=encoded))
             return 200, json.loads(encoded), []
 
     def convert(self, context, slip, draft, source):

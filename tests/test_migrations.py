@@ -348,8 +348,7 @@ def test_baseline_adoption_validates_existing_rows_before_recording_history(tmp_
         assert connection.execute('SELECT active FROM contact').fetchone() == (2,)
 
 
-@pytest.mark.parametrize('dsn', [None, ''])
-def test_playground_migration_cli_keeps_sqlite_selection_and_backup(tmp_path, monkeypatch, dsn):
+def test_playground_migration_cli_keeps_sqlite_selection_and_backup(tmp_path, monkeypatch):
     import subprocess
     import sys
     from examples.playground.migrate import legacy_registry
@@ -360,10 +359,6 @@ def test_playground_migration_cli_keeps_sqlite_selection_and_backup(tmp_path, mo
     old = Database(path, old_registry); old.initialize()
     preserved = old.create(old_registry.models['customer'], name='Preserved')
     monkeypatch.setenv('EVLET_DATABASE', str(path))
-    if dsn is None:
-        monkeypatch.delenv('EVLET_POSTGRES_DSN', raising=False)
-    else:
-        monkeypatch.setenv('EVLET_POSTGRES_DSN', dsn)
     result = subprocess.run([sys.executable, '-m', 'examples.playground.migrate'],
                             text=True, capture_output=True)
     assert result.returncode == 0, result.stderr

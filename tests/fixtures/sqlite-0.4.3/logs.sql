@@ -1,0 +1,10 @@
+BEGIN TRANSACTION;
+CREATE TABLE evlet_forwarded_peers (peer TEXT PRIMARY KEY, last_seen INTEGER NOT NULL);
+CREATE TABLE evlet_tool_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, user_id INTEGER NOT NULL, origin TEXT NOT NULL CHECK(origin IN ('eva','schedule','mcp','api')), client TEXT, client_id INTEGER, key_id INTEGER, run_id INTEGER, tool TEXT NOT NULL, model TEXT, record_id INTEGER, kind TEXT NOT NULL CHECK(kind IN ('read','write')), outcome TEXT NOT NULL CHECK(outcome IN ('ok','denied','failed','approval')), duration_ms INTEGER, inputs TEXT, error TEXT);
+CREATE TABLE evlet_turn (id INTEGER PRIMARY KEY);
+CREATE INDEX evlet_tool_call_at ON evlet_tool_calls(at);
+CREATE INDEX evlet_tool_call_user ON evlet_tool_calls(user_id, at);
+CREATE INDEX evlet_tool_call_client ON evlet_tool_calls(client_id, at);
+CREATE INDEX evlet_tool_call_run ON evlet_tool_calls(run_id);
+DELETE FROM "sqlite_sequence";
+COMMIT;

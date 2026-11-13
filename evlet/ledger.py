@@ -16,12 +16,13 @@ times, no public surface). It computes nothing; rows are stored as given.
 
 This module checks the declaration when the class is created, describes the options for the saved
 schema, and holds the append-only triggers and the lock keys. Session (evlet/database.py) does the
-reads and writes; migrations (evlet/migrations.py, evlet/postgres_schema.py) create the tables.
+reads and writes; migrations (evlet/migrations.py) create the tables.
 """
 
 from datetime import datetime, timezone
 import hashlib
 import json
+from . import qb
 
 # Field types a ledger model may declare, matched exactly (a subclass such as State, LongText, Email or
 # Duration is a different type).
@@ -156,65 +157,21 @@ def now():
     return datetime.now(timezone.utc)
 
 
-# Append-only triggers
+# Append-only tables
 
-def trigger_names(table):
-    """SQLite trigger names of an append-only ledger table."""
-    return tuple(f'evlet_{table}_no_{event}' for event in ('update', 'delete', 'replace'))
-
-
-def add_triggers(connection, postgres, table):
+def add_triggers(connection, table):
     """Refuse UPDATE and DELETE on a ledger table, so also REPLACE and upsert updates, as the
     evlet_audit and evlet_journal tables do. Idempotent."""
-    from .models import identifier
-    quoted, message = identifier(table), f'{table} {APPEND_ONLY}'
-    if postgres:
-        connection.execute("CREATE OR REPLACE FUNCTION evlet_ledger_append_only() RETURNS trigger LANGUAGE plpgsql AS "
-                           f"$$ BEGIN RAISE EXCEPTION '% {APPEND_ONLY}', TG_TABLE_NAME USING ERRCODE = 'integrity_constraint_violation'; END $$")
-        present = {row[0] for row in connection.execute(
-            'SELECT tgname FROM pg_trigger WHERE tgrelid = ?::regclass AND NOT tgisinternal', (quoted,))}
-        if 'evlet_append_only' not in present:
-            connection.execute(f'CREATE TRIGGER evlet_append_only BEFORE UPDATE OR DELETE ON {quoted} '
-                               'FOR EACH ROW EXECUTE FUNCTION evlet_ledger_append_only()')
-        if 'evlet_no_truncate' not in present:
-            connection.execute(f'CREATE TRIGGER evlet_no_truncate BEFORE TRUNCATE ON {quoted} '
-                               'FOR EACH STATEMENT EXECUTE FUNCTION evlet_ledger_append_only()')
-        return
-    refuse = f"BEGIN SELECT RAISE(ABORT, '{message}'); END"
-    update, delete, replace = (identifier(name) for name in trigger_names(table))
-    connection.execute(f'CREATE TRIGGER IF NOT EXISTS {update} BEFORE UPDATE ON {quoted} {refuse}')
-    connection.execute(f'CREATE TRIGGER IF NOT EXISTS {delete} BEFORE DELETE ON {quoted} {refuse}')
-    # REPLACE deletes the old row without firing DELETE triggers (unless recursive triggers are on, as
-    # Evlet's own connections have them), so an insert may not reuse an id.
-    connection.execute(f'CREATE TRIGGER IF NOT EXISTS {replace} BEFORE INSERT ON {quoted} '
-                       f'WHEN EXISTS (SELECT 1 FROM {quoted} WHERE "id" = NEW."id") {refuse}')
+    connection.make_append_only(table, f'{table} {APPEND_ONLY}')
 
 
-def drop_triggers(connection, postgres, table):
-    from .models import identifier
-    if postgres:
-        connection.execute(f'DROP TRIGGER IF EXISTS evlet_append_only ON {identifier(table)}')
-        connection.execute(f'DROP TRIGGER IF EXISTS evlet_no_truncate ON {identifier(table)}')
-        return
-    for name in trigger_names(table):
-        connection.execute(f'DROP TRIGGER IF EXISTS {identifier(name)}')
+def drop_triggers(connection, table):
+    connection.drop_append_only(table)
 
 
-def has_triggers(connection, postgres, table):
-    """True when all the append-only triggers are present, False when none is; SchemaError otherwise."""
-    from .migrations import SchemaError
-    from .models import identifier
-    if postgres:
-        present = {row[0] for row in connection.execute(
-            'SELECT tgname FROM pg_trigger WHERE tgrelid = ?::regclass AND NOT tgisinternal', (identifier(table),))}
-        expected = {'evlet_append_only', 'evlet_no_truncate'}
-    else:
-        present = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?", (table,))}
-        expected = set(trigger_names(table))
-    found = present & expected
-    if found and found != expected:
-        raise SchemaError(f'{table}: the append-only triggers are incomplete; run explicit migrations')
-    return bool(found)
+def has_triggers(connection, table):
+    """True when the table refuses changes, False when it does not; SchemaError when it is half way."""
+    return connection.is_append_only(table)
 
 
 # Transaction locks
@@ -248,7 +205,7 @@ def lock_key(key):
 
 
 def lock_hash(key):
-    """The signed 64-bit number PostgreSQL locks for a key. Stable across processes and releases; two keys
+    """The signed 64-bit number a database adapter locks for a key (connection.lock). Stable across processes and releases; two keys
     that share a number only make a writer wait, they never let two writers in at once."""
     return int.from_bytes(hashlib.blake2b(lock_key(key).encode('utf-8'), digest_size=8).digest(), 'big', signed=True)
 
@@ -273,14 +230,14 @@ def describe(database):
     journals, periods = getattr(registry, 'journals', {}), getattr(registry, 'periods', {})
     result = []
     with database._connection() as connection:
-        connection.execute('BEGIN')
+        connection.snapshot()
         try:
             for name, model in models:
                 journal = journals.get(model)
                 period = periods.get(model)
                 result.append({
                     'model': model.__name__, 'table': name,
-                    'rows': connection.execute(f'SELECT count(*) FROM {identifier(name)}').fetchone()[0],
+                    'rows': connection.run(qb.select(name, qb.count())).value(),
                     'append_only': model.__append_only__,
                     'journal': 'off' if journal is None else 'tamper evident' if journal.tamper_evident else 'on',
                     'timestamps': model.__timestamps__ or 'off',

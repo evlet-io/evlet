@@ -20,6 +20,8 @@ import re
 import time
 from urllib.parse import urlencode
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .auth import AccessError
 from .connector import ConnectorError
 from .database import ConflictError, NotFoundError
@@ -40,16 +42,28 @@ GROUPS = ('create', 'update', 'confirm', 'action', 'destructive')
 OUTCOMES = ('ok', 'denied', 'failed', 'approval')
 KEEP_CALLS, KEEP_APPROVALS, APPROVAL_SECONDS = 90 * 86400, 30 * 86400, 86400
 # The call log. Framework step 0002_tool_calls creates it too, before moving the old MCP log in.
-CALLS_TABLE = (
-    "CREATE TABLE IF NOT EXISTS evlet_tool_calls (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, user_id INTEGER NOT NULL, "
-    "origin TEXT NOT NULL CHECK(origin IN ('eva','schedule','mcp','api')), client TEXT, client_id INTEGER, key_id INTEGER, run_id INTEGER, "
-    "tool TEXT NOT NULL, model TEXT, record_id INTEGER, kind TEXT NOT NULL CHECK(kind IN ('read','write')), "
-    "outcome TEXT NOT NULL CHECK(outcome IN ('ok','denied','failed','approval')), duration_ms INTEGER, inputs TEXT, error TEXT)",
-    'CREATE INDEX IF NOT EXISTS evlet_tool_call_at ON evlet_tool_calls(at)',
-    'CREATE INDEX IF NOT EXISTS evlet_tool_call_user ON evlet_tool_calls(user_id, at)',
-    'CREATE INDEX IF NOT EXISTS evlet_tool_call_client ON evlet_tool_calls(client_id, at)',
-    'CREATE INDEX IF NOT EXISTS evlet_tool_call_run ON evlet_tool_calls(run_id)',
-)
+CALLS = TableDefinition('evlet_tool_calls', (
+    Column('at', 'INTEGER', required=True), Column('user_id', 'INTEGER', required=True), Column('origin', 'TEXT', required=True),
+    Column('client', 'TEXT'), Column('client_id', 'INTEGER'), Column('key_id', 'INTEGER'), Column('run_id', 'INTEGER'),
+    Column('tool', 'TEXT', required=True), Column('model', 'TEXT'), Column('record_id', 'INTEGER'), Column('kind', 'TEXT', required=True),
+    Column('outcome', 'TEXT', required=True), Column('duration_ms', 'INTEGER'), Column('inputs', 'TEXT'), Column('error', 'TEXT')),
+    numbered=True, checks=(qb.in_('origin', ORIGINS), qb.in_('kind', ('read', 'write')), qb.in_('outcome', OUTCOMES)))
+APPROVALS = TableDefinition('evlet_tool_approvals', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'), Column('origin', 'TEXT', required=True),
+    Column('client', 'TEXT'), Column('run_id', 'INTEGER'), Column('tool', 'TEXT', required=True), Column('arguments', 'TEXT', required=True),
+    Column('digest', 'TEXT', required=True), Column('summary', 'TEXT', required=True), Column('status', 'TEXT', required=True),
+    Column('created_at', 'INTEGER', required=True), Column('expires_at', 'INTEGER', required=True), Column('decided_at', 'INTEGER')),
+    numbered=True, checks=(qb.in_('status', ('pending', 'approved', 'declined', 'used', 'expired')),))
+
+
+def ensure_calls(connection):
+    connection.ensure_table(CALLS)
+    connection.ensure_index('evlet_tool_call_at', 'evlet_tool_calls', ('at',))
+    connection.ensure_index('evlet_tool_call_user', 'evlet_tool_calls', ('user_id', 'at'))
+    connection.ensure_index('evlet_tool_call_client', 'evlet_tool_calls', ('client_id', 'at'))
+    connection.ensure_index('evlet_tool_call_run', 'evlet_tool_calls', ('run_id',))
+
+
 # Text a file tool returns at most, and the largest file it reads.
 TEXT_LIMIT, FILE_LIMIT = 60_000, 2 * 1024 * 1024
 LOCAL_CLIENT = 'Local MCP connector'
@@ -236,15 +250,10 @@ class Tools:
     def initialize(self):
         with self.database.transaction() as tx:
             connection = tx.connection
-            for statement in (
-                *CALLS_TABLE,
-                "CREATE TABLE IF NOT EXISTS evlet_tool_approvals (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, "
-                "origin TEXT NOT NULL, client TEXT, run_id INTEGER, tool TEXT NOT NULL, arguments TEXT NOT NULL, digest TEXT NOT NULL, summary TEXT NOT NULL, "
-                "status TEXT NOT NULL CHECK(status IN ('pending','approved','declined','used','expired')), created_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, decided_at INTEGER)",
-                'CREATE INDEX IF NOT EXISTS evlet_tool_approval_user ON evlet_tool_approvals(user_id, status)',
-                'CREATE INDEX IF NOT EXISTS evlet_tool_approval_digest ON evlet_tool_approvals(digest)',
-            ):
-                connection.execute(statement)
+            ensure_calls(connection)
+            connection.ensure_table(APPROVALS)
+            connection.ensure_index('evlet_tool_approval_user', 'evlet_tool_approvals', ('user_id', 'status'))
+            connection.ensure_index('evlet_tool_approval_digest', 'evlet_tool_approvals', ('digest',))
         self.prune()
 
     def prune(self):
@@ -255,9 +264,10 @@ class Tools:
         self.pruned = now
         now = int(now)
         with self.database.transaction() as tx:
-            tx.connection.execute('DELETE FROM evlet_tool_calls WHERE at<?', (now - KEEP_CALLS,))
-            tx.connection.execute("UPDATE evlet_tool_approvals SET status='expired' WHERE status IN ('pending','approved') AND expires_at<=?", (now,))
-            tx.connection.execute('DELETE FROM evlet_tool_approvals WHERE created_at<?', (now - KEEP_APPROVALS,))
+            tx.connection.run(qb.delete('evlet_tool_calls').where(qb.lt('at', now - KEEP_CALLS)))
+            tx.connection.run(qb.update('evlet_tool_approvals', status='expired')
+                              .where(qb.in_('status', ('pending', 'approved')), qb.le('expires_at', now)))
+            tx.connection.run(qb.delete('evlet_tool_approvals').where(qb.lt('created_at', now - KEEP_APPROVALS)))
 
     def primary_host(self):
         from urllib.parse import urlsplit
@@ -386,11 +396,11 @@ class Tools:
             if not access.assistant:
                 return LOCAL_CLIENT
             with self.database._connection() as connection:
-                row = connection.execute('SELECT client_name FROM evlet_mcp_clients WHERE id=?', (access.assistant,)).fetchone()
+                row = connection.run(qb.select('evlet_mcp_clients', 'client_name').where(id=access.assistant)).one()
             return row[0] if row else None
         if access.key_id is not None:
             with self.database._connection() as connection:
-                row = connection.execute('SELECT name FROM evlet_api_keys WHERE id=?', (access.key_id,)).fetchone()
+                row = connection.run(qb.select('evlet_api_keys', 'name').where(id=access.key_id)).one()
             return row[0] if row else None
         return None
 
@@ -402,13 +412,13 @@ class Tools:
             connection = tx.connection
             if origin == 'mcp':
                 rate = min(60, self.business.controls.settings['mcp.rate'])
-                recent = connection.execute('SELECT count(*) FROM evlet_tool_calls WHERE origin=? AND user_id=? AND COALESCE(client_id,0)=? AND at>?',
-                                            ('mcp', user.id, client_id or 0, now - 60)).fetchone()[0]
+                recent = connection.run(qb.select('evlet_tool_calls', qb.count()).where(
+                    qb.eq(qb.coalesce('client_id', 0), client_id or 0), qb.gt('at', now - 60), origin='mcp', user_id=user.id)).value()
                 if recent >= rate:
                     raise ConnectorError(429, f'Use at most {rate} tool calls per minute.')
                 if client_id:
                     # A busy count: saved with the next batch (evlet/writes.py LogBuffer).
-                    self.database.logs.add(None, 'UPDATE evlet_mcp_clients SET calls=calls+1, last_used=? WHERE id=?', (now, client_id))
+                    self.database.logs.add(None, qb.update('evlet_mcp_clients', calls=qb.col('calls') + 1, last_used=now).where(id=client_id))
             return self.insert(connection, now, user, origin, client, client_id, run_id, tool, values, 'ok')
 
     def insert(self, connection, now, user, origin, client, client_id, run_id, tool, values, outcome, error=None, model=None, record_id=None, duration=None):
@@ -417,10 +427,11 @@ class Tools:
             model = values.get('model') if isinstance(values.get('model'), str) else model
             record_id = values.get('id') if type(values.get('id')) is int else record_id
         inputs = json.dumps(redacted(values), separators=(',', ':'))[:4000] if isinstance(values, dict) else None
-        return connection.execute('INSERT INTO evlet_tool_calls(at,user_id,origin,client,client_id,key_id,run_id,tool,model,record_id,kind,outcome,duration_ms,inputs,error) '
-                                  'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-                                  (now, user.id, origin, client, client_id, None if access is None else access.key_id, run_id, tool.name, model, record_id,
-                                   'write' if tool.writes else 'read', outcome, duration, inputs, None if error is None else str(error)[:500])).lastrowid
+        return connection.run(qb.insert(
+            'evlet_tool_calls', at=now, user_id=user.id, origin=origin, client=client, client_id=client_id,
+            key_id=None if access is None else access.key_id, run_id=run_id, tool=tool.name, model=model, record_id=record_id,
+            kind='write' if tool.writes else 'read', outcome=outcome, duration_ms=duration, inputs=inputs,
+            error=None if error is None else str(error)[:500]).returning_id()).id
 
     def log(self, user, origin, client, client_id, run_id, tool, values, outcome, started, error=None, model=None, record_id=None):
         """Log a finished call in its own short write to the logs file, so it never waits on a long write to records.
@@ -433,8 +444,9 @@ class Tools:
         if call_id is None:
             return
         with self.database.transaction(store='logs') as tx:
-            tx.connection.execute('UPDATE evlet_tool_calls SET outcome=?, duration_ms=?, error=?, record_id=COALESCE(record_id, ?) WHERE id=?',
-                                  (outcome, int((time.monotonic() - started) * 1000), None if error is None else str(error)[:500], record_id, call_id))
+            tx.connection.run(qb.update('evlet_tool_calls', outcome=outcome, duration_ms=int((time.monotonic() - started) * 1000),
+                                        error=None if error is None else str(error)[:500], record_id=qb.coalesce('record_id', record_id))
+                              .where(id=call_id))
 
     def run(self, user, origin, tool, values, scope, run_id, client):
         name = tool.name
@@ -608,20 +620,20 @@ class Tools:
         now = int(time.time())
         waiting = None
         with self.database.transaction() as tx:
-            row = tx.connection.execute("SELECT * FROM evlet_tool_approvals WHERE digest=? AND user_id=? AND status IN ('pending','approved') AND expires_at>? "
-                                        'ORDER BY id DESC LIMIT 1', (digest, user.id, now)).fetchone()
+            row = tx.connection.run(qb.select('evlet_tool_approvals').where(qb.in_('status', ('pending', 'approved')), qb.gt('expires_at', now),
+                                                                            digest=digest, user_id=user.id).order_by('-id').limit(1)).one()
             # An approval is used once: a second identical call needs a new one.
             if row is not None and row['status'] == 'approved' and \
-                    tx.connection.execute("UPDATE evlet_tool_approvals SET status='used' WHERE id=? AND status='approved'", (row['id'],)).rowcount == 1:
+                    tx.connection.run(qb.update('evlet_tool_approvals', status='used').where(id=row['id'], status='approved')).rowcount == 1:
                 waiting = None
             elif row is not None and row['status'] == 'pending':
                 waiting = row
             else:
-                approval_id = tx.connection.execute(
-                    'INSERT INTO evlet_tool_approvals(user_id,origin,client,run_id,tool,arguments,digest,summary,status,created_at,expires_at) '
-                    "VALUES (?,?,?,?,?,?,?,?,'pending',?,?)",
-                    (user.id, origin, client, run_id, tool.name, canonical, digest, json.dumps({**summary, 'group': group}, default=str), now, now + APPROVAL_SECONDS)).lastrowid
-                waiting = tx.connection.execute('SELECT * FROM evlet_tool_approvals WHERE id=?', (approval_id,)).fetchone()
+                approval_id = tx.connection.run(qb.insert(
+                    'evlet_tool_approvals', user_id=user.id, origin=origin, client=client, run_id=run_id, tool=tool.name, arguments=canonical,
+                    digest=digest, summary=json.dumps({**summary, 'group': group}, default=str), status='pending', created_at=now,
+                    expires_at=now + APPROVAL_SECONDS).returning_id()).id
+                waiting = tx.connection.run(qb.select('evlet_tool_approvals').where(id=approval_id)).one()
         # Raised after the commit, so the pending approval is kept.
         if waiting is not None:
             raise ApprovalNeeded(self.public_approval(waiting))
@@ -633,12 +645,11 @@ class Tools:
         A finished call has its duration, so the call asking now never counts itself."""
         if run_id is None:
             return False
-        marks = ','.join('?' * len(CONTENT))
+        conversation = qb.select(qb.table('evlet_eva_runs', 'current'), 'current.conversation_id').where(qb.eq('current.id', run_id))
+        runs = qb.select('evlet_eva_runs', 'id').where(qb.eq('conversation_id', conversation))
         with self.database._connection() as connection:
-            row = connection.execute(
-                f"SELECT 1 FROM evlet_tool_calls WHERE outcome='ok' AND duration_ms IS NOT NULL AND tool IN ({marks}) AND run_id IN "
-                '(SELECT id FROM evlet_eva_runs WHERE conversation_id=(SELECT conversation_id FROM evlet_eva_runs WHERE id=?)) LIMIT 1',
-                (*CONTENT, run_id)).fetchone()
+            row = connection.run(qb.select('evlet_tool_calls', qb.value(1)).where(
+                qb.eq('outcome', 'ok'), qb.not_null('duration_ms'), qb.in_('tool', tuple(CONTENT)), qb.in_('run_id', runs)).limit(1)).one()
         return row is not None
 
     def permitted(self, user, tool, values, record=None):
@@ -677,8 +688,8 @@ class Tools:
     def approvals(self, user, *, pending_only=False):
         self.prune()
         with self.database._connection() as connection:
-            rows = connection.execute('SELECT * FROM evlet_tool_approvals WHERE user_id=?' + (" AND status='pending'" if pending_only else '') +
-                                      ' ORDER BY id DESC LIMIT 50', (user.id,)).fetchall()
+            pending = qb.eq('status', 'pending') if pending_only else qb.TRUE
+            rows = connection.run(qb.select('evlet_tool_approvals').where(pending, user_id=user.id).order_by('-id').limit(50)).all()
         return [self.public_approval(row) for row in rows]
 
     def decide(self, user, approval_id, approve):
@@ -687,39 +698,37 @@ class Tools:
             raise ValidationError({'approve': 'Use true or false'})
         now = int(time.time())
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT * FROM evlet_tool_approvals WHERE id=? AND user_id=?', (approval_id, user.id)).fetchone()
+            row = tx.connection.run(qb.select('evlet_tool_approvals').where(id=approval_id, user_id=user.id)).one()
             if row is None:
                 raise AccessError(404, 'Approval not found')
             if row['status'] != 'pending' or row['expires_at'] <= now:
                 raise AccessError(409, 'This approval was already answered or has expired.')
-            tx.connection.execute('UPDATE evlet_tool_approvals SET status=?, decided_at=? WHERE id=?', ('approved' if approve else 'declined', now, approval_id))
+            tx.connection.run(qb.update('evlet_tool_approvals', status='approved' if approve else 'declined', decided_at=now).where(id=approval_id))
             from .controls import audit
             summary = json.loads(row['summary'])
             target = ' '.join(str(part) for part in (row['tool'], summary.get('model', ''), summary.get('id', '')) if part != '')
             audit(tx.connection, user.username, 'Eva' if row['origin'] in ('eva', 'schedule') else 'MCP', target, 'Approved' if approve else 'Declined')
-            row = tx.connection.execute('SELECT * FROM evlet_tool_approvals WHERE id=?', (approval_id,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_tool_approvals').where(id=approval_id)).one()
         return self.public_approval(row)
 
     # ---------- reading the log ----------
 
     def calls(self, query, *, user_id=None, limit=50):
         """Tool calls, newest first: Controls (everyone) or one person's own (user_id)."""
-        clauses, args = [], []
+        conditions = []
         if user_id is not None:
-            clauses.append('c.user_id=?'); args.append(user_id)
+            conditions.append(qb.eq('c.user_id', user_id))
         for key in ('origin', 'outcome', 'tool'):
             if query.get(key):
-                clauses.append(f'c.{key}=?'); args.append(query[key])
+                conditions.append(qb.eq('c.' + key, query[key]))
         if query.get('q'):
-            text = '%' + query['q'].replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_') + '%'
-            clauses.append("(u.username LIKE ? ESCAPE '\\' OR c.tool LIKE ? ESCAPE '\\' OR c.model LIKE ? ESCAPE '\\' OR c.client LIKE ? ESCAPE '\\')")
-            args.extend([text] * 4)
+            conditions.append(qb.or_(*(qb.contains_ci(name, query['q']) for name in ('u.username', 'c.tool', 'c.model', 'c.client'))))
         if query.get('before'):
-            clauses.append('c.id<?'); args.append(query['before'])
-        where = (' WHERE ' + ' AND '.join(clauses)) if clauses else ''
+            conditions.append(qb.lt('c.id', query['before']))
         with self.database._connection() as connection:
-            rows = connection.execute('SELECT c.*, u.username FROM evlet_tool_calls c LEFT JOIN evlet_users u ON u.id=c.user_id' + where +
-                                      ' ORDER BY c.id DESC LIMIT ?', (*args, limit + 1)).fetchall()
+            rows = connection.run(qb.select(qb.table('evlet_tool_calls', 'c'), qb.all_columns('c'), 'u.username')
+                                  .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('c.user_id')), left=True)
+                                  .where(*conditions).order_by('-c.id').limit(limit + 1)).all()
         items = [{key: row[key] for key in ('id', 'at', 'username', 'origin', 'client', 'run_id', 'tool', 'model', 'record_id', 'kind', 'outcome', 'duration_ms', 'error')}
                  | {'inputs': json.loads(row['inputs']) if row['inputs'] else None} for row in rows[:limit]]
         return {'items': items, 'next': items[-1]['id'] if len(rows) > limit else None}

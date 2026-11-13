@@ -11,12 +11,13 @@ import json
 import logging
 import re
 import secrets
-import sqlite3
 import time
 from threading import BoundedSemaphore, Lock
 from urllib.parse import urlsplit
 
-from .models import ValidationError, identifier
+from . import qb
+from .adapter import Column, TableDefinition
+from .models import ValidationError
 from .identity import RecordId
 
 # Framework roles. Custom roles live in evlet_roles; Policy.roles maps every role to its base.
@@ -77,7 +78,7 @@ class Security:
 
 def is_administrator(user):
     """Whether user (a User or an account row) is the built-in Administrator."""
-    if isinstance(user, (dict, sqlite3.Row)) or hasattr(user, 'keys'):
+    if isinstance(user, dict) or hasattr(user, 'keys'):
         return user['username'] == ADMINISTRATOR and user['role'] == 'admin'
     # A job's system identity (User.system) is never the Administrator, whatever name it is given.
     return getattr(user, 'username', None) == ADMINISTRATOR and getattr(user, 'role', None) == 'admin' and not getattr(user, 'system', None)
@@ -238,6 +239,50 @@ def client_network(address):
     return str(ip)
 
 
+# Accounts, sessions and their framework tables. Columns added in later releases follow in initialize().
+USERS = TableDefinition('evlet_users', (
+    Column('username', 'TEXT', required=True), Column('password', 'TEXT', required=True), Column('role', 'TEXT', required=True),
+    Column('active', 'INTEGER', required=True, default=1)), numbered=True, unique=(('username',),))
+SESSIONS = TableDefinition('evlet_sessions', (
+    Column('token', 'TEXT', primary=True), Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
+    Column('csrf', 'TEXT', required=True), Column('expires', 'INTEGER', required=True), Column('realm', 'TEXT', required=True, default='desk')))
+LOGIN_LIMITS = TableDefinition('evlet_login_limits', (
+    Column('client', 'TEXT', primary=True), Column('attempts', 'INTEGER', required=True), Column('resets', 'INTEGER', required=True)))
+FORWARDED_PEERS = TableDefinition('evlet_forwarded_peers', (Column('peer', 'TEXT', primary=True), Column('last_seen', 'INTEGER', required=True)))
+USER_LINKS = TableDefinition('evlet_user_links', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'), Column('model', 'TEXT', required=True),
+    Column('record_id', 'INTEGER', required=True)), primary_key=('user_id', 'model', 'record_id'))
+API_KEYS = TableDefinition('evlet_api_keys', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'), Column('name', 'TEXT', required=True),
+    Column('prefix', 'TEXT', required=True), Column('hash', 'TEXT', required=True), Column('scope', 'TEXT', required=True),
+    Column('created_at', 'INTEGER', required=True), Column('last_used', 'INTEGER'), Column('revoked_at', 'INTEGER')),
+    numbered=True, unique=(('prefix',),))
+# AI assistants: registered OAuth clients, each person's connections, their tokens (hashed) and calls.
+OAUTH_CLIENTS = TableDefinition('evlet_oauth_clients', (
+    Column('id', 'TEXT', primary=True), Column('name', 'TEXT', required=True), Column('redirect_uris', 'TEXT', required=True), Column('secret', 'TEXT'),
+    Column('auth_method', 'TEXT', required=True, default='none'), Column('created_at', 'INTEGER', required=True)),
+    checks=(qb.in_('auth_method', ('none', 'client_secret_post', 'client_secret_basic')),))
+MCP_CLIENTS = TableDefinition('evlet_mcp_clients', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
+    Column('oauth_client', 'TEXT', required=True, references='evlet_oauth_clients', on_delete='cascade'), Column('client_name', 'TEXT', required=True),
+    Column('created_at', 'INTEGER', required=True), Column('last_used', 'INTEGER'), Column('calls', 'INTEGER', required=True, default=0),
+    Column('allow_changes', 'INTEGER', required=True, default=0), Column('apps', 'TEXT'), Column('revoked_at', 'INTEGER')), numbered=True)
+OAUTH_CODES = TableDefinition('evlet_oauth_codes', (
+    Column('hash', 'TEXT', primary=True), Column('oauth_client', 'TEXT', required=True, references='evlet_oauth_clients', on_delete='cascade'),
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'), Column('redirect_uri', 'TEXT', required=True),
+    Column('challenge', 'TEXT', required=True), Column('allow_changes', 'INTEGER', required=True), Column('expires', 'INTEGER', required=True),
+    Column('grant_id', 'INTEGER')))
+MCP_TOKENS = TableDefinition('evlet_mcp_tokens', (
+    Column('hash', 'TEXT', primary=True), Column('client_id', 'INTEGER', required=True, references='evlet_mcp_clients', on_delete='cascade'),
+    Column('kind', 'TEXT', required=True), Column('expires', 'INTEGER', required=True), Column('used', 'INTEGER', required=True, default=0)),
+    checks=(qb.in_('kind', ('access', 'refresh')),))
+ROLES_TABLE = TableDefinition('evlet_roles', (
+    Column('id', 'TEXT', primary=True), Column('kind', 'TEXT', required=True), Column('base', 'TEXT'),
+    Column('realm', 'TEXT', required=True, default='desk'), Column('opens_controls', 'INTEGER', required=True, default=0),
+    Column('description', 'TEXT', required=True, default='')),
+    checks=(qb.in_('kind', ('framework', 'custom')), qb.in_('realm', ('desk', 'portal'))))
+
+
 class LocalAuth:
     def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session', realms=None, trusted_proxies=(),
                  security=None):
@@ -292,67 +337,59 @@ class LocalAuth:
 
     def initialize(self):
         with self.database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)')
+            tx.connection.ensure_table(USERS)
             # Allow Eva and Allow MCP (Controls, Users): both off for new people. They open Eva or MCP and grant no record access.
-            users = self.database.columns(tx.connection, 'evlet_users')
+            users = tx.connection.columns('evlet_users')
             for name in ('allow_eva', 'allow_mcp'):
                 if name not in users:
-                    tx.connection.execute(f'ALTER TABLE evlet_users ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0')
-            if 'allow_mcp' not in users and self.database.columns(tx.connection, 'evlet_mcp_clients'):
+                    tx.connection.add_column('evlet_users', Column(name, 'INTEGER', required=True), default=0)
+            if 'allow_mcp' not in users and tx.connection.columns('evlet_mcp_clients'):
                 # On upgrade, people with a connected assistant keep MCP; everyone else starts without it.
-                tx.connection.execute('UPDATE evlet_users SET allow_mcp=1 WHERE id IN (SELECT user_id FROM evlet_mcp_clients WHERE revoked_at IS NULL)')
-            tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires INTEGER NOT NULL, realm TEXT NOT NULL DEFAULT 'desk')")
-            columns = self.database.columns(tx.connection, 'evlet_sessions')
+                tx.connection.run(qb.update('evlet_users', allow_mcp=1).where(
+                    qb.in_('id', qb.select('evlet_mcp_clients', 'user_id').where(revoked_at=None))))
+            tx.connection.ensure_table(SESSIONS)
+            columns = tx.connection.columns('evlet_sessions')
             if 'realm' not in columns:
-                tx.connection.execute("ALTER TABLE evlet_sessions ADD COLUMN realm TEXT NOT NULL DEFAULT 'desk'")
-            for name, kind in (('started', 'INTEGER'), ('agent', "TEXT NOT NULL DEFAULT ''"), ('two_step', 'INTEGER')):
-                if name not in columns:
-                    tx.connection.execute(f'ALTER TABLE evlet_sessions ADD COLUMN {name} {kind}')
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_login_limits (client TEXT PRIMARY KEY, attempts INTEGER NOT NULL, resets INTEGER NOT NULL)')
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_forwarded_peers (peer TEXT PRIMARY KEY, last_seen INTEGER NOT NULL)')
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_user_links (user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, model TEXT NOT NULL, record_id INTEGER NOT NULL, PRIMARY KEY (user_id, model, record_id))')
+                tx.connection.add_column('evlet_sessions', Column('realm', 'TEXT', required=True), default='desk')
+            for column, default in ((Column('started', 'INTEGER'), None), (Column('agent', 'TEXT', required=True), ''), (Column('two_step', 'INTEGER'), None)):
+                if column.name not in columns:
+                    tx.connection.add_column('evlet_sessions', column, default=default)
+            tx.connection.ensure_table(LOGIN_LIMITS)
+            tx.connection.ensure_table(FORWARDED_PEERS)
+            tx.connection.ensure_table(USER_LINKS)
 
-            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_user ON evlet_sessions(user_id)')
-            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_session_expiry ON evlet_sessions(expires)')
-            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_login_reset ON evlet_login_limits(resets)')
+            tx.connection.ensure_index('evlet_session_user', 'evlet_sessions', ('user_id',))
+            tx.connection.ensure_index('evlet_session_expiry', 'evlet_sessions', ('expires',))
+            tx.connection.ensure_index('evlet_login_reset', 'evlet_login_limits', ('resets',))
             # Sessions have their own SQLite file, which cannot refer to accounts (evlet/writes.py): a session
             # of an account that is gone ends here. Sign-in also requires an active account.
-            tx.connection.execute('DELETE FROM evlet_sessions WHERE user_id NOT IN (SELECT id FROM evlet_users)')
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_api_keys (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, name TEXT NOT NULL, prefix TEXT NOT NULL UNIQUE, hash TEXT NOT NULL, scope TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER, revoked_at INTEGER)')
-            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_api_key_user ON evlet_api_keys(user_id)')
-            # AI assistants: registered OAuth clients, each person's connections, their tokens (hashed) and calls.
-            for statement in (
-                "CREATE TABLE IF NOT EXISTS evlet_oauth_clients (id TEXT PRIMARY KEY, name TEXT NOT NULL, redirect_uris TEXT NOT NULL, secret TEXT, "
-                "auth_method TEXT NOT NULL DEFAULT 'none' CHECK(auth_method IN ('none','client_secret_post','client_secret_basic')), created_at INTEGER NOT NULL)",
-                'CREATE TABLE IF NOT EXISTS evlet_mcp_clients (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
-                'oauth_client TEXT NOT NULL REFERENCES evlet_oauth_clients(id) ON DELETE CASCADE, client_name TEXT NOT NULL, created_at INTEGER NOT NULL, last_used INTEGER, '
-                'calls INTEGER NOT NULL DEFAULT 0, allow_changes INTEGER NOT NULL DEFAULT 0, apps TEXT, revoked_at INTEGER)',
-                'CREATE INDEX IF NOT EXISTS evlet_mcp_client_user ON evlet_mcp_clients(user_id)',
-                'CREATE TABLE IF NOT EXISTS evlet_oauth_codes (hash TEXT PRIMARY KEY, oauth_client TEXT NOT NULL REFERENCES evlet_oauth_clients(id) ON DELETE CASCADE, '
-                'user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, redirect_uri TEXT NOT NULL, challenge TEXT NOT NULL, '
-                'allow_changes INTEGER NOT NULL, expires INTEGER NOT NULL, grant_id INTEGER)',
-                "CREATE TABLE IF NOT EXISTS evlet_mcp_tokens (hash TEXT PRIMARY KEY, client_id INTEGER NOT NULL REFERENCES evlet_mcp_clients(id) ON DELETE CASCADE, "
-                "kind TEXT NOT NULL CHECK(kind IN ('access','refresh')), expires INTEGER NOT NULL, used INTEGER NOT NULL DEFAULT 0)",
-                'CREATE INDEX IF NOT EXISTS evlet_mcp_token_client ON evlet_mcp_tokens(client_id)',
-            ):
-                tx.connection.execute(statement)
-            tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_roles (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('framework','custom')), base TEXT, realm TEXT NOT NULL DEFAULT 'desk' CHECK(realm IN ('desk','portal')), opens_controls INTEGER NOT NULL DEFAULT 0, description TEXT NOT NULL DEFAULT '')")
+            tx.connection.run(qb.delete('evlet_sessions').where(qb.not_in('user_id', qb.select('evlet_users', 'id'))))
+            tx.connection.ensure_table(API_KEYS)
+            tx.connection.ensure_index('evlet_api_key_user', 'evlet_api_keys', ('user_id',))
+            tx.connection.ensure_table(OAUTH_CLIENTS)
+            tx.connection.ensure_table(MCP_CLIENTS)
+            tx.connection.ensure_index('evlet_mcp_client_user', 'evlet_mcp_clients', ('user_id',))
+            tx.connection.ensure_table(OAUTH_CODES)
+            tx.connection.ensure_table(MCP_TOKENS)
+            tx.connection.ensure_index('evlet_mcp_token_client', 'evlet_mcp_tokens', ('client_id',))
+            tx.connection.ensure_table(ROLES_TABLE)
             # Customize workspaces (Controls, Roles): edit the site's workspace overrides. Admin always may.
-            if 'customize_workspaces' not in self.database.columns(tx.connection, 'evlet_roles'):
-                tx.connection.execute('ALTER TABLE evlet_roles ADD COLUMN customize_workspaces INTEGER NOT NULL DEFAULT 0')
+            if 'customize_workspaces' not in tx.connection.columns('evlet_roles'):
+                tx.connection.add_column('evlet_roles', Column('customize_workspaces', 'INTEGER', required=True), default=0)
             # A role's realm decides where its users sign in: desk roles on desk hosts, portal roles on portal hosts.
             for role, realm, description in (('admin', 'desk', 'Full access to every app. Opens Controls.'), ('editor', 'desk', 'Reads and changes records.'),
                                              ('viewer', 'desk', 'Reads records only.'), (PORTAL, 'portal', 'Signs in on portal hosts. Sees only what an app grants.')):
-                tx.connection.execute("INSERT OR IGNORE INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES (?,'framework',NULL,?,?,?)", (role, realm, int(role == 'admin'), description))
-            ensure_administrator(tx.connection, getattr(self.database, 'driver', None) is not None)
+                tx.connection.run(qb.insert('evlet_roles', id=role, kind='framework', base=None, realm=realm, opens_controls=int(role == 'admin'),
+                                            description=description).on_conflict().do_nothing())
+            ensure_administrator(tx.connection)
 
     def roles(self):
         """Every role by id, with its kind, base, realm and whether it opens Controls."""
         with self.database._connection() as connection:
-            return {row['id']: dict(row) for row in connection.execute('SELECT * FROM evlet_roles ORDER BY kind DESC, id')}
+            return {row['id']: dict(row) for row in connection.run(qb.select('evlet_roles').order_by('-kind', 'id'))}
 
     def _role(self, connection, role):
-        if not isinstance(role, str) or not connection.execute('SELECT 1 FROM evlet_roles WHERE id=?', (role,)).fetchone():
+        if not isinstance(role, str) or not connection.run(qb.select('evlet_roles', 'id').where(id=role)).one():
             raise ValidationError({'role': 'Choose an existing role'})
 
     def guard(self, scope):
@@ -405,18 +442,18 @@ class LocalAuth:
                 return
             entry[2] = now
         # Saved with the next batch of the logs file (evlet/writes.py LogBuffer).
-        self.database.logs.add('logs', 'INSERT INTO evlet_forwarded_peers(peer,last_seen) VALUES (?,?) ON CONFLICT(peer) DO UPDATE SET last_seen=excluded.last_seen',
-                               (address, now))
-        self.database.logs.add('logs', 'DELETE FROM evlet_forwarded_peers WHERE last_seen<? OR peer NOT IN '
-                               '(SELECT peer FROM evlet_forwarded_peers ORDER BY last_seen DESC, peer LIMIT ?)', (now - 7 * 86400, FORWARDED_ROWS))
+        self.database.logs.add('logs', qb.insert('evlet_forwarded_peers', peer=address, last_seen=now)
+                               .on_conflict('peer').do_update(last_seen=qb.col('excluded.last_seen')))
+        newest = qb.select('evlet_forwarded_peers', 'peer').order_by('-last_seen', 'peer').limit(FORWARDED_ROWS)
+        self.database.logs.add('logs', qb.delete('evlet_forwarded_peers').where(qb.or_(qb.lt('last_seen', now - 7 * 86400), qb.not_in('peer', newest))))
 
     def forwarded_peers(self):
         """Peers seen in the last day sending forwarded headers that are still not trusted proxies, newest first."""
         # The notes are batched (note_forwarded): save them first.
         self.database.logs.flush()
         with self.database._connection() as connection:
-            rows = connection.execute('SELECT peer FROM evlet_forwarded_peers WHERE last_seen>? ORDER BY last_seen DESC, peer LIMIT 20',
-                                      (int(time.time()) - 86400,)).fetchall()
+            rows = connection.run(qb.select('evlet_forwarded_peers', 'peer').where(qb.gt('last_seen', int(time.time()) - 86400))
+                                  .order_by('-last_seen', 'peer').limit(20)).all()
         return [row['peer'] for row in rows if not _trusted(self._proxy_networks, row['peer'])]
 
     def cookie_for(self, realm):
@@ -457,9 +494,13 @@ class LocalAuth:
         realm = self.realm(scope)
         with self.database._connection() as connection:
             # One statement: the session, its user and the user's record links, while the role's realm is the host's.
-            rows = connection.execute('SELECT u.id, u.username, u.role, s.csrf, s.two_step, l.model, l.record_id FROM evlet_sessions s JOIN evlet_users u ON u.id=s.user_id '
-                                      'JOIN evlet_roles r ON r.id=u.role AND r.realm=s.realm LEFT JOIN evlet_user_links l ON l.user_id=u.id WHERE s.token=? AND s.realm=? AND s.expires>? AND u.active=1 ORDER BY l.model, l.record_id',
-                                      (self.token(scope), realm, int(time.time()))).fetchall()
+            rows = connection.run(
+                qb.select(qb.table('evlet_sessions', 's'), 'u.id', 'u.username', 'u.role', 's.csrf', 's.two_step', 'l.model', 'l.record_id')
+                .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('s.user_id')))
+                .join(qb.table('evlet_roles', 'r'), qb.and_(qb.eq('r.id', qb.col('u.role')), qb.eq('r.realm', qb.col('s.realm'))))
+                .join(qb.table('evlet_user_links', 'l'), qb.eq('l.user_id', qb.col('u.id')), left=True)
+                .where(qb.eq('s.token', self.token(scope)), qb.eq('s.realm', realm), qb.gt('s.expires', int(time.time())), qb.eq('u.active', 1))
+                .order_by('l.model', 'l.record_id')).all()
         row = rows[0] if rows else None
         links = tuple((item['model'], RecordId(item['record_id'])) for item in rows if item['model'] is not None)
         if row is None:
@@ -499,11 +540,14 @@ class LocalAuth:
         row, links = None, ()
         if match:
             with self.database._connection() as connection:
-                row = connection.execute('SELECT k.id AS key_id, k.hash, k.scope, k.last_used, u.id, u.username, u.role FROM evlet_api_keys k JOIN evlet_users u ON u.id=k.user_id '
-                                         "JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' WHERE k.prefix=? AND k.revoked_at IS NULL AND u.active=1", (match[1],)).fetchone()
+                row = connection.run(
+                    qb.select(qb.table('evlet_api_keys', 'k'), qb.named('k.id', 'key_id'), 'k.hash', 'k.scope', 'k.last_used', 'u.id', 'u.username', 'u.role')
+                    .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('k.user_id')))
+                    .join(qb.table('evlet_roles', 'r'), qb.and_(qb.eq('r.id', qb.col('u.role')), qb.eq('r.realm', 'desk')))
+                    .where(qb.eq('k.prefix', match[1]), qb.is_null('k.revoked_at'), qb.eq('u.active', 1))).one()
                 if row is not None:
-                    links = tuple((item['model'], RecordId(item['record_id'])) for item in connection.execute(
-                        'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (row['id'],)))
+                    links = tuple((item['model'], RecordId(item['record_id'])) for item in connection.run(
+                        qb.select('evlet_user_links', 'model', 'record_id').where(user_id=row['id']).order_by('model', 'record_id')))
         if row is None or not hmac.compare_digest(row['hash'], hashlib.sha256(token.encode()).hexdigest()):
             network = 'key-failure:' + client_network(self.client_address(scope))
             prefix = network + ':' + (match[1] if match else (token or '')[:12])
@@ -520,7 +564,7 @@ class LocalAuth:
         now = int(time.time())
         if row['last_used'] is None or row['last_used'] < now - 60:
             # Saved with the next batch (evlet/writes.py LogBuffer): a key request never waits on it.
-            self.database.logs.add(None, 'UPDATE evlet_api_keys SET last_used=? WHERE id=?', (now, row['key_id']))
+            self.database.logs.add(None, qb.update('evlet_api_keys', last_used=now).where(id=row['key_id']))
         return User(row['id'], row['username'], row['role'], links, access=self.key_access(row['key_id'], row['scope']))
 
     def address(self, scope):
@@ -549,17 +593,14 @@ class LocalAuth:
         (access and refresh tokens) and their unused authorization codes. keys=True also revokes their API keys,
         for takeover recovery: a two-step reset, deactivation and the break-glass grant."""
         now = int(time.time())
-        present = None
-        if isinstance(connection, sqlite3.Connection):
-            # The server-shell commands may meet a database from before assistants or keys existed.
-            present = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        connection.execute('DELETE FROM evlet_sessions WHERE user_id=?' + (' AND token<>?' if keep else ''), (user_id,) + ((keep,) if keep else ()))
-        if present is None or 'evlet_mcp_clients' in present:
-            connection.execute('DELETE FROM evlet_oauth_codes WHERE user_id=?', (user_id,))
-            connection.execute('DELETE FROM evlet_mcp_tokens WHERE client_id IN (SELECT id FROM evlet_mcp_clients WHERE user_id=?)', (user_id,))
-            connection.execute('UPDATE evlet_mcp_clients SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', (now, user_id))
-        if keys and (present is None or 'evlet_api_keys' in present):
-            connection.execute('UPDATE evlet_api_keys SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', (now, user_id))
+        connection.run(qb.delete('evlet_sessions').where(user_id=user_id, *((qb.ne('token', keep),) if keep else ())))
+        # The server-shell commands may meet a database from before assistants or keys existed.
+        if connection.table_exists('evlet_mcp_clients'):
+            connection.run(qb.delete('evlet_oauth_codes').where(user_id=user_id))
+            connection.run(qb.delete('evlet_mcp_tokens').where(qb.in_('client_id', qb.select('evlet_mcp_clients', 'id').where(user_id=user_id))))
+            connection.run(qb.update('evlet_mcp_clients', revoked_at=now).where(user_id=user_id, revoked_at=None))
+        if keys and connection.table_exists('evlet_api_keys'):
+            connection.run(qb.update('evlet_api_keys', revoked_at=now).where(user_id=user_id, revoked_at=None))
 
     def create_key(self, user_id, name, scope, check=None):
         """Store a new key and return (row, key). The key itself is shown once and only its hash is kept."""
@@ -567,39 +608,41 @@ class LocalAuth:
         with self.database.transaction() as tx:
             for _ in range(5):
                 prefix = 'evk_' + ''.join(secrets.choice(alphabet) for _ in range(8))
-                if not tx.connection.execute('SELECT 1 FROM evlet_api_keys WHERE prefix=?', (prefix,)).fetchone():
+                if not tx.connection.run(qb.select('evlet_api_keys', 'id').where(prefix=prefix)).one():
                     break
             else:
                 raise AccessError(503, 'Could not create a key. Try again.')
             token = prefix + '_' + secrets.token_urlsafe(32)
-            tx.connection.execute('INSERT INTO evlet_api_keys(user_id,name,prefix,hash,scope,created_at) VALUES (?,?,?,?,?,?)',
-                                  (user_id, name, prefix, hashlib.sha256(token.encode()).hexdigest(), json.dumps(scope, sort_keys=True), int(time.time())))
-            row = self.key_rows(tx.connection, 'k.prefix=?', (prefix,))[0]
+            tx.connection.run(qb.insert('evlet_api_keys', user_id=user_id, name=name, prefix=prefix, hash=hashlib.sha256(token.encode()).hexdigest(),
+                                        scope=json.dumps(scope, sort_keys=True), created_at=int(time.time())))
+            row = self.key_rows(tx.connection, qb.eq('k.prefix', prefix))[0]
             if check is not None:
                 check(tx.connection, row)
         return row, token
 
     @staticmethod
-    def key_rows(connection, where='1=1', values=()):
-        rows = connection.execute('SELECT k.id, k.user_id, u.username, u.role, k.name, k.prefix, k.scope, k.created_at, k.last_used FROM evlet_api_keys k '
-                                  f'JOIN evlet_users u ON u.id=k.user_id WHERE k.revoked_at IS NULL AND {where} ORDER BY k.id DESC LIMIT 200', values)
+    def key_rows(connection, *conditions):
+        rows = connection.run(
+            qb.select(qb.table('evlet_api_keys', 'k'), 'k.id', 'k.user_id', 'u.username', 'u.role', 'k.name', 'k.prefix', 'k.scope', 'k.created_at', 'k.last_used')
+            .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('k.user_id')))
+            .where(qb.is_null('k.revoked_at'), *conditions).order_by('-k.id').limit(200))
         return [{**dict(row), 'scope': json.loads(row['scope'])} for row in rows]
 
     def keys(self, user_id=None):
         # Show the latest counts and times: save the batched ones first (evlet/writes.py LogBuffer).
         self.database.logs.flush()
         with self.database._connection() as connection:
-            return self.key_rows(connection, *(('k.user_id=?', (user_id,)) if user_id is not None else ()))
+            return self.key_rows(connection, *((qb.eq('k.user_id', user_id),) if user_id is not None else ()))
 
     def revoke_key(self, key_id, user_id=None, check=None):
         """Revoke a key now; with user_id, only that user's own key. check(connection, row) runs first."""
         with self.database.transaction() as tx:
-            found = self.key_rows(tx.connection, 'k.id=?' + (' AND k.user_id=?' if user_id is not None else ''), (key_id,) + ((user_id,) if user_id is not None else ()))
+            found = self.key_rows(tx.connection, qb.eq('k.id', key_id), *((qb.eq('k.user_id', user_id),) if user_id is not None else ()))
             if not found:
                 raise AccessError(404, 'Key not found')
             if check is not None:
                 check(tx.connection, found[0])
-            tx.connection.execute('UPDATE evlet_api_keys SET revoked_at=? WHERE id=?', (int(time.time()), key_id))
+            tx.connection.run(qb.update('evlet_api_keys', revoked_at=int(time.time())).where(id=key_id))
             return found[0]
 
     def account_values(self, body):
@@ -620,9 +663,9 @@ class LocalAuth:
         name, password, role = self.account_values(values)
         with self.database.transaction() as tx:
             self._role(tx.connection, role)
-            if tx.connection.execute('SELECT 1 FROM evlet_users WHERE username=?', (name,)).fetchone():
+            if tx.connection.run(qb.select('evlet_users', 'id').where(username=name)).one():
                 raise ValidationError({'username': 'Someone already uses this username'})
-            user_id = tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (name, password, role)).lastrowid
+            user_id = tx.connection.run(qb.insert('evlet_users', username=name, password=password, role=role).returning_id()).id
             if check is not None:
                 check(tx.connection, User(user_id, name, role))
         return User(user_id, name, role)
@@ -630,14 +673,14 @@ class LocalAuth:
     @staticmethod
     def _can_sign_in(connection):
         """Whether any account has a password. The Administrator has none until someone sets it."""
-        return connection.execute("SELECT 1 FROM evlet_users WHERE password<>'' LIMIT 1").fetchone() is not None
+        return connection.run(qb.select('evlet_users', 'id').where(qb.ne('password', '')).limit(1)).one() is not None
 
     def password_needed(self, user):
         """Whether a signed-in account still has no password (the Administrator after a development sign-in link)."""
         if user.access is not None:
             return False
         with self.database._connection() as connection:
-            row = connection.execute('SELECT password FROM evlet_users WHERE id=?', (user.id,)).fetchone()
+            row = connection.run(qb.select('evlet_users', 'password').where(id=user.id)).one()
         return row is not None and row['password'] == ''
 
     def setup_needed(self):
@@ -658,9 +701,9 @@ class LocalAuth:
                 raise AccessError(409, 'An administrator already exists')
             # Setting up as administrator gives the built-in Administrator its password.
             if name == ADMINISTRATOR:
-                tx.connection.execute("UPDATE evlet_users SET password=? WHERE username=? AND role='admin'", (password, ADMINISTRATOR))
+                tx.connection.run(qb.update('evlet_users', password=password).where(username=ADMINISTRATOR, role='admin'))
             else:
-                tx.connection.execute('INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)', (name, password, 'admin'))
+                tx.connection.run(qb.insert('evlet_users', username=name, password=password, role='admin'))
 
     def login(self, scope, body):
         if self.second_step is not None and set(body) == {'ticket', 'code'}:
@@ -678,15 +721,18 @@ class LocalAuth:
         with hashing_slot():
             # Attempts and sessions share their own file, so a sign-in never waits on a long write to records.
             with self.database.transaction(store='sessions') as tx:
-                tx.connection.execute('DELETE FROM evlet_login_limits WHERE resets<=?', (now,))
-                tx.connection.execute('DELETE FROM evlet_sessions WHERE expires<=?', (now,))
+                tx.connection.run(qb.delete('evlet_login_limits').where(qb.le('resets', now)))
+                tx.connection.run(qb.delete('evlet_sessions').where(qb.le('expires', now)))
                 for key, limit in ((pair, self.lockout), (client, 100)):
-                    row = tx.connection.execute('SELECT attempts FROM evlet_login_limits WHERE client=?', (key,)).fetchone()
+                    row = tx.connection.run(qb.select('evlet_login_limits', 'attempts').where(client=key)).one()
                     if row and row['attempts'] >= limit:
                         raise AccessError(429, 'Too many sign-in attempts. Try again in 15 minutes.')
                 for key in (pair, client):
-                    tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (key, now + 900))
-                account = tx.connection.execute('SELECT u.*, r.realm AS role_realm FROM evlet_users u LEFT JOIN evlet_roles r ON r.id=u.role WHERE u.username=?', (username,)).fetchone()
+                    tx.connection.run(qb.insert('evlet_login_limits', client=key, attempts=1, resets=now + 900)
+                                      .on_conflict('client').do_update(attempts=qb.col('evlet_login_limits.attempts') + 1))
+                account = tx.connection.run(qb.select(qb.table('evlet_users', 'u'), qb.all_columns('u'), qb.named('r.realm', 'role_realm'))
+                                            .join(qb.table('evlet_roles', 'r'), qb.eq('r.id', qb.col('u.role')), left=True)
+                                            .where(qb.eq('u.username', username))).one()
             # An account without a password (the Administrator before it is set) never signs in with one.
             usable = account is not None and account['password'].startswith('scrypt:')
             stored = account['password'] if usable else 'scrypt:' + '00' * 16 + ':' + '00' * 64
@@ -700,14 +746,14 @@ class LocalAuth:
             raise AccessError(401, 'Invalid username or password')
         with self.database.transaction() as tx:
             # A password/role change during hashing must not revive an old login.
-            current = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (account['id'],)).fetchone()
+            current = tx.connection.run(qb.select('evlet_users').where(id=account['id'])).one()
             if not current or not current['active'] or current['password'] != stored or current['role'] != account['role']:
                 raise AccessError(401, 'Invalid username or password')
             # With two-step sign-in the failed-attempt count stays until the code is right too.
             challenge = self.second_step.challenge(tx, current, realm) if self.second_step is not None else None
             if challenge is not None:
                 return challenge, []
-            tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (pair,))
+            tx.connection.run(qb.delete('evlet_login_limits').where(client=pair))
             return self.start_session(tx, scope, current, realm)
 
     def start_session(self, tx, scope, account, realm, verified=False):
@@ -716,10 +762,9 @@ class LocalAuth:
         token, csrf = secrets.token_urlsafe(32), secrets.token_hex(32)
         agent = dict(scope.get('headers', [])).get(b'user-agent', b'').decode('latin1')[:200]
         now = int(time.time())
-        tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (self.token(scope),))
-        tx.connection.execute('INSERT INTO evlet_sessions(token,user_id,csrf,expires,realm,started,agent,two_step) VALUES (?,?,?,?,?,?,?,?)',
-                              (hashlib.sha256(token.encode()).hexdigest(), account['id'], csrf, now + self.session_hours * 3600, realm, now, agent,
-                               now if verified else None))
+        tx.connection.run(qb.delete('evlet_sessions').where(token=self.token(scope)))
+        tx.connection.run(qb.insert('evlet_sessions', token=hashlib.sha256(token.encode()).hexdigest(), user_id=account['id'], csrf=csrf,
+                                    expires=now + self.session_hours * 3600, realm=realm, started=now, agent=agent, two_step=now if verified else None))
         return {'user': User(account['id'], account['username'], account['role']).public(), 'csrf': csrf}, [self.cookie(token, realm)]
 
     def cookie(self, token, realm='desk'):
@@ -730,7 +775,7 @@ class LocalAuth:
 
     def logout(self, scope):
         with self.database.transaction(store='sessions') as tx:
-            tx.connection.execute('DELETE FROM evlet_sessions WHERE token=?', (self.token(scope),))
+            tx.connection.run(qb.delete('evlet_sessions').where(token=self.token(scope)))
         return [self.cookie('', self.realm(scope))]
 
     def _link_target(self, model, record_id):
@@ -747,19 +792,19 @@ class LocalAuth:
         """
         name, record_id = self._link_target(model, record_id)
         with self.database.transaction() as tx:
-            account = tx.connection.execute('SELECT username FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            account = tx.connection.run(qb.select('evlet_users', 'username').where(id=user_id)).one()
             if not account:
                 raise AccessError(404, 'Account not found')
-            if not tx.connection.execute(f'SELECT 1 FROM {identifier(name)} WHERE id=?', (record_id,)).fetchone():
+            if not tx.connection.run(qb.select(name, 'id').where(id=record_id)).one():
                 raise AccessError(404, 'Record not found')
-            if tx.connection.execute('INSERT INTO evlet_user_links(user_id,model,record_id) VALUES (?,?,?) ON CONFLICT DO NOTHING', (user_id, name, record_id)).rowcount:
+            if tx.connection.run(qb.insert('evlet_user_links', user_id=user_id, model=name, record_id=record_id).on_conflict().do_nothing()).rowcount:
                 self._audit_link(tx.connection, actor, account['username'], f'Linked to {name} {record_id}')
 
     def unlink_user(self, user_id, model, record_id, *, actor='system'):
         name, record_id = self._link_target(model, record_id)
         with self.database.transaction() as tx:
-            account = tx.connection.execute('SELECT username FROM evlet_users WHERE id=?', (user_id,)).fetchone()
-            if account and tx.connection.execute('DELETE FROM evlet_user_links WHERE user_id=? AND model=? AND record_id=?', (user_id, name, record_id)).rowcount:
+            account = tx.connection.run(qb.select('evlet_users', 'username').where(id=user_id)).one()
+            if account and tx.connection.run(qb.delete('evlet_user_links').where(user_id=user_id, model=name, record_id=record_id)).rowcount:
                 self._audit_link(tx.connection, actor, account['username'], f'Unlinked from {name} {record_id}')
 
     @staticmethod
@@ -771,8 +816,8 @@ class LocalAuth:
 
     def user_links(self, user_id):
         with self.database._connection() as connection:
-            return tuple((row['model'], RecordId(row['record_id'])) for row in connection.execute(
-                'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (user_id,)))
+            return tuple((row['model'], RecordId(row['record_id'])) for row in connection.run(
+                qb.select('evlet_user_links', 'model', 'record_id').where(user_id=user_id).order_by('model', 'record_id')))
 
     def users(self):
         return self.user_page()['items']
@@ -781,9 +826,9 @@ class LocalAuth:
         if type(offset) is not int or not 0 <= offset <= 2**63-1:
             raise ValidationError({'offset': 'Use a nonnegative offset'})
         with self.database._connection() as connection:
-            connection.execute('BEGIN')
-            items = [dict(row) for row in connection.execute('SELECT id,username,role,active FROM evlet_users ORDER BY id LIMIT 100 OFFSET ?', (offset,))]
-            total = connection.execute('SELECT count(*) FROM evlet_users').fetchone()[0]
+            connection.snapshot()
+            items = [dict(row) for row in connection.run(qb.select('evlet_users', 'id', 'username', 'role', 'active').order_by('id').limit(100).offset(offset))]
+            total = connection.run(qb.select('evlet_users', qb.count())).value()
             return {'items': items, 'total': total, 'offset': offset, 'limit': 100}
 
     def update_user(self, user_id, body, check=None):
@@ -795,13 +840,13 @@ class LocalAuth:
         changes = dict(body)
         if 'password' in changes:
             with self.database._connection() as connection:
-                found = connection.execute('SELECT role FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+                found = connection.run(qb.select('evlet_users', 'role').where(id=user_id)).one()
             role = changes.get('role', found['role'] if found else 'viewer')
             changes['password'] = password_hash(changes['password'], minimum=self.minimum(role if isinstance(role, str) else 'admin'))
         with self.database.transaction() as tx:
             if 'role' in changes:
                 self._role(tx.connection, changes['role'])
-            row = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_users').where(id=user_id)).one()
             if not row:
                 raise AccessError(404, 'Account not found')
             if is_administrator(row) and (changes.get('role', 'admin') != 'admin' or changes.get('active', True) is not True):
@@ -809,23 +854,16 @@ class LocalAuth:
             after = check(tx.connection, row, changes) if check is not None else None
             if row['role'] == 'admin' and row['active'] and (changes.get('role', 'admin') != 'admin' or not changes.get('active', True)):
                 # Admins who can sign in: the Administrator counts once it has a password.
-                if tx.connection.execute("SELECT count(*) FROM evlet_users WHERE role='admin' AND active=1 AND password<>''").fetchone()[0] <= 1:
+                if tx.connection.run(qb.select('evlet_users', qb.count()).where(qb.ne('password', ''), role='admin', active=1)).value() <= 1:
                     raise AccessError(409, LAST_ADMIN)
             for key, value in changes.items():
-                tx.connection.execute(f'UPDATE evlet_users SET {key}=? WHERE id=?', (value, user_id))
+                tx.connection.run(qb.update('evlet_users', **{key: value}).where(id=user_id))
             self.end_sessions(tx.connection, user_id, keys=changes.get('active') is False)
             if after is not None:
                 after()
 
 
-def _user_columns(connection, postgres):
-    if postgres:
-        return {row[0] for row in connection.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='evlet_users'")}
-    return {row[1] for row in connection.execute('PRAGMA table_info(evlet_users)')}
-
-
-def ensure_administrator(connection, postgres=False):
+def ensure_administrator(connection):
     """Create the built-in Administrator (username admin) when it is missing: role admin, no password, so it cannot sign
     in until one is set. Returns True when it was created.
 
@@ -835,25 +873,26 @@ def ensure_administrator(connection, postgres=False):
     a password). Any other admin account is refused, never taken over. A changed role or status is put back.
     """
     from .migrations import SchemaError
-    if 'builtin' not in _user_columns(connection, postgres):
-        connection.execute('ALTER TABLE evlet_users ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0')
-    marked = connection.execute('SELECT id, username, password FROM evlet_users WHERE builtin=1 ORDER BY id').fetchone()
-    named = connection.execute('SELECT id, role, active, builtin FROM evlet_users WHERE username=?', (ADMINISTRATOR,)).fetchone()
+    if 'builtin' not in connection.columns('evlet_users'):
+        connection.add_column('evlet_users', Column('builtin', 'INTEGER', required=True), default=0)
+    marked = connection.run(qb.select('evlet_users', 'id', 'username', 'password').where(builtin=1).order_by('id')).one()
+    find_named = qb.select('evlet_users', 'id', 'role', 'active', 'builtin').where(username=ADMINISTRATOR)
+    named = connection.run(find_named).one()
     if marked is not None and marked[1] != ADMINISTRATOR:
         if named is None:
-            connection.execute('UPDATE evlet_users SET username=? WHERE id=?', (ADMINISTRATOR, marked[0]))
-            named = connection.execute('SELECT id, role, active, builtin FROM evlet_users WHERE username=?', (ADMINISTRATOR,)).fetchone()
+            connection.run(qb.update('evlet_users', username=ADMINISTRATOR).where(id=marked[0]))
+            named = connection.run(find_named).one()
         else:
             _adoptable(named, SchemaError)
-            connection.execute('UPDATE evlet_users SET builtin=0, active=? WHERE id=?', (1 if marked[2] else 0, marked[0]))
+            connection.run(qb.update('evlet_users', builtin=0, active=1 if marked[2] else 0).where(id=marked[0]))
     if named is None:
-        connection.execute("INSERT INTO evlet_users(username,password,role,builtin) VALUES (?,'','admin',1)", (ADMINISTRATOR,))
+        connection.run(qb.insert('evlet_users', username=ADMINISTRATOR, password='', role='admin', builtin=1))
         return True
     if not named[3]:
         _adoptable(named, SchemaError)
-        connection.execute('UPDATE evlet_users SET builtin=1 WHERE id=?', (named[0],))
+        connection.run(qb.update('evlet_users', builtin=1).where(id=named[0]))
     elif named[1] != 'admin' or not named[2]:
-        connection.execute("UPDATE evlet_users SET role='admin', active=1 WHERE id=?", (named[0],))
+        connection.run(qb.update('evlet_users', role='admin', active=1).where(id=named[0]))
     return False
 
 

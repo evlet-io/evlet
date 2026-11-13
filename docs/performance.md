@@ -1,27 +1,23 @@
 # Performance and hardening measurements
 
-Milestone 8 includes real SQLite and PostgreSQL benchmarks and regression tests.
+Milestone 8 includes real SQLite benchmarks and regression tests. Evlet 0.4 also
+measured PostgreSQL; PostgreSQL was removed in 0.4.5.
 Results are local measurements of this workload, not estimated scale or production
 capacity guarantees. The framework's larger tenant and employee-count targets
 remain unvalidated.
 
 ## Reproduce
 
-Use Python 3.12+, the development lock, and the optional PostgreSQL lock for that
-adapter. Build the frontend before collecting bundle sizes. Run from the checkout:
+Use Python 3.12+ and the development lock. Build the frontend before collecting
+bundle sizes. Run from the checkout:
 
 ```sh
 .venv/bin/python scripts/benchmark.py \
   --sqlite /tmp/new-evlet-benchmark.sqlite3 --output /tmp/sqlite-result.json
-
-# Configure EVLET_BENCHMARK_DSN through a protected environment/service setting.
-# It must identify a dedicated, empty PostgreSQL database.
-.venv/bin/python scripts/benchmark.py \
-  --postgres --output /tmp/postgres-result.json
 ```
 
-SQLite refuses an existing target file. PostgreSQL refuses a database with any
-public tables. The benchmark never drops, truncates, or replaces existing data.
+SQLite refuses an existing target file. The benchmark never drops, truncates, or
+replaces existing data.
 Keep generated benchmark state separate from application state; remove it only
 when no longer needed. It does not provision a server or change server settings.
 
@@ -31,9 +27,8 @@ invoice transaction every three seconds (20 during the run). `--gl`, `--stock`,
 `--users`, `--seconds`, and `--requests` adjust the sizes; `--requests` is a minimum
 total request count, divided across readers. GL rows must be at least 20,000.
 
-Loading uses deterministic integer minor units, SQLite executemany, and PostgreSQL
-COPY. It bypasses model construction to keep fixture creation separate from runtime
-measurements. Both adapters use equivalent model schemas and indexes. The load
+Loading uses deterministic integer minor units and SQLite executemany. It bypasses
+model construction to keep fixture creation separate from runtime measurements. The load
 transaction commits before measurement. Global ledger totals, stock totals, and
 invoice counts are checked. This is synthetic transaction data, not an accounting
 posting engine or inventory valuation implementation.
@@ -60,9 +55,7 @@ index comparison, database size, client CPU, client peak RSS, and frontend asset
 On macOS peak RSS units are bytes; on Linux they are KiB. CPU is process CPU time
 and can exceed elapsed wall time with concurrent threads.
 
-PostgreSQL server CPU and memory are separate processes and **are excluded from
-client resource figures**. Database bytes include SQLite database/sidecar files or
-PostgreSQL's database size; they exclude the whole cluster WAL and server installation.
+Database bytes include SQLite database/sidecar files.
 Frontend gzip size is the sum of separately compressed asset files. The existing
 748.67 kB JavaScript chunk remains a build advisory; it was not hidden by increasing
 the warning threshold.
@@ -73,19 +66,13 @@ the warning threshold.
   tests verify SQLite uses those indexes.
 - Duplicate security headers rejected before authentication.
 - Real concurrent read-modify-write tests and multi-tenant replay/revocation stress.
-- PostgreSQL snapshot, foreign-key/unique constraints, numeric precision, migrations,
-  private files, child records, actions, jobs, events, and permission tests.
-- A bounded PostgreSQL pool after sustained tests exposed failures with connection
-  creation on every operation. Session state is discarded and unfinished writes
-  rolled back before a connection returns to the pool. No write retry is added.
 
 - Trusted batch code walks any number of aggregate groups a page at a time
   (`tx.aggregate(..., limit=, after=)`), each page one keyset query, and takes `in` lists of up
   to 30,000 values. Tests walk 20,000 groups 500 at a time with a traced Python peak under
-  1.5 MB on SQLite and PostgreSQL; holding all groups at once takes about 5.7 MB.
+  1.5 MB; holding all groups at once takes about 5.7 MB.
 
-The existing hostname tenant catalog remains SQLite-only. PostgreSQL writes remain
-serialized per database. Neither additional API workers nor these local benchmark
+SQLite writes remain serialized per file. Neither additional API workers nor these local benchmark
 numbers establish parallel write capacity or production readiness.
 
 ## Local results, 29 October 2026
@@ -93,36 +80,28 @@ numbers establish parallel write capacity or production readiness.
 Apple M3, 8 CPU cores, 16 GiB RAM, macOS 27.0.1, Python 3.12.11. Runs were sequential,
 with development test/build processes stopped during measurement. The machine was
 not an isolated performance host; other desktop applications could still run.
-SQLite 3.53.1 used WAL, synchronous FULL, and a 5-second busy timeout. PostgreSQL
-14.18 used its local TCP listener, 128 MiB shared buffers, 100 server connections,
-fsync/synchronous_commit/full_page_writes enabled, and a client pool capped at 10.
+SQLite 3.53.1 used WAL, synchronous FULL, and a 5-second busy timeout.
 
-| Metric | SQLite | PostgreSQL |
-| --- | ---: | ---: |
-| Successful requests in about 60 seconds | 53,985 | 58,312 |
-| Requests/second | 899.1 | 971.2 |
-| Request median / p95 | 55.1 / 67.2 ms | 51.3 / 55.4 ms |
-| Completed invoice transactions | 20 | 20 |
-| Invoice transaction median / p95 | 16.3 / 25.7 ms | 29.2 / 34.3 ms |
-| Trial balance median, 2m rows | 1,520.1 ms | 62.5 ms |
-| Stock balance median, 500k rows | 338.9 ms | 17.4 ms |
-| Posting-day SUM median before / after index | 39.6 / 5.3 ms | 30.0 / 1.9 ms |
-| Fixture load time | 7.34 s | 7.11 s |
-| Database size | 85.7 MiB | 236.4 MiB |
-| Client peak RSS | 48.2 MiB | 51.0 MiB |
-| Client CPU during concurrent phase | 181.8 s | 94.5 s |
-| Request/write errors | 0 | 0 |
+| Metric | SQLite |
+| --- | ---: |
+| Successful requests in about 60 seconds | 53,985 |
+| Requests/second | 899.1 |
+| Request median / p95 | 55.1 / 67.2 ms |
+| Completed invoice transactions | 20 |
+| Invoice transaction median / p95 | 16.3 / 25.7 ms |
+| Trial balance median, 2m rows | 1,520.1 ms |
+| Stock balance median, 500k rows | 338.9 ms |
+| Posting-day SUM median before / after index | 39.6 / 5.3 ms |
+| Fixture load time | 7.34 s |
+| Database size | 85.7 MiB |
+| Client peak RSS | 48.2 MiB |
+| Client CPU during concurrent phase | 181.8 s |
+| Request/write errors | 0 |
 
-PostgreSQL server resource usage is not included in those client figures. The
-single-run throughput difference is not a general database ranking. PostgreSQL's
-reporting planner differs from SQLite's; inspect plans and repeat with application
-queries before choosing an adapter. The posting-day comparison shows why indexes
-must follow actual filters, rather than being added to every field.
+The posting-day comparison shows why indexes must follow actual filters, rather than
+being added to every field.
 
-Raw results: [SQLite](benchmarks/2026-10-29-sqlite.json) and
-[PostgreSQL](benchmarks/2026-10-29-postgresql.json). The previous unpooled PostgreSQL
-stress run failed and is not included as a successful comparison. The accepted run
-uses the bounded pool and includes the same continuous reader/paced writer workload.
+Raw results: [SQLite](benchmarks/2026-10-29-sqlite.json).
 
 The frontend assets total 756,380 bytes, or 167,723 bytes when each asset is gzipped.
 These figures exclude the HTML shell and HTTP headers. Distribution validation and
@@ -131,23 +110,13 @@ final test counts are recorded below. Those figures are from 29 October 2026; se
 
 ## Release checks
 
-Local validation on 29 October 2026 passed the complete 306-test backend suite with
-real PostgreSQL enabled, plus the subsequently added pool-checkout timeout test
-(307 tests in the final collection). All 80 frontend tests and the production build
-passed. Source/wheel builds and installation into a clean environment passed. The
-base wheel ran without optional dependencies; installing the hash-locked PostgreSQL
-extra then passed an installed-package persistence round trip.
+Local validation on 29 October 2026 passed the complete backend suite (307 tests
+in the final collection). All 80 frontend tests and the production build passed.
+Source/wheel builds and installation into a clean environment passed. The base wheel
+ran without optional dependencies.
 
-The framework wheel is 72,452 bytes for this build. This excludes optional drivers,
-Python, Node, PostgreSQL server binaries, and application assets, so it is not the
-complete deployment footprint. The PostgreSQL binary driver download was about
-4.8 MB on this Mac; platform artifacts differ.
-
-A disposable PostgreSQL 14 logical dump/restore retained the test invoice reference
-and its exact 12,345 minor-unit value (123.45). This checks a simple local recovery
-round trip, not complete application/storage recovery, PITR, or a production RTO.
-CI additionally runs the PostgreSQL integration suite on versions 14 and 18. Check
-the PR's current results before accepting cross-version support.
+The framework wheel is 72,452 bytes for this build. This excludes Python, Node and
+application assets, so it is not the complete deployment footprint.
 
 ## Busy writing on SQLite
 
@@ -206,8 +175,6 @@ the order of the log read them, so each is one short write to `logs.sqlite3`.
 thread keeps its last connection for its next operation. It is used again only while the four
 files are the same files on disk (a restore or a replaced file opens a new one); any open
 transaction is rolled back before it is kept. `Database.close()` closes them.
-
-PostgreSQL keeps one database and is unchanged: `store=` is accepted and does nothing there.
 
 ### Local results, 12-11-2026
 
@@ -314,27 +281,21 @@ These are local measurements of one workload, not capacity guarantees.
 A `Hierarchy.team` scope (see [business-capabilities.md](business-capabilities.md#team-and-hierarchy-scopes))
 is one non-correlated `IN (WITH RECURSIVE ...)` subquery. The database computes the team once
 per statement, not once per row: SQLite materializes it (`MATERIALIZE evlet_team`) and finds
-each level with the parent index; PostgreSQL plans a `Recursive Union` without a per-row
-`SubPlan`. The recursive step joins on `parent >= id AND parent <= id`. PostgreSQL cannot hash
-that join, so it walks the parent index level by level. With a plain `=` join it guessed ten
-rows per level, chose a hash join and scanned the whole employee table at every level: 840 ms
-for a 500-level chain of 10,000 employees, against 1.8 ms with the range join. SQLite plans
-both forms the same. Declare the parent Link with `index=True`; without it each level scans
-the table on both databases.
+each level with the parent index. The recursive step joins on `parent >= id AND parent <= id`.
+The range join keeps a database from choosing a hash join that scans the whole table at every
+level. SQLite plans it the same as a plain `=` join. Declare the parent Link with `index=True`;
+without it each level scans the table.
 
 Each statement that applies the scope recomputes the team, so its cost grows with the team
 size. A list page applies it to the page, the count and one batched Link check per target
 model (list pages serialize their rows in one batch). A single-record check (detail, write,
 action, attachment) also computes the whole team. `tests/test_hierarchy_scopes.py` asserts the
-SQLite plan; `tests/test_postgres.py` asserts the PostgreSQL plan and that a manager with 150
-indirect reports sees exactly their team in lists and aggregates.
+SQLite plan.
 
-Reproduce from the checkout (a temporary SQLite file, or an empty PostgreSQL database named
-by `EVLET_BENCHMARK_DSN`; authenticated ASGI requests, no socket):
+Reproduce from the checkout (a temporary SQLite file, authenticated ASGI requests, no socket):
 
 ```sh
 .venv/bin/python scripts/benchmark_hierarchy.py
-.venv/bin/python scripts/benchmark_hierarchy.py --postgres
 ```
 
 The data set has 10,000 employees with 10 leave rows each (100,000 rows): a manager over a
@@ -344,19 +305,18 @@ returned total against the expected team.
 
 ### Local results, 3 November 2026
 
-Apple M3, 8 CPU cores, 16 GiB RAM, macOS 27.0.1, Python 3.12.16, SQLite 3.54.1, PostgreSQL
-14.18 on the same machine with default settings. 20 runs per case, wall time per request
-including the session check, median and p95.
+Apple M3, 8 CPU cores, 16 GiB RAM, macOS 27.0.1, Python 3.12.16, SQLite 3.54.1. 20 runs per
+case, wall time per request including the session check, median and p95.
 
-| Case | SQLite median | SQLite p95 | PostgreSQL median | PostgreSQL p95 |
-| --- | ---: | ---: | ---: | ---: |
-| Deep chain (501 people): leave page of 50 and count | 10.0 ms | 17.0 ms | 14.9 ms | 22.1 ms |
-| Deep chain: leave aggregate (count, sum) | 7.5 ms | 20.2 ms | 6.9 ms | 26.8 ms |
-| Deep chain: employee page | 7.8 ms | 19.7 ms | 10.0 ms | 18.4 ms |
-| Wide tree (5,001 people, 50,010 leave rows): leave page and count | 25.8 ms | 57.1 ms | 56.9 ms | 146.0 ms |
-| Wide tree: leave aggregate | 17.9 ms | 31.2 ms | 28.1 ms | 83.9 ms |
-| Wide tree: employee page | 21.3 ms | 23.0 ms | 32.8 ms | 41.0 ms |
-| Leaf (1 person): leave page and count | 5.6 ms | 7.3 ms | 7.1 ms | 11.6 ms |
+| Case | SQLite median | SQLite p95 |
+| --- | ---: | ---: |
+| Deep chain (501 people): leave page of 50 and count | 10.0 ms | 17.0 ms |
+| Deep chain: leave aggregate (count, sum) | 7.5 ms | 20.2 ms |
+| Deep chain: employee page | 7.8 ms | 19.7 ms |
+| Wide tree (5,001 people, 50,010 leave rows): leave page and count | 25.8 ms | 57.1 ms |
+| Wide tree: leave aggregate | 17.9 ms | 31.2 ms |
+| Wide tree: employee page | 21.3 ms | 23.0 ms |
+| Leaf (1 person): leave page and count | 5.6 ms | 7.3 ms |
 
 Before list pages serialized their rows in one batch, each row's Link check recomputed the
 team: the wide tree's leave page took 315 ms on SQLite (50 team computations). These are

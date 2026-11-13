@@ -2,9 +2,9 @@
 
 One query per call. Sums add stored scaled integers, so Decimal and Currency totals are
 exact; a sum outside the signed 64-bit range is an error, never a float. A measure's
-`where=` is a finite-v1 Boolean expression compiled to parameterized SQL. The SQL avoids
-dialect differences so SQLite and PostgreSQL return the same results; groups are sorted
-in Python for the same reason.
+`where=` is a finite-v1 Boolean expression compiled to a query builder expression. The
+statements avoid dialect differences, so another database adapter returns the same results;
+groups are sorted in Python for the same reason.
 """
 
 from dataclasses import dataclass, replace
@@ -15,10 +15,11 @@ import math
 import re
 from urllib.parse import parse_qs
 
+from . import qb
 from .auth import AccessError
 from .identity import path_id
 from .fields import COLORS, Boolean, Date, DateTime, Decimal, Integer, Link, LongText, Reference, Tags
-from .models import Model, ValidationError, identifier
+from .models import Model, ValidationError
 from .query import SqlQuery
 
 FUNCTIONS = ('count', 'count_distinct', 'sum', 'min', 'max')
@@ -37,7 +38,7 @@ OVERFLOW = 'A sum is outside the exact range of stored numbers; narrow the filte
 ACCEPTS = {'count_distinct': {'link', 'boolean', 'number', 'date', 'value'}, 'sum': {'number'},
            'min': {'number', 'date'}, 'max': {'number', 'date'}}
 FLIPPED = {'eq': 'eq', 'ne': 'ne', 'lt': 'gt', 'lte': 'gte', 'gt': 'lt', 'gte': 'lte'}
-SYMBOLS = {'lt': '<', 'lte': '<=', 'gt': '>', 'gte': '>='}
+ORDERED = {'lt': qb.lt, 'lte': qb.le, 'gt': qb.gt, 'gte': qb.ge}
 # A declared measure's trend= (field, grain, points): the default grain and points, and the points allowed.
 TREND_GRAIN, TREND_POINTS, MIN_POINTS, MAX_POINTS = 'month', 6, 2, 24
 
@@ -165,11 +166,29 @@ class Compiled:
     link: str | None      # Link on target back to owner, for per-record measures
     where: dict | None    # finite-v1 IR
     reads: frozenset      # target fields the where expression reads
-    sql: tuple            # aggregate columns over the alias "record"
-    values: tuple         # parameters, in column order
     trend: tuple | None = None   # (Date field, grain, points) of a model-level measure
     color: str | None = None     # one of fields.COLORS
-    predicate: str | None = None  # the where= SQL alone (1 for rows that count); its parameters lead `values`
+
+    def counted(self, zone):
+        """The where= condition on the alias "record" (rows whose predicate is 1), or None without where=.
+        today() in it is the date in `zone`, so it is built when the statement runs."""
+        if self.where is None:
+            return None
+        return qb.eq(predicate(self.target, self.where, set(), zone), 1)
+
+    def columns(self, zone):
+        """The aggregate columns over the alias "record": one, or two halves for a sum."""
+        counted = self.counted(zone)
+        if self.function == 'count':
+            return (qb.count() if counted is None else qb.count(qb.when((counted, 1))),)
+        column = qb.col(f'record.{self.field}')
+        if self.function == 'sum':
+            # Exact sums of 64-bit amounts: each half is summed on its own. Integer division and % truncate toward
+            # zero, so high * SPLIT + low gives the amount back.
+            halves = (column / SPLIT, column % SPLIT)
+            return tuple(qb.sum(half if counted is None else qb.when((counted, half))) for half in halves)
+        value = column if counted is None else qb.when((counted, column))
+        return ({'count_distinct': qb.count_distinct, 'min': qb.min, 'max': qb.max}[self.function](value),)
 
 
 @dataclass(frozen=True)
@@ -194,7 +213,7 @@ class Group:
     key: str
     field: str
     part: str | None
-    sql: str
+    expression: qb.Expression
 
 
 def compile_measure(registry, owner, name, measure):
@@ -219,19 +238,8 @@ def compile_measure(registry, owner, name, measure):
             accepted = {'sum': 'a number field', 'min': 'a number or date field', 'max': 'a number or date field',
                         'count_distinct': 'a field other than tags, references and long text'}[measure.function]
             raise ValueError(f'{measure.function} needs {accepted}; {measure.field} is a {field.kind} field')
-    ir, reads, predicate, values = compile_where(registry, target, measure.where)
-    column = None if measure.field is None else f'"record".{identifier(measure.field)}'
-    if measure.function == 'count':
-        sql = ('count(*)' if predicate is None else f'count(CASE WHEN {predicate} = 1 THEN 1 END)',)
-    else:
-        value = column if predicate is None else f'CASE WHEN {predicate} = 1 THEN {column} END'
-        if measure.function == 'sum':
-            # Integer division and remainder truncate toward zero in SQLite and PostgreSQL alike.
-            sql = (f'sum(({value}) / {SPLIT})', f'sum(({value}) % {SPLIT})')
-        else:
-            sql = ({'count_distinct': 'count(DISTINCT {})', 'min': 'min({})', 'max': 'max({})'}[measure.function].format(value),)
-    return Compiled(name, measure.function, owner, target, measure.field, link, ir, reads, sql, tuple(values) * len(sql),
-                    trend, measure.color, predicate)
+    ir, reads = compile_where(registry, target, measure.where)
+    return Compiled(name, measure.function, owner, target, measure.field, link, ir, reads, trend, measure.color)
 
 
 def compile_trend(owner, measure):
@@ -259,9 +267,9 @@ def compile_trend(owner, measure):
 
 
 def compile_where(registry, model, where):
-    """(finite IR, fields read, SQL giving 1, 0 or NULL for undecided, parameters)."""
+    """(finite IR, fields read). The IR is checked here; Compiled.counted builds its condition."""
     if where is None:
-        return None, frozenset(), None, []
+        return None, frozenset()
     from .calc import CalcError, Expr, _Context, compile_expression, lift
     try:
         expression = where if isinstance(where, Expr) else lift(where)
@@ -270,28 +278,28 @@ def compile_where(registry, model, where):
         raise ValueError(exc.message) from None
     if result != 'boolean':
         raise ValueError('where: use a Boolean condition such as F("status") == "issued"')
-    values, reads = [], set()
-    sql = predicate(model, ir, values, reads)
-    return ir, frozenset(reads), sql, values
+    reads = set()
+    predicate(model, ir, reads)
+    return ir, frozenset(reads)
 
 
-def predicate(model, node, values, reads):
-    """SQL for a finite Boolean: 1 true, 0 false, NULL when finite-v1 leaves it undecided
+def predicate(model, node, reads, zone='UTC'):
+    """An expression for a finite Boolean: 1 true, 0 false, NULL when finite-v1 leaves it undecided
     (an ordered comparison or Boolean field with an empty value). Only true rows count."""
     op = node['$expr']
     if op == 'literal' and node['type'] == 'boolean':
-        return '1' if node['value'] else '0'
+        return qb.value(1 if node['value'] else 0)
     if op == 'ref':
         column, _ = stored(model, node, reads)
-        return f'(CASE WHEN {column} IS NULL THEN NULL WHEN {column} = 0 THEN 0 ELSE 1 END)'
+        return qb.when((qb.is_null(column), None), (qb.eq(column, 0), 0), otherwise=1)
     if op in ('and', 'or', 'not'):
-        parts = [predicate(model, arg, values, reads) for arg in node['args']]
+        parts = [predicate(model, arg, reads, zone) for arg in node['args']]
         # Arithmetic keeps NULL (undecided) whenever an operand is undecided, as finite-v1 does.
         if op == 'not':
-            return f'(1 - {parts[0]})'
-        return f'({parts[0]} * {parts[1]})' if op == 'and' else f'(({parts[0]} + {parts[1]} + 1) / 2)'
+            return qb.value(1) - parts[0]
+        return parts[0] * parts[1] if op == 'and' else (parts[0] + parts[1] + 1) / 2
     if op in FLIPPED:
-        return comparison(model, op, *node['args'], values, reads)
+        return comparison(model, op, *node['args'], reads, zone)
     if op == 'hop':
         raise ValueError('where: Link paths are not supported in measures; compare fields of the measured model')
     raise ValueError(f'where: {op} is not supported in measures; use comparisons of fields and values with &, | and ~')
@@ -305,7 +313,7 @@ def stored(model, node, reads):
     if field is None:
         raise ValueError(f'where: {name} is not stored, so measures cannot read it')
     reads.add(name)
-    return f'"record".{identifier(name)}', field
+    return qb.col(f'record.{name}'), field
 
 
 def today_value(node):
@@ -326,7 +334,17 @@ def today_value(node):
     return None
 
 
-def comparison(model, op, left, right, values, reads):
+def matches(column, op, value):
+    """1 when the column equals (op 'eq') or differs from (op 'ne') a value or column, else 0; for an ordered
+    op, NULL (undecided) when the column is empty. An empty column equals nothing."""
+    if op == 'eq':
+        return qb.when((qb.is_null(column), 0), (qb.eq(column, value), 1), otherwise=0)
+    if op == 'ne':
+        return qb.when((qb.is_null(column), 1), (qb.eq(column, value), 0), otherwise=1)
+    return qb.when((qb.is_null(column), None), (ORDERED[op](column, value), 1), otherwise=0)
+
+
+def comparison(model, op, left, right, reads, zone):
     if left['$expr'] != 'ref' and right['$expr'] == 'ref':
         left, right, op = right, left, FLIPPED[op]
     if left['$expr'] == 'literal' and right['$expr'] == 'literal':
@@ -336,12 +354,7 @@ def comparison(model, op, left, right, values, reads):
         a, field = stored(model, left, reads)
         if not isinstance(field, Date):
             raise ValueError('where: compare a Date field with today()')
-        values.append(when)
-        if op == 'eq':
-            return f'(CASE WHEN {a} IS NULL THEN 0 WHEN {a} = ? THEN 1 ELSE 0 END)'
-        if op == 'ne':
-            return f'(CASE WHEN {a} IS NULL THEN 1 WHEN {a} = ? THEN 0 ELSE 1 END)'
-        return f'(CASE WHEN {a} IS NULL THEN NULL WHEN {a} {SYMBOLS[op]} ? THEN 1 ELSE 0 END)'
+        return matches(a, op, qb.value(when.value(zone)))
     if left['$expr'] != 'ref' or right['$expr'] not in ('ref', 'literal'):
         if 'hop' in (left['$expr'], right['$expr']):
             raise ValueError('where: Link paths are not supported in measures; compare fields of the measured model')
@@ -352,12 +365,13 @@ def comparison(model, op, left, right, values, reads):
         if kind(field) == 'number' and getattr(field, 'scale', 0) != getattr(other, 'scale', 0):
             raise ValueError('where: compare number fields with the same scale')
         if op in ('eq', 'ne'):
-            same = f'(CASE WHEN {a} IS NULL AND {b} IS NULL THEN 1 WHEN {a} IS NULL OR {b} IS NULL THEN 0 WHEN {a} = {b} THEN 1 ELSE 0 END)'
-            return same if op == 'eq' else f'(1 - {same})'
-        return f'(CASE WHEN {a} IS NULL OR {b} IS NULL THEN NULL WHEN {a} {SYMBOLS[op]} {b} THEN 1 ELSE 0 END)'
+            same = qb.when((qb.and_(qb.is_null(a), qb.is_null(b)), 1), (qb.or_(qb.is_null(a), qb.is_null(b)), 0),
+                           (qb.eq(a, b), 1), otherwise=0)
+            return same if op == 'eq' else qb.value(1) - same
+        return qb.when((qb.or_(qb.is_null(a), qb.is_null(b)), None), (ORDERED[op](a, b), 1), otherwise=0)
     literal, value = right['type'], right['value']
     if literal == 'null':
-        return f'(CASE WHEN {a} IS NULL THEN {int(op == "eq")} ELSE {int(op == "ne")} END)'
+        return qb.when((qb.is_null(a), int(op == 'eq')), otherwise=int(op == 'ne'))
     if literal == 'boolean':
         value = int(value)
     elif literal == 'decimal':
@@ -367,17 +381,12 @@ def comparison(model, op, left, right, values, reads):
         if exact.denominator != 1:
             # No stored value equals a number with more places than the field keeps.
             if op in ('eq', 'ne'):
-                return f'(CASE WHEN {a} IS NULL THEN {int(op == "ne")} ELSE {int(op == "ne")} END)'
+                return qb.value(int(op == 'ne'))
             op, exact = ('lte', math.floor(exact)) if op in ('lt', 'lte') else ('gte', math.ceil(exact))
         value = int(exact)
         if not MIN_STORED <= value <= MAX_STORED:
             raise ValueError('where: the number is outside the range of stored values')
-    values.append(value)
-    if op == 'eq':
-        return f'(CASE WHEN {a} IS NULL THEN 0 WHEN {a} = ? THEN 1 ELSE 0 END)'
-    if op == 'ne':
-        return f'(CASE WHEN {a} IS NULL THEN 1 WHEN {a} = ? THEN 0 ELSE 1 END)'
-    return f'(CASE WHEN {a} IS NULL THEN NULL WHEN {a} {SYMBOLS[op]} ? THEN 1 ELSE 0 END)'
+    return matches(a, op, qb.value(value))
 
 
 def compile_declared(registry, models):
@@ -427,12 +436,12 @@ def groups_for(model, group_by):
         field = model.__fields__.get(name)
         if field is None:
             raise ValidationError({'group_by': f'Unknown field: {name}'})
-        column = f'"record".{identifier(name)}'
+        column = qb.col(f'record.{name}')
         if isinstance(item, DatePart):
             if not isinstance(field, Date):
                 raise ValidationError({'group_by': f'{type(item).__name__}() needs a Date field; {name} is a {field.kind} field'})
-            sql = {'day': column, 'month': f'substr({column}, 1, 7)', 'year': f'substr({column}, 1, 4)'}[item.part]
-            result.append(Group(f'{name}__{item.part}', name, item.part, sql))
+            part = {'day': column, 'month': qb.substr(column, 1, 7), 'year': qb.substr(column, 1, 4)}[item.part]
+            result.append(Group(f'{name}__{item.part}', name, item.part, part))
         else:
             if kind(field) is None:
                 raise ValidationError({'group_by': f'{name} is a {field.kind} field and cannot be grouped'})
@@ -471,30 +480,31 @@ def prepare(registry, model, measures, group_by):
     return compiled, groups
 
 
-def combine(where, values, extra, extra_values):
-    if not extra:
-        return where, list(values)
-    return where + (' AND ' if where else ' WHERE ') + extra.removeprefix(' WHERE '), [*values, *extra_values]
+def combine(*conditions):
+    """The conditions that check something, for .where(*...): none when every one holds for all rows."""
+    return tuple(item for item in conditions if not qb.always(item))
 
 
-def execute(connection, registry, model, compiled, groups, where, values, zone='UTC', page=None):
+def execute(connection, registry, model, compiled, groups, where, zone='UTC', page=None):
     """Run one aggregate statement and convert the results. Groups are sorted with empty keys first.
-    today() in a where= is the date in `zone` when the statement runs. With `page`, the database orders
-    the groups and returns at most `page` of them (a trusted paged aggregate) instead of refusing more
-    than MAX_GROUPS."""
-    columns = [group.sql for group in groups] + [column for item in compiled for column in item.sql]
-    parameters = [value.value(zone) if isinstance(value, Today) else value for item in compiled for value in item.values]
-    sql = (f'SELECT {", ".join(f"{column} AS {identifier(f"c{index}")}" for index, column in enumerate(columns))} '
-           f'FROM {identifier(registry.name_for(model))} AS "record"{where}')
-    parameters += values
+    `where` is a tuple of conditions on the alias "record". today() in a where= is the date in `zone` when
+    the statement runs. With `page`, the database orders the groups and returns at most `page` of them (a
+    trusted paged aggregate) instead of refusing more than MAX_GROUPS."""
+    measured = [(item, item.columns(zone)) for item in compiled]
+    # Groups are named group__N and grouped and ordered by that name, so a month or year (substr with bound
+    # positions) is grouped and ordered in one pass. No column is called that: field names have no "__" and
+    # the columns a field adds end in _model, _id or _text.
+    keys = [f'group__{index}' for index in range(len(groups))]
+    measures = [column for _, parts in measured for column in parts]
+    query = qb.select(qb.table(registry.name_for(model), 'record'),
+                      *(qb.named(group.expression, key) for group, key in zip(groups, keys)),
+                      *(qb.named(column, f'c{index}') for index, column in enumerate(measures))).where(*where)
     if groups:
-        positions = [str(index + 1) for index in range(len(groups))]
-        sql += ' GROUP BY ' + ', '.join(positions)
+        query = query.group_by(*keys)
         if page is not None:
-            sql += ' ORDER BY ' + ', '.join(f'{position} ASC NULLS FIRST' for position in positions)
-        sql += ' LIMIT ?'
-        parameters.append(MAX_GROUPS + 1 if page is None else page)
-    rows = connection.execute(sql, parameters).fetchall()
+            query = query.order_by(*(qb.asc(key, nulls='first') for key in keys))
+        query = query.limit(MAX_GROUPS + 1 if page is None else page)
+    rows = connection.run(query).all()
     if page is None and len(rows) > MAX_GROUPS:
         raise ValidationError({'group_by': f'The result has more than {MAX_GROUPS} groups; add filters or group by fewer fields'})
     result = []
@@ -505,9 +515,9 @@ def execute(connection, registry, model, compiled, groups, where, values, zone='
             field = model.__fields__[group.field]
             item[group.key] = None if raw is None else int(raw) if group.part == 'year' else raw if group.part == 'month' else field.from_storage(raw)
         index = len(groups)
-        for measure in compiled:
-            item[measure.name] = value(measure, [row[index + offset] for offset in range(len(measure.sql))])
-            index += len(measure.sql)
+        for measure, parts in measured:
+            item[measure.name] = value(measure, [row[index + offset] for offset in range(len(parts))])
+            index += len(parts)
         result.append(item)
     if page is None:
         result.sort(key=lambda item: tuple((item[group.key] is not None, item[group.key]) for group in groups))
@@ -515,7 +525,7 @@ def execute(connection, registry, model, compiled, groups, where, values, zone='
 
 
 def keyset(model, groups, after):
-    """SQL and values that keep the groups after `after` in the paged order: each group key ascending,
+    """The condition that keeps the groups after `after` in the paged order: each group key ascending,
     empty values first. `after` is a dict holding every group key, normally the previous page's last row."""
     if not isinstance(after, dict) or any(group.key not in after for group in groups):
         raise ValidationError({'after': 'Use the last group of the previous page, a dict with every group key'})
@@ -539,17 +549,13 @@ def keyset(model, groups, after):
             raise ValidationError({'after': f'{group.key}: {exc}'}) from None
     # (k1, k2, ...) > (a1, a2, ...) spelled out, because empty values sort first and SQL row comparison
     # treats them as unknown.
-    branches, values = [], []
+    branches = []
     for index, group in enumerate(groups):
-        terms = []
-        for previous, key in zip(groups[:index], keys):
-            terms.append(f'{previous.sql} IS NULL' if key is None else f'{previous.sql} = ?')
-            values.extend([] if key is None else [key])
+        terms = [qb.eq(previous.expression, key) for previous, key in zip(groups[:index], keys)]
         key = keys[index]
-        terms.append(f'{group.sql} IS NOT NULL' if key is None else f'{group.sql} > ?')
-        values.extend([] if key is None else [key])
-        branches.append('(' + ' AND '.join(terms) + ')')
-    return '(' + ' OR '.join(branches) + ')', values
+        terms.append(qb.not_null(group.expression) if key is None else qb.gt(group.expression, key))
+        branches.append(qb.and_(*terms))
+    return qb.or_(*branches)
 
 
 def value(measure, raw):
@@ -557,7 +563,7 @@ def value(measure, raw):
         return int(raw[0] or 0)
     field = measure.target.__fields__[measure.field]
     if measure.function == 'sum':
-        # Exact halves (integers, or PostgreSQL numerics) recombined in Python; only the final total is checked.
+        # Exact halves (integers, or a server database's numerics) recombined in Python; only the final total is checked.
         high, low = (0 if part is None else part for part in raw)
         if isinstance(high, float) or isinstance(low, float) or int(high) != high or int(low) != low:
             raise ValidationError({'measures': OVERFLOW})
@@ -574,18 +580,18 @@ def aggregate(tx, model, measures, group_by=(), filters=None, limit=None, after=
     after the group `after` (None for the first page). Trusted filters take long `in` lists (evlet/query.py)."""
     model = tx.registry.resolve(model)
     compiled, groups = prepare(tx.registry, model, measures, group_by)
-    where, values = SqlQuery(tx.registry, model, trusted=True).where(filters)
+    where = combine(SqlQuery(tx.registry, model, trusted=True).where(filters))
     if limit is None:
         if after is not None:
             raise ValidationError({'after': 'Use after together with limit'})
-        return execute(tx.connection, tx.registry, model, compiled, groups, where, values)
+        return execute(tx.connection, tx.registry, model, compiled, groups, where)
     if not groups:
         raise ValidationError({'limit': 'Paging needs group_by'})
     if type(limit) is not int or not 1 <= limit <= PAGE_GROUPS:
         raise ValidationError({'limit': f'Use an integer between 1 and {PAGE_GROUPS}'})
     if after is not None:
-        where, values = combine(where, values, *keyset(model, groups, after))
-    return execute(tx.connection, tx.registry, model, compiled, groups, where, values, page=limit)
+        where = combine(*where, keyset(model, groups, after))
+    return execute(tx.connection, tx.registry, model, compiled, groups, where, page=limit)
 
 
 def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, zone='UTC', search=('', None), children=(),
@@ -595,26 +601,26 @@ def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, z
 
     `currencies` is an optional (codes, source_for) pair: `codes` receives the currency code of each money result
     (see currency_codes), and `source_for(item)` gives the currency source the caller may use, or None."""
-    scope_for = scope_for or (lambda target: ('', ()))
+    scope_for = scope_for or (lambda target: qb.TRUE)
     if record_id is None:
         # Filters are checked even when no measure is available.
-        where, values = SqlQuery(tx.registry, model, children=children).where(filters, search[0], search_fields=search[1])
+        where = SqlQuery(tx.registry, model, children=children).where(filters, search[0], search_fields=search[1])
         if not items:
             return {}
-        where, values = combine(where, values, *scope_for(model))
+        where = combine(where, scope_for(model))
         if currencies is not None:
-            currencies[0].update(currency_codes(tx, items, where, values, zone, None, currencies[1]))
-        return execute(tx.connection, tx.registry, model, items, [], where, values, zone)[0]
+            currencies[0].update(currency_codes(tx, items, where, zone, None, currencies[1]))
+        return execute(tx.connection, tx.registry, model, items, [], where, zone)[0]
     if filters:
         raise ValidationError({'filters': 'Per-record measures take no filters'})
     result = {}
     for target in dict.fromkeys(item.target for item in items):
         for link in dict.fromkeys(item.link for item in items if item.target is target):
             chosen = [item for item in items if item.target is target and item.link == link]
-            where, values = combine(f' WHERE "record".{identifier(link)} = ?', [record_id], *scope_for(target))
+            where = combine(qb.eq(f'record.{link}', record_id), scope_for(target))
             if currencies is not None:
-                currencies[0].update(currency_codes(tx, chosen, where, values, zone, record_id, currencies[1]))
-            result.update(execute(tx.connection, tx.registry, target, chosen, [], where, values, zone)[0])
+                currencies[0].update(currency_codes(tx, chosen, where, zone, record_id, currencies[1]))
+            result.update(execute(tx.connection, tx.registry, target, chosen, [], where, zone)[0])
     return {item.name: result[item.name] for item in items}
 
 
@@ -624,7 +630,7 @@ def money(item):
         and getattr(item.target.__fields__[item.field], 'kind', None) == 'currency'
 
 
-def currency_codes(tx, items, where, values, zone, record_id, source_for):
+def currency_codes(tx, items, where, zone, record_id, source_for):
     """{measure name: ISO code} for money measures whose counted rows all share one currency.
 
     A count has no currency. A sum, minimum or maximum of a Currency field takes the field's code: a fixed code
@@ -649,17 +655,14 @@ def currency_codes(tx, items, where, values, zone, record_id, source_for):
             if isinstance(code, str) and code:
                 result[item.name] = code
             continue
-        column = f'"record".{identifier(name)}' if link is None else f'"linked".{identifier(name)}'
-        join = '' if link is None else (f' LEFT JOIN {identifier(tx.registry.name_for(item.target.__fields__[link].target))} AS "linked"'
-                                        f' ON "linked".id = "record".{identifier(link)}')
-        condition, parameters = f'"record".{identifier(item.field)} IS NOT NULL', []
-        if item.predicate is not None:
-            condition += f' AND {item.predicate} = 1'
-            parameters = [value.value(zone) if isinstance(value, Today) else value
-                          for value in item.values[:len(item.values) // len(item.sql)]]
-        sql = (f'SELECT min({column}), max({column}), count(*) - count({column}) '
-               f'FROM {identifier(tx.registry.name_for(item.target))} AS "record"{join}{where} {"AND" if where else "WHERE"} {condition}')
-        low, high, missing = tx.connection.execute(sql, [*values, *parameters]).fetchone()
+        column = qb.col(f'record.{name}' if link is None else f'linked.{name}')
+        query = qb.select(qb.table(tx.registry.name_for(item.target), 'record'), qb.min(column), qb.max(column), qb.count() - qb.count(column))
+        if link is not None:
+            linked = qb.table(tx.registry.name_for(item.target.__fields__[link].target), 'linked')
+            query = query.join(linked, qb.eq('linked.id', qb.col(f'record.{link}')), left=True)
+        counted = item.counted(zone)
+        query = query.where(*where, qb.not_null(f'record.{item.field}'), *(() if counted is None else (counted,)))
+        low, high, missing = tx.connection.run(query).one()
         if isinstance(low, str) and low and low == high and not missing:
             result[item.name] = low
     return result
@@ -747,12 +750,11 @@ def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=N
     # As for lists, eq and in filters on a Link to a row-scoped model are allowed for records this role can read.
     policy.query_fields(user, model, filters, (), database=tx.connection, children=children)
     text, fields = searched(business, user, model, search)
-    where, values = SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields)
-    where, values = combine(where, values, *policy.scope_sql(user, model))
+    where = combine(SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields), policy.scope(user, model))
     zone = getattr(business, 'timezone', None) or 'UTC'
     if currencies is not None:
-        currencies.update(currency_codes(tx, compiled, where, values, zone, None, lambda item: currency_source(business, user, item)))
-    return execute(tx.connection, registry, model, compiled, groups, where, values, zone)
+        currencies.update(currency_codes(tx, compiled, where, zone, None, lambda item: currency_source(business, user, item)))
+    return execute(tx.connection, registry, model, compiled, groups, where, zone)
 
 
 # The list page's tabs (Meta.list_tabs): record counts per value of one State, Select or Link field.
@@ -799,14 +801,12 @@ def list_tabs(business, tx, user, model, filters=None, search=''):
     children = getattr(business, 'children', {}).values()
     policy.query_fields(user, model, filters, (), children=children)
     text, fields = searched(business, user, model, search)
-    where, values = SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields)
-    where, values = combine(where, values, *policy.scope_sql(user, model))
-    table, column = identifier(registry.name_for(model)), f'"record".{identifier(name)}'
-    total = tx.connection.execute(f'SELECT COUNT(*) FROM {table} AS "record"{where}', values).fetchone()[0]
-    grouped, grouped_values = combine(where, values, f' WHERE {column} IS NOT NULL', [])
+    where = combine(SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields), policy.scope(user, model))
+    table, column = qb.table(registry.name_for(model), 'record'), qb.col(f'record.{name}')
+    total = tx.connection.run(qb.select(table, qb.count()).where(*where)).value()
     limit = TAB_LINKS + 1 if link else MAX_GROUPS
-    rows = tx.connection.execute(f'SELECT {column} AS "c0", COUNT(*) AS "c1" FROM {table} AS "record"{grouped} '
-                                 f'GROUP BY 1 ORDER BY 2 DESC, 1 LIMIT ?', [*grouped_values, limit]).fetchall()
+    rows = tx.connection.run(qb.select(table, qb.named(column, 'c0'), qb.named(qb.count(), 'c1')).where(*where, qb.not_null(column))
+                             .group_by(column).order_by(qb.desc(qb.count()), qb.asc(column)).limit(limit)).all()
     items = [{'value': field.serialize(field.from_storage(row[0])), 'count': int(row[1])} for row in rows[:limit - 1 if link else limit]]
     return {'field': name, 'total': int(total or 0), 'items': items, 'more': link and len(rows) > TAB_LINKS}
 
@@ -829,7 +829,7 @@ def scoped_measures(business, tx, user, model, record_id=None, filters=None, sea
         policy.query_fields(user, model, filters, (), children=getattr(business, 'children', {}).values())
     else:
         policy.record(tx, user, model, record_id)
-    return values_for(tx, model, items, record_id, filters, lambda target: policy.scope_sql(user, target),
+    return values_for(tx, model, items, record_id, filters, lambda target: policy.scope(user, target),
                       getattr(business, 'timezone', None) or 'UTC', searched(business, user, model, search), getattr(business, 'children', {}).values(),
                       currencies)
 
@@ -938,7 +938,7 @@ def route(business, scope, user, model, parts):
     if parts[3] == 'list_tabs':
         query, filters = parameters(scope, {'filters', 'q'})
         with business.database._connection() as connection:
-            connection.execute('BEGIN')
+            connection.snapshot()
             return 200, list_tabs(business, Session(connection, business.registry), user, model, filters, query.get('q', '')), []
     if parts[3] == 'aggregate':
         query, filters = parameters(scope, {'measures', 'group_by', 'filters', 'q'})
@@ -946,7 +946,7 @@ def route(business, scope, user, model, parts):
     else:
         query, filters = parameters(scope, set() if record_id else {'filters', 'q'})
     with business.database._connection() as connection:
-        connection.execute('BEGIN')
+        connection.snapshot()
         tx = Session(connection, business.registry)
         if parts[3] == 'aggregate':
             codes = {}

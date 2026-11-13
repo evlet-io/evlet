@@ -12,6 +12,8 @@ from html import escape
 from importlib import resources
 import re
 
+from . import qb
+from .adapter import Column as StoredColumn, TableDefinition
 from .auth import AccessError, has_role
 from .fields import RichText
 from .models import Model, ValidationError
@@ -369,6 +371,15 @@ class PrintDesign:
         return (*cls.header, *(cls.header_first or ()), *cls.main, *cls.footer, *(cls.footnote.blocks if cls.footnote else ()))
 
 
+# Print designs changed in Controls; a stored design replaces the one in code with the same name.
+DESIGNS = TableDefinition('evlet_print_designs', (
+    StoredColumn('name', 'TEXT', primary=True),
+    StoredColumn('definition', 'TEXT', required=True),
+    StoredColumn('changed_by', 'TEXT'),
+    StoredColumn('changed_at', 'INTEGER'),
+))
+
+
 class Prints:
     """The application's registered designs, by name (the class name)."""
 
@@ -394,14 +405,13 @@ class Prints:
 
     def initialize(self):
         with self.business.database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_print_designs (name TEXT PRIMARY KEY, definition TEXT NOT NULL, '
-                                  'changed_by TEXT, changed_at INTEGER)')
+            tx.connection.ensure_table(DESIGNS)
         self.reload()
 
     def stored_rows(self):
         try:
             with self.business.database._connection() as connection:
-                rows = connection.execute('SELECT name, definition, changed_by, changed_at FROM evlet_print_designs ORDER BY name').fetchall()
+                rows = connection.run(qb.select('evlet_print_designs', 'name', 'definition', 'changed_by', 'changed_at').order_by('name')).all()
         except Exception:
             return {}
         return {row['name']: {'definition': row['definition'], 'changed_by': row['changed_by'], 'changed_at': row['changed_at']} for row in rows}
@@ -510,7 +520,8 @@ class Prints:
         if len(content) > limits.max_size:
             raise ValidationError({'attachment': f'The PDF is larger than {size_text(limits.max_size)}'})
         name = business.registry.name_for(model)
-        if tx.connection.execute("SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=? AND (purpose IS NULL OR purpose <> 'image')", (name, record_id)).fetchone()[0] >= limits.max_files:
+        files = qb.select('evlet_attachments', qb.count()).where(qb.or_(qb.is_null('purpose'), qb.ne('purpose', 'image')), model=name, record_id=record_id)
+        if tx.connection.run(files).value() >= limits.max_files:
             raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
         file_id = business.storage.add(tx, name, record_id, filename, content)
         from .journal import file
@@ -1363,10 +1374,11 @@ class Designer:
         import json, time
         definition = design_to(design, self.prints.business.registry)
         with self.prints.business.database.transaction() as tx:
-            before = tx.connection.execute('SELECT definition FROM evlet_print_designs WHERE name=?', (name,)).fetchone()
-            tx.connection.execute('INSERT INTO evlet_print_designs(name, definition, changed_by, changed_at) VALUES (?,?,?,?) '
-                                  'ON CONFLICT (name) DO UPDATE SET definition=excluded.definition, changed_by=excluded.changed_by, changed_at=excluded.changed_at',
-                                  (name, json.dumps(definition, sort_keys=True), user.username, int(time.time())))
+            before = tx.connection.run(qb.select('evlet_print_designs', 'definition').where(name=name)).one()
+            tx.connection.run(qb.insert('evlet_print_designs', name=name, definition=json.dumps(definition, sort_keys=True),
+                                        changed_by=user.username, changed_at=int(time.time()))
+                              .on_conflict('name').do_update(definition=qb.col('excluded.definition'), changed_by=qb.col('excluded.changed_by'),
+                                                             changed_at=qb.col('excluded.changed_at')))
             audit(tx.connection, user.username, 'Print designs', name, 'Changed' if before else 'Added',
                   None if before is None else json.loads(before[0]), definition)
             bump(tx.connection)
@@ -1377,10 +1389,10 @@ class Designer:
         from .controls import audit, bump
         import json
         with self.prints.business.database.transaction() as tx:
-            row = tx.connection.execute('SELECT definition FROM evlet_print_designs WHERE name=?', (name,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_print_designs', 'definition').where(name=name)).one()
             if row is None:
                 raise AccessError(404, 'Print design not found')
-            tx.connection.execute('DELETE FROM evlet_print_designs WHERE name=?', (name,))
+            tx.connection.run(qb.delete('evlet_print_designs').where(name=name))
             audit(tx.connection, user.username, 'Print designs', name, 'Removed', json.loads(row[0]), None)
             bump(tx.connection)
         self.prints.reload()

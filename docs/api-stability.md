@@ -64,7 +64,7 @@ production ready, but the rules below hold from 0.3 on.
   entry (left out when there are none). A broken unique entry raises `ValidationError` with the
   entry's fields as keys (HTTP 422). Ledger entries may name `id`. `Session.reserve_ids(model,
   count)` and an `id` in `insert_many` rows for reserved ids. A raw update or delete that an
-  append-only table refuses raises `ConflictError` on SQLite and PostgreSQL
+  append-only table refuses raises `ConflictError`
   ([model-engine.md](model-engine.md#composite-and-unique-indexes), [ledger.md](ledger.md)).
 
 - **Aggregates in a transaction.** `Session.aggregate(model, *, measures, group_by=(), filters=None,
@@ -216,10 +216,14 @@ with `-W error::DeprecationWarning` before they move to the next series.
 Apps must not depend on these. They can change in any release without a deprecation:
 
 - Modules and names that are not listed above, even when they can be imported, such as
-  `evlet.lifecycle`, `evlet.database` helpers, `evlet.cli`, `evlet.controls_*`,
-  `evlet.postgres_schema` and `evlet.ui.metadata`.
+  `evlet.lifecycle`, `evlet.database` helpers, `evlet.cli`, `evlet.controls_*`, `evlet.sqlite`
+  and `evlet.ui.metadata`.
+- The query builder (`evlet.qb`) and the database adapter interface (`evlet.adapter`, the
+  connection methods and the `Database` methods listed in [database-adapters.md](database-adapters.md)).
+  They are documented for framework work and for people who write a dialect, and are provisional:
+  they may change in a minor release, with a `CHANGELOG.md` note.
 - Names that start with an underscore, and dunder attributes such as `__fields__`.
-- Methods of exported classes that the app guides do not document, such as `Policy.scope_sql`
+- Methods of exported classes that the app guides do not document, such as `Policy.scope`
   or `Registry.plan_for`.
 - The stored layout of tables Evlet manages (`evlet_*`), and the browser framework in
   `frontend/`.

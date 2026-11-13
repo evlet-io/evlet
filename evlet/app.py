@@ -3,9 +3,9 @@
 import asyncio
 import json
 import logging
-import sqlite3
 from urllib.parse import parse_qs, urlsplit
 
+from .adapter import OperationalError
 from .database import ConflictError, NotFoundError
 from .identity import jsonable, path_id
 from .models import ValidationError
@@ -201,7 +201,7 @@ class Application:
         except StorageError:
             logger.exception("Attachment storage failed")
             status, payload = 503, {"error": "Attachment temporarily unavailable"}
-        except sqlite3.OperationalError:
+        except OperationalError:
             logger.exception("Database operation failed")
             status, payload = 503, {"error": "Database temporarily unavailable"}
         except Exception:

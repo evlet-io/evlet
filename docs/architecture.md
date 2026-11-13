@@ -34,8 +34,9 @@ SolidJS by Evlet's own UI framework.
    referenced record's 63-bit id and uses a real database foreign key; JSON and URLs
    carry the 13-character text form of the id. Schema creation is
    supported; migrations are not. Changing a model requires a new disposable
-   development database until migrations exist. A future PostgreSQL adapter can
-   implement the same small operations without introducing a generic ORM now.
+   development database until migrations exist. Another database can implement
+   the same small operations without introducing a generic ORM
+   ([database adapters](database-adapters.md)).
 3. **Portable ASGI, with Uvicorn only as a development server.** The core
    implements HTTP and lifespan directly. It exposes health, versioned metadata,
    and explicitly registered models' create/list/detail operations. Database work
@@ -253,35 +254,32 @@ approval responsibilities, limits, and the application development workflow.
 
 ## Deferred work
 
-WebSockets, arbitrary schema conversions, PostgreSQL tenant-catalog integration,
-parallel write scheduling, and production-target validation remain later work.
+WebSockets, arbitrary schema conversions, parallel write scheduling, and
+production-target validation remain later work.
 
 
 ## Milestone 8 decisions
 
-PostgreSQL is an optional driver-backed Database implementation. Models, validation,
-query compilation, authentication, permissions, and business handlers stay shared.
-A small private connection adapter binds parameters and adapts framework-generated
-SQL; native schema introspection and migrations live separately. A bounded optional
-Psycopg pool reuses connections and resets session state after each operation. It is not a general
-SQL translation layer. The base wheel imports without Psycopg installed.
-
-An explicit transaction advisory lock preserves the existing serialized-write
-contract across PostgreSQL processes, including business actions and queue claims.
-Read pages use repeatable-read snapshots. This initial adapter does not provide
-parallel writes within one database, and the operator-managed SQLite tenant catalog
-is not extended to remote credentials or PostgreSQL provisioning.
-
 Private storage, events, and jobs check their owning database through a shared
 boundary instead of assuming a SQLite file. Session revocation/expiry and login
 counter cleanup now have explicit indexes. Repeated security headers are rejected
-before authentication. Nullable ordering is explicit on both adapters.
+before authentication. Nullable ordering is explicit.
 
 Reproducible benchmarks use synthetic large ledgers and real databases, with
 continuous authenticated ASGI readers, paced invoice transactions, SQL reports,
 index comparisons, and measured resource/bundle sizes. They do not model a complete
-accounting system or prove deployment capacity. See [performance](performance.md),
-[PostgreSQL](postgresql.md), and [operations](production-operations.md).
+accounting system or prove deployment capacity. See [performance](performance.md)
+and [operations](production-operations.md).
+
+## Database adapters
+
+SQLite is the one database Evlet ships with. Framework code reads and writes through the
+query builder (`evlet/qb.py`): plain statement objects run with `connection.run(...)`. The SQLite
+dialect (`evlet/sqlite.py`) compiles them to SQL and implements the connection interface in
+`evlet/adapter.py`. `evlet/database.py` opens connections and runs transactions, and
+`evlet/writes.py` holds the SQLite files and their write line-up. Other modules never write SQL
+text or ask which database they run on; the modules still being moved are listed in
+[database adapters](database-adapters.md), with the plan and how another database would be added.
 
 ## Projects, app packages and instances
 
@@ -305,10 +303,9 @@ from existing State/Move applications.
 declared, registered and migrated like any model and read through the same session, measures and
 reports, but its table holds an integer id the database assigns and the declared columns only, and
 `Meta.api` is forced to `None`, so every caller surface already leaves it out. Append-only tables use
-database triggers, as `evlet_audit` and `evlet_journal` do. Named locks (`tx.lock`) are PostgreSQL
-transaction advisory locks on hashed business keys and a no-op on SQLite, whose writers are already
-serialised. The framework adds no finance or stock concepts; balancing, reversals and cache rebuilds
-are app code. See [ledger models](ledger.md).
+database triggers, as `evlet_audit` and `evlet_journal` do. Named locks (`tx.lock`) only check that a
+write transaction is open on SQLite, whose writers are already serialised. The framework adds no
+finance or stock concepts; balancing, reversals and cache rebuilds are app code. See [ledger models](ledger.md).
 
 ## The Tool Engine
 

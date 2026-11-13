@@ -8,8 +8,6 @@ from evlet import (Model, Text, Integer, Rule, Dialog, Report, Column, Chart, Co
 from evlet.forms import Forms
 from evlet.services import Calendar, Endpoint
 from test_business import http, client, PASSWORD
-from test_postgres import pg_dsn  # noqa: F401 - fixture
-from evlet.postgres import PostgreSQLDatabase
 
 
 class Ticket(Model):
@@ -301,11 +299,9 @@ class SalesGroupedByPage(SalesGrouped):
         return result
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def sales(request, tmp_path):
-    # Report runs, totals, sorting and export behave the same on both databases.
-    db = (Database(tmp_path / 'sales.sqlite3', Registry(Sale)) if request.param == 'sqlite'
-          else PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), Registry(Sale)))
+@pytest.fixture
+def sales(tmp_path):
+    db = Database(tmp_path / 'sales.sqlite3', Registry(Sale))
     auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
     app = Application(db, auth=auth, reports=(SalesByCustomer, Unexported, SalesGrouped, SalesGroupedByPage))
     app.initialize()

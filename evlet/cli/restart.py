@@ -8,7 +8,6 @@ from contextlib import closing
 from pathlib import Path
 import re
 import shlex
-import sqlite3
 import subprocess
 import sys
 import time
@@ -114,13 +113,14 @@ def check_routes(root, name, state):
 
 def framework_pending(path, locked):
     """Names of framework steps the database has not run, read without writing."""
-    from .. import framework
+    from .. import framework, qb
+    from ..writes import read_file
     database = path / 'data/database.sqlite3'
     applied = 0
     if database.is_file():
-        with closing(sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)) as connection:
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_framework_migrations'").fetchone():
-                applied = connection.execute('SELECT COUNT(*) FROM evlet_framework_migrations').fetchone()[0]
+        with closing(read_file(database)) as connection:
+            if connection.table_exists('evlet_framework_migrations'):
+                applied = connection.run(qb.select('evlet_framework_migrations', qb.count())).value()
     return [step.name for step in framework.STEPS[applied:]]
 
 

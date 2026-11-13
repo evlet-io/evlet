@@ -2,7 +2,7 @@
 
 A caller-supplied `id` is refused with one clear message on every create and update path (HTTP, Context,
 transaction sessions, action handlers, moves), and the database refuses a raw id UPDATE. Ledger rows keep
-database-assigned ids, with an explicit id only when this transaction reserved it. Real SQLite and PostgreSQL.
+database-assigned ids, with an explicit id only when this transaction reserved it. Real SQLite.
 """
 
 import sqlite3
@@ -13,11 +13,9 @@ from evlet import (Application, Child, ConflictError, Database, Integer, Link, M
                    ValidationError, action)
 from evlet.auth import LocalAuth, User
 from evlet.framework import STEPS, upgrade
-from evlet.identity import RecordId, check_ids, has_id_guard, id_guard_name
+from evlet.identity import RecordId, check_ids, has_id_guard
 from evlet.models import ASSIGNED_ID
-from evlet.postgres import PostgreSQLDatabase
 from test_business import PASSWORD, client, http
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 ADMIN = User(1, 'admin', 'admin')
@@ -62,16 +60,10 @@ def build(database):
     return app, client(app)
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def app(request, tmp_path):
+@pytest.fixture
+def app(tmp_path):
     registry = Registry(Venture, Note, Tally)
-    if request.param == 'sqlite':
-        return build(Database(tmp_path / 'ids.sqlite3', registry))
-    return build(PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry))
-
-
-def postgres(database):
-    return isinstance(database, PostgreSQLDatabase)
+    return build(Database(tmp_path / 'ids.sqlite3', registry))
 
 
 def refused(error):
@@ -79,7 +71,7 @@ def refused(error):
 
 
 def guarded(error):
-    """The id guard's refusal, as the same ConflictError on SQLite and PostgreSQL."""
+    """The id guard's refusal, as a ConflictError."""
     return isinstance(error.value, ConflictError) and str(error.value).endswith(': record ids never change')
 
 
@@ -189,7 +181,7 @@ def test_the_database_refuses_a_raw_id_update(app):
     note = database.create(Note, body='x')
     for table in ('note', 'venture', 'venture_steps', 'tally'):
         with database.transaction() as tx:
-            assert has_id_guard(tx.connection, postgres(database), table)
+            assert has_id_guard(tx.connection, table)
     with pytest.raises(Exception) as error:
         with database.transaction() as tx:
             tx.connection.execute('UPDATE note SET id = ? WHERE id = ?', (NUMBER_ID, note.id))
@@ -232,12 +224,12 @@ def test_check_ids_reports_impossible_ids_and_a_missing_guard(tmp_path):
     database.initialize()
     upgrade(database)
     with database.transaction() as tx:
-        assert check_ids(tx.connection, False, registry) == []
+        assert check_ids(tx.connection, registry) == []
     with sqlite3.connect(path) as connection:
         connection.execute('INSERT INTO note (id, body) VALUES (-3, ?)', ('raw',))
-        connection.execute(f'DROP TRIGGER "{id_guard_name("venture")}"')
+        connection.execute('DROP TRIGGER "evlet_venture_fixed_id"')
     with database.transaction() as tx:
-        assert check_ids(tx.connection, False, registry) == [
+        assert check_ids(tx.connection, registry) == [
             'note: 1 row(s) with an id that is empty, zero or negative',
             'venture: the database does not refuse id changes; run evlet migrate']
 
@@ -251,12 +243,12 @@ def test_the_framework_step_adds_the_guard_to_existing_tables(tmp_path):
     # An instance from before 0006_fixed_ids: no guards, and the step not yet recorded.
     with sqlite3.connect(path) as connection:
         for table in registry.models:
-            connection.execute(f'DROP TRIGGER "{id_guard_name(table)}"')
+            connection.execute(f'DROP TRIGGER "evlet_{table}_fixed_id"')
         connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files')")
     assert STEPS[5].name == '0006_fixed_ids'
     assert upgrade(database) == ['0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files']
     with database.transaction() as tx:
-        assert check_ids(tx.connection, False, registry) == []
+        assert check_ids(tx.connection, registry) == []
 
 
 def test_evlet_ids_check_prints_problems_and_exits_with_one(app, tmp_path, monkeypatch, capsys):

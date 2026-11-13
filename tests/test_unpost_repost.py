@@ -1,4 +1,4 @@
-"""Unpost and repost of posted documents, and Recompute of posted records on request, on real SQLite and PostgreSQL."""
+"""Unpost and repost of posted documents, and Recompute of posted records on request, on real SQLite."""
 
 import pytest
 
@@ -7,11 +7,9 @@ from evlet import (Application, Boolean, Child, Currency, Database, Decimal, Eff
 from evlet.auth import AccessError, User
 from evlet.calc import F
 from evlet.identity import RecordId, encode
-from evlet.postgres import PostgreSQLDatabase
 from finite_fixtures import FiniteMeta
 from test_business import client, http
 from test_effects import etag, move, posting_models, new_bill, open_bills
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 from test_rules_types import ALL, add_user, start
 
 
@@ -109,13 +107,10 @@ class Order(Model):
 MODELS = (Account, Ledger, Invoice, Payment, Allocation, Tally, Memo, Order)
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def books(request, tmp_path):
+@pytest.fixture
+def books(tmp_path):
     registry = Registry(*MODELS)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'books.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'books.sqlite3', registry)
     app = start(database)
     c = client(app)
     account = c('POST', '/api/account', {'title': 'Sales'})[1]['id']
@@ -436,27 +431,6 @@ def test_recompute_includes_posted_records_only_when_asked(tmp_path, caplog):
     status, body, _ = correct(c, issued, 'repost')
     assert status == 200 and body['total'] == '9.00', body
     assert effects.check(app) == []
-
-
-def test_recompute_posted_on_postgresql(pg_dsn):
-    from evlet import AddIndex, Migration, Recompute
-    base = Migration('0000_base', AddIndex('bill', 'memo'))
-    database = PostgreSQLDatabase(pg_dsn, Registry(*posting_models(1)), migrations=[base])
-    app = start(database)
-    c = client(app)
-    customer = c('POST', '/api/customer', {})[1]['id']
-    url = new_bill(c, customer)
-    assert move(c, url, 'issued')[0] == 200
-    step = Migration('0001_recompute', Recompute('bill_lines', ('amount',)), Recompute('bill', ('total',)))
-    database.close()
-    database = PostgreSQLDatabase(pg_dsn, Registry(*posting_models(2)), migrations=[base, step])
-    applied = database.migrate(database.migrations, recompute_posted=True)
-    assert (applied.skipped, applied.posted) == (0, 1)
-    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
-    app.initialize()
-    c = client(app)
-    assert c('GET', url)[1]['total'] == '6.00'
-    assert c('GET', f'{url}/journal')[1]['items'][0]['data']['posted'] is True
 
 
 def test_migrate_command_takes_the_recompute_posted_flag(monkeypatch, capsys, tmp_path):

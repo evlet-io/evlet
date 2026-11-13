@@ -10,6 +10,7 @@ import re
 import time
 from urllib.parse import parse_qs
 
+from . import qb
 from .auth import AccessError, User
 from .documents import Context, typed_arguments
 from .permissions import trusted
@@ -63,14 +64,14 @@ def public_limit(business, scope, endpoint):
     address = client_network(business.auth.client_address(scope))
     client = hashlib.sha256(f'public:{endpoint.name}:{address}'.encode()).hexdigest()
     with business.database.transaction(store='logs') as tx:
-        tx.connection.execute('DELETE FROM evlet_public_limits WHERE resets<=?', (now,))
+        tx.connection.run(qb.delete('evlet_public_limits').where(qb.le('resets', now)))
         for window, limit in PUBLIC_LIMITS:
-            row = tx.connection.execute('SELECT calls, resets FROM evlet_public_limits WHERE client=? AND period=?', (client, window)).fetchone()
+            row = tx.connection.run(qb.select('evlet_public_limits', 'calls', 'resets').where(client=client, period=window)).one()
             if row and row['calls'] >= limit:
                 raise HTTPError(429, 'Too many requests. Try again later.', [(b'retry-after', str(max(1, row['resets'] - now)).encode())])
         for window, _ in PUBLIC_LIMITS:
-            tx.connection.execute('INSERT INTO evlet_public_limits VALUES (?,?,1,?) ON CONFLICT(client, period) DO UPDATE SET calls=evlet_public_limits.calls+1',
-                                  (client, window, now + window))
+            tx.connection.run(qb.insert('evlet_public_limits', client=client, period=window, calls=1, resets=now + window)
+                              .on_conflict('client', 'period').do_update(calls=qb.col('evlet_public_limits.calls') + 1))
 
 
 @dataclass(frozen=True)

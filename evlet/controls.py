@@ -1,9 +1,9 @@
 """Controls: roles, overrides, the audit log and the config version behind /controls."""
 
+from dataclasses import replace
 import ipaddress
 import json
 import re
-import sqlite3
 from threading import Lock
 import time
 from types import MappingProxyType
@@ -14,17 +14,18 @@ from .controls_system import System
 from .customization import Customization, activated, instance_fields
 from .fields import Layer
 from .fields import Link
+from .adapter import Column, IntegrityError, TableDefinition
 from .database import NotFoundError
 from .identity import path_id
-from .models import ValidationError, checked_body, identifier
+from .models import ValidationError, checked_body
 from .periods import TABLE as PERIOD_LOCKS
-from . import writes
+from . import qb, writes
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
 # Workspace overrides share the table but have their own routes (/api/_controls/workspaces), not POST /overrides.
-OVERRIDE_KINDS = "CHECK(kind IN ('perm','field','custom','layout','list','naming','setting','workspace'))"
+OVERRIDE_KINDS = (*KINDS, 'workspace')
 WORKSPACE_ACCESS = 'Customizing workspaces needs an admin, or a role with "Customize workspaces" on.'
 PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'periods', 'prints', 'currencies', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
@@ -79,54 +80,53 @@ def _field_scope(name):
 SCOPES = MappingProxyType({name: _field_scope(name) for name in ('created_by', 'owner', 'account_manager', 'assignee')})
 
 
+OVERRIDES = TableDefinition('evlet_overrides', (
+    Column('kind', 'TEXT', required=True), Column('key', 'TEXT', required=True), Column('value', 'TEXT', required=True),
+    Column('changed_by', 'INTEGER'), Column('changed_at', 'INTEGER')), primary_key=('kind', 'key'), checks=(qb.in_('kind', OVERRIDE_KINDS),))
+AUDIT = TableDefinition('evlet_audit', (
+    Column('at', 'INTEGER', required=True), Column('actor', 'TEXT', required=True), Column('area', 'TEXT', required=True),
+    Column('target', 'TEXT', required=True), Column('detail', 'TEXT', required=True), Column('before', 'TEXT'), Column('after', 'TEXT')), numbered=True)
+CONFIG = TableDefinition('evlet_config', (Column('id', 'INTEGER', primary=True), Column('version', 'INTEGER', required=True)),
+                         checks=(qb.eq('id', 1),))
+
+
+class _KindProbe(Exception):
+    """Undoes the probe row of ensure_schema: its savepoint rolls back on any error."""
+
+
 def ensure_schema(connection):
-    """Create the Controls tables on a framework or raw SQLite connection. The audit log is append-only."""
-    overrides = ('CREATE TABLE IF NOT EXISTS {} (kind TEXT NOT NULL ' + OVERRIDE_KINDS +
-                 ', key TEXT NOT NULL, value TEXT NOT NULL, changed_by INTEGER, changed_at INTEGER, PRIMARY KEY (kind, key))')
-    for statement in (
-        overrides.format('evlet_overrides'),
-        'CREATE TABLE IF NOT EXISTS evlet_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL, area TEXT NOT NULL, target TEXT NOT NULL, detail TEXT NOT NULL, before TEXT, after TEXT)',
-        'CREATE TABLE IF NOT EXISTS evlet_config (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)',
-        'INSERT OR IGNORE INTO evlet_config(id,version) VALUES (1,1)',
-        PERIOD_LOCKS,
-    ):
-        connection.execute(statement)
+    """Create the Controls tables on a framework or server-shell connection. The audit log is append-only."""
+    for definition in (OVERRIDES, AUDIT, CONFIG, PERIOD_LOCKS):
+        connection.ensure_table(definition)
+    connection.run(qb.insert('evlet_config', id=1, version=1).on_conflict().do_nothing())
     # Workspace overrides (kind "workspace") came later: widen the kind check of a table made before them.
-    if isinstance(connection, sqlite3.Connection):
-        sql = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='evlet_overrides'").fetchone()[0]
-        if "'workspace'" not in sql:
-            connection.execute(overrides.format('evlet_overrides_widened'))
-            connection.execute('INSERT INTO evlet_overrides_widened(kind,key,value,changed_by,changed_at) '
-                               'SELECT kind,key,value,changed_by,changed_at FROM evlet_overrides')
-            connection.execute('DROP TABLE evlet_overrides')
-            connection.execute('ALTER TABLE evlet_overrides_widened RENAME TO evlet_overrides')
-    else:
-        checks = connection.execute("SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
-                                    "WHERE conrelid = to_regclass('evlet_overrides') AND contype = 'c'").fetchall()
-        old = [row[0] for row in checks if 'kind' in row[1] and 'workspace' not in row[1]]
-        for name in old:
-            connection.execute(f'ALTER TABLE evlet_overrides DROP CONSTRAINT {identifier(name)}')
-        if old:
-            connection.execute(f'ALTER TABLE evlet_overrides ADD CONSTRAINT evlet_overrides_kind_check {OVERRIDE_KINDS}')
-    if isinstance(connection, sqlite3.Connection):
-        refuse = "BEGIN SELECT RAISE(ABORT, 'The audit log is append-only'); END"
-        connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_audit_no_update BEFORE UPDATE ON evlet_audit {refuse}')
-        connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_audit_no_delete BEFORE DELETE ON evlet_audit {refuse}')
-        connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_audit_no_replace BEFORE INSERT ON evlet_audit WHEN EXISTS (SELECT 1 FROM evlet_audit WHERE id=NEW.id) {refuse}')
-    else:
-        connection.execute("CREATE OR REPLACE FUNCTION evlet_audit_append_only() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'The audit log is append-only'; END $$")
-        connection.execute('CREATE OR REPLACE TRIGGER evlet_audit_append_only BEFORE UPDATE OR DELETE ON evlet_audit FOR EACH ROW EXECUTE FUNCTION evlet_audit_append_only()')
+    # A probe row inside a savepoint tells whether the table takes the kind; it never stays.
+    try:
+        with connection.savepoint('evlet_overrides_kind'):
+            connection.run(qb.insert('evlet_overrides', kind='workspace', key='evlet_kind_probe', value=''))
+            raise _KindProbe
+    except _KindProbe:
+        widen = False
+    except IntegrityError:
+        widen = True
+    if widen:
+        names = ('kind', 'key', 'value', 'changed_by', 'changed_at')
+        connection.ensure_table(replace(OVERRIDES, name='evlet_overrides_widened'))
+        connection.run(qb.insert_rows_from('evlet_overrides_widened', names, qb.select('evlet_overrides', *names)))
+        connection.drop_table('evlet_overrides')
+        connection.rename_table('evlet_overrides_widened', 'evlet_overrides')
+    connection.make_append_only('evlet_audit', 'The audit log is append-only')
 
 
 def audit(connection, actor, area, target, detail, before=None, after=None):
-    connection.execute('INSERT INTO evlet_audit(at,actor,area,target,detail,before,after) VALUES (?,?,?,?,?,?,?)', (
-        int(time.time()), actor, area, target, detail,
-        None if before is None else json.dumps(before, sort_keys=True), None if after is None else json.dumps(after, sort_keys=True)))
+    connection.run(qb.insert('evlet_audit', at=int(time.time()), actor=actor, area=area, target=target, detail=detail,
+                             before=None if before is None else json.dumps(before, sort_keys=True),
+                             after=None if after is None else json.dumps(after, sort_keys=True)))
 
 
 def bump(connection):
-    connection.execute('UPDATE evlet_config SET version=version+1 WHERE id=1')
-    return connection.execute('SELECT version FROM evlet_config WHERE id=1').fetchone()[0]
+    connection.run(qb.update('evlet_config', version=qb.col('version') + 1).where(id=1))
+    return connection.run(qb.select('evlet_config', 'version').where(id=1)).value()
 
 
 def grant(database_path, username, clear_allowlist=False):
@@ -137,34 +137,25 @@ def grant(database_path, username, clear_allowlist=False):
     """
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
-    connection = writes.connect(database_path, isolation_level=None)
-    try:
-        connection.execute('BEGIN IMMEDIATE')
-        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone():
+    with writes.shell_transaction(database_path) as connection:
+        if not connection.table_exists('evlet_users'):
             raise ValueError('This instance has no users yet. Open it in a browser to create the first admin.')
         ensure_schema(connection)
-        row = connection.execute('SELECT id, role, active FROM evlet_users WHERE username=?', (username.lower(),)).fetchone()
+        row = connection.run(qb.select('evlet_users', 'id', 'role', 'active').where(username=username.lower())).one()
         if row is None:
             raise ValueError(f'No user is named {username}.')
-        connection.execute("UPDATE evlet_users SET role='admin', active=1 WHERE id=?", (row[0],))
+        connection.run(qb.update('evlet_users', role='admin', active=1).where(id=row[0]))
         LocalAuth.end_sessions(connection, row[0], keys=True)
         audit(connection, 'cli', 'Users', username.lower(), 'Made an active admin from the server shell · Sessions, AI assistants and API keys ended',
               {'role': row[1], 'active': bool(row[2])}, {'role': 'admin', 'active': True})
         # An allowlist that shuts everyone out is cleared only when asked; routes.py stays as it is.
-        ips = connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key='security.controls_ips'").fetchone()
+        ips = connection.run(qb.select('evlet_overrides', 'value').where(kind='setting', key='security.controls_ips')).one()
         networks = json.loads(ips[0]) if ips is not None else []
         if ips is not None and clear_allowlist:
-            connection.execute("DELETE FROM evlet_overrides WHERE kind='setting' AND key='security.controls_ips'")
+            connection.run(qb.delete('evlet_overrides').where(kind='setting', key='security.controls_ips'))
             audit(connection, 'cli', 'Security', 'security.controls_ips', 'Allowed networks cleared from the server shell', networks, None)
         bump(connection)
-        connection.execute('COMMIT')
-        return networks if isinstance(networks, list) else []
-    except BaseException:
-        if connection.in_transaction:
-            connection.execute('ROLLBACK')
-        raise
-    finally:
-        connection.close()
+    return networks if isinstance(networks, list) else []
 
 
 def reset_two_step_from_shell(database_path, username):
@@ -172,25 +163,15 @@ def reset_two_step_from_shell(database_path, username):
     from .settings import reset_two_step
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
-    connection = writes.connect(database_path, isolation_level=None)
-    connection.row_factory = sqlite3.Row
-    try:
-        connection.execute('BEGIN IMMEDIATE')
+    with writes.shell_transaction(database_path) as connection:
         ensure_schema(connection)
-        row = connection.execute('SELECT id, username FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+        row = connection.run(qb.select('evlet_users', 'id', 'username').where(username=username.lower())).one() \
+            if connection.table_exists('evlet_users') else None
         if row is None:
             raise ValueError(f'No user is named {username}.')
-        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_user_profile'").fetchone():
+        if not connection.table_exists('evlet_user_profile'):
             raise ValueError(f'{username} has no two-step sign-in to reset.')
         reset_two_step(connection, 'cli', row['id'], row['username'])
-        connection.execute('COMMIT')
-    except BaseException:
-        if connection.in_transaction:
-            connection.execute('ROLLBACK')
-        raise
-    finally:
-        connection.close()
 
 
 def set_email_from_shell(database_path, username, email):
@@ -204,29 +185,19 @@ def set_email_from_shell(database_path, username, email):
         address = None
     if not address:
         raise ValueError(f'{email} is not a valid email address.')
-    connection = writes.connect(database_path, isolation_level=None)
-    connection.row_factory = sqlite3.Row
-    try:
-        connection.execute('BEGIN IMMEDIATE')
+    with writes.shell_transaction(database_path) as connection:
         ensure_schema(connection)
-        row = connection.execute('SELECT id, username FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+        row = connection.run(qb.select('evlet_users', 'id', 'username').where(username=username.lower())).one() \
+            if connection.table_exists('evlet_users') else None
         if row is None:
             raise ValueError(f'No user is named {username}.')
-        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_user_profile'").fetchone():
+        if not connection.table_exists('evlet_user_profile'):
             raise ValueError('This instance has no profiles yet. Start it once first.')
-        connection.execute('INSERT OR IGNORE INTO evlet_user_profile(user_id) VALUES (?)', (row['id'],))
-        before = connection.execute('SELECT email FROM evlet_user_profile WHERE user_id=?', (row['id'],)).fetchone()['email']
-        connection.execute('UPDATE evlet_user_profile SET email=? WHERE user_id=?', (address, row['id']))
-        connection.execute('DELETE FROM evlet_email_tokens WHERE user_id=?', (row['id'],))
+        connection.run(qb.insert('evlet_user_profile', user_id=row['id']).on_conflict().do_nothing())
+        before = connection.run(qb.select('evlet_user_profile', 'email').where(user_id=row['id'])).value()
+        connection.run(qb.update('evlet_user_profile', email=address).where(user_id=row['id']))
+        connection.run(qb.delete('evlet_email_tokens').where(user_id=row['id']))
         audit(connection, 'cli', 'Users', row['username'], 'Email set from the server shell', {'email': before or None}, {'email': address})
-        connection.execute('COMMIT')
-    except BaseException:
-        if connection.in_transaction:
-            connection.execute('ROLLBACK')
-        raise
-    finally:
-        connection.close()
     return address
 
 
@@ -237,17 +208,14 @@ def set_password_from_shell(database_path, username, password, file_minimum=15):
     from .auth import password_hash
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
-    connection = writes.connect(database_path, isolation_level=None)
-    connection.row_factory = sqlite3.Row
-    try:
-        connection.execute('BEGIN IMMEDIATE')
+    with writes.shell_transaction(database_path) as connection:
         ensure_schema(connection)
-        row = connection.execute('SELECT id, username, role FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+        row = connection.run(qb.select('evlet_users', 'id', 'username', 'role').where(username=username.lower())).one() \
+            if connection.table_exists('evlet_users') else None
         if row is None:
             raise ValueError(f'No user is named {username}.')
         minimum = file_minimum
-        stored = connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key='security.password_min'").fetchone()
+        stored = connection.run(qb.select('evlet_overrides', 'value').where(kind='setting', key='security.password_min')).one()
         if stored is not None and row['role'] != 'admin':
             value = json.loads(stored[0])
             minimum = value if type(value) is int and 1 <= value <= 64 else strictest('security.password_min', value, None, file_minimum)
@@ -255,16 +223,9 @@ def set_password_from_shell(database_path, username, password, file_minimum=15):
             encoded = password_hash(password, minimum=minimum)
         except ValidationError as exc:
             raise ValueError(exc.errors['password']) from None
-        connection.execute('UPDATE evlet_users SET password=? WHERE id=?', (encoded, row['id']))
+        connection.run(qb.update('evlet_users', password=encoded).where(id=row['id']))
         LocalAuth.end_sessions(connection, row['id'], keys=True)
         audit(connection, 'cli', 'Users', row['username'], 'Password set from the server shell. Sessions, AI assistants and API keys ended.')
-        connection.execute('COMMIT')
-    except BaseException:
-        if connection.in_transaction:
-            connection.execute('ROLLBACK')
-        raise
-    finally:
-        connection.close()
 
 
 def shell_address(environ):
@@ -392,8 +353,8 @@ class Controls:
             for role, base in self.file.roles.items():
                 if role not in (*ROLES, PORTAL):
                     app = self.app_roles.get(role, ('an installed',))[0]
-                    tx.connection.execute("INSERT OR IGNORE INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES (?,'custom',?,?,0,?)",
-                                          (role, base, 'portal' if base == PORTAL else 'desk', f'From the {app} app. Starts from {base}.'))
+                    tx.connection.run(qb.insert('evlet_roles', id=role, kind='custom', base=base, realm='portal' if base == PORTAL else 'desk',
+                                                opens_controls=0, description=f'From the {app} app. Starts from {base}.').on_conflict().do_nothing())
         self.ready = True
         self.refresh(force=True)
 
@@ -402,18 +363,19 @@ class Controls:
         if not self.ready:
             return
         with self.database._connection() as connection:
-            version = connection.execute('SELECT version FROM evlet_config WHERE id=1').fetchone()[0]
+            version = connection.run(qb.select('evlet_config', 'version').where(id=1)).value()
         if version == self.version and not force:
             return
         with self.lock:
             with self.database._connection() as connection:
-                connection.execute('BEGIN')
-                version = connection.execute('SELECT version FROM evlet_config WHERE id=1').fetchone()[0]
+                connection.snapshot()
+                version = connection.run(qb.select('evlet_config', 'version').where(id=1)).value()
                 if version == self.version and not force:
                     return
-                roles = {row['id']: dict(row) for row in connection.execute('SELECT * FROM evlet_roles')}
-                stored = [dict(row) for row in connection.execute('SELECT kind,key,value FROM evlet_overrides ORDER BY kind,key')]
-                fields = [(row[0], row[1], json.loads(row[2])) for row in connection.execute('SELECT model,name,definition FROM evlet_custom_fields ORDER BY created_at, name')]
+                roles = {row['id']: dict(row) for row in connection.run(qb.select('evlet_roles'))}
+                stored = [dict(row) for row in connection.run(qb.select('evlet_overrides', 'kind', 'key', 'value').order_by('kind', 'key'))]
+                fields = [(row[0], row[1], json.loads(row[2])) for row in connection.run(
+                    qb.select('evlet_custom_fields', 'model', 'name', 'definition').order_by('created_at', 'name'))]
             self.apply(version, roles, stored, fields)
 
     def apply(self, version, roles, stored, fields=()):
@@ -767,8 +729,9 @@ class Controls:
 
     def overrides(self):
         with self.database._connection() as connection:
-            stored = {(row['kind'], row['key']): row for row in connection.execute(
-                "SELECT o.*, u.username FROM evlet_overrides o LEFT JOIN evlet_users u ON u.id=o.changed_by WHERE o.kind <> 'workspace'")}
+            stored = {(row['kind'], row['key']): row for row in connection.run(
+                qb.select(qb.table('evlet_overrides', 'o'), qb.all_columns('o'), 'u.username')
+                .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('o.changed_by')), left=True).where(qb.ne('o.kind', 'workspace')))}
         items = []
         meta = lambda kind, key: {'changed_by': stored[kind, key]['username'], 'changed_at': stored[kind, key]['changed_at']} if (kind, key) in stored else {'changed_by': None, 'changed_at': None}
         value = lambda kind, key: json.loads(stored[kind, key]['value']) if (kind, key) in stored else None
@@ -788,7 +751,8 @@ class Controls:
             items.append({'kind': kind, 'key': key, 'file': file, 'value': value(kind, key), **meta(kind, key)})
         # Instance fields are listed for export; they are added and removed on the Models page.
         with self.database._connection() as connection:
-            rows = connection.execute('SELECT model, name, definition, created_by, created_at FROM evlet_custom_fields ORDER BY created_at, name').fetchall()
+            rows = connection.run(qb.select('evlet_custom_fields', 'model', 'name', 'definition', 'created_by', 'created_at')
+                                  .order_by('created_at', 'name')).all()
         tables = {self.registry.name_for(model): name for name, model in self.models().items()}
         for table in dict.fromkeys(row['model'] for row in rows if row['model'] in tables):
             mine = [row for row in rows if row['model'] == table]
@@ -824,15 +788,16 @@ class Controls:
         with self.database.transaction() as tx:
             connection = tx.connection
             for kind, key, value in checked:
-                row = connection.execute('SELECT value FROM evlet_overrides WHERE kind=? AND key=?', (kind, key)).fetchone()
+                row = connection.run(qb.select('evlet_overrides', 'value').where(kind=kind, key=key)).one()
                 before = None if row is None else json.loads(row['value'])
                 if before == value:
                     continue
                 if value is None:
-                    connection.execute('DELETE FROM evlet_overrides WHERE kind=? AND key=?', (kind, key))
+                    connection.run(qb.delete('evlet_overrides').where(kind=kind, key=key))
                 else:
-                    connection.execute('INSERT INTO evlet_overrides(kind,key,value,changed_by,changed_at) VALUES (?,?,?,?,?) ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, changed_by=excluded.changed_by, changed_at=excluded.changed_at',
-                                       (kind, key, json.dumps(value, sort_keys=True), user.id, now))
+                    connection.run(qb.insert('evlet_overrides', kind=kind, key=key, value=json.dumps(value, sort_keys=True), changed_by=user.id, changed_at=now)
+                                   .on_conflict('kind', 'key').do_update(value=qb.col('excluded.value'), changed_by=qb.col('excluded.changed_by'),
+                                                                         changed_at=qb.col('excluded.changed_at')))
                 schedule = SCHEDULE.fullmatch(key)
                 if schedule:
                     audit(connection, user.username, 'Jobs', schedule[1], 'Resumed' if value is None else 'Paused', before, value)
@@ -854,7 +819,7 @@ class Controls:
                     # Sessions keep their start: a shorter length ends the ones already older than it.
                     shorter = self.settings[key] - (self.files()[key] if value is None else value)
                     if shorter > 0:
-                        connection.execute('UPDATE evlet_sessions SET expires=expires-? WHERE expires>?', (shorter * 3600, now))
+                        connection.run(qb.update('evlet_sessions', expires=qb.col('expires') - shorter * 3600).where(qb.gt('expires', now)))
             version = self.publish(tx)
         self.refresh()
         for kind, key, value in checked:
@@ -893,14 +858,14 @@ class Controls:
             models.append({'name': self.registry.name_for(model), 'label': model.__name__, 'field': period.field,
                            'scope': None if scope is None else {'field': period.scope, 'model': self.registry.name_for(scope), 'label': scope.__name__}})
         with self.database._connection() as connection:
-            rows = connection.execute('SELECT p.scope, p.lock_date, p.changed_at, u.username FROM evlet_period_locks p '
-                                      'LEFT JOIN evlet_users u ON u.id=p.changed_by ORDER BY p.scope').fetchall()
-            history = [dict(row) for row in connection.execute("SELECT id,at,actor,target,detail,before,after FROM evlet_audit "
-                                                              "WHERE area='Periods' ORDER BY id DESC LIMIT 50")]
+            rows = connection.run(qb.select(qb.table('evlet_period_locks', 'p'), 'p.scope', 'p.lock_date', 'p.changed_at', 'u.username')
+                                  .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('p.changed_by')), left=True).order_by('p.scope')).all()
+            history = [dict(row) for row in connection.run(qb.select('evlet_audit', 'id', 'at', 'actor', 'target', 'detail', 'before', 'after')
+                                                           .where(area='Periods').order_by('-id').limit(50))]
             titles, scopes = {}, []
             for name, target in self.period_scopes().items():
                 title = 'title' if has_title(target) else None
-                records = connection.execute(f'SELECT id{", title" if title else ""} FROM {identifier(name)} ORDER BY id LIMIT 200').fetchall()
+                records = connection.run(qb.select(name, 'id', *(('title',) if title else ())).order_by('id').limit(200)).all()
                 choices = [{'id': str(row['id']), 'title': (row['title'] if title else None) or str(row['id'])} for row in records]
                 titles.update({f'{name}:{item["id"]}': item['title'] for item in choices})
                 scopes.append({'model': name, 'label': target.__name__, 'records': choices})
@@ -943,13 +908,14 @@ class Controls:
     def users(self, offset):
         page = self.business.auth.user_page(offset)
         with self.database._connection() as connection:
-            sessions = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_sessions WHERE expires>? GROUP BY user_id', (int(time.time()),))}
-            two_step = {row['user_id']: {'since': row['two_step_since'], 'agent': row['two_step_agent']} for row in connection.execute(
-                'SELECT user_id, two_step_since, two_step_agent FROM evlet_user_profile WHERE two_step_secret IS NOT NULL')}
-            assistants = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_mcp_clients WHERE revoked_at IS NULL GROUP BY user_id')}
-            keys = {row[0]: row[1] for row in connection.execute('SELECT user_id, count(*) FROM evlet_api_keys WHERE revoked_at IS NULL GROUP BY user_id')}
-            ai = {row['id']: (bool(row['allow_eva']), bool(row['allow_mcp'])) for row in connection.execute('SELECT id, allow_eva, allow_mcp FROM evlet_users')}
-            unset = {row[0] for row in connection.execute("SELECT id FROM evlet_users WHERE password=''")}
+            sessions = {row[0]: row[1] for row in connection.run(
+                qb.select('evlet_sessions', 'user_id', qb.count()).where(qb.gt('expires', int(time.time()))).group_by('user_id'))}
+            two_step = {row['user_id']: {'since': row['two_step_since'], 'agent': row['two_step_agent']} for row in connection.run(
+                qb.select('evlet_user_profile', 'user_id', 'two_step_since', 'two_step_agent').where(qb.not_null('two_step_secret')))}
+            assistants = {row[0]: row[1] for row in connection.run(qb.select('evlet_mcp_clients', 'user_id', qb.count()).where(revoked_at=None).group_by('user_id'))}
+            keys = {row[0]: row[1] for row in connection.run(qb.select('evlet_api_keys', 'user_id', qb.count()).where(revoked_at=None).group_by('user_id'))}
+            ai = {row['id']: (bool(row['allow_eva']), bool(row['allow_mcp'])) for row in connection.run(qb.select('evlet_users', 'id', 'allow_eva', 'allow_mcp'))}
+            unset = {row[0] for row in connection.run(qb.select('evlet_users', 'id').where(password=''))}
         for item in page['items']:
             # The built-in Administrator: its role and status cannot change (evlet/auth.py).
             item['builtin'] = is_administrator(item)
@@ -985,7 +951,7 @@ class Controls:
                 raise AccessError(403, ADMIN_ONLY)
             from .settings import reset_two_step
             with self.database.transaction() as tx:
-                row = tx.connection.execute('SELECT id, username FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+                row = tx.connection.run(qb.select('evlet_users', 'id', 'username').where(id=user_id)).one()
                 if row is None:
                     raise AccessError(404, 'Account not found')
                 reset_two_step(tx.connection, actor.username, row['id'], row['username'])
@@ -1010,7 +976,7 @@ class Controls:
             if 'sessions' in body:
                 details.append('Signed out everywhere')
             if revoke:
-                keys = connection.execute('SELECT count(*) FROM evlet_api_keys WHERE user_id=? AND revoked_at IS NULL', (row['id'],)).fetchone()[0]
+                keys = connection.run(qb.select('evlet_api_keys', qb.count()).where(user_id=row['id'], revoked_at=None)).value()
                 details.append(f'Revoked {keys} API key' + ('' if keys == 1 else 's'))
             before = {'role': row['role'], 'active': bool(row['active'])}
             after = {key: values[key] for key in ('role', 'active') if key in values}
@@ -1020,7 +986,7 @@ class Controls:
             self.business.auth.update_user(user_id, changes, check)
             return
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_users').where(id=user_id)).one()
             if row is None:
                 raise AccessError(404, 'Account not found')
             after = check(tx.connection, row, {})
@@ -1032,7 +998,7 @@ class Controls:
         if any(type(value) is not bool for value in body.values()):
             raise ValidationError({key: 'Use true or false' for key, value in body.items() if type(value) is not bool})
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT * FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_users').where(id=user_id)).one()
             if row is None:
                 raise AccessError(404, 'Account not found')
             if actor.role != 'admin' and row['role'] == 'admin':
@@ -1040,20 +1006,21 @@ class Controls:
             details = []
             for key, label in (('allow_eva', 'Allow Eva'), ('allow_mcp', 'Allow MCP')):
                 if key in body and body[key] != bool(row[key]):
-                    tx.connection.execute(f'UPDATE evlet_users SET {key}=? WHERE id=?', (int(body[key]), user_id))
+                    tx.connection.run(qb.update('evlet_users', **{key: int(body[key])}).where(id=user_id))
                     details.append(f"{label}: {'on' if body[key] else 'off'}")
             if body.get('allow_mcp') is False:
-                for client in tx.connection.execute('SELECT id FROM evlet_mcp_clients WHERE user_id=? AND revoked_at IS NULL', (user_id,)).fetchall():
+                for client in tx.connection.run(qb.select('evlet_mcp_clients', 'id').where(user_id=user_id, revoked_at=None)).all():
                     self.business.assistants.end(tx.connection, client[0])
-                tx.connection.execute('DELETE FROM evlet_oauth_codes WHERE user_id=?', (user_id,))
+                tx.connection.run(qb.delete('evlet_oauth_codes').where(user_id=user_id))
             if details:
                 audit(tx.connection, actor.username, 'Users', row['username'], ' · '.join(details),
                       {key: bool(row[key]) for key in body}, dict(body))
 
     def role_list(self):
         with self.database._connection() as connection:
-            counts = {row[0]: row[1] for row in connection.execute('SELECT role, count(*) FROM evlet_users GROUP BY role')}
-            rows = [dict(row) for row in connection.execute("SELECT * FROM evlet_roles ORDER BY kind DESC, CASE id WHEN 'admin' THEN 0 WHEN 'editor' THEN 1 WHEN 'viewer' THEN 2 ELSE 3 END, id")]
+            counts = {row[0]: row[1] for row in connection.run(qb.select('evlet_users', 'role', qb.count()).group_by('role'))}
+            framework_first = qb.when((qb.eq('id', 'admin'), 0), (qb.eq('id', 'editor'), 1), (qb.eq('id', 'viewer'), 2), otherwise=3)
+            rows = [dict(row) for row in connection.run(qb.select('evlet_roles').order_by('-kind', framework_first, 'id'))]
         return [{**row, 'opens_controls': bool(row['opens_controls'] or row['id'] == 'admin'),
                  'customize_workspaces': bool(row['customize_workspaces'] or row['id'] == 'admin'), 'users': counts.get(row['id'], 0),
                  'app': self.app_roles.get(row['id'], (None,))[0], 'declared': row['id'] in self.file.roles} for row in rows]
@@ -1074,10 +1041,10 @@ class Controls:
         if not isinstance(description, str) or len(description) > 200:
             raise ValidationError({'description': 'Use at most 200 characters.'})
         with self.database.transaction() as tx:
-            if role in RESERVED_ROLES or tx.connection.execute('SELECT 1 FROM evlet_roles WHERE id=?', (role,)).fetchone():
+            if role in RESERVED_ROLES or tx.connection.run(qb.select('evlet_roles', qb.value(1)).where(id=role)).one():
                 raise ValidationError({'id': 'That name is taken.'})
-            tx.connection.execute("INSERT INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES (?,'custom',?,?,0,?)",
-                                  (role, base, realm, description.strip() or f'Starts from {base}.'))
+            tx.connection.run(qb.insert('evlet_roles', id=role, kind='custom', base=base, realm=realm, opens_controls=0,
+                                        description=description.strip() or f'Starts from {base}.'))
             audit(tx.connection, actor.username, 'Roles', role, f'Created from {base}', None, {'base': base, 'realm': realm})
             self.publish(tx)
         self.refresh()
@@ -1094,7 +1061,7 @@ class Controls:
         if 'description' in body and (not isinstance(body['description'], str) or len(body['description']) > 200):
             raise ValidationError({'description': 'Use at most 200 characters.'})
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT * FROM evlet_roles WHERE id=?', (role,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_roles').where(id=role)).one()
             if row is None:
                 raise AccessError(404, 'Role not found')
             if actor.role != 'admin' and (any(flag in body for flag, _ in flags) or row['kind'] == 'framework'):
@@ -1106,10 +1073,10 @@ class Controls:
                         raise ValidationError({flag: refusals[flag][0]})
                     if row['realm'] != 'desk':
                         raise ValidationError({flag: refusals[flag][1]})
-                    tx.connection.execute(f'UPDATE evlet_roles SET {flag}=? WHERE id=?', (int(body[flag]), role))
+                    tx.connection.run(qb.update('evlet_roles', **{flag: int(body[flag])}).where(id=role))
                     details.append(f'{label}: ' + ('no → yes' if body[flag] else 'yes → no'))
             if 'description' in body and body['description'] != row['description']:
-                tx.connection.execute('UPDATE evlet_roles SET description=? WHERE id=?', (body['description'].strip(), role))
+                tx.connection.run(qb.update('evlet_roles', description=body['description'].strip()).where(id=role))
                 details.append('Description changed')
             if details:
                 audit(tx.connection, actor.username, 'Roles', role, ' · '.join(details))
@@ -1120,25 +1087,25 @@ class Controls:
         if actor.role != 'admin':
             raise AccessError(403, ADMIN_ONLY)
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT * FROM evlet_roles WHERE id=?', (role,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_roles').where(id=role)).one()
             if row is None:
                 raise AccessError(404, 'Role not found')
             if row['kind'] == 'framework':
                 raise AccessError(409, 'Framework roles cannot be deleted.')
             if role in self.file.roles:
                 raise AccessError(409, f"The {self.app_roles.get(role, ('installed',))[0]} app declares this role. Remove it from the app first.")
-            count = tx.connection.execute('SELECT count(*) FROM evlet_users WHERE role=?', (role,)).fetchone()[0]
+            count = tx.connection.run(qb.select('evlet_users', qb.count()).where(role=role)).value()
             if count:
                 raise AccessError(409, f"{count} {'user has' if count == 1 else 'users have'} the {role} role. Move them to another role first.")
-            removed = tx.connection.execute("DELETE FROM evlet_overrides WHERE kind='perm' AND key LIKE ? ESCAPE '\\'", (role.replace('_', '\\_') + '|%',)).rowcount
-            two_step = tx.connection.execute("SELECT value FROM evlet_overrides WHERE kind='setting' AND key='security.two_step_roles'").fetchone()
+            removed = tx.connection.run(qb.delete('evlet_overrides').where(qb.starts_with('key', role + '|'), kind='perm')).rowcount
+            two_step = tx.connection.run(qb.select('evlet_overrides', 'value').where(kind='setting', key='security.two_step_roles')).one()
             if two_step and role in json.loads(two_step['value']):
                 kept = [item for item in json.loads(two_step['value']) if item != role]
                 if kept == SETTINGS['security.two_step_roles']:
-                    tx.connection.execute("DELETE FROM evlet_overrides WHERE kind='setting' AND key='security.two_step_roles'")
+                    tx.connection.run(qb.delete('evlet_overrides').where(kind='setting', key='security.two_step_roles'))
                 else:
-                    tx.connection.execute("UPDATE evlet_overrides SET value=? WHERE kind='setting' AND key='security.two_step_roles'", (json.dumps(kept),))
-            tx.connection.execute('DELETE FROM evlet_roles WHERE id=?', (role,))
+                    tx.connection.run(qb.update('evlet_overrides', value=json.dumps(kept)).where(kind='setting', key='security.two_step_roles'))
+            tx.connection.run(qb.delete('evlet_roles').where(id=role))
             audit(tx.connection, actor.username, 'Roles', role, 'Deleted' + (f' with {removed} permission override{"s" if removed != 1 else ""}' if removed else ''),
                   {'base': row['base'], 'realm': row['realm']}, None)
             self.publish(tx)
@@ -1188,9 +1155,9 @@ class Controls:
         if len(name.strip()) > 60:
             raise ValidationError({'name': 'Use at most 60 characters.'})
         with self.database._connection() as connection:
-            owner = connection.execute('SELECT id, username, role, active FROM evlet_users WHERE username=?',
-                                       (actor.username if personal else str(body.get('user', '')).lower(),)).fetchone()
-            count = connection.execute('SELECT count(*) FROM evlet_api_keys WHERE user_id=? AND revoked_at IS NULL', (owner['id'] if owner else 0,)).fetchone()[0]
+            owner = connection.run(qb.select('evlet_users', 'id', 'username', 'role', 'active')
+                                   .where(username=actor.username if personal else str(body.get('user', '')).lower())).one()
+            count = connection.run(qb.select('evlet_api_keys', qb.count()).where(user_id=owner['id'] if owner else 0, revoked_at=None)).value()
         if owner is None or not owner['active']:
             raise ValidationError({'user': 'Choose an active user.'})
         if (self.roles.get(owner['role']) or {}).get('realm') != 'desk':
@@ -1244,9 +1211,9 @@ class Controls:
         except metadata.PackageNotFoundError:
             version = ''
         with self.database._connection() as connection:
-            overrides = connection.execute('SELECT count(*) FROM evlet_overrides').fetchone()[0]
-            active, total = connection.execute('SELECT sum(active), count(*) FROM evlet_users').fetchone()
-            recent = [dict(row) for row in connection.execute('SELECT id,at,actor,area,target,detail FROM evlet_audit ORDER BY id DESC LIMIT 5')]
+            overrides = connection.run(qb.select('evlet_overrides', qb.count())).value()
+            active, total = connection.run(qb.select('evlet_users', qb.sum('active'), qb.count())).one()
+            recent = [dict(row) for row in connection.run(qb.select('evlet_audit', 'id', 'at', 'actor', 'area', 'target', 'detail').order_by('-id').limit(5))]
         models = []
         for name, model in self.models().items():
             fields = model.__declared_fields__
@@ -1345,8 +1312,9 @@ class Controls:
         """Each workspace with its saved override and who changed it, and how it looks to this person without and with it."""
         workspaces = self.business.workspaces
         with self.database._connection() as connection:
-            stored = {row['key']: row for row in connection.execute(
-                "SELECT o.key, o.value, o.changed_at, u.username FROM evlet_overrides o LEFT JOIN evlet_users u ON u.id=o.changed_by WHERE o.kind='workspace'")}
+            stored = {row['key']: row for row in connection.run(
+                qb.select(qb.table('evlet_overrides', 'o'), 'o.key', 'o.value', 'o.changed_at', 'u.username')
+                .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('o.changed_by')), left=True).where(qb.eq('o.kind', 'workspace')))}
         schema = self.business.schema(user)
         declared = {entry['key']: entry for entry in workspaces.view(user, schema, overrides=False)}
         effective = {entry['key']: entry for entry in schema.get('workspaces', ())}
@@ -1369,13 +1337,13 @@ class Controls:
         if not custom and compiled['label'] is None and compiled['icon'] is None and not compiled['groups']:
             return self.reset_workspace(user, key, missing_ok=True)
         with self.database.transaction() as tx:
-            row = tx.connection.execute("SELECT value FROM evlet_overrides WHERE kind='workspace' AND key=?", (key,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_overrides', 'value').where(kind='workspace', key=key)).one()
             before = None if row is None else json.loads(row['value'])
             if before == stored:
                 return
-            tx.connection.execute('INSERT INTO evlet_overrides(kind,key,value,changed_by,changed_at) VALUES (?,?,?,?,?) ON CONFLICT(kind,key) DO UPDATE SET '
-                                  'value=excluded.value, changed_by=excluded.changed_by, changed_at=excluded.changed_at',
-                                  ('workspace', key, json.dumps(stored, sort_keys=True), user.id, int(time.time())))
+            tx.connection.run(qb.insert('evlet_overrides', kind='workspace', key=key, value=json.dumps(stored, sort_keys=True), changed_by=user.id,
+                                        changed_at=int(time.time())).on_conflict('kind', 'key').do_update(
+                value=qb.col('excluded.value'), changed_by=qb.col('excluded.changed_by'), changed_at=qb.col('excluded.changed_at')))
             audit(tx.connection, user.username, 'Workspaces', key, 'Added' if custom and before is None else 'Changed', before, stored)
             self.publish(tx)
         self.refresh()
@@ -1383,13 +1351,13 @@ class Controls:
     def reset_workspace(self, user, key, *, missing_ok=False):
         workspaces = self.business.workspaces
         with self.database.transaction() as tx:
-            row = tx.connection.execute("SELECT value FROM evlet_overrides WHERE kind='workspace' AND key=?", (key,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_overrides', 'value').where(kind='workspace', key=key)).one()
             if row is None:
                 if missing_ok or any(plan['key'] == key for plan in workspaces.plans):
                     return
                 raise AccessError(404, 'No workspace has this key')
             before = json.loads(row['value'])
-            tx.connection.execute("DELETE FROM evlet_overrides WHERE kind='workspace' AND key=?", (key,))
+            tx.connection.run(qb.delete('evlet_overrides').where(kind='workspace', key=key))
             audit(tx.connection, user.username, 'Workspaces', key, 'Removed' if before.get('custom') else 'Reset to the declared workspace', before, None)
             self.publish(tx)
         self.refresh()

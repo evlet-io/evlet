@@ -9,7 +9,9 @@ from decimal import Decimal
 from uuid import uuid4
 
 from .identity import RecordId, new_id, sequential
-from .models import ValidationError, identifier
+from .models import ValidationError
+from . import qb
+from .adapter import Column, TableDefinition
 
 STORE = 'evlet_sections'
 LABEL_LENGTH = 200
@@ -175,9 +177,10 @@ def sums(rows, fields):
 # Storage
 
 def create_store(connection):
-    connection.execute(f'CREATE TABLE IF NOT EXISTS {STORE} (id INTEGER PRIMARY KEY, collection TEXT NOT NULL, '
-                       'owner INTEGER NOT NULL, position INTEGER NOT NULL, label TEXT NOT NULL)')
-    connection.execute(f'CREATE INDEX IF NOT EXISTS {STORE}_owner ON {STORE} (collection, owner, position)')
+    connection.ensure_table(TableDefinition(STORE, (
+        Column('id', 'INTEGER', primary=True), Column('collection', 'TEXT', required=True), Column('owner', 'INTEGER', required=True),
+        Column('position', 'INTEGER', required=True), Column('label', 'TEXT', required=True))))
+    connection.ensure_index(f'{STORE}_owner', STORE, ('collection', 'owner', 'position'))
 
 
 def store_name(registry, child_model):
@@ -192,23 +195,22 @@ def load(tx, child, owner_ids):
     collection, ids, result = store_name(tx.registry, child.model), list(dict.fromkeys(owner_ids)), {}
     for start in range(0, len(ids), CHUNK):
         part = ids[start:start + CHUNK]
-        for row in tx.connection.execute(
-                f'SELECT id, owner, position, label FROM {STORE} WHERE collection = ? AND owner IN ({", ".join("?" for _ in part)}) '
-                'ORDER BY owner, position, id', [collection, *part]).fetchall():
+        query = qb.select(STORE, 'id', 'owner', 'position', 'label').where(qb.in_('owner', part), collection=collection)
+        for row in tx.connection.run(query.order_by('owner', 'position', 'id')):
             result.setdefault(RecordId(row[1]), []).append(SectionRow(row[3], id=RecordId(row[0]), position=row[2]))
     return result
 
 
 def _new_id(tx, child):
     """A section id no row of the same table has, so ids in a Table's rows never clash."""
-    table = identifier(store_name(tx.registry, child.model))
+    table = store_name(tx.registry, child.model)
     for _ in range(8):
         if sequential():
-            last = tx.connection.execute(f'SELECT max(id) FROM {STORE}').fetchone()[0]
+            last = tx.connection.run(qb.select(STORE, qb.max('id'))).value()
             candidate = RecordId(max(int(last or 0), 2**40) + 1)
         else:
             candidate = new_id()
-        if tx.connection.execute(f'SELECT 1 FROM {table} WHERE id = ?', (candidate,)).fetchone() is None:
+        if tx.connection.run(qb.select(table, 'id').where(id=candidate)).one() is None:
             return candidate
     raise ValidationError({child.name: 'Could not find a free section id'})
 
@@ -247,23 +249,20 @@ def persist(context, child, owner_id, old, new, keys, old_rows=(), new_rows=()):
     removed = [item.id for item in old if item.id not in kept]
     if removed:
         policy.require(user, child.model, 'delete')
-        tx.connection.execute(f'DELETE FROM {STORE} WHERE collection = ? AND id IN ({", ".join("?" for _ in removed)})',
-                              [collection, *removed])
+        tx.connection.run(qb.delete(STORE).where(qb.in_('id', removed), collection=collection))
     for item in new:
         position = item._values['evlet_position']
         if item.id is None:
             policy.require(user, child.model, 'create')
             item.id = _new_id(tx, child)
-            tx.connection.execute(f'INSERT INTO {STORE} (id, collection, owner, position, label) VALUES (?, ?, ?, ?, ?)',
-                                  (item.id, collection, owner_id, position, item.label))
+            tx.connection.run(qb.insert(STORE, id=item.id, collection=collection, owner=owner_id, position=position, label=item.label))
             keys[item.key] = item.id
             continue
         previous = before[item.id]
         if previous.label != item.label or previous._values['evlet_position'] != position and item._placed:
             policy.require(user, child.model, 'update')
         if previous.label != item.label or previous._values['evlet_position'] != position:
-            tx.connection.execute(f'UPDATE {STORE} SET label = ?, position = ? WHERE collection = ? AND id = ?',
-                                  (item.label, position, collection, item.id))
+            tx.connection.run(qb.update(STORE, label=item.label, position=position).where(collection=collection, id=item.id))
     return changes(old, new, old_rows, new_rows)
 
 
@@ -276,8 +275,7 @@ def forget(connection, registry, model, ids):
         return
     for start in range(0, len(ids), CHUNK):
         part = ids[start:start + CHUNK]
-        connection.execute(f'DELETE FROM {STORE} WHERE collection IN ({", ".join("?" for _ in names)}) '
-                           f'AND owner IN ({", ".join("?" for _ in part)})', [*names, *part])
+        connection.run(qb.delete(STORE).where(qb.in_('collection', names), qb.in_('owner', part)))
 
 
 def signature(draft):

@@ -39,14 +39,6 @@ def main():
     if available():
         raise RuntimeError('Clean wheel check unexpectedly has the optional print extra')
 
-    from evlet import PostgreSQLDatabase
-    try:
-        PostgreSQLDatabase('dbname=unused', Registry())
-    except RuntimeError as exc:
-        assert 'evlet[postgres]' in str(exc)
-    else:
-        raise RuntimeError('Clean wheel check unexpectedly has the optional PostgreSQL driver')
-
     class Product(Model):
         title = Text(required=True)
         price = Currency(required=True)

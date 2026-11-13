@@ -1,4 +1,4 @@
-"""Set-based work in trusted sessions: paged aggregates and long `in` lists, on real SQLite and PostgreSQL.
+"""Set-based work in trusted sessions: paged aggregates and long `in` lists, on real SQLite.
 The HTTP and permission-aware limits (100 values per `in`, 500 groups per aggregate) stay as they were."""
 
 from datetime import date, timedelta
@@ -10,9 +10,7 @@ import pytest
 
 from evlet import Boolean, Count, Database, Date, Integer, Link, Model, Month, Registry, Rule, Select, Sum, Text, ValidationError, Year
 from evlet.auth import User
-from evlet.postgres import PostgreSQLDatabase
 from test_indexes import build
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 
@@ -35,12 +33,10 @@ class Entry(Model):
         ledger = True
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def app(request, tmp_path):
+@pytest.fixture
+def app(tmp_path):
     registry = Registry(Account, Entry)
-    if request.param == 'sqlite':
-        return build(Database(tmp_path / 'batches.sqlite3', registry))
-    return build(PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry))
+    return build(Database(tmp_path / 'batches.sqlite3', registry))
 
 
 def accounts(database, count):

@@ -1,19 +1,6 @@
 """The Playground's reports run through the report routes with the caller's permissions."""
 
-import pytest
-
-import test_business
-import test_postgres
-from test_business import client, hashed  # noqa: F401
-from test_postgres import pg_dsn  # noqa: F401 - fixture
-
-
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def secured(request, tmp_path, monkeypatch, hashed):
-    """The Playground on SQLite, and on PostgreSQL when CI provides one."""
-    if request.param == 'sqlite':
-        return test_business.secured.__wrapped__(tmp_path, monkeypatch, hashed)
-    return test_postgres.secured.__wrapped__(request.getfixturevalue('pg_dsn'), hashed)
+from test_business import client, hashed, secured  # noqa: F401 - fixtures
 
 
 def seed(api):

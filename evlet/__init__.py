@@ -54,10 +54,6 @@ from .eva import AI
 
 __all__ += ["AI", "ConnectorError", "HTTPClient", "MCPServer"]
 
-from .postgres import PostgreSQLDatabase
-
-__all__ += ["PostgreSQLDatabase"]
-
 from .ui.application import App
 from .ui.metadata import Html, Main, Section
 
@@ -126,4 +122,8 @@ def __getattr__(name):
     if name == 'Tab':
         raise ImportError('evlet.Tab was removed: record pages have no tabs. Use Main(fields, *tables) first in '
                           'Meta.layout and Section(...) after it')
+    # Removed in 0.4.5 (docs/database-adapters.md).
+    if name == 'PostgreSQLDatabase':
+        from .database import POSTGRESQL_REMOVED
+        raise ImportError(POSTGRESQL_REMOVED)
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')

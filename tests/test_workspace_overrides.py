@@ -1,5 +1,5 @@
 """Site workspace overrides (Controls): every kind of change and reset, the audit log, who may change them, and
-that permission filtering still applies after them. On real SQLite and PostgreSQL."""
+that permission filtering still applies after them. On real SQLite."""
 
 import json
 import sqlite3
@@ -8,21 +8,17 @@ import pytest
 
 from evlet import Database, Registry
 from evlet.controls import ensure_schema
-from evlet.postgres import PostgreSQLDatabase
+from evlet.sqlite import SQLiteConnection
 from test_business import PASSWORD, client
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 from test_workspaces import MODELS, build, shape
 
 ROUTE = '/api/_controls/workspaces'
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def app(request, tmp_path):
+@pytest.fixture
+def app(tmp_path):
     registry = Registry(*MODELS)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'overrides.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'overrides.sqlite3', registry)
     app = build(database)
     admin = client(app)
     # planner: an editor-based role that may customize workspaces; clerk: the same role without it.
@@ -238,7 +234,7 @@ def test_a_stored_override_that_no_longer_applies_fails_closed(tmp_path):
 
 
 def test_a_table_made_before_workspaces_takes_their_kind(tmp_path):
-    connection = sqlite3.connect(tmp_path / 'old.sqlite3', isolation_level=None)
+    connection = sqlite3.connect(tmp_path / 'old.sqlite3', isolation_level=None, factory=SQLiteConnection)
     connection.execute("CREATE TABLE evlet_overrides (kind TEXT NOT NULL CHECK(kind IN ('perm','field','custom','layout','list','naming','setting')), "
                        'key TEXT NOT NULL, value TEXT NOT NULL, changed_by INTEGER, changed_at INTEGER, PRIMARY KEY (kind, key))')
     connection.execute("INSERT INTO evlet_overrides VALUES ('setting','security.lockout','4',1,2)")
@@ -249,18 +245,3 @@ def test_a_table_made_before_workspaces_takes_their_kind(tmp_path):
         ('setting', 'security.lockout', '4', 1, 2), ('workspace', 'sales', '{}', 1, 2)]
     with pytest.raises(sqlite3.IntegrityError):
         connection.execute("INSERT INTO evlet_overrides VALUES ('other','x','{}',1,2)")
-
-
-def test_a_postgresql_table_made_before_workspaces_takes_their_kind(pg_dsn):
-    app = build(PostgreSQLDatabase(pg_dsn, Registry(*MODELS)))
-    with app.database.transaction() as tx:
-        tx.connection.execute('ALTER TABLE evlet_overrides DROP CONSTRAINT evlet_overrides_kind_check')
-        tx.connection.execute("ALTER TABLE evlet_overrides ADD CONSTRAINT evlet_overrides_kind_check "
-                              "CHECK(kind IN ('perm','field','custom','layout','list','naming','setting'))")
-    with app.database.transaction() as tx:
-        ensure_schema(tx.connection)
-        ensure_schema(tx.connection)
-        tx.connection.execute("INSERT INTO evlet_overrides(kind,key,value) VALUES ('workspace','sales','{}')")
-    with pytest.raises(Exception, match='constraint was violated'):
-        with app.database.transaction() as tx:
-            tx.connection.execute("INSERT INTO evlet_overrides(kind,key,value) VALUES ('other','x','{}')")

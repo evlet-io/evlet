@@ -37,8 +37,7 @@ State, so this changes nothing for valid models today, but the rule names both).
 
 ## Storage
 
-Entries live in one table, created at startup when any model journals, on SQLite and
-PostgreSQL:
+Entries live in one table, created at startup when any model journals:
 
 ```
 evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash)
@@ -55,11 +54,11 @@ evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash)
 * `data` is canonical JSON (sorted keys, no spaces).
 * `prev_hash` and `hash` are set only with `tamper_evident=True`.
 
-Database triggers refuse `UPDATE` and `DELETE` on the table (and `TRUNCATE` on PostgreSQL),
+Database triggers refuse `UPDATE` and `DELETE` on the table,
 so even raw SQL in trusted code cannot change an entry by mistake. On SQLite a third trigger
 refuses an insert that reuses an existing id, because `INSERT OR REPLACE` deletes the old row
-without firing DELETE triggers. The triggers are created with `IF NOT EXISTS` (or checked by
-name on PostgreSQL) at every start, so an older database gets new ones. The table is not a
+without firing DELETE triggers. The triggers are created with `IF NOT EXISTS`
+at every start, so an older database gets new ones. The table is not a
 model: no `Session`, HTTP route, connector or MCP tool can write or change it. Someone with
 direct database access can still drop the triggers; see "Tamper evidence".
 
@@ -334,7 +333,7 @@ so the command knows them without loading the apps.
 
 The command reads one instance's SQLite database. If the database uses WAL and its shared
 memory file cannot be created read only, it opens the database normally with
-`PRAGMA query_only`, which still refuses every write. For a PostgreSQL database, or a tenant
+`PRAGMA query_only`, which still refuses every write. For a tenant
 database of a `TenantRegistry`, call `evlet.journal.verify(database)` from Python with that
 database; it returns `(entries checked, breaks)` and also uses the registry's declarations.
 

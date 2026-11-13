@@ -274,7 +274,7 @@ evlet_two_step_tickets(token_hash PRIMARY KEY, user_id, realm, expires, attempts
 ```
 
 `evlet_sessions` also records when each session started, its browser and when it finished
-two-step sign-in. SQLite and PostgreSQL both create these tables on start.
+two-step sign-in. Evlet creates these tables on start.
 
 ## Not built yet
 

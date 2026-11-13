@@ -18,6 +18,7 @@ from datetime import datetime, timedelta, timezone
 import itertools
 
 from .identity import EPOCH_MS, RANDOM_BITS
+from . import qb
 
 COLUMNS = ('evlet_created_at', 'evlet_created_by', 'evlet_modified_at', 'evlet_modified_by')
 MODIFIED = COLUMNS[2:]
@@ -64,8 +65,7 @@ def modified(actor):
 
 def touch(connection, table, record_id, actor):
     """Mark a record changed by a write that sets its columns directly (void, unpost)."""
-    connection.execute(f'UPDATE {table} SET "evlet_modified_at" = ?, "evlet_modified_by" = ? WHERE "id" = ?',
-                       (now(), actor, record_id))
+    connection.run(qb.update(table, evlet_modified_at=now(), evlet_modified_by=actor).where(id=record_id))
 
 
 def id_time(record_id):
@@ -76,57 +76,39 @@ def id_time(record_id):
     return datetime.fromtimestamp((EPOCH_MS + millis) / 1000, timezone.utc).strftime('%Y-%m-%dT%H:%M:%S.%f')[:-3] + 'Z'
 
 
-def _present(connection, postgres, table):
-    from .models import identifier
-    if postgres:
-        return {row[0] for row in connection.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?", (table,))}
-    return {row[1] for row in connection.execute(f'PRAGMA table_info({identifier(table)})')}
+def columns():
+    """The four columns, as adapter Columns for CREATE TABLE and ADD COLUMN: times as text, users as integers."""
+    from .adapter import Column
+    return [Column(name, 'TEXT' if name.endswith('_at') else 'INTEGER') for name in COLUMNS]
 
 
-def column_sql(postgres):
-    """The column definitions for CREATE TABLE."""
-    number = 'BIGINT' if postgres else 'INTEGER'
-    return [f'"{name}" {"TEXT" if name.endswith("_at") else number}' for name in COLUMNS]
-
-
-def add_columns(connection, postgres, table):
+def add_columns(connection, table):
     """Give an existing table the four columns and fill them, once. Idempotent; returns whether it added them."""
-    from .models import identifier
-    present = _present(connection, postgres, table)
+    present = set(connection.columns(table))
     if set(COLUMNS) <= present:
         return False
-    for name, sql in zip(COLUMNS, column_sql(postgres)):
-        if name not in present:
-            connection.execute(f'ALTER TABLE {identifier(table)} ADD COLUMN {sql}')
-    backfill(connection, postgres, table)
+    for column in columns():
+        if column.name not in present:
+            connection.add_column(table, column)
+    backfill(connection, table)
     return True
 
 
-def _journal(connection, postgres):
-    if postgres:
-        return connection.execute("SELECT to_regclass('evlet_journal') IS NOT NULL").fetchone()[0]
-    return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_journal'").fetchone() is not None
-
-
-def backfill(connection, postgres, table):
+def backfill(connection, table):
     """Fill rows that have no times: from the record's Journal where it has one (the first and the last
     entry that changed the record, with their actors), otherwise from the time in the id with no actor.
     Rows whose id holds no time (made before time-ordered ids) stay empty."""
-    from .models import identifier
-    quoted = identifier(table)
     found = {}
-    if _journal(connection, postgres):
-        kinds = ', '.join('?' for _ in CHANGES)
-        for row in connection.execute(f'SELECT record_id, actor, at FROM evlet_journal WHERE model=? AND kind IN ({kinds}) ORDER BY id',
-                                      (table, *CHANGES)):
+    if connection.table_exists('evlet_journal'):
+        entries = qb.select('evlet_journal', 'record_id', 'actor', 'at').where(qb.in_('kind', CHANGES), model=table).order_by('id')
+        for row in connection.run(entries):
             actor = None if row[1] == ENGINE else int(row[1])
             first = found.get(row[0])
             found[row[0]] = (first[0], first[1], row[2], actor) if first else (row[2], actor, row[2], actor)
     last = 0
     while True:
-        ids = [row[0] for row in connection.execute(
-            f'SELECT "id" FROM {quoted} WHERE "evlet_created_at" IS NULL AND "id" > ? ORDER BY "id" LIMIT 500', (last,))]
+        ids = [row[0] for row in connection.run(
+            qb.select(table, 'id').where(qb.is_null('evlet_created_at'), qb.gt('id', last)).order_by('id').limit(500))]
         if not ids:
             return
         last = ids[-1]
@@ -138,9 +120,9 @@ def backfill(connection, postgres, table):
                 values = None if at is None else (at, None, at, None)
             if values is not None:
                 updates.append((*values, record_id))
-        if updates:
-            connection.executemany(f'UPDATE {quoted} SET "evlet_created_at" = ?, "evlet_created_by" = ?, '
-                                   '"evlet_modified_at" = ?, "evlet_modified_by" = ? WHERE "id" = ?', updates)
+        for created_at, created_by, modified_at, modified_by, record_id in updates:
+            connection.run(qb.update(table, evlet_created_at=created_at, evlet_created_by=created_by, evlet_modified_at=modified_at,
+                                     evlet_modified_by=modified_by).where(id=record_id))
 
 
 def detail(business, tx, user, record):
@@ -158,9 +140,11 @@ def detail(business, tx, user, record):
     names = tx.__dict__.setdefault('_audit_names', {})
     ids = sorted({value for value in (created_by, modified_by) if value is not None} - names.keys())
     if ids:
-        names.update({row[0]: row[1] or row[2] for row in tx.connection.execute(
-            'SELECT u.id, COALESCE(NULLIF(p.short_name, \'\'), NULLIF(p.full_name, \'\')), u.username FROM evlet_users u '
-            f'LEFT JOIN evlet_user_profile p ON p.user_id = u.id WHERE u.id IN ({", ".join("?" for _ in ids)})', ids)})
+        people = (qb.select(qb.table('evlet_users', 'u'), 'u.id', qb.coalesce(qb.nullif('p.short_name', ''), qb.nullif('p.full_name', '')),
+                            'u.username')
+                  .join(qb.table('evlet_user_profile', 'p'), qb.eq('p.user_id', qb.col('u.id')), left=True)
+                  .where(qb.in_('u.id', ids)))
+        names.update({row[0]: row[1] or row[2] for row in tx.connection.run(people)})
     for key, value in (('created_by', created_by), ('modified_by', modified_by)):
         if value in names:
             result[key] = {'id': value, 'name': names[value]}

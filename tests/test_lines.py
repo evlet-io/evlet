@@ -1,15 +1,14 @@
-"""Owned tables (Table): row limits, row changes, paging and bounded SQL, on real SQLite and PostgreSQL."""
+"""Owned tables (Table): row limits, row changes, paging and bounded SQL, on real SQLite."""
 
 from contextlib import contextmanager
 
 import pytest
 
-from evlet import (Application, Database, PostgreSQLDatabase, LocalAuth, Registry, Model, Child, Table, Decimal, Currency,
+from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency,
                    Integer, Text, Link, Rule, ValidationError)
 from evlet.business import ChildTable
 from evlet.calc import CalcError, Document, check_plan, fingerprint, round
 from test_business import http, client, PASSWORD
-from test_postgres import pg_dsn  # noqa: F401  (fixture)
 from finite_fixtures import FiniteMeta
 
 FULL = Rule(('read', 'create', 'update', 'delete'))
@@ -74,13 +73,10 @@ def build(database, **options):
     return app
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def make_app(request, tmp_path):
+@pytest.fixture
+def make_app(tmp_path):
     def make(*models, counting=False, **options):
-        if request.param == 'sqlite':
-            return build((Counting if counting else Database)(tmp_path / 'lines.sqlite3', Registry(*models)), **options)
-        return build(PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), Registry(*models)), **options)
-    make.backend = request.param
+        return build((Counting if counting else Database)(tmp_path / 'lines.sqlite3', Registry(*models)), **options)
     return make
 
 
@@ -179,8 +175,7 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     (status, detail, headers), statements = counted(c, 'GET', url)
     assert status == 200 and len(detail['children']['lines']) == 100 and detail['children']['lines'][0]['product'] == product
     assert detail['children_pages']['lines']['total'] == 1000
-    if make_app.backend == 'sqlite':
-        assert statements <= 13, statements  # 607 for 100 rows before batching; one reads the config version, one names who wrote it, one claims the write lock of the main file only.
+    assert statements <= 13, statements  # 607 for 100 rows before batching; one reads the config version, one names who wrote it, one claims the write lock of the main file only.
 
     status, rows, _ = page(c, url, limit=100, offset=900)
     assert status == 200 and rows['total'] == 1000 and (rows['limit'], rows['offset']) == (100, 900)
@@ -190,18 +185,16 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
 
     (status, saved, _), statements = counted(c, 'PATCH', url, {'title': 'renamed'}, headers={b'if-match': headers[b'etag']})
     assert status == 200 and saved['title'] == 'renamed' and saved['total'] == '2500.00'
-    if make_app.backend == 'sqlite':
-        # 2,021 for 100 rows before batching; two of these open and release the operation savepoint,
-        # one names who created and changed the record, and one removes the saver's unsaved changes
-        # (evlet/unsaved.py).
-        assert statements <= 37, statements  # one claims the write lock of the main file only
+    # 2,021 for 100 rows before batching; two of these open and release the operation savepoint,
+    # one names who created and changed the record, and one removes the saver's unsaved changes
+    # (evlet/unsaved.py).
+    assert statements <= 37, statements  # one claims the write lock of the main file only
 
     last = order['_row_ids']['l999']
     headers = {b'if-match': c('GET', url)[2][b'etag']}
     (status, saved, _), statements = counted(c, 'PATCH', url, {'children': {'lines': {'update': [{'id': last, 'qty': '3'}]}}}, headers=headers)
     assert status == 200 and saved['total'] == '2505.00' and saved['line_count'] == 1000
-    if make_app.backend == 'sqlite':
-        assert statements <= 39, statements  # one claims the write lock of the main file only
+    assert statements <= 39, statements  # one claims the write lock of the main file only
     assert page(c, url, limit=1, offset=999)[1]['items'][0]['qty'] == '3.0000'
 
     status, error, _ = edit(c, url, {'children': {'lines': {'create': [{'qty': '1'}]}}})
@@ -218,12 +211,10 @@ def test_nested_rows_load_with_a_bounded_statement_count(make_app):
     (status, detail, headers), statements = counted(c, 'GET', url)
     assert status == 200 and len(detail['children']['lines']) == 100 and 'children_pages' not in detail
     assert all(len(line['children']['parts']) == 9 and line['hours'] == '9.0000' for line in detail['children']['lines'])
-    if make_app.backend == 'sqlite':
-        assert statements <= 11, statements  # 2,407 before batching; one claims the write lock of the main file only.
+    assert statements <= 11, statements  # 2,407 before batching; one claims the write lock of the main file only.
     (status, saved, _), statements = counted(c, 'PATCH', url, {'title': 'nested'}, headers={b'if-match': headers[b'etag']})
     assert status == 200, saved
-    if make_app.backend == 'sqlite':
-        assert statements <= 33, statements  # 9,221 before batching; one claims the write lock of the main file only.
+    assert statements <= 33, statements  # 9,221 before batching; one claims the write lock of the main file only.
     first = detail['children']['lines'][0]
     status, parts, _ = page(c, url, f"lines/{first['id']}/parts", limit=5)
     assert status == 200 and parts['total'] == 9 and [part['id'] for part in parts['items']] == [part['id'] for part in first['children']['parts'][:5]]

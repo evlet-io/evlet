@@ -15,7 +15,7 @@ from evlet.instances import database_state, read_lock
 from test_cli_lifecycle import environment_stub, project, runtime  # noqa: F401
 
 
-def move_calls(connection, postgres):
+def move_calls(connection):
     # The shape of a real non-additive change: copy rows to a new table, then drop the old one.
     connection.execute('CREATE TABLE IF NOT EXISTS evlet_moved_calls (id INTEGER PRIMARY KEY, tool TEXT NOT NULL)')
     if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_legacy_calls'").fetchone():
@@ -23,7 +23,7 @@ def move_calls(connection, postgres):
         connection.execute('DROP TABLE evlet_legacy_calls')
 
 
-def broken_move(connection, postgres):
+def broken_move(connection):
     connection.execute('DROP TABLE evlet_legacy_calls')
     raise RuntimeError('simulated framework step failure')
 
@@ -219,7 +219,7 @@ def test_tool_calls_step_copes_with_missing_mcp_tables(tmp_path):
         assert connection.execute('SELECT count(*) FROM evlet_tool_calls').fetchone()[0] == 0
 
 
-def slow_step(connection, postgres):
+def slow_step(connection):
     time.sleep(0.3)
 
 

@@ -6,10 +6,11 @@ from dataclasses import dataclass
 from types import MappingProxyType, SimpleNamespace
 
 from .auth import AccessError, PORTAL, PUBLIC, ROLES, is_administrator
+from . import qb
 from .identity import RecordId
 from .naming import title_sources
 from .fields import Link, Reference
-from .models import Model, ValidationError, identifier, refuse_id
+from .models import Model, ValidationError, refuse_id
 from .query import Condition, SqlQuery, child_tables, conditions
 
 
@@ -195,38 +196,28 @@ def team_target(registry, model, team):
 
 
 def scope_condition(registry, model, condition):
-    """SQL for what a row scope returned, over the alias "record": (clause, values), or (None, []) for every row.
+    """A query builder condition (evlet/qb.py) over the alias "record" for what a row scope returned;
+    qb.always() is true of it when the scope lets every row through.
 
     A filter object combines its filters with AND, AnyOf its conditions with OR, and Team selects the
-    hierarchy with a recursive query from the linked records, which UNION stops at a cycle.
+    hierarchy below the linked records (qb.in_tree).
     """
     if isinstance(condition, dict):
-        where, values = SqlQuery(registry, model).where(condition)
-        return (f'({where.removeprefix(" WHERE ")})' if where else None), values
+        return SqlQuery(registry, model).where(condition)
     if isinstance(condition, AnyOf):
-        clauses, values = [], []
+        clauses = []
         for item in condition.conditions:
-            clause, more = scope_condition(registry, model, item)
-            if clause is None:
-                return None, []
+            clause = scope_condition(registry, model, item)
+            if qb.always(clause):
+                return qb.TRUE
             clauses.append(clause)
-            values += more
-        return ('(' + ' OR '.join(clauses) + ')') if clauses else '1=0', values
+        return qb.or_(*clauses)
     if isinstance(condition, Team):
         target = team_target(registry, model, (condition.hierarchy, condition.field))
         name = registry.name_for(target)
         roots = sorted({record_id for linked, record_id in condition.links if linked == name})
-        if not roots:
-            return '1=0', []
         column, _ = SqlQuery(registry, model).reference(condition.field)
-        table, parent = identifier(name), identifier(condition.hierarchy.parent)
-        marks = ', '.join('?' for _ in roots)
-        start = f'SELECT id FROM {table} WHERE id IN ({marks})' if condition.include_self else f'SELECT id FROM {table} WHERE {parent} IN ({marks})'
-        # The range join cannot be hashed, so PostgreSQL walks the parent index level by level instead of
-        # scanning the table at each level (it guesses ten rows per level); SQLite plans both forms alike.
-        return (f'{column} IN (WITH RECURSIVE evlet_team(id) AS ({start} UNION SELECT below.id FROM evlet_team '
-                f'JOIN {table} AS below ON below.{parent} >= evlet_team.id AND below.{parent} <= evlet_team.id) '
-                f'SELECT id FROM evlet_team)'), roots
+        return qb.in_tree(column, name, condition.hierarchy.parent, roots, include_roots=condition.include_self)
     raise ValueError('Row scope must return a filter object')
 
 
@@ -569,23 +560,21 @@ class Policy:
             return False
         return self.expression_allowed(user, model, name)
 
-    def scope_sql(self, user, model):
+    def scope(self, user, model):
+        """The user's row scope on model as a query builder condition over the alias "record"."""
         rule = self.rule(user, model)
         if rule.scope is None:
-            return '', []
-        clause, values = scope_condition(self.registry, model, rule.scope(user))
-        return (' WHERE ' + clause if clause else ''), values
+            return qb.TRUE
+        return scope_condition(self.registry, model, rule.scope(user))
 
     def record(self, tx, user, model, record_id, operation='read'):
         self.require(user, model, operation)
-        where, values = self.scope_sql(user, model)
-        table = identifier(self.registry.name_for(model))
-        sql = f'SELECT 1 FROM {table} AS record{where} {"AND" if where else "WHERE"} record.id=?'
         try:
             record_id = RecordId(record_id)
         except ValueError:
             raise AccessError(404, 'Record not found') from None
-        if not tx.connection.execute(sql, [*values, record_id]).fetchone():
+        query = qb.select(qb.table(self.registry.name_for(model), 'record'), 'record.id')
+        if tx.connection.run(query.where(self.scope(user, model), qb.eq('record.id', record_id))).one() is None:
             raise AccessError(404, 'Record not found')
         return tx.get(model, record_id)
 
@@ -605,13 +594,13 @@ class Policy:
         if not self.allows(user, model, operation):
             return {}
         ids = list(dict.fromkeys(RecordId(record_id) for record_id in record_ids if _is_id(record_id)))
-        where, values = self.scope_sql(user, model)
-        table = identifier(self.registry.name_for(model))
+        scope = self.scope(user, model)
+        source = qb.table(self.registry.name_for(model), 'record')
+        query = qb.select(source, 'record.id') if columns == 'record.id' else qb.select(source)
         found = {}
         for start in range(0, len(ids), CHUNK):
             part = ids[start:start + CHUNK]
-            sql = f'SELECT {columns} FROM {table} AS record{where} {"AND" if where else "WHERE"} record.id IN ({", ".join("?" for _ in part)})'
-            for row in tx.connection.execute(sql, [*values, *part]).fetchall():
+            for row in tx.connection.run(query.where(scope, qb.in_('record.id', part))).all():
                 if columns == 'record.id': found[RecordId(row[0])] = None
                 else: found[RecordId(row['id'])] = model._from_row(row)
         return found

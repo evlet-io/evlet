@@ -22,6 +22,8 @@ import re
 import struct
 import zlib
 
+from . import qb
+
 KEY = 'display.currencies'
 CODE = re.compile('[A-Z]{3}')
 MAX_CODES = 30
@@ -238,11 +240,7 @@ def field_code(session, model, field, values):
         link = model.__declared_fields__.get(source['link'])
         if target is None or link is None:
             return None
-        from .models import identifier
-        row = session.connection.execute(
-            f'SELECT {identifier(source["field"])} FROM {identifier(session.registry.name_for(link.target))} WHERE "id" = ?',
-            (int(target),)).fetchone()
-        code = row[0] if row is not None else None
+        code = session.connection.run(qb.select(session.registry.name_for(link.target), source['field']).where(id=int(target))).value()
     else:
         code = values.get(source['field'])
     return code if isinstance(code, str) and CODE.fullmatch(code) else None
@@ -276,10 +274,10 @@ def lowered(before, after):
 
 
 def _scopes(registry, code, setting):
-    """(model name, model, column, extra SQL, values) of every stored Currency column whose amounts can be in `code`:
+    """(model name, model, column, condition) of every stored Currency column whose amounts can be in `code`:
     a fixed code, a field of the record, a field behind a Link, or an app setting (`setting(app, key)` reads it).
-    Amounts without a currency source have 2 places whatever the code, so they are not in any."""
-    from .models import identifier
+    The condition picks the rows in `code`. Amounts without a currency source have 2 places whatever the code,
+    so they are not in any."""
     for name, model in registry.models.items():
         for column, field in model.__declared_fields__.items():
             if getattr(field, 'kind', None) != 'currency' or not field.stored:
@@ -289,27 +287,29 @@ def _scopes(registry, code, setting):
                 continue
             if 'code' in source:
                 if source['code'] == code:
-                    yield name, model, column, '', ()
+                    yield name, model, column, qb.TRUE
             elif 'setting' in source:
                 if setting is not None and setting(source['setting']['app'], source['setting']['key']) == code:
-                    yield name, model, column, '', ()
+                    yield name, model, column, qb.TRUE
             elif 'link' in source:
                 target = registry.name_for(model.__declared_fields__[source['link']].target)
-                yield name, model, column, (f' AND {identifier(source["link"])} IN (SELECT "id" FROM {identifier(target)} '
-                                            f'WHERE {identifier(source["field"])} = ?)'), (code,)
+                yield name, model, column, qb.in_(source['link'], qb.select(target, 'id').where(qb.eq(source['field'], code)))
             else:
-                yield name, model, column, f' AND {identifier(source["field"])} = ?', (code,)
+                yield name, model, column, qb.eq(source['field'], code)
+
+
+def _excess(column, factor):
+    """The amounts in the column with a remainder when divided by factor."""
+    return qb.ne(qb.col(column) % factor, 0)
 
 
 def stored_excess(connection, registry, code, decimals, setting=None):
     """(count, first) of the stored amounts in `code` with more than `decimals` places: count over every column,
     first as 'Model #id field' or None. Exact integer arithmetic on the stored millionths."""
     from .identity import RecordId
-    from .models import identifier
     factor, count, first = 10 ** (MONEY_SCALE - decimals), 0, None
-    for name, model, column, extra, values in _scopes(registry, code, setting):
-        where = f'{identifier(column)} % {factor} <> 0{extra}'
-        found = connection.execute(f'SELECT COUNT(*), MIN("id") FROM {identifier(name)} WHERE {where}', values).fetchone()
+    for name, model, column, scope in _scopes(registry, code, setting):
+        found = connection.run(qb.select(name, qb.count(), qb.min('id')).where(_excess(column, factor), scope)).one()
         if found[0]:
             count += found[0]
             first = first or f'{model.__name__} #{RecordId(found[1])} {column}'
@@ -324,7 +324,6 @@ def round_stored_money(application, code, decimals, *, actor='cli'):
     Rounding changes stored totals: a document total no longer equals the sum of its rounded lines until it is
     recalculated. Revisions and the Journal keep the values they recorded."""
     from .auth import User
-    from .models import identifier
     if type(decimals) is not int or not 0 <= decimals <= MAX_DECIMALS:
         raise ValueError(f'decimals is a whole number from 0 to {MAX_DECIMALS}')
     if not isinstance(code, str) or not CODE.fullmatch(code):
@@ -334,15 +333,17 @@ def round_stored_money(application, code, decimals, *, actor='cli'):
     factor, half, changed = 10 ** (MONEY_SCALE - decimals), 10 ** (MONEY_SCALE - decimals) // 2, 0
     setting = business.settings.values.get if getattr(business, 'settings', None) is not None else None
     with application.database.transaction() as tx:
-        for name, model, column, extra, values in _scopes(registry, code, setting):
-            quoted, where = identifier(column), f'{identifier(column)} % {factor} <> 0{extra}'
-            if getattr(model, '__append_only__', False) and tx.connection.execute(
-                    f'SELECT 1 FROM {identifier(name)} WHERE {where} LIMIT 1', values).fetchone() is not None:
+        for name, model, column, scope in _scopes(registry, code, setting):
+            where = (_excess(column, factor), scope)
+            if getattr(model, '__append_only__', False) and tx.connection.run(
+                    qb.select(name, qb.value(1)).where(*where).limit(1)).one() is not None:
                 raise ValueError(f'{model.__name__} is an append-only ledger with {code} amounts of more than {decimals} '
                                  'places; its rows are never changed')
-            changed += tx.connection.execute(
-                f'UPDATE {identifier(name)} SET {quoted} = CASE WHEN {quoted} >= 0 THEN (({quoted} + {half}) / {factor}) * {factor} '
-                f'ELSE -(((-{quoted}) + {half}) / {factor}) * {factor} END WHERE {where}', values).rowcount
+            amount = qb.col(column)
+            # Half up, away from zero: a negative amount rounds as its positive opposite does.
+            rounded = qb.when((qb.ge(column, 0), ((amount + half) / factor) * factor),
+                              otherwise=-(((-amount + half) / factor) * factor))
+            changed += tx.connection.run(qb.update(name, **{column: rounded}).where(*where)).rowcount
         controls.audit(tx.connection, actor, 'Display', KEY, f'Rounded {changed} stored {code} amounts to {decimals} places')
     current = dict(controls.settings.get(KEY) or {})
     current[code] = {**{key: value for key, value in display(current, code).items()}, 'decimals': decimals}

@@ -2,7 +2,7 @@
 Meta.default_tab were removed in 0.4: they fail when the model is defined.
 
 Checked when the Registry is built, sent in /api/schema as record_layout, cut per role, and served by the
-existing list and aggregate routes on real SQLite (and PostgreSQL in test_postgres.py)."""
+existing list and aggregate routes on real SQLite."""
 
 import json
 from decimal import Decimal as Exact

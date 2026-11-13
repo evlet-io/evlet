@@ -9,14 +9,21 @@ import json
 import re
 import time
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .auth import AccessError
 from .identity import path_id
 from .models import ValidationError, checked_body
 
-TABLE = ('CREATE TABLE IF NOT EXISTS evlet_unsaved (user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, '
-         'model TEXT NOT NULL, record_id INTEGER NOT NULL, changes TEXT NOT NULL, base_revision TEXT NOT NULL, '
-         'saved_at INTEGER NOT NULL, size INTEGER NOT NULL, PRIMARY KEY (user_id, model, record_id))')
-INDEX = 'CREATE INDEX IF NOT EXISTS evlet_unsaved_saved_at ON evlet_unsaved (saved_at)'
+TABLE = TableDefinition('evlet_unsaved', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
+    Column('model', 'TEXT', required=True),
+    Column('record_id', 'INTEGER', required=True),
+    Column('changes', 'TEXT', required=True),
+    Column('base_revision', 'TEXT', required=True),
+    Column('saved_at', 'INTEGER', required=True),
+    Column('size', 'INTEGER', required=True),
+), primary_key=('user_id', 'model', 'record_id'))
 TASK = 'evlet_unsaved_purge'
 BATCH = 500
 DAY = 86400
@@ -33,10 +40,10 @@ TOO_LARGE = ('These unsaved changes are larger than {kb} KB, so they are not kep
              'They stay in this tab until you save or close it.')
 
 
-def ensure(connection, postgres=False):
+def ensure(connection):
     """Create the table. Framework step 0004 and startup both call it."""
-    connection.execute(TABLE)
-    connection.execute(INDEX)
+    connection.ensure_table(TABLE)
+    connection.ensure_index('evlet_unsaved_saved_at', 'evlet_unsaved', ('saved_at',))
 
 
 def autosave(model):
@@ -73,9 +80,8 @@ class Unsaved:
     # ---------- setup and clean-up ----------
 
     def initialize(self):
-        postgres = getattr(self.database, 'driver', None) is not None
         with self.database.transaction() as tx:
-            ensure(tx.connection, postgres)
+            ensure(tx.connection)
         self.purge()
 
     def schedule(self):
@@ -84,7 +90,7 @@ class Unsaved:
         if jobs is None:
             return
         with self.database._connection() as connection:
-            if connection.execute('SELECT 1 FROM evlet_schedules WHERE name=?', (TASK,)).fetchone():
+            if connection.run(qb.select('evlet_schedules', qb.value(1)).where(name=TASK)).one():
                 return
         jobs.schedule(TASK, TASK, {}, every=DAY)
 
@@ -113,26 +119,26 @@ class Unsaved:
         cutoff = now - self.limit('unsaved.server_days') * DAY
         removed = 0
         for _ in range(batches):
-            rows = connection.execute('SELECT user_id, model, record_id FROM evlet_unsaved WHERE saved_at<? ORDER BY saved_at LIMIT ?',
-                                      (cutoff, BATCH)).fetchall()
+            rows = connection.run(qb.select('evlet_unsaved', 'user_id', 'model', 'record_id')
+                                  .where(qb.lt('saved_at', cutoff)).order_by('saved_at').limit(BATCH)).all()
             for row in rows:
-                connection.execute('DELETE FROM evlet_unsaved WHERE user_id=? AND model=? AND record_id=?', tuple(row))
+                connection.run(qb.delete('evlet_unsaved').where(user_id=row[0], model=row[1], record_id=row[2]))
             removed += len(rows)
             if len(rows) < BATCH:
                 break
         cap = self.limit('unsaved.server_entries')
-        for (user_id,) in connection.execute('SELECT user_id FROM evlet_unsaved GROUP BY user_id HAVING count(*)>? ORDER BY user_id LIMIT ?',
-                                             (cap, BATCH)).fetchall():
+        for (user_id,) in connection.run(qb.select('evlet_unsaved', 'user_id').group_by('user_id').having(qb.gt(qb.count(), cap))
+                                         .order_by('user_id').limit(BATCH)).all():
             removed += self.trim(connection, user_id, cap)
         return removed
 
     @staticmethod
     def trim(connection, user_id, cap):
         """Keep a person's newest `cap` entries."""
-        rows = connection.execute('SELECT model, record_id FROM evlet_unsaved WHERE user_id=? ORDER BY saved_at DESC, model, record_id LIMIT ? OFFSET ?',
-                                  (user_id, BATCH, cap)).fetchall()
+        rows = connection.run(qb.select('evlet_unsaved', 'model', 'record_id').where(user_id=user_id)
+                              .order_by('-saved_at', 'model', 'record_id').limit(BATCH).offset(cap)).all()
         for row in rows:
-            connection.execute('DELETE FROM evlet_unsaved WHERE user_id=? AND model=? AND record_id=?', (user_id, row[0], row[1]))
+            connection.run(qb.delete('evlet_unsaved').where(user_id=user_id, model=row[0], record_id=row[1]))
         return len(rows)
 
     # ---------- hooks from record writes ----------
@@ -140,17 +146,17 @@ class Unsaved:
     @staticmethod
     def record_deleted(connection, model_name, record_id):
         """Every person's entry for a deleted record, in the delete's transaction."""
-        connection.execute('DELETE FROM evlet_unsaved WHERE model=? AND record_id=?', (model_name, record_id))
+        connection.run(qb.delete('evlet_unsaved').where(model=model_name, record_id=record_id))
 
     @staticmethod
     def record_saved(connection, user, model_name, record_id):
         """The saver's own entry, in the save's transaction."""
         if user is not None and getattr(user, 'id', 0):
-            connection.execute('DELETE FROM evlet_unsaved WHERE user_id=? AND model=? AND record_id=?', (user.id, model_name, record_id))
+            connection.run(qb.delete('evlet_unsaved').where(user_id=user.id, model=model_name, record_id=record_id))
 
     @staticmethod
     def clear_user(connection, user_id):
-        connection.execute('DELETE FROM evlet_unsaved WHERE user_id=?', (user_id,))
+        connection.run(qb.delete('evlet_unsaved').where(user_id=user_id))
 
     # ---------- HTTP ----------
 
@@ -181,7 +187,7 @@ class Unsaved:
     def info(self, user):
         """The person's limits, entry count and setting; /api/_settings/me carries it too."""
         with self.database._connection() as connection:
-            count = connection.execute('SELECT count(*) FROM evlet_unsaved WHERE user_id=?', (user.id,)).fetchone()[0]
+            count = connection.run(qb.select('evlet_unsaved', qb.count()).where(user_id=user.id)).value()
         return {'limits': self.limits(), 'count': int(count), 'enabled': self.enabled(user)}
 
     def enabled(self, user):
@@ -214,11 +220,12 @@ class Unsaved:
             if empty(changes):
                 self.record_saved(tx.connection, user, name, record_id)
                 return 200, {'saved_at': None, 'size': 0, 'dropped': dropped}, []
-            tx.connection.execute(
-                'INSERT INTO evlet_unsaved(user_id,model,record_id,changes,base_revision,saved_at,size) VALUES (?,?,?,?,?,?,?) '
-                'ON CONFLICT(user_id,model,record_id) DO UPDATE SET changes=excluded.changes, base_revision=excluded.base_revision, '
-                'saved_at=excluded.saved_at, size=excluded.size',
-                (user.id, name, record_id, encoded, revision, now, size))
+            tx.connection.run(
+                qb.insert('evlet_unsaved', user_id=user.id, model=name, record_id=record_id, changes=encoded, base_revision=revision,
+                          saved_at=now, size=size)
+                .on_conflict('user_id', 'model', 'record_id')
+                .do_update(changes=qb.col('excluded.changes'), base_revision=qb.col('excluded.base_revision'),
+                           saved_at=qb.col('excluded.saved_at'), size=qb.col('excluded.size')))
             self.trim(tx.connection, user.id, self.limit('unsaved.server_entries'))
         return 200, {'saved_at': now, 'size': size, 'dropped': dropped}, []
 
@@ -240,11 +247,11 @@ class Unsaved:
         business, policy = self.business, self.business.policy
         nothing = {'entry': None, 'dropped': []}
         with self.database._connection() as connection:
-            connection.execute('BEGIN')
+            connection.snapshot()
             tx = Session(connection, self.database.registry, self.database.timezone)
             tx._business = business
-            row = connection.execute('SELECT changes, base_revision, saved_at, size FROM evlet_unsaved WHERE user_id=? AND model=? AND record_id=?',
-                                     (user.id, name, record_id)).fetchone()
+            row = connection.run(qb.select('evlet_unsaved', 'changes', 'base_revision', 'saved_at', 'size')
+                                 .where(user_id=user.id, model=name, record_id=record_id)).one()
             try:
                 record = policy.record(tx, user, model, record_id, 'read')
             except AccessError as exc:
@@ -354,11 +361,13 @@ class Unsaved:
     def summary(self):
         """Counts and sizes for Controls; never the contents."""
         with self.database._connection() as connection:
-            total = connection.execute('SELECT count(*), COALESCE(sum(size), 0), min(saved_at) FROM evlet_unsaved').fetchone()
-            people = connection.execute('SELECT u.id, u.username, count(*) AS entries, sum(n.size) AS bytes, max(n.saved_at) AS latest '
-                                        'FROM evlet_unsaved n JOIN evlet_users u ON u.id=n.user_id GROUP BY u.id, u.username '
-                                        'ORDER BY entries DESC, u.username LIMIT 200').fetchall()
-        # PostgreSQL sums to numeric; every count and size here is a whole number.
+            total = connection.run(qb.select('evlet_unsaved', qb.count(), qb.coalesce(qb.sum('size'), 0), qb.min('saved_at'))).one()
+            people = connection.run(
+                qb.select(qb.table('evlet_unsaved', 'n'), 'u.id', 'u.username', qb.named(qb.count(), 'entries'),
+                          qb.named(qb.sum('n.size'), 'bytes'), qb.named(qb.max('n.saved_at'), 'latest'))
+                .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('n.user_id')))
+                .group_by('u.id', 'u.username').order_by('-entries', 'u.username').limit(200)).all()
+        # Every count and size here is a whole number, whatever type the database sums to.
         return {'entries': int(total[0]), 'bytes': int(total[1]), 'oldest': total[2], 'limits': self.limits(),
                 'people': [{'id': row['id'], 'username': row['username'], 'entries': int(row['entries']), 'bytes': int(row['bytes']), 'latest': row['latest']}
                            for row in people]}
@@ -369,8 +378,8 @@ class Unsaved:
         cutoff = int(time.time()) - body['days'] * DAY
         from .controls import audit
         with self.database.transaction() as tx:
-            count = tx.connection.execute('SELECT count(*) FROM evlet_unsaved WHERE saved_at<?', (cutoff,)).fetchone()[0]
-            tx.connection.execute('DELETE FROM evlet_unsaved WHERE saved_at<?', (cutoff,))
+            count = tx.connection.run(qb.select('evlet_unsaved', qb.count()).where(qb.lt('saved_at', cutoff))).value()
+            tx.connection.run(qb.delete('evlet_unsaved').where(qb.lt('saved_at', cutoff)))
             audit(tx.connection, actor.username, 'Records', 'Unsaved changes',
                   f'Cleared {count} unsaved {"entry" if count == 1 else "entries"} older than {body["days"]} days')
         return {'cleared': count, **self.summary()}

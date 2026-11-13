@@ -2,14 +2,15 @@
 
 This is an operating guide, not a production-readiness certification. Use the
 [tenant deployment guide](tenancy-deployment.md) for the existing Caddy/systemd
-rendering and [PostgreSQL guide](postgresql.md) for the optional adapter. Public
+rendering and [database adapters](database-adapters.md) for how another database
+would be added. Public
 DNS, certificate issuance, Linux service behavior, provider limits, and target
 hardware still need verification on the actual deployment.
 
 ## Release preparation
 
 1. Pin the application release, Python dependencies, frontend lockfile, and optional
-   driver/storage dependencies. Run the backend tests, frontend tests/build, and
+   storage dependencies. Run the backend tests, frontend tests/build, and
    clean wheel installation check. Build frontend assets before maintenance.
 2. Use a dedicated unprivileged service account. Keep configuration and secrets
    outside the public asset directory. Restrict application files, database files,
@@ -80,18 +81,8 @@ the other three are best effort for the last moment of writes, so a session star
 line written just before the crash may be missing. Separate processes still wait for each
 other through SQLite. See [Busy writing on SQLite](performance.md#busy-writing-on-sqlite).
 
-PostgreSQL requires a dedicated UTF-8 database and role per application. Give the
-runtime role only the privileges it needs, with no superuser or CREATEDB permission.
-Use a separate migration operator where practical. Configure certificate-verified
-TLS for remote connections, for example `sslmode=verify-full` and an appropriate
-CA source. Restrict database ingress and configure backup retention, WAL archiving,
-capacity alerts, and recovery objectives with the database operator. The supplied
-adapter still serializes framework writes per database. Adding API workers will
-not remove that limit.
-
-Set explicit service connection limits below PostgreSQL's connection budget.
-Account for application processes, job workers, migrations, monitoring, and admin
-access. Avoid aggressive retries during lock/connection failures. HTTP database
+Adding API workers does not remove the one-writer-per-file limit. Avoid aggressive
+retries when the database is busy. HTTP database
 failures return a generic 503; inspect protected server diagnostics without exposing
 connection strings, record values, or credentials to users.
 
@@ -107,11 +98,6 @@ running server may keep working. `evlet restore BACKUP --instance NAME` puts a s
 server stopped, after keeping the files it replaces; it also restores a single-file backup from
 before 0.4.3, which the next `evlet migrate` splits ([cli.md](cli.md#back-up-and-restore)). Backups
 hold only database files: keep `secret.key`, `files/` and the app sources with them.
-
-For PostgreSQL, use a supported `pg_dump`/`pg_restore` pair
-for logical backups, or the provider's tested physical/PITR service. Do not use a
-client older than the server for logical dumps. Avoid secrets in command arguments;
-use a protected service configuration or password file.
 
 Database attachment bytes are transactional with their metadata. Local/S3 file
 attachments require a coordinated backup of database metadata, namespace markers,

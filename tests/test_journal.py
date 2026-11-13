@@ -453,20 +453,16 @@ def check_append_only_and_chain(app):
     assert all(row['hash'] is None for row in entries if row['model'] == 'memo')
     assert invoice[0]['prev_hash'] is None and all(row['prev_hash'] == before['hash'] for before, row in zip(invoice, invoice[1:]))
     assert journal_module.verify(app.database) == (len(invoice), [])
-    postgres = getattr(app.database, 'driver', None) is not None
     for sql in ('UPDATE evlet_journal SET data=? WHERE id=?', 'DELETE FROM evlet_journal WHERE id=?'):
-        # SQLite reports the trigger's abort as a constraint failure; PostgreSQL as a failed operation.
+        # The append-only triggers refuse the change.
         with pytest.raises((ConflictError, sqlite3.OperationalError)):
             with app.database.transaction() as tx:
                 tx.connection.execute(sql, ('{}', invoice[1]['id']) if 'UPDATE' in sql else (invoice[1]['id'],))
     assert stored(app) == entries
     # Someone with direct database access removes the guard and edits or deletes entries.
     with app.database.transaction() as tx:
-        if postgres:
-            tx.connection.execute('DROP TRIGGER evlet_journal_append_only ON evlet_journal')
-        else:
-            tx.connection.execute('DROP TRIGGER evlet_journal_no_update')
-            tx.connection.execute('DROP TRIGGER evlet_journal_no_delete')
+        tx.connection.execute('DROP TRIGGER evlet_journal_no_update')
+        tx.connection.execute('DROP TRIGGER evlet_journal_no_delete')
         # Entries: created, moved, number and three notes.
         tx.connection.execute('DELETE FROM evlet_journal WHERE id=?', (invoice[1]['id'],))
         tx.connection.execute("UPDATE evlet_journal SET data='{\"text\":\"Changed\"}' WHERE id=?", (invoice[3]['id'],))

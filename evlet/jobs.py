@@ -6,10 +6,11 @@ import hashlib
 import logging
 import re
 import secrets
-import sqlite3
 import threading
 import time
 
+from . import qb
+from .adapter import Column, OperationalError, TableDefinition
 from .auth import AccessError, User
 from .identity import RecordId, text as text_id
 from .database import NotFoundError
@@ -111,7 +112,7 @@ class JobContext:
             account_id = user.id if isinstance(user, User) else user
             if type(account_id) is not int or account_id <= 0:
                 raise ValueError('Pass user= an account id or a User with one')
-            row = tx.connection.execute('SELECT id,username,role FROM evlet_users WHERE id=? AND active=1', (account_id,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_users', 'id', 'username', 'role').where(id=account_id, active=1)).one()
             if row is None:
                 raise AccessError(403, 'The account this job acts as is not active')
             acting = User(row['id'], row['username'], row['role'], user_links(tx, account_id))
@@ -136,8 +137,8 @@ class JobContext:
 
 def user_links(tx, user_id):
     """The (model, record id) pairs row scopes such as own_customer read for an account."""
-    return tuple((row['model'], RecordId(row['record_id'])) for row in tx.connection.execute(
-        'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (user_id,)))
+    return tuple((row['model'], RecordId(row['record_id'])) for row in tx.connection.run(
+        qb.select('evlet_user_links', 'model', 'record_id').where(user_id=user_id).order_by('model', 'record_id')))
 
 
 def progress_text(done, total, message=''):
@@ -166,6 +167,45 @@ def encode_checkpoint(value):
     return encoded
 
 
+NAMESPACE = TableDefinition('evlet_job_namespace', (
+    Column('id', 'INTEGER', primary=True), Column('tenant', 'TEXT', required=True), Column('namespace', 'TEXT', required=True),
+), checks=(qb.eq('id', 1),))
+JOBS = TableDefinition('evlet_jobs', (
+    Column('task', 'TEXT', required=True), Column('payload', 'TEXT', required=True),
+    Column('actor', 'INTEGER'), Column('model', 'TEXT'), Column('record_id', 'INTEGER'), Column('state', 'TEXT', required=True),
+    Column('attempts', 'INTEGER', required=True, default=0), Column('max_attempts', 'INTEGER', required=True),
+    Column('run_at', 'INTEGER', required=True), Column('created_at', 'INTEGER', required=True), Column('completed_at', 'INTEGER'),
+    Column('lease', 'TEXT'), Column('lease_until', 'INTEGER'), Column('dedupe', 'TEXT'), Column('error', 'TEXT'),
+), numbered=True, unique=(('dedupe',),))
+# The last committed progress and, for resumable tasks, the checkpoint the next step starts from.
+PROGRESS = TableDefinition('evlet_job_progress', (
+    Column('job_id', 'INTEGER', primary=True), Column('done', 'INTEGER', required=True), Column('total', 'INTEGER'),
+    Column('message', 'TEXT', required=True, default=''), Column('checkpoint', 'TEXT'), Column('updated_at', 'INTEGER', required=True),
+))
+IDENTITIES = TableDefinition('evlet_job_identities', (Column('job_id', 'INTEGER', primary=True), Column('role', 'TEXT', required=True)))
+# Jobs queued with an API key run with that key's scope, and not at all once it is revoked.
+KEYS = TableDefinition('evlet_job_keys', (Column('job_id', 'INTEGER', primary=True), Column('key_id', 'INTEGER', required=True)))
+# Likewise for AI assistants: the connection (0 for the local connector), narrowed again when the job runs.
+ASSISTANTS = TableDefinition('evlet_job_assistants', (Column('job_id', 'INTEGER', primary=True), Column('client_id', 'INTEGER', required=True)))
+SCHEDULES = TableDefinition('evlet_schedules', (
+    Column('name', 'TEXT', primary=True), Column('task', 'TEXT', required=True), Column('payload', 'TEXT', required=True),
+    Column('actor', 'INTEGER'), Column('model', 'TEXT'), Column('record_id', 'INTEGER'),
+    Column('interval', 'INTEGER', required=True), Column('next_run', 'INTEGER', required=True),
+    Column('enabled', 'INTEGER', required=True, default=1),
+))
+CALENDAR_SCHEDULES = TableDefinition('evlet_calendar_schedules', (
+    Column('name', 'TEXT', primary=True), Column('expression', 'TEXT', required=True), Column('timezone', 'TEXT', required=True),
+))
+# The tables holding who a job runs as, and the column each keeps.
+JOB_IDENTITY = (('evlet_job_identities', 'role'), ('evlet_job_keys', 'key_id'), ('evlet_job_assistants', 'client_id'))
+
+
+class _Validated(Exception):
+    """Raised inside a savepoint to undo a validation-only enqueue, carrying the job row it wrote."""
+    def __init__(self, row):
+        self.row = row
+
+
 class JobQueue:
     def __init__(self, database, tasks, *, tenant='local', events=None, policy=None):
         if not isinstance(tenant, str) or not re.fullmatch('[a-z][a-z0-9-]{0,47}', tenant):
@@ -188,35 +228,18 @@ class JobQueue:
 
     def initialize(self):
         with self.database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_namespace (id INTEGER PRIMARY KEY CHECK(id=1), tenant TEXT NOT NULL, namespace TEXT NOT NULL)')
-            tx.connection.execute('INSERT OR IGNORE INTO evlet_job_namespace VALUES (1,?,?)', (self.tenant, secrets.token_hex(32)))
+            tx.connection.ensure_table(NAMESPACE)
+            tx.connection.run(qb.insert('evlet_job_namespace', id=1, tenant=self.tenant, namespace=secrets.token_hex(32)).on_conflict().do_nothing())
             self._bound(tx)
-            tx.connection.execute('''CREATE TABLE IF NOT EXISTS evlet_jobs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, task TEXT NOT NULL, payload TEXT NOT NULL,
-                actor INTEGER, model TEXT, record_id INTEGER, state TEXT NOT NULL,
-                attempts INTEGER NOT NULL DEFAULT 0, max_attempts INTEGER NOT NULL,
-                run_at INTEGER NOT NULL, created_at INTEGER NOT NULL, completed_at INTEGER,
-                lease TEXT, lease_until INTEGER, dedupe TEXT UNIQUE, error TEXT)''')
-            tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_jobs_due ON evlet_jobs(state,run_at)')
-            # The last committed progress and, for resumable tasks, the checkpoint the next step starts from.
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_progress (job_id INTEGER PRIMARY KEY, done INTEGER NOT NULL, total INTEGER, '
-                                  "message TEXT NOT NULL DEFAULT '', checkpoint TEXT, updated_at INTEGER NOT NULL)")
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_identities (job_id INTEGER PRIMARY KEY, role TEXT NOT NULL)')
-            # Jobs queued with an API key run with that key's scope, and not at all once it is revoked.
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_keys (job_id INTEGER PRIMARY KEY, key_id INTEGER NOT NULL)')
-            # Likewise for AI assistants: the connection (0 for the local connector), narrowed again when the job runs.
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_job_assistants (job_id INTEGER PRIMARY KEY, client_id INTEGER NOT NULL)')
-            tx.connection.execute('''CREATE TABLE IF NOT EXISTS evlet_schedules (
-                name TEXT PRIMARY KEY, task TEXT NOT NULL, payload TEXT NOT NULL, actor INTEGER,
-                model TEXT, record_id INTEGER, interval INTEGER NOT NULL, next_run INTEGER NOT NULL,
-                enabled INTEGER NOT NULL DEFAULT 1)''')
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_calendar_schedules (name TEXT PRIMARY KEY, expression TEXT NOT NULL, timezone TEXT NOT NULL)')
+            for definition in (JOBS, PROGRESS, IDENTITIES, KEYS, ASSISTANTS, SCHEDULES, CALENDAR_SCHEDULES):
+                tx.connection.ensure_table(definition)
+            tx.connection.ensure_index('evlet_jobs_due', 'evlet_jobs', ('state', 'run_at'))
             # retired=1 marks a schedule disabled because its declaration was removed, not by an operator.
-            if 'retired' not in self.database.columns(tx.connection, 'evlet_calendar_schedules'):
-                tx.connection.execute('ALTER TABLE evlet_calendar_schedules ADD COLUMN retired INTEGER NOT NULL DEFAULT 0')
+            if 'retired' not in tx.connection.columns('evlet_calendar_schedules'):
+                tx.connection.add_column('evlet_calendar_schedules', Column('retired', 'INTEGER', required=True), default=0)
 
     def _bound(self, tx):
-        row = tx.connection.execute('SELECT tenant FROM evlet_job_namespace WHERE id=1').fetchone()
+        row = tx.connection.run(qb.select('evlet_job_namespace', 'tenant').where(id=1)).one()
         if not self.database.owns(tx) or not row or row[0] != self.tenant:
             raise ValueError('Job transaction belongs to another tenant database')
 
@@ -244,26 +267,27 @@ class JobQueue:
         if system_role is not None and (user is not None or system_role not in ('admin', 'editor', 'viewer')):
             raise ValueError('System jobs require an explicit supported role and no browser actor')
         if key is not None:
-            old = tx.connection.execute('SELECT * FROM evlet_jobs WHERE dedupe=?', (key,)).fetchone()
+            old = tx.connection.run(qb.select('evlet_jobs').where(dedupe=key)).one()
             if old:
-                identity = tx.connection.execute('SELECT role FROM evlet_job_identities WHERE job_id=?', (old['id'],)).fetchone()
-                if (identity[0] if identity else None) != system_role: raise ValueError('Idempotency key was already used for another execution identity')
-                queued_by = tx.connection.execute('SELECT key_id FROM evlet_job_keys WHERE job_id=?', (old['id'],)).fetchone()
-                if (queued_by[0] if queued_by else None) != key_id: raise ValueError('Idempotency key was already used for another execution identity')
-                queued_by = tx.connection.execute('SELECT client_id FROM evlet_job_assistants WHERE job_id=?', (old['id'],)).fetchone()
-                if (queued_by[0] if queued_by else None) != assistant: raise ValueError('Idempotency key was already used for another execution identity')
+                identity = tx.connection.run(qb.select('evlet_job_identities', 'role').where(job_id=old['id'])).value()
+                if identity != system_role: raise ValueError('Idempotency key was already used for another execution identity')
+                queued_by = tx.connection.run(qb.select('evlet_job_keys', 'key_id').where(job_id=old['id'])).value()
+                if queued_by != key_id: raise ValueError('Idempotency key was already used for another execution identity')
+                queued_by = tx.connection.run(qb.select('evlet_job_assistants', 'client_id').where(job_id=old['id'])).value()
+                if queued_by != assistant: raise ValueError('Idempotency key was already used for another execution identity')
                 if (old['task'], old['payload'], old['actor'], old['model'], old['record_id']) != (task, encoded, actor, model, record_id):
                     raise ValueError('Idempotency key was already used for another job')
                 return JobReceipt(old['id'], old['state'])
-        job_id = tx.connection.execute('INSERT INTO evlet_jobs(task,payload,actor,model,record_id,state,max_attempts,run_at,created_at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', (task, encoded, actor, model, record_id, 'queued', definition.max_attempts, due, now, key)).lastrowid
-        if system_role is not None: tx.connection.execute('INSERT INTO evlet_job_identities(job_id,role) VALUES (?,?)', (job_id, system_role))
-        if key_id is not None: tx.connection.execute('INSERT INTO evlet_job_keys(job_id,key_id) VALUES (?,?)', (job_id, key_id))
-        if assistant is not None: tx.connection.execute('INSERT INTO evlet_job_assistants(job_id,client_id) VALUES (?,?)', (job_id, assistant))
+        job_id = tx.connection.run(qb.insert('evlet_jobs', task=task, payload=encoded, actor=actor, model=model, record_id=record_id, state='queued',
+                                             max_attempts=definition.max_attempts, run_at=due, created_at=now, dedupe=key).returning_id()).id
+        if system_role is not None: tx.connection.run(qb.insert('evlet_job_identities', job_id=job_id, role=system_role))
+        if key_id is not None: tx.connection.run(qb.insert('evlet_job_keys', job_id=job_id, key_id=key_id))
+        if assistant is not None: tx.connection.run(qb.insert('evlet_job_assistants', job_id=job_id, client_id=assistant))
         return JobReceipt(job_id, 'queued')
 
     def _follow_up(self, tx, context, payload, run_at, key):
         self._bound(tx)
-        row = tx.connection.execute('SELECT * FROM evlet_jobs WHERE id=?', (context.id,)).fetchone()
+        row = tx.connection.run(qb.select('evlet_jobs').where(id=context.id)).one()
         if row is None:
             raise ValueError('This job is no longer queued')
         due = timestamp(run_at)
@@ -277,19 +301,18 @@ class JobQueue:
         key = f'follow:{context.id}:{due}' if key is None else key
         if not isinstance(key, str) or not 1 <= len(key) <= 200:
             raise ValueError('Use an idempotency key of 1 to 200 characters')
-        identity = {table: tx.connection.execute(f'SELECT {column} FROM {table} WHERE job_id=?', (context.id,)).fetchone()
-                    for table, column in (('evlet_job_identities', 'role'), ('evlet_job_keys', 'key_id'), ('evlet_job_assistants', 'client_id'))}
-        old = tx.connection.execute('SELECT * FROM evlet_jobs WHERE dedupe=?', (key,)).fetchone()
+        identity = {(table, column): tx.connection.run(qb.select(table, column).where(job_id=context.id)).value()
+                    for table, column in JOB_IDENTITY}
+        old = tx.connection.run(qb.select('evlet_jobs').where(dedupe=key)).one()
         if old:
             if (old['task'], old['payload'], old['actor'], old['model'], old['record_id']) != (row['task'], encoded, row['actor'], row['model'], row['record_id']):
                 raise ValueError('Idempotency key was already used for another job')
             return JobReceipt(old['id'], old['state'])
-        job_id = tx.connection.execute('INSERT INTO evlet_jobs(task,payload,actor,model,record_id,state,max_attempts,run_at,created_at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                                       (row['task'], encoded, row['actor'], row['model'], row['record_id'], 'queued', row['max_attempts'], due, int(time.time()), key)).lastrowid
-        for table, value in identity.items():
+        job_id = tx.connection.run(qb.insert('evlet_jobs', task=row['task'], payload=encoded, actor=row['actor'], model=row['model'], record_id=row['record_id'],
+                                             state='queued', max_attempts=row['max_attempts'], run_at=due, created_at=int(time.time()), dedupe=key).returning_id()).id
+        for (table, column), value in identity.items():
             if value is not None:
-                column = {'evlet_job_identities': 'role', 'evlet_job_keys': 'key_id', 'evlet_job_assistants': 'client_id'}[table]
-                tx.connection.execute(f'INSERT INTO {table}(job_id,{column}) VALUES (?,?)', (job_id, value[0]))
+                tx.connection.run(qb.insert(table, job_id=job_id, **{column: value}))
         if self.wake not in tx._after_commit:
             tx._after_commit.append(self.wake)
         return JobReceipt(job_id, 'queued')
@@ -310,24 +333,26 @@ class JobQueue:
             raise ValueError('Use an interval between 60 seconds and one year')
         with self.database.transaction() as tx:
             # Validate using the same enqueue contract, without publishing a job.
-            tx.connection.execute('SAVEPOINT validate_schedule')
-            receipt = self.enqueue(tx, task, payload, user=user, target=target)
-            row = tx.connection.execute('SELECT * FROM evlet_jobs WHERE id=?', (receipt.id,)).fetchone()
-            tx.connection.execute('ROLLBACK TO validate_schedule')
-            tx.connection.execute('RELEASE validate_schedule')
+            try:
+                with tx.connection.savepoint('validate_schedule'):
+                    receipt = self.enqueue(tx, task, payload, user=user, target=target)
+                    raise _Validated(tx.connection.run(qb.select('evlet_jobs').where(id=receipt.id)).one())
+            except _Validated as validated:
+                row = validated.row
             due = int(time.time()) + every if start_at is None else timestamp(start_at)
-            tx.connection.execute('INSERT INTO evlet_schedules(name,task,payload,actor,model,record_id,interval,next_run) VALUES (?,?,?,?,?,?,?,?)', (schedule, task, row['payload'], row['actor'], row['model'], row['record_id'], every, due))
+            tx.connection.run(qb.insert('evlet_schedules', name=schedule, task=task, payload=row['payload'], actor=row['actor'], model=row['model'],
+                                        record_id=row['record_id'], interval=every, next_run=due))
             if calendar is not None:
                 # Same transaction, so a crash cannot leave a calendar schedule running as an interval.
-                tx.connection.execute('DELETE FROM evlet_calendar_schedules WHERE name=?', (schedule,))
-                tx.connection.execute('INSERT INTO evlet_calendar_schedules(name,expression,timezone) VALUES (?,?,?)', (schedule, *calendar))
+                tx.connection.run(qb.delete('evlet_calendar_schedules').where(name=schedule))
+                tx.connection.run(qb.insert('evlet_calendar_schedules', name=schedule, expression=calendar[0], timezone=calendar[1]))
 
     def set_schedule_active(self, schedule, active):
         if type(active) is not bool:
             raise ValueError('Use a boolean active flag')
         with self.database.transaction() as tx:
             self._bound(tx)
-            if not tx.connection.execute('UPDATE evlet_schedules SET enabled=? WHERE name=?', (active, name(schedule))).rowcount:
+            if not tx.connection.run(qb.update('evlet_schedules', enabled=active).where(name=name(schedule))).rowcount:
                 raise ValueError('Unknown schedule')
 
     def tick(self, *, now=None):
@@ -338,23 +363,26 @@ class JobQueue:
 
     def _tick(self, tx, now):
         """Queue one job for each schedule that is due, inside the caller's write transaction."""
-        rows = tx.connection.execute('SELECT * FROM evlet_schedules WHERE enabled=1 AND next_run<=? ORDER BY next_run,name LIMIT 100', (now,)).fetchall()
+        rows = tx.connection.run(qb.select('evlet_schedules').where(qb.eq('enabled', 1), qb.le('next_run', now))
+                                 .order_by('next_run', 'name').limit(100)).all()
         for row in rows:
             # One occurrence after downtime; missed intervals are coalesced.
             definition = self.tasks.get(row['task'])
             if definition is None:
-                tx.connection.execute('UPDATE evlet_schedules SET enabled=0 WHERE name=?', (row['name'],))
+                tx.connection.run(qb.update('evlet_schedules', enabled=0).where(name=row['name']))
                 logger.error('Disabled schedule %s: its task is not registered', row['name'])
                 continue
             key = f"schedule:{row['name']}:{row['next_run']}"
-            tx.connection.execute('INSERT OR IGNORE INTO evlet_jobs(task,payload,actor,model,record_id,state,max_attempts,run_at,created_at,dedupe) VALUES (?,?,?,?,?,?,?,?,?,?)', (row['task'], row['payload'], row['actor'], row['model'], row['record_id'], 'queued', definition.max_attempts, now, now, key))
-            calendar = tx.connection.execute('SELECT expression,timezone FROM evlet_calendar_schedules WHERE name=?', (row['name'],)).fetchone()
+            tx.connection.run(qb.insert('evlet_jobs', task=row['task'], payload=row['payload'], actor=row['actor'], model=row['model'],
+                                        record_id=row['record_id'], state='queued', max_attempts=definition.max_attempts, run_at=now,
+                                        created_at=now, dedupe=key).on_conflict().do_nothing())
+            calendar = tx.connection.run(qb.select('evlet_calendar_schedules', 'expression', 'timezone').where(name=row['name'])).one()
             if calendar:
                 from .services import Calendar
                 next_run = Calendar(calendar['expression'], calendar['timezone']).next(now)
             else:
                 next_run = row['next_run'] + ((now - row['next_run']) // row['interval'] + 1) * row['interval']
-            tx.connection.execute('UPDATE evlet_schedules SET next_run=? WHERE name=?', (next_run, row['name']))
+            tx.connection.run(qb.update('evlet_schedules', next_run=next_run).where(name=row['name']))
         return len(rows)
 
     def claim(self, *, now=None, lease_seconds=LEASE):
@@ -367,12 +395,17 @@ class JobQueue:
 
     def _claim(self, tx, now, lease_seconds):
         """Fail jobs whose attempts ran out, then lease the next due job, inside the caller's write transaction."""
-        tx.connection.execute("UPDATE evlet_jobs SET state='failed',error='Worker attempts exhausted',lease=NULL,lease_until=NULL,completed_at=? WHERE state='running' AND lease_until<=? AND attempts>=max_attempts", (now, now))
-        row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE (state='queued' AND run_at<=?) OR (state='running' AND lease_until<=? AND attempts<max_attempts) ORDER BY run_at,id LIMIT 1", (now, now)).fetchone()
+        tx.connection.run(qb.update('evlet_jobs', state='failed', error='Worker attempts exhausted', lease=None, lease_until=None, completed_at=now)
+                          .where(qb.eq('state', 'running'), qb.le('lease_until', now), qb.ge('attempts', qb.col('max_attempts'))))
+        row = tx.connection.run(qb.select('evlet_jobs').where(qb.or_(
+            qb.and_(qb.eq('state', 'queued'), qb.le('run_at', now)),
+            qb.and_(qb.eq('state', 'running'), qb.le('lease_until', now), qb.lt('attempts', qb.col('max_attempts'))),
+        )).order_by('run_at', 'id').limit(1)).one()
         if row is None:
             return None
         token = secrets.token_hex(24)
-        tx.connection.execute("UPDATE evlet_jobs SET state='running',attempts=attempts+1,lease=?,lease_until=?,error=NULL WHERE id=?", (token, now + lease_seconds, row['id']))
+        tx.connection.run(qb.update('evlet_jobs', state='running', attempts=qb.col('attempts') + 1, lease=token, lease_until=now + lease_seconds, error=None)
+                          .where(id=row['id']))
         return row['id'], token
 
     def execute(self, claim, *, active=lambda: True, now=None):
@@ -398,7 +431,7 @@ class JobQueue:
                 clock = now + int(time.monotonic() - began)
                 with self.database.transaction() as tx:
                     self._bound(tx)
-                    row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE id=? AND state='running' AND lease=? AND lease_until>?", (job_id, token, clock)).fetchone()
+                    row = tx.connection.run(qb.select('evlet_jobs').where(qb.eq('id', job_id), qb.eq('state', 'running'), qb.eq('lease', token), qb.gt('lease_until', clock))).one()
                     if row is None:
                         return steps > 0
                     if not active():
@@ -416,17 +449,16 @@ class JobQueue:
                         result = task.handler(tx, context, payload)
                     if task.resumable and result is not None:
                         checkpoint = encode_checkpoint(result)
-                        tx.connection.execute("INSERT INTO evlet_job_progress(job_id,done,checkpoint,updated_at) VALUES (?,0,?,?) "
-                                              'ON CONFLICT(job_id) DO UPDATE SET checkpoint=excluded.checkpoint, updated_at=excluded.updated_at',
-                                              (job_id, checkpoint, int(time.time())))
+                        tx.connection.run(qb.insert('evlet_job_progress', job_id=job_id, done=0, checkpoint=checkpoint, updated_at=int(time.time()))
+                                          .on_conflict('job_id').do_update(checkpoint=qb.col('excluded.checkpoint'), updated_at=qb.col('excluded.updated_at')))
                         # Each committed step renews the lease, so a long job is not reclaimed while it makes progress.
-                        tx.connection.execute('UPDATE evlet_jobs SET lease_until=CASE WHEN lease_until<? THEN ? ELSE lease_until END WHERE id=? AND lease=?',
-                                              (clock + LEASE, clock + LEASE, job_id, token))
+                        tx.connection.run(qb.update('evlet_jobs', lease_until=qb.when((qb.lt('lease_until', clock + LEASE), clock + LEASE), otherwise=qb.col('lease_until')))
+                                          .where(id=job_id, lease=token))
                         steps += 1
                         continue
                     if task.resumable:
-                        tx.connection.execute('UPDATE evlet_job_progress SET checkpoint=NULL WHERE job_id=?', (job_id,))
-                    tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND lease=?", (int(time.time()), job_id, token))
+                        tx.connection.run(qb.update('evlet_job_progress', checkpoint=None).where(job_id=job_id))
+                    tx.connection.run(qb.update('evlet_jobs', state='succeeded', completed_at=int(time.time()), lease=None, lease_until=None).where(id=job_id, lease=token))
                     if self.events and row['model']:
                         self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
                     return True
@@ -435,7 +467,8 @@ class JobQueue:
                 task.handler(context, payload)
             with self.database.transaction() as tx:
                 self._bound(tx)
-                completed = tx.connection.execute("UPDATE evlet_jobs SET state='succeeded',completed_at=?,lease=NULL,lease_until=NULL WHERE id=? AND state='running' AND lease=? AND lease_until>?", (int(time.time()), job_id, token, int(time.time()))).rowcount
+                completed = tx.connection.run(qb.update('evlet_jobs', state='succeeded', completed_at=int(time.time()), lease=None, lease_until=None)
+                                              .where(qb.eq('id', job_id), qb.eq('state', 'running'), qb.eq('lease', token), qb.gt('lease_until', int(time.time())))).rowcount
                 if not completed: return False
                 if self.events and row['model']:
                     self.events.publish(tx, self.database.registry.models[row['model']], row['record_id'])
@@ -443,16 +476,17 @@ class JobQueue:
         except Exception as exc:
             logger.exception('Background task %s failed', job_id)
             with self.database.transaction() as tx:
-                row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE id=? AND state='running' AND lease=?", (job_id, token)).fetchone()
+                row = tx.connection.run(qb.select('evlet_jobs').where(id=job_id, state='running', lease=token)).one()
                 if row is None:
                     return False
-                if not running and isinstance(exc, sqlite3.OperationalError):
+                if not running and isinstance(exc, OperationalError):
                     self._release_claim(tx, job_id, token, now + 1)
                     return False
                 retry = task is not None and row['attempts'] < row['max_attempts'] and not isinstance(exc, (AccessError, NotFoundError, ValidationError))
                 due = now + min(86400, task.retry_delay * 2 ** (row['attempts'] - 1)) if retry else now
                 # A resumable task keeps its checkpoint, so the retry resumes after the last committed step.
-                tx.connection.execute('UPDATE evlet_jobs SET state=?,run_at=?,completed_at=?,lease=NULL,lease_until=NULL,error=? WHERE id=? AND lease=?', ('queued' if retry else 'failed', due, None if retry else now, exc.message if isinstance(exc, AccessError) else type(exc).__name__, job_id, token))
+                tx.connection.run(qb.update('evlet_jobs', state='queued' if retry else 'failed', run_at=due, completed_at=None if retry else now, lease=None, lease_until=None,
+                                            error=exc.message if isinstance(exc, AccessError) else type(exc).__name__).where(id=job_id, lease=token))
             return True
 
     def _prepare(self, tx, row, job_id, token):
@@ -462,44 +496,47 @@ class JobQueue:
             raise ValidationError({'task': 'Task is no longer registered'})
         user = None
         if row['actor'] is not None:
-            account = tx.connection.execute('SELECT id,username,role FROM evlet_users WHERE id=? AND active=1', (row['actor'],)).fetchone()
+            account = tx.connection.run(qb.select('evlet_users', 'id', 'username', 'role').where(id=row['actor'], active=1)).one()
             if account is None:
                 raise AccessError(403, 'The requesting account is inactive')
             user = User(*account)
-            queued_by = tx.connection.execute('SELECT k.id, k.scope, k.revoked_at FROM evlet_job_keys j LEFT JOIN evlet_api_keys k ON k.id=j.key_id WHERE j.job_id=?', (job_id,)).fetchone()
+            queued_by = tx.connection.run(qb.select(qb.table('evlet_job_keys', 'j'), 'k.id', 'k.scope', 'k.revoked_at')
+                                          .join(qb.table('evlet_api_keys', 'k'), qb.eq('k.id', qb.col('j.key_id')), left=True).where(qb.eq('j.job_id', job_id))).one()
             if queued_by is not None:
                 if queued_by['id'] is None or queued_by['revoked_at'] is not None:
                     raise AccessError(403, 'The API key that queued this job was revoked.')
                 user = User(*account, access=self.business.auth.key_access(queued_by['id'], queued_by['scope']))
-            queued_by = tx.connection.execute('SELECT client_id FROM evlet_job_assistants WHERE job_id=?', (job_id,)).fetchone()
+            queued_by = tx.connection.run(qb.select('evlet_job_assistants', 'client_id').where(job_id=job_id)).one()
             if queued_by is not None:
                 connection = None
                 if queued_by[0]:
-                    connection = tx.connection.execute('SELECT * FROM evlet_mcp_clients WHERE id=? AND user_id=? AND revoked_at IS NULL', (queued_by[0], account['id'])).fetchone()
+                    connection = tx.connection.run(qb.select('evlet_mcp_clients').where(id=queued_by[0], user_id=account['id'], revoked_at=None)).one()
                     if connection is None:
                         raise AccessError(403, 'The AI assistant that queued this job was disconnected.')
                 user = self.business.assistants.narrow(user, connection)
         else:
-            identity = tx.connection.execute('SELECT role FROM evlet_job_identities WHERE job_id=?', (job_id,)).fetchone()
+            identity = tx.connection.run(qb.select('evlet_job_identities', 'role').where(job_id=job_id)).one()
             if identity: user = User(0, 'schedule', identity[0])
         if user is not None and row['model']:
             model = self.database.registry.models.get(row['model'])
             if model is None: raise NotFoundError()
             self.policy.record(tx, user, model, row['record_id'], 'update')
-        namespace = tx.connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
+        namespace = tx.connection.run(qb.select('evlet_job_namespace', 'namespace').where(id=1)).one()[0]
         stable_key = hashlib.sha256((namespace + ':' + (row['dedupe'] or f'job:{job_id}')).encode()).hexdigest()
-        saved = tx.connection.execute('SELECT checkpoint FROM evlet_job_progress WHERE job_id=?', (job_id,)).fetchone()
+        saved = tx.connection.run(qb.select('evlet_job_progress', 'checkpoint').where(job_id=job_id)).one()
         checkpoint = json.loads(saved[0]) if task.resumable and saved and saved[0] is not None else None
-        sql = ('INSERT INTO evlet_job_progress(job_id,done,total,message,updated_at) VALUES (?,?,?,?,?) ON CONFLICT(job_id) DO UPDATE SET '
-               'done=excluded.done, total=excluded.total, message=excluded.message, updated_at=excluded.updated_at')
+        def saved_progress(done, total, message):
+            return (qb.insert('evlet_job_progress', job_id=job_id, done=done, total=total, message=message, updated_at=int(time.time()))
+                    .on_conflict('job_id').do_update(done=qb.col('excluded.done'), total=qb.col('excluded.total'), message=qb.col('excluded.message'),
+                                                     updated_at=qb.col('excluded.updated_at')))
         if task.external:
             def report(done, total, message):
                 with self.database.transaction() as own:
-                    if own.connection.execute("SELECT 1 FROM evlet_jobs WHERE id=? AND state='running' AND lease=?", (job_id, token)).fetchone():
-                        own.connection.execute(sql, (job_id, done, total, message, int(time.time())))
+                    if own.connection.run(qb.select('evlet_jobs', qb.value(1)).where(id=job_id, state='running', lease=token)).one():
+                        own.connection.run(saved_progress(done, total, message))
         else:
             def report(done, total, message):
-                tx.connection.execute(sql, (job_id, done, total, message, int(time.time())))
+                tx.connection.run(saved_progress(done, total, message))
         context = JobContext(job_id, self.tenant, row['attempts'], user, stable_key, checkpoint)
         object.__setattr__(context, '_report', report)
         object.__setattr__(context, '_queue', self)
@@ -508,7 +545,8 @@ class JobQueue:
 
     @staticmethod
     def _release_claim(tx, job_id, token, due):
-        tx.connection.execute("UPDATE evlet_jobs SET state='queued',attempts=attempts-1,run_at=?,lease=NULL,lease_until=NULL,error=NULL WHERE id=? AND state='running' AND lease=?", (due, job_id, token))
+        tx.connection.run(qb.update('evlet_jobs', state='queued', attempts=qb.col('attempts') - 1, run_at=due, lease=None, lease_until=None, error=None)
+                          .where(id=job_id, state='running', lease=token))
 
     def run_one(self, *, active=lambda: True, now=None):
         if not active():
@@ -529,22 +567,24 @@ class JobQueue:
         """True when a worker pass has something to write: a queued job that is due, a running job whose
         lease ran out, or a schedule that is due. One read on a plain connection."""
         with self.database._connection() as connection:
-            jobs = connection.execute("SELECT 1 FROM evlet_jobs WHERE (state='queued' AND run_at<=?) OR (state='running' AND lease_until<=?) LIMIT 1", (now, now)).fetchone()
+            jobs = connection.run(qb.select('evlet_jobs', qb.value(1)).where(qb.or_(
+                qb.and_(qb.eq('state', 'queued'), qb.le('run_at', now)),
+                qb.and_(qb.eq('state', 'running'), qb.le('lease_until', now)))).limit(1)).one()
             if jobs is not None:
                 return True
-            return connection.execute('SELECT 1 FROM evlet_schedules WHERE enabled=1 AND next_run<=? LIMIT 1', (now,)).fetchone() is not None
+            return connection.run(qb.select('evlet_schedules', qb.value(1)).where(qb.eq('enabled', 1), qb.le('next_run', now)).limit(1)).one() is not None
 
     def status(self, job_id, user):
         with self.database.transaction() as tx:
             self._bound(tx)
-            row = tx.connection.execute('SELECT * FROM evlet_jobs WHERE id=?', (job_id,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_jobs').where(id=job_id)).one()
             if row is None or (row['actor'] != user.id and user.role != 'admin'):
                 raise AccessError(404, 'Job not found')
             if row['model']:
                 self.policy.record(tx, user, self.database.registry.models[row['model']], row['record_id'])
             result = {key: row[key] for key in ('id', 'state', 'attempts', 'run_at', 'created_at', 'completed_at', 'error')}
             # Progress the handler reported; the checkpoint and payload stay private.
-            progress = tx.connection.execute('SELECT done,total,message FROM evlet_job_progress WHERE job_id=?', (job_id,)).fetchone()
+            progress = tx.connection.run(qb.select('evlet_job_progress', 'done', 'total', 'message').where(job_id=job_id)).one()
             result['progress'] = None if progress is None else {'done': progress['done'], 'total': progress['total'], 'message': progress['message']}
             return result
 
@@ -552,11 +592,14 @@ class JobQueue:
         """Trusted operator summary; never includes payloads or exception messages."""
         with self.database._connection() as db:
             return [{**dict(row), 'record_id': text_id(row['record_id'])}
-                    for row in db.execute('SELECT j.id,j.task,j.actor,j.model,j.record_id,j.state,j.attempts,j.run_at,j.error,p.done,p.total,p.message '
-                                          'FROM evlet_jobs j LEFT JOIN evlet_job_progress p ON p.job_id=j.id ORDER BY j.id DESC LIMIT 100')]
+                    for row in db.run(qb.select(qb.table('evlet_jobs', 'j'), 'j.id', 'j.task', 'j.actor', 'j.model', 'j.record_id', 'j.state', 'j.attempts',
+                                                'j.run_at', 'j.error', 'p.done', 'p.total', 'p.message')
+                                      .join(qb.table('evlet_job_progress', 'p'), qb.eq('p.job_id', qb.col('j.id')), left=True)
+                                      .order_by('-j.id').limit(100))]
 
     def retry(self, job_id):
         with self.database.transaction() as tx:
             self._bound(tx)
-            if not tx.connection.execute("UPDATE evlet_jobs SET state='queued',attempts=0,run_at=?,error=NULL,completed_at=NULL WHERE id=? AND state='failed'", (int(time.time()), job_id)).rowcount:
+            if not tx.connection.run(qb.update('evlet_jobs', state='queued', attempts=0, run_at=int(time.time()), error=None, completed_at=None)
+                                     .where(id=job_id, state='failed')).rowcount:
                 raise ValueError('Only failed jobs can be retried')

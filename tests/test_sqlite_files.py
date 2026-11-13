@@ -10,6 +10,8 @@ import time
 
 import pytest
 
+from evlet import qb
+
 from evlet import Database, JobQueue, Task, User
 from evlet import framework, writes
 from evlet.writes import STORES, Busy, SplitError, WriteLine, split_files
@@ -40,7 +42,7 @@ def test_side_tables_live_in_their_own_files_in_wal_mode(full):
     assert {'evlet_users', 'evlet_jobs', 'evlet_job_progress', 'evlet_events', 'evlet_audit'} <= set(kept)
     # References across files are dropped (Evlet checks them); references inside one file stay.
     assert 'REFERENCES' not in schema(sessions)['evlet_sessions']
-    assert 'REFERENCES evlet_eva_conversations' in schema(eva)['evlet_eva_runs']
+    assert 'REFERENCES "evlet_eva_conversations"' in schema(eva)['evlet_eva_runs']
     for path in (main, sessions, logs, eva):
         with closing(sqlite3.connect(path)) as connection:
             assert connection.execute('PRAGMA journal_mode').fetchone()[0] == 'wal'
@@ -259,7 +261,7 @@ def test_a_slow_write_logs_a_warning_naming_the_job(secured, caplog):
 
 def test_batched_writes_save_within_a_moment_and_on_close(secured):
     database = secured.database
-    database.logs.add('logs', "INSERT INTO evlet_forwarded_peers(peer,last_seen) VALUES ('10.0.0.1',1)")
+    database.logs.add('logs', qb.insert('evlet_forwarded_peers', peer='10.0.0.1', last_seen=1))
     deadline = time.monotonic() + 2
     while time.monotonic() < deadline:
         with database._connection() as connection:
@@ -268,8 +270,8 @@ def test_batched_writes_save_within_a_moment_and_on_close(secured):
         time.sleep(0.05)
     else:
         pytest.fail('The batch was not saved')
-    database.logs.add(None, 'UPDATE evlet_users SET active=active WHERE id=1')
-    database.logs.add('logs', "INSERT INTO evlet_forwarded_peers(peer,last_seen) VALUES ('10.0.0.2',1)")
+    database.logs.add(None, qb.update('evlet_users', active=qb.col('active')).where(id=1))
+    database.logs.add('logs', qb.insert('evlet_forwarded_peers', peer='10.0.0.2', last_seen=1))
     database.close()
     with database._connection() as connection:
         assert connection.execute('SELECT count(*) FROM evlet_forwarded_peers').fetchone()[0] == 2
@@ -282,7 +284,7 @@ def test_adding_to_the_batch_never_waits_on_the_database(secured):
     started.wait()
     began = time.monotonic()
     for index in range(100):
-        secured.database.logs.add('logs', 'INSERT INTO evlet_forwarded_peers(peer,last_seen) VALUES (?,1)', (f'10.1.0.{index}',))
+        secured.database.logs.add('logs', qb.insert('evlet_forwarded_peers', peer=f'10.1.0.{index}', last_seen=1))
     assert time.monotonic() - began < 0.05
     holder.join()
     secured.database.close()

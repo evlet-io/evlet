@@ -3,8 +3,7 @@
 A measure is a total, count, minimum or maximum over records. You can ask for
 measures ad hoc, grouped by fields or by part of a date, or declare named measures on
 a model so lists and records can show them. An aggregate runs one SQL statement, applies
-the caller's row scope and field permissions, and gives the same results on SQLite and
-PostgreSQL.
+the caller's row scope and field permissions, and gives exact results.
 
 This guide covers Phase 9 of the model handoff.
 
@@ -29,8 +28,7 @@ database adds those integers, so `1000 x 0.10` is exactly `100.00`. Only the fin
 total is checked: it must lie in the signed 64-bit range of stored values, from
 -2^63 to 2^63 - 1 scaled units (for Currency, stored in millionths, about 9.2 million million either way).
 A larger total is an error, never a rounded or floating point number. Intermediate
-totals never fail, so the result does not depend on the order of rows and SQLite and
-PostgreSQL agree. With `group_by`, one group out of range fails the whole request.
+totals never fail, so the result does not depend on the order of rows. With `group_by`, one group out of range fails the whole request.
 
 ## Ad hoc aggregates in Python
 
@@ -98,7 +96,7 @@ while page := tx.aggregate(Entry, measures={"total": Sum("amount")}, group_by=("
 
 * Each group comes back exactly once. Groups are in a stable order: by each group key in
   turn, ascending, empty values first. The database orders text keys by its collation,
-  so the order of text keys can differ between SQLite and PostgreSQL. It never changes
+  so the order of text keys can differ between databases. It never changes
   between pages of one walk.
 * Each page is one query that starts after `after`. No page reads the groups before it,
   and the caller keeps only one page in memory, whatever the number of groups.
@@ -432,7 +430,7 @@ out whole, as before.
 
 * At most eight measures per request or per `Meta.measures`, four group fields and 500
   groups.
-* Text minimums and maximums are not offered, because SQLite and PostgreSQL order text
+* Text minimums and maximums are not offered, because databases order text
   differently. Group order is decided in Python for the same reason.
 * A per-record request reads the record (one statement for the row scope check and one
   for the record) and then runs one aggregate statement for each related model and link

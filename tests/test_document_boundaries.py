@@ -457,7 +457,7 @@ def test_legacy_child_errors_do_not_name_hidden_child_fields(tmp_path):
     assert status == 422 and 'cost' not in str(result) and 'margin' not in str(result)
 
 
-def test_text_matching_rejects_nul_like_postgresql(tmp_path):
+def test_text_matching_rejects_nul_characters(tmp_path):
     class Note(Model):
         title = Text()
     app = application(tmp_path, Note)

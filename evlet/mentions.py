@@ -13,6 +13,8 @@ notification preferences (Settings, Notifications, "Someone mentions me").
 import re
 import time
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .auth import AccessError, User
 from .database import NotFoundError
 from .models import ValidationError, checked_body
@@ -21,17 +23,31 @@ KIND = 'mention'
 PAGE = 50
 EVENT_MODEL = '_inbox'
 
+INBOX = TableDefinition('evlet_inbox', (
+    Column('user_id', 'INTEGER', required=True), Column('kind', 'TEXT', required=True), Column('actor', 'INTEGER'),
+    Column('model', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True), Column('entry_id', 'INTEGER'),
+    Column('at', 'INTEGER', required=True), Column('read_at', 'INTEGER'), Column('email', 'TEXT'),
+    Column('hidden', 'INTEGER', required=True, default=0)), numbered=True)
+
 
 def initialize(database):
     with database.transaction() as tx:
-        tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_inbox (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, '
-                              'kind TEXT NOT NULL, actor INTEGER, model TEXT NOT NULL, record_id INTEGER NOT NULL, entry_id INTEGER, '
-                              'at INTEGER NOT NULL, read_at INTEGER, email TEXT, hidden INTEGER NOT NULL DEFAULT 0)')
-        tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_inbox_user ON evlet_inbox(user_id, hidden, read_at, id)')
+        tx.connection.ensure_table(INBOX)
+        tx.connection.ensure_index('evlet_inbox_user', 'evlet_inbox', ('user_id', 'hidden', 'read_at', 'id'))
+
+
+def _shown_name():
+    """The person's full name, or their username when it is empty (users as u, left-joined profiles as p)."""
+    return qb.coalesce(qb.nullif('p.full_name', ''), qb.col('u.username'))
+
+
+def _people(*columns):
+    return qb.select(qb.table('evlet_users', 'u'), *columns).join(
+        qb.table('evlet_user_profile', 'p'), qb.eq('p.user_id', qb.col('u.id')), left=True)
 
 
 def _user(tx, user_id):
-    row = tx.connection.execute('SELECT id, username, role, active FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+    row = tx.connection.run(qb.select('evlet_users', 'id', 'username', 'role', 'active').where(id=user_id)).one()
     return None if row is None or not row['active'] else User(row['id'], row['username'], row['role'])
 
 
@@ -65,10 +81,9 @@ def record(business, tx, author, model, record_id, entry_id, html):
         if not in_app and not email:
             continue
         # With "in Evlet" turned off the row only carries the email: hidden from the inbox.
-        inbox_id = tx.connection.execute(
-            'INSERT INTO evlet_inbox(user_id, kind, actor, model, record_id, entry_id, at, read_at, email, hidden) VALUES (?,?,?,?,?,?,?,?,?,?)',
-            (user_id, KIND, author.id, name, int(record_id), entry_id, now, None if in_app else now, 'pending' if email else 'off',
-             0 if in_app else 1)).lastrowid
+        inbox_id = tx.connection.run(qb.insert(
+            'evlet_inbox', user_id=user_id, kind=KIND, actor=author.id, model=name, record_id=int(record_id), entry_id=entry_id, at=now,
+            read_at=None if in_app else now, email='pending' if email else 'off', hidden=0 if in_app else 1).returning_id()).id
         if email:
             wanted.append(inbox_id)
         publish(business, tx, user_id)
@@ -87,9 +102,8 @@ def mentionable(business, tx, user, model, record_id, query):
     if not isinstance(query, str) or len(query) > 60:
         raise ValidationError({'q': 'Use at most 60 characters'})
     needle = query.strip().lower()
-    rows = tx.connection.execute(
-        "SELECT u.id, u.username, u.role, COALESCE(p.full_name, '') AS full_name FROM evlet_users u "
-        'LEFT JOIN evlet_user_profile p ON p.user_id=u.id WHERE u.active=1 ORDER BY u.username LIMIT 500').fetchall()
+    rows = tx.connection.run(_people('u.id', 'u.username', 'u.role', qb.named(qb.coalesce('p.full_name', ''), 'full_name'))
+                             .where(qb.eq('u.active', 1)).order_by('u.username').limit(500)).all()
     found = []
     for row in rows:
         names = f"{row['full_name']} {row['username']}".lower()
@@ -129,7 +143,7 @@ def shown(business, tx, user, row, names):
 
 
 def unread(connection, user_id):
-    return connection.execute('SELECT count(*) FROM evlet_inbox WHERE user_id=? AND hidden=0 AND read_at IS NULL', (user_id,)).fetchone()[0]
+    return connection.run(qb.select('evlet_inbox', qb.count()).where(user_id=user_id, hidden=0, read_at=None)).value()
 
 
 def route(business, scope, body, user):
@@ -144,13 +158,12 @@ def route(business, scope, body, user):
             checked_body(body, {'ids', 'all'}, 'Send ids or all', field='ids')
             now = int(time.time())
             if body.get('all') is True:
-                tx.connection.execute('UPDATE evlet_inbox SET read_at=? WHERE user_id=? AND read_at IS NULL', (now, user.id))
+                tx.connection.run(qb.update('evlet_inbox', read_at=now).where(user_id=user.id, read_at=None))
             else:
                 ids = body.get('ids')
                 if not isinstance(ids, list) or not 1 <= len(ids) <= 100 or any(type(item) is not int for item in ids):
                     raise ValidationError({'ids': 'Send 1 to 100 inbox ids'})
-                tx.connection.execute(f'UPDATE evlet_inbox SET read_at=? WHERE user_id=? AND read_at IS NULL AND id IN ({", ".join("?" for _ in ids)})',
-                                      (now, user.id, *ids))
+                tx.connection.run(qb.update('evlet_inbox', read_at=now).where(qb.in_('id', ids), user_id=user.id, read_at=None))
             publish(business, tx, user.id)
             return 200, {'unread': unread(tx.connection, user.id)}, []
         if path != '/api/_inbox' or method != 'GET':
@@ -159,16 +172,15 @@ def route(business, scope, body, user):
         limit, offset = query.get('limit', [str(PAGE)])[0], query.get('offset', ['0'])[0]
         if not re.fullmatch('[0-9]{1,3}', limit) or not re.fullmatch('[0-9]{1,9}', offset) or not 1 <= int(limit) <= 100:
             raise ValidationError({'query': 'Use a limit of 1 to 100 and a nonnegative offset'})
-        rows = tx.connection.execute('SELECT * FROM evlet_inbox WHERE user_id=? AND hidden=0 ORDER BY id DESC LIMIT ? OFFSET ?',
-                                     (user.id, int(limit), int(offset))).fetchall()
+        rows = tx.connection.run(qb.select('evlet_inbox').where(user_id=user.id, hidden=0).order_by('-id').limit(int(limit))
+                                 .offset(int(offset))).all()
         actors = sorted({row['actor'] for row in rows if row['actor'] is not None})
         names = {}
         if actors:
-            names = {row['id']: row['name'] for row in tx.connection.execute(
-                "SELECT u.id, COALESCE(NULLIF(p.full_name, ''), u.username) AS name FROM evlet_users u LEFT JOIN evlet_user_profile p ON p.user_id=u.id "
-                f'WHERE u.id IN ({", ".join("?" for _ in actors)})', actors)}
+            names = {row['id']: row['name'] for row in tx.connection.run(
+                _people('u.id', qb.named(_shown_name(), 'name')).where(qb.in_('u.id', actors)))}
         items = [shown(business, tx, user, row, names) for row in rows]
-        total = tx.connection.execute('SELECT count(*) FROM evlet_inbox WHERE user_id=? AND hidden=0', (user.id,)).fetchone()[0]
+        total = tx.connection.run(qb.select('evlet_inbox', qb.count()).where(user_id=user.id, hidden=0)).value()
         return 200, {'items': items, 'total': total, 'unread': unread(tx.connection, user.id)}, []
 
 
@@ -179,15 +191,14 @@ def send_emails(business, inbox_ids):
     from .connectors import ConnectionFailed
     for inbox_id in inbox_ids:
         with business.database.transaction() as tx:
-            row = tx.connection.execute("SELECT * FROM evlet_inbox WHERE id=? AND email='pending'", (inbox_id,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_inbox').where(id=inbox_id, email='pending')).one()
             if row is None:
                 continue
             person = _user(tx, row['user_id'])
-            profile = tx.connection.execute('SELECT email FROM evlet_user_profile WHERE user_id=?', (row['user_id'],)).fetchone() \
+            profile = tx.connection.run(qb.select('evlet_user_profile', 'email').where(user_id=row['user_id'])).one() \
                 if person else None
             address = profile['email'] if profile is not None else None
-            actor = tx.connection.execute("SELECT COALESCE(NULLIF(p.full_name, ''), u.username) AS name FROM evlet_users u "
-                                          'LEFT JOIN evlet_user_profile p ON p.user_id=u.id WHERE u.id=?', (row['actor'],)).fetchone()
+            actor = tx.connection.run(_people(qb.named(_shown_name(), 'name')).where(qb.eq('u.id', row['actor']))).one()
             item = shown(business, tx, person, row, {row['actor']: actor['name'] if actor else 'Someone'}) if person else None
         outcome = 'no_email'
         if item is not None and address:
@@ -204,7 +215,7 @@ def send_emails(business, inbox_ids):
                 except (ConnectionFailed, ValueError):
                     outcome = 'failed'
         with business.database.transaction() as tx:
-            tx.connection.execute('UPDATE evlet_inbox SET email=? WHERE id=?', (outcome, inbox_id))
+            tx.connection.run(qb.update('evlet_inbox', email=outcome).where(id=inbox_id))
 
 
 __all__ = ['initialize', 'record', 'route', 'mentionable', 'send_emails', 'unread']

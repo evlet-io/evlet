@@ -7,21 +7,21 @@ their Fields in the database's Layer (see fields.Layer); model classes from app 
 """
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
 import json
 import re
-import sqlite3
 from threading import Lock
 import time
 from types import MappingProxyType
 
+from . import qb
 from .auth import AccessError
 from .naming import form_hidden
 from .declarations import Ref
 from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Decimal, Integer, Layer, Link, LongText, Select,
                      State, Text, active_layer)
+from .adapter import Column, DatabaseError, TableDefinition
 from .database import ConflictError
-from .models import ValidationError, identifier
+from .models import ValidationError
 from .ui.metadata import FLOWS, OPEN_IN, PANEL_BLOCKS, PANEL_KINDS, label_for, list_tabs_for, starts_valid, view_for
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default', 'options_add', 'options_hidden')
@@ -31,18 +31,17 @@ FIELD_NAME = re.compile(r'x_[a-z0-9_]{1,38}')
 FRAMEWORK_COLUMNS = ('id', 'created_by', 'created_at', 'modified_by', 'modified_at', 'tenant', 'revision')
 TYPES = ('Text', 'LongText', 'Integer', 'Decimal', 'Currency', 'Date', 'Boolean', 'Select', 'Link')
 PAGE_SIZES = (25, 50, 100)
-DROP_COLUMN = (3, 35, 0)
 REQUIRED_HIDDEN = "A required field can't be hidden. People couldn't fill it in."
 RETIRED = 'This option is no longer offered. Choose another one.'
 
 
+CUSTOM_FIELDS = TableDefinition('evlet_custom_fields', (
+    Column('model', 'TEXT', required=True), Column('name', 'TEXT', required=True), Column('definition', 'TEXT', required=True),
+    Column('created_by', 'TEXT'), Column('created_at', 'INTEGER')), primary_key=('model', 'name'))
+
+
 def ensure_schema(connection):
-    connection.execute('CREATE TABLE IF NOT EXISTS evlet_custom_fields (model TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, '
-                       'created_by TEXT, created_at INTEGER, PRIMARY KEY (model, name))')
-
-
-def sqlite_version(connection):
-    return connection.execute('SELECT sqlite_version()').fetchone()[0]
+    connection.ensure_table(CUSTOM_FIELDS)
 
 
 # ---------- instance fields ----------
@@ -104,16 +103,8 @@ def activated(database, layer):
 
 
 def add_column(connection, table, name, field):
-    if isinstance(connection, sqlite3.Connection):
-        from .migrations import _column
-        connection.execute(f'ALTER TABLE {identifier(table)} ADD COLUMN {_column(name, field)[0]}')
-        return
-    from .models import storage_name
-    from .postgres_schema import column
-    connection.execute(f'ALTER TABLE {identifier(table)} ADD COLUMN {column(name, field)[0]}')
-    if isinstance(field, Link):
-        connection.execute(f'ALTER TABLE {identifier(table)} ADD FOREIGN KEY ({identifier(name)}) '
-                           f'REFERENCES {identifier(storage_name(field.target))}(id)')
+    from .migrations import field_columns
+    connection.add_column(table, field_columns(name, field)[0])
 
 
 # ---------- file values ----------
@@ -174,11 +165,7 @@ class Customization:
 
     def initialize(self, connection):
         ensure_schema(connection)
-        if isinstance(connection, sqlite3.Connection):
-            version = sqlite_version(connection)
-            if tuple(int(part) for part in version.split('.')[:3]) < DROP_COLUMN:
-                self.drop = (f'Removing a field needs SQLite 3.35 or later, and this server has {version}. '
-                             'Update SQLite to remove fields. Adding fields still works.')
+        self.drop = connection.cannot_drop_columns()
 
     def fields(self, model):
         """Fields of a model that Controls can change: everything but the engine's own."""
@@ -625,16 +612,8 @@ class Customization:
     # ---------- instance fields ----------
 
     def backup(self):
-        """A copy of a SQLite database next to it, in backups/. PostgreSQL is backed up by its operator."""
-        database = self.business.database
-        if getattr(database, 'path', None) is None or not hasattr(database, 'must_exist'):
-            return None
-        from .cli.install import snapshot
-        folder = database.path.parent / 'backups'
-        folder.mkdir(mode=0o700, exist_ok=True)
-        target = folder / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
-        snapshot(database.path, target)
-        return target.name
+        """A copy of the database (Database.backup), or None when its operator backs it up."""
+        return self.business.database.backup()
 
     def check_new(self, model, body):
         if not isinstance(body, dict) or set(body) - {'name', 'type', 'label', 'help_text', 'tooltip', 'required', 'default', 'options', 'target'}:
@@ -646,7 +625,7 @@ class Customization:
             errors['name'] = 'Use lowercase letters, digits and underscores, 40 characters at most with x_.'
         else:
             with self.business.database._connection() as connection:
-                taken = {column.lower() for column in self.business.database.columns(connection, self.registry.name_for(model))}
+                taken = {column.lower() for column in connection.columns(self.registry.name_for(model))}
             # Names compare ignoring case, and against every column, a Reference's <name>_model and <name>_id included.
             if name in taken | {key.lower() for key in model.__declared_fields__} | set(FRAMEWORK_COLUMNS):
                 errors['name'] = f'{model.__name__} already has a field called {name}.'
@@ -697,16 +676,16 @@ class Customization:
         taken = ValidationError({'name': f'{model.__name__} already has a field called {name}.'})
         with self.engine:
             with self.business.database._connection() as connection:
-                rows = connection.execute(f'SELECT count(*) FROM {identifier(table)}').fetchone()[0]
+                rows = connection.run(qb.select(table, qb.count())).value()
             if definition['required'] and definition['default'] is None and rows:
                 raise ValidationError({'default': f'{rows} records already exist. Give a default for them, or leave the field optional.'})
             backup = self.backup()
             try:
                 version = self.insert_field(actor, model, table, name, definition, field, backup)
-            except (sqlite3.Error, ConflictError):
+            except (DatabaseError, ConflictError):
                 # Another process added the same field first.
                 with self.business.database._connection() as connection:
-                    if name in self.business.database.columns(connection, table):
+                    if name in connection.columns(table):
                         raise taken from None
                 raise
         self.controls.refresh()
@@ -715,17 +694,17 @@ class Customization:
     def insert_field(self, actor, model, table, name, definition, field, backup):
         with self.business.database.transaction() as tx:
             connection = tx.connection
-            if connection.execute('SELECT 1 FROM evlet_custom_fields WHERE model=? AND name=?', (table, name)).fetchone():
+            if connection.run(qb.select('evlet_custom_fields', qb.value(1)).where(model=table, name=name)).one():
                 raise ValidationError({'name': f'{model.__name__} already has a field called {name}.'})
-            rows = connection.execute(f'SELECT count(*) FROM {identifier(table)}').fetchone()[0]
+            rows = connection.run(qb.select(table, qb.count())).value()
             if definition['required'] and definition['default'] is None and rows:
                 raise ValidationError({'default': f'{rows} records already exist. Give a default for them, or leave the field optional.'})
             field.name = name
             add_column(connection, table, name, field)
             if definition['required'] and definition['default'] is not None and rows:
-                connection.execute(f'UPDATE {identifier(table)} SET {identifier(name)}=?', (field.to_storage(field.default),))
-            connection.execute('INSERT INTO evlet_custom_fields(model,name,definition,created_by,created_at) VALUES (?,?,?,?,?)',
-                               (table, name, json.dumps(definition, sort_keys=True), actor.username, int(time.time())))
+                connection.run(qb.update(table, **{name: field.to_storage(field.default)}))
+            connection.run(qb.insert('evlet_custom_fields', model=table, name=name, definition=json.dumps(definition, sort_keys=True),
+                                     created_by=actor.username, created_at=int(time.time())))
             self.grant_new_field(connection, model, name)
             self.controls.audit(connection, actor.username, 'Models', f'{model.__name__}.{name}',
                                 f'Field added ({definition["type"]})' + (f' · backup {backup}' if backup else ''), None, definition)
@@ -738,15 +717,15 @@ class Customization:
         table = self.registry.name_for(model)
         with self.engine:
             with self.business.database._connection() as connection:
-                row = connection.execute('SELECT definition FROM evlet_custom_fields WHERE model=? AND name=?', (table, name)).fetchone()
+                row = connection.run(qb.select('evlet_custom_fields', 'definition').where(model=table, name=name)).one()
             if row is None:
                 raise AccessError(404, 'Field not found')
             backup = self.backup()
             with self.business.database.transaction() as tx:
                 connection = tx.connection
                 cleaned = self.cleanup(connection, model, name)
-                connection.execute(f'ALTER TABLE {identifier(table)} DROP COLUMN {identifier(name)}')
-                connection.execute('DELETE FROM evlet_custom_fields WHERE model=? AND name=?', (table, name))
+                connection.drop_column(table, name)
+                connection.run(qb.delete('evlet_custom_fields').where(model=table, name=name))
                 detail = 'Field removed' + (f' with {cleaned} override{"s" if cleaned != 1 else ""} cleaned' if cleaned else '')
                 self.controls.audit(connection, actor.username, 'Models', f'{model.__name__}.{name}',
                                     detail + (f' · backup {backup}' if backup else ''), json.loads(row[0]), None)
@@ -759,9 +738,8 @@ class Customization:
         """A new instance field is readable and writable like the record for desk roles. A desk role's permission
         override that lists fields gets it too, so it is hidden from staff only when an admin unticks it there.
         Portal roles get it only when an admin ticks it."""
-        pattern = '%|' + model.__name__.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        desk = {row['id'] for row in connection.execute("SELECT id FROM evlet_roles WHERE realm='desk'")}
-        for row in connection.execute("SELECT key, value FROM evlet_overrides WHERE kind='perm' AND key LIKE ? ESCAPE '\\'", (pattern,)).fetchall():
+        desk = {row['id'] for row in connection.run(qb.select('evlet_roles', 'id').where(realm='desk'))}
+        for row in connection.run(qb.select('evlet_overrides', 'key', 'value').where(qb.eq('kind', 'perm'), qb.ends_with('key', '|' + model.__name__))).all():
             if row['key'].partition('|')[0] not in desk:
                 continue
             value = json.loads(row['value'])
@@ -773,7 +751,7 @@ class Customization:
             if isinstance(value.get('write'), list) and name not in value['write'] and {'create', 'update'} & set(value['ops']):
                 changed['write'] = [*value['write'], name]
             if changed != value:
-                connection.execute("UPDATE evlet_overrides SET value=? WHERE kind='perm' AND key=?", (json.dumps(changed, sort_keys=True), row['key']))
+                connection.run(qb.update('evlet_overrides', value=json.dumps(changed, sort_keys=True)).where(kind='perm', key=row['key']))
 
     def instance_model(self, model_name):
         model = self.controls.models().get(model_name)
@@ -791,13 +769,14 @@ class Customization:
             nonlocal changed
             changed += 1
             if value is None:
-                connection.execute('DELETE FROM evlet_overrides WHERE kind=? AND key=?', (kind, key))
+                connection.run(qb.delete('evlet_overrides').where(kind=kind, key=key))
             else:
-                connection.execute('UPDATE evlet_overrides SET value=? WHERE kind=? AND key=?', (json.dumps(value, sort_keys=True), kind, key))
+                connection.run(qb.update('evlet_overrides', value=json.dumps(value, sort_keys=True)).where(kind=kind, key=key))
 
-        escaped = model_name.replace('\\', '\\\\').replace('%', '\\%').replace('_', '\\_')
-        rows = connection.execute("SELECT kind, key, value FROM evlet_overrides WHERE (kind='field' AND key=?) OR (kind IN ('layout','list','naming') AND key=?) "
-                                  "OR (kind='perm' AND key LIKE ? ESCAPE '\\')", (f'{model_name}.{name}', model_name, f'%|{escaped}')).fetchall()
+        rows = connection.run(qb.select('evlet_overrides', 'kind', 'key', 'value').where(qb.or_(
+            qb.and_(qb.eq('kind', 'field'), qb.eq('key', f'{model_name}.{name}')),
+            qb.and_(qb.in_('kind', ('layout', 'list', 'naming')), qb.eq('key', model_name)),
+            qb.and_(qb.eq('kind', 'perm'), qb.ends_with('key', '|' + model_name))))).all()
         fields = {key: field for key, field in model.__declared_fields__.items() if key != name}
         for kind, key, raw in ((row[0], row[1], row[2]) for row in rows):
             value = json.loads(raw)
@@ -853,9 +832,9 @@ class Customization:
         model, rules = self.naming_model(model_name)
         table = self.registry.name_for(model)
         with self.business.database._connection() as connection:
-            rows = [dict(row) for row in connection.execute(
-                "SELECT scope_key AS prefix, \"last\" AS value, last_name, how, note, changed_by, changed_at FROM evlet_sequence "
-                "WHERE model=? AND field=? AND period='' ORDER BY changed_at DESC, scope_key", (table, rules.field))] \
+            rows = [dict(row) for row in connection.run(
+                qb.select('evlet_sequence', qb.named('scope_key', 'prefix'), qb.named('last', 'value'), 'last_name', 'how', 'note',
+                          'changed_by', 'changed_at').where(model=table, field=rules.field, period='').order_by('-changed_at', 'scope_key'))] \
                 if self.counter_table(connection) else []
         for row in rows:
             match = self.series_of(rules, row['prefix'])
@@ -866,9 +845,7 @@ class Customization:
         return {'field': rules.field, 'items': rows}
 
     def counter_table(self, connection):
-        if isinstance(connection, sqlite3.Connection):
-            return connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_sequence'").fetchone() is not None
-        return connection.execute("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_sequence'").fetchone() is not None
+        return connection.table_exists('evlet_sequence')
 
     @staticmethod
     def series_of(rules, prefix):
@@ -897,15 +874,15 @@ class Customization:
             connection = tx.connection
             from .sequences import upgrade_counters
             upgrade_counters(connection)
-            row = connection.execute("SELECT \"last\", last_name FROM evlet_sequence WHERE model=? AND field=? AND scope_key=? AND period=''",
-                                     (table, rules.field, prefix)).fetchone()
+            row = connection.run(qb.select('evlet_sequence', 'last', 'last_name').where(model=table, field=rules.field, scope_key=prefix, period='')).one()
             floor = issued(prefix, row[1]) if row else None
             if floor is not None and value < floor:
                 raise ValidationError({'value': f'Lower than {row[1]}, which already exists. The next names would clash with existing records.'})
-            connection.execute("INSERT INTO evlet_sequence (model, field, scope_key, period, \"last\", how, note, changed_by, changed_at) "
-                               "VALUES (?, ?, ?, '', ?, 'set', ?, ?, ?) ON CONFLICT (model, field, scope_key, period) DO UPDATE SET "
-                               "\"last\" = excluded.\"last\", how = 'set', note = excluded.note, changed_by = excluded.changed_by, changed_at = excluded.changed_at",
-                               (table, rules.field, prefix, value, note.strip(), actor.username, int(time.time())))
+            connection.run(qb.insert('evlet_sequence', model=table, field=rules.field, scope_key=prefix, period='', last=value, how='set',
+                                     note=note.strip(), changed_by=actor.username, changed_at=int(time.time()))
+                           .on_conflict('model', 'field', 'scope_key', 'period')
+                           .do_update(last=qb.col('excluded.last'), how='set', note=qb.col('excluded.note'), changed_by=qb.col('excluded.changed_by'),
+                                      changed_at=qb.col('excluded.changed_at')))
             before = row[0] if row else 0
             self.controls.audit(connection, actor.username, 'Naming', f'{model.__name__} · {prefix}', f'Counter {before} → {value} · {note.strip()}',
                                 {'value': before}, {'value': value})
@@ -979,7 +956,7 @@ class Customization:
                            'width': width(field)})
         table = self.registry.name_for(model)
         with self.business.database._connection() as connection:
-            count = connection.execute(f'SELECT count(*) FROM {identifier(table)}').fetchone()[0]
+            count = connection.run(qb.select(table, qb.count())).value()
         rules = self.naming.get(model)
         # The record's parts the side panel can hide: its own, then each child table with its label.
         labels = {child.name: child.label for child in self.registry.children if child.parent is model}

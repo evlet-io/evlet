@@ -1,4 +1,4 @@
-"""Period locks (Meta.period): closed periods refuse every writer, mirror rows move to the first open date, on real SQLite and PostgreSQL."""
+"""Period locks (Meta.period): closed periods refuse every writer, mirror rows move to the first open date, on real SQLite."""
 
 from datetime import date, datetime, timedelta, timezone
 
@@ -8,10 +8,8 @@ from evlet import (Application, Boolean, Currency, Database, Date, DateTime, Eff
                    Text, ValidationError)
 from evlet.auth import AccessError, LocalAuth, User
 from evlet.periods import set_lock
-from evlet.postgres import PostgreSQLDatabase
 from finite_fixtures import FiniteMeta
 from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401 - fixtures
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 from test_rules_types import ALL
 
 FULL = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'))}
@@ -87,13 +85,10 @@ class Receipt(Model):
 MODELS = (Company, Booking, Stamp, Posting, Voucher, Receipt)
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def books(request, tmp_path):
+@pytest.fixture
+def books(tmp_path):
     registry = Registry(*MODELS)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'periods.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'periods.sqlite3', registry)
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201

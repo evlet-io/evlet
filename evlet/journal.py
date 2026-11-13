@@ -26,13 +26,15 @@ from .auth import AccessError, User
 from .fields import Link, Reference
 from .identity import RecordId, text as text_id
 from .models import ValidationError
+from . import qb
+from .adapter import Column, TableDefinition
 
-TABLE = ('CREATE TABLE IF NOT EXISTS evlet_journal (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, '
-         'record_id INTEGER NOT NULL, kind TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL, data TEXT NOT NULL, '
-         'prev_hash TEXT, hash TEXT)')
-INDEX = 'CREATE INDEX IF NOT EXISTS evlet_journal_record ON evlet_journal (model, record_id, id)'
+TABLE = TableDefinition('evlet_journal', (
+    Column('model', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True), Column('kind', 'TEXT', required=True),
+    Column('actor', 'TEXT', required=True), Column('at', 'TEXT', required=True), Column('data', 'TEXT', required=True),
+    Column('prev_hash', 'TEXT'), Column('hash', 'TEXT')), numbered=True)
 # Models that have declared tamper_evident=True; verify() treats their unhashed entries as breaks.
-HASHED = 'CREATE TABLE IF NOT EXISTS evlet_journal_hashed (model TEXT PRIMARY KEY)'
+HASHED = TableDefinition('evlet_journal_hashed', (Column('model', 'TEXT', primary=True),))
 APPEND_ONLY = 'The journal is append only'
 # Kinds the engine writes; `effects` is written by effects_posted() after a move posts or a void or unpost reverses
 # effect rows, and `recomputed` by a Recompute migration that changed a record's stored results.
@@ -90,33 +92,18 @@ def compile_journals(models, child_models, effects=()):
     return MappingProxyType(result)
 
 
-def ensure_table(connection, *, postgres=False, hashed=()):
-    """Create the table, its index and the triggers that refuse UPDATE and DELETE (and, on SQLite, an
-    INSERT OR REPLACE over an existing entry), and record the tamper-evident models `hashed`.
+def ensure_table(connection, *, hashed=()):
+    """Create the table and its index, make it append-only (UPDATE, DELETE and an insert that replaces an
+    entry are refused), and record the tamper-evident models `hashed`.
 
     Every statement is idempotent, so a database created by an earlier release gets new guards on start.
     """
-    connection.execute(TABLE)
-    connection.execute(INDEX)
-    connection.execute(HASHED)
+    connection.ensure_table(TABLE)
+    connection.ensure_index('evlet_journal_record', 'evlet_journal', ('model', 'record_id', 'id'))
+    connection.ensure_table(HASHED)
     for name in hashed:
-        connection.execute('INSERT INTO evlet_journal_hashed (model) VALUES (?) ON CONFLICT (model) DO NOTHING', (name,))
-    if postgres:
-        connection.execute("CREATE OR REPLACE FUNCTION evlet_journal_append_only() RETURNS trigger LANGUAGE plpgsql AS "
-                           f"$$ BEGIN RAISE EXCEPTION '{APPEND_ONLY}'; END $$")
-        if connection.execute("SELECT 1 FROM pg_trigger WHERE tgname='evlet_journal_append_only'").fetchone() is None:
-            connection.execute('CREATE TRIGGER evlet_journal_append_only BEFORE UPDATE OR DELETE ON evlet_journal '
-                               'FOR EACH ROW EXECUTE FUNCTION evlet_journal_append_only()')
-            connection.execute('CREATE TRIGGER evlet_journal_no_truncate BEFORE TRUNCATE ON evlet_journal '
-                               'FOR EACH STATEMENT EXECUTE FUNCTION evlet_journal_append_only()')
-    else:
-        for event in ('UPDATE', 'DELETE'):
-            connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_journal_no_{event.lower()} BEFORE {event} ON evlet_journal '
-                               f"BEGIN SELECT RAISE(ABORT, '{APPEND_ONLY}'); END")
-        # REPLACE deletes the old row without firing DELETE triggers, so an insert may not reuse an id.
-        connection.execute('CREATE TRIGGER IF NOT EXISTS evlet_journal_no_replace BEFORE INSERT ON evlet_journal '
-                           'WHEN EXISTS (SELECT 1 FROM evlet_journal WHERE id = NEW.id) '
-                           f"BEGIN SELECT RAISE(ABORT, '{APPEND_ONLY}'); END")
+        connection.run(qb.insert('evlet_journal_hashed', model=name).on_conflict('model').do_nothing())
+    connection.make_append_only('evlet_journal', APPEND_ONLY)
 
 
 # Writing
@@ -151,7 +138,7 @@ def via(tx, user):
     assistant = None if access is None else access.assistant
     if assistant is None:
         return None
-    row = tx.connection.execute('SELECT client_name FROM evlet_mcp_clients WHERE id=?', (assistant,)).fetchone() if assistant else None
+    row = tx.connection.run(qb.select('evlet_mcp_clients', 'client_name').where(id=assistant)).one() if assistant else None
     return row[0] if row is not None else 'Local MCP connector'
 
 
@@ -201,25 +188,23 @@ def insert(connection, registry, model, record_id, kind, actor, data):
     at, text = now(), canonical(data)
     prev_hash = digest = None
     if registry.journals[model].tamper_evident:
-        # Writers are serialized (SQLite BEGIN IMMEDIATE, a PostgreSQL transaction lock), so the
+        # Writers are serialized (one write transaction at a time), so the
         # previous entry cannot change before this one commits.
-        row = connection.execute('SELECT hash FROM evlet_journal WHERE model=? AND record_id=? ORDER BY id DESC LIMIT 1',
-                                 (name, record_id)).fetchone()
+        row = connection.run(qb.select('evlet_journal', 'hash').where(model=name, record_id=record_id).order_by('-id').limit(1)).one()
         prev_hash = None if row is None else row[0]
         digest = entry_hash(name, record_id, kind, actor, at, text, prev_hash)
-    row = connection.execute('INSERT INTO evlet_journal (model, record_id, kind, actor, at, data, prev_hash, hash) '
-                             'VALUES (?, ?, ?, ?, ?, ?, ?, ?) RETURNING id',
-                             (name, record_id, kind, actor, at, text, prev_hash, digest)).fetchone()
-    return row[0]
+    entry = qb.insert('evlet_journal', model=name, record_id=record_id, kind=kind, actor=actor, at=at, data=text, prev_hash=prev_hash,
+                      hash=digest)
+    return connection.run(entry.returning_id()).id
 
 
-def recomputed(connection, registry, changes, *, postgres=False):
+def recomputed(connection, registry, changes):
     """`recomputed` entries, as the engine, for the records a Recompute migration changed:
     {(model, record_id): {"fields": ..., "rows": ...}} in the shape of a `changed` entry."""
     changes = {key: data for key, data in changes.items() if key[0] in registry.journals}
     if not changes:
         return
-    ensure_table(connection, postgres=postgres,
+    ensure_table(connection,
                  hashed=[registry.name_for(model) for model, journal in registry.journals.items() if journal.tamper_evident])
     for (model, record_id), data in sorted(changes.items(), key=lambda item: (registry.name_for(item[0][0]), item[0][1])):
         if getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False):
@@ -435,8 +420,8 @@ def clean_entry(business, tx, model, record_id, kind, values):
     if kind == 'follow_up_done':
         target = values.get('follow_up')
         name = business.registry.name_for(model)
-        if type(target) is not int or tx.connection.execute(
-                "SELECT 1 FROM evlet_journal WHERE id=? AND model=? AND record_id=? AND kind='follow_up'", (target, name, record_id)).fetchone() is None:
+        if type(target) is not int or tx.connection.run(
+                qb.select('evlet_journal', 'id').where(id=target, model=name, record_id=record_id, kind='follow_up')).one() is None:
             raise ValidationError({'follow_up': 'Name a follow up of this record'})
         if target in completed(tx, name, record_id):
             raise AccessError(409, 'This follow up is already done')
@@ -448,7 +433,7 @@ def assignee(business, tx, model, record_id, value):
     """The id of an active user who can read the record, or None."""
     if value is None:
         return None
-    row = tx.connection.execute('SELECT id, username, role, active FROM evlet_users WHERE id=?', (value,)).fetchone() \
+    row = tx.connection.run(qb.select('evlet_users', 'id', 'username', 'role', 'active').where(id=value)).one() \
         if type(value) is int and 1 <= value <= 2**63 - 1 else None
     if row is None or not row['active']:
         raise ValidationError({'assignee': 'Choose an active user'})
@@ -461,8 +446,7 @@ def assignee(business, tx, model, record_id, value):
 
 def completed(tx, name, record_id):
     """{follow up id: id of the entry that completed it} for one record."""
-    rows = tx.connection.execute("SELECT id, data FROM evlet_journal WHERE model=? AND record_id=? AND kind='follow_up_done'",
-                                 (name, record_id)).fetchall()
+    rows = tx.connection.run(qb.select('evlet_journal', 'id', 'data').where(model=name, record_id=record_id, kind='follow_up_done')).all()
     return {json.loads(row['data'])['follow_up']: row['id'] for row in rows}
 
 
@@ -504,7 +488,7 @@ def add(context, model, record_id, kind, values):
         from .mentions import record as mentioned
         context.__dict__.setdefault('_mention_emails', []).extend(mentioned(business, tx, user, model, record_id, entry_id, data['html']))
     business.changed(tx, model, record_id, journal=True)
-    row = tx.connection.execute('SELECT id, kind, actor, at, data FROM evlet_journal WHERE id=?', (entry_id,)).fetchone()
+    row = tx.connection.run(qb.select('evlet_journal', 'id', 'kind', 'actor', 'at', 'data').where(id=entry_id)).one()
     return shown(business, tx, user, model, record_id, [row])[0]
 
 
@@ -730,10 +714,10 @@ def entries(context, model, record_id, *, limit=PAGE, offset=0, kind=None):
     if type(limit) is not int or not 1 <= limit <= MAX_PAGE or type(offset) is not int or not 0 <= offset <= 2**63 - 1:
         raise ValidationError({'query': f'Use a limit of 1 to {MAX_PAGE} entries and a nonnegative offset'})
     name = business.registry.name_for(model)
-    only, values = ('', ()) if kind is None else (' AND kind=?', (kind,))
-    rows = tx.connection.execute(f'SELECT id, kind, actor, at, data FROM evlet_journal WHERE model=? AND record_id=?{only} '
-                                 'ORDER BY id DESC LIMIT ? OFFSET ?', (name, record_id, *values, limit, offset)).fetchall()
-    total = tx.connection.execute(f'SELECT count(*) FROM evlet_journal WHERE model=? AND record_id=?{only}', (name, record_id, *values)).fetchone()[0]
+    only = qb.TRUE if kind is None else qb.eq('kind', kind)
+    rows = tx.connection.run(qb.select('evlet_journal', 'id', 'kind', 'actor', 'at', 'data').where(only, model=name, record_id=record_id)
+                             .order_by('-id').limit(limit).offset(offset)).all()
+    total = tx.connection.run(qb.select('evlet_journal', qb.count()).where(only, model=name, record_id=record_id)).value()
     items = shown(business, tx, user, model, record_id, rows)
     ids = {item['actor'] for item in items if item['actor'] is not None}
     ids |= {item['data']['assignee'] for item in items if item['kind'] == 'follow_up' and item['data'].get('assignee')}
@@ -743,7 +727,7 @@ def entries(context, model, record_id, *, limit=PAGE, offset=0, kind=None):
     users = {}
     if ids:
         ids = sorted(ids)
-        found = tx.connection.execute(f'SELECT id, username FROM evlet_users WHERE id IN ({", ".join("?" for _ in ids)})', ids).fetchall()
+        found = tx.connection.run(qb.select('evlet_users', 'id', 'username').where(qb.in_('id', ids))).all()
         users = {str(row['id']): row['username'] for row in found}
     return {'items': items, 'total': total, 'limit': limit, 'offset': offset, 'users': users}
 
@@ -752,10 +736,9 @@ def summary(business, tx, model, record_id):
     """`_journal` for a detail response: the number of entries and of follow ups not done yet."""
     if model not in business.journals:
         return {}
-    row = tx.connection.execute("SELECT count(*), sum(CASE WHEN kind='follow_up' THEN 1 ELSE 0 END), "
-                                "sum(CASE WHEN kind='follow_up_done' THEN 1 ELSE 0 END) FROM evlet_journal "
-                                'WHERE model=? AND record_id=?', (business.registry.name_for(model), record_id)).fetchone()
-    return {'_journal': {'count': row[0], 'open_follow_ups': (row[1] or 0) - (row[2] or 0)}}
+    kinds = dict(tx.connection.run(qb.select('evlet_journal', 'kind', qb.count())
+                                   .where(model=business.registry.name_for(model), record_id=record_id).group_by('kind')).all())
+    return {'_journal': {'count': sum(kinds.values()), 'open_follow_ups': kinds.get('follow_up', 0) - kinds.get('follow_up_done', 0)}}
 
 
 def schema(business, user, model):
@@ -798,19 +781,19 @@ def route(business, scope, body, user, model, record_id):
         raise ValidationError({'query': f'Use a limit of 1 to {MAX_PAGE} entries, a nonnegative offset and a known kind'})
     from .documents import Context
     with business.database._connection() as connection:
-        # One read snapshot (PostgreSQL: repeatable read, read only).
-        connection.execute('BEGIN')
+        # One read snapshot.
+        connection.snapshot()
         context = Context(business, Session(connection, business.registry), user, readonly=True)
         return 200, entries(context, model, record_id, limit=int(limit), offset=int(offset), kind=kind), []
 
 
 # Verification
 
-def hashed_models(connection, columns):
+def hashed_models(connection):
     """Names of the models that have declared tamper_evident=True, as recorded at startup."""
-    if 'model' not in columns(connection, 'evlet_journal_hashed'):
+    if 'model' not in connection.columns('evlet_journal_hashed'):
         return set()
-    return {row[0] for row in connection.execute('SELECT model FROM evlet_journal_hashed').fetchall()}
+    return {row[0] for row in connection.run(qb.select('evlet_journal_hashed', 'model')).all()}
 
 
 def verify_connection(connection, *, hashed=(), batch=1000):
@@ -824,8 +807,8 @@ def verify_connection(connection, *, hashed=(), batch=1000):
     hashed = set(hashed)
     last, breaks, checked, after = {}, [], 0, 0
     while True:
-        rows = connection.execute('SELECT id, model, record_id, kind, actor, at, data, prev_hash, hash FROM evlet_journal '
-                                  'WHERE id > ? ORDER BY id LIMIT ?', (after, batch)).fetchall()
+        rows = connection.run(qb.select('evlet_journal', 'id', 'model', 'record_id', 'kind', 'actor', 'at', 'data', 'prev_hash', 'hash')
+                              .where(qb.gt('id', after)).order_by('id').limit(batch)).all()
         if not rows:
             return checked, breaks
         for row in rows:
@@ -848,12 +831,12 @@ def verify_connection(connection, *, hashed=(), batch=1000):
 
 
 def verify(database):
-    """verify_connection() over a database (SQLite or PostgreSQL) in one read snapshot. Tamper-evident
+    """verify_connection() over a database in one read snapshot. Tamper-evident
     models are those its registry declares plus those recorded in the database."""
     declared = {database.registry.name_for(model) for model, journal in getattr(database.registry, 'journals', {}).items()
                 if journal.tamper_evident}
     with database._connection() as connection:
-        if 'id' not in database.columns(connection, 'evlet_journal'):
+        if 'id' not in connection.columns('evlet_journal'):
             return 0, []
-        connection.execute('BEGIN')
-        return verify_connection(connection, hashed=declared | hashed_models(connection, database.columns))
+        connection.snapshot()
+        return verify_connection(connection, hashed=declared | hashed_models(connection))

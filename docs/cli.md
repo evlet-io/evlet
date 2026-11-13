@@ -427,10 +427,8 @@ for everyone else in either direction, and can only shorten sessions and the loc
 `"local"`, the only values accepted today. New `config.py` files leave them out.
 Older files that set them to those values keep working.
 
-The CLI supports SQLite/local storage. Existing PostgreSQL, tenant routing, S3 and
-other framework APIs remain available through explicit Python configuration.
-PostgreSQL instance creation is intentionally rejected until its isolation strategy
-is specified. Do not point the new installer at an existing unmanaged database.
+The CLI supports SQLite/local storage. Tenant routing, S3 and other framework APIs
+remain available through explicit Python configuration. Do not point the new installer at an existing unmanaged database.
 It will reject it rather than adopt it. Existing Playground data stays in place.
 
 `evlet serve` never prints sign-in links. While the built-in Administrator has no password

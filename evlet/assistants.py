@@ -17,6 +17,7 @@ import time
 from http.client import HTTPException
 from urllib.parse import parse_qs, unquote, urlencode, urlsplit
 
+from . import qb
 from .auth import AccessError, KeyAccess, User, client_network
 from .connector import ConnectorError, strict_json
 from .controls import ADMIN_ONLY, NOT_FOUND, audit
@@ -111,16 +112,16 @@ class Assistants:
         now = int(now)
         with self.database.transaction() as tx:
             connection = tx.connection
-            connection.execute('DELETE FROM evlet_mcp_clients WHERE revoked_at<?', (now - KEEP,))
-            connection.execute('DELETE FROM evlet_oauth_codes WHERE expires<=?', (now,))
-            connection.execute('DELETE FROM evlet_mcp_tokens WHERE expires<=?', (now,))
-            connection.execute('DELETE FROM evlet_oauth_clients WHERE created_at<? AND NOT EXISTS '
-                               '(SELECT 1 FROM evlet_mcp_clients c WHERE c.oauth_client=evlet_oauth_clients.id)', (now - 86400,))
+            connection.run(qb.delete('evlet_mcp_clients').where(qb.lt('revoked_at', now - KEEP)))
+            connection.run(qb.delete('evlet_oauth_codes').where(qb.le('expires', now)))
+            connection.run(qb.delete('evlet_mcp_tokens').where(qb.le('expires', now)))
+            connected = qb.select(qb.table('evlet_mcp_clients', 'c'), qb.value(1)).where(qb.eq('c.oauth_client', qb.col('evlet_oauth_clients.id')))
+            connection.run(qb.delete('evlet_oauth_clients').where(qb.lt('created_at', now - 86400), qb.not_exists(connected)))
 
     def allowed(self, user_id):
         """Allow MCP on the person (Controls, Users)."""
         with self.database._connection() as connection:
-            row = connection.execute('SELECT allow_mcp FROM evlet_users WHERE id=?', (user_id,)).fetchone()
+            row = connection.run(qb.select('evlet_users', 'allow_mcp').where(qb.eq('id', qb.value(user_id)))).one()
         return row is not None and bool(row[0])
 
     def narrow(self, user, row=None):
@@ -227,13 +228,14 @@ class Assistants:
         key = digest(f'{kind}:' + client_network(self.auth.address(scope)))
         now = int(time.time())
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT attempts, resets FROM evlet_login_limits WHERE client=?', (key,)).fetchone()
+            row = tx.connection.run(qb.select('evlet_login_limits', 'attempts', 'resets').where(client=key)).one()
             if row is not None and row['resets'] <= now:
-                tx.connection.execute('DELETE FROM evlet_login_limits WHERE client=?', (key,))
+                tx.connection.run(qb.delete('evlet_login_limits').where(client=key))
                 row = None
             if row is not None and row['attempts'] >= limit:
                 raise OAuthError('slow_down', 'Too many requests. Try again later.', 429)
-            tx.connection.execute('INSERT INTO evlet_login_limits VALUES (?,1,?) ON CONFLICT(client) DO UPDATE SET attempts=evlet_login_limits.attempts+1', (key, now + seconds))
+            tx.connection.run(qb.insert('evlet_login_limits', client=key, attempts=1, resets=now + seconds)
+                              .on_conflict('client').do_update(attempts=qb.col('evlet_login_limits.attempts') + 1))
 
     def register(self, scope, body):
         """Dynamic client registration (RFC 7591). Public clients use PKCE; others also get a secret."""
@@ -254,12 +256,13 @@ class Assistants:
         now = int(time.time())
         with self.database.transaction() as tx:
             # Registrations with no connected client after a day are removed; signed-out connections don't keep them.
-            tx.connection.execute('DELETE FROM evlet_oauth_clients WHERE created_at<? AND NOT EXISTS '
-                                  '(SELECT 1 FROM evlet_mcp_clients c WHERE c.oauth_client=evlet_oauth_clients.id AND c.revoked_at IS NULL)', (now - 86400,))
-            if tx.connection.execute('SELECT count(*) FROM evlet_oauth_clients').fetchone()[0] >= MAX_CLIENTS:
+            connected = qb.select(qb.table('evlet_mcp_clients', 'c'), qb.value(1)).where(
+                qb.eq('c.oauth_client', qb.col('evlet_oauth_clients.id')), qb.is_null('c.revoked_at'))
+            tx.connection.run(qb.delete('evlet_oauth_clients').where(qb.lt('created_at', now - 86400), qb.not_exists(connected)))
+            if tx.connection.run(qb.select('evlet_oauth_clients', qb.count())).value() >= MAX_CLIENTS:
                 raise OAuthError('temporarily_unavailable', 'Too many registered clients. Try again tomorrow.', 503)
-            tx.connection.execute('INSERT INTO evlet_oauth_clients(id,name,redirect_uris,secret,auth_method,created_at) VALUES (?,?,?,?,?,?)',
-                                  (client_id, name.strip(), json.dumps(uris), secret and digest(secret), method, now))
+            tx.connection.run(qb.insert('evlet_oauth_clients', id=client_id, name=name.strip(), redirect_uris=json.dumps(uris),
+                                        secret=secret and digest(secret), auth_method=method, created_at=now))
         result = {'client_id': client_id, 'client_id_issued_at': now, 'client_name': name.strip(), 'redirect_uris': uris,
                   'grant_types': ['authorization_code', 'refresh_token'], 'response_types': ['code'], 'token_endpoint_auth_method': method}
         return {**result, 'client_secret': secret, 'client_secret_expires_at': 0} if secret else result
@@ -277,7 +280,7 @@ class Assistants:
             except (binascii.Error, UnicodeError):
                 raise OAuthError('invalid_client', 'Unknown client.', 401) from None
         with self.database._connection() as connection:
-            row = connection.execute('SELECT * FROM evlet_oauth_clients WHERE id=?', (client_id or '',)).fetchone()
+            row = connection.run(qb.select('evlet_oauth_clients').where(id=client_id or '')).one()
         # The client authenticates exactly the way it registered: a public client never sends a secret.
         if row is None or used != row['auth_method'] or (row['secret'] is not None and not (secret and hmac.compare_digest(row['secret'], digest(secret)))):
             raise OAuthError('invalid_client', 'Unknown client.', 401)
@@ -285,14 +288,14 @@ class Assistants:
 
     @staticmethod
     def end(connection, grant_id):
-        connection.execute('DELETE FROM evlet_mcp_tokens WHERE client_id=?', (grant_id,))
-        connection.execute('UPDATE evlet_mcp_clients SET revoked_at=? WHERE id=? AND revoked_at IS NULL', (int(time.time()), grant_id))
+        connection.run(qb.delete('evlet_mcp_tokens').where(client_id=grant_id))
+        connection.run(qb.update('evlet_mcp_clients', revoked_at=int(time.time())).where(qb.is_null('revoked_at'), id=grant_id))
 
     @staticmethod
     def issue(connection, grant_id):
         access, refresh, now = 'evm_' + secrets.token_urlsafe(32), 'evr_' + secrets.token_urlsafe(32), int(time.time())
         for token, kind, seconds in ((access, 'access', ACCESS_SECONDS), (refresh, 'refresh', REFRESH_SECONDS)):
-            connection.execute('INSERT INTO evlet_mcp_tokens(hash,client_id,kind,expires,used) VALUES (?,?,?,?,0)', (digest(token), grant_id, kind, now + seconds))
+            connection.run(qb.insert('evlet_mcp_tokens', hash=digest(token), client_id=grant_id, kind=kind, expires=now + seconds, used=0))
         return {'access_token': access, 'token_type': 'Bearer', 'expires_in': ACCESS_SECONDS, 'refresh_token': refresh, 'scope': 'mcp'}
 
     def token(self, scope, form):
@@ -303,10 +306,10 @@ class Assistants:
         now = int(time.time())
         with self.database.transaction() as tx:
             connection = tx.connection
-            connection.execute('DELETE FROM evlet_mcp_tokens WHERE expires<=?', (now,))
-            connection.execute('DELETE FROM evlet_oauth_codes WHERE expires<=?', (now,))
+            connection.run(qb.delete('evlet_mcp_tokens').where(qb.le('expires', now)))
+            connection.run(qb.delete('evlet_oauth_codes').where(qb.le('expires', now)))
             if form.get('grant_type') == 'authorization_code':
-                code = connection.execute('SELECT * FROM evlet_oauth_codes WHERE hash=?', (digest(form.get('code', '')),)).fetchone()
+                code = connection.run(qb.select('evlet_oauth_codes').where(hash=digest(form.get('code', '')))).one()
                 if code is None or code['oauth_client'] != client['id']:
                     raise invalid
                 if code['grant_id'] is not None:
@@ -318,22 +321,30 @@ class Assistants:
                     expected = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b'=').decode()
                     if form.get('redirect_uri') != code['redirect_uri'] or not VERIFIER.fullmatch(verifier) or not hmac.compare_digest(expected, code['challenge']):
                         raise invalid
-                    if not connection.execute("SELECT 1 FROM evlet_users u JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' WHERE u.id=? AND u.active=1", (code['user_id'],)).fetchone():
+                    desk = (qb.select(qb.table('evlet_users', 'u'), qb.value(1))
+                            .join('evlet_roles', qb.and_(qb.eq('r.id', qb.col('u.role')), qb.eq('r.realm', 'desk')), alias='r')
+                            .where(qb.eq('u.id', code['user_id']), qb.eq('u.active', 1)))
+                    if not connection.run(desk).one():
                         raise invalid
-                    latest = connection.execute('SELECT apps FROM evlet_mcp_clients WHERE user_id=? ORDER BY id DESC LIMIT 1', (code['user_id'],)).fetchone()
+                    latest = connection.run(qb.select('evlet_mcp_clients', 'apps').where(user_id=code['user_id']).order_by('-id').limit(1)).one()
                     # Connecting the same client again replaces the earlier connection.
-                    for row in connection.execute('SELECT id FROM evlet_mcp_clients WHERE user_id=? AND oauth_client=? AND revoked_at IS NULL', (code['user_id'], client['id'])).fetchall():
+                    for row in connection.run(qb.select('evlet_mcp_clients', 'id').where(qb.is_null('revoked_at'), user_id=code['user_id'],
+                                                                                         oauth_client=client['id'])).all():
                         self.end(connection, row['id'])
-                    grant_id = connection.execute('INSERT INTO evlet_mcp_clients(user_id,oauth_client,client_name,created_at,calls,allow_changes,apps) VALUES (?,?,?,?,0,?,?)',
-                                                  (code['user_id'], client['id'], client['name'], now, code['allow_changes'], latest['apps'] if latest else None)).lastrowid
-                    connection.execute('UPDATE evlet_oauth_codes SET grant_id=? WHERE hash=?', (grant_id, code['hash']))
-                    person = connection.execute('SELECT username FROM evlet_users WHERE id=?', (code['user_id'],)).fetchone()['username']
+                    grant_id = connection.run(qb.insert('evlet_mcp_clients', user_id=code['user_id'], oauth_client=client['id'], client_name=client['name'],
+                                                        created_at=now, calls=0, allow_changes=code['allow_changes'],
+                                                        apps=latest['apps'] if latest else None).returning_id()).id
+                    connection.run(qb.update('evlet_oauth_codes', grant_id=grant_id).where(hash=code['hash']))
+                    person = connection.run(qb.select('evlet_users', 'username').where(id=code['user_id'])).one()['username']
                     audit(connection, person, AREA, f"{client['name']} · {person}", 'Client connected' + (', can make changes' if code['allow_changes'] else ''))
                     result = self.issue(connection, grant_id)
             elif form.get('grant_type') == 'refresh_token':
-                row = connection.execute("SELECT t.hash, t.client_id, t.used, m.oauth_client, u.active FROM evlet_mcp_tokens t JOIN evlet_mcp_clients m ON m.id=t.client_id "
-                                         "JOIN evlet_users u ON u.id=m.user_id JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' "
-                                         "WHERE t.hash=? AND t.kind='refresh' AND m.revoked_at IS NULL", (digest(form.get('refresh_token', '')),)).fetchone()
+                refresh = (qb.select(qb.table('evlet_mcp_tokens', 't'), 't.hash', 't.client_id', 't.used', 'm.oauth_client', 'u.active')
+                           .join('evlet_mcp_clients', qb.eq('m.id', qb.col('t.client_id')), alias='m')
+                           .join('evlet_users', qb.eq('u.id', qb.col('m.user_id')), alias='u')
+                           .join('evlet_roles', qb.and_(qb.eq('r.id', qb.col('u.role')), qb.eq('r.realm', 'desk')), alias='r')
+                           .where(qb.eq('t.hash', digest(form.get('refresh_token', ''))), qb.eq('t.kind', 'refresh'), qb.is_null('m.revoked_at')))
+                row = connection.run(refresh).one()
                 if row is None or row['oauth_client'] != client['id'] or not row['active']:
                     raise invalid
                 if row['used']:
@@ -341,8 +352,8 @@ class Assistants:
                     self.end(connection, row['client_id'])
                     result = invalid
                 else:
-                    connection.execute('UPDATE evlet_mcp_tokens SET used=1 WHERE hash=?', (row['hash'],))
-                    connection.execute("DELETE FROM evlet_mcp_tokens WHERE client_id=? AND kind='access'", (row['client_id'],))
+                    connection.run(qb.update('evlet_mcp_tokens', used=1).where(hash=row['hash']))
+                    connection.run(qb.delete('evlet_mcp_tokens').where(client_id=row['client_id'], kind='access'))
                     result = self.issue(connection, row['client_id'])
             else:
                 raise OAuthError('unsupported_grant_type', 'Use authorization_code or refresh_token.')
@@ -355,8 +366,10 @@ class Assistants:
         self.throttle(scope, 'oauth-token', 60, 60)
         client = self.client(scope, form)
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT t.client_id, m.oauth_client, m.client_name, u.username FROM evlet_mcp_tokens t JOIN evlet_mcp_clients m ON m.id=t.client_id '
-                                        'JOIN evlet_users u ON u.id=m.user_id WHERE t.hash=?', (digest(form.get('token', '')),)).fetchone()
+            row = tx.connection.run(qb.select(qb.table('evlet_mcp_tokens', 't'), 't.client_id', 'm.oauth_client', 'm.client_name', 'u.username')
+                                    .join('evlet_mcp_clients', qb.eq('m.id', qb.col('t.client_id')), alias='m')
+                                    .join('evlet_users', qb.eq('u.id', qb.col('m.user_id')), alias='u')
+                                    .where(qb.eq('t.hash', digest(form.get('token', ''))))).one()
             if row is not None and row['oauth_client'] == client['id']:
                 self.end(tx.connection, row['client_id'])
                 audit(tx.connection, row['username'], AREA, f"{row['client_name']} · {row['username']}", 'Signed out by the client')
@@ -370,11 +383,14 @@ class Assistants:
         if token and ACCESS.fullmatch(token):
             with self.database._connection() as connection:
                 # Assistants are for the desk: a person whose role is now a portal role is refused like a signed-out one.
-                row = connection.execute('SELECT m.*, u.username, u.role FROM evlet_mcp_tokens t JOIN evlet_mcp_clients m ON m.id=t.client_id JOIN evlet_users u ON u.id=m.user_id '
-                                         "JOIN evlet_roles r ON r.id=u.role AND r.realm='desk' "
-                                         "WHERE t.hash=? AND t.kind='access' AND t.expires>? AND m.revoked_at IS NULL AND u.active=1", (digest(token), int(time.time()))).fetchone()
-                links = () if row is None else tuple((item['model'], item['record_id']) for item in connection.execute(
-                    'SELECT model, record_id FROM evlet_user_links WHERE user_id=? ORDER BY model, record_id', (row['user_id'],)))
+                row = connection.run(qb.select(qb.table('evlet_mcp_tokens', 't'), qb.all_columns('m'), 'u.username', 'u.role')
+                                     .join('evlet_mcp_clients', qb.eq('m.id', qb.col('t.client_id')), alias='m')
+                                     .join('evlet_users', qb.eq('u.id', qb.col('m.user_id')), alias='u')
+                                     .join('evlet_roles', qb.and_(qb.eq('r.id', qb.col('u.role')), qb.eq('r.realm', 'desk')), alias='r')
+                                     .where(qb.eq('t.hash', digest(token)), qb.eq('t.kind', 'access'), qb.gt('t.expires', int(time.time())),
+                                            qb.is_null('m.revoked_at'), qb.eq('u.active', 1))).one()
+                links = () if row is None else tuple((item['model'], item['record_id']) for item in connection.run(
+                    qb.select('evlet_user_links', 'model', 'record_id').where(user_id=row['user_id']).order_by('model', 'record_id')))
         if row is None:
             challenge = f'Bearer resource_metadata="{origin}/.well-known/oauth-protected-resource/_/mcp"' + (', error="invalid_token"' if token else '')
             raise HTTPError(401, 'Sign in to continue', [(b'www-authenticate', challenge.encode())])
@@ -412,7 +428,7 @@ class Assistants:
             raise AccessError(400, 'The assistant sent each detail more than once. Start connecting again from the assistant.')
         params = {key: values[0] for key, values in params.items()}
         with self.database._connection() as connection:
-            client = connection.execute('SELECT * FROM evlet_oauth_clients WHERE id=?', (params.get('client_id', ''),)).fetchone()
+            client = connection.run(qb.select('evlet_oauth_clients').where(id=params.get('client_id', ''))).one()
         if client is None:
             raise AccessError(400, "This assistant isn't registered here. Start connecting again from the assistant.")
         if params.get('redirect_uri') not in json.loads(client['redirect_uris']):
@@ -438,15 +454,16 @@ class Assistants:
         if not body['approve']:
             return {'redirect': self.back(params, origin, error='access_denied')}
         with self.database._connection() as connection:
-            active = connection.execute('SELECT count(*) FROM evlet_mcp_clients WHERE user_id=? AND revoked_at IS NULL AND oauth_client<>?', (user.id, client['id'])).fetchone()[0]
+            active = connection.run(qb.select('evlet_mcp_clients', qb.count()).where(
+                qb.eq('user_id', user.id), qb.is_null('revoked_at'), qb.ne('oauth_client', client['id']))).value()
         if active >= MAX_PER_USER:
             raise AccessError(409, f'You have {MAX_PER_USER} connected assistants. Disconnect one in Settings first.')
         code = secrets.token_urlsafe(32)
         # The person's choice is kept; it only has effect while Controls allows changes (mcp.allow_writes).
         changes = body.get('allow_changes', False)
         with self.database.transaction() as tx:
-            tx.connection.execute('INSERT INTO evlet_oauth_codes(hash,oauth_client,user_id,redirect_uri,challenge,allow_changes,expires) VALUES (?,?,?,?,?,?,?)',
-                                  (digest(code), client['id'], user.id, params['redirect_uri'], params['code_challenge'], int(changes), int(time.time()) + CODE_SECONDS))
+            tx.connection.run(qb.insert('evlet_oauth_codes', hash=digest(code), oauth_client=client['id'], user_id=user.id, redirect_uri=params['redirect_uri'],
+                                        challenge=params['code_challenge'], allow_changes=int(changes), expires=int(time.time()) + CODE_SECONDS))
             audit(tx.connection, user.username, AREA, f"{client['name']} · {user.username}", 'Consent given')
         return {'redirect': self.back(params, origin, code=code)}
 
@@ -460,18 +477,20 @@ class Assistants:
         # Show the latest counts and times: save the batched ones first (evlet/writes.py LogBuffer).
         self.database.logs.flush()
         with self.database._connection() as connection:
-            clients = [dict(row) for row in connection.execute('SELECT id, client_name, created_at, last_used, calls, allow_changes, apps FROM evlet_mcp_clients '
-                                                                'WHERE user_id=? AND revoked_at IS NULL ORDER BY id DESC', (user.id,))]
-            requests = [dict(row) for row in connection.execute("SELECT at, client AS client_name, tool, model, kind, outcome FROM evlet_tool_calls "
-                                                                 "WHERE user_id=? AND origin IN ('mcp','eva','schedule') AND at>? ORDER BY id DESC LIMIT 50",
-                                                                 (user.id, int(time.time()) - KEEP))]
+            clients = [dict(row) for row in connection.run(
+                qb.select('evlet_mcp_clients', 'id', 'client_name', 'created_at', 'last_used', 'calls', 'allow_changes', 'apps')
+                .where(qb.eq('user_id', user.id), qb.is_null('revoked_at')).order_by('-id'))]
+            requests = [dict(row) for row in connection.run(
+                qb.select('evlet_tool_calls', 'at', qb.named('client', 'client_name'), 'tool', 'model', 'kind', 'outcome')
+                .where(qb.eq('user_id', user.id), qb.in_('origin', ('mcp', 'eva', 'schedule')), qb.gt('at', int(time.time()) - KEEP))
+                .order_by('-id').limit(50))]
         for item in clients:
             item['allow_changes'], item['apps'] = bool(item['allow_changes']), None if item['apps'] is None else json.loads(item['apps'])
         return {'enabled': settings['mcp.enabled'], 'allowed': self.allowed(user.id), 'writes': settings['mcp.allow_writes'], 'address': origin + '/_/mcp',
                 'clients': clients, 'requests': requests, 'apps': self.visible_apps(user), 'chosen': clients[0]['apps'] if clients else None}
 
     def mine_row(self, connection, user, client_id):
-        row = connection.execute('SELECT * FROM evlet_mcp_clients WHERE id=? AND user_id=? AND revoked_at IS NULL', (client_id, user.id)).fetchone()
+        row = connection.run(qb.select('evlet_mcp_clients').where(qb.eq('id', qb.value(client_id)), qb.eq('user_id', user.id), qb.is_null('revoked_at'))).one()
         if row is None:
             raise AccessError(404, 'Assistant not found')
         return row
@@ -486,20 +505,21 @@ class Assistants:
             # An explicit list stays explicit: apps installed later aren't added on their own.
             stored = None if apps is None else json.dumps([app for app in visible if app in apps])
             with self.database.transaction() as tx:
-                tx.connection.execute('UPDATE evlet_mcp_clients SET apps=? WHERE user_id=? AND revoked_at IS NULL', (stored, user.id))
+                tx.connection.run(qb.update('evlet_mcp_clients', apps=stored).where(qb.eq('user_id', user.id), qb.is_null('revoked_at')))
             return
         if not isinstance(body, dict) or set(body) != {'allow_changes'} or type(body['allow_changes']) is not bool:
             raise ValidationError({'allow_changes': 'Use true or false'})
         with self.database.transaction() as tx:
             row = self.mine_row(tx.connection, user, client_id)
             if bool(row['allow_changes']) != body['allow_changes']:
-                tx.connection.execute('UPDATE evlet_mcp_clients SET allow_changes=? WHERE id=?', (int(body['allow_changes']), client_id))
+                tx.connection.run(qb.update('evlet_mcp_clients', allow_changes=int(body['allow_changes'])).where(id=client_id))
                 audit(tx.connection, user.username, AREA, f"{row['client_name']} · {user.username}", 'Can make changes: ' + ('on' if body['allow_changes'] else 'off'))
 
     def revoke(self, actor, client_id, personal):
         with self.database.transaction() as tx:
-            row = tx.connection.execute('SELECT m.client_name, m.user_id, u.username, u.role FROM evlet_mcp_clients m JOIN evlet_users u ON u.id=m.user_id '
-                                        'WHERE m.id=? AND m.revoked_at IS NULL', (client_id,)).fetchone()
+            row = tx.connection.run(qb.select(qb.table('evlet_mcp_clients', 'm'), 'm.client_name', 'm.user_id', 'u.username', 'u.role')
+                                    .join('evlet_users', qb.eq('u.id', qb.col('m.user_id')), alias='u')
+                                    .where(qb.eq('m.id', qb.value(client_id)), qb.is_null('m.revoked_at'))).one()
             if row is None or (personal and row['user_id'] != actor.id):
                 raise AccessError(404, 'Assistant not found')
             if not personal and row['role'] == 'admin' and actor.role != 'admin':
@@ -512,12 +532,15 @@ class Assistants:
         # Show the latest counts and times: save the batched ones first (evlet/writes.py LogBuffer).
         self.database.logs.flush()
         with self.database._connection() as connection:
-            clients = [dict(row) for row in connection.execute('SELECT m.id, m.client_name, u.username, u.role, m.created_at, m.last_used, m.calls FROM evlet_mcp_clients m '
-                                                                'JOIN evlet_users u ON u.id=m.user_id WHERE m.revoked_at IS NULL ORDER BY m.id DESC LIMIT 500')]
-            counts = connection.execute("SELECT kind, outcome, count(*) AS n FROM evlet_tool_calls WHERE origin='mcp' AND at>? GROUP BY kind, outcome", (int(time.time()) - 86400,)).fetchall()
+            clients = [dict(row) for row in connection.run(
+                qb.select(qb.table('evlet_mcp_clients', 'm'), 'm.id', 'm.client_name', 'u.username', 'u.role', 'm.created_at', 'm.last_used', 'm.calls')
+                .join('evlet_users', qb.eq('u.id', qb.col('m.user_id')), alias='u').where(qb.is_null('m.revoked_at')).order_by('-m.id').limit(500))]
+            since = int(time.time()) - 86400
+            counts = connection.run(qb.select('evlet_tool_calls', 'kind', 'outcome', qb.named(qb.count(), 'n'))
+                                    .where(qb.eq('origin', 'mcp'), qb.gt('at', since)).group_by('kind', 'outcome')).all()
             # Calls in the last 24 hours per connected client, for the clients table.
-            recent = {row['client_id']: row['n'] for row in connection.execute(
-                "SELECT client_id, count(*) AS n FROM evlet_tool_calls WHERE origin='mcp' AND at>? GROUP BY client_id", (int(time.time()) - 86400,))}
+            recent = {row['client_id']: row['n'] for row in connection.run(
+                qb.select('evlet_tool_calls', 'client_id', qb.named(qb.count(), 'n')).where(qb.eq('origin', 'mcp'), qb.gt('at', since)).group_by('client_id'))}
         totals = {'reads': 0, 'writes': 0, 'denied': 0}
         for row in counts:
             if row['outcome'] != 'approval':

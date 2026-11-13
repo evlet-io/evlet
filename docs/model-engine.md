@@ -239,14 +239,13 @@ class Part(Child):
         indexes = [(("evlet_owner", "code"), {"unique": True})]  # a code once per record
 ```
 
-- The database enforces a unique entry, on SQLite and PostgreSQL. A create or update that breaks
+- The database enforces a unique entry. A create or update that breaks
   one raises `ValidationError` with the same message on each of the entry's fields, such as
   `Another record already has the same station, on date and kind`. HTTP answers 422 with those
   field errors, as for any validation error. Rows that leave any of the fields empty (null) never
   clash.
 - An entry names stored fields with one column each, and may name the row `id`. A `Reference`
-  (two columns) and `RichText` are refused, with a message naming the field. On PostgreSQL an
-  indexed `Text` needs `max_length` of 500 or less, as for `index=True`.
+  (two columns) and `RichText` are refused, with a message naming the field.
 - A `Child` row names its owner field, `evlet_owner` unless `Table(..., owner_field=...)` says
   otherwise, to make a value unique per record. Its error says `Another row of this record
   already has the same code` and is reported on the row's own fields.
@@ -508,7 +507,7 @@ new scale in `evlet_money` and rewrites the saved schema; an amount too large fo
 record and changes nothing. An instance does this only in `evlet migrate`, after its backup
 (framework step `0007_money_scale`); serving it before that is refused. An application that is not
 an instance does it on startup, like its other framework steps, or in `database.migrate()` before any
-app migration runs, on SQLite and PostgreSQL alike. Applied migration checksums do not change: a
+app migration runs. Applied migration checksums do not change: a
 Currency field's scale belongs to the framework and checksums as 2, and saved documents keep their
 calculation version, so they stay editable after the move (also when a formula reads the Link its
 currency comes through, such as `customer` for `currency='customer.currency'`).
@@ -637,7 +636,7 @@ URLs all point to it.
 
 - **In storage** it is a 63-bit integer: 42 bits of milliseconds since 01-01-2026 UTC, then
   21 random bits, so ids sort in creation order. SQLite keeps it as the `INTEGER PRIMARY KEY`
-  (the rowid) and PostgreSQL as `bigint`. The framework makes every id in one helper and
+  (the rowid). The framework makes every id in one helper and
   draws again if one is ever taken.
 - **Everywhere else** it is 13 lowercase Crockford base32 characters, such as
   `01hc1sd9vc1ye`: JSON bodies, Link values, `{"model", "id"}` References, URLs
@@ -665,8 +664,8 @@ PATCH, `context.update`, `tx.update` (inside `tx.maintenance()` too), `context.m
 Table rows name their saved rows by `id` to update, keep or reorder them, as before. A row id that is
 not one of the parent's saved rows is refused, and a new row never takes the id it is given.
 
-The database refuses an id change too. Every model table has a trigger (`evlet_<table>_fixed_id` on
-SQLite, `evlet_fixed_id` on PostgreSQL) that aborts an `UPDATE` changing `id`, so raw SQL cannot
+The database refuses an id change too. Every model table has a trigger (`evlet_<table>_fixed_id`)
+that aborts an `UPDATE` changing `id`, so raw SQL cannot
 break the links that point at a row; Evlet raises `ConflictError('<table>: record ids never change')`.
 New tables get it when they are created, every migration batch adds it again (a rebuilt table loses its
 triggers), and framework step `0006_fixed_ids` adds it to existing instances on `evlet migrate`.
@@ -854,7 +853,7 @@ Batch jobs that verify or rebuild large tables often select rows by a long list 
 keys. A trusted session accepts `in` and `nin` lists of any length up to 30,000 values in all
 for one query, for example `tx.count(Entry, filters={"id__in": ids})` with 10,000 ids. Each
 value is validated and bound as its own parameter, so values never become SQL. The total
-stays below SQLite's limit of 32,766 parameters per statement and PostgreSQL's 65,535, with
+stays below SQLite's limit of 32,766 parameters per statement, with
 room for the query's other values. Split a longer list with the standard library:
 
 ```python
@@ -1094,7 +1093,7 @@ table's storage name, such as `AddTable("employee_dependents", "documents", Docu
 ### Planning a migration
 
 `database.plan(migrations)` reports what `migrate(migrations)` would do without writing
-anything. On SQLite it opens the file read-only; on PostgreSQL it only reads.
+anything. It opens the SQLite file read-only.
 
 ```python
 plan = database.plan(migrations)
@@ -1186,7 +1185,7 @@ Migration("0003_half_days", AlterField("leaveapplication", "days", Decimal(scale
 
 ### Making a field required or optional
 
-`AlterField` changes `required` on a table that has rows, on SQLite and PostgreSQL:
+`AlterField` changes `required` on a table that has rows:
 
 ```python
 from evlet import AlterField, Migration, Text
@@ -1205,8 +1204,7 @@ Migration("0005_note_optional", AlterField("contact", "note", Text()))
   A `RunData` step runs after its own migration's operations, so a step that fills the values
   belongs in an earlier migration.
 * On SQLite the column's `NOT NULL` is added or removed in place, with the same documented
-  procedure as `RetireField`, after the rows are checked inside the migration transaction. On
-  PostgreSQL it is `ALTER COLUMN ... SET NOT NULL` or `DROP NOT NULL`.
+  procedure as `RetireField`, after the rows are checked inside the migration transaction.
 * `evlet migrate --plan` suggests the `AlterField` and notes when `fill=` may be needed. `fill`
   is part of the step's checksum only when it is given.
 
@@ -1324,5 +1322,5 @@ so this upgrade does not retroactively reject previously accepted addresses.
 Stored rows are decoded without rerunning custom field validators or
 `Model.validate()`. New records and updates still run those rules, so an older row
 can be read and repaired after a rule is tightened. Text fields reject NUL
-characters on both SQLite and PostgreSQL. Text collation and Unicode case folding
+characters. Text collation and Unicode case folding
 can differ by database backend; explicit nullable ordering is shared.

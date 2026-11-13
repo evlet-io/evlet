@@ -173,7 +173,6 @@ The four SQLite files:
   own next run with `context.follow_up(tx, payload, run_at=...)`, in the same transaction and
   with the same identity ([jobs-realtime.md](jobs-realtime.md#follow-up-runs)). An app that
   polls with an every-minute schedule can use a follow-up run instead.
-- PostgreSQL instances keep one database; the step only records itself there.
 
 ### From 0.4.1 to 0.4.2
 
