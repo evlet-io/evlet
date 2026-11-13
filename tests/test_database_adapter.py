@@ -441,6 +441,35 @@ def test_windows_derived_tables_case_and_arithmetic(people):
     assert connection.run(qb.select('adapter_person', 'age').where(given='Aisha')).value() == 62
 
 
+
+def test_distinct_having_searched_case_division_and_text_functions(people):
+    connection, north, south = people
+    assert names(connection, qb.select('adapter_person', 'team').distinct().where(qb.not_null('team')).order_by('team')) == [north, south]
+    busy = qb.select('adapter_person', 'team').where(qb.not_null('team')).group_by('team').having(qb.gt(qb.count(), 1))
+    assert names(connection, busy) == [north]
+    with pytest.raises(ValueError):
+        connection.run(qb.select('adapter_person', 'team').having(qb.gt(qb.count(), 1)))
+    totals = connection.run(qb.select('adapter_person', qb.named(qb.count_distinct('team'), 'teams'),
+                                      qb.named(qb.sum(qb.when((qb.ge('age', 30), 1), otherwise=0)), 'older'),
+                                      qb.named(qb.sum(qb.when((qb.is_null('age'), 0), (qb.lt('age', 30), 1))), 'younger'))).one()
+    assert (totals['teams'], totals['older'], totals['younger']) == (2, 2, 1)
+    assert connection.run(qb.select('adapter_person', qb.col('age') / 2).where(given='Chen')).value() == 22
+    assert connection.run(qb.select('adapter_person', qb.col('age') / -2).where(given='Chen')).value() == -22
+    shown = connection.run(qb.select('adapter_person', qb.upper('given'), qb.substr('given', 1, 2), qb.trim(qb.value('  x ')),
+                                      qb.replace_text('given', 'a', 'o'), qb.abs(qb.value(-3))).where(given='dana')).one()
+    assert tuple(shown) == ('DANA', 'da', 'x', 'dono', 3)
+    # A column default and a cascading reference in a framework table.
+    connection.ensure_table(TableDefinition('evlet_adapter_parent', (Column('label', 'TEXT', required=True, default='none'),), numbered=True))
+    connection.ensure_table(TableDefinition('evlet_adapter_child', (
+        Column('parent', 'INTEGER', required=True, references='evlet_adapter_parent', on_delete='cascade'),
+        Column('state', 'INTEGER', required=True, default=1)), numbered=True))
+    parent = connection.run(qb.insert('evlet_adapter_parent').returning_id()).id
+    connection.run(qb.insert('evlet_adapter_child', parent=parent))
+    assert connection.run(qb.select('evlet_adapter_parent', 'label')).value() == 'none'
+    assert connection.run(qb.select('evlet_adapter_child', 'state')).value() == 1
+    connection.run(qb.delete('evlet_adapter_parent').where(id=parent))
+    assert connection.run(qb.select('evlet_adapter_child', qb.count())).value() == 0
+
 def test_a_hierarchy_below_its_roots(people):
     connection, north, south = people
     third = connection.run(qb.insert('adapter_team', label='East', lead=south).returning_id()).id

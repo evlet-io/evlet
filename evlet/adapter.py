@@ -21,12 +21,18 @@ OperationalError = sqlite3.OperationalError
 @dataclass(frozen=True)
 class Column:
     """One column of a table. `type` is Evlet's column type (TEXT, INTEGER, REAL or BLOB, from Field.columns),
-    `references` the table a foreign key points at (its "id"), or None."""
+    `references` the table a foreign key points at (its "id"), or None.
+
+    Framework tables (TableDefinition) may also give a `default` (an int or str the database fills in when an
+    insert leaves the column out) and `on_delete` for a reference: 'cascade' removes the row with the row it
+    points at, 'set null' empties the column. Model columns use neither."""
     name: str
     type: str
     required: bool = False
     primary: bool = False
     references: str = None
+    default: object = None
+    on_delete: str = None
 
 
 @dataclass(frozen=True)

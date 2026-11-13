@@ -47,6 +47,10 @@ class Expression:
     def __mul__(self, other):
         return Arithmetic(self, '*', expression(other))
 
+    def __truediv__(self, other):
+        """Division; two integers divide to an integer, rounding toward zero."""
+        return Arithmetic(self, '/', expression(other))
+
 
 @dataclass(frozen=True, eq=False)
 class Column(Expression):
@@ -73,7 +77,8 @@ class Arithmetic(Expression):
 
 
 # The functions a statement may call. A dialect writes each in its own SQL.
-FUNCTIONS = {'count', 'sum', 'min', 'max', 'coalesce', 'nullif', 'lower', 'length', 'abs', 'row_number'}
+FUNCTIONS = {'count', 'count_distinct', 'sum', 'min', 'max', 'coalesce', 'nullif', 'lower', 'upper', 'trim', 'length', 'substr',
+             'replace', 'abs', 'row_number'}
 
 
 @dataclass(frozen=True, eq=False)
@@ -95,6 +100,13 @@ class Case(Expression):
     """The value matching what an expression holds: CASE expression WHEN key THEN value ... END."""
     expression: Expression
     pairs: tuple
+
+
+@dataclass(frozen=True, eq=False)
+class When(Expression):
+    """The value of the first condition that holds: CASE WHEN condition THEN value ... ELSE otherwise END."""
+    pairs: tuple
+    otherwise: Expression
 
 
 @dataclass(frozen=True, eq=False)
@@ -223,9 +235,19 @@ class Select(Expression):
     orders: tuple = ()
     count: int = None
     skip: int = None
+    unique: bool = False
+    having_conditions: tuple = ()
 
     def where(self, /, *conditions, **equals):
         return replace(self, conditions=self.conditions + _conditions(conditions, equals))
+
+    def distinct(self):
+        """Each distinct row once: SELECT DISTINCT."""
+        return replace(self, unique=True)
+
+    def having(self, /, *conditions):
+        """Conditions on the groups of .group_by(), such as qb.gt(qb.count(), 5)."""
+        return replace(self, having_conditions=self.having_conditions + _conditions(conditions, {}))
 
     def join(self, table, on, *, alias=None, left=False):
         return replace(self, joins=self.joins + (Join(_table(table, alias), on, left),))
@@ -567,8 +589,36 @@ def nullif(column, item):
     return Function('nullif', (expression(column, column=True), expression(item)))
 
 
+def count_distinct(column):
+    """The number of distinct non-empty values in the column."""
+    return _function('count_distinct', column)
+
+
 def lower(column):
     return _function('lower', column)
+
+
+def upper(column):
+    return _function('upper', column)
+
+
+def trim(column):
+    """The text without spaces at either end."""
+    return _function('trim', column)
+
+
+def substr(column, start, size):
+    """size characters of the text from position start (1 is the first): qb.substr('token', 1, 16)."""
+    return Function('substr', (expression(column, column=True), expression(start), expression(size)))
+
+
+def replace_text(column, old, new):
+    """The text with every old replaced by new."""
+    return Function('replace', (expression(column, column=True), expression(old), expression(new)))
+
+
+def abs(column):  # noqa: A001 - read as qb.abs
+    return _function('abs', column)
 
 
 def length(column):
@@ -578,6 +628,17 @@ def length(column):
 def case(column, choices):
     """The value choices maps the column's value to: qb.case('id', {12: 1, 15: 2}). Other rows get NULL."""
     return Case(_left(column), tuple((expression(key), expression(item)) for key, item in choices.items()))
+
+
+def when(*pairs, otherwise=None):
+    """The value of the first (condition, value) pair whose condition holds, else otherwise:
+    qb.sum(qb.when((qb.eq('outcome', 'denied'), 1), otherwise=0))."""
+    if not pairs:
+        raise ValueError('qb.when needs at least one (condition, value) pair')
+    for condition, _ in pairs:
+        if not isinstance(condition, Condition):
+            raise TypeError('qb.when takes (condition, value) pairs built with qb')
+    return When(tuple((condition, expression(item)) for condition, item in pairs), expression(otherwise))
 
 
 def row_number():

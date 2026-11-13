@@ -29,6 +29,12 @@ def column_sql(column):
         sql += ' NOT NULL'
     if column.references:
         sql += f' REFERENCES {identifier(column.references)}("id")'
+        if column.on_delete is not None:
+            if column.on_delete not in ('cascade', 'set null'):
+                raise ValueError("on_delete is 'cascade' or 'set null'")
+            sql += ' ON DELETE ' + column.on_delete.upper()
+    if column.default is not None:
+        sql += ' DEFAULT ' + literal(column.default)
     return sql
 
 
@@ -300,7 +306,7 @@ class Compiler:
     """Turns one evlet/qb.py statement into SQLite SQL text and its bound values, in order."""
 
     COMPARE = {'=', '!=', '<', '<=', '>', '>='}
-    ARITHMETIC = {'+', '-', '*'}
+    ARITHMETIC = {'+', '-', '*', '/'}
 
     def __init__(self, *, literal=False):
         # literal: write values into the SQL (table definitions take no parameters); otherwise bind them.
@@ -326,12 +332,16 @@ class Compiler:
             columns = ', '.join(self.output(item) for item in query.columns)
         else:
             columns = f'{identifier(source.alias or source.name)}.*' if isinstance(source, qb.Table) else '*'
-        sql = f'SELECT {columns} FROM {self.table(source)}'
+        sql = f'SELECT {"DISTINCT " if query.unique else ""}{columns} FROM {self.table(source)}'
         for join in query.joins:
             sql += f' {"LEFT " if join.left else ""}JOIN {self.table(join.table)} ON {self.expression(join.on)}'
         sql += self.where(query.conditions)
         if query.groups:
             sql += ' GROUP BY ' + ', '.join(self.expression(item) for item in query.groups)
+        if query.having_conditions:
+            if not query.groups:
+                raise ValueError('.having() needs .group_by()')
+            sql += ' HAVING ' + ' AND '.join(self.expression(item) for item in query.having_conditions)
         if query.orders:
             sql += ' ORDER BY ' + ', '.join(self.order(item) for item in query.orders)
         if query.count is not None:
@@ -443,6 +453,9 @@ class Compiler:
         if isinstance(item, qb.Case):
             pairs = ' '.join(f'WHEN {self.expression(key)} THEN {self.expression(value)}' for key, value in item.pairs)
             return f'CASE {self.expression(item.expression)} {pairs} END'
+        if isinstance(item, qb.When):
+            pairs = ' '.join(f'WHEN {self.expression(condition)} THEN {self.expression(value)}' for condition, value in item.pairs)
+            return f'CASE {pairs} ELSE {self.expression(item.otherwise)} END'
         if isinstance(item, qb.Window):
             window = []
             if item.partition_by:
@@ -457,6 +470,8 @@ class Compiler:
             raise ValueError(f'Unknown function: {item.name}')
         if item.name == 'count' and not item.arguments:
             return 'count(*)'
+        if item.name == 'count_distinct':
+            return f'count(DISTINCT {self.expression(item.arguments[0])})'
         return f'{item.name}({", ".join(self.expression(part) for part in item.arguments)})'
 
     def within(self, item):
