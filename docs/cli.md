@@ -84,6 +84,8 @@ evlet instance --list
 evlet install notes --instance acme --trust
 evlet install site --instance acme --trust --yes
 evlet serve acme --port 8000
+evlet restart acme
+evlet restart acme --check
 evlet dev --instance acme
 evlet dev-link
 evlet migrate acme --trust
@@ -519,6 +521,59 @@ service again.
 nothing outside `--apply` changes `/etc` or calls `sudo`. Controls, AI, MCP has a
 **Check** button that tests the public address from the server.
 
+### Restart a site safely
+
+On a server set up with `evlet setup --host --apply`, restart an instance with:
+
+```sh
+evlet restart acme
+```
+
+Run it on the server as the service user, inside the project or with `--project`. It
+checks the instance first, so a working site is never restarted into a broken one. Each
+check prints one line, `ok` or the problem in plain words:
+
+- **Instance**: the instance exists, and `config.py` and `routes.py` load.
+- **Apps**: the installed apps match `apps.lock` and import.
+- **Routes**: the instance builds the way `evlet serve` builds it, so its route table resolves.
+- **Migrations**: no Evlet framework or app migration is pending. If one is, it stops with
+  `Run evlet migrate acme first`. It never migrates by itself.
+- **Service**: the unit `/etc/systemd/system/evlet-acme.service` exists and runs
+  `evlet serve acme` for this project. The port comes from its `--port` (8000 when it has none).
+
+All checks only read, and the running service keeps going while they run. When one fails,
+the command stops with exit status 1 and restarts nothing. When they all pass, it asks
+`Restart evlet-acme now?`, shows `sudo systemctl restart evlet-acme` and runs it; `sudo`
+may ask for your password. Then it waits up to 30 seconds for the unit's port to answer, such as
+`http://127.0.0.1:8010/health`, sending the instance's domain as the `Host` header,
+and prints `acme is back up at https://erp.example.com`. If the site does not answer in
+time, it prints the last 20 lines of `journalctl -u evlet-acme` and exits with status 1.
+
+A refusal looks like this:
+
+```text
+Instance: ok
+Apps: ok (notes 0.1.0)
+Routes: ok (primary host erp.example.com)
+Migrations: pending: 0010_split_files. Run evlet migrate acme first
+Service: ok (/etc/systemd/system/evlet-acme.service, port 8010)
+Checks failed. evlet-acme was not restarted and keeps running as it was.
+```
+
+Options:
+
+- `--check` runs the checks only and restarts nothing.
+- `--yes` restarts without asking. Without a terminal, such as in a script, the command
+  refuses unless `--yes` is given.
+- `--service NAME` restarts another unit, for one you installed by hand. It must still run
+  `evlet serve` for this instance.
+- `--timeout SECONDS` waits longer or shorter for `/health` (default 30).
+
+On a machine without systemd, such as a Mac, or for an instance with no unit, the Service
+check says so and nothing is restarted. Stop the server and start it again with
+`evlet serve acme` instead. `evlet dev` reloads by itself. A unit that does not run
+`evlet serve` is not Evlet's: restart it by hand with `sudo systemctl restart NAME`.
+
 ### Serve a website on its own host
 
 A static or server frontend can have its own host, such as a public website on
@@ -552,7 +607,7 @@ are needed:
 
 ```sh
 evlet host add acme www.example.com --root site.www --routes-only
-sudo systemctl restart evlet-acme
+evlet restart acme
 ```
 
 ### Serve an instance behind Caddy
