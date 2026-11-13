@@ -6,7 +6,7 @@
 // from the schema and detail.
 
 import { html, match, when, type Child } from '../dom';
-import { ApiError, ValidationError, type RecordData } from '../api';
+import { ApiError, type RecordData } from '../api';
 import { legacyRecordId, recordId } from '../ids';
 import { uid } from '../ui/core';
 import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Cell, type Readable } from '../reactive';
@@ -28,14 +28,13 @@ import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage, MeasureValues } from './client';
-import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, listFields, measureLabel, measureView, numberField, screenModel, sections, sequenceField, summaryFields, titleOf, LIST_KEYS, panelView, stateLook, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
+import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, listFields, measureLabel, measureView, numberField, screenModel, sections, sequenceField, summaryFields, titleOf, LIST_KEYS, panelView, stateLook, stepLabel, stepOf, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { blockFilters, declaresRelated, HtmlContent, MeasureChart, RelatedRecords, type BlockRecord } from './record-blocks';
 import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowNoun, rowsText, valueText } from './record-compact';
 import type { LayoutBlock } from '../model/schema';
 import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
 import { filterFields } from './filters';
-import { Revisions } from './revisions';
 import { presentSlip, takePrefill } from './slips';
 import { openEvaPanel } from '../eva/chat';
 import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden } from './unsaved';
@@ -51,7 +50,7 @@ const live = (render: () => Child) => html`${render}`;
 /** A field as a screen shows it: the State lock and the role's write access close it, with the reason. */
 function gate(field: Field, locked: Readable<boolean>, canWrite: boolean): FieldLike {
   const meta: FieldSchema = canWrite ? field.meta : { ...field.meta, read_only: true };
-  const stateLocked = derive(() => locked.get() && !(field.meta as any).editable_when_locked);
+  const stateLocked = derive(() => locked.get() && (field.meta as any).versioned !== false);
   const rules = derive<Rules>(() => { const rules = field.rules.get(); return stateLocked.get() && !rules.locked ? { ...rules, locked: true } : rules; });
   const editable = derive(() => canWrite && field.editable.get() && !stateLocked.get());
   // Locked by the record (its state, or no write access): the banner or header says so once, not each field.
@@ -288,34 +287,39 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return true;
   };
 
-  // ---------- moves, actions, void and revise ----------
+  // ---------- moves and actions ----------
 
+  // One move per target state: the detail lists the rules out of the current state.
+  const moveTo = (to: string) => { const moves = extras.peek()._moves ?? []; return moves.find(item => item.to === to && item.allowed) ?? moves.find(item => item.to === to); };
   const blockedMove = (to: string): string | null => {
     if (isNew) return 'Save the record first';
     if (store.dirty.get()) return 'Save or discard your changes first';
-    const move = extras.get()._moves?.find(item => item.to === to);
-    if (!move) return `This record cannot move from ${humanize(stateValue())} to ${humanize(to)}`;
+    extras.get();
+    const move = moveTo(to);
+    if (!move) return `This record cannot move from ${stepLabel(model, stateValue())} to ${stepLabel(model, to)}`;
     return move.allowed ? null : move.reason ?? `${move.label} is not available now`;
   };
   const moved = (to: string, label: string) => {
     const number = sequence && has(sequence.name) ? store.field(sequence.name).value.peek() : null;
-    toast(number && sequence?.name !== undefined && (sequence as any).sequence?.assign_on === to ? `${label} done. Number ${number}.` : `Moved to ${humanize(to)}`);
+    toast(number && sequence?.name !== undefined && (sequence as any).sequence?.assign_on === to ? `${label} done. Number ${number}.` : `Moved to ${stepLabel(model, to)}`);
   };
   const runMove = async (to: string) => {
-    const move = extras.peek()._moves?.find(item => item.to === to);
-    const label = move?.label ?? humanize(to);
-    // A move that asks for fields (a reason required once lost, say) collects them first.
-    const asked = (move?.asks ?? []).map(field => model.fields.find(meta => meta.name === field)).filter(meta => meta !== undefined);
-    if (asked.length) {
-      const inputs = asked.map(meta => ({ ...meta, read_only: false, required: Boolean(meta.required || meta.required_when), applies_when: null, required_when: null, locked_when: null }));
-      ActionDialog({ name: to, label } as ActionMeta, inputs, async values => {
-        if (await store.move(to, values)) { moved(to, label); return null; }
+    const move = moveTo(to);
+    if (!move) return;
+    const label = move.label;
+    // A move that takes a remark or asks for fields (a reason required once lost, say) collects them first.
+    const asked = (move.asks ?? []).map(field => model.fields.find(meta => meta.name === field)).filter(meta => meta !== undefined);
+    const remark = move.remark ? [{ name: 'remark', type: 'longtext', label: move.remark.label ?? 'Remark', required: move.remark.required, max_length: 1000 } as FieldSchema] : [];
+    if (asked.length || remark.length) {
+      const inputs = [...remark, ...asked.map(meta => ({ ...meta, read_only: false, required: Boolean(meta.required || meta.required_when), applies_when: null, required_when: null, locked_when: null }))];
+      ActionDialog({ name: move.key, label } as ActionMeta, inputs, async values => {
+        if (await store.move(move.key, values)) { moved(to, label); return null; }
         const errors = Object.fromEntries(asked.map(meta => [meta.name, store.field(meta.name).error.peek()]).filter(([, error]) => error));
         return Object.keys(errors).length ? errors : store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`;
       });
       return;
     }
-    const ok = await store.move(to);
+    const ok = await store.move(move.key);
     if (!ok) { toast(store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`, { icon: 'info' }); return; }
     moved(to, label);
   };
@@ -356,57 +360,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     // The handler may have changed this record; a document or a record it opened is another page.
     if (outcome && !outcome.document && !outcome.open) void store.reload().catch(() => {});
   });
-  const correct = (kind: 'void' | 'revise' | 'unpost' | 'repost') => {
-    // A repost's reason is optional; the other corrections need one.
-    const optional = kind === 'repost';
-    const reason = localField({ name: 'reason', type: 'longtext', label: optional ? 'Reason (optional)' : 'Reason', required: !optional, max_length: 1000 } as any, '');
-    const noun = model.label.toLowerCase();
-    const copy = {
-      void: { title: `Void ${titleText.peek()}`, icon: 'circle-x', tint: 'rose' as const, variant: 'danger' as const, submit: `Void ${noun}`,
-        note: 'Voiding keeps the record and its number, and reverses what it posted. It can’t be undone.' },
-      revise: { title: `Revise ${titleText.peek()}`, icon: 'copy', tint: 'blue' as const, variant: 'primary' as const, submit: `Revise ${noun}`,
-        note: 'Revising voids this record and opens an editable copy. The copy gets its own number when it is issued.' },
-      unpost: { title: `Unpost ${titleText.peek()}`, icon: 'rotate-ccw', tint: 'amber' as const, variant: 'danger' as const, submit: `Unpost ${noun}`,
-        note: `Unposting reverses what this ${noun} posted and returns it to the state it was posted from. It keeps its number. Repost it when it is right.` },
-      repost: { title: `Repost ${titleText.peek()}`, icon: 'repeat', tint: 'blue' as const, variant: 'primary' as const, submit: `Repost ${noun}`,
-        note: `Reposting checks this ${noun} again and posts it with fresh entries. It keeps its number.` },
-    }[kind];
-    let busy = false;
-    const submit = async (close: () => void) => {
-      const text = String(reason.value.peek() ?? '').trim();
-      if (!text && !optional) { reason.error.set('Give a reason'); return; }
-      if (text.length > 1000) { reason.error.set('Use at most 1,000 characters'); return; }
-      if (busy) return;
-      busy = true;
-      try {
-        if (store.dirty.peek()) { reason.error.set('Save or discard your changes first'); return; }
-        const etag = store.etag.peek();
-        const response = kind === 'void' ? await api.voidRecord(name, store.id!, text, etag)
-          : kind === 'revise' ? await api.revise(name, store.id!, text, etag)
-          : kind === 'unpost' ? await api.unpost(name, store.id!, text, etag) : await api.repost(name, store.id!, text, etag);
-        close();
-        if (kind === 'revise') {
-          toast('Revised. You are editing the new draft.', { icon: 'copy' });
-          if (panel) panel.show(response.data.id);
-          else void router.go('record', { model: name, id: String(response.data.id) });
-        } else {
-          store.applyServer(response.data, response.etag);
-          await store.loadAll().catch(() => {});
-          toast(kind === 'void' ? 'Voided. The number stays used.' : kind === 'unpost' ? 'Unposted. What it posted was reversed.' : 'Reposted.',
-            { icon: copy.icon });
-        }
-      } catch (error) {
-        if (error instanceof ValidationError && error.fields.reason) reason.error.set(error.fields.reason);
-        else if (error instanceof ValidationError && error.fields._effects) reason.error.set(error.fields._effects);
-        else reason.error.set(error instanceof ApiError ? error.message : 'This did not work. Try again.');
-      } finally { busy = false; }
-    };
-    let closeDialog = () => {};
-    closeDialog = openModal({ title: copy.title, icon: copy.icon, tint: copy.tint, narrow: true,
-      onSubmit: () => void submit(closeDialog),
-      body: () => [html`<p class="muted">${copy.note}</p>`, fieldFor({ field: reason, full: true })],
-      footer: close => DialogFooter({ cancel: close, submit: { label: copy.submit, variant: copy.variant, onClick: () => void submit(close) } }) });
-  };
   const remove = () => openModal({ title: `Delete ${titleText.peek()}?`, icon: 'trash-2', tint: 'rose', narrow: true,
     body: () => html`<p>This can’t be undone.</p>`,
     footer: close => DialogFooter({ cancel: close, submit: { label: 'Delete', variant: 'danger', icon: 'trash-2', onClick: async () => {
@@ -435,44 +388,17 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       { label: 'Reload', icon: 'rotate-ccw', onSelect: () => void store.reload().catch(() => {}) });
     if (canDuplicate()) items.push({ label: 'Duplicate', icon: 'copy', hint: formatKeys(SCREEN_KEYS.duplicate), onSelect: duplicateNow });
     if (foldable) items.push({ label: 'Reset layout', icon: 'layout-grid', disabled: !folds.changed, onSelect: () => folds.reset() });
-    const now = extras.peek();
-    if (now._revise) items.push({ label: `Revise ${model.label.toLowerCase()}`, icon: 'copy', disabled: !now._revise.allowed, onSelect: () => correct('revise') });
-    if (now._void) items.push({ label: `Void ${model.label.toLowerCase()}`, icon: 'circle-x', danger: true, disabled: !now._void.allowed, onSelect: () => correct('void') });
-    if (now._repost) items.push({ label: `Repost ${model.label.toLowerCase()}`, icon: 'repeat', disabled: !now._repost.allowed, onSelect: () => correct('repost') });
-    if (now._unpost) items.push({ label: `Unpost ${model.label.toLowerCase()}`, icon: 'rotate-ccw', danger: true, disabled: !now._unpost.allowed, onSelect: () => correct('unpost') });
     if (canDelete()) items.push('separator', { label: 'Delete', icon: 'trash-2', danger: true, hint: formatKeys(SCREEN_KEYS.remove), onSelect: remove });
     return items;
   };
 
-  const runLifecycle = async (operation: 'confirm' | 'cancel' | 'reopen', reason?: string): Promise<string | null> => {
-    if (store.dirty.peek()) return 'Save or discard your changes first';
-    try {
-      const response = await api.lifecycle(name, store.id!, operation, store.etag.peek(), reason);
-      store.applyServer(response.data, response.etag);
-      await store.loadAll();
-      toast(`${model.lifecycle?.labels[operation] ?? humanize(operation)} done`);
-      return null;
-    } catch (error) { return error instanceof ApiError ? error.fields.reason ?? error.message : 'The operation failed'; }
-  };
-  const lifecycleAction = (operation: 'confirm' | 'cancel' | 'reopen') => {
-    const label = model.lifecycle?.labels[operation] ?? humanize(operation);
-    if (operation === 'cancel') {
-      ActionDialog({ name: operation, label } as ActionMeta,
-        [{ name: 'reason', type: 'longtext', label: 'Reason', required: true, max_length: 1000 } as FieldSchema],
-        values => runLifecycle(operation, String(values.reason ?? '')));
-    } else void runLifecycle(operation).then(error => { if (error) toast(error, { icon: 'info' }); });
-  };
-
-  // The header's buttons. The moves (lifecycle operations, then State moves) make one split button: the first
-  // move this person may take on it, the others behind its chevron. Actions, slips and Ask Eva are outline
+  // The header's buttons. The State's moves make one split button: the primary move (else the first this person may
+  // take) on it, the others behind its chevron. Actions, slips and Ask Eva are outline
   // buttons before it, as many as fit (OUTLINE_BUTTONS, one in a side panel); the rest, Print and the record's
   // own items (Copy link, Duplicate, Delete...) are in More.
-  type HeaderEntry = { label: string; icon: string; allowed: boolean; blocked: () => string | null; run: () => void };
-  const moveEntries = (): HeaderEntry[] => [
-    ...(extras.get()._lifecycle_actions ?? []).map(operation => ({ label: model.lifecycle?.labels[operation] ?? humanize(operation), icon: operation === 'cancel' ? 'rotate-ccw' : 'arrow-right',
-      allowed: true, blocked: () => store.dirty.get() ? 'Save or discard your changes first' : null, run: () => lifecycleAction(operation) })),
-    ...(extras.get()._moves ?? []).map(move => ({ label: move.label, icon: moveIcon(move.to), allowed: move.allowed, blocked: () => blockedMove(move.to), run: () => void runMove(move.to) })),
-  ];
+  type HeaderEntry = { label: string; icon: string; allowed: boolean; primary?: boolean; blocked: () => string | null; run: () => void };
+  const moveEntries = (): HeaderEntry[] => (extras.get()._moves ?? []).map(move => ({ label: move.label, icon: moveIcon(model, move.to), allowed: move.allowed,
+    primary: move.primary, blocked: () => blockedMove(move.to), run: () => void runMove(move.to) }));
   const outlineEntries = (): HeaderEntry[] => [
     ...actions().map(action => ({ label: action.label, icon: actionIcon(action), allowed: true, blocked: () => actionBlocked(action), run: () => runAction(action) })),
     ...(model.slips ?? []).map(slip => ({ label: slip.label, icon: 'file-text', allowed: true, blocked: slipBlocked, run: () => openSlip(slip.name) })),
@@ -495,7 +421,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const shown = outline.slice(0, OUTLINE_BUTTONS), rest = outline.slice(OUTLINE_BUTTONS);
     const buttons = shown.map(entry => entry === eva ? Button({ label: 'Ask Eva', icon: 'sparkles', iconTint: 'violet', hideLabelOnPhone: true, onClick: askEvaNow })
       : MoveButton({ label: entry.label, icon: entry.icon, blocked: entry.blocked, onMove: entry.run }));
-    const main = moves.find(move => move.allowed) ?? moves[0];
+    const main = moves.find(move => move.primary) ?? moves.find(move => move.allowed) ?? moves[0];
     const split = main ? SplitButton({ main: MoveButton({ label: main.label, icon: main.icon, blocked: main.blocked, variant: 'primary', onMove: main.run }),
       items: moves.filter(move => move !== main).map(menuEntry), menuLabel: 'Other moves' }) : null;
     // Print, when the role may print this model and the server has the print extra: the preview is the server's PDF.
@@ -529,7 +455,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // show="badge" draws it in the header; show="bar" draws the stage bar on the page and the badge in a side panel
   // (which has no bar); show="none" draws neither, unless Meta.status names the State.
   const stateBadge = state && !isNew && (show === 'badge' || (panel && show === 'bar') || statusMeta?.name === state.field) ? StatusBadge({
-    value: stateValue, tint: value => statusTint(fieldOf(model, state.field) ?? {}, value), name: 'Status',
+    value: stateValue, label: value => stepLabel(model, value), tint: value => statusTint(fieldOf(model, state.field) ?? {}, value), name: 'Status',
     look: value => { const kind = stateLook(model, value); return kind === null || kind === 'open' ? 'pill' : kind; },
     moves: () => takeable().map(move => ({ to: move.to, label: move.label })), blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) }) : null;
   const statusBadge = statusMeta && statusMeta.name !== state?.field && has(statusMeta.name) && !isNew ? StatusBadge({
@@ -590,12 +516,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       // A title that is the record's name (no other title source) reads as a document number too.
       || Boolean(naming && store.field('name').value.get() && String(store.field('name').value.get()) === titleText.get()),
     status: [stateBadge, statusBadge, lockMark].filter(Boolean) as Child[],
-    // Under the title row, only when it has something to say: the name or number still to be assigned, and the
-    // revision of a confirmable record. Key facts are the subtitle; Record info is the footer.
-    meta: [nameFact, numberFact, model.lifecycle && !isNew ? live(() => {
-      const current = extras.get()._lifecycle;
-      return current ? Chip({ label: `${model.lifecycle!.labels[current.state]} · Revision ${current.revision}`, tone: current.state === 'confirmed' ? 'green' : 'slate' }) : null;
-    }) : null].filter(Boolean) as Child[],
+    // Under the title row, only when it has something to say: the name or number still to be assigned. Key facts are
+    // the subtitle; Record info is the footer.
+    meta: [nameFact, numberFact].filter(Boolean) as Child[],
     actions: [live(headerActions)],
   });
   strikeTitle(header);
@@ -609,7 +532,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- banners ----------
 
-  const link = (target: number, label: string) => html`<a class="link-q" href=${router.href('record', { model: name, id: String(target) })}>${label}</a>`;
   // When and by whom a cancelled record was cancelled, from its journal: the newest move into its state, with the
   // reason the move recorded (or a value the move asked for). Nothing without a journal.
   const cancelled = cell<{ at: string; by: string | null; reason: string | null } | null>(null);
@@ -617,12 +539,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const value = stateValue();
     if (lookNow() !== 'cancelled') return cancelled.set(null);
     untrack(() => void api.journal(name, store.id!, { limit: 50 }).then(page => {
-      const entry = page.items.find(item => ['moved', 'voided'].includes(item.kind) && String(item.data?.to ?? '') === value);
+      const entry = page.items.find(item => item.kind === 'moved' && String(item.data?.to ?? '') === value);
       if (!entry) return cancelled.set(null);
       const asked = Object.entries((entry.data.fields ?? {}) as Record<string, { new?: unknown }>)
         .map(([field, change]) => ({ meta: fieldOf(model, field), value: change?.new }))
         .find(item => item.meta && ['text', 'longtext'].includes(item.meta.type) && typeof item.value === 'string' && item.value.trim());
-      const reason = typeof entry.data.reason === 'string' && entry.data.reason.trim() ? entry.data.reason.trim()
+      const remark = (entry as { remark?: unknown }).remark;
+      const reason = typeof remark === 'string' && remark.trim() ? remark.trim()
         : asked ? String(asked.value).trim() : null;
       cancelled.set({ at: entry.at, by: entry.actor === null ? null : page.users[String(entry.actor)] ?? null, reason });
     }, () => cancelled.set(null)));
@@ -630,38 +553,22 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const cancelledLine = (value: string) => {
     const info = cancelled.get();
     const when = info ? ` on ${formatDateTime(info.at).slice(0, 10)}${info.by ? ` by ${info.by}` : ''}` : '';
-    return { title: `${humanize(value)}${when}.`, reason: info?.reason ? `Reason: ${info.reason.replace(/[.\s]+$/, '')}. ` : '' };
+    return { title: `${stepLabel(model, value)}${when}.`, reason: info?.reason ? `Reason: ${info.reason.replace(/[.\s]+$/, '')}. ` : '' };
   };
-  const lifecycle = state && (state.locked?.length || state.voidable?.length) && !isNew ? () => {
-    const value = stateValue(), now = extras.get(), revises = has('revises') ? store.field('revises').value.get() as number | null : null;
-    const revisedBy = now.revised_by ?? null;
-    const reviseOf = revises ? [' Revision of ', link(revises, `${model.label} ${revises}`), '.'] : [];
-    if (value === 'void') return StateBanner({ tone: 'danger', icon: 'ban', title: cancelledLine(value).title, text: [cancelledLine(value).reason, `This ${model.label.toLowerCase()} was voided. What it posted was reversed and its number is kept.`,
-      ...(revisedBy ? [' Replaced by ', link(revisedBy, `${model.label} ${revisedBy}`), '.'] : []), ...reviseOf] });
+  const lifecycle = state && state.steps.some(step => step.lock) && !isNew ? () => {
+    const value = stateValue(), now = extras.get();
     if (now._locked) {
-      const buttons = [now._revise?.allowed ? Button({ label: 'Revise', icon: 'copy', size: 'small', onClick: () => correct('revise') }) : null,
-        now._void?.allowed ? Button({ label: 'Void', icon: 'circle-x', size: 'small', variant: 'soft-danger', onClick: () => correct('void') }) : null,
-        now._unpost?.allowed ? Button({ label: 'Unpost', icon: 'rotate-ccw', size: 'small', variant: 'soft-danger', onClick: () => correct('unpost') }) : null,
-        // Unposted into a locked state (it posted from one): it stays locked and posts again by Repost.
-        now._repost?.allowed ? Button({ label: 'Repost', icon: 'repeat', size: 'small', onClick: () => correct('repost') }) : null].filter(Boolean) as Node[];
-      const editable = model.fields.filter(field => (field as any).editable_when_locked).map(field => field.label.toLowerCase());
-      // Only the corrections this user can make now (the state allows them and so does the role).
-      const ways = [now._void?.allowed ? 'void' : null, now._revise?.allowed ? 'revise' : null].filter(Boolean);
-      const correction = ways.length === 2 ? ' To correct it, void or revise.' : ways.length ? ` To correct it, ${ways[0]} it.` : '';
-      const what = [editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.', correction, ...reviseOf];
-      // Cancelled: a soft red strip with when and by whom, and the reason when one was given.
+      const editable = model.fields.filter(field => (field as any).versioned === false).map(field => field.label.toLowerCase());
+      const what = editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.';
+      // Cancelled: a soft red strip with when and by whom, and the remark when one was given.
       if (lookNow() === 'cancelled') {
         const line = cancelledLine(value);
-        return StateBanner({ tone: 'danger', icon: 'ban', title: line.title, actions: buttons, text: [line.reason, ...what] });
+        return StateBanner({ tone: 'danger', icon: 'ban', title: line.title, text: [line.reason, what] });
       }
-      return StateBanner({ tone: 'info', title: `${humanize(value)} and locked.`, actions: buttons, text: what });
+      return StateBanner({ tone: 'info', title: `${stepLabel(model, value)} and locked.`, text: what });
     }
-    const next = (state.moves.find(move => (Array.isArray(move.from) ? move.from : [move.from]).includes(value) && state.locked?.includes(move.to)));
-    // An unposted record: what it posted was reversed, and it posts again by Repost (listed for roles that may).
-    if (now._repost) return StateBanner({ tone: 'neutral', title: `${humanize(value)}, unposted.`,
-      actions: now._repost.allowed ? [Button({ label: 'Repost', icon: 'repeat', size: 'small', onClick: () => correct('repost') })] : [],
-      text: ['What it posted was reversed and its number is kept. Everything can change until it is reposted.', ...reviseOf] });
-    return StateBanner({ tone: 'neutral', icon: 'circle-alert', title: `${humanize(value)}.`, text: [next ? `Everything can change until it is ${humanize(next.to).toLowerCase()}.` : 'Everything can change.', ...reviseOf] });
+    const next = state.rules.find(rule => rule.from.includes(value) && stepOf(model, rule.to)?.lock);
+    return StateBanner({ tone: 'neutral', icon: 'circle-alert', title: `${stepLabel(model, value)}.`, text: next ? `Everything can change until it is ${stepLabel(model, next.to).toLowerCase()}.` : 'Everything can change.' });
   } : null;
   const problems = () => {
     const conflict = store.conflict.get(), form = store.formError.get(), load = store.loadError.get();
@@ -809,7 +716,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // A #field address (/app/invoice/7#due) opens that field's section and focuses it.
   const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target)) revealField(frame, target); };
   if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
-  const lockedText = () => model.fields.some(field => (field as any).editable_when_locked) ? `Locked. Lines can’t change while it is ${humanize(stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
+  const lockedText = () => model.fields.some(field => (field as any).versioned === false) ? `Locked. Lines can’t change while it is ${stepLabel(model, stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
   /** A Table's row editor form: the row model's first section as a grid, the rest as "more information" rows, as
    * on the record itself; fields are inputs, since a row is saved with the record. */
   const rowForm = (child: { name: string; model?: string }) => {
@@ -955,7 +862,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
           break;
       }
     }
-    // Related records the layout does not list, revisions and postings.
+    // Related records the layout does not list, and postings.
     if (relations.length && relatedShown && tabShown('related')) {
       const row = MoreRow({ title: 'Related', folds, start: rowStart(false, ++index), none: 'Loading…',
         summary: () => relations.map(relation => { const count = related(relation.name).total.get(); return count === null ? '' : `${relation.label}: ${count}`; }).filter(Boolean).join(' · '),
@@ -963,8 +870,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       whenVisible(row, () => relations.forEach(relation => related(relation.name).ensure()));
       rows.push(row);
     }
-    if (model.lifecycle && !isNew && tabShown('revisions')) rows.push(MoreRow({ title: 'Revisions', folds, start: false, summary: () => '', none: 'Every confirmed revision of this record',
-      body: () => Revisions(ctx, model, store.id!) }));
     if (postings && tabShown('postings')) rows.push(MoreRow({ title: 'Postings', folds, start: false, none: 'Nothing posted yet',
       summary: () => (postings.get() ?? []).map(item => `${targetPlural(ctx, item.target)}: ${item.rows + item.reversals}`).join(' · '), body: () => Postings(ctx, postings) }));
     // The stage bar and the key cards above one white card: the state banner strip, the primary area, then more
@@ -1074,9 +979,10 @@ function withSaveKeys(button: HTMLButtonElement): HTMLButtonElement {
 
 // ---------- action dialog ----------
 
-/** A move's icon, read from where it goes: Resume plays, On hold pauses, Complete checks, Cancel crosses. */
-function moveIcon(to: string): string {
-  if (/cancel|void|lost|reject|declin|unqualif/i.test(to)) return 'circle-x';
+/** A move's icon, read from where it goes: a final rose step crosses, Resume plays, On hold pauses, Complete checks. */
+function moveIcon(model: ScreenModel, to: string): string {
+  const step = stepOf(model, to);
+  if (step?.final && step.color === 'rose') return 'circle-x';
   if (/hold|pause|suspend|block/i.test(to)) return 'pause';
   if (/won|paid|done|complete|approve|accept|close|finish|deliver/i.test(to)) return 'circle-check';
   if (/issue|send|submit|sent/i.test(to)) return 'send';

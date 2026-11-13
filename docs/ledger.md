@@ -61,7 +61,7 @@ Eva, the connector) must reach them.
   `unique`, `index`, bounds, scale checks and coercion apply as usual. Class creation refuses, with
   a message naming the problem: other field types (`State`, `Sequence`, `RichText`, `LongText`,
   `Tags`, `MultiSelect`, `Reference`, `Email` and the rest), computed, query, fetched and virtual
-  fields, field rules, child tables, actions, moves, lifecycle handlers, change reactions, and
+  fields, field rules, child tables, actions, moves, state hooks, and
   screen options (`help_text`, `hidden`, `read_only`, `visible_if`, Select `colors`, layouts,
   tabs, `Meta.status` and every other Meta option not listed below).
 - **Links.** A ledger model may link to a normal model or to another ledger model, with real
@@ -101,10 +101,10 @@ with database.transaction() as tx:
   `run()` reads a ledger model through `self.context.aggregate` and `self.context.list`, which
   apply the person's `Rule(scope=...)` on the model, so declare `permissions` on a ledger model
   whose reports need row scopes ([reports.md](reports.md)).
-- A move's `run` method or an `@action` handler writes ledger rows through
+- A `@state` hook or an `@action` handler writes ledger rows through
   `self.context.session`, its own transaction session, so the rows commit or roll back with the
   move, its Sequence number and the record's changes
-  ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+  ([states-actions.md](states-actions.md#the-transaction-session-in-hooks-and-actions)).
   Such a handler may also set a Link to the row it wrote, such as `self.posting = row.id`. The save
   does not check that Link against the caller's read access, because the ledger has no surface and
   callers cannot write the Link themselves. A Link with `filters` is still checked.

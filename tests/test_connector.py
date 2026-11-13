@@ -110,10 +110,10 @@ def test_live_tools_use_tenant_authentication_permissions_actions_and_validation
     created = invoke(server, 'create_record', {'model': 'project', 'values': {'title': 'Connector', 'children': {'tasks': [{'title': 'Complete', 'done': True}]}}})['result']['structuredContent']
     record_id = created['id']
     rejected = invoke(server, 'update_record', {'model': 'project', 'id': record_id, 'values': {'status': 'done'}})['result']
-    assert rejected['isError'] and rejected['structuredContent']['status'] == 403
+    assert rejected['isError'] and rejected['structuredContent']['status'] == 422
     invalid = invoke(server, 'create_record', {'model': 'project', 'values': {'title': ''}})['result']
     assert invalid['isError'] and 'title' in invalid['structuredContent']['fields']
-    assert approved(live_connector, server, 'run_action', {'model': 'project', 'id': record_id, 'action': 'start'})['result']['structuredContent']['status'] == 'active'
+    assert approved(live_connector, server, 'change_state', {'model': 'project', 'id': record_id, 'rule': 'start'})['result']['structuredContent']['status'] == 'active'
     job = approved(live_connector, server, 'run_action', {'model': 'project', 'id': record_id, 'action': 'refresh_progress'})['result']['structuredContent']['job']
     assert invoke(server, 'job_status', {'id': job['id']})['result']['structuredContent']['state'] == 'queued'
     live_connector[1]['alpha'].business.jobs.run_one()

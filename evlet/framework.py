@@ -103,6 +103,16 @@ def _administrator(connection):
         ensure_administrator(connection)
 
 
+def _state_manager(connection):
+    """Give a journal from before 0.4.6 the state manager's columns, empty on its old entries."""
+    from .journal import SCALAR_COLUMNS
+    if connection.table_exists('evlet_journal'):
+        present = connection.columns('evlet_journal')
+        for column in SCALAR_COLUMNS:
+            if column.name not in present:
+                connection.add_column('evlet_journal', column)
+
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -119,6 +129,8 @@ STEPS = (
     # Recorded only: upgrade() moves the tables before the steps' transaction (Database.upgrade_storage, which
     # runs evlet.writes.split_files), since a file cannot be attached inside a transaction.
     FrameworkStep('0010_split_files', 'Move sign-in sessions, the tool-call log and Eva into their own SQLite files next to the database.'),
+    FrameworkStep('0011_state_manager', "Add the state manager's rule, remark, level, base and rules_version columns to the journal.",
+                  _state_manager),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

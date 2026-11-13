@@ -8,8 +8,8 @@ secrets and connector secrets (see [Controls](controls.md#connectors-and-secrets
 writing our own cipher is not an option. The connector calls the same authenticated HTTP routes used by
 the browser, so tenant, account, model, row, field, and action checks stay on the
 server. It has no database handle, arbitrary SQL, Python execution, or file tool.
-No context it reaches opens the transaction session of a move or action handler
-([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+No context it reaches opens the transaction session of a state hook or action handler
+([states-actions.md](states-actions.md#the-transaction-session-in-hooks-and-actions)).
 The same tools are also served over HTTP at `/_/mcp` with OAuth sign-in; see
 [Remote MCP with OAuth](#remote-mcp-with-oauth).
 
@@ -145,7 +145,7 @@ so the application decides what this person may call and logs every call.
 | `job_status` | Read a permitted queued action's status when jobs are configured |
 | `create_record` | Create with backend validation |
 | `update_record` | Apply partial values and any supplied child replacements |
-| `change_state` | Move a document to another state, or confirm, cancel or reopen a confirmable one |
+| `change_state` | Move a document with one of its State rules (`rule`, `remark`, `values`) |
 | `run_action` | Invoke a registered action, including queued actions |
 | `delete_record` | Delete a permitted record and owned children |
 

@@ -89,7 +89,7 @@ class JobContext:
           The role's permissions apply (a row scope that names the account matches nothing), writes are
           recorded under no account, and the Journal names the system as `via`.
 
-        Job handlers are trusted code, so the context may also make system moves (Move(..., system=True)).
+        Job handlers are trusted code, so the context may also make system moves (rules with by=()).
         Writes commit or roll back with the job's own transaction (or the step of a resumable task)."""
         from .documents import Context
         business = self._business

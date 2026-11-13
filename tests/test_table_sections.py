@@ -8,7 +8,7 @@ from decimal import Decimal as D
 
 import pytest
 
-from evlet import (Application, Child, Database, Decimal, Integer, Model, PrintDesign, Registry, Rule, Section, State, Move,
+from evlet import (Application, Child, Database, Decimal, Integer, Model, PrintDesign, Registry, Rule, Section, State,
                    Table, Text, ValidationError, action)
 from evlet.auth import LocalAuth
 from evlet.printing import Column, Table as PrintTable, document_context
@@ -41,7 +41,12 @@ class Quote(Model):
         derives = ('line_count',)
 
     title_text = Text(max_length=40, default='quote')
-    status = State(('draft', 'sent'), default='draft', locked=('sent',), moves=(Move('draft', 'sent', 'Send'),))
+    status = State(
+        State.Step('draft'),
+        State.Step('sent', lock=True),
+        rules=(
+            State.Rule('draft', 'sent', 'Send', key='sent'),
+        ), default='draft')
     lines = Table(Line, sections=True)
     line_count = Integer()
     total_qty = Decimal(scale=2, compute=lines.sum('qty'))
@@ -81,17 +86,20 @@ class Order(Model):
 
 
 class Contract(Model):
-    """Revisable: a revise copies the document, its rows and its section rows."""
-    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise'))}
-
-    class Meta:
-        revisable = True
+    """A State document whose Table has section rows."""
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 
     class Row(Child):
         item = Text(max_length=40)
 
-    status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued', 'void'),
-                   final=('void',), voidable=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+            State.Rule('issued', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ))
     lines = Table(Row, sections=True)
 
 
@@ -388,20 +396,6 @@ def test_print_groups_rows_under_their_sections_with_sums(app):
         ('Goods', ['Shelf'], {'qty': D('4.00'), 'amount': D('8913.04')}),
         ('Services', ['Install', 'Deliver'], {'qty': D('2.00'), 'amount': D('7291.80')}),
         ('Later', [], {'qty': D('0'), 'amount': D('0')})]
-
-
-def test_revise_copies_section_rows(app):
-    call = client(app)
-    status, data, _ = call('POST', '/api/contract', {'children': {'lines': [{'section': 'A'}, {'item': 'one'}, {'section': 'B'}, {'item': 'two'}]}})
-    assert status == 201, data
-    url = f"/api/contract/{data['id']}"
-    assert call('POST', f'{url}/moves/issued', {}, headers={b'if-match': call('GET', url)[2][b'etag']})[0] == 200
-    status, copy, _ = call('POST', f'{url}/revise', {'reason': 'price change'}, headers={b'if-match': call('GET', url)[2][b'etag']})
-    assert status in (200, 201) and copy['revises'] == data['id'], copy
-    assert [line.get('section') or line['item'] for line in copy['children']['lines']] == ['A', 'one', 'B', 'two']
-    # New section rows: the original keeps its own.
-    original = {line['id'] for line in call('GET', url)[1]['children']['lines'] if 'section' in line}
-    assert original.isdisjoint(line['id'] for line in copy['children']['lines'] if 'section' in line)
 
 
 def test_postings_read_sections(app):

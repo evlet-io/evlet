@@ -294,9 +294,9 @@ Rules may read fields or Link paths the user cannot read; the server enforces th
   never a count. Avoid tight `max_rows` or `min_rows` on collections whose hidden row count
   must stay private.
 
-### Move guards and action availability
+### Rule guards and action availability
 
-`Move(..., when=...)` and `@action(..., available_when=...)` use the same language and are
+`State.Rule(..., when=...)` and `@action(..., available_when=...)` use the same language and are
 decided like `locked_when`: on the record as saved, in the write's transaction, with pending
 or error results blocking. They are compiled with the document at registration but are not
 entries of the shipped plan, so they do not change any plan or formula hash. A State field is
@@ -495,23 +495,21 @@ route first. Formula changes never backfill stored totals on their own; use the 
 migration operation ([model-engine.md](model-engine.md#recalculating-stored-values)) to
 recalculate them explicitly.
 
-Locked records, confirmed or cancelled [confirmable](document-lifecycle.md) documents and records with
-posted [effects](effects.md) are the exception. A locked record keeps its saved results on
-ordinary writes. A confirmed or cancelled document keeps them on every write until it is
-reopened. The draft preview and the record's detail follow the same rule, so they show the
-values a save would keep. A trusted Session write to a `derive()` model is the one difference:
-only postings keep its results, because lifecycle handlers and app code write to a confirmed
-document and its derived values must follow. A record with postings keeps them on
-every write, moves and actions included, and needs no recalculation request; asking for
-one is refused with 409 (`This record has postings. To change its totals, void or revise
-it.`). Its actions and moves may not change what those results read (409, naming the
-field). `Recompute` skips posted records only and reports how many it kept, so the effect
-rows a record posted always match its saved totals; a locked record that never posted is
-recalculated. An admin may include posted records for one migration run with
+Locked records and records with posted [effects](effects.md) are the exception. A record in
+a locked step keeps its saved results on ordinary writes. The draft preview and the record's
+detail follow the same rule, so they show the values a save would keep. A trusted Session write
+to a `derive()` model is the one difference: only postings keep its results, because hooks and
+app code write to a locked document and its derived values must follow. A record with postings
+keeps them on every write, moves and actions included, and needs no recalculation request;
+asking for one is refused with 409 (`This record has postings. To change its totals, move it out
+of its posted state.`). Its actions and moves may not change what those results read (409,
+naming the field). `Recompute` skips records with live postings, and records that posted and
+are in a final state, and reports how many it kept, so the effect rows a record posted always
+match its saved totals; a locked record that never posted is recalculated. An admin may include posted records for one migration run with
 `evlet migrate <instance> --recompute-posted`; each changed one is journaled with
-`"posted": true` ([model-engine.md](model-engine.md#recalculating-stored-values)). An admin
-can also unpost a posted record, correct it and repost it
-([states-actions.md](states-actions.md#unpost-and-repost)). Draft previews of a locked or posted record show the values a save keeps.
+`"posted": true` ([model-engine.md](model-engine.md#recalculating-stored-values)). A rule out
+of the posting state reverses the rows, after which the record can be corrected and posted
+again ([effects.md](effects.md#leaving-the-posting-state)). Draft previews of a locked or posted record show the values a save keeps.
 
 ## Permissions and the browser plan
 

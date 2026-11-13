@@ -106,14 +106,9 @@ def check_class(name, namespace, bases, fields, tables, sources):
         raise ValueError(f'{name}: a ledger model has no child tables; use another ledger model with a Link')
     if sources:
         raise ValueError(f'{name}: a ledger model has no query sources')
-    for flag in ('confirmable', 'track_changes'):
-        if namespace.get(flag) or any(getattr(base, flag, False) for base in bases):
-            raise ValueError(f'{name}: a ledger model has no lifecycle; {flag} is not available')
     for key, value in namespace.items():
-        if hasattr(value, '__action__') or hasattr(value, '__lifecycle__') or hasattr(value, '__depends__'):
-            raise ValueError(f'{name}.{key}: a ledger model has no actions, moves, lifecycle handlers or reactions')
-    if callable(namespace.get('changed')):
-        raise ValueError(f'{name}.changed: a ledger model has no change reactions; trusted code writes its rows')
+        if hasattr(value, '__action__') or hasattr(value, '__evlet_hook__') or hasattr(value, '__depends__'):
+            raise ValueError(f'{name}.{key}: a ledger model has no actions, hooks or reactions; trusted code writes its rows')
     allowed = tuple(getattr(types, kind) for kind in FIELD_TYPES)
     for key, field in fields.items():
         if getattr(field, 'engine_timestamp', None):
@@ -129,8 +124,8 @@ def check_class(name, namespace, bases, fields, tables, sources):
             value = getattr(field, attribute, None)
             if value not in (None, ''):
                 raise ValueError(f'{name}.{key}: a ledger model has no {what} ({attribute}=)')
-        if field.hidden or field.read_only or field.editable_when_locked:
-            raise ValueError(f'{name}.{key}: hidden, read_only and editable_when_locked are screen options; a ledger '
+        if field.hidden or field.read_only or not field.versioned:
+            raise ValueError(f'{name}.{key}: hidden, read_only and versioned=False are screen options; a ledger '
                              'model has no screens')
         if field.filters:
             raise ValueError(f'{name}.{key}: Link filters choose records in a form; a ledger model has no forms')

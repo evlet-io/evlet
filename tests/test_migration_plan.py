@@ -19,10 +19,10 @@ from evlet.instances import load_runtime
 
 ADMIN = User(1, 'admin', 'admin')
 
-MODELS = '''from evlet import Integer, Journal, Model, Rule, Text{imports}
+MODELS = '''from evlet import Integer, Journal, Model, Rule, State, Text{imports}
 
 RULES = {{'admin': Rule(('read', 'create', 'update', 'delete'))}}
-LIFECYCLE = {{'admin': Rule(('read', 'create', 'update', 'delete', 'confirm', 'cancel', 'reopen'))}}
+LIFECYCLE = {{'admin': Rule(('read', 'create', 'update', 'delete'))}}
 {child}
 
 class Employee(Model):
@@ -31,9 +31,9 @@ class Employee(Model):
 {employee}
 
 class LeaveApplication(Model):
-    confirmable = True
-    track_changes = True
     permissions = LIFECYCLE
+    status = State(State.Step('draft'), State.Step('confirmed', lock=True, release=True),
+                   rules=(State.Rule('draft', 'confirmed', 'Confirm', key='confirm'),))
     employee = Text(required=True)
     days = Integer(default=0)
     reason = Text()
@@ -82,15 +82,14 @@ def runtime(root):
 
 
 def seed(root):
-    """An employee and a confirmed leave application with a revision and journal entries."""
+    """An employee and a confirmed leave application with hashed journal entries."""
     app = runtime(root)
     try:
         with app.business.context(ADMIN) as context:
             employee = context.create(app.registry.models['employee'], full_name='Mariam')['id']
-            document = context.document(app.registry.models['leaveapplication'], employee='Mariam', days=3, reason='Annual')
-            document.save()
-            document.confirm()
-            return employee, document.id
+            leave = context.create(app.registry.models['leaveapplication'], employee='Mariam', days=3, reason='Annual')['id']
+            context.move(app.registry.models['leaveapplication'], leave, 'confirm')
+            return employee, leave
     finally:
         app.database.close()
 
@@ -150,7 +149,7 @@ def test_plan_names_each_difference_writes_nothing_and_its_suggestion_migrates(p
             rows = tx.connection.execute('SELECT evlet_owner, full_name, age FROM employee_dependents').fetchall()
         assert [tuple(row) for row in rows] == [(employee, 'Omar', 7)]
         with app.business.context(ADMIN) as context:
-            assert context.snapshot(Leave, leave, revision=1)['document']['reason'] == 'Annual'
+            assert (context.get(Leave, leave).status, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
     finally:
         app.database.close()
     main(['journal', 'verify', 'acme'])
@@ -262,13 +261,16 @@ def test_mismatch_names_the_changed_property(tmp_path):
 
 def hr_models(*, dependents=False, nationality=False):
     from evlet import Journal, Rule
-    lifecycle = {'admin': Rule(('read', 'create', 'update', 'delete', 'confirm', 'cancel', 'reopen'))}
+    from evlet import State
+    lifecycle = {'admin': Rule(('read', 'create', 'update', 'delete'))}
     employee = {'__module__': __name__, 'full_name': Text(required=True), 'permissions': {'admin': Rule(('read', 'create', 'update', 'delete'))}}
     if nationality:
         employee['nationality'] = Text(default='AE')
     if dependents:
         employee['dependents'] = Table(type('Dependent', (Child,), {'__module__': __name__, 'full_name': Text(required=True), 'age': Integer()}))
-    leave = {'__module__': __name__, 'confirmable': True, 'track_changes': True, 'permissions': lifecycle,
+    leave = {'__module__': __name__, 'permissions': lifecycle,
+             'status': State(State.Step('draft'), State.Step('confirmed', lock=True, release=True),
+                             rules=(State.Rule('draft', 'confirmed', 'Confirm', key='confirm'),)),
              'employee': Text(required=True), 'days': Integer(default=0), 'reason': Text(),
              'Meta': type('Meta', (), {'journal': Journal(tamper_evident=True)})}
     return Registry(type('Employee', (Model,), employee), type('LeaveApplication', (Model,), leave))
@@ -282,14 +284,14 @@ def application(database):
 
 
 def confirmed_leave(database):
-    """An employee and a leave application confirmed once (revision 1, hashed journal entries)."""
+    """An employee and a leave application confirmed once (hashed journal entries)."""
     app = application(database)
+    Leave = database.registry.models['leaveapplication']
     with app.business.context(ADMIN) as context:
         employee = context.create(database.registry.models['employee'], full_name='Mariam')['id']
-        document = context.document(database.registry.models['leaveapplication'], employee='Mariam', days=3, reason='Annual')
-        document.save()
-        document.confirm()
-        return employee, document.id
+        leave = context.create(Leave, employee='Mariam', days=3, reason='Annual')['id']
+        context.move(Leave, leave, 'confirm')
+        return employee, leave
 
 
 def check_plan_and_add_table(make):
@@ -317,7 +319,7 @@ def check_plan_and_add_table(make):
     with app.business.context(ADMIN) as context:
         assert context.get(Employee, employee).nationality == 'AE'
         context.update(Employee, employee, children={'dependents': [{'full_name': 'Omar', 'age': 7}]})
-        assert context.snapshot(Leave, leave, revision=1)['document']['reason'] == 'Annual'
+        assert (context.get(Leave, leave).status, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
         assert context.get(Leave, leave).days == 3
     checked, breaks = verify(database)
     assert checked and not breaks
@@ -340,7 +342,7 @@ def people_models(*, days=None, split=False):
     employee = {key: value for key, value in vars(Employee).items() if key in ('permissions', '__module__')}
     employee.update({'first_name': Text(default=''), 'last_name': Text(default='')} if split else {'full_name': Text(required=True)})
     leave = {key: value for key, value in vars(Leave).items()
-             if key in ('confirmable', 'track_changes', 'permissions', '__module__', 'Meta')}
+             if key in ('status', 'permissions', '__module__', 'Meta')}
     leave.update({'employee': Text(required=True), 'days': days or Integer(default=0), 'reason': Text()})
     return Registry(type('Employee', (Model,), employee), type('LeaveApplication', (Model,), leave))
 
@@ -390,7 +392,7 @@ def check_retire_alter_and_run_data(make):
     Leave = decimal_days.models['leaveapplication']
     with app.business.context(ADMIN) as context:
         assert context.get(Leave, leave).days == '3.0'
-        assert context.snapshot(Leave, leave, revision=1)['document']['reason'] == 'Annual'
+        assert (context.get(Leave, leave).status, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
         half = context.create(Leave, employee='Mariam', days='1.5')['id']
         assert context.get(Leave, half).days == '1.5'
 
@@ -583,14 +585,12 @@ def check_run_data_order_and_maintenance(make):
 
 
 def check_maintenance_steps(make):
-    """Data steps cannot write confirmed records unless declared and allowed, and then they are audited."""
+    """Maintenance data steps run only when the run allows them, and then they are audited."""
     from evlet import AddField, RunData
     database = make(hr_models(), [])
     confirmed_leave(database)
     target = hr_models(nationality=True)
     base = AddField('employee', 'nationality', Text(default='AE'))
-    with pytest.raises(SchemaError, match='write it through Context'):
-        make(target, [Migration('0001', base, RunData(shorten_reason))], migrate=True)
     steps = [Migration('0001', base, RunData(shorten_reason, maintenance=True))]
     with pytest.raises(SchemaError, match='--allow-maintenance'):
         make(target, steps, migrate=True)

@@ -65,7 +65,7 @@ def test_meta_panel_keeps_what_it_names_in_order_and_wins_over_flags():
     view = view_for(listed())
     # notes has panel=False and is not named; owner is named, so Ticket shows with only owner (subject is
     # hidden here, and the record page still shows a required field while it is empty on a new record).
-    assert view['panel'] == {'fields': ['notes', 'subject'], 'tabs': ['lines', 'postings', 'related', 'revisions'],
+    assert view['panel'] == {'fields': ['notes', 'subject'], 'tabs': ['lines', 'postings', 'related'],
                              'blocks': ['info', 'key_fields', 'summary'], 'order': ['details', 'activity', 'files']}
 
 
@@ -76,7 +76,7 @@ def test_meta_panel_details_keeps_every_section():
 
         class Meta:
             panel = ('details',)
-    assert view_for(Ticket)['panel'] == {'tabs': ['activity', 'postings', 'related', 'revisions'],
+    assert view_for(Ticket)['panel'] == {'tabs': ['activity', 'postings', 'related'],
                                          'blocks': ['files', 'info', 'key_fields', 'summary'], 'order': ['details']}
 
 

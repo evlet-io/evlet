@@ -14,9 +14,10 @@ from test_business import PASSWORD, client, hashed, http, secured
 from test_hosts_realms import portal  # noqa: F401
 
 
-def with_key(app, token, method, path, data=None, client='127.0.0.1'):
+def with_key(app, token, method, path, data=None, client='127.0.0.1', etag=None):
     # No cookie, no CSRF token and no request header: the key alone authenticates.
-    return http(app, method, path, data, headers={b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}, client=client)
+    headers = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b'', **({b'if-match': etag} if etag else {})}
+    return http(app, method, path, data, headers=headers, client=client)
 
 
 def create(c, name='Script', scope=None, user=None, personal=False):
@@ -174,11 +175,13 @@ def test_jobs_queued_with_a_key_keep_its_scope_and_stop_when_it_is_revoked(secur
     project = admin('POST', '/api/project', {'title': 'Keyed'})[1]
     created = create(admin, 'Worker', {'access': 'write', 'models': ['Project']})[1]
     token = created['token']
-    assert with_key(secured, token, 'POST', f"/api/project/{project['id']}/actions/refresh_progress")[0] == 202
+    assert with_key(secured, token, 'POST', f"/api/project/{project['id']}/actions/refresh_progress",
+                    etag=with_key(secured, token, 'GET', f"/api/project/{project['id']}")[2][b'etag'])[0] == 202
     assert jobs.run_one()
     assert seen[0].access is not None and seen[0].access.write and {model.__name__ for model in seen[0].access.models} >= {'Project'}
     assert not secured.business.policy.allows(seen[0], Customer, 'read')
-    assert with_key(secured, token, 'POST', f"/api/project/{project['id']}/actions/refresh_progress")[0] == 202
+    assert with_key(secured, token, 'POST', f"/api/project/{project['id']}/actions/refresh_progress",
+                    etag=with_key(secured, token, 'GET', f"/api/project/{project['id']}")[2][b'etag'])[0] == 202
     assert admin('DELETE', f"/api/_controls/keys/{created['key']['id']}")[0] == 200
     assert jobs.run_one() and len(seen) == 1
     with secured.database._connection() as connection:
@@ -189,7 +192,7 @@ def test_jobs_queued_with_a_key_keep_its_scope_and_stop_when_it_is_revoked(secur
 def test_guard_checks_are_cached_per_key_scope(secured):
     from types import SimpleNamespace
     from evlet.auth import KeyAccess, User
-    from evlet.states import readable
+    from evlet.guards import readable
     guard = SimpleNamespace(reads=(('self', Customer, 'customer_name'),))
     policy = secured.business.policy
     assert readable(policy, User(2, 'editor', 'editor'), guard)

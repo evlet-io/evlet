@@ -211,30 +211,24 @@ from masquerading as authoritative totals. Legacy permissions remain unchanged.
 
 After merging inputs, the operation runs an explicit action if requested,
 settles authoritative values, validates children/parent, persists deltas and
-calls optional `changed(change)` before commit. `validate()` is the sole model
-validation convention. Actions use `@action`, explicit allowed roles and typed
+commits. `@validate` methods are the model validation convention, and `@state`
+hooks react to moves ([states-actions.md](states-actions.md#hooks)). Actions use `@action`, explicit allowed roles and typed
 scalar arguments (`str/int/bool/float`); the native UI presents those inputs.
 Protect status fields with `read_only=True` when an ordinary PATCH must not
 bypass an action. Declaring `@action` makes a model a document: its PATCH,
 actions and deletion then require `If-Match`, and it gains draft evaluation.
 Legacy `Action` registrations on a document model keep their legacy route and
-also require `If-Match`; their trusted handlers bypass document settlement and
-`validate()`.
+also require `If-Match`; their trusted handlers bypass document settlement.
 A legacy `ChildTable` under a document parent is saved through the document
 route, which sets the parent link itself and ignores a client-supplied one.
 
-`Change` contains operation, actor, immutable before/after snapshots, changed
-stored fields and added/updated/removed/reordered child information. Deletion
-uses `operation="delete"`, a before snapshot and `after=None`. A true no-op,
-virtual query refresh or related-only action does not fire a source reaction.
-The source draft is frozen during its reaction; resaving it and cascades deeper
-than 16 operations fail. A reaction error rolls back the source, related writes
-and queued intents. External I/O does not belong inside a reaction.
+0.4.6 removed `changed(change)` and the `Change` object; a model that declares
+`changed` fails when the class is created.
 
 ## Dialogs and reports
 
 A nested `Dialog` exposes one source action without a second empty method.
-Implement `load(source)`, optional `validate()` and `submit(source)`. Fields and
+Implement `load(source)`, optional `@validate` checks and `submit(source)`. Fields and
 tables are transient, with no business SQL tables. `parent` in a dialog row is
 the dialog; `source` is the authorized persisted source snapshot. Load/evaluate
 never save it. Submit requires its current revision and a scoped idempotency

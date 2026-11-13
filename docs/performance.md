@@ -322,21 +322,6 @@ Before list pages serialized their rows in one batch, each row's Link check reco
 team: the wide tree's leave page took 315 ms on SQLite (50 team computations). These are
 local measurements of one synthetic workload, not capacity guarantees.
 
-## Unpost dependents
-
-Before an unpost, the engine looks for live records that depend on the record
-([states-actions.md](states-actions.md#unpost-and-repost)). It reads the ids of the record's
-Table rows (one statement per table level and chunk of 500) and of its effect rows (one per
-effect), then runs one statement per chunk of ids for every Link field whose target is the
-model, one of its Table row models or one of its effect targets, and for every `Reference`
-field of every model (a Reference may name any model). Link and Reference columns are indexed
-only when declared with `index=True`, so most of these statements scan their table. Documents
-of matched Table rows are found one statement per level and chunk, and each candidate costs
-one read and one posting check. Unpost is a rare admin action, so the scans are accepted;
-details do not run them (`_unpost` does not check dependents). Index the Link and Reference
-fields that point at posting documents, their rows or their effect targets when those tables
-grow large.
-
 ## Frontend bundle after removing SolidJS
 
 Measured on 2 November 2026 with the same method (`frontend/dist/assets`, each file

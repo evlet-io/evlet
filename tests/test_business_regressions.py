@@ -78,7 +78,7 @@ def test_child_collection_can_retain_rows_without_update_permission(secured, ope
     retained[0]['title'] = 'Forbidden update'
     assert call('PATCH', f'/api/project/{project.id}', {'title': 'Rollback parent', 'children': {'tasks': retained}})[0] == 403
     assert secured.database.get(Project, project.id).title == 'Keep parent'
-    assert call('GET', f'/api/project/{project.id}')[1] == data
+    assert call('GET', f'/api/project/{project.id}')[1] == {key: value for key, value in data.items() if key != '_row_ids'}
 
 
 def test_child_retention_checks_parent_ownership_and_row_scope(secured):
@@ -91,6 +91,7 @@ def test_child_retention_checks_parent_ownership_and_row_scope(secured):
     })
     call = client(secured, 'editor')
     path = f'/api/project/{project.id}'
-    assert call('PATCH', path, {'children': {'tasks': [{'id': hidden.id}]}})[0] == 404
+    # A row outside the scope answers like a row of another record: neither is revealed.
+    assert call('PATCH', path, {'children': {'tasks': [{'id': hidden.id}]}})[0] == 422
     assert call('PATCH', path, {'children': {'tasks': [{'id': foreign.id}]}})[0] == 422
     assert secured.database.count(ProjectTask) == 2

@@ -130,8 +130,7 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
   | Route | Allowed when the scope lists |
   | --- | --- |
   | `GET/POST /api/<model>`, `GET/PATCH/DELETE /api/<model>/<id>` | the model in `models` |
-  | `POST /api/<model>/<id>/actions/<name>`, `.../moves/<name>` | `(Model, "<name>")` in `actions` |
-  | `POST /api/<model>/<id>/void`, `.../revise`, `.../unpost`, `.../repost` | `(Model, "void")`, `(Model, "revise")`, `(Model, "unpost")` or `(Model, "repost")` in `actions` |
+  | `POST /api/<model>/<id>/actions/<name>`, `.../moves/<key>` | `(Model, "<name>")` or `(Model, "<rule key>")` in `actions` |
   | `/api/<model>/measures`, `/api/<model>/aggregate`, `/api/<model>/<id>/measures` | `"measures"` in `extras` |
   | `/api/<model>/<id>/related/...` | `"related"` in `extras` |
   | `/api/<model>/<id>/lines/...` | `"lines"` in `extras` |

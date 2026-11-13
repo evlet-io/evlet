@@ -71,13 +71,12 @@ export interface ChildSchema { name: string; model: string; label: string; link:
 export const isSectionRow = (item: Record<string, unknown>) => typeof item.section === 'string' && Object.keys(item).every(key => key === 'id' || key === 'section' || key === '_key');
 export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>; dialog?: boolean }
 
-/** Phase 4 state metadata (field, states, moves with labels and roles, locked, final). Optional until the backend sends it. */
+/** A State (docs/states-actions.md): its steps in order and the rules between them, keyed for the move route. */
 export interface StateSchema {
   field: string;
-  states: string[];
-  moves: Array<{ from: string; to: string; label: string; roles?: string[] }>;
-  locked?: string[];
-  final?: string[];
+  default?: string;
+  steps: Array<{ key: string; label: string; color: string | null; lock: boolean; release: boolean; final: boolean }>;
+  rules: Array<{ key: string; from: string[]; to: string; label: string; by?: string[]; primary?: boolean; remark?: { mode: string; label: string | null } | null; asks?: string[] }>;
   show?: 'badge' | 'bar' | 'none';
 }
 

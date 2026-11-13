@@ -142,12 +142,12 @@ def test_changes_that_need_approval_wait_then_run_exactly_once(eva):
     app, script = eva
     editor = client(app, 'editor')
     project = editor('POST', '/api/project', {'title': 'Approval'})[1]
-    script.turns = [[call('run_action', model='project', id=project['id'], action='start')], [('text', 'Started.')]]
+    script.turns = [[call('change_state', model='project', id=project['id'], rule='start')], [('text', 'Started.')]]
     conversation, run, stored = ask(app, editor, 'Start the Approval project')
     assert stored['runs'][0]['status'] == 'awaiting_approval'
     [activity] = stored['runs'][0]['activities']
     approval = activity['approval']
-    assert activity['status'] == 'approval' and approval['summary']['action'] == 'start' and approval['summary']['record']['title'] == 'Approval'
+    assert activity['status'] == 'approval' and approval['summary']['operation'] == 'start' and approval['summary']['record']['title'] == 'Approval'
     assert editor('GET', f"/api/project/{project['id']}")[1]['status'] == 'planned'
     # Another message waits until this is answered; an API key or assistant can't answer it.
     assert editor('POST', f'/api/_eva/conversations/{conversation}/messages', {'text': 'And?'})[0] == 409
@@ -159,7 +159,7 @@ def test_changes_that_need_approval_wait_then_run_exactly_once(eva):
     assert stored['runs'][0]['activities'][0]['status'] == 'done'
     assert editor('GET', f"/api/project/{project['id']}")[1]['status'] == 'active'
     assert editor('POST', f"/api/_tools/approvals/{approval['id']}", {'approve': True})[0] == 409
-    log = client(app)('GET', '/api/_controls/tools?tool=run_action')[1]['items']
+    log = client(app)('GET', '/api/_controls/tools?tool=change_state')[1]['items']
     assert [item['outcome'] for item in log] == ['ok', 'approval']
 
 

@@ -2,13 +2,13 @@
 
 import pytest
 
-from evlet import Model, Move, Registry, Select, State, Text
+from evlet import Model, Registry, Select, State, Text
 from evlet.ui.metadata import ui_schema, view_for
 
 
 def task_model(name='Task', **meta):
     fields = {'title': Text(required=True), 'kind': Select(('bug', 'chore'), default='bug'),
-              'stage': State(('open', 'done'), moves=(Move('open', 'done', 'Finish'),))}
+              'stage': State(State.Step('open'), State.Step('done'), rules=(State.Rule('open', 'done', 'Finish'),))}
     if meta:
         fields['Meta'] = type('Meta', (), meta)
     return type(Model)(name, (Model,), {'__module__': __name__, **fields})

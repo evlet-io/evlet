@@ -176,12 +176,11 @@ await api.update('order', 1, { children: { lines: { update: [{ id: 2, qty: '3' }
 - Routes: `session`, `login`, `logout`, `schema`, `list`, `get`, `create`, `update`,
   `remove`, `lines` (`GET /api/{model}/{id}/lines/{table}[/{row id}/{table}...]`),
   `draft` (`POST /api/_draft/{model}`), `action` and `move`
-  (`POST /api/{model}/{id}/moves/{to}`).
-- `move()` sends no values (the server refuses a move with a body) and the record's ETag.
-  It answers with the record, its new `_moves`, `_actions`, `_void`, `_revise` and
-  `_effects`, and a new ETag. A move the record does not allow now is a 409
+  (`POST /api/{model}/{id}/moves/{key}`).
+- `move()` sends the rule key, the record's ETag and the remark and asked values, if any.
+  It answers with the record, its new `_moves`, `_actions` and `_effects`, and a new ETag. A move the record does not allow now is a 409
   `ConflictError` whose message gives the reason. Its tests replay responses recorded from
-  the real routes, including void, revise, measures, related records and line pages
+  the real routes, including moves, measures, related records and line pages
   (`scripts/generate_ui_framework_fixtures.py`).
 - A request's own signal and the page signal are combined with `AbortSignal.any`, or with
   listeners that are removed when the request ends.
@@ -856,7 +855,7 @@ not part of the build.
 | `recents.ts` | The history button on the right of the top bar, left of notifications: this session's recent records, newest first, with the model and when each was opened |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
-| `record-page.ts` | Record (doc) view, new records, action, void, revise, unpost and repost dialogs |
+| `record-page.ts` | Record (doc) view, new records, action and move dialogs |
 | `slips.ts` | Slips ([slips.md](slips.md)): `presentSlip()`, the slip modal and what follows a hand-in |
 | `report-page.ts` | Reports ([reports.md](reports.md)): the index, one report's filters, rows, totals, chart, Export and Print |
 | `palette.ts` | Command palette (Cmd or Ctrl K), with the Explorer button at the end of its field |
@@ -945,10 +944,9 @@ page in a new browser tab.
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
 | `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records; `?slip=name` on a record opens it. A `menu` slip is listed at the top level of the schema; the shell shows no entry for it, so browser code presents it with `presentSlip()`. A slip that becomes a record for review opens New filled in, with a note |
-| `State` with moves (Phase 4) | List tabs per state unless `Meta.list_tabs` names another field (counts from `GET /api/{model}/list_tabs`), a board when `Meta.board` names the State, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column; tabs by another field narrow the cards and keep every column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
-| Locked states, `editable_when_locked` | Lock banner; only the declared fields stay editable; lines lock |
-| Void and revise (Phase 5) | Dialogs with a required reason; banners and links both ways (`revises`, `revised_by`) |
-| Unpost and repost | Offered from `_unpost` and `_repost` in the locked banner, the More menu and the unposted banner; Unpost asks for a reason, Repost takes an optional one |
+| `State` with rules | List tabs per state unless `Meta.list_tabs` names another field (counts from `GET /api/{model}/list_tabs`), a board when `Meta.board` names the State, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column; tabs by another field narrow the cards and keep every column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
+| Locked steps, `versioned=False` | Lock banner; only the declared fields stay editable; lines lock |
+| A rule with `remark` | The move dialog asks for the remark, required when `_moves` says so |
 | `Sequence` (Phase 7) | The number in mono as the title; "Number assigned on ..." until then |
 | `Meta.measures` (Phase 9) | Model-level measures as stat cards over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |

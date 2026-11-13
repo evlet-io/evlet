@@ -1,6 +1,6 @@
 // How a record's lifecycle reads (stateLook in app/meta.ts): cancelled records struck through and greyed in lists,
 // with a red "Cancelled" and a soft red strip on the record; locked ones with a lock and grey text; the starting state
-// as a dashed Draft pill. Decided from the schema's State (final, locked, voidable, default, colours), never names.
+// as a dashed Draft pill. Decided from the State's steps (final, lock, colour) and default, never from names.
 import { afterEach, describe, expect, it } from 'vitest';
 import { invoice, start, stopAll, text, until, type Route } from './screens-helpers';
 import { copy, type Recorded } from './server';
@@ -10,39 +10,24 @@ import { html } from '../dom';
 
 afterEach(stopAll);
 
-const project = (colors?: Record<string, string>) => ({
-  name: 'project', fields: [{ name: 'stage', type: 'select', default: 'draft', ...(colors ? { colors } : {}) }],
-  state: { field: 'stage', states: ['draft', 'active', 'done', 'cancelled'], moves: [], locked: ['done', 'cancelled'], final: ['cancelled'] },
+const step = (key: string, color: string | null = null, lock = false, final = false) => ({ key, label: key, color, lock, release: false, final });
+const project = (cancelled: string | null = 'rose') => ({
+  name: 'project', fields: [{ name: 'stage', type: 'select', default: 'draft' }],
+  state: { field: 'stage', default: 'draft', rules: [], steps: [step('draft'), step('active'), step('done', 'green', true), step('cancelled', cancelled, true, true)] },
 }) as unknown as ScreenModel;
 
 describe('stateLook', () => {
-  it('falls back without a cancelled list: final in red is cancelled, locked or final is locked, the default is draft', () => {
-    const model = project({ cancelled: 'rose', done: 'green' });
-    expect(['draft', 'active', 'done', 'cancelled', '', null].map(value => stateLook(model, value))).toEqual(['draft', 'open', 'locked', 'cancelled', null, null]);
-    // Without a red colour a final state is only locked: the schema can't tell a cancellation from a closed record.
-    expect(stateLook(project(), 'cancelled')).toBe('locked');
-    // The framework's void state of a voidable State is a cancellation.
-    const voidable = { ...project(), state: { ...project().state, states: ['draft', 'issued', 'void'], final: ['void'], locked: ['issued', 'void'], voidable: ['issued'] } } as unknown as ScreenModel;
-    expect(stateLook(voidable, 'void')).toBe('cancelled');
+  it('reads its steps: a final rose step is cancelled, another locked or final step is locked, the default is draft', () => {
+    expect(['draft', 'active', 'done', 'cancelled', '', null].map(value => stateLook(project(), value))).toEqual(['draft', 'open', 'locked', 'cancelled', null, null]);
+    // Without rose a final step is only locked: the schema can't tell a cancellation from a closed record.
+    expect(stateLook(project(null), 'cancelled')).toBe('locked');
+    expect(stateLook(project('green'), 'cancelled')).toBe('locked');
+    // A rose step that is not final (a rule leaves it) is locked, not cancelled.
+    const lost = { ...project(), state: { ...project().state!, steps: [step('draft'), step('lost', 'rose', true)] } } as ScreenModel;
+    expect(stateLook(lost, 'lost')).toBe('locked');
+    // The default step reads as draft, wherever it is.
+    expect(stateLook({ ...project(), state: { ...project().state!, default: 'active' } } as ScreenModel, 'active')).toBe('draft');
     expect(stateLook({ ...project(), state: undefined } as unknown as ScreenModel, 'draft')).toBeNull();
-  });
-
-  it('takes the schema\'s cancelled list as the only test when the state field has one', () => {
-    const marked = (cancelled: string[]) => {
-      const model = project({ cancelled: 'rose' }) as unknown as { fields: Array<Record<string, unknown>> };
-      model.fields[0].cancelled = cancelled;
-      return model as unknown as ScreenModel;
-    };
-    // Listed: cancelled whatever its colour or finality; a red final state left off the list is only locked.
-    expect(stateLook(marked(['active']), 'active')).toBe('cancelled');
-    expect(stateLook(marked(['active']), 'cancelled')).toBe('locked');
-    expect(stateLook(marked([]), 'cancelled')).toBe('locked');
-    expect(stateLook(marked(['cancelled']), 'cancelled')).toBe('cancelled');
-    expect(stateLook(marked(['cancelled']), 'done')).toBe('locked');
-    expect(stateLook(marked(['cancelled']), 'draft')).toBe('draft');
-    // A void state the list leaves out is not cancelled by the fallback.
-    const voidable = { ...project(), state: { ...project().state, states: ['draft', 'issued', 'void'], final: ['void'], locked: ['issued', 'void'], voidable: ['issued'], cancelled: [] } } as unknown as ScreenModel;
-    expect(stateLook(voidable, 'void')).toBe('locked');
   });
 
   it('draws a status badge as red text, a lock and grey text, or a dashed Draft pill', () => {
@@ -60,19 +45,19 @@ describe('stateLook', () => {
 });
 
 const voided = String(invoice.invoice_void.body.id), draft = String(invoice.invoice_draft.body.id);
-function schema(panel = false, cancelled?: string[]): Recorded {
+function schema(panel = false, recolor?: Record<string, string | null>): Recorded {
   const body = copy(invoice.schema).body;
   const model = body.models.find((item: { name: string }) => item.name === 'invoice');
   if (panel) model.open_in = 'panel';
-  if (cancelled) model.fields.find((field: { name: string }) => field.name === model.state.field).cancelled = cancelled;
+  for (const [key, color] of Object.entries(recolor ?? {})) model.state.steps.find((item: { key: string }) => item.key === key).color = color;
   return { ...invoice.schema, body };
 }
-// The void invoice's journal: the void, by sara, with its reason.
-const journal: Recorded = { status: 200, etag: null, body: { items: [{ id: 9, kind: 'voided', actor: 2, at: '2026-11-09T08:00:00.000Z',
-  data: { from: 'issued', to: 'void', reason: 'Customer cancelled the order' } }], total: 1, limit: 50, offset: 0, users: { 2: 'sara' } } };
-const routes = (panel = false, cancelled?: string[]): Route[] => [
+// The void invoice's journal: the void move, by sara, with its remark.
+const journal: Recorded = { status: 200, etag: null, body: { items: [{ id: 9, kind: 'moved', actor: 2, at: '2026-11-09T08:00:00.000Z',
+  data: { from: 'issued', to: 'void', move: 'Void' }, rule: 'void', remark: 'Customer cancelled the order' }], total: 1, limit: 50, offset: 0, users: { 2: 'sara' } } };
+const routes = (panel = false, recolor?: Record<string, string | null>): Route[] => [
   ['GET', /\/api\/auth\/session$/, invoice.session],
-  ['GET', /\/api\/schema$/, schema(panel, cancelled)],
+  ['GET', /\/api\/schema$/, schema(panel, recolor)],
   ['GET', /\/api\/invoice\?/, invoice.invoices],
   ['GET', /\/api\/invoice\/measures/, invoice.invoice_measures],
   ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
@@ -124,9 +109,9 @@ describe('a cancelled record', () => {
     expect(card.querySelector('.t > .ev-state-ic')!.getAttribute('aria-label')).toBe('Draft');
   });
 
-  it('follows the state field\'s cancelled list when the schema sends one', async () => {
-    const { host } = start(routes(false, ['draft']), '/app/invoice');
-    await until(() => expect(host.querySelector(`tr[data-key="${draft}"].ev-row-cancelled`)).not.toBeNull());
+  it('follows the step colours the schema sends, not the step names', async () => {
+    const { host } = start(routes(false, { void: 'slate' }), '/app/invoice');
+    await until(() => expect(host.querySelector(`tr[data-key="${voided}"] .ev-state-ic[aria-label="Locked"]`)).not.toBeNull());
     expect(host.querySelector(`tr[data-key="${voided}"]`)!.classList.contains('ev-row-cancelled')).toBe(false);
   });
 

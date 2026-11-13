@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 
-from evlet import (Application, Child, Database, LocalAuth, Model, Naming, Registry, Rule, Series, Table, Text,
+from evlet import (Application, Child, Database, LocalAuth, Model, Naming, Registry, Rule, Series, State, Table, Text,
                    User, ValidationError)
 from evlet.auth import AccessError
 from evlet.framework import upgrade
@@ -63,13 +63,15 @@ class Code(Model):
 
 
 class Bill(Model):
-    """A confirmable document numbered when it is confirmed, so drafts never take a number."""
-    confirmable = True
-    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'confirm'))}
+    """A document named when it is confirmed, so drafts never take a number."""
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
     customer = Text(required=True)
+    status = State(State.Step('draft'), State.Step('confirmed', lock=True, release=True), State.Step('cancelled', lock=True),
+                   rules=(State.Rule('draft', 'confirmed', 'Confirm', key='confirm'), State.Rule('confirmed', 'cancelled', 'Cancel', key='cancel'),
+                          State.Rule('cancelled', 'draft', 'Reopen', key='reopen')))
 
     class Meta:
-        naming = Naming(Series('BILL-{####}'), assign_on='confirm')
+        naming = Naming(Series('BILL-{####}'), assign_on='confirmed')
 
     class Line(Child):
         name = Text()  # Row tables have no standard name, so a row may have its own.
@@ -191,13 +193,13 @@ def test_confirm_time_names_leave_drafts_unnumbered_and_stay_on_reopen(app):
         first = context.create(Bill, customer='A', children={'lines': [{'name': 'row names are fine'}]})
         second = context.create(Bill, customer='B')
         assert first['name'] is None and second['name'] is None and first['title'] == str(first['id'])
-        context.confirm(Bill, second['id'])
-        context.confirm(Bill, first['id'])
+        context.move(Bill, second['id'], 'confirm')
+        context.move(Bill, first['id'], 'confirm')
         assert context.get(Bill, second['id']).name == 'BILL-0001' and context.get(Bill, first['id']).name == 'BILL-0002'
         assert context.get(Bill, first['id']).title == 'BILL-0002'
-        context.cancel(Bill, first['id'], reason='Typo')
-        context.reopen(Bill, first['id'])
-        context.confirm(Bill, first['id'])
+        context.move(Bill, first['id'], 'cancel')
+        context.move(Bill, first['id'], 'reopen')
+        context.move(Bill, first['id'], 'confirm')
         assert context.get(Bill, first['id']).name == 'BILL-0002'
 
 
@@ -219,7 +221,7 @@ def test_upgrading_a_database_with_data_adds_the_columns_and_fills_titles(tmp_pa
         connection.execute("INSERT INTO contact (first_name, last_name) VALUES ('Old', 'Row')")
     database = Database(path, Registry(Contact))
     database.initialize()  # A table without the standard columns is accepted until the framework step runs.
-    assert upgrade(database)[-8:] == ['0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files']
+    assert upgrade(database)[-9:] == ['0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager']
     with sqlite3.connect(path) as connection:
         assert connection.execute('SELECT id, name, title FROM contact').fetchall() == [(1, None, 'Old Row')]
         assert any(row[2] for row in connection.execute("PRAGMA index_list(contact)") if row[1].endswith('name_unique'))

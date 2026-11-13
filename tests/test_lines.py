@@ -5,7 +5,7 @@ from contextlib import contextmanager
 import pytest
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency,
-                   Integer, Text, Link, Rule, ValidationError)
+                   Integer, Text, Link, Rule, ValidationError, validate)
 from evlet.business import ChildTable
 from evlet.calc import CalcError, Document, check_plan, fingerprint, round
 from test_business import http, client, PASSWORD
@@ -31,6 +31,8 @@ class Line(Child):
     amount = Currency(compute=round(qty * rate, 2))
     parts = Table(Part, max_rows=9)
     hours = Decimal(compute=parts.sum('hours'))
+
+    @validate
 
     def validate(self):
         if self.qty == 13:

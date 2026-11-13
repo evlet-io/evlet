@@ -1,4 +1,4 @@
-"""Effects: rows a document posts to other models when a move enters a state, reversed when it is voided.
+"""Effects: rows a document posts to other models when it enters a release state, reversed when it leaves it.
 
 A model declares its effects in `Meta.effects`:
 
@@ -14,10 +14,10 @@ document, read with full access and frozen, so the rows are a pure function of t
 enters `on`, the engine validates every row as a new record of the target model, checks the balance and
 writes the rows in the move's transaction with `source` pointing at the record. A target model declares
 `source = Reference()` and `reversal = Boolean(default=False)`; its rows are read only for every caller.
-On void or unpost the engine writes mirror rows (`reverse`) marked `reversal=True`. Originals are never changed.
+When a rule leaves `on` the engine writes mirror rows (`reverse`) marked `reversal=True`, before the
+@state.exit hooks run. Originals are never changed.
 """
 
-from collections import deque
 from dataclasses import dataclass
 from decimal import Decimal, localcontext
 import inspect
@@ -106,7 +106,7 @@ class Bound:
     balanced: tuple | None
     # States a record can reach only by passing through `on`: such a record has posted its rows.
     implied: frozenset
-    # States a record may be in after entering `on` (including "void" when it can be voided from them).
+    # States a record may be in while its rows are live: `on`.
     after: frozenset
 
 
@@ -132,7 +132,7 @@ def compile_effects(registry, models, child_models):
         if model in child_models:
             raise ValueError(f'{name}: effects belong on a root document, not on Table rows')
         if model.__state__ is None:
-            raise ValueError(f'{name}: effects are posted when a move enters a state, so the model needs a State')
+            raise ValueError(f'{name}: effects are posted when a record enters a release state, so the model needs a State')
         bound, seen = [], set()
         for effect in declared:
             try:
@@ -174,43 +174,19 @@ def check_target(registry, model, target, child_models):
 
 
 def check_state(model, effect):
-    """Check `on` and return (implied, after) states.
+    """Check `on` and return (implied, after) states: both are just `on`.
 
-    `on` must be entered by a declared move, cannot be the default, cannot be entered twice, and every state
-    a record may be in after it is locked, so posted rows always match a record that ordinary writes and
-    deletes cannot change.
-    """
+    `on` is a locked release step: rows are posted when the record enters it and reversed when a rule leaves
+    it, so a record has live rows exactly while it is in `on`, and ordinary writes cannot change it meanwhile."""
     field = model.__declared_fields__[model.__state__]
     label = f'{model.__name__} effect on {effect.target if isinstance(effect.target, str) else effect.target.__name__}'
-    if effect.on not in field.choices:
+    step = field.steps.get(effect.on)
+    if step is None:
         raise ValueError(f'{label}: {effect.on!r} is not a state of {model.__name__}.{model.__state__}')
-    if effect.on == field.default or not any(move.to == effect.on for move in field.moves):
-        raise ValueError(f'{label}: {effect.on!r} must be entered by a declared move, and must not be the default state')
-
-    def reachable(starts, skip=None):
-        found, queue = set(starts), deque(starts)
-        while queue:
-            state = queue.popleft()
-            following = [move.to for move in field.moves if state in move.sources]
-            if state in field.voidable:
-                following.append('void')
-            for item in following:
-                if item != skip and item not in found:
-                    found.add(item)
-                    queue.append(item)
-        return found
-    if effect.on not in reachable([field.default]):
-        raise ValueError(f'{label}: no sequence of declared moves from {field.default!r} reaches {effect.on!r}')
-    after = reachable([effect.on])
-    if effect.on in reachable([move.to for move in field.moves if effect.on in move.sources] + (['void'] if effect.on in field.voidable else [])):
-        raise ValueError(f'{label}: a record could enter {effect.on!r} twice and post its rows again; '
-                         f'no move may lead back to {effect.on!r}')
-    unlocked = sorted(after - set(field.locked))
-    if unlocked:
-        raise ValueError(f'{label}: every state after {effect.on!r} must be locked, so posted rows keep matching '
-                         'their record; not locked: ' + ', '.join(unlocked))
-    implied = frozenset(set(field.choices) - reachable([field.default], skip=effect.on))
-    return implied, frozenset(after)
+    if not (step.lock and step.release) or effect.on == field.default:
+        raise ValueError(f'{label}: {effect.on!r} must be a locked release step that is not the default, '
+                         'State.Step(..., lock=True, release=True), so posted rows always match the record')
+    return frozenset((effect.on,)), frozenset((effect.on,))
 
 
 def check_method(model, effect):
@@ -234,10 +210,10 @@ def check_fields(model, target, effect, after):
     if effect.balanced is not None:
         for name in effect.balanced:
             numeric(name, 'balanced')
-    voidable = set(after) & set(model.__declared_fields__[model.__state__].voidable)
+    leaving = [rule.key for rule in model.__declared_fields__[model.__state__].rules if effect.on in rule.sources]
     if effect.reverse is None:
-        if voidable:
-            raise ValueError(f'{label}: a record can be voided after posting (from {", ".join(sorted(voidable))}), '
+        if leaving:
+            raise ValueError(f'{label}: rule {leaving[0]!r} leaves {effect.on!r}, which reverses the rows, '
                              'so the effect needs reverse=Swap(...) or Negate(...)')
         return
     touched = set(effect.reverse.fields) & set(effect.balanced or ())
@@ -494,7 +470,7 @@ def is_balanced(bound, rows):
 
 def write(engine, bound, draft):
     """Insert one row with one statement, plus the calculation version of a finite-v1 target and an event when
-    events are enabled. The source is the record being moved or voided, so it is not checked again."""
+    events are enabled. The source is the record being moved, so it is not checked again."""
     from .database import insert, storage_columns, stored_values
     from .documents import record_plan
     from .naming import has_title
@@ -519,7 +495,7 @@ def readable(business, user, target):
 
 
 def failure(business, user, bound, message):
-    """A move or void that cannot post: a ValidationError naming target details only to roles that can read them."""
+    """A move that cannot post: a ValidationError naming target details only to roles that can read them."""
     if not readable(business, user, bound.target):
         return ValidationError({'_effects': 'The rows this record posts to other records are not valid'})
     return ValidationError({'_effects': message})
@@ -620,22 +596,19 @@ def posted(tx, registry, bound, record_ids):
     return found
 
 
-def has_postings(connection, registry, model, record, *, voided=False):
+def has_postings(connection, registry, model, record):
     """Whether a record has live posted effects: its latest row of some effect is an original, so it was posted
-    and has not been unposted since. A void record counts only with `voided`, and then any row counts.
+    and has not been reversed since.
 
-    Its stored calculated values are then frozen: corrections go through void, revise or unpost."""
+    Its stored calculated values are then frozen: corrections go through a rule out of the posting state."""
     bounds = registry.effects.get(model, ())
     if not bounds:
-        return False
-    void = model.__state__ is not None and record._values.get(model.__state__) == 'void'
-    if void and not voided:
         return False
     name = registry.name_for(model)
     for bound in bounds:
         row = connection.run(qb.select(registry.name_for(bound.target), REVERSAL).where(**{f'{SOURCE}_model': name, f'{SOURCE}_id': record.id})
                              .order_by('-id').limit(1)).one()
-        if row is not None and (void or not row[0]):
+        if row is not None and not row[0]:
             return True
     return False
 
@@ -652,7 +625,7 @@ def ever_posted(connection, registry, model, record_id):
 def live(rows):
     """The original rows not cancelled yet, from one effect's rows of a record in id order.
 
-    Each reversal batch (a void or an unpost) cancels every original written before it, so the live rows are the
+    Each reversal batch (a rule leaving the posting state) cancels every original written before it, so the live rows are the
     originals after the last reversal: all of them before any reversal, none right after one."""
     last = max((row.id for row in rows if row._values[REVERSAL]), default=0)
     return [row for row in rows if not row._values[REVERSAL] and row.id > last]
@@ -690,7 +663,7 @@ def mirror_values(bound, values):
 
 
 def reverse(context, model, record_id):
-    """Called when a record is voided or unposted: write a mirror row for each live original row, marked as a
+    """Called when a rule leaves an effect's state: write a mirror row for each live original row, marked as a
     reversal. Rows are only ever added, so earlier postings and their reversals stay as they are.
 
     Returns the Journal items of the targets that received mirror rows."""
@@ -701,7 +674,7 @@ def reverse(context, model, record_id):
         if bound.reverse is None:
             continue
         rows = posted(tx, business.registry, bound, [record_id]).get(record_id, [])
-        # Only the live rows: those of earlier postings were reversed when they were unposted.
+        # Only the live rows: those of earlier postings were reversed when the record left their state.
         originals = live(rows)
         if not originals:
             # Nothing was posted, or this record's rows were reversed already.
@@ -853,9 +826,9 @@ def target_name(bound):
 def compare(engine, bound, model_name, record_id, state, document, rows):
     """Differences between what a record should have posted for one effect and the saved rows.
 
-    The rows are split into postings (see `cycles`). Postings an unpost cancelled are checked on their own:
+    The rows are split into postings (see `cycles`). Postings a later reversal cancelled are checked on their own:
     their reversals must mirror their originals. The record's current posting, the last one, is compared
-    with the rows the record produces now, as is the only posting of a record that was never unposted.
+    with the rows the record produces now, as is the only posting of a record that never left its state.
     """
     postings = cycles(rows)
     result = []
@@ -866,7 +839,7 @@ def compare(engine, bound, model_name, record_id, state, document, rows):
                 result.append(difference(bound, model_name, record_id, 'unbalanced', flag,
                                          message=f'{bound.balanced[0]} totals {first} and {bound.balanced[1]} totals {second}'))
     if state not in bound.after:
-        # The record has not entered the effect's state, or was unposted: every posting it made must be cancelled.
+        # The record has not entered the effect's state, or left it: every posting it made must be cancelled.
         for originals, reversals in postings:
             if originals and not reversals:
                 result += [difference(bound, model_name, record_id, 'extra', False, actual=row,
@@ -884,9 +857,6 @@ def compare(engine, bound, model_name, record_id, state, document, rows):
     try:
         expected = [normalized(draft) for draft in prepare_all(engine, bound, produce(bound, document), record_id)]
         mirrors = []
-        if state == 'void' and bound.reverse is not None:
-            mirrors = [normalized(draft) for draft in
-                       prepare_all(engine, bound, [mirror_values(bound, values) for values in expected], record_id, reversal=True)]
     except Exception as error:  # Any failure of the rows method is reported for this record.
         message = str(error) if isinstance(error, (RowError, VirtualRead)) else \
             f'{bound.source.__name__}.{bound.rows} failed: {type(error).__name__}: {error}'

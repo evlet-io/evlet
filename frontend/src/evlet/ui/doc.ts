@@ -209,11 +209,12 @@ export function StatusBadge(props: {
   };
 }
 
-/** StatusFlow steps from a model State: its states in order, terminal ones marked. */
+/** StatusFlow steps from a model State: its steps in order with their labels; a final step ends the flow badly when
+ * it is coloured rose, else well. */
 export function flowFromState(state: StateSchema): { steps: FlowStep[]; good: string[]; bad: string[] } {
-  const bad = (state.final ?? []).filter(name => /void|lost|cancel|reject|unqualified/i.test(name));
-  const good = (state.final ?? []).filter(name => !bad.includes(name));
-  return { steps: state.states.map(value => ({ value, label: humanize(value) })), good, bad };
+  const ends = state.steps.filter(step => step.final);
+  return { steps: state.steps.map(step => ({ value: step.key, label: step.label })),
+    good: ends.filter(step => step.color !== 'rose').map(step => step.key), bad: ends.filter(step => step.color === 'rose').map(step => step.key) };
 }
 
 export interface TabItem { id: string; label: Prop<string>; count?: Prop<number | null> }
@@ -254,8 +255,8 @@ export function SideBlock(props: { title: Prop<string>; action?: Node; body: Chi
 export type Lifecycle = 'draft' | 'locked' | 'void';
 
 /**
- * The record's lifecycle under the header: a draft (what issuing does), locked (with Revise and
- * Void), or void (with the reason).
+ * The record's state under the header: a draft (what its next move does), locked (with the moves that
+ * change it, as `actions`), or void (with the reason).
  */
 export function LockBanner(props: {
   lifecycle: Prop<Lifecycle>;
@@ -264,20 +265,16 @@ export function LockBanner(props: {
   draftText?: Prop<string>;
   lockedText?: Prop<string>;
   reason?: Prop<string | null>;
-  onRevise?: () => void;
-  onVoid?: () => void;
+  /** Buttons shown while locked, such as the record's Reopen and Void moves. */
+  actions?: Node[];
 }): HTMLElement {
   const lifecycle = () => read(props.lifecycle);
-  const actions = [
-    props.onRevise ? Button({ label: 'Revise', icon: 'copy', size: 'small', onClick: props.onRevise }) : null,
-    props.onVoid ? Button({ label: 'Void', icon: 'circle-x', size: 'small', variant: 'soft-danger', onClick: props.onVoid }) : null,
-  ].filter(Boolean) as Node[];
-  const shownActions = actions.map(action => when(() => lifecycle() === 'locked', () => action));
+  const shownActions = (props.actions ?? []).map(action => when(() => lifecycle() === 'locked', () => action));
   return StateBanner({
     tone: () => lifecycle() === 'void' ? 'danger' : lifecycle() === 'locked' ? 'info' : 'neutral',
     title: () => lifecycle() === 'void' ? 'Void.' : lifecycle() === 'locked' ? `${read(props.state ?? 'Issued')} and locked.` : 'Draft.',
     text: () => lifecycle() === 'void' ? (read(props.reason ?? '') || 'This record was voided.')
-      : lifecycle() === 'locked' ? read(props.lockedText ?? 'Only some fields can change. To correct it, void or revise.')
+      : lifecycle() === 'locked' ? read(props.lockedText ?? 'Only some fields can change. To change the rest, move it back to an editable state.')
       : read(props.draftText ?? 'Everything can change until it is issued.'),
     actions: shownActions as unknown as Node[],
   });

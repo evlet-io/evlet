@@ -19,7 +19,7 @@ through that model's normal create path.
 ## Define a slip
 
 ```python
-from evlet import Child, Currency, Date, Decimal, Link, Outcome, Select, Slip, Table, Text, ValidationError
+from evlet import Child, Currency, Date, Decimal, Link, Outcome, Select, Slip, Table, Text, ValidationError, validate
 
 class Task(Child):
     title = Text(required=True)
@@ -44,7 +44,8 @@ class StartJob(Slip):
     def load(self, source):            # starting values, before the person's input
         self.client = source.id
 
-    def validate(self):                # rules across fields
+    @validate                          # rules across fields
+    def check_start(self):
         if self.starts_on.year < 2026:
             raise ValidationError({"starts_on": "Pick a date from 2026 on"})
 

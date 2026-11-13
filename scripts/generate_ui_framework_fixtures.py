@@ -15,8 +15,8 @@ from tempfile import TemporaryDirectory
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
-                   Move, MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome,
-                   Report, Column, Chart, Count, Html, Main, Ref, Section)
+                   MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome,
+                   Report, Column, Chart, Count, Html, Main, Ref, Section, state, validate)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
 from evlet.audit import fixed_times
@@ -57,7 +57,8 @@ class Line(Child):
     amount = Currency(compute=round(F('qty') * F('rate'), 2))
     parts = Table(Part, max_rows=9)
 
-    def validate(self):
+    @validate
+    def check_qty(self):
         if self.qty == 13:
             raise ValidationError({'qty': 'Thirteen is not allowed'})
 
@@ -119,43 +120,50 @@ class InvoiceLine(Child):
 
 
 class InvoiceMeta(FiniteMeta):
-    revisable = True
     board = 'status'
     effects = (Effect(LedgerEntry, rows='ledger_rows', on='issued', reverse=Swap('debit', 'credit'), balanced=('debit', 'credit')),)
     measures = {'outstanding': Sum('outstanding', where=F('status') == 'issued'), 'count': Count(),
                 'payments': Count('payment', link='invoice'), 'paid': Sum('amount', model='payment', link='invoice')}
     key_fields = ('customer', 'total', 'due_on')
-    relations = (Related('payment', 'invoice', label='Payments', limit=5, order=('-paid_on',)),
-                 Related('invoice', 'revises', label='Revisions', limit=10, order=('-id',)))
+    relations = (Related('payment', 'invoice', label='Payments', limit=5, order=('-paid_on',)),)
     attachments = Attachments(max_files=5, max_size=262144)
     title_field = 'number'
     list_fields = ('id', 'number', 'customer', 'posting_date', 'status', 'total', 'outstanding')
     search_fields = ('number',)
-    layout = (('Invoice', ('number', 'customer', 'posting_date', 'due_on', 'status')), ('Amounts', ('total', 'outstanding', 'remarks', 'revises')))
+    layout = (('Invoice', ('number', 'customer', 'posting_date', 'due_on', 'status')), ('Amounts', ('total', 'outstanding', 'remarks')))
 
 
 class Invoice(Model):
-    """A transaction document: State and moves, a Sequence, void and revise, effects, measures and meaning."""
+    """A transaction document: a State with rules (void and reopen take a remark), a Sequence, effects, measures and meaning."""
     Meta = InvoiceMeta
-    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise')),
-                   'editor': Rule(('read', 'create', 'update', 'void', 'revise')), 'viewer': Rule(('read',))}
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
+                   'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
     number = Sequence('INV-{year}-{n:05}', assign_on='issued', date='posting_date')
     customer = Link(Customer, required=True)
     posting_date = Date(required=True)
     due_on = Date()
-    status = State(('draft', 'issued', 'paid', 'void'),
-                   moves=(Move('draft', 'issued', 'Issue', when=F('total') > D('0'), run='open_balance'), Move('issued', 'paid', 'Mark paid', roles=('admin',))),
-                   locked=('issued', 'paid', 'void'), final=('paid', 'void'), voidable=('issued',), show='bar')
+    status = State(
+        State.Step('draft', 'Draft'),
+        State.Step('issued', 'Issued', color='green', lock=True, release=True),
+        State.Step('paid', 'Paid', color='teal', lock=True, final=True),
+        State.Step('void', 'Void', color='rose', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issue', primary=True, when=F('total') > D('0')),
+            State.Rule('issued', 'paid', 'Mark paid', key='mark_paid', by=('admin',)),
+            State.Rule('issued', 'draft', 'Reopen', key='reopen', by=('admin',), remark='required'),
+            State.Rule('issued', 'void', 'Void', key='void', remark=State.Remark('required', label='Reason')),
+        ), show='bar')
     lines = Table(InvoiceLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
     outstanding = Currency(default=0)
-    remarks = Text(default='', editable_when_locked=True)
+    remarks = Text(default='', versioned=False)
 
     @action(label='Record payment', inputs={'amount': Currency(required=True), 'paid_on': Date(required=True)},
             available_when=F('status') == 'issued')
     def record_payment(self, amount, paid_on):
         self.remarks = f'Paid {amount} on {paid_on.isoformat()}'
 
+    @state('issued')
     def open_balance(self):
         self.outstanding = self.total
 
@@ -251,8 +259,8 @@ def record_api(folder):
 
 def documents(out, folder):
     """Responses of the document routes, recorded as an editor: a move refused by its condition, a move,
-    an action, void, revise, per-record and model measures, related records, line pages and details
-    carrying _moves, _actions, _void, _revise, _effects and _journal, with the schema's state, key_fields,
+    an action, a void move with its remark, an admin's reopen, per-record and model measures, related records,
+    line pages and details carrying _moves, _actions, _effects and _journal, with the schema's state, key_fields,
     relations and journal, and the journal itself: engine and user entries, follow ups, and a viewer's partial view."""
     database = Database(folder / 'documents.sqlite3', Registry(Customer, LedgerEntry, Invoice, Payment))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
@@ -291,19 +299,20 @@ def documents(out, folder):
         assert status == 201, body
         return f"/api/invoice/{body['id']}"
 
-    # An issued invoice that is voided, and one that stays issued until it is revised below.
+    # An issued invoice that is voided: the void move takes a required remark (labelled Reason).
     voided = invoice(children={'lines': lines})
-    assert write('POST', voided, '/moves/issued', {})[0] == 200
+    assert write('POST', voided, '/moves/issue', {})[0] == 200
     keep('invoice_void_before', editor('GET', voided))
-    keep('invoice_void_reason_missing', write('POST', voided, '/void', {'reason': ''}))
-    keep('invoice_void', write('POST', voided, '/void', {'reason': 'Customer cancelled the order'}))
-    revised = invoice(children={'lines': lines})
-    assert write('POST', revised, '/moves/issued', {})[0] == 200
-    keep('invoice_revise_before', editor('GET', revised))
+    keep('invoice_void_reason_missing', write('POST', voided, '/moves/void', {'remark': ''}))
+    keep('invoice_void', write('POST', voided, '/moves/void', {'remark': 'Customer cancelled the order'}))
+    # One that stays issued, so the list holds an invoice in each of draft, issued and void.
+    issued = invoice(children={'lines': lines})
+    assert write('POST', issued, '/moves/issue', {})[0] == 200
+    keep('invoice_locked', editor('GET', issued))
     # A draft refused while it has no lines, then given lines: the list holds one invoice per state.
     url = invoice()
     keep('invoice_draft_blocked', editor('GET', url))
-    keep('invoice_move_refused', write('POST', url, '/moves/issued', {}))
+    keep('invoice_move_refused', write('POST', url, '/moves/issue', {}))
     assert write('PATCH', url, '', {'children': {'lines': {'create': lines}}})[0] == 200
     keep('invoice_draft', editor('GET', url))
     keep('invoices', editor('GET', '/api/invoice?limit=50&offset=0'))
@@ -311,13 +320,12 @@ def documents(out, folder):
     keep('invoice_measures_issued', editor('GET', '/api/invoice/measures?filters=' + quote(json.dumps({'status': 'issued'}))))
     keep('invoice_aggregate_by_status', editor('GET', '/api/invoice/aggregate?measures=n:count&group_by=status'))
     keep('invoice_list_tabs', editor('GET', '/api/invoice/list_tabs'))
-    keep('invoice_related_revisions', editor('GET', f'{url}/related/invoice.revises?limit=10&offset=0'))
     keep('invoice_attachment_upload', editor('POST', f'{url}/attachments', {'name': 'signed-copy.pdf', 'content': 'JVBERi0='}))
     keep('invoice_attachments', editor('GET', f'{url}/attachments'))
     # The draft's journal so far: created, its lines added, the file.
     keep('invoice_draft_journal', editor('GET', f'{url}/journal?limit=50'))
     # The draft is issued and paid in part.
-    keep('invoice_issued', write('POST', url, '/moves/issued', {}))
+    keep('invoice_issued', write('POST', url, '/moves/issue', {}))
     keep('invoice_issued_detail', editor('GET', url))
     keep('invoice_action', write('POST', url, '/actions/record_payment', {'amount': '500.00', 'paid_on': '2026-11-10'}))
     payment = admin('POST', '/api/payment', {'invoice': int(url.rsplit('/', 1)[1]), 'amount': '500.00', 'paid_on': '2026-11-10'})[1]
@@ -348,19 +356,16 @@ def documents(out, folder):
     keep('invoice_viewer_detail', viewer('GET', url))
     keep('invoice_viewer_journal', viewer('GET', f'{url}/journal?limit=50'))
     keep('invoice_viewer_note_refused', viewer('POST', f'{url}/journal', {'kind': 'note', 'text': 'Seen'}))
-    # Revising voids the issued invoice and opens a draft copy.
-    keep('invoice_revision', write('POST', revised, '/revise', {'reason': 'Wrong quantity on line 2'}))
-    keep('invoice_revised_original', editor('GET', revised))
-    # An admin unposts an issued invoice (a reason is required) and posts it again; the editor has neither.
+    # An admin reopens an issued invoice (a remark is required), which reverses its postings; the editor's
+    # reopen is listed but blocked by role.
     def admin_write(method, record, route='', body=None):
         return admin(method, record + route, body, headers={b'if-match': admin('GET', record)[2][b'etag']})
-    unposted = invoice(children={'lines': lines})
-    assert write('POST', unposted, '/moves/issued', {})[0] == 200
-    keep('invoice_unpost_before', admin('GET', unposted))
-    keep('invoice_unpost_editor', editor('GET', unposted))
-    keep('invoice_unpost_reason_missing', admin_write('POST', unposted, '/unpost', {'reason': ''}))
-    keep('invoice_unpost', admin_write('POST', unposted, '/unpost', {'reason': 'Wrong customer'}))
-    keep('invoice_repost', admin_write('POST', unposted, '/repost', {}))
+    reopened = invoice(children={'lines': lines})
+    assert write('POST', reopened, '/moves/issue', {})[0] == 200
+    keep('invoice_reopen_before', admin('GET', reopened))
+    keep('invoice_reopen_editor', editor('GET', reopened))
+    keep('invoice_reopen_remark_missing', admin_write('POST', reopened, '/moves/reopen', {}))
+    keep('invoice_reopen', admin_write('POST', reopened, '/moves/reopen', {'remark': 'Wrong customer'}))
     keep('invoice_admin_session', admin('GET', '/api/auth/session'))
     database.close()
 

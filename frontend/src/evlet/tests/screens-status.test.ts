@@ -39,7 +39,6 @@ const routes = (schemaBody: Recorded, detail: Recorded = invoice.invoice_draft, 
   ['GET', new RegExp(`/api/invoice/${detail.body.id}$`), detail],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/measures$/, invoice.invoice_record_measures],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/related\/payment\.invoice/, invoice.invoice_related_payments],
-  ['GET', /\/api\/invoice\/[0-9a-z]{13}\/related\/invoice\.revises/, invoice.invoice_related_revisions],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/journal/, invoice.invoice_draft_journal],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/attachments$/, invoice.invoice_attachments],
   ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
@@ -49,7 +48,7 @@ const badges = (host: Element) => [...host.querySelectorAll<HTMLElement>('.doc-h
 describe('record status display', () => {
   it('shows a State as a header badge by default, with the moves this person may take as buttons and in its menu', async () => {
     const { host, sent } = start([...routes(schema(invoice.schema, { show: null })),
-      ['POST', new RegExp(`/api/invoice/${draft}/moves/issued$`), invoice.invoice_issued]], `/app/invoice/${draft}`);
+      ['POST', new RegExp(`/api/invoice/${draft}/moves/issue$`), invoice.invoice_issued]], `/app/invoice/${draft}`);
     await until(() => expect(badges(host)).toHaveLength(1));
     expect(host.querySelector('.stepper')).toBeNull();
     const badge = badges(host)[0];
@@ -65,11 +64,12 @@ describe('record status display', () => {
     const items = [...document.querySelectorAll('[role="menuitem"]')].map(text);
     expect(items).toEqual(['Issue']);
     click(byText(document, '[role="menuitem"]', 'Issue'));
-    await until(() => expect(requests(sent, 'POST', /moves\/issued$/)).toHaveLength(1));
-    // Issued: the editor has no move out of it (Mark paid is for admins), so the badge is plain text.
+    await until(() => expect(requests(sent, 'POST', /moves\/issue$/)).toHaveLength(1));
+    // Issued: Mark paid and Reopen are for admins, so the editor's badge offers only Void.
     await until(() => expect(text(badges(host)[0])).toBe('Issued'));
-    expect(badges(host)[0].tagName).toBe('SPAN');
-    expect(badges(host)[0].getAttribute('aria-label')).toBe('Status: Issued');
+    expect(badges(host)[0].getAttribute('aria-label')).toBe('Status: Issued. Change status');
+    click(badges(host)[0]);
+    expect([...document.querySelectorAll('[role="menuitem"]')].map(text)).toEqual(['Void']);
   });
 
   it('shows and takes the moves of a record whose text id has letters, as every new id does', async () => {
@@ -77,11 +77,11 @@ describe('record status display', () => {
     const textId = '01hff1w8vgqwf';
     const retext = (source: Recorded): Recorded => JSON.parse(JSON.stringify(source).split(draft).join(textId));
     const { host, sent } = start([...routes(schema(invoice.schema, { show: null }), retext(invoice.invoice_draft)),
-      ['POST', new RegExp(`/api/invoice/${textId}/moves/issued$`), retext(invoice.invoice_issued)]], `/app/invoice/${textId}`);
+      ['POST', new RegExp(`/api/invoice/${textId}/moves/issue$`), retext(invoice.invoice_issued)]], `/app/invoice/${textId}`);
     await until(() => expect(byText(host, '.doc-head .ph-actions button', 'Issue')).not.toBeNull());
     expect(badges(host)[0].tagName).toBe('BUTTON');
     click(byText(host, '.doc-head .ph-actions button', 'Issue'));
-    await until(() => expect(requests(sent, 'POST', new RegExp(`/api/invoice/${textId}/moves/issued$`))).toHaveLength(1));
+    await until(() => expect(requests(sent, 'POST', new RegExp(`/api/invoice/${textId}/moves/issue$`))).toHaveLength(1));
     await until(() => expect(text(badges(host)[0])).toBe('Issued'));
     expect(lastToast()).not.toMatch(/cannot move/);
   });

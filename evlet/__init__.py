@@ -3,14 +3,13 @@
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
-                     Image, Link, LongText, MultiSelect, Percent, Phone, Reference, RichText, Select, State, Tags, Text, Time, URL)
+                     Image, Link, LongText, MultiSelect, Percent, Phone, Reference, RichText, Select, Tags, Text, Time, URL)
 from .migrations import (AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, Migration, MigrationPlan, Recompute,
                          RenameField, RetireField, RunData, SchemaError)
 from .models import Model, Registry, ValidationError, Child
-from .declarations import Move, Ref, Table, Query, action, depends
+from .declarations import Ref, Table, Query, action, depends
 from .sequences import Naming, Sequence, Series
-from .lifecycle import validate, install_decorators
-install_decorators(action)
+from .statemanager import State, release, state, validate
 
 __all__ = [
     "AddField", "AddIndex", "AddTable", "AlterField", "Application", "Boolean", "ConflictError", "CreateModel", "DropField",
@@ -65,7 +64,7 @@ from .auth import Security
 __all__ += ["AppDefinition", "Instance", "Schedule", "Security"]
 from .routing import ApiScope, ControlsAccess, Docs, Frontend, Host, Request, Response
 __all__ += ["ApiScope", "ControlsAccess", "Docs", "Frontend", "Host", "Request", "Response"]
-__all__ += ["Child", "Move", "Table", "Ref", "Query", "action", "validate", "depends"]
+__all__ += ["Child", "Table", "Ref", "Query", "action", "validate", "depends", "release", "state"]
 from .forms import Chart, Dialog, Report, Column
 from .effects import Effect, Negate, Swap
 __all__ += ["Effect", "Negate", "Swap"]

@@ -5,7 +5,7 @@ from urllib.parse import quote
 
 import pytest
 
-from evlet import Database, Link, Model, Move, Registry, Rule, Select, State, Text
+from evlet import Database, Link, Model, Registry, Rule, Select, State, Text
 from evlet.ui.metadata import view_for
 from test_business import client
 from test_rules_types import add_user, start
@@ -37,8 +37,14 @@ class Ticket(Model):
     """The State drives the tabs when Meta.list_tabs is not set; list_tab picks the one it opens on."""
     permissions = {'admin': ALL}
     title = Text(default='')
-    stage = State(('open', 'closed', 'void'), moves=(Move('open', 'closed', 'Close'),), locked=('closed', 'void'),
-                  final=('void',), voidable=('closed',))
+    stage = State(
+        State.Step('open'),
+        State.Step('closed', lock=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+            State.Rule('closed', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ))
     kind = Select(('bug', 'idea'), default='bug')
 
     class Meta:

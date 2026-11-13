@@ -31,7 +31,7 @@ TEAM = (
 def seed_team(app, password):
     """Create the demo employees and the three viewer accounts linked to them; returns {account: employee id}."""
     ids, accounts = {}, {}
-    # Employee keeps its history (track_changes), so records are written through a Context, as the demo.
+    # Employee keeps its history in its journal, so records are written through a Context, as the demo.
     with app.business.context(User(0, 'team-demo', 'admin')) as context:
         for name, manager, _, department in TEAM:
             ids[name] = context.create(Employee, full_name=name, reports_to=ids.get(manager), department=department)['id']

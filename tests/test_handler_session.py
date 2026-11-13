@@ -5,8 +5,8 @@ assistants, tools, MCP and the connector reach. Real SQLite, through the ASGI ro
 
 import pytest
 
-from evlet import (Application, Column, Database, Integer, Link, Model, Move, Registry, Report, Rule, Sequence, State, Sum, Text,
-                   ValidationError, action, api)
+from evlet import (Application, Column, Database, Integer, Link, Model, Registry, Report, Rule, Sequence, State, Sum,
+                   Text, ValidationError, action, api, state, validate)
 from evlet.auth import AccessError, KeyAccess, LocalAuth, User
 from evlet.connector import ConnectorError
 from evlet.services import Endpoint
@@ -25,11 +25,16 @@ class Transfer(Model):
     origin = Text(max_length=40, default='store')
     destination = Text(max_length=40, default='site')
     quantity = Integer(default=1)
-    note = Text(default='', editable_when_locked=True)
+    note = Text(default='', versioned=False)
     number = Sequence('TR{n:04}', assign_on='sent')
-    status = State(('draft', 'sent'), default='draft', moves=(Move('draft', 'sent', 'Send', run='post_movements'),),
-                   locked=('sent',), final=('sent',))
+    status = State(
+        State.Step('draft'),
+        State.Step('sent', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'sent', 'Send', key='sent'),
+        ), default='draft')
 
+    @state('sent')
     def post_movements(self):
         tx = self.context.session
         KEPT.append(self.context)
@@ -66,9 +71,11 @@ class Transfer(Model):
         rows = self.context.session.count(Movement)
         return {'rows': rows}
 
-    def changed(self, change):
-        if change.operation == 'move' and self.number and change.before.note == 'fail after numbering':
-            raise ValidationError({'note': 'Refused after the number was assigned'})
+    @validate
+    def refuse(self):
+        # Runs after the @state hook wrote its rows and before the number is assigned.
+        if self.status == 'sent' and self.before is not None and self.before.note == 'fail after the hook':
+            raise ValidationError({'note': 'Refused after the hook wrote its rows'})
 
 
 class Movement(Model):
@@ -185,12 +192,12 @@ def test_a_failure_in_run_rolls_back_the_state_the_number_and_the_rows(app):
     assert post(admin, smaller, 'moves/sent', {})[1]['number'] == 'TR0001'
 
 
-def test_a_failure_after_numbering_rolls_back_the_number_and_the_rows_too(app):
+def test_a_failure_after_the_hook_rolls_back_the_rows_and_takes_no_number(app):
     app, admin = app
     stock(app.database)
-    record_id = transfer(admin, quantity=1, note='fail after numbering')
+    record_id = transfer(admin, quantity=1, note='fail after the hook')
     status, body, _ = post(admin, record_id, 'moves/sent', {})
-    assert status == 422 and body['fields'] == {'note': 'Refused after the number was assigned'}
+    assert status == 422 and body['fields'] == {'note': 'Refused after the hook wrote its rows'}
     row, rows = saved(app.database, record_id)
     assert row.status == 'draft' and row.number is None and rows == []
     assert counter(app.database) == 0

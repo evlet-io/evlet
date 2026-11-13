@@ -538,19 +538,19 @@ def test_api_scope_lists_each_route_family(portal):
             return True
         except HTTPError:
             return False
-    paths = ('/api/invoice', '/api/invoice/01hbbfy2vasb2', '/api/invoice/01hbbfy2vasb2/void', '/api/invoice/01hbbfy2vasb2/revise', '/api/invoice/01hbbfy2vasb2/unpost', '/api/invoice/01hbbfy2vasb2/repost',
+    paths = ('/api/invoice', '/api/invoice/01hbbfy2vasb2', '/api/invoice/01hbbfy2vasb2/moves/void', '/api/invoice/01hbbfy2vasb2/moves/reopen',
              '/api/invoice/01hbbfy2vasb2/actions/send',
              '/api/invoice/01hbbfy2vasb2/moves/send', '/api/invoice/measures', '/api/invoice/aggregate', '/api/invoice/01hbbfy2vasb2/measures',
              '/api/invoice/01hbbfy2vasb2/related/payment', '/api/invoice/01hbbfy2vasb2/lines/rows', '/api/invoice/01hbbfy2vasb2/attachments', '/api/_draft/invoice', '/api/invoice/01hbbfy2vasb2/other')
     assert [path for path in paths if allowed(portal, path)] == ['/api/invoice', '/api/invoice/01hbbfy2vasb2']
     shop = Frontend('shop', kind='static', dist='dist', path='/shop', auth='portal', api=('ops.full',))
-    scope = ApiScope('full', models=(Invoice,), actions=((Invoice, 'void'), (Invoice, 'unpost'), (Invoice, 'send')),
+    scope = ApiScope('full', models=(Invoice,), actions=((Invoice, 'void'), (Invoice, 'send')),
                      extras=('measures', 'related', 'lines', 'attachments', 'drafts'))
     routes = resolve_routes([('ops', AppDefinition(frontends=(shop,), api_scopes=(scope,)))], None, {'hosts': (Host('portal.localhost', root=shop),)})
     auth = LocalAuth(portal.database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False)
     app = Application(portal.database, auth=auth, routes=routes)
-    # Each correction is listed on its own: unpost does not open repost.
-    assert [path for path in paths if not allowed(app, path)] == ['/api/invoice/01hbbfy2vasb2/revise', '/api/invoice/01hbbfy2vasb2/repost', '/api/invoice/01hbbfy2vasb2/other']
+    # Each rule is listed on its own: void does not open reopen.
+    assert [path for path in paths if not allowed(app, path)] == ['/api/invoice/01hbbfy2vasb2/moves/reopen', '/api/invoice/01hbbfy2vasb2/other']
     with pytest.raises(ValueError, match='extras'):
         ApiScope('bad', models=(Invoice,), extras=('everything',))
 

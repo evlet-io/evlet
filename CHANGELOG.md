@@ -4,6 +4,89 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## 0.4.6 (unreleased)
+
+### Upgrading to 0.4.6
+
+- **One state manager replaces the old lifecycle.** `evlet/statemanager.py` holds a document's
+  State: its steps, the rules between them and its hooks. The old forms are removed outright, with
+  no aliases and no deprecation release, by owner decision. A model that still declares
+  `before_close`, `changed`, `check_lifecycle` or an undecorated `validate()`, or sets
+  `confirmable` or `track_changes`, fails when the class is created with a message naming the
+  replacement. See [docs/states-actions.md](docs/states-actions.md) and
+  [docs/document-lifecycle.md](docs/document-lifecycle.md).
+- **Apps that use `confirmable` must move to a State first.** The framework migration step that
+  converts the rows of `evlet_document_lifecycle` and `evlet_document_revisions` comes in a later
+  0.4.6 pull request (PR 3). Until then, declare draft, a locked release step and a final
+  cancelled step with rules, as the Lifecycle Playground does.
+- **Rewriting a State.** `State(("draft", "issued"), moves=(Move("draft", "issued", "Issue"),),
+  locked=("issued",), final=(...), voidable=(...))` becomes `State(State.Step("draft"),
+  State.Step("issued", lock=True), rules=(State.Rule("draft", "issued", "Issue"),))`. Routes,
+  `context.move()` and `_moves` now name a rule by its key, which defaults to `<from>_to_<to>`;
+  give each rule `key=` to keep the old move URLs (`key="issued"`). `roles=` becomes `by=`;
+  `system=True` becomes `by=()`. A `colors=` map moves onto each step's `color=`.
+- **Hooks.** `Move(..., run="m")` becomes `@state("to")` on `m`; `before_close` becomes
+  `@state.exit(...)` or `@validate`; `changed()` becomes `@state(...)` or a job queued from a hook;
+  `Model.validate()` (also on Dialogs, Slips and Reports) and `@validate.confirm/.cancel` become
+  `@validate`; `@action.confirm/.cancel` become `@state(...)` and `@state.exit(...)`.
+- **Corrections.** Void is a final step reached by a rule, usually with `remark="required"`.
+  Revise and unpost become a rule back (Reopen); repost becomes moving into the posting state
+  again. `Rule` operations `void`, `revise`, `unpost`, `repost`, `confirm`, `cancel` and `reopen`
+  are gone: a rule's `by` and update permission decide a move. Remove them from `permissions`,
+  Controls overrides and `ApiScope.actions`.
+- **Renamed.** `editable_when_locked=True` is now `versioned=False`.
+- **Database.** A Select may become a State, and step colours may change, with `AlterField`
+  alone; no data moves. The Playground's `0020_project_state` does this for Project.
+
+### Removed
+
+- `Move`, and `State(choices, moves=, locked=, final=, voidable=, cancelled=)`.
+- `confirmable`, `track_changes`, `lifecycle_labels`, `Meta.revisable` with `revises` and
+  `revised_by`, `Naming(assign_on="confirm")` (use the state's name).
+- The routes `/confirm`, `/cancel`, `/reopen`, `/void`, `/revise`, `/unpost`, `/repost`,
+  `/revisions`, `/snapshot` and the lifecycle `/diff`, with their `Context` methods, detail keys
+  (`_lifecycle`, `_lifecycle_actions`, `_void`, `_revise`, `_unpost`, `_repost`) and schema keys
+  (`lifecycle`, `voidable`, `revisable`, `unpostable`, `state.states`, `state.moves`,
+  `state.locked`, `state.final`, `state.voidable`, `state.cancelled`).
+- `context.document()` and `BoundDocument`, `context.record_approval()`,
+  `context.lifecycle_execution`, `context.reference_effect()`, `check_lifecycle`, `before_close`,
+  `changed()` and `Change`, `@validate.confirm/.cancel`, `@action.confirm/.cancel`,
+  `Model.validate()`, and the record page's Revisions part (`revisions` in `Meta.panel`).
+- `evlet/lifecycle.py` and `evlet/corrections.py`. `evlet/states.py` is now `evlet/guards.py`
+  (internal). `docs/lifecycle-specification.md`.
+- Unpost and repost audit rows, and the unpost dependents check (it returns with restore).
+
+### Added
+
+- `State(*steps, rules=(), default=, show=)` with `State.Step(key, label, color=, lock=,
+  release=, final=)` and `State.Rule(from_, to, label, key=, by=, when=, remark=, ask=, primary=,
+  reject=)`. `by` takes role names and `F("field")` user fields. `State.Remark(mode, label=,
+  required_when=)` asks for a remark; `State.Level` and `self_approve=` are declared for approval
+  levels, which come in PR 2.
+- The hooks `@validate`, `@state(...)`, `@state.exit(...)` and `@release` (declared; it runs from
+  PR 3), with `self.is_new` and `self.before` inside them.
+- `POST /api/{model}/{id}/moves/{key}` with `{"remark": ..., ...values}`, and
+  `context.move(model, id, key, *, remark=None, **values)`. A missing required remark is 422
+  `{"remark": "<Label> needs a remark"}`; an unknown key is 404 `Move not found`.
+- `_moves` items carry `key`, `primary` and `remark`; the schema's `state` entry has `steps` and
+  `rules`.
+- `evlet_journal` gains nullable `rule`, `remark`, `level`, `base` and `rules_version` columns. A
+  `moved` entry records the rule key and the remark, shown to readers of the State. The hash covers
+  these only when set, so existing chains verify unchanged.
+- The Playground's Project has Start and Complete rules; Complete checks in `@state("done")` that
+  every task is done.
+
+### Changed
+
+- `Effect(on=...)` must name a `lock=True, release=True` step that is not the default. Rows post
+  when the record enters `on` and are reversed when any rule leaves it, before `@state.exit`
+  hooks; `reverse` is required whenever a rule leaves `on`. `Recompute` keeps the saved results of
+  records with live postings and of records that posted and are in a final state.
+- The `change_state` tool takes `{model, id, rule, remark, values}`. A move into a final step is in
+  the destructive confirmation group for MCP clients and Eva write confirmations.
+- The record page asks for a rule's remark in the move dialog and reads a cancelled look from a
+  final step coloured `rose`, never from state names.
+
 ## 0.4.5 (13-11-2026)
 
 ### Upgrading to 0.4.5

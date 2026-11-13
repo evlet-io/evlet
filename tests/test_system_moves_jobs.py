@@ -1,10 +1,10 @@
-"""System moves (Move(..., system=True)), a job's business context (JobContext.business) and jobs an
+"""System moves (rules with by=()), a job's business context (JobContext.business) and jobs an
 action queues to run once its transaction commits (Context.enqueue). Real SQLite, through the ASGI routes."""
 
 import pytest
 
-from evlet import (Application, Boolean, Database, JobQueue, Model, Move, Registry, Rule, State, Task, Text,
-                   ValidationError, action)
+from evlet import (Application, Boolean, Database, JobQueue, Model, Registry, Rule, State, Task, Text,
+                   ValidationError, action, state)
 from evlet.calc import F
 from evlet.identity import RecordId
 from evlet.auth import AccessError, KeyAccess, LocalAuth, User
@@ -25,12 +25,18 @@ class Build(Model):
     title = Text(required=True, max_length=60)
     ready = Boolean(default=True)
     note = Text(default='', max_length=200)
-    status = State(('new', 'queued', 'building', 'done'), default='new', moves=(
-        Move('new', 'queued', 'Queue'),
-        Move('queued', 'building', 'Start', system=True, when=F('ready'), run='started'),
-        Move('building', 'done', 'Finish', system=True),
-    ))
+    status = State(
+        State.Step('new'),
+        State.Step('queued'),
+        State.Step('building'),
+        State.Step('done'),
+        rules=(
+            State.Rule('new', 'queued', 'Queue', key='queued'),
+            State.Rule('queued', 'building', 'Start', key='building', by=(), when=F('ready')),
+            State.Rule('building', 'done', 'Finish', key='done', by=()),
+        ), default='new')
 
+    @state('building')
     def started(self):
         self.note = 'Started'
 
@@ -106,16 +112,10 @@ def queue(app, record_id, user=User(1, 'admin', 'admin')):
 
 # Declaring
 
-def test_a_system_move_has_no_roles_and_a_move_without_roles_must_say_so():
-    move = Move('queued', 'building', 'Start', system=True)
-    assert move.system and move.roles == ()
-    assert Move('new', 'queued').system is False and Move('new', 'queued').roles == ('admin', 'editor')
-    with pytest.raises(ValueError, match='A system move has no roles'):
-        Move('queued', 'building', system=True, roles=('admin',))
-    with pytest.raises(ValueError, match=r'declare Move\(\.\.\., system=True\)'):
-        Move('queued', 'building', roles=())
-    with pytest.raises(ValueError, match='system must be True or False'):
-        Move('queued', 'building', system='yes')
+def test_a_system_rule_has_no_approvers():
+    rule = State.Rule('queued', 'building', 'Start', by=())
+    assert rule.system and rule.roles == () and rule.users == ()
+    assert not State.Rule('new', 'queued').system and State.Rule('new', 'queued').roles == ('admin', 'editor')
 
 
 # Never offered, refused to every caller
@@ -124,7 +124,7 @@ def test_system_moves_are_never_offered(app):
     admin = client(app)
     record_id = create(admin)
     state = next(item for item in admin('GET', '/api/schema')[1]['models'] if item['name'] == 'build')['state']
-    assert [move['to'] for move in state['moves']] == ['queued']
+    assert [rule['to'] for rule in state['rules']] == ['queued']
     queue(app, record_id)
     detail = admin('GET', f'/api/build/{record_id}')[1]
     assert status_of(app, record_id) == 'queued' and detail['_moves'] == []

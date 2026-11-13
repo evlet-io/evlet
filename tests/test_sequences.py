@@ -6,12 +6,12 @@ import sqlite3
 
 import pytest
 
-from evlet import (AddField, ConflictError, Database, Date, Link, Migration, Model, Move, Registry, RenameField, Rule, SchemaError,
-                   Sequence, State, Text, ValidationError, action)
+from evlet import (AddField, ConflictError, Database, Date, Link, Migration, Model, Registry, RenameField, Rule,
+                   SchemaError, Sequence, State, Text, ValidationError, action, state, validate)
 from evlet.auth import User
 from evlet.calc import F
 from evlet.identity import RecordId
-from evlet.sequences import backfill, clear_for_copy, parse_format
+from evlet.sequences import backfill, parse_format
 from test_business import client
 from test_rules_types import ALL, add_user, start
 
@@ -24,27 +24,31 @@ class Company(Model):
 
 
 class Invoice(Model):
-    class Meta:
-        # A revision is a new draft without a number; it gets its own when it is issued.
-        revisable = True
     permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('title', 'number', 'status'))}
     company = Link(Company, required=True)
     posting_date = Date(required=True)
     title = Text(default='')
     number = Sequence('INV-{year}-{n:05}', scope=('company',), assign_on='issued', date='posting_date')
-    status = State(('draft', 'issued', 'void'), moves=(
-        Move('draft', 'issued', 'Issue', run='on_issue'),
-        Move('issued', 'draft', 'Reopen'),
-    ), locked=('issued', 'void'), final=('void',), voidable=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+            State.Rule('issued', 'draft', 'Reopen', key='draft'),
+            State.Rule('issued', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ))
 
+    @state('issued')
     def on_issue(self):
         if self.title == 'fail':
             raise ValidationError({'title': 'Run failed'})
 
-    def changed(self, change):
-        # Runs after the number is assigned and the record is written, in the same transaction.
-        if change.operation == 'move' and self.title == 'boom':
-            raise ValidationError({'title': 'Rejected after numbering'})
+    @validate
+    def not_boom(self):
+        # Runs on every save once values are final, so a failing move never takes a number.
+        if self.status == 'issued' and self.title == 'boom':
+            raise ValidationError({'title': 'Rejected'})
 
     @action('Rename', inputs={'value': Text(required=True)})
     def rename(self, value):
@@ -84,26 +88,34 @@ class Visit(Model):
 
 
 class Slip(Model):
-    # Numbered on create and revisable, so a revision is numbered when the engine creates it.
-    class Meta:
-        revisable = True
+    # Numbered on create.
     permissions = ALL
     note = Text(default='')
     code = Sequence('S{n}')
-    status = State(('open', 'closed', 'void'), moves=(Move('open', 'closed', 'Close'),),
-                   locked=('closed', 'void'), final=('void',), voidable=('closed',))
-
-    def changed(self, change):
-        if change.operation == 'revise' and self.note == 'boom':
-            raise ValidationError({'note': 'Rejected after numbering'})
+    status = State(
+        State.Step('open'),
+        State.Step('closed', lock=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+            State.Rule('closed', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ))
 
 
 class Permit(Model):
     # Held permits can be voided before they are granted, so before they have a number.
     permissions = ALL
     code = Sequence('PM{n}', assign_on='granted')
-    status = State(('draft', 'held', 'granted', 'void'), moves=(Move('draft', 'held', 'Hold'), Move('held', 'granted', 'Grant')),
-                   locked=('held', 'granted', 'void'), final=('void',), voidable=('held', 'granted'))
+    status = State(
+        State.Step('draft'),
+        State.Step('held', lock=True),
+        State.Step('granted', lock=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'held', 'Hold', key='held'),
+            State.Rule('held', 'granted', 'Grant', key='granted'),
+            State.Rule(('held', 'granted'), 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ))
 
 
 MODELS = (Company, Invoice, Receipt, Ticket, Pass, Visit, Slip, Permit)
@@ -130,11 +142,7 @@ def move(c, url, to):
 
 
 def void(c, url, reason='Wrong'):
-    return c('POST', f'{url}/void', {'reason': reason}, headers=etag(c, url))
-
-
-def revise(c, url, reason='Wrong'):
-    return c('POST', f'{url}/revise', {'reason': reason}, headers=etag(c, url))
+    return c('POST', f'{url}/moves/void', {'remark': reason}, headers=etag(c, url))
 
 
 def invoice(c, company, day='2026-03-10', **values):
@@ -182,9 +190,9 @@ def test_declarations_are_checked_against_the_model():
     with pytest.raises(ValueError, match='assign_on'):
         register(code=Sequence('N{n}', assign_on='issued'))
     with pytest.raises(ValueError, match='assign_on'):
-        register(status=State(('draft', 'sent')), code=Sequence('N{n}', assign_on='issued'))
+        register(status=State(State.Step('draft'), State.Step('sent')), code=Sequence('N{n}', assign_on='issued'))
     with pytest.raises(ValueError, match='not its State'):
-        register(status=State(('draft', 'sent')), code=Sequence('N{n}', scope=('status',)))
+        register(status=State(State.Step('draft'), State.Step('sent')), code=Sequence('N{n}', scope=('status',)))
     with pytest.raises(ValueError, match='cannot read a Sequence'):
         register(code=Sequence('N{n}'), copy=Text(compute=F('code')))
     from evlet import Child, Table
@@ -243,7 +251,7 @@ def test_assigned_numbers_fix_their_scope_and_period(numbered):
 
 def check_failures_do_not_consume_numbers(numbered):
     app, c, one, two = numbered
-    # A run method that fails before assignment, and a reaction that fails after the number is written.
+    # An @state hook and an @validate check that fail: neither move takes a number.
     for name in ('fail', 'boom'):
         record, url = invoice(c, one, title=name)
         status, body, _ = move(c, url, 'issued')
@@ -265,22 +273,10 @@ def test_failures_do_not_consume_numbers(numbered):
     check_failures_do_not_consume_numbers(numbered)
 
 
-# Void and revise
+# Void
 
-def check_void_and_revise_keep_and_renew_numbers(numbered):
+def check_void_keeps_numbers(numbered):
     app, c, one, two = numbered
-    record, url = invoice(c, one)
-    assert move(c, url, 'issued')[1]['number'] == 'INV-2026-00001'
-    # The revision starts as a draft without a number; the original is void and keeps its own.
-    status, copy, _ = revise(c, url)
-    assert status == 201 and copy['number'] is None and copy['status'] == 'draft' and copy['revises'] == record['id']
-    original = c('GET', url)[1]
-    assert (original['status'], original['number'], original['revised_by']) == ('void', 'INV-2026-00001', copy['id'])
-    # The copy is a new record, so its scope is free until it is numbered; issuing it takes the next number.
-    copy_url = f"/api/invoice/{copy['id']}"
-    assert c('PATCH', copy_url, {'company': two}, headers=etag(c, copy_url))[1]['company'] == two
-    assert move(c, copy_url, 'issued')[1]['number'] == 'INV-2026-00001'
-    assert issue(c, one) == 'INV-2026-00002'
     # Voiding before the number is due assigns nothing; voiding after it keeps the number.
     permits = []
     for _ in range(2):
@@ -292,43 +288,10 @@ def check_void_and_revise_keep_and_renew_numbers(numbered):
     third = f"/api/permit/{c('POST', '/api/permit', {})[1]['id']}"
     move(c, third, 'held')
     assert move(c, third, 'granted')[1]['code'] == 'PM2'
-    # A number due on create is assigned to the copy when the engine creates it.
-    slip = c('POST', '/api/slip', {})[1]
-    slip_url = f"/api/slip/{slip['id']}"
-    move(c, slip_url, 'closed')
-    status, slip_copy, _ = revise(c, slip_url)
-    assert status == 201 and (slip['code'], slip_copy['code'], slip_copy['status']) == ('S1', 'S2', 'open')
-    assert c('GET', slip_url)[1]['code'] == 'S1'
 
 
-def test_void_and_revise_keep_and_renew_numbers(numbered):
-    check_void_and_revise_keep_and_renew_numbers(numbered)
-
-
-def check_a_caught_revise_failure_leaves_no_number(numbered):
-    app, c, one, two = numbered
-    with app.business.context(ADMIN) as context:
-        failing = context.create(Slip, note='boom')
-        context.move(Slip, failing['id'], 'closed')
-        kept = context.create(Slip)
-        context.move(Slip, kept['id'], 'closed')
-    assert (failing['code'], kept['code']) == ('S1', 'S2')
-    with app.business.context(ADMIN) as context:
-        # The copy took S3 before its reaction failed; the savepoint gives the number back.
-        with pytest.raises(ValidationError):
-            context.revise(Slip, failing['id'], 'Wrong')
-        assert context.create(Slip)['code'] == 'S3'
-        assert context.revise(Slip, kept['id'], 'Wrong')['code'] == 'S4'
-    assert c('GET', f"/api/slip/{failing['id']}")[1]['status'] == 'closed'
-    assert c('GET', f"/api/slip/{kept['id']}")[1]['status'] == 'void'
-    with app.database.transaction() as tx:
-        codes = [row[0] for row in tx.connection.execute('SELECT code FROM slip ORDER BY id').fetchall()]
-        assert tx.connection.execute('SELECT count(*) FROM slip WHERE revises=?', (failing['id'],)).fetchone()[0] == 0
-    assert codes == ['S1', 'S2', 'S3', 'S4']
-
-
-def test_a_caught_revise_failure_leaves_no_number(numbered):
-    check_a_caught_revise_failure_leaves_no_number(numbered)
+def test_void_keeps_numbers(numbered):
+    check_void_keeps_numbers(numbered)
 
 
 def check_only_the_engine_writes_a_sequence(numbered):
@@ -429,12 +392,6 @@ def test_counters_live_in_the_framework_table(numbered):
     with app.database.transaction() as tx:
         rows = tx.connection.execute('SELECT model, field, scope_key, period, "last" FROM evlet_sequence ORDER BY scope_key').fetchall()
     assert [tuple(row) for row in rows] == [('invoice', 'number', f'[{int(RecordId(one))}]', '2026', 1), ('invoice', 'number', f'[{int(RecordId(two))}]', '2027', 1)]
-
-
-def test_clear_for_copy_gives_a_copy_a_fresh_number():
-    values = {'company': 1, 'number': 'INV-2026-00001', 'title': 'Copy'}
-    assert clear_for_copy(Invoice, values) == {'company': 1, 'number': None, 'title': 'Copy'}
-    assert values['number'] == 'INV-2026-00001' and clear_for_copy(Company, {'title': 'x'}) == {'title': 'x'}
 
 
 # Migrations

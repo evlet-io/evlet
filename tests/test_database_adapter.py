@@ -601,7 +601,12 @@ def contents(path):
 
 
 def test_a_0_4_3_database_opens_unchanged(tmp_path):
+    from evlet.framework import upgrade
     path = restore(tmp_path)
+    # 0.4.6 adds the state manager's journal columns (framework step 0011); after that the file stays as it is.
+    upgraded = Database(path, upgrade_fixture.registry(), migrations=upgrade_fixture.MIGRATIONS)
+    assert upgrade(upgraded) == ['0011_state_manager']
+    upgraded.close()
     before = contents(path)
     database = Database(path, upgrade_fixture.registry(), migrations=upgrade_fixture.MIGRATIONS)
     with database._connection() as connection:

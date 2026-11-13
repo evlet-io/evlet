@@ -514,7 +514,7 @@ class Prints:
             raise AccessError(409, 'This record does not keep attachments')
         from .business import size_text
         from .documents import Context
-        from .states import check_attachments
+        from .statemanager import check_attachments
         check_attachments(Context(business, tx, user, readonly=True), model, tx.get(model, record_id))
         limits = business.attachment_limits[model]
         if len(content) > limits.max_size:

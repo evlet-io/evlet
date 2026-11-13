@@ -56,6 +56,21 @@
         "id": 2,
         "name": "owner"
       }
+    },
+    "_moves": [
+      {
+        "key": "start",
+        "to": "active",
+        "label": "Start project",
+        "allowed": true,
+        "primary": true
+      }
+    ],
+    "_locked": false,
+    "_actions": [],
+    "_journal": {
+      "count": 1,
+      "open_follow_ups": 0
     }
   },
   "events": {

@@ -186,7 +186,7 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 
 **Permissions** (kind `perm`, key `role|Model`, value
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
-operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`, `unpost`, `repost`), readable and
+operations (`read`, `create`, `update`, `delete`, `journal`, `print`), readable and
 writable fields must stay within the file rule. Stricter only applies to the fields declared in
 app files. An instance field (`x_`, added by Controls) follows the record for every signed-in
 staff role, that is every desk role: each one that reads the model reads it, and each one that
@@ -198,9 +198,9 @@ Portal roles (customers) and public endpoints never get an instance field by def
 grants it to a portal role with a permission override, and fields added later stay hidden from
 it until ticked there.
 The API, generated screens, API keys, exports and AI assistants all read fields through the same
-`Policy`. Write needs read, no access clears fields and
-rows, revise needs create. Admin rules can't be overridden. The page shows the first four;
-`journal`, `void`, `revise`, `unpost` and `repost` named in the file rule are kept on save. A role based on the
+`Policy`. Write needs read, and no access clears fields and
+rows. Admin rules can't be overridden. The page shows the first four; `journal` and `print`
+named in the file rule are kept on save. A role based on the
 editor journals like the editor when its rule reads and updates the model (`docs/journal.md`).
 Row scopes are named presets: `created_by`, `owner`, `account_manager` and `assignee` (for
 models with that field), `own_customer` and the app's own (`AppDefinition(scopes={...})`).
@@ -303,7 +303,7 @@ Record pages have no tabs (0.4): a layout is saved as the plain list of sections
 order is dropped, and sending one now is refused. For a model whose `Meta.layout` declares `Main` or blocks
 ([record layouts](ui.md#record-layouts)), Controls moves fields and sections; the layout's blocks stay as the app
 declares them, a section keeps its place by title, and a section Controls adds goes last. Each model in
-`GET /api/_controls/state` lists its record parts in `tabs` (Activity, Details, Revisions, its child tables, Related,
+`GET /api/_controls/state` lists its record parts in `tabs` (Activity, Details, its child tables, Related,
 Postings), the names the side panel can hide.
 **Side panel**: what a record shows when a list opens it in a side panel. Each section, field and record part (Details aside) has
 a panel button, pressed while it shows there; the Side panel card has the summary strip, Files and Record info (the record footer). A layout
@@ -995,8 +995,8 @@ local `evlet mcp` steps. "Can make changes" has effect only while
 `evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles,
 overrides, connectors, email accounts, personal mailboxes (connect, disconnect, options), API
 keys, AI assistants (consent, sign-out, "Can make changes", MCP settings), migrations and jobs all
-write to it. Records (area `Records`) lists each unpost and repost of a posted record (who, the
-record and the reason) and each migration run that recalculated posted records (actor `cli`). Periods lists
+write to it. Records (area `Records`) lists each migration run that recalculated posted records (actor
+`cli`). Periods lists
 each lock change and each `unlocked_periods` block (actor `python`). The Audit log page searches who, what and the detail, filters by area and pages
 newest first, 50 rows at a time.
 

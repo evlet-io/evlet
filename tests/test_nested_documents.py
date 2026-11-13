@@ -5,7 +5,7 @@ import re
 import pytest
 
 from evlet import (AddField, Migration, Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Text, Integer, Rule,
-                   Policy, Action, ValidationError, action)
+                   Policy, Action, ValidationError, action, validate)
 from evlet.calc import round, parent
 from evlet.business import Business
 from evlet.identity import RecordId, sequential_ids
@@ -19,6 +19,8 @@ class Task(Child):
     title = Text(default='')
     hours = Decimal(default=0, minimum='0')
     amount = Currency(compute=round(hours * parent.hourly_rate, 2))
+
+    @validate
 
     def validate(self):
         if self.title == 'invalid':

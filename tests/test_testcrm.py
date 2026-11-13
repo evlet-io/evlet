@@ -78,7 +78,7 @@ def test_sign_in_and_navigation_schema(crm):
     deal = models['deal']
     # Sales people never see the internal notes; State, moves, key fields and relations drive the screens.
     assert 'internal_notes' not in {field['name'] for field in deal['fields']}
-    assert deal['state']['field'] == 'stage' and [move['to'] for move in deal['state']['moves']][:3] == ['qualified', 'proposal', 'negotiation']
+    assert deal['state']['field'] == 'stage' and [rule['to'] for rule in deal['state']['rules']][:3] == ['qualified', 'proposal', 'negotiation']
     assert deal['key_fields'] == ['organization', 'contact', 'total', 'expected_close', 'owner']
     assert [relation['name'] for relation in deal['relations']][0] == 'task.deal'
     assert deal['children'][0]['max_rows'] == 1000
@@ -131,7 +131,7 @@ def test_open_a_deal_and_edit_fields(crm):
     edited = sara.write('PATCH', url, {'title': 'HR, WPS payroll and leave', 'payment_days': 60, 'tags': ['Payroll']})
     assert edited[0] == 200, edited
     assert (edited[1]['title'], edited[1]['payment_days'], edited[1]['tags']) == ('HR, WPS payroll and leave', 60, ['Payroll'])
-    assert sara.write('PATCH', url, {'stage': 'won'})[1]['fields'] == {'stage': 'This changes only through its moves'}
+    assert sara.write('PATCH', url, {'stage': 'won'})[1]['fields'] == {'stage': 'This changes only through its rules'}
     assert sara.write('PATCH', url, {'number': 'X'})[1]['fields'] == {'number': 'This number is assigned by the system'}
 
 
@@ -215,7 +215,7 @@ def test_moves_guards_and_blocked_reasons(crm):
     assert deal['line_count'] == 0 and [(move['to'], move['allowed']) for move in deal['_moves']] == [('qualified', True), ('lost', True)]
     qualified = omar.write('POST', url + '/moves/qualified', {})[1]
     blocked = {move['to']: move for move in qualified['_moves']}['proposal']
-    assert blocked == {'to': 'proposal', 'label': 'Send proposal', 'allowed': False, 'reason': 'The condition for this move is not met'}
+    assert blocked == {'key': 'proposal', 'to': 'proposal', 'label': 'Send proposal', 'allowed': False, 'reason': 'The condition for this move is not met'}
     refused = omar.write('POST', url + '/moves/proposal', {})
     assert refused[0] == 409 and refused[1]['error'] == 'Send proposal is not available: the condition for this move is not met'
     assert omar.write('POST', url + '/moves/won', {})[1]['error'] == 'This record cannot move from qualified to won'
@@ -244,31 +244,29 @@ def test_winning_a_deal_creates_a_task_books_it_and_makes_a_customer(crm):
     admin = login(crm, 'admin')
     bookings = admin('GET', '/api/booking?limit=100&offset=0&filters=' + quote(json.dumps({'organization': deal['organization']})))[1]['items']
     assert [(row['amount'], row['owner'], row['reversal']) for row in bookings] == [(won['total'], 'rahul', False)]
-    # Voiding the won deal writes the reversing booking; revising starts a new copy at lead.
-    revision = admin.write('POST', url + '/revise', {'reason': 'Customer added a second warehouse'})
-    assert revision[0] == 201, revision
-    assert revision[1]['stage'] == 'lead' and revision[1]['revises'] == url.rsplit('/', 1)[1] and revision[1]['number'] != won['number']
+    # Sales people cannot void; voiding the won deal writes the reversing booking.
+    assert rahul.write('POST', url + '/moves/void', {'remark': 'x'})[0] in (403, 404, 409)
+    assert admin.write('POST', url + '/moves/void', {'remark': 'Customer added a second warehouse'})[0] == 200
     bookings = admin('GET', '/api/booking?limit=100&offset=0&filters=' + quote(json.dumps({'organization': deal['organization']})))[1]['items']
     assert sorted(row['amount'] for row in bookings) == sorted([won['total'], '-' + won['total']])
     assert admin('GET', url)[1]['stage'] == 'void'
-    # Sales people cannot void or revise.
-    assert rahul.write('POST', '/api/deal/' + str(revision[1]['id']) + '/void', {'reason': 'x'})[0] in (403, 404)
 
 
-def test_admin_unposts_a_won_deal_and_reposts_it(crm):
+def test_admin_reopens_a_won_deal_and_wins_it_again(crm):
     admin, rahul = login(crm, 'admin'), login(crm, 'rahul')
     deals = admin('GET', '/api/deal?limit=100&offset=0&filters=' + quote(json.dumps({'stage': 'negotiation'})))[1]['items']
     deal = next(item for item in deals if item['contact'] and Decimal(item['total']) > 0)
     url = f"/api/deal/{deal['id']}"
     won = admin.write('POST', url + '/moves/won', {})[1]
-    assert won['stage'] == 'won' and won['_unpost'] == {'allowed': True}
-    # Sales people cannot unpost; the admin gives a reason and the deal goes back to negotiation with its number.
-    assert rahul('POST', url + '/unpost', {'reason': 'x'})[0] in (403, 404)
-    status, body, _ = admin.write('POST', url + '/unpost', {'reason': 'Signed with the wrong entity'})
+    assert won['stage'] == 'won' and [move['key'] for move in won['_moves']] == ['reopen', 'void']
+    # Sales people cannot reopen; the admin writes a remark and the deal goes back to negotiation with its number.
+    assert rahul('POST', url + '/moves/reopen', {'remark': 'x'})[0] in (403, 404, 409, 428)
+    assert admin.write('POST', url + '/moves/reopen', {})[1]['fields'] == {'remark': 'Reopen needs a remark'}
+    status, body, _ = admin.write('POST', url + '/moves/reopen', {'remark': 'Signed with the wrong entity'})
     assert status == 200 and (body['stage'], body['number']) == ('negotiation', won['number']), body
-    entry = admin('GET', url + '/journal?limit=5')[1]['items'][1]
-    assert entry['kind'] == 'unposted' and entry['data'] == {'from': 'won', 'to': 'negotiation', 'reason': 'Signed with the wrong entity'}
-    status, body, _ = admin.write('POST', url + '/repost', {})
+    entry = next(item for item in admin('GET', url + '/journal?limit=5')[1]['items'] if item['kind'] == 'moved')
+    assert (entry['rule'], entry['remark'], entry['data']['to']) == ('reopen', 'Signed with the wrong entity', 'negotiation')
+    status, body, _ = admin.write('POST', url + '/moves/won', {})
     assert status == 200 and (body['stage'], body['number']) == ('won', won['number']), body
     filters = quote(json.dumps({'memo': f"{won['number']} {won['title']}"}))
     bookings = admin('GET', f'/api/booking?limit=100&offset=0&filters={filters}')[1]['items']

@@ -4,10 +4,10 @@ One set of tools serves every AI entry point: MCP clients (remote and `evlet mcp
 Eva when it arrives. Every tool call runs as the person, through the same routes and permission
 checks as the browser, and is checked again each time it runs. A tool listed earlier grants
 nothing. Tools never get database, SQL, file system or shell access, and never act as anyone
-else. The transaction session that a move's `run` method or an action handler gets
+else. The transaction session that a `@state` hook or an action handler gets
 (`self.context.session`) is refused on every context a tool reaches, services and reports
 included; a tool that runs an action runs the app's own handler
-([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+([states-actions.md](states-actions.md#the-transaction-session-in-hooks-and-actions)).
 
 ## Tools
 
@@ -23,7 +23,7 @@ it.
 | `list_files`, `read_file` | Read |
 | `list_services`, `job_status` | Read |
 | `create_record`, `update_record` | Write |
-| `change_state` (State moves; confirm, cancel, reopen), `run_action`, `call_service` | Write |
+| `change_state` (State moves), `run_action`, `call_service` | Write |
 | `delete_record` | Destructive |
 
 A tool is listed only when it can apply (an app with reports, actions, documents, files or
@@ -32,13 +32,13 @@ Changes to a saved record read it first and send its revision, so the change, an
 approval, name the same version. `read_file` returns UTF-8 text only (2 MB at most, 60,000
 characters); other files report their size.
 
-`change_state` takes `{model, id, to, values?, reason?}`. For a model with a `State`, `to` is the
-state to move to, and the call goes to `POST /api/{model}/{id}/moves/{to}`, so the move's roles,
-`when` guard, closed periods and current state are checked as they are for the browser. `values`
-fills the fields the move asks for. For a confirmable document, `to` is `confirm`, `cancel` or
-`reopen`, and `cancel` takes a `reason`. The tool is listed when some model is confirmable or
-has a State with moves the role can see. A move into one of the State's `cancelled` states is
-in the destructive group; every other move is in the confirm group.
+`change_state` takes `{model, id, rule, remark?, values?}`. `rule` is a rule key from the
+record's `_moves` (or the schema's `state.rules`), and the call goes to
+`POST /api/{model}/{id}/moves/{rule}`, so the rule's `by`, `when` guard, remark, closed periods
+and current state are checked as they are for the browser. `remark` is the note the rule asks
+for; `values` fills the fields the move asks for. The tool is listed when some model has a
+State with rules the role can see. A move into a final step is in the destructive group; every
+other move is in the confirm group.
 
 Business services become tools only when the app marks them. Their docstring is what
 assistants read; public endpoints cannot be tools:
@@ -57,15 +57,16 @@ The Playground offers `playground.project_overview` this way.
 
 ## Approvals
 
-Being allowed to make a change does not always mean making it without a click. For MCP
-clients:
+Being allowed to make a change does not always mean making it without a click. These are
+confirmations of tool writes (Eva write confirmations, for Eva), not a State's approval
+levels. For MCP clients:
 
 | Kind of change | MCP clients |
 | --- | --- |
 | Read, search, totals, files | Run |
 | Create or change a record | Run; the client asks its user |
-| Confirm or move a document, app actions, business services | Approved in Evlet |
-| Cancel, reopen, delete, a move into a cancelled state | Approved in Evlet |
+| Move a document, app actions, business services | Approved in Evlet |
+| Delete, a move into a final step | Approved in Evlet |
 
 The API never asks: a key or session is the person's own program. Formal approvals in apps
 always apply as well.

@@ -9,9 +9,9 @@ the deals they own and never see a deal's internal notes. Viewers read, without 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email, Integer, Journal, Link,
-                   LongText, Mail, Model, Move, Negate, Percent, Phone, Reference, Related, Rule, Select, Sequence, State, Sum,
-                   Table, Tags, Text, Time, URL, action)
+from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email,
+                   Integer, Journal, Link, LongText, Mail, Model, Negate, Percent, Phone, Reference, Related, Rule,
+                   Select, Sequence, State, Sum, Table, Tags, Text, Time, URL, action, state)
 from evlet.calc import D, F, choose, coalesce, days, has_value, is_empty, month_start, parent, round, today, when
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
@@ -109,7 +109,7 @@ class Booking(Model):
 class Deal(Model):
     """A sales opportunity, from first contact to won or lost."""
     permissions = {
-        'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise')),
+        'admin': Rule(('read', 'create', 'update', 'delete')),
         # Sales people own their deals: they see only those, and never the internal notes.
         'editor': Rule(('read', 'create', 'update'), scope=lambda user: {'owner': user.username},
                        read_fields=('number', 'title', 'organization', 'contact', 'owner', 'lead_source', 'expected_close',
@@ -132,24 +132,33 @@ class Deal(Model):
     owner = Text(required=True, default=CurrentUser, max_length=60)
     lead_source = Select(SOURCES, label='Source')
     expected_close = Date()
-    stage = State(('lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost', 'void'), moves=(
-        Move('lead', 'qualified', 'Qualify'),
-        Move('qualified', 'proposal', 'Send proposal', when=F('total') > 0),
-        Move('proposal', 'negotiation', 'Negotiate'),
-        Move(('proposal', 'negotiation'), 'won', 'Mark won',
-             when=(F('total') > 0) & has_value(F('contact')), run='on_won'),
-        Move(('lead', 'qualified', 'proposal', 'negotiation'), 'lost', 'Mark lost'),
-        Move('lost', 'lead', 'Reopen', roles=('admin',)),
-    ), locked=('won', 'lost', 'void'), final=('void',), voidable=('won',), show='bar')
-    # A won deal that has to change is revised: it is voided and a new copy starts at lead.
+    stage = State(
+        State.Step('lead', 'Lead'),
+        State.Step('qualified', 'Qualified'),
+        State.Step('proposal', 'Proposal'),
+        State.Step('negotiation', 'Negotiation'),
+        State.Step('won', 'Won', color='green', lock=True, release=True),
+        State.Step('lost', 'Lost', color='slate', lock=True),
+        State.Step('void', 'Void', color='rose', lock=True, final=True),
+        rules=(
+            State.Rule('lead', 'qualified', 'Qualify', key='qualified', primary=True),
+            State.Rule('qualified', 'proposal', 'Send proposal', key='proposal', when=F('total') > 0),
+            State.Rule('proposal', 'negotiation', 'Negotiate', key='negotiation'),
+            State.Rule(('proposal', 'negotiation'), 'won', 'Mark won', key='won', when=(F('total') > 0) & has_value(F('contact'))),
+            State.Rule(('lead', 'qualified', 'proposal', 'negotiation'), 'lost', 'Mark lost', key='lost'),
+            State.Rule('lost', 'lead', 'Reopen', key='lead', by=('admin',)),
+            State.Rule('won', 'negotiation', 'Reopen', key='reopen', by=('admin',), remark='required'),
+            State.Rule('won', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ), show='bar')
+    # A won deal that has to change is reopened with a remark: its postings are reversed and it is won again later.
     probability = Percent(compute=choose(F('stage'), {'won': 100, 'negotiation': 75, 'proposal': 50, 'qualified': 25, 'lead': 10},
                                          default=0))
     payment_days = Integer(initial=F('organization.payment_days'), minimum=0, maximum=180)
     vat_rate = Percent(default=5)
     # Shown once the deal is lost, required then and still editable after it is locked. Mark lost asks for it.
-    lost_reason = Text(applies_when=F('stage') == 'lost', required_when=F('stage') == 'lost', editable_when_locked=True,
+    lost_reason = Text(applies_when=F('stage') == 'lost', required_when=F('stage') == 'lost', versioned=False,
                        max_length=200)
-    next_step = Text(max_length=200, editable_when_locked=True)
+    next_step = Text(max_length=200, versioned=False)
     follow_up_on = Date()
     won_on = Date()
     tags = Tags()
@@ -186,7 +195,6 @@ class Deal(Model):
     class Meta:
         calculation_language = 'finite-v1'
         numeric_profile = 'finite40-hu18-v1'
-        revisable = True
         title_field = 'title'
         list_fields = ('number', 'title', 'organization', 'owner', 'stage', 'total', 'expected_close')
         board = 'stage'
@@ -195,8 +203,7 @@ class Deal(Model):
         layout = (('Deal', ('number', 'title', 'organization', 'contact', 'owner', 'lead_source', 'tags')),
                   ('Forecast', ('stage', 'probability', 'expected_close', 'days_to_close', 'weighted', 'lost_reason')),
                   ('Amounts', ('subtotal', 'vat_total', 'total', 'recurring_total', 'line_count')),
-                  ('Terms', ('payment_days', 'vat_rate', 'next_step', 'follow_up_on', 'won_on', 'payment_expected',
-                             'revises')),
+                  ('Terms', ('payment_days', 'vat_rate', 'next_step', 'follow_up_on', 'won_on', 'payment_expected')),
                   ('Internal', ('internal_notes',)))
         relations = (Related('task', 'deal', label='Tasks', limit=10, order=('due_on',)),)
         measures = {
@@ -209,6 +216,7 @@ class Deal(Model):
         effects = (Effect(Booking, rows='booking_rows', on='won', reverse=Negate('amount')),)
         attachments = Attachments(max_files=10, max_size=1_048_576)
 
+    @state('won')
     def on_won(self):
         """Winning a deal dates it, makes the organization a customer and books a kick-off."""
         won_on = today_in_dubai()
@@ -266,14 +274,18 @@ class Lead(Model):
     lead_source = Select(SOURCES, label='Source')
     score = Integer(default=50, minimum=0, maximum=100)
     owner = Text(default=CurrentUser, max_length=60)
-    status = State(('new', 'qualified', 'lost'), moves=(
-        Move('new', 'qualified', 'Qualify', when=F('score') >= 40),
-        Move(('new', 'qualified'), 'lost', 'Mark lost'),
-        Move('lost', 'new', 'Reopen'),
-    ), locked=('lost',))
+    status = State(
+        State.Step('new'),
+        State.Step('qualified'),
+        State.Step('lost', lock=True),
+        rules=(
+            State.Rule('new', 'qualified', 'Qualify', key='qualified', when=F('score') >= 40),
+            State.Rule(('new', 'qualified'), 'lost', 'Mark lost', key='lost'),
+            State.Rule('lost', 'new', 'Reopen', key='new'),
+        ))
     # Mark lost asks for the reason: the move carries it and checks it in the same transaction.
     lost_reason = Text(applies_when=F('status') == 'lost', required_when=F('status') == 'lost',
-                       editable_when_locked=True, max_length=200)
+                       versioned=False, max_length=200)
     deal = Link(Deal)
 
     class Meta:
