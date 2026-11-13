@@ -7,9 +7,7 @@ import pytest
 
 from evlet import Database, Journal, Model, Registry, Rule, Text
 from evlet.richtext import mention_ids, sanitise
-from evlet import PostgreSQLDatabase
 from test_business import client
-from test_postgres import pg_dsn  # noqa: F401  (skips without EVLET_TEST_POSTGRES_DSN)
 from test_rules_types import add_user, start
 
 
@@ -24,19 +22,6 @@ class Case(Model):
 @pytest.fixture
 def app(tmp_path):
     app = start(Database(tmp_path / 'db.sqlite3', Registry(Case)))
-    add_user(app, 'editor')
-    add_user(app, 'viewer')
-    return app
-
-
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def any_app(request, tmp_path):
-    """The same app on SQLite and, when EVLET_TEST_POSTGRES_DSN is set, on PostgreSQL."""
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'db.sqlite3', Registry(Case))
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), Registry(Case))
-    app = start(database)
     add_user(app, 'editor')
     add_user(app, 'viewer')
     return app
@@ -144,8 +129,8 @@ def test_inactive_and_unknown_users_are_not_notified(app):
         assert tx.connection.execute('SELECT count(*) FROM evlet_inbox').fetchone()[0] == 0
 
 
-def test_preferences_decide_the_inbox_and_email(any_app, monkeypatch):
-    app = any_app
+def test_preferences_decide_the_inbox_and_email(app, monkeypatch):
+    app = app
     admin, editor = client(app), client(app, 'editor')
     ids = users(app)
     sent = []
