@@ -342,7 +342,7 @@ def round_stored_money(application, code, decimals, *, actor='cli'):
             amount = qb.col(column)
             # Half up, away from zero: a negative amount rounds as its positive opposite does.
             rounded = qb.when((qb.ge(column, 0), ((amount + half) / factor) * factor),
-                              otherwise=qb.value(0) - (((qb.value(0) - amount) + half) / factor) * factor)
+                              otherwise=-(((-amount + half) / factor) * factor))
             changed += tx.connection.run(qb.update(name, **{column: rounded}).where(*where)).rowcount
         controls.audit(tx.connection, actor, 'Display', KEY, f'Rounded {changed} stored {code} amounts to {decimals} places')
     current = dict(controls.settings.get(KEY) or {})

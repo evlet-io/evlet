@@ -73,13 +73,12 @@ entry_id = connection.run(qb.insert('evlet_journal', model=name, record_id=recor
 - Hierarchies: `qb.in_tree(column, table, parent, roots, include_roots=...)`, the rows at or
   below some roots following a parent link (team row scopes). A cycle stops the walk.
 - Functions: `qb.count()`, `qb.count(column)`, `qb.count_distinct`, `qb.sum`, `qb.min`, `qb.max`,
-  `qb.coalesce`, `qb.nullif`, `qb.lower`, `qb.upper`, `qb.trim`, `qb.length`, `qb.substr(column, start, size)`,
-  `qb.replace_text(column, old, new)`, `qb.abs`.
+  `qb.coalesce`, `qb.nullif`, `qb.lower`, `qb.length`, `qb.substr(column, start, size)`.
 - Choices: `qb.case(column, {key: value})` (the value matching what the column holds) and
   `qb.when((condition, value), ..., otherwise=None)` (the value of the first condition that holds).
 - Windows: `qb.over(qb.row_number(), partition_by=[...], order_by=[...])`.
 - Other: `qb.col('alias.name')`, `qb.value(item)`, `qb.named(expression, 'name')`,
-  `qb.all_columns('alias')`, `qb.from_query(query, alias)`, and `+`, `-`, `*`, `/` and `%` on
+  `qb.all_columns('alias')`, `qb.from_query(query, alias)`, and `+`, `-`, `*`, `/`, `%` and unary `-` on
   expressions (two integers divide to an integer, rounding toward zero; `%` keeps the left side's sign).
 - `name=None` and `qb.eq(column, None)` mean `IS NULL`. Where a value that may be `None` must
   never match an empty column, pass `qb.value(item)`.

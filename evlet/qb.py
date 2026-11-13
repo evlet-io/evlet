@@ -51,6 +51,9 @@ class Expression:
         """Division; two integers divide to an integer, rounding toward zero."""
         return Arithmetic(self, '/', expression(other))
 
+    def __neg__(self):
+        return Arithmetic(Value(0), '-', self)
+
     def __mod__(self, other):
         """The remainder of integer division; it keeps the sign of the left side."""
         return Arithmetic(self, '%', expression(other))
@@ -81,8 +84,7 @@ class Arithmetic(Expression):
 
 
 # The functions a statement may call. A dialect writes each in its own SQL.
-FUNCTIONS = {'count', 'count_distinct', 'sum', 'min', 'max', 'coalesce', 'nullif', 'lower', 'upper', 'trim', 'length', 'substr',
-             'replace', 'abs', 'row_number'}
+FUNCTIONS = {'count', 'count_distinct', 'sum', 'min', 'max', 'coalesce', 'nullif', 'lower', 'length', 'substr', 'row_number'}
 
 
 @dataclass(frozen=True, eq=False)
@@ -607,27 +609,9 @@ def lower(column):
     return _function('lower', column)
 
 
-def upper(column):
-    return _function('upper', column)
-
-
-def trim(column):
-    """The text without spaces at either end."""
-    return _function('trim', column)
-
-
 def substr(column, start, size):
     """size characters of the text from position start (1 is the first): qb.substr('token', 1, 16)."""
     return Function('substr', (expression(column, column=True), expression(start), expression(size)))
-
-
-def replace_text(column, old, new):
-    """The text with every old replaced by new."""
-    return Function('replace', (expression(column, column=True), expression(old), expression(new)))
-
-
-def abs(column):  # noqa: A001 - read as qb.abs
-    return _function('abs', column)
 
 
 def length(column):

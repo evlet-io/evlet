@@ -393,6 +393,8 @@ def test_text_matching_and_case(people):
     assert names(connection, person.where(qb.contains_ci('given', 'D'))) == ['dana']
     assert names(connection, person.where(qb.excludes_ci('tags', 'A'))) == ['Bilal', 'Chen', 'dana']
     assert names(connection, person.where(qb.starts_with('given', 'Ch'))) == ['Chen']
+    assert names(connection, person.where(qb.starts_with('given', 'ch'))) == []
+    assert names(connection, person.where(qb.starts_with('given', '_'))) == []
     assert names(connection, person.where(qb.contains('given', "%_'"))) == []
 
 
@@ -401,6 +403,9 @@ def test_joins_subqueries_and_exists(people):
     joined = (qb.select(qb.table('adapter_person', 'p'), 'p.given', 't.label')
               .join(qb.table('adapter_team', 't'), qb.eq('t.id', qb.col('p.team')), left=True).order_by('p.id'))
     assert [tuple(row) for row in connection.run(joined)] == [('Aisha', 'North'), ('Bilal', 'North'), ('Chen', 'South'), ('dana', None)]
+    inner = (qb.select(qb.table('adapter_person', 'p'), 'p.given', 't.label')
+             .join(qb.table('adapter_team', 't'), qb.eq('t.id', qb.col('p.team'))).order_by('p.id'))
+    assert [tuple(row) for row in connection.run(inner)] == [('Aisha', 'North'), ('Bilal', 'North'), ('Chen', 'South')]
     led = qb.select('adapter_team', 'id').where(qb.not_null('lead'))
     assert names(connection, qb.select('adapter_person', 'given').where(qb.in_('team', led))) == ['Chen']
     members = qb.select(qb.table('adapter_person', 'p'), 'p.id').where(qb.eq('p.team', qb.col('t.id')))
@@ -459,9 +464,8 @@ def test_distinct_having_searched_case_division_and_text_functions(people):
     assert names(connection, qb.select('adapter_person', 'given').where(qb.ends_with('given', 'en')).order_by('id')) == ['Chen']
     assert names(connection, qb.select('adapter_person', 'given').where(qb.ends_with('given', 'EN'))) == []
     assert names(connection, qb.select('adapter_person', 'given').where(qb.ends_with('given', 'xxAisha'))) == []
-    shown = connection.run(qb.select('adapter_person', qb.upper('given'), qb.substr('given', 1, 2), qb.trim(qb.value('  x ')),
-                                      qb.replace_text('given', 'a', 'o'), qb.abs(qb.value(-3))).where(given='dana')).one()
-    assert tuple(shown) == ('DANA', 'da', 'x', 'dono', 3)
+    shown = connection.run(qb.select('adapter_person', qb.substr('given', 1, 2), -qb.col('age')).where(given='dana')).one()
+    assert tuple(shown) == ('da', -22)
     # A column default and a cascading reference in a framework table.
     connection.ensure_table(TableDefinition('evlet_adapter_parent', (Column('label', 'TEXT', required=True, default='none'),), numbered=True))
     connection.ensure_table(TableDefinition('evlet_adapter_child', (
@@ -471,8 +475,13 @@ def test_distinct_having_searched_case_division_and_text_functions(people):
     connection.run(qb.insert('evlet_adapter_child', parent=parent))
     assert connection.run(qb.select('evlet_adapter_parent', 'label')).value() == 'none'
     assert connection.run(qb.select('evlet_adapter_child', 'state')).value() == 1
+    connection.ensure_table(TableDefinition('evlet_adapter_note', (
+        Column('parent', 'INTEGER', references='evlet_adapter_parent', on_delete='set null'),), numbered=True))
+    connection.run(qb.insert('evlet_adapter_note', parent=parent))
     connection.run(qb.delete('evlet_adapter_parent').where(id=parent))
     assert connection.run(qb.select('evlet_adapter_child', qb.count())).value() == 0
+    assert connection.run(qb.select('evlet_adapter_note', 'parent')).all()[0][0] is None
+    connection.drop_table('evlet_adapter_note')
     # Rebuilding a framework table: copy, drop, rename.
     connection.run(qb.insert('evlet_adapter_parent', label='kept'))
     connection.ensure_table(TableDefinition('evlet_adapter_parent_new', (Column('label', 'TEXT', required=True),), numbered=True))
@@ -509,6 +518,9 @@ def test_writes_report_their_rows_and_upserts_take_one_path(people):
     connection.run(copied)
     assert dict(connection.run(qb.select('evlet_adapter_counter', 'key', 'value')).all()) == {'k': 3, 'x': 5, 'Chen': 45}
     assert connection.run(qb.insert('adapter_team', label='Default').returning_id()).id > 0
+    # A conflict on any unique key is skipped when no columns are named.
+    assert connection.run(qb.insert('evlet_adapter_counter', key='k', value=9).on_conflict().do_nothing()).rowcount == 0
+    assert connection.run(qb.select('evlet_adapter_counter', 'value').where(key='k')).value() == 3
 
 
 def test_framework_table_definitions_hold_their_rules(connection):
