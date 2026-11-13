@@ -971,7 +971,12 @@ class Controls:
             if 'active' in values and values['active'] != bool(row['active']):
                 details.append('Activated' if values['active'] else 'Deactivated')
             if 'password' in values:
-                details.append('Password set')
+                # Admins may set anyone's password. A non-admin Controls role may set a non-admin's, which lets
+                # it sign in as them, so the entry says plainly who did it and with which role.
+                if actor.role != 'admin' and actor.id != row['id']:
+                    details.append(f"Password set by {actor.username} (role {actor.role}), who is not an admin")
+                else:
+                    details.append('Password set')
             if 'sessions' in body:
                 details.append('Signed out everywhere')
             if revoke:
