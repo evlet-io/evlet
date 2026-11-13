@@ -98,6 +98,9 @@ export interface LinkSource {
   remember?(model: string, id: string, title: string): void;
   /** A record's readable fields, as a cell that fills in once it is read (null until then, or when it can't be read). */
   record?(model: string, id: string): Readable<RecordData | null>;
+  /** Where a linked record opens (its record page), or null when this person can't open it. Absent: Link
+   * values don't open their record. Display only: the record's route still checks every permission. */
+  href?(model: string, id: string): string | null;
   /** Forget everything read so far (on sign-out). */
   clear?(): void;
 }
@@ -112,7 +115,9 @@ type LinkApi = ApiClient & { reading?(model: string, id: string): Promise<{ data
  * field reads its linked currency from it).
  * Titles are kept for the signed-in session and forgotten when it ends.
  */
-export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
+export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
+  /** The record page's URL (the app's router); href() answers it only for models this role's schema has. */
+  recordHref?: (model: string, id: string) => string } = {}): LinkSource {
   let titles = new Map<string, Cell<string | null>>();
   let wanted = new Map<string, Set<string>>();
   let records = new Map<string, Cell<RecordData | null>>();
@@ -177,6 +182,8 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex): LinkSource {
     },
     remember,
     clear,
+    // A model the role cannot read is not in its schema; a child table's rows have no page of their own.
+    href: options.recordHref ? (model, id) => schema.has(model) && !schema.model(model).child_only ? options.recordHref!(model, id) : null : undefined,
     record(model, id) {
       const key = `${model}:${id}`;
       let record = records.get(key);
@@ -275,7 +282,9 @@ export function currencyCodeIn(meta: FieldSchema, value: (name: string) => unkno
 /** A field's value as it reads at rest: pills for states, chips for tags, record titles for links. */
 export function displayValue(field: FieldLike, options: { links?: LinkSource | null; empty?: string;
   /** Rich text links read as text (inside a button that starts editing). */
-  plainLinks?: boolean } = {}): Node {
+  plainLinks?: boolean;
+  /** A Link value is a link to the linked record, when the LinkSource says this person can open it (read-only views). */
+  open?: boolean } = {}): Node {
   const meta = field.meta, kind = kindOf(meta.type);
   const blank = () => html`<span class="muted">${options.empty ?? 'Not set'}</span>`;
   const value = () => field.value.get();
@@ -300,7 +309,12 @@ export function displayValue(field: FieldLike, options: { links?: LinkSource | n
           const id = String(value());
           return links && meta.target ? links.title(meta.target, id).get() ?? '' : `#${id}`;
         });
-        return html`<span class="cell-flex">${RecordMark({ name: () => title.get() || '?' })}<span class="tx">${() => title.get() || 'Loading'}</span></span>`;
+        const shown = () => [RecordMark({ name: () => title.get() || '?' }), html`<span class="tx">${() => title.get() || 'Loading'}</span>`];
+        const href = options.open ? linkHref(meta, value, links) : null;
+        if (!href) return html`<span class="cell-flex">${shown()}</span>`;
+        // An ordinary link: the router opens it in the page, Cmd or Ctrl click and a middle click open a tab.
+        return when(() => href.get() !== null, () => html`<a class="cell-flex link-to" href=${() => href.get()}>${shown()}</a>`,
+          () => html`<span class="cell-flex">${shown()}</span>`);
       }, blank);
   }
   if (meta.type === 'currency') {
@@ -312,6 +326,13 @@ export function displayValue(field: FieldLike, options: { links?: LinkSource | n
   // A unit declared with suffix= reads after the number at rest too: 5.00%, 8 hours.
   const unit = (meta.type === 'integer' || meta.type === 'decimal') && meta.suffix ? (meta.suffix === '%' ? '%' : ` ${meta.suffix}`) : '';
   return when(() => !isEmpty(value()), () => html`<span class=${numeric ? 'tx num' : 'tx'}>${() => kind.format(value(), meta) + unit}</span>`, blank);
+}
+
+// Where a Link's value opens: null without a value, or when the LinkSource says this person can't open the target.
+function linkHref(meta: FieldSchema, value: () => unknown, links: LinkSource | null): Readable<string | null> | null {
+  if (!meta.target || !links?.href) return null;
+  const target = meta.target, href = links.href.bind(links);
+  return derive(() => { const id = value(); return isEmpty(id) ? null : href(target, String(id)); });
 }
 
 // ---------- hints ----------
@@ -360,6 +381,8 @@ export interface ControlOptions {
   onPicked?: () => void;
   links?: LinkSource | null;
   label?: string;
+  /** A Link shows a way to open the linked record (default true): a link when read only, an arrow on hover when editable. */
+  goto?: boolean;
 }
 
 export interface Control {
@@ -411,7 +434,7 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
 
   if (field.calculated || kind.control === 'readonly') {
     const element = html`<div class="fval ro" id=${id} role="textbox" aria-readonly="true" aria-label=${options.label ?? meta.label}
-      aria-describedby=${options.describedBy ?? null} tabindex="-1">${displayValue(field, { links: options.links, empty: field.calculated ? 'Not calculated yet' : undefined })}${meta.type === 'state'
+      aria-describedby=${options.describedBy ?? null} tabindex="-1">${displayValue(field, { links: options.links, open: options.goto !== false, empty: field.calculated ? 'Not calculated yet' : undefined })}${meta.type === 'state'
         ? html`<span class="muted" style="font-size:12px;margin-left:6px">changes through moves</span>` : null}</div>` as HTMLElement;
     return { element, commit: () => true, focus: () => element.focus() };
   }
@@ -615,8 +638,31 @@ function LinkControl(field: FieldLike, id: string, options: ControlOptions): Con
       event.preventDefault(); event.stopPropagation(); open(event.key);
     }
   });
-  return { element: button, commit: () => true, focus: () => button.focus(), type: text => { if (field.editable.peek()) open(text); },
+  const control: Control = { element: button, commit: () => true, focus: () => button.focus(), type: text => { if (field.editable.peek()) open(text); },
     open: () => { if (field.editable.peek()) open(); } };
+  const go = options.goto === false ? null : LinkGo(field, links);
+  if (!go) return control;
+  // Read only with a value it can open: the value is a link. Editable: hovering shows the arrow over the record's mark.
+  const reading = () => html`<div class="in-link input ro" id=${id} role="group" aria-label=${options.label ?? null}
+    aria-describedby=${options.describedBy ?? null}>${displayValue(field, { links, open: true })}</div>`;
+  control.element = html`<div class="in-link-box">${when(() => go.href.get() !== null && !field.editable.get(), reading,
+    () => [button, go.arrow()])}</div>` as HTMLElement;
+  return control;
+}
+
+/**
+ * The ↗ arrow that opens a Link's record. It sits after the field's edit button in an `.in-link-box`, over the
+ * record's mark, and shows (nudged up and right, with an Open hint) while the box is hovered or the arrow focused.
+ * Null when the LinkSource gives no record pages; the arrow is left out while there is no value or the person
+ * can't open the target model. The record's route still checks every permission.
+ */
+export function LinkGo(field: FieldLike, links: LinkSource | null = defaultLinks): { href: Readable<string | null>; arrow: () => Node } | null {
+  const meta = field.meta, href = linkHref(meta, () => field.value.get(), links);
+  if (!href) return null;
+  const title = () => { const value = field.value.get(); return isEmpty(value) ? '' : links!.title(meta.target!, String(value)).get() ?? ''; };
+  const hint = () => `Open ${title() || meta.label.toLowerCase()}`;
+  return { href, arrow: () => when(() => href.get() !== null, () => html`<a class="link-go" href=${() => href.get()} aria-label=${hint}>${Icon('arrow-up-right', { size: 'sm' })}<span
+    class="link-go-hint" aria-hidden="true">${hint}</span></a>`) };
 }
 
 function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option: LinkOption | null) => void, typed = ''): Node {
@@ -821,7 +867,7 @@ function withTip(control: HTMLElement, text: string, label: string): HTMLElement
   // A unit box or picker: the icon is one more part of the box, right after the input.
   if (control.classList.contains('in-affix')) { control.querySelector('input')!.after(tip); return control; }
   const kind = control.tagName === 'INPUT' ? 'tip-in' : control.tagName === 'TEXTAREA' ? 'tip-area'
-    : control.classList.contains('in-select') || control.classList.contains('in-link') ? 'tip-chev' : 'tip-end';
+    : control.classList.contains('in-select') || control.classList.contains('in-link') || control.classList.contains('in-link-box') ? 'tip-chev' : 'tip-end';
   return html`<div class=${`fld-ctl ${kind}`}>${control}${tip}</div>` as HTMLElement;
 }
 

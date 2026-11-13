@@ -9,7 +9,7 @@ import { Button, Icon } from './base';
 import { uid } from './core';
 import { phrase, labeller } from './explain';
 import { flowGrid, FoldSection, type Flow, type Folds, type FoldStart } from './fold';
-import { displayValue, FieldControl, FieldHints, recordOf, siblingsOf, type Control, type FieldLike, type LinkSource } from './fields';
+import { displayValue, FieldControl, FieldHints, LinkGo, recordOf, siblingsOf, type Control, type FieldLike, type LinkSource } from './fields';
 import { kindOf } from './kinds';
 import { toast } from './layers';
 import { tooltip } from './tooltip';
@@ -66,8 +66,9 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
   let before: unknown = null, control: Control | null = null, finishing = false;
 
   // Rich text at rest inside the edit button shows its links as text (a link inside a button can't be used).
+  // Read only, a Link value opens its record (inside the edit button it can't: the pencil edits it).
   const rest = (editable = false) => html`<span class="tx-wrap">${props.display ? props.display(field)
-    : displayValue(field, { links: props.links, plainLinks: editable })}</span>`;
+    : displayValue(field, { links: props.links, plainLinks: editable, open: !editable })}</span>`;
   // A click, or Enter or Space on the value, edits it and opens its picker (Tab only focuses the value).
   const start = () => {
     if (!untrack(() => field.editable.get())) return;
@@ -185,7 +186,9 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
       // Tab skips a value that can't change; a click still focuses it (and shows why) and screen readers read it.
       const readOnly = html`<div class="fval ro" tabindex="-1" aria-labelledby=${props.labelledBy ?? null}>${rest()}</div>` as HTMLElement;
       tooltip(readOnly, () => lockReason(field));
-      return when(field.editable, () => at, () => readOnly);
+      // A Link the person can open: hovering the value shows the arrow that opens its record, beside the edit button.
+      const go = props.display ? null : LinkGo(field, props.links ?? undefined);
+      return when(field.editable, () => go ? html`<div class="in-link-box iv-go">${at}${go.arrow()}</div>` : at, () => readOnly);
     })}</div>` as HTMLElement;
   return wrapper;
 }
