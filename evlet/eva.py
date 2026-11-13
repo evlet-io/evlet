@@ -31,7 +31,7 @@ from xml.etree import ElementTree
 
 from .auth import AccessError, KeyAccess, User
 from .identity import checked as record_id, text as text_id
-from .connector import ConnectorError
+from .connector import ConnectorError, NoRedirect
 from .models import ValidationError, checked_body
 from .permissions import calling
 from .tools import ApprovalNeeded, NAMES, Tool, label, redacted
@@ -104,7 +104,8 @@ class OpenAI:
 
     def __init__(self, base_url, api_key, timeout=90):
         self.base_url, self.api_key, self.timeout = base_url.rstrip('/'), api_key, timeout
-        self.opener = build_opener(ProxyHandler({}))
+        # A redirect is answered as an error, never followed: following it would send the key to another address.
+        self.opener = build_opener(ProxyHandler({}), NoRedirect())
 
     def stream(self, request):
         """Yield ('text', str), ('tool_call', {id, name, arguments}) and ('usage', dict) for one model request."""
@@ -121,6 +122,8 @@ class OpenAI:
                 detail = json.loads(exc.read(65536)).get('error', {}).get('message', '')
             except (ValueError, OSError, AttributeError):
                 detail = ''
+            if 300 <= exc.code < 400:
+                raise ProviderError(f'The AI provider answered with a redirect ({exc.code}). Check the API address.') from None
             raise ProviderError(f'The AI provider answered {exc.code}' + (f': {detail[:300]}' if detail else '.'), retry=exc.code in (408, 409, 429, 500, 502, 503, 504)) from None
         except (URLError, OSError, TimeoutError):
             raise ProviderError("The AI provider can't be reached right now.", retry=True) from None
@@ -174,9 +177,11 @@ def provider_test(values):
         raise ConnectionFailed('Use an https address, or http only on this machine.')
     request = Request(url + '/models', headers={'Authorization': 'Bearer ' + (values.get('api_key') or '')})
     try:
-        with build_opener(ProxyHandler({})).open(request, timeout=10) as response:
+        with build_opener(ProxyHandler({}), NoRedirect()).open(request, timeout=10) as response:
             response.read(1024)
     except HTTPError as exc:
+        if 300 <= exc.code < 400:
+            raise ConnectionFailed(f'The provider answered with a redirect ({exc.code}). Check the API address.') from None
         raise ConnectionFailed('The key was refused.' if exc.code in (401, 403) else f'The provider answered {exc.code}.') from None
     except (URLError, OSError, TimeoutError):
         raise ConnectionFailed("The provider can't be reached from this server.") from None

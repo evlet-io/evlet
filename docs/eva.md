@@ -35,7 +35,8 @@ The Playground turns Eva on when `EVLET_EVA_MODEL` names an OpenAI model.
 `AI(...)` takes `provider='openai'` (the default) or an object with `stream(request)` (tests use
 a scripted one), `base_url` (an https address, http only on this machine) and
 `max_output_tokens` (256 to 64,000, default 4,000). The OpenAI adapter uses the standard
-library (`urllib`) and Chat Completions with streaming. It adds no dependency.
+library (`urllib`) and Chat Completions with streaming. It adds no dependency. It never follows
+a redirect: a 3xx answer is a provider error, so the API key is only ever sent to `base_url`.
 
 ## What people see
 
