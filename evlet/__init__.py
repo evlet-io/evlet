@@ -54,10 +54,6 @@ from .eva import AI
 
 __all__ += ["AI", "ConnectorError", "HTTPClient", "MCPServer"]
 
-from .postgres import PostgreSQLDatabase
-
-__all__ += ["PostgreSQLDatabase"]
-
 from .ui.application import App
 from .ui.metadata import Html, Main, Section
 

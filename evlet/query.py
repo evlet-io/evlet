@@ -5,6 +5,7 @@ from typing import NamedTuple
 
 from .fields import Integer, Link, LongText, Reference, RichText, Tags, Text
 from .identity import RecordId, path_id
+from . import qb
 from .models import ValidationError, identifier
 
 OPERATORS = {'eq', 'ne', 'gt', 'gte', 'lt', 'lte', 'between', 'in', 'nin', 'isnull',
@@ -14,8 +15,8 @@ MAX_CONDITIONS = 50
 # Most values one `in` or `nin` condition takes from HTTP, Eva, tools and permission-aware Context.
 MAX_IN_VALUES = 100
 # Most `in` and `nin` values one trusted session query takes in all (tx.list, tx.count, tx.aggregate).
-# Each value is one bound parameter, so this stays below SQLite's 32,766 and PostgreSQL's 65,535
-# parameters per statement with room for the query's other values.
+# Each value is one bound parameter, so this stays below SQLite's 32,766 parameters per statement (and the
+# 65,535 of common server databases) with room for the query's other values.
 TRUSTED_IN_VALUES = 30_000
 MATCHES = ('any', 'none')
 _TEXT = ('eq', 'ne', 'in', 'nin', 'contains', 'icontains', 'nicontains', 'startswith', 'isnull')
@@ -137,7 +138,8 @@ def conditions(filters):
 
 
 class SqlQuery:
-    """Compiles filters, search and ordering into parameterized SQL (not the `evlet.Query` field source).
+    """Turns filters, search and ordering into query builder conditions and orders (evlet/qb.py), for the
+    records of one model under the alias "record". Not the `evlet.Query` field source.
 
     children: ChildTables (beyond the registry's Table declarations) that child groups may name.
     trusted: the query comes from trusted Python code in a Session (tx.list, tx.count, tx.aggregate), so
@@ -154,6 +156,8 @@ class SqlQuery:
         registry.name_for(model)
 
     def reference(self, path, model=None, alias='record'):
+        """(expression, field) for a field path; a Reference gives its two columns as a tuple. A Link path
+        reads the target's field with a subquery, at most three hops."""
         model = self.model if model is None else model
         parts = path.split('__')
         if not 1 <= len(parts) <= 4:
@@ -162,16 +166,17 @@ class SqlQuery:
         field = ID_FIELD if name == 'id' else model.__fields__.get(name)
         if field is None:
             raise ValueError(f'Unknown field: {name}')
+        identifier(name)
         if isinstance(field, Reference):
             if len(parts) > 1:
                 raise ValueError(f'{name} is a Reference; filter it by value instead of following it')
             # A reference has two columns: the model name and the record ID.
-            return tuple(f'{identifier(alias)}.{identifier(column)}' for column, _ in field.columns(name)), field
+            return tuple(qb.col(f'{alias}.{column}') for column, _ in field.columns(name)), field
         if isinstance(field, RichText):
             if len(parts) > 1:
                 raise ValueError(f'{name} is rich text, not a Link')
-            return f'{identifier(alias)}.{identifier(name + "_text")}', RICH_TEXT_COLUMN
-        column = f'{identifier(alias)}.{identifier(name)}'
+            return qb.col(f'{alias}.{name}_text'), RICH_TEXT_COLUMN
+        column = qb.col(f'{alias}.{name}')
         if len(parts) == 1:
             return column, field
         if not isinstance(field, Link):
@@ -179,9 +184,8 @@ class SqlQuery:
         self.alias += 1
         target_alias = f'link{self.alias}'
         target_column, target_field = self.reference('__'.join(parts[1:]), field.target, target_alias)
-        table = identifier(self.registry.name_for(field.target))
-        sql = f'(SELECT {target_column} FROM {table} AS {identifier(target_alias)} WHERE {identifier(target_alias)}."id" = {column})'
-        return sql, target_field
+        table = qb.table(self.registry.name_for(field.target), target_alias)
+        return qb.select(table, target_column).where(qb.eq(f'{target_alias}.id', column)), target_field
 
     @staticmethod
     def loose(field):
@@ -201,13 +205,14 @@ class SqlQuery:
         return field.to_storage(field.clean(value))
 
     def where(self, filters, search="", *, search_fields=None):
-        clauses, values = [], []
+        """One condition (qb.TRUE when there is nothing to check) for the filters and the search text."""
+        clauses = []
         for item in conditions(filters):
             try:
                 if isinstance(item, ChildGroup):
-                    clauses.append(self.child_clause(item, values))
+                    clauses.append(self.child_clause(item))
                 else:
-                    clauses.append(self.condition(item, values))
+                    clauses.append(self.condition(item))
             except (ValueError, TypeError, UnicodeError) as exc:
                 raise ValidationError({item.label: str(exc)}) from exc
         try:
@@ -222,18 +227,16 @@ class SqlQuery:
                 matches = []
                 searched_id = path_id(search.removeprefix('#'))
                 if searched_id is not None:
-                    matches.append('"record"."id" = ?')
-                    values.append(searched_id)
+                    matches.append(qb.eq('record.id', searched_id))
                 for name in (view_for(self.model)['search_fields'] if search_fields is None else search_fields):
                     column, _ = self.reference(name)
-                    matches.append(f'instr(lower({column}), lower(?)) > 0')
-                    values.append(search)
-                clauses.append('(' + (' OR '.join(matches) or '1=0') + ')')
+                    matches.append(qb.contains_ci(column, search))
+                clauses.append(qb.or_(*matches))
         except (ValueError, UnicodeError) as exc:
             raise ValidationError({'q': str(exc)}) from exc
-        return (' WHERE ' + ' AND '.join(clauses)) if clauses else '', values
+        return qb.and_(*clauses)
 
-    def child_clause(self, group, values):
+    def child_clause(self, group):
         """EXISTS (any row) or NOT EXISTS (no row) over the child table, correlated on its parent Link:
         one row must meet every condition, and parent rows are never repeated."""
         child = self.children.get((self.model, group.child))
@@ -241,16 +244,16 @@ class SqlQuery:
             raise ValueError(f'Unknown child table: {group.child}')
         self.alias += 1
         alias = f'child{self.alias}'
-        clauses = [f'{identifier(alias)}.{identifier(child.link)} = "record"."id"']
+        clauses = [qb.eq(f'{alias}.{child.link}', qb.col('record.id'))]
         for item in group.where:
             try:
-                clauses.append(self.condition(item, values, child.model, alias))
+                clauses.append(self.condition(item, child.model, alias))
             except (ValueError, TypeError, UnicodeError) as exc:
                 raise ValidationError({item.label: str(exc)}) from exc
-        table = identifier(self.registry.name_for(child.model))
-        return f'{"NOT " if group.match == "none" else ""}EXISTS (SELECT 1 FROM {table} AS {identifier(alias)} WHERE {" AND ".join(clauses)})'
+        rows = qb.select(qb.table(self.registry.name_for(child.model), alias), qb.col(f'{alias}.id')).where(*clauses)
+        return qb.not_exists(rows) if group.match == 'none' else qb.exists(rows)
 
-    def condition(self, item, values, model=None, alias='record'):
+    def condition(self, item, model=None, alias='record'):
         model = self.model if model is None else model
         path, operator, value = item.path, item.operator, item.value
         if operator not in OPERATORS:
@@ -259,17 +262,16 @@ class SqlQuery:
         if operator not in KIND_OPERATORS.get(field.kind, ()):
             raise ValueError(f'{field.kind.title()} fields do not take {operator}')
         if isinstance(column, tuple):
-            return self.reference_filter(column, field, operator, value, values)
+            return self.reference_filter(column, field, operator, value)
         if operator == 'contains' and isinstance(field, Tags):
             # Tags are a JSON array of quoted tags without quotes inside, so a quoted tag matches one whole tag.
-            values.append(Tags.encode(Tags.tag(value)))
-            return f'instr({column}, ?) > 0'
+            return qb.contains(column, Tags.encode(Tags.tag(value)))
         if operator == 'isnull':
             if type(value) is not bool:
                 raise ValueError('isnull expects true or false')
-            return f'{column} IS {"" if value else "NOT "}NULL'
+            return qb.is_null(column) if value else qb.not_null(column)
         if value is None and operator in ('eq', 'ne'):
-            return f'{column} IS {"" if operator == "eq" else "NOT "}NULL'
+            return qb.is_null(column) if operator == 'eq' else qb.not_null(column)
         if operator in ('in', 'nin'):
             if not isinstance(value, (list, tuple)) or not self.trusted and len(value) > MAX_IN_VALUES:
                 raise ValueError(f'{operator} expects at most {MAX_IN_VALUES} values')
@@ -280,57 +282,51 @@ class SqlQuery:
             if any(item is None for item in value):
                 raise ValueError('Use isnull to query null values')
             loose = self.loose(field)
-            values.extend(loose.to_storage(loose.clean(item)) for item in value)
+            stored = [loose.to_storage(loose.clean(item)) for item in value]
             if operator == 'in':
-                return f'{column} IN ({", ".join("?" for _ in value)})' if value else '1=0'
+                return qb.in_(column, stored)
             # Not in also matches empty values, as "is not one of these" reads.
-            return f'({column} IS NULL OR {column} NOT IN ({", ".join("?" for _ in value)}))' if value else '1=1'
+            return qb.or_(qb.is_null(column), qb.not_in(column, stored)) if stored else qb.TRUE
         if operator == 'between':
             if not isinstance(value, (list, tuple)) or len(value) != 2 or None in value:
                 raise ValueError('between expects [first, last]')
-            values.extend(self.value(field, item) for item in value)
-            return f'{column} BETWEEN ? AND ?'
+            return qb.between(column, self.value(field, value[0]), self.value(field, value[1]))
         if operator in ('contains', 'icontains', 'nicontains', 'startswith'):
             if not isinstance(field, Text) or not isinstance(value, str):
                 raise ValueError('Text matching requires a text field and string')
             value.encode('utf-8')
             if '\x00' in value:
                 raise ValueError('Text matching must not contain NUL characters')
-            if operator == 'startswith':
-                values.extend([value, value])
-                return f'substr({column}, 1, length(?)) = ?'
-            values.append(value)
-            if operator == 'nicontains':
-                return f'({column} IS NULL OR instr(lower({column}), lower(?)) = 0)'
-            return f'instr({column}, ?) > 0' if operator == 'contains' else f'instr(lower({column}), lower(?)) > 0'
+            match = {'contains': qb.contains, 'icontains': qb.contains_ci, 'nicontains': qb.excludes_ci,
+                     'startswith': qb.starts_with}[operator]
+            return match(column, value)
         if value is None:
             raise ValueError('Use isnull to query null values')
-        symbol = {'eq': '=', 'ne': '!=', 'gt': '>', 'gte': '>=', 'lt': '<', 'lte': '<='}[operator]
-        values.append(self.value(field, value))
-        return f'{column} {symbol} ?'
+        compare = {'eq': qb.eq, 'ne': qb.ne, 'gt': qb.gt, 'gte': qb.ge, 'lt': qb.lt, 'lte': qb.le}[operator]
+        return compare(column, self.value(field, value))
 
     @staticmethod
-    def reference_filter(columns, field, operator, value, values):
+    def reference_filter(columns, field, operator, value):
         model_column, id_column = columns
         if operator == 'isnull' or operator in ('eq', 'ne') and value is None:
             if operator == 'isnull' and type(value) is not bool:
                 raise ValueError('isnull expects true or false')
             empty = value if operator == 'isnull' else operator == 'eq'
-            return f'{id_column} IS {"" if empty else "NOT "}NULL'
+            return qb.is_null(id_column) if empty else qb.not_null(id_column)
         if operator != 'eq':
             raise ValueError('Reference fields support equality and isnull filters')
         target, record_id = field.validate(value)
-        values.extend([target, record_id])
-        return f'({model_column} = ? AND {id_column} = ?)'
+        return qb.and_(qb.eq(model_column, target), qb.eq(id_column, record_id))
 
     def ordering(self, order_by):
+        """The qb orders for order_by: empty values first going up and last going down, then by id."""
         if order_by is None:
             order_by = ('-id',)
         if isinstance(order_by, str):
             order_by = (order_by,)
         if not isinstance(order_by, (tuple, list)) or not 1 <= len(order_by) <= 4:
             raise ValidationError({'order_by': 'Use between one and four field names'})
-        clauses = []
+        orders = []
         try:
             for key in order_by:
                 if not isinstance(key, str):
@@ -339,12 +335,43 @@ class SqlQuery:
                 column, _ = self.reference(key[1:] if descending else key)
                 if isinstance(column, tuple):
                     raise ValueError('Reference fields cannot be used for ordering')
-                clauses.append(column + (' DESC NULLS LAST' if descending else ' ASC NULLS FIRST'))
+                orders.append(qb.desc(column, nulls='last') if descending else qb.asc(column, nulls='first'))
             if not any(key.lstrip('-') == 'id' for key in order_by):
-                clauses.append('"record"."id" ASC')
+                orders.append(qb.asc('record.id'))
         except ValueError as exc:
             raise ValidationError({'order_by': str(exc)}) from exc
-        return ' ORDER BY ' + ', '.join(clauses)
+        return tuple(orders)
+
+    # Temporary bridge for modules not yet moved onto the query builder (docs/database-adapters.md): the same
+    # conditions and orders as SQLite text. Removed once the last of them builds statements with qb.
+
+    def where_sql(self, filters, search="", *, search_fields=None):
+        """(" WHERE ...", values), or ("", []) when there is nothing to check."""
+        from .sqlite import compile_condition
+        condition = self.where(filters, search, search_fields=search_fields)
+        if qb.always(condition):
+            return '', []
+        sql, values = compile_condition(condition)
+        return ' WHERE ' + sql, values
+
+    def reference_sql(self, path):
+        """The SQL of one field path's column (not a Reference)."""
+        from .sqlite import Compiler
+        column, _ = self.reference(path)
+        compiler = Compiler()
+        text = compiler.expression(column)
+        if compiler.values or isinstance(column, tuple):
+            raise ValueError(f'{path} is not a single column')
+        return text
+
+    def ordering_sql(self, order_by):
+        """" ORDER BY ..." for order_by."""
+        from .sqlite import Compiler
+        compiler = Compiler()
+        text = ', '.join(compiler.order(item) for item in self.ordering(order_by))
+        if compiler.values:
+            raise ValueError('An ordering takes no values')
+        return ' ORDER BY ' + text
 
 
 # Earlier name, kept so existing imports of evlet.query.Query keep working.

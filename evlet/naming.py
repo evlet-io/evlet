@@ -9,6 +9,7 @@ Row tables (Table children) have neither.
 """
 
 import re
+from . import qb
 
 NAME_LENGTH = 140
 TITLE_LENGTH = 255
@@ -163,48 +164,38 @@ def check_name(connection, table, model, value, record_id=None):
         raise ValidationError({'name': 'Use a name'})
     if len(value) > NAME_LENGTH:
         raise ValidationError({'name': f'Use at most {NAME_LENGTH} characters'})
-    found = connection.execute(f'SELECT id FROM {identifier(table)} WHERE "name" = ?', (value,)).fetchone()
+    found = connection.run(qb.select(table, 'id').where(name=value)).one()
     if found is not None and found[0] != record_id:
         raise ValidationError({'name': 'This name is already taken'})
 
 
-def add_columns(connection, postgres, table, model):
+def add_columns(connection, table, model):
     """Add the standard columns a record table lacks, with the unique index over names. Idempotent."""
-    from .models import identifier
+    from .adapter import Column
     framework = [key for key, field in model.__app_stored__.items() if standard(field)]
     if not framework:
         return
-    if postgres:
-        present = {row[0] for row in connection.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=?", (table,))}
-    else:
-        present = {row[1] for row in connection.execute(f'PRAGMA table_info({identifier(table)})')}
+    present = set(connection.columns(table))
     for key in framework:
         if key not in present:
-            connection.execute(f'ALTER TABLE {identifier(table)} ADD COLUMN {identifier(key)} TEXT')
+            connection.add_column(table, Column(key, 'TEXT'))
     if 'name' in framework and 'name' not in present:
-        if postgres:
-            connection.execute(f'CREATE UNIQUE INDEX {identifier(f"evlet_{table}_name_unique")} ON {identifier(table)} ("name")')
-        else:
-            from .migrations import _index
-            _index(connection, table, 'name', unique=True)
+        from .migrations import index
+        index(connection, table, 'name', unique=True)
 
 
 def fill_titles(connection, table, model):
     """Fill the standard title of records that have none, in batches."""
-    from .models import identifier
     if not has_title(model):
         return
     last = 0
     while True:
-        rows = connection.execute(f'SELECT * FROM {identifier(table)} WHERE "title" IS NULL AND "id" > ? ORDER BY "id" LIMIT 500',
-                                  (last,)).fetchall()
+        rows = connection.run(qb.select(table).where(qb.is_null('title'), qb.gt('id', last)).order_by('id').limit(500)).all()
         if not rows:
             return
         last = rows[-1]['id']
-        records = [model._from_row(row) for row in rows]
-        connection.executemany(f'UPDATE {identifier(table)} SET "title" = ? WHERE "id" = ?',
-                               [(title_of(model, record._values, record.id), record.id) for record in records])
+        for record in (model._from_row(row) for row in rows):
+            connection.run(qb.update(table, title=title_of(model, record._values, record.id)).where(id=record.id))
 
 
 def drop_echoes(model, values, current=None):

@@ -7,10 +7,8 @@ their Fields in the database's Layer (see fields.Layer); model classes from app 
 """
 
 from contextlib import contextmanager
-from datetime import datetime, timezone
 import json
 import re
-import sqlite3
 from threading import Lock
 import time
 from types import MappingProxyType
@@ -20,6 +18,7 @@ from .naming import form_hidden
 from .declarations import Ref
 from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Decimal, Integer, Layer, Link, LongText, Select,
                      State, Text, active_layer)
+from .adapter import DatabaseError
 from .database import ConflictError
 from .models import ValidationError, identifier
 from .ui.metadata import FLOWS, OPEN_IN, PANEL_BLOCKS, PANEL_KINDS, label_for, list_tabs_for, starts_valid, view_for
@@ -31,7 +30,6 @@ FIELD_NAME = re.compile(r'x_[a-z0-9_]{1,38}')
 FRAMEWORK_COLUMNS = ('id', 'created_by', 'created_at', 'modified_by', 'modified_at', 'tenant', 'revision')
 TYPES = ('Text', 'LongText', 'Integer', 'Decimal', 'Currency', 'Date', 'Boolean', 'Select', 'Link')
 PAGE_SIZES = (25, 50, 100)
-DROP_COLUMN = (3, 35, 0)
 REQUIRED_HIDDEN = "A required field can't be hidden. People couldn't fill it in."
 RETIRED = 'This option is no longer offered. Choose another one.'
 
@@ -39,10 +37,6 @@ RETIRED = 'This option is no longer offered. Choose another one.'
 def ensure_schema(connection):
     connection.execute('CREATE TABLE IF NOT EXISTS evlet_custom_fields (model TEXT NOT NULL, name TEXT NOT NULL, definition TEXT NOT NULL, '
                        'created_by TEXT, created_at INTEGER, PRIMARY KEY (model, name))')
-
-
-def sqlite_version(connection):
-    return connection.execute('SELECT sqlite_version()').fetchone()[0]
 
 
 # ---------- instance fields ----------
@@ -104,16 +98,8 @@ def activated(database, layer):
 
 
 def add_column(connection, table, name, field):
-    if isinstance(connection, sqlite3.Connection):
-        from .migrations import _column
-        connection.execute(f'ALTER TABLE {identifier(table)} ADD COLUMN {_column(name, field)[0]}')
-        return
-    from .models import storage_name
-    from .postgres_schema import column
-    connection.execute(f'ALTER TABLE {identifier(table)} ADD COLUMN {column(name, field)[0]}')
-    if isinstance(field, Link):
-        connection.execute(f'ALTER TABLE {identifier(table)} ADD FOREIGN KEY ({identifier(name)}) '
-                           f'REFERENCES {identifier(storage_name(field.target))}(id)')
+    from .migrations import field_columns
+    connection.add_column(table, field_columns(name, field)[0])
 
 
 # ---------- file values ----------
@@ -174,11 +160,7 @@ class Customization:
 
     def initialize(self, connection):
         ensure_schema(connection)
-        if isinstance(connection, sqlite3.Connection):
-            version = sqlite_version(connection)
-            if tuple(int(part) for part in version.split('.')[:3]) < DROP_COLUMN:
-                self.drop = (f'Removing a field needs SQLite 3.35 or later, and this server has {version}. '
-                             'Update SQLite to remove fields. Adding fields still works.')
+        self.drop = connection.cannot_drop_columns()
 
     def fields(self, model):
         """Fields of a model that Controls can change: everything but the engine's own."""
@@ -625,16 +607,8 @@ class Customization:
     # ---------- instance fields ----------
 
     def backup(self):
-        """A copy of a SQLite database next to it, in backups/. PostgreSQL is backed up by its operator."""
-        database = self.business.database
-        if getattr(database, 'path', None) is None or not hasattr(database, 'must_exist'):
-            return None
-        from .cli.install import snapshot
-        folder = database.path.parent / 'backups'
-        folder.mkdir(mode=0o700, exist_ok=True)
-        target = folder / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
-        snapshot(database.path, target)
-        return target.name
+        """A copy of the database (Database.backup), or None when its operator backs it up."""
+        return self.business.database.backup()
 
     def check_new(self, model, body):
         if not isinstance(body, dict) or set(body) - {'name', 'type', 'label', 'help_text', 'tooltip', 'required', 'default', 'options', 'target'}:
@@ -646,7 +620,7 @@ class Customization:
             errors['name'] = 'Use lowercase letters, digits and underscores, 40 characters at most with x_.'
         else:
             with self.business.database._connection() as connection:
-                taken = {column.lower() for column in self.business.database.columns(connection, self.registry.name_for(model))}
+                taken = {column.lower() for column in connection.columns(self.registry.name_for(model))}
             # Names compare ignoring case, and against every column, a Reference's <name>_model and <name>_id included.
             if name in taken | {key.lower() for key in model.__declared_fields__} | set(FRAMEWORK_COLUMNS):
                 errors['name'] = f'{model.__name__} already has a field called {name}.'
@@ -703,10 +677,10 @@ class Customization:
             backup = self.backup()
             try:
                 version = self.insert_field(actor, model, table, name, definition, field, backup)
-            except (sqlite3.Error, ConflictError):
+            except (DatabaseError, ConflictError):
                 # Another process added the same field first.
                 with self.business.database._connection() as connection:
-                    if name in self.business.database.columns(connection, table):
+                    if name in connection.columns(table):
                         raise taken from None
                 raise
         self.controls.refresh()
@@ -866,9 +840,7 @@ class Customization:
         return {'field': rules.field, 'items': rows}
 
     def counter_table(self, connection):
-        if isinstance(connection, sqlite3.Connection):
-            return connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_sequence'").fetchone() is not None
-        return connection.execute("SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_sequence'").fetchone() is not None
+        return connection.table_exists('evlet_sequence')
 
     @staticmethod
     def series_of(rules, prefix):

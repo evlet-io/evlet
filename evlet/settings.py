@@ -259,7 +259,7 @@ class Settings:
                 'realm TEXT NOT NULL, expires INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, secret BLOB)',
             ):
                 tx.connection.execute(statement)
-            if 'two_step_agent' not in self.database.columns(tx.connection, 'evlet_user_profile'):
+            if 'two_step_agent' not in tx.connection.columns('evlet_user_profile'):
                 tx.connection.execute("ALTER TABLE evlet_user_profile ADD COLUMN two_step_agent TEXT NOT NULL DEFAULT ''")
             # The Administrator's name never changes.
             row = tx.connection.execute("SELECT id FROM evlet_users WHERE username=? AND role='admin'", (ADMINISTRATOR,)).fetchone()
@@ -796,7 +796,7 @@ class Settings:
         raw = vault.open(self.key, profile['two_step_secret'], f'two_step:{user_id}')
         if re.fullmatch(r'[0-9]{6}', code):
             counter = check_totp(raw, code, profile['two_step_last'] if profile['two_step_last'] is not None else -1)
-            # Conditional, so two requests racing with the same code (on PostgreSQL, say) cannot both use it.
+            # Conditional, so two requests racing with the same code cannot both use it.
             if counter is not None and connection.execute('UPDATE evlet_user_profile SET two_step_last=? WHERE user_id=? AND (two_step_last IS NULL OR two_step_last<?)',
                                                           (counter, user_id, counter)).rowcount == 1:
                 return True

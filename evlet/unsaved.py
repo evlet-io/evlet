@@ -33,7 +33,7 @@ TOO_LARGE = ('These unsaved changes are larger than {kb} KB, so they are not kep
              'They stay in this tab until you save or close it.')
 
 
-def ensure(connection, postgres=False):
+def ensure(connection):
     """Create the table. Framework step 0004 and startup both call it."""
     connection.execute(TABLE)
     connection.execute(INDEX)
@@ -73,9 +73,8 @@ class Unsaved:
     # ---------- setup and clean-up ----------
 
     def initialize(self):
-        postgres = getattr(self.database, 'driver', None) is not None
         with self.database.transaction() as tx:
-            ensure(tx.connection, postgres)
+            ensure(tx.connection)
         self.purge()
 
     def schedule(self):
@@ -350,7 +349,7 @@ class Unsaved:
             people = connection.execute('SELECT u.id, u.username, count(*) AS entries, sum(n.size) AS bytes, max(n.saved_at) AS latest '
                                         'FROM evlet_unsaved n JOIN evlet_users u ON u.id=n.user_id GROUP BY u.id, u.username '
                                         'ORDER BY entries DESC, u.username LIMIT 200').fetchall()
-        # PostgreSQL sums to numeric; every count and size here is a whole number.
+        # Every count and size here is a whole number, whatever type the database sums to.
         return {'entries': int(total[0]), 'bytes': int(total[1]), 'oldest': total[2], 'limits': self.limits(),
                 'people': [{'id': row['id'], 'username': row['username'], 'entries': int(row['entries']), 'bytes': int(row['bytes']), 'latest': row['latest']}
                            for row in people]}

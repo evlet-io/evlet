@@ -9,12 +9,11 @@
             indexes = [(('unit', 'on_date', 'kind'), {'unique': True}), ('on_date',)]
 
 An entry is a tuple of field names, or (field names, {"unique": True}). The database enforces a unique
-entry on SQLite and PostgreSQL; a write that breaks one raises ValidationError naming the fields. The
+entry; a write that breaks one raises ValidationError naming the fields. The
 saved schema records the entries (a ledger model under "ledger", a normal model under "indexes"), the
 schema check compares them with the database, and AddIndex(table, (fields...), unique=...) adds one.
 """
 
-import re
 
 from .models import ValidationError
 
@@ -73,21 +72,9 @@ def of(entry):
     return {(tuple(item['fields']), item['unique']) for item in entry or ()}
 
 
-def violated(registry, exc):
-    """ValidationError for a database error that broke a unique Meta.indexes entry, else None.
-
-    SQLite names the columns in its message ("UNIQUE constraint failed: table.a, table.b"); PostgreSQL in
-    the error detail ("Key (a, b)=(...) already exists."). The values are never repeated."""
-    diag = getattr(exc, 'diag', None)
-    if diag is not None:
-        match = re.match(r'Key \((.+?)\)=', diag.message_detail or '')
-        table = diag.table_name
-        columns = tuple(part.strip().strip('"') for part in match[1].split(',')) if match else ()
-    else:
-        match = re.fullmatch(r'UNIQUE constraint failed: (.+)', str(exc))
-        pairs = [part.strip().split('.', 1) for part in match[1].split(',')] if match else []
-        table = pairs[0][0] if pairs and len(pairs[0]) == 2 else None
-        columns = tuple(pair[1] for pair in pairs if len(pair) == 2 and pair[0] == table)
+def violated(registry, table, columns):
+    """ValidationError for a unique violation of `columns` of `table` (from the connection's integrity_failure)
+    that broke a unique Meta.indexes entry, else None. The values are never repeated."""
     model = registry.models.get(table) if table else None
     if model is None or columns not in declared(model, unique=True):
         return None

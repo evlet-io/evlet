@@ -6,10 +6,10 @@ import hashlib
 import logging
 import re
 import secrets
-import sqlite3
 import threading
 import time
 
+from .adapter import OperationalError
 from .auth import AccessError, User
 from .identity import RecordId, text as text_id
 from .database import NotFoundError
@@ -212,7 +212,7 @@ class JobQueue:
                 enabled INTEGER NOT NULL DEFAULT 1)''')
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_calendar_schedules (name TEXT PRIMARY KEY, expression TEXT NOT NULL, timezone TEXT NOT NULL)')
             # retired=1 marks a schedule disabled because its declaration was removed, not by an operator.
-            if 'retired' not in self.database.columns(tx.connection, 'evlet_calendar_schedules'):
+            if 'retired' not in tx.connection.columns('evlet_calendar_schedules'):
                 tx.connection.execute('ALTER TABLE evlet_calendar_schedules ADD COLUMN retired INTEGER NOT NULL DEFAULT 0')
 
     def _bound(self, tx):
@@ -438,7 +438,7 @@ class JobQueue:
                 row = tx.connection.execute("SELECT * FROM evlet_jobs WHERE id=? AND state='running' AND lease=?", (job_id, token)).fetchone()
                 if row is None:
                     return False
-                if not running and isinstance(exc, sqlite3.OperationalError):
+                if not running and isinstance(exc, OperationalError):
                     self._release_claim(tx, job_id, token, now + 1)
                     return False
                 retry = task is not None and row['attempts'] < row['max_attempts'] and not isinstance(exc, (AccessError, NotFoundError, ValidationError))

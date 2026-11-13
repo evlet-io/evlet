@@ -504,7 +504,7 @@ def write(engine, bound, draft):
     from .currencies import check_amounts
     check_amounts(tx, target, draft._values)
     names, values = storage_columns(target, stored_values(target, draft._values), target.__fields__)
-    table = identifier(business.registry.name_for(target))
+    table = business.registry.name_for(target)
     record_id = insert(tx.connection, table, names, values, id_title=has_title(target), actor=tx.actor)
     if business.registry.plan_for(target) is not None:
         record_plan(tx, business.registry.name_for(target), record_id, business.registry.formula_hashes.get(target))
@@ -774,15 +774,15 @@ def check(application):
     Takes an Application (or its Business). Returns a list of differences, each a dict with `model`,
     `record`, `target`, `kind` ("missing", "extra", "changed", "unbalanced" or "invalid"), `reversal`
     and, where they apply, `expected`, `actual` (serialized values), `row` (the saved row id) and `message`.
-    Everything is read from one read-only snapshot (a deferred SQLite transaction, or REPEATABLE READ READ
-    ONLY on PostgreSQL), so writers are not blocked and records and rows are read consistently.
+    Everything is read from one read-only snapshot (connection.snapshot()), so writers are not blocked and
+    records and rows are read consistently.
     """
     from .database import Session
     business = getattr(application, 'business', application)
     registry = business.registry
     differences = []
     with business.database._connection() as connection:
-        connection.execute('BEGIN')
+        connection.snapshot()
         try:
             tx = Session(connection, registry)
             engine = engine_context(business, tx)

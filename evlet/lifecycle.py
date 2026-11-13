@@ -9,6 +9,8 @@ import json
 
 from .auth import AccessError
 from .identity import RecordId, path_id, text as text_id
+from . import qb
+from .adapter import Column, TableDefinition
 
 SOURCES = ('User', 'API', 'Automation', 'Scheduler', 'System', 'Integration')
 OPERATIONS = {'confirm': ('draft', 'confirmed'), 'cancel': ('confirmed', 'cancelled'), 'reopen': ('cancelled', 'draft')}
@@ -72,35 +74,28 @@ def labels(model):
     return {**defaults, **custom}
 
 
-def ensure_tables(connection, *, postgres=False):
-    connection.execute('CREATE TABLE IF NOT EXISTS evlet_document_lifecycle (model TEXT NOT NULL, record_id INTEGER NOT NULL, '
-                       "state TEXT NOT NULL CHECK(state IN ('draft','confirmed','cancelled')), revision INTEGER NOT NULL CHECK(revision>=0), "
-                       'confirmation_id TEXT, PRIMARY KEY(model,record_id))')
-    connection.execute('CREATE TABLE IF NOT EXISTS evlet_document_revisions (model TEXT NOT NULL, record_id INTEGER NOT NULL, '
-                       'revision INTEGER NOT NULL CHECK(revision>0), execution_id TEXT NOT NULL UNIQUE, at TEXT NOT NULL, '
-                       'actor TEXT NOT NULL, data TEXT NOT NULL, hash TEXT NOT NULL, PRIMARY KEY(model,record_id,revision))')
-    # Reuse the journal's append-only contract, including SQLite REPLACE and PostgreSQL TRUNCATE.
-    if postgres:
-        connection.execute("CREATE OR REPLACE FUNCTION evlet_revision_append_only() RETURNS trigger LANGUAGE plpgsql AS "
-                           "$$ BEGIN RAISE EXCEPTION 'Revisions are immutable'; END $$")
-        if connection.execute("SELECT 1 FROM pg_trigger WHERE tgname='evlet_revision_append_only'").fetchone() is None:
-            connection.execute('CREATE TRIGGER evlet_revision_append_only BEFORE UPDATE OR DELETE ON evlet_document_revisions '
-                               'FOR EACH ROW EXECUTE FUNCTION evlet_revision_append_only()')
-            connection.execute('CREATE TRIGGER evlet_revision_no_truncate BEFORE TRUNCATE ON evlet_document_revisions '
-                               'FOR EACH STATEMENT EXECUTE FUNCTION evlet_revision_append_only()')
-    else:
-        for operation in ('UPDATE', 'DELETE'):
-            connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_revision_no_{operation.lower()} BEFORE {operation} '
-                               "ON evlet_document_revisions BEGIN SELECT RAISE(ABORT, 'Revisions are immutable'); END")
-        connection.execute('CREATE TRIGGER IF NOT EXISTS evlet_revision_no_replace BEFORE INSERT ON evlet_document_revisions '
-                           'WHEN EXISTS (SELECT 1 FROM evlet_document_revisions WHERE model=NEW.model AND record_id=NEW.record_id AND revision=NEW.revision) '
-                           "OR EXISTS (SELECT 1 FROM evlet_document_revisions WHERE execution_id=NEW.execution_id) "
-                           "BEGIN SELECT RAISE(ABORT, 'Revisions are immutable'); END")
+# A document's lifecycle state, and the permanent snapshot each confirmation takes.
+STATES = TableDefinition('evlet_document_lifecycle', (
+    Column('model', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True), Column('state', 'TEXT', required=True),
+    Column('revision', 'INTEGER', required=True), Column('confirmation_id', 'TEXT')),
+    primary_key=('model', 'record_id'), checks=(qb.in_('state', ('draft', 'confirmed', 'cancelled')), qb.ge('revision', 0)))
+REVISIONS = TableDefinition('evlet_document_revisions', (
+    Column('model', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True), Column('revision', 'INTEGER', required=True),
+    Column('execution_id', 'TEXT', required=True), Column('at', 'TEXT', required=True), Column('actor', 'TEXT', required=True),
+    Column('data', 'TEXT', required=True), Column('hash', 'TEXT', required=True)),
+    primary_key=('model', 'record_id', 'revision'), unique=(('execution_id',),), checks=(qb.gt('revision', 0),))
+
+
+def ensure_tables(connection):
+    connection.ensure_table(STATES)
+    connection.ensure_table(REVISIONS)
+    # The journal's append-only contract: no UPDATE, DELETE or replacing insert.
+    connection.make_append_only('evlet_document_revisions', 'Revisions are immutable')
 
 
 def metadata(context, model, record_id):
-    row = context._tx.connection.execute('SELECT state, revision, confirmation_id FROM evlet_document_lifecycle WHERE model=? AND record_id=?',
-                                         (context._business.registry.name_for(model), record_id)).fetchone()
+    row = context._tx.connection.run(qb.select('evlet_document_lifecycle', 'state', 'revision', 'confirmation_id')
+                                     .where(model=context._business.registry.name_for(model), record_id=record_id)).one()
     return {'state': row['state'], 'revision': row['revision'], 'confirmation_id': row['confirmation_id']} if row else {
         'state': 'draft', 'revision': 0, 'confirmation_id': None}
 
@@ -227,26 +222,29 @@ def finish(context, model, record_id, before, draft, operation, reason):
         data = {'document': stored_tree(business, draft), 'approval': approval_information(context, model, record_id), 'effects': effects}
         text = journal.canonical(data)
         integrity = hashlib.sha256(journal.canonical([name, record_id, execution.revision, execution.id, at, journal.actor_of(user), text]).encode()).hexdigest()
-        tx.connection.execute('INSERT INTO evlet_document_revisions(model,record_id,revision,execution_id,at,actor,data,hash) VALUES (?,?,?,?,?,?,?,?)',
-                              (name, record_id, execution.revision, execution.id, at, journal.actor_of(user), text, integrity))
-    tx.connection.execute('INSERT INTO evlet_document_lifecycle(model,record_id,state,revision,confirmation_id) VALUES (?,?,?,?,?) '
-                          'ON CONFLICT(model,record_id) DO UPDATE SET state=excluded.state, revision=excluded.revision, confirmation_id=excluded.confirmation_id',
-                          (name, record_id, OPERATIONS[operation][1], execution.revision, confirmation))
+        tx.connection.run(qb.insert('evlet_document_revisions', model=name, record_id=record_id, revision=execution.revision,
+                                    execution_id=execution.id, at=at, actor=journal.actor_of(user), data=text, hash=integrity))
+    state = OPERATIONS[operation][1]
+    tx.connection.run(qb.insert('evlet_document_lifecycle', model=name, record_id=record_id, state=state, revision=execution.revision,
+                                confirmation_id=confirmation)
+                      .on_conflict('model', 'record_id').do_update(state=state, revision=execution.revision, confirmation_id=confirmation))
     data = event_data(context, model, record_id, journal.tree_changes(business, model, before, draft))
     data.update(execution_id=execution.id, confirmation_id=confirmation, effects=effects, reason=reason,
                 **{'from': current['state'], 'to': OPERATIONS[operation][1]})
     if operation == 'cancel':
         # Keep both the original effect references and the application's compensations.
-        original = tx.connection.execute('SELECT data FROM evlet_document_revisions WHERE model=? AND record_id=? AND revision=?',
-                                         (name, record_id, current['revision'])).fetchone()
+        original = tx.connection.run(qb.select('evlet_document_revisions', 'data')
+                                     .where(model=name, record_id=record_id, revision=current['revision'])).one()
         data['effects'] = [*json.loads(original[0]).get('effects', []), *effects]
     kind = 'reconfirmed' if operation == 'confirm' and current['revision'] else {'confirm': 'confirmed', 'cancel': 'cancelled', 'reopen': 'reopened'}[operation]
     journal.append(business, tx, user, model, record_id, kind, data)
 
 
 def approval_information(context, model, record_id):
-    row = context._tx.connection.execute("SELECT id, kind, actor, at, data FROM evlet_journal WHERE model=? AND record_id=? AND kind IN ('approved','rejected') ORDER BY id DESC LIMIT 1",
-                                         (context._business.registry.name_for(model), record_id)).fetchone()
+    row = context._tx.connection.run(qb.select('evlet_journal', 'id', 'kind', 'actor', 'at', 'data')
+                                     .where(qb.in_('kind', ('approved', 'rejected')), model=context._business.registry.name_for(model),
+                                            record_id=record_id)
+                                     .order_by('-id').limit(1)).one()
     return None if row is None else {'event_id': row['id'], 'approved': row['kind'] == 'approved', 'actor': row['actor'], 'at': row['at'],
                                      'reason': json.loads(row['data']).get('reason')}
 
@@ -272,9 +270,9 @@ def revisions(context, model, record_id, *, limit=50, offset=0):
     if type(limit) is not int or not 1 <= limit <= 100 or type(offset) is not int or not 0 <= offset <= 2**63-1:
         raise ValidationError({'page': 'Use a limit of 1 to 100 and a nonnegative offset'})
     name = context._business.registry.name_for(model)
-    rows = context._tx.connection.execute('SELECT revision, execution_id, at, actor, hash FROM evlet_document_revisions WHERE model=? AND record_id=? ORDER BY revision LIMIT ? OFFSET ?',
-                                         (name, record_id, limit, offset)).fetchall()
-    total = context._tx.connection.execute('SELECT count(*) FROM evlet_document_revisions WHERE model=? AND record_id=?', (name, record_id)).fetchone()[0]
+    rows = context._tx.connection.run(qb.select('evlet_document_revisions', 'revision', 'execution_id', 'at', 'actor', 'hash')
+                                      .where(model=name, record_id=record_id).order_by('revision').limit(limit).offset(offset)).all()
+    total = context._tx.connection.run(qb.select('evlet_document_revisions', qb.count()).where(model=name, record_id=record_id)).value()
     return {'items': [dict(row) for row in rows], 'total': total, 'limit': limit, 'offset': offset}
 
 
@@ -309,8 +307,8 @@ def snapshot(context, model, record_id, revision):
     require_confirmable(context, model, record_id)
     if type(revision) is not int or not 1 <= revision <= 2**63-1:
         raise ValidationError({'revision': 'Use a positive revision number'})
-    row = context._tx.connection.execute('SELECT * FROM evlet_document_revisions WHERE model=? AND record_id=? AND revision=?',
-                                         (context._business.registry.name_for(model), record_id, revision)).fetchone()
+    row = context._tx.connection.run(qb.select('evlet_document_revisions')
+                                     .where(model=context._business.registry.name_for(model), record_id=record_id, revision=revision)).one()
     if row is None:
         raise AccessError(404, 'Revision not found')
     from .journal import canonical

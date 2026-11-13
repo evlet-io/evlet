@@ -2,7 +2,7 @@
 
 A Sequence value is written only by the engine, inside the write transaction that assigns it.
 Counters live in `evlet_sequence(model, field, scope_key, period, last)`. Writers are serialized
-(SQLite `BEGIN IMMEDIATE`, a PostgreSQL transaction lock), the counter row is updated in the same
+(one write transaction at a time), the counter row is updated in the same
 transaction as the record, so committed records get gapless numbers and a rollback consumes none.
 """
 
@@ -13,15 +13,25 @@ from types import MappingProxyType
 
 from .fields import Boolean, Date, Integer, LongText, MISSING, State, Tags, Text
 from .models import ValidationError, identifier
+from . import qb
+from .adapter import Column, TableDefinition
 
 TOKEN = re.compile(r'\{([^{}]*)\}')
 PERIOD_TOKENS = ('year', 'yy', 'month')
 MAX_FORMAT = 120
-COUNTER_TABLE = ('CREATE TABLE IF NOT EXISTS evlet_sequence (model TEXT NOT NULL, field TEXT NOT NULL, '
-                 'scope_key TEXT NOT NULL, period TEXT NOT NULL, "last" INTEGER NOT NULL, last_name TEXT, how TEXT, '
-                 'note TEXT, changed_by TEXT, changed_at INTEGER, PRIMARY KEY (model, field, scope_key, period))')
-NEXT = ('INSERT INTO evlet_sequence (model, field, scope_key, period, "last") VALUES (?, ?, ?, ?, 1) '
-        'ON CONFLICT (model, field, scope_key, period) DO UPDATE SET "last" = evlet_sequence."last" + 1 RETURNING "last"')
+COUNTER_TABLE = TableDefinition('evlet_sequence', (
+    Column('model', 'TEXT', required=True), Column('field', 'TEXT', required=True), Column('scope_key', 'TEXT', required=True),
+    Column('period', 'TEXT', required=True), Column('last', 'INTEGER', required=True), Column('last_name', 'TEXT'),
+    Column('how', 'TEXT'), Column('note', 'TEXT'), Column('changed_by', 'TEXT'), Column('changed_at', 'INTEGER')),
+    primary_key=('model', 'field', 'scope_key', 'period'))
+# A counter row is identified by these columns.
+COUNTER_KEY = ('model', 'field', 'scope_key', 'period')
+
+
+def next_counter(connection, model, field, scope_key, period):
+    """Add one to a counter, starting it at 1, in the write transaction; returns the new value."""
+    counter = qb.insert('evlet_sequence', model=model, field=field, scope_key=scope_key, period=period, last=1)
+    return connection.run(counter.on_conflict(*COUNTER_KEY).do_update(last=qb.col('evlet_sequence.last') + 1).returning('last')).id
 ASSIGNED_BY_ENGINE = 'This number is assigned by the system'
 # Numbers already taken in a scope (planted by a repair, or an older format) are skipped, at most this many in a row.
 MAX_SKIPPED = 10000
@@ -167,15 +177,8 @@ def compile_sequences(registry, models, plans, child_models):
 
 # Storage
 
-def index_sql(name, table, field_name, sequence):
-    """A unique index on the scope fields and the number, for assigned numbers only."""
-    columns = ', '.join(identifier(column) for column in (*sequence.scope, field_name))
-    return (f'CREATE UNIQUE INDEX {identifier(name)} ON {identifier(table)} ({columns}) '
-            f'WHERE {identifier(field_name)} IS NOT NULL')
-
-
 def ensure_counters(connection):
-    connection.execute(COUNTER_TABLE)
+    connection.ensure_table(COUNTER_TABLE)
 
 
 def scope_key(model, sequence, values):
@@ -207,11 +210,10 @@ def next_number(connection, resource, name, model, sequence, values, today):
     day = number_day(sequence, values, today)
     fields = model.__declared_fields__
     key = (resource, name, scope_key(model, sequence, values), sequence.period_key(day))
-    columns = ' AND '.join(f'{identifier(column)} = ?' for column in (*sequence.scope, name))
-    scope = [fields[column].to_storage(values.get(column)) for column in sequence.scope]
+    scope = {column: fields[column].to_storage(values.get(column)) for column in sequence.scope}
     for _ in range(MAX_SKIPPED):
-        number = sequence.render(connection.execute(NEXT, key).fetchone()[0], day)
-        if connection.execute(f'SELECT 1 FROM {identifier(resource)} WHERE {columns}', [*scope, number]).fetchone() is None:
+        number = sequence.render(next_counter(connection, *key), day)
+        if connection.run(qb.select(resource, 'id').where(**scope, **{name: number})).one() is None:
             return number
     raise ValidationError({name: 'No free number was found in this series; check the stored numbers and the format'})
 
@@ -332,7 +334,7 @@ def backfill(session, model, name, *, filters=None, today=None):
                 if record._values.get(scoped) is None:
                     raise ValidationError({scoped: f'Record {record.id} has no value for this scope field'})
             number = next_number(session.connection, resource, name, model, sequence, record._values, today)
-            session.connection.execute(f'UPDATE {identifier(resource)} SET {identifier(name)} = ? WHERE "id" = ?', (number, record.id))
+            session.connection.run(qb.update(resource, **{name: number}).where(id=record.id))
             count += 1
 
 
@@ -380,10 +382,6 @@ MAX_NAME = 40
 DATE_TOKENS = {'YYYY': '%Y', 'YY': '%y', 'MM': '%m', 'DD': '%d'}
 SERIES_ID = re.compile(r'[a-z][a-z0-9_]{0,39}')
 COUNTER_COLUMNS = (('last_name', 'TEXT'), ('how', 'TEXT'), ('note', 'TEXT'), ('changed_by', 'TEXT'), ('changed_at', 'INTEGER'))
-ISSUE = ('INSERT INTO evlet_sequence (model, field, scope_key, period, "last", how, changed_by, changed_at, note) '
-         "VALUES (?, ?, ?, '', 1, 'issued', ?, ?, NULL) ON CONFLICT (model, field, scope_key, period) DO UPDATE SET "
-         '"last" = evlet_sequence."last" + 1, how = \'issued\', changed_by = excluded.changed_by, '
-         'changed_at = excluded.changed_at, note = NULL RETURNING "last"')
 MAX_TRIES = 1000
 
 
@@ -603,16 +601,11 @@ def compile_namings(models, child_models):
 
 def upgrade_counters(connection):
     """The counter table with the columns naming series use: the last name and the last change."""
-    import sqlite3
-    connection.execute(COUNTER_TABLE)
-    if isinstance(connection, sqlite3.Connection):
-        present = {row[1] for row in connection.execute('PRAGMA table_info(evlet_sequence)')}
-    else:
-        present = {row[0] for row in connection.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='evlet_sequence'")}
+    connection.ensure_table(COUNTER_TABLE)
+    present = set(connection.columns('evlet_sequence'))
     for name, kind in COUNTER_COLUMNS:
         if name not in present:
-            connection.execute(f'ALTER TABLE evlet_sequence ADD COLUMN {name} {kind}')
+            connection.add_column('evlet_sequence', Column(name, kind))
 
 
 def render(parts, values, day, number=None):
@@ -643,15 +636,18 @@ def issue_name(connection, resource, rules, values, today, actor):
     day = rules.day(values, today)
     head, width, tail = split(parts)
     prefix, suffix = render(head, values, day), render(tail, values, day)
-    target = identifier(rules.field)
     for _ in range(MAX_TRIES):
-        number = connection.execute(ISSUE, (resource, rules.field, prefix, actor, int(time.time()))).fetchone()[0]
+        now = int(time.time())
+        counter = qb.insert('evlet_sequence', model=resource, field=rules.field, scope_key=prefix, period='', last=1, how='issued',
+                            changed_by=actor, changed_at=now, note=None)
+        counter = counter.on_conflict(*COUNTER_KEY).do_update(last=qb.col('evlet_sequence.last') + 1, how='issued', changed_by=actor,
+                                                               changed_at=now, note=None)
+        number = connection.run(counter.returning('last')).id
         name = prefix + str(number).zfill(width) + suffix
         if len(name) > MAX_NAME:
             raise ValidationError({rules.field: f'This name would be longer than {MAX_NAME} characters'})
-        if connection.execute(f'SELECT 1 FROM {identifier(resource)} WHERE {target} = ?', (name,)).fetchone() is None:
-            connection.execute("UPDATE evlet_sequence SET last_name = ? WHERE model = ? AND field = ? AND scope_key = ? AND period = ''",
-                               (name, resource, rules.field, prefix))
+        if connection.run(qb.select(resource, 'id').where(**{rules.field: name})).one() is None:
+            connection.run(qb.update('evlet_sequence', last_name=name).where(model=resource, field=rules.field, scope_key=prefix, period=''))
             return name
     raise ValidationError({rules.field: f'No free name was found in {MAX_TRIES} tries. Set the counter past the names already used.'})
 
@@ -662,8 +658,8 @@ def preview_name(connection, resource, rules, parts, values, today):
     day = rules.day(values, today)
     head, width, tail = split(parts)
     prefix = render(head, values, day)
-    row = connection.execute("SELECT \"last\" FROM evlet_sequence WHERE model = ? AND field = ? AND scope_key = ? AND period = ''",
-                             (resource, rules.field, prefix)).fetchone() if connection is not None else None
+    row = connection.run(qb.select('evlet_sequence', 'last').where(model=resource, field=rules.field, scope_key=prefix, period='')).one() \
+        if connection is not None else None
     return prefix + str((row[0] if row else 0) + 1).zfill(width) + render(tail, values, day)
 
 
@@ -692,7 +688,7 @@ def issue(connection, registry, model, rules, values, today, actor=None, *, reco
         name = model.autoname(record, context)
         check_name(connection, table, model, name, record_id)
         return name
-    connection.execute(COUNTER_TABLE)
+    connection.ensure_table(COUNTER_TABLE)
     return issue_name(connection, table, rules, values, today, actor)
 
 

@@ -3,8 +3,8 @@
 One query per call. Sums add stored scaled integers, so Decimal and Currency totals are
 exact; a sum outside the signed 64-bit range is an error, never a float. A measure's
 `where=` is a finite-v1 Boolean expression compiled to parameterized SQL. The SQL avoids
-dialect differences so SQLite and PostgreSQL return the same results; groups are sorted
-in Python for the same reason.
+dialect differences, so another database adapter returns the same results; groups are
+sorted in Python for the same reason.
 """
 
 from dataclasses import dataclass, replace
@@ -226,7 +226,7 @@ def compile_measure(registry, owner, name, measure):
     else:
         value = column if predicate is None else f'CASE WHEN {predicate} = 1 THEN {column} END'
         if measure.function == 'sum':
-            # Integer division and remainder truncate toward zero in SQLite and PostgreSQL alike.
+            # Integer division and remainder truncate toward zero in SQLite, as in standard SQL.
             sql = (f'sum(({value}) / {SPLIT})', f'sum(({value}) % {SPLIT})')
         else:
             sql = ({'count_distinct': 'count(DISTINCT {})', 'min': 'min({})', 'max': 'max({})'}[measure.function].format(value),)
@@ -557,7 +557,7 @@ def value(measure, raw):
         return int(raw[0] or 0)
     field = measure.target.__fields__[measure.field]
     if measure.function == 'sum':
-        # Exact halves (integers, or PostgreSQL numerics) recombined in Python; only the final total is checked.
+        # Exact halves (integers, or a server database's numerics) recombined in Python; only the final total is checked.
         high, low = (0 if part is None else part for part in raw)
         if isinstance(high, float) or isinstance(low, float) or int(high) != high or int(low) != low:
             raise ValidationError({'measures': OVERFLOW})
@@ -574,7 +574,7 @@ def aggregate(tx, model, measures, group_by=(), filters=None, limit=None, after=
     after the group `after` (None for the first page). Trusted filters take long `in` lists (evlet/query.py)."""
     model = tx.registry.resolve(model)
     compiled, groups = prepare(tx.registry, model, measures, group_by)
-    where, values = SqlQuery(tx.registry, model, trusted=True).where(filters)
+    where, values = SqlQuery(tx.registry, model, trusted=True).where_sql(filters)
     if limit is None:
         if after is not None:
             raise ValidationError({'after': 'Use after together with limit'})
@@ -598,7 +598,7 @@ def values_for(tx, model, items, record_id=None, filters=None, scope_for=None, z
     scope_for = scope_for or (lambda target: ('', ()))
     if record_id is None:
         # Filters are checked even when no measure is available.
-        where, values = SqlQuery(tx.registry, model, children=children).where(filters, search[0], search_fields=search[1])
+        where, values = SqlQuery(tx.registry, model, children=children).where_sql(filters, search[0], search_fields=search[1])
         if not items:
             return {}
         where, values = combine(where, values, *scope_for(model))
@@ -747,7 +747,7 @@ def scoped_aggregate(business, tx, user, model, measures, group_by=(), filters=N
     # As for lists, eq and in filters on a Link to a row-scoped model are allowed for records this role can read.
     policy.query_fields(user, model, filters, (), database=tx.connection, children=children)
     text, fields = searched(business, user, model, search)
-    where, values = SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields)
+    where, values = SqlQuery(registry, model, children=children).where_sql(filters, text, search_fields=fields)
     where, values = combine(where, values, *policy.scope_sql(user, model))
     zone = getattr(business, 'timezone', None) or 'UTC'
     if currencies is not None:
@@ -799,7 +799,7 @@ def list_tabs(business, tx, user, model, filters=None, search=''):
     children = getattr(business, 'children', {}).values()
     policy.query_fields(user, model, filters, (), children=children)
     text, fields = searched(business, user, model, search)
-    where, values = SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields)
+    where, values = SqlQuery(registry, model, children=children).where_sql(filters, text, search_fields=fields)
     where, values = combine(where, values, *policy.scope_sql(user, model))
     table, column = identifier(registry.name_for(model)), f'"record".{identifier(name)}'
     total = tx.connection.execute(f'SELECT COUNT(*) FROM {table} AS "record"{where}', values).fetchone()[0]
@@ -938,7 +938,7 @@ def route(business, scope, user, model, parts):
     if parts[3] == 'list_tabs':
         query, filters = parameters(scope, {'filters', 'q'})
         with business.database._connection() as connection:
-            connection.execute('BEGIN')
+            connection.snapshot()
             return 200, list_tabs(business, Session(connection, business.registry), user, model, filters, query.get('q', '')), []
     if parts[3] == 'aggregate':
         query, filters = parameters(scope, {'measures', 'group_by', 'filters', 'q'})
@@ -946,7 +946,7 @@ def route(business, scope, user, model, parts):
     else:
         query, filters = parameters(scope, set() if record_id else {'filters', 'q'})
     with business.database._connection() as connection:
-        connection.execute('BEGIN')
+        connection.snapshot()
         tx = Session(connection, business.registry)
         if parts[3] == 'aggregate':
             codes = {}

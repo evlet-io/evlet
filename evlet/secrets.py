@@ -212,7 +212,6 @@ def rotate(database_path, key):
     any point leaves every secret readable. A row that can't be read is skipped and reported, and the
     old key is then kept for it. Returns (re-encrypted count, names of unreadable rows).
     """
-    import sqlite3
     key = secret_key(key)
     if key.from_environment:
         raise SecretKeyError(f'{KEY_ENV} is set, so the key is kept outside Evlet. Rotation works on a secret.key file.')
@@ -222,12 +221,12 @@ def rotate(database_path, key):
     if not old:
         return 0, []
     key.write([secrets.token_bytes(32), *old])
-    from .writes import connect, tables as all_tables
+    from .writes import connect
     connection = connect(database_path, uri=True, isolation_level=None)
     done, failed = 0, []
     try:
         connection.execute('BEGIN IMMEDIATE')
-        tables = all_tables(connection)
+        tables = connection.tables()
         for table, column, id_column, purpose_column, prefix, text, name in SEALED:
             if table not in tables:
                 continue

@@ -1,4 +1,6 @@
-"""Explicit, atomic SQLite schema changes with validated data and history."""
+"""Explicit, atomic schema changes with validated data and history.
+
+Every database-specific step goes through the connection (evlet/adapter.py, docs/database-adapters.md)."""
 
 from dataclasses import dataclass
 import copy
@@ -6,10 +8,11 @@ import hashlib
 import json
 import logging
 import re
-import sqlite3
 
+from . import qb
+from .adapter import Column, DatabaseError, TableDefinition
 from .identity import add_id_guard
-from .audit import COLUMNS as AUDIT_COLUMNS, add_columns as add_audit_columns, column_sql as audit_column_sql
+from .audit import COLUMNS as AUDIT_COLUMNS, add_columns as add_audit_columns, columns as audit_columns_of
 from .fields import Field, Integer, Link, MAX_INTEGER, MISSING, Reference
 from .identity import RecordId
 from . import indexes as model_indexes, ledger as ledgers
@@ -28,17 +31,12 @@ def link_target(field):
     return field.target if isinstance(field.target, str) else storage_name(field.target)
 
 
-def _column(name, field):
-    """Column definitions for one field; most fields have one, a Reference has two."""
-    result = []
-    for column, sql_type in field.columns(name):
-        sql = f'{identifier(column)} {sql_type}'
-        if field.required:
-            sql += ' NOT NULL'
-        if isinstance(field, Link):
-            sql += f' REFERENCES {identifier(link_target(field))}("id")'
-        result.append(sql)
-    return result
+def field_columns(name, field):
+    """The Columns of one field; most fields have one, a Reference has two. A Link column references its table."""
+    for column, _ in field.columns(name):
+        identifier(column)
+    return [Column(column, sql_type, field.required, references=link_target(field) if isinstance(field, Link) else None)
+            for column, sql_type in field.columns(name)]
 
 
 def index_columns(name, field):
@@ -53,25 +51,17 @@ def stored_columns(columns, name):
     return (name,)
 
 
-def _index(connection, table, field, *, unique=False, columns=None):
-    base = f'evlet_{table}_{field}_{"unique" if unique else "index"}'
-    name, suffix = base, 1
-    while connection.execute('SELECT 1 FROM sqlite_master WHERE name = ?', (name,)).fetchone():
-        suffix += 1
-        name = f'{base}_{suffix}'
-    covered = ', '.join(identifier(column) for column in (columns or (field,)))
-    connection.execute(f'CREATE {"UNIQUE " if unique else ""}INDEX {identifier(name)} ON {identifier(table)} ({covered})')
+def index(connection, table, field, *, unique=False, columns=None):
+    """An index on a field (or on `columns`), named evlet_<table>_<field>_unique or _index."""
+    covered = columns or (field,)
+    for name in (table, *covered):
+        identifier(name)
+    connection.create_index(table, f'evlet_{table}_{field}_{"unique" if unique else "index"}', tuple(covered), unique=unique)
 
 
 def _sequence_index(connection, table, name, field):
     """The unique index of a Sequence: its scope fields and the number, for assigned numbers only."""
-    from .sequences import index_sql
-    base, suffix = f'evlet_{table}_{name}_sequence', 1
-    index = base
-    while connection.execute('SELECT 1 FROM sqlite_master WHERE name = ?', (index,)).fetchone():
-        suffix += 1
-        index = f'{base}_{suffix}'
-    connection.execute(index_sql(index, table, name, field))
+    connection.create_index(table, f'evlet_{table}_{name}_sequence', (*field.scope, name), unique=True, partial=name)
 
 
 def _create(connection, table, model):
@@ -81,26 +71,35 @@ def _create(connection, table, model):
     A ledger model's table has the id and its declared columns only (evlet/ledger.py)."""
     framework = not declared_name(model)
     fields = {name: field for name, field in model.__fields__.items() if framework or not standard(field)}
-    columns = ['"id" INTEGER PRIMARY KEY AUTOINCREMENT']
-    columns.extend(sql for name, field in fields.items() for sql in _column(name, field))
+    identifier(table)
+    columns = [column for name, field in fields.items() for column in field_columns(name, field)]
     if not ledgers.is_ledger(model):
-        columns.extend(audit_column_sql(False))
-    connection.execute(f'CREATE TABLE {identifier(table)} ({", ".join(columns)})')
+        columns.extend(audit_columns_of())
+    connection.create_table(table, columns)
     for name, field in fields.items():
         if field.index or field.unique:
-            _index(connection, table, name, unique=field.unique, columns=index_columns(name, field))
+            index(connection, table, name, unique=field.unique, columns=index_columns(name, field))
         if field.kind == 'sequence':
             _sequence_index(connection, table, name, field)
     for covered, unique in model.__indexes__:
-        _index(connection, table, '_'.join(covered), unique=unique, columns=covered)
+        index(connection, table, '_'.join(covered), unique=unique, columns=covered)
     if ledgers.is_ledger(model) and model.__append_only__:
-        ledgers.add_triggers(connection, False, table)
-    add_id_guard(connection, False, table)
+        ledgers.add_triggers(connection, table)
+    add_id_guard(connection, table)
+
+
+# The framework's own migration tables: the saved schema (one row) and the applied history.
+SCHEMA = TableDefinition('evlet_schema', (Column('id', 'INTEGER', primary=True), Column('definition', 'TEXT', required=True)),
+                         checks=(qb.eq('id', 1),))
+HISTORY = TableDefinition('evlet_migrations', (Column('position', 'INTEGER', primary=True), Column('name', 'TEXT', required=True),
+                                               Column('checksum', 'TEXT', required=True)), unique=(('name',),))
+RETIRED = TableDefinition('evlet_retired_fields', (Column('model', 'TEXT', required=True), Column('name', 'TEXT', required=True),
+                                                   Column('definition', 'TEXT', required=True)), primary_key=('model', 'name'))
 
 
 def _metadata(connection):
-    connection.execute('CREATE TABLE IF NOT EXISTS evlet_schema (id INTEGER PRIMARY KEY CHECK(id = 1), definition TEXT NOT NULL)')
-    connection.execute('CREATE TABLE IF NOT EXISTS evlet_migrations (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, checksum TEXT NOT NULL)')
+    connection.ensure_table(SCHEMA)
+    connection.ensure_table(HISTORY)
     # Section rows of Tables declared with sections=True (evlet/sections.py); framework-owned, so no app migration.
     from .sections import create_store
     create_store(connection)
@@ -108,7 +107,8 @@ def _metadata(connection):
 
 # Currency amounts are stored at MONEY_SCALE places (evlet/currencies.py). Releases up to 0.4 stored them at 2; this
 # row records that a database's amounts are at the current scale. A database without it is moved by money_scale().
-MONEY = 'CREATE TABLE IF NOT EXISTS evlet_money (id INTEGER PRIMARY KEY CHECK(id = 1), scale INTEGER NOT NULL)'
+MONEY = TableDefinition('evlet_money', (Column('id', 'INTEGER', primary=True), Column('scale', 'INTEGER', required=True)),
+                        checks=(qb.eq('id', 1),))
 
 
 def _currency_scale(definition, scale):
@@ -126,7 +126,7 @@ def upgraded_definition(saved):
     return json.dumps(_currency_scale(json.loads(saved), MONEY_SCALE), sort_keys=True, separators=(',', ':'))
 
 
-def money_columns(connection, registry, saved, postgres=False):
+def money_columns(connection, registry, saved):
     """[(table, column, scale, ledger)] of every stored Currency column: from the saved definition (or the models when
     the database predates saved definitions) and from the Currency fields Controls added (evlet_custom_fields)."""
     if saved is not None:
@@ -137,17 +137,15 @@ def money_columns(connection, registry, saved, postgres=False):
         models = [(name, ledgers.is_ledger(model), [(key, 2) for key, field in app_fields(model).items() if field.kind == 'currency'])
                   for name, model in registry.models.items()]
     found = [(table, column, scale, ledger) for table, ledger, fields in models for column, scale in fields]
-    exists = "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_custom_fields'" if postgres \
-        else "SELECT 1 FROM sqlite_master WHERE name='evlet_custom_fields'"
-    if connection.execute(exists).fetchone() is not None:
+    if connection.table_exists('evlet_custom_fields'):
         ledger_names = {table for table, ledger, _ in models if ledger}
-        for row in connection.execute('SELECT model, name, definition FROM evlet_custom_fields ORDER BY model, name'):
+        for row in connection.run(qb.select('evlet_custom_fields', 'model', 'name', 'definition').order_by('model', 'name')):
             if json.loads(row[2]).get('type') == 'Currency':
                 found.append((row[0], row[1], 2, row[0] in ledger_names))
     return found
 
 
-def money_scale(connection, registry, saved, *, allow=True, postgres=False):
+def money_scale(connection, registry, saved, *, allow=True):
     """Move a database's Currency amounts from the 2 places releases up to 0.4 stored to MONEY_SCALE, in the open
     transaction, with exact integer arithmetic. Returns the saved definition (JSON text or None) as it now reads.
 
@@ -155,46 +153,41 @@ def money_scale(connection, registry, saved, *, allow=True, postgres=False):
     so the move only happens inside `evlet migrate`, after its backup. An amount that would not fit the 64-bit
     column names its record and nothing is changed."""
     from .currencies import MONEY_SCALE
-    connection.execute(MONEY)
-    row = connection.execute('SELECT scale FROM evlet_money WHERE id = 1').fetchone()
+    connection.ensure_table(MONEY)
+    row = connection.run(qb.select('evlet_money', 'scale').where(id=1)).one()
     if row is not None:
         if row[0] != MONEY_SCALE:
             raise SchemaError('This database stores amounts at another scale; install the Evlet release that wrote it')
         return saved
-    tables = set(_postgres_tables(connection) if postgres else _tables(connection))
-    columns = [item for item in money_columns(connection, registry, saved, postgres) if item[0] in tables and item[2] < MONEY_SCALE]
+    tables = _tables(connection)
+    columns = [item for item in money_columns(connection, registry, saved) if item[0] in tables and item[2] < MONEY_SCALE]
     if columns and not allow:
         raise SchemaError('Evlet now stores currency amounts at 6 decimal places and this database still has them at 2; '
                           'stop serving and run evlet migrate (it backs the database up first)')
     for table, column, scale, ledger in columns:
         factor = 10 ** (MONEY_SCALE - scale)
         limit = MAX_INTEGER // factor
-        quoted, name = identifier(table), identifier(column)
-        found = connection.execute(f'SELECT "id" FROM {quoted} WHERE {name} > ? OR {name} < ? ORDER BY "id" LIMIT 1',
-                                   (limit, -limit)).fetchone()
+        found = connection.run(qb.select(table, 'id').where(qb.or_(qb.gt(column, limit), qb.lt(column, -limit)))
+                               .order_by('id').limit(1)).one()
         if found is not None:
             raise SchemaError(f'{table} #{RecordId(found[0])}: {column} is too large to keep at 6 decimal places; '
                               'the largest amount is 9,223,372,036,854.775807')
-        triggers = ledger and ledgers.has_triggers(connection, postgres, table)
+        triggers = ledger and ledgers.has_triggers(connection, table)
         if triggers:
-            ledgers.drop_triggers(connection, postgres, table)
-        connection.execute(f'UPDATE {quoted} SET {name} = {name} * {factor} WHERE {name} IS NOT NULL')
+            ledgers.drop_triggers(connection, table)
+        connection.run(qb.update(table, **{column: qb.col(column) * factor}).where(qb.not_null(column)))
         if triggers:
-            ledgers.add_triggers(connection, postgres, table)
-    connection.execute('INSERT INTO evlet_money (id, scale) VALUES (1, ?)', (MONEY_SCALE,))
+            ledgers.add_triggers(connection, table)
+    connection.run(qb.insert('evlet_money', id=1, scale=MONEY_SCALE))
     if saved is None:
         return None
     upgraded = upgraded_definition(saved)
-    connection.execute('UPDATE evlet_schema SET definition = ? WHERE id = 1', (upgraded,))
+    connection.run(qb.update('evlet_schema', definition=upgraded).where(id=1))
     return upgraded
 
 
 def _moved(saved):
     return None if saved is None else (saved,)
-
-
-def _postgres_tables(connection):
-    return {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname='public' AND tablename NOT LIKE 'evlet\\_%'")}
 
 
 def _definition(registry):
@@ -218,7 +211,8 @@ def _same(saved, registry):
 
 
 def _tables(connection):
-    return {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT GLOB 'sqlite_*' AND name NOT GLOB 'evlet_*'")}
+    """The app's tables: every table but the framework's own."""
+    return {name for name in connection.tables() if not name.startswith('evlet_')}
 
 
 def app_fields(model):
@@ -250,73 +244,70 @@ def standard_fields(model):
     return {key: field for key, field in model.__app_stored__.items() if standard(field)}
 
 
-def instance_columns(connection, postgres=False):
+def instance_columns(connection):
     """{table: {column}} of the instance fields Controls added, from evlet_custom_fields."""
-    exists = "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_custom_fields'" if postgres \
-        else "SELECT 1 FROM sqlite_master WHERE name='evlet_custom_fields'"
-    if connection.execute(exists).fetchone() is None:
+    if not connection.table_exists('evlet_custom_fields'):
         return {}
     result = {}
-    for row in connection.execute('SELECT model, name FROM evlet_custom_fields'):
+    for row in connection.run(qb.select('evlet_custom_fields', 'model', 'name')):
         result.setdefault(row[0], set()).add(row[1])
     return result
 
 
 def _check(connection, registry, *, rows=False):
+    """Compare every model's table, read through the adapter's neutral TableShape, with the models."""
     added, retired = instance_columns(connection), retired_columns(connection)
     for name, model in registry.models.items():
         table = identifier(name)
-        columns = connection.execute(f'PRAGMA table_info({table})').fetchall()
-        names = [row['name'] for row in columns]
+        shape = connection.inspect(name)
+        names = shape.names()
         ledger = ledgers.is_ledger(model)
         skip = added.get(name, set()) | {column for field in retired.get(name, ()) for column in stored_columns(names, field)} \
-            | leftover_standard(model, {row['name']: not row['notnull'] for row in columns}) | (set() if ledger else audit_columns(name, names))
-        actual = {row['name']: (row['type'].upper(), bool(row['notnull']), row['pk']) for row in columns if row['name'] not in skip}
+            | leftover_standard(model, {column.name: not column.required for column in shape.columns}) \
+            | (set() if ledger else audit_columns(name, names))
+        actual = {column.name: (column.type, column.required, column.primary) for column in shape.columns if column.name not in skip}
         # A table made before records had standard columns gets them from framework step 0003 (evlet migrate).
         framework = standard_fields(model)
         present = {key for key in framework if key in names}
         if present and present != set(framework):
             raise SchemaError(f'{name}: the standard name and title columns are incomplete; run evlet migrate')
-        expected = {'id': ('INTEGER', False, 1), **{
-            column: (sql_type, field.required, 0) for key, field in app_fields(model).items() for column, sql_type in field.columns(key)},
-            **({key: ('TEXT', False, 0) for key in framework} if present else {})}
+        expected = {'id': ('INTEGER', False, True), **{
+            column: (sql_type, field.required, False) for key, field in app_fields(model).items() for column, sql_type in field.columns(key)},
+            **({key: ('TEXT', False, False) for key in framework} if present else {})}
         if actual != expected:
             raise SchemaError(f'{name}: database columns differ from models; run explicit migrations')
-        links = {(row['from'], row['table'], row['to'], row['on_delete'])
-                 for row in connection.execute(f'PRAGMA foreign_key_list({table})') if row['from'] not in skip}
-        expected_links = {(key, storage_name(field.target), 'id', 'NO ACTION')
-                          for key, field in app_fields(model).items() if isinstance(field, Link)}
+        links = {(column.name, column.references) for column in shape.columns if column.references and column.name not in skip}
+        expected_links = {(key, storage_name(field.target)) for key, field in app_fields(model).items() if isinstance(field, Link)}
         if links != expected_links:
             raise SchemaError(f'{name}: foreign keys differ from models')
         unique, indexed, partial = set(), set(), set()
-        for index in connection.execute(f'PRAGMA index_list({table})').fetchall():
-            fields = tuple(row['name'] for row in connection.execute('SELECT * FROM pragma_index_info(?)', (index['name'],)))
-            if set(fields) & skip:
+        for found in shape.indexes:
+            if set(found.columns) & skip:
                 continue
-            if index['partial']:
-                if index['unique']:
-                    partial.add(fields)
+            if found.partial:
+                if found.unique:
+                    partial.add(found.columns)
                 continue
-            indexed.add(fields)
-            if index['unique']:
-                unique.add(fields)
+            indexed.add(found.columns)
+            if found.unique:
+                unique.add(found.columns)
         if unique != {(key,) for key, field in model.__fields__.items() if field.unique and (key in present or not standard(field))} \
                 | model_indexes.declared(model, unique=True):
             raise SchemaError(f'{name}: unique constraints differ from models')
         if any(index_columns(key, field) not in indexed for key, field in model.__fields__.items() if field.index) \
                 or not model_indexes.declared(model) <= indexed:
             raise SchemaError(f'{name}: an explicit index migration is required')
-        if ledger and ledgers.has_triggers(connection, False, name) != model.__append_only__:
+        if ledger and ledgers.has_triggers(connection, name) != model.__append_only__:
             raise SchemaError(f'{name}: the append-only triggers differ from Meta.append_only; run explicit migrations')
         if any((*field.scope, key) not in partial for key, field in model.__fields__.items() if field.kind == 'sequence'):
             raise SchemaError(f'{name}: a Sequence field is missing its unique index')
         if rows:
-            for row in connection.execute(f'SELECT * FROM {table}'):
+            for row in connection.run(qb.select(name)):
                 try:
                     model._from_row(row)
                 except (ValueError, TypeError, OverflowError) as exc:
                     raise SchemaError(f'{name} #{RecordId(row["id"])}: stored data fails validation: {exc}') from exc
-    if connection.execute('PRAGMA foreign_key_check').fetchone() is not None:
+    if connection.broken_foreign_key() is not None:
         raise SchemaError('Stored data contains a broken foreign key')
 
 
@@ -335,7 +326,8 @@ def ledger_tables(registry):
 
 
 def _save_definition(connection, registry):
-    connection.execute('INSERT OR REPLACE INTO evlet_schema (id, definition) VALUES (1, ?)', (_definition(registry),))
+    definition = _definition(registry)
+    connection.run(qb.insert('evlet_schema', id=1, definition=definition).on_conflict('id').do_update(definition=definition))
 
 
 def _migration_plan(migrations):
@@ -346,7 +338,7 @@ def _migration_plan(migrations):
 
 
 def _history(connection, migrations, checksums):
-    history = connection.execute('SELECT name, checksum FROM evlet_migrations ORDER BY position').fetchall()
+    history = connection.run(qb.select('evlet_migrations', 'name', 'checksum').order_by('position')).all()
     if len(history) > len(migrations) or any(
         row['name'] != migrations[i].name or row['checksum'] != checksums[i]
         for i, row in enumerate(history)
@@ -357,43 +349,33 @@ def _history(connection, migrations, checksums):
 
 def initialize(database):
     plan = None if database.migrations is None else _migration_plan(database.migrations)
-    database.path.parent.mkdir(parents=True, exist_ok=True)
-    with database._connection() as connection:
-        connection.execute('PRAGMA journal_mode = WAL')
-        connection.execute('BEGIN IMMEDIATE')
-        try:
-            tables = _tables(connection)
-            if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
-                from .lifecycle import ensure_tables
-                ensure_tables(connection)
-            _metadata(connection)
-            saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()
-            saved = _moved(money_scale(connection, database.registry, saved and saved[0], allow=getattr(database, 'upgrade_money', True)))
-            if saved:
-                ledger_switch(saved[0], database.registry)
-            if saved and not _same(saved[0], database.registry):
-                raise SchemaError('Model definitions changed; run explicit migrations before startup')
-            baseline = False
-            if plan is not None:
-                migrations, checksums = plan
-                history = _history(connection, migrations, checksums)
-                if history and len(history) != len(migrations):
-                    raise SchemaError('Unapplied migration history; run explicit migrations before startup')
-                baseline = not history
-            if not tables:
-                for name, model in database.registry.models.items():
-                    _create(connection, name, model)
-            _check(connection, database.registry, rows=not saved or baseline)
-            if baseline:
-                connection.executemany(
-                    'INSERT INTO evlet_migrations (position, name, checksum) VALUES (?, ?, ?)',
-                    [(i + 1, migration.name, checksums[i]) for i, migration in enumerate(migrations)],
-                )
-            _save_definition(connection, database.registry)
-            connection.commit()
-        except BaseException:
-            connection.rollback()
-            raise
+    with database.schema_transaction() as connection:
+        tables = _tables(connection)
+        if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
+            from .lifecycle import ensure_tables
+            ensure_tables(connection)
+        _metadata(connection)
+        saved = connection.run(qb.select('evlet_schema', 'definition').where(id=1)).one()
+        saved = _moved(money_scale(connection, database.registry, saved and saved[0], allow=getattr(database, 'upgrade_money', True)))
+        if saved:
+            ledger_switch(saved[0], database.registry)
+        if saved and not _same(saved[0], database.registry):
+            raise SchemaError('Model definitions changed; run explicit migrations before startup')
+        baseline = False
+        if plan is not None:
+            migrations, checksums = plan
+            history = _history(connection, migrations, checksums)
+            if history and len(history) != len(migrations):
+                raise SchemaError('Unapplied migration history; run explicit migrations before startup')
+            baseline = not history
+        if not tables:
+            for name, model in database.registry.models.items():
+                _create(connection, name, model)
+        _check(connection, database.registry, rows=not saved or baseline)
+        if baseline:
+            for i, migration in enumerate(migrations):
+                connection.run(qb.insert('evlet_migrations', position=i + 1, name=migration.name, checksum=checksums[i]))
+        _save_definition(connection, database.registry)
 
 
 @dataclass(frozen=True)
@@ -427,11 +409,11 @@ class AddField:
         values = self.field.to_columns(self.value())
         if isinstance(self.field, (Link, Reference)) and any(value is not None for value in values):
             raise SchemaError('Add nullable Link and Reference fields with a null backfill; required backfills are not supported')
-        for sql, value in zip(_column(self.name, self.field), values):
-            literal = connection.execute('SELECT quote(?)', (value,)).fetchone()[0]
-            connection.execute(f'ALTER TABLE {identifier(self.table)} ADD COLUMN {sql} DEFAULT {literal}')
+        identifier(self.table)
+        for column, value in zip(field_columns(self.name, self.field), values):
+            connection.add_column(self.table, column, default=value)
         if self.field.unique or self.field.index:
-            _index(connection, self.table, self.name, unique=self.field.unique, columns=index_columns(self.name, self.field))
+            index(connection, self.table, self.name, unique=self.field.unique, columns=index_columns(self.name, self.field))
         if self.field.kind == 'sequence':
             _sequence_index(connection, self.table, self.name, self.field)
 
@@ -450,14 +432,15 @@ class RenameField:
         return {'operation': 'rename_field', 'table': self.table, 'old_name': self.old_name, 'new_name': self.new_name}
 
     def apply(self, connection, columns=None):
-        """columns: the table's column names (read from SQLite when not given)."""
+        """columns: the table's column names (read from the database when not given)."""
         if columns is None:
-            columns = {row[1] for row in connection.execute(f'PRAGMA table_info({identifier(self.table)})')}
+            columns = set(connection.columns(self.table))
         # A Reference occupies <name>_model and <name>_id; rename both.
         pairs = [(self.old_name + suffix, self.new_name + suffix) for suffix in ('_model', '_id')] \
             if self.old_name not in columns and {self.old_name + '_model', self.old_name + '_id'} <= columns else [(self.old_name, self.new_name)]
         for old, new in pairs:
-            connection.execute(f'ALTER TABLE {identifier(self.table)} RENAME COLUMN {identifier(old)} TO {identifier(new)}')
+            identifier(old), identifier(new)
+            connection.rename_column(self.table, old, new)
 
 
 @dataclass(frozen=True)
@@ -481,13 +464,13 @@ class AddIndex:
                 'unique': self.unique}
 
     def apply(self, connection, columns=None):
-        """columns: the table's column names (read from SQLite when not given); a Reference indexes both of its columns."""
+        """columns: the table's column names (read from the database when not given); a Reference indexes both of its columns."""
         if self.composite():
-            _index(connection, self.table, '_'.join(self.field), unique=self.unique, columns=self.field)
+            index(connection, self.table, '_'.join(self.field), unique=self.unique, columns=self.field)
             return
         if columns is None:
-            columns = {row[1] for row in connection.execute(f'PRAGMA table_info({identifier(self.table)})')}
-        _index(connection, self.table, self.field, unique=self.unique, columns=stored_columns(columns, self.field))
+            columns = set(connection.columns(self.table))
+        index(connection, self.table, self.field, unique=self.unique, columns=stored_columns(columns, self.field))
 
 
 @dataclass(frozen=True)
@@ -503,8 +486,8 @@ class SetAppendOnly:
             raise SchemaError('SetAppendOnly enabled is True or False')
         return {'operation': 'set_append_only', 'table': self.table, 'enabled': self.enabled}
 
-    def apply(self, connection, postgres=False):
-        (ledgers.add_triggers if self.enabled else ledgers.drop_triggers)(connection, postgres, self.table)
+    def apply(self, connection):
+        (ledgers.add_triggers if self.enabled else ledgers.drop_triggers)(connection, self.table)
 
 
 @dataclass(frozen=True)
@@ -548,18 +531,18 @@ class CreateModel:
                                   line.replace('after the migrations', 'in the database').replace('in the models', 'in CreateModel')
                                   for line in lines))
 
-    def verify(self, check, connection):
-        """Check the existing table against this definition with the adapter's schema check."""
+    def verify(self, connection):
+        """Check the existing table against this definition."""
         from types import SimpleNamespace
         try:
-            check(connection, SimpleNamespace(models={storage_name(self.model): self.model}))
+            _check(connection, SimpleNamespace(models={storage_name(self.model): self.model}))
         except SchemaError as exc:
             raise SchemaError(f'CreateModel({self.model.__name__}, if_missing=True): the existing table cannot be adopted: {exc}') from None
 
     def apply(self, connection):
         table = storage_name(self.model)
         if self.if_missing and table in _tables(connection):
-            self.verify(_check, connection)
+            self.verify(connection)
             return
         _create(connection, table, self.model)
 
@@ -632,72 +615,18 @@ class Recompute:
         """No structural change; migrate() recalculates after the batch's other operations."""
 
 
-def retired_columns(connection, postgres=False):
+def retired_columns(connection):
     """{table: {column}} of the fields RetireField took out of the models; their columns and data stay."""
-    exists = "SELECT 1 FROM pg_tables WHERE schemaname='public' AND tablename='evlet_retired_fields'" if postgres \
-        else "SELECT 1 FROM sqlite_master WHERE name='evlet_retired_fields'"
-    if connection.execute(exists).fetchone() is None:
+    if not connection.table_exists('evlet_retired_fields'):
         return {}
     result = {}
-    for row in connection.execute('SELECT model, name FROM evlet_retired_fields'):
+    for row in connection.run(qb.select('evlet_retired_fields', 'model', 'name')):
         result.setdefault(row[0], set()).add(row[1])
     return result
 
 
 def _retired_table(connection):
-    connection.execute('CREATE TABLE IF NOT EXISTS evlet_retired_fields (model TEXT NOT NULL, name TEXT NOT NULL, '
-                       'definition TEXT NOT NULL, PRIMARY KEY (model, name))')
-
-
-def _relax(connection, table, columns, *, references=False):
-    """Drop NOT NULL (and with `references`, the foreign key) from columns of an engine-created SQLite table.
-
-    This is SQLite's documented procedure for constraint changes that leave stored content as it is: the
-    table's CREATE statement is edited in place and the schema version bumped, inside the migration
-    transaction, so a rollback restores it."""
-    sql = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
-    edited = sql
-    for column in columns:
-        pattern = re.compile(re.escape(identifier(column)) + r' (\w+)( NOT NULL)?( REFERENCES "[A-Za-z0-9_]+"\("id"\))?')
-        match = pattern.search(edited)
-        if match is None:
-            raise SchemaError(f'{table}.{column}: the column definition was not created by Evlet')
-        replacement = f'{identifier(column)} {match.group(1)}' + ('' if references else match.group(3) or '')
-        edited = edited[:match.start()] + replacement + edited[match.end():]
-    _replace_create(connection, table, sql, edited, 'retiring a required field, dropping a Link field and making a field optional need it')
-
-
-def _require(connection, table, column):
-    """Add NOT NULL to a column of an engine-created SQLite table whose rows all have a value (checked first by
-    the caller, inside the same migration transaction), with the same in-place procedure as _relax."""
-    sql = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone()[0]
-    pattern = re.compile(re.escape(identifier(column)) + r' (\w+)( NOT NULL)?( REFERENCES "[A-Za-z0-9_]+"\("id"\))?')
-    match = pattern.search(sql)
-    if match is None:
-        raise SchemaError(f'{table}.{column}: the column definition was not created by Evlet')
-    edited = sql[:match.start()] + f'{identifier(column)} {match.group(1)} NOT NULL{match.group(3) or ""}' + sql[match.end():]
-    _replace_create(connection, table, sql, edited, 'making a field required needs it')
-
-
-def _replace_create(connection, table, sql, edited, why):
-    """Store an edited CREATE statement for a table and bump the schema version (SQLite's documented procedure
-    for constraint changes that keep the stored rows), inside the migration transaction."""
-    if edited == sql:
-        return
-    version = connection.execute('PRAGMA schema_version').fetchone()[0]
-    connection.execute('PRAGMA writable_schema = ON')
-    try:
-        connection.execute("UPDATE sqlite_master SET sql = ? WHERE type = 'table' AND name = ?", (edited, table))
-        connection.execute(f'PRAGMA schema_version = {int(version) + 1}')
-    except sqlite3.DatabaseError as exc:
-        # SQLite builds in defensive mode (SQLITE_DBCONFIG_DEFENSIVE) refuse schema edits.
-        raise SchemaError(f'{table}: this SQLite build does not allow changing column constraints in place ({exc}); {why}') from exc
-    finally:
-        connection.execute('PRAGMA writable_schema = OFF')
-
-
-def _column_names(connection, table):
-    return {row[1] for row in connection.execute(f'PRAGMA table_info({identifier(table)})')}
+    connection.ensure_table(RETIRED)
 
 
 @dataclass(frozen=True)
@@ -718,11 +647,12 @@ class RetireField:
         return {'operation': 'retire_field', 'table': self.table, 'name': self.name}
 
     def apply(self, connection, definition=None):
-        columns = stored_columns(_column_names(connection, self.table), self.name)
-        _relax(connection, self.table, columns, references=True)
+        for column in stored_columns(connection.columns(self.table), self.name):
+            connection.set_required(self.table, column, False)
+            connection.drop_reference(self.table, column)
         _retired_table(connection)
-        connection.execute('INSERT INTO evlet_retired_fields (model, name, definition) VALUES (?, ?, ?)',
-                           (self.table, self.name, json.dumps(definition or {}, sort_keys=True)))
+        connection.run(qb.insert('evlet_retired_fields', model=self.table, name=self.name,
+                                 definition=json.dumps(definition or {}, sort_keys=True)))
 
 
 @dataclass(frozen=True)
@@ -739,21 +669,20 @@ class DropField:
         identifier(self.name)
         return {'operation': 'drop_field', 'table': self.table, 'name': self.name}
 
-    def _retired(self, connection, postgres=False):
-        if self.name not in retired_columns(connection, postgres).get(self.table, set()):
+    def _retired(self, connection):
+        if self.name not in retired_columns(connection).get(self.table, set()):
             raise SchemaError(f'{self.table}.{self.name}: DropField needs a field an earlier migration retired')
 
     def apply(self, connection):
         self._retired(connection)
-        columns = stored_columns(_column_names(connection, self.table), self.name)
-        for index in connection.execute(f'PRAGMA index_list({identifier(self.table)})').fetchall():
-            covered = {row[2] for row in connection.execute('SELECT * FROM pragma_index_info(?)', (index[1],))}
-            if covered & set(columns):
-                connection.execute(f'DROP INDEX {identifier(index[1])}')
-        _relax(connection, self.table, columns, references=True)
+        columns = stored_columns(connection.columns(self.table), self.name)
+        for found in connection.inspect(self.table).indexes:
+            if set(found.columns) & set(columns):
+                connection.drop_index(found.name)
         for column in columns:
-            connection.execute(f'ALTER TABLE {identifier(self.table)} DROP COLUMN {identifier(column)}')
-        connection.execute('DELETE FROM evlet_retired_fields WHERE model = ? AND name = ?', (self.table, self.name))
+            connection.set_required(self.table, column, False)
+            connection.drop_column(self.table, column)
+        connection.run(qb.delete('evlet_retired_fields').where(model=self.table, name=self.name))
 
 
 TEXTS = ('text', 'longtext')
@@ -826,40 +755,33 @@ class AlterField:
         return value
 
     def apply(self, connection, factor=1, was_required=None):
-        postgres = not isinstance(connection, sqlite3.Connection)
-        table, column = identifier(self.table), identifier(self.name)
+        table, column = self.table, self.name
         if was_required is None:
             was_required = self.field.required  # Called without the plan: leave the constraint as it is.
         # Values convert first, so a fill is stored at the new scale.
         if factor != 1:
             limit = MAX_INTEGER // factor
-            row = connection.execute(f'SELECT "id" FROM {table} WHERE {column} > ? OR {column} < ? ORDER BY "id" LIMIT 1',
-                                     (limit, -limit)).fetchone()
+            row = connection.run(qb.select(table, 'id').where(qb.or_(qb.gt(column, limit), qb.lt(column, -limit)))
+                                 .order_by('id').limit(1)).one()
             if row is not None:
                 raise SchemaError(f'{self.table} #{RecordId(row[0])}.{self.name}: the value is too large for the new scale')
-            connection.execute(f'UPDATE {table} SET {column} = {column} * ? WHERE {column} IS NOT NULL', (factor,))
+            connection.run(qb.update(table, **{column: qb.col(column) * factor}).where(qb.not_null(column)))
         if self.field.required and not was_required:
             if self.fill is not None:
-                connection.execute(f'UPDATE {table} SET {column} = ? WHERE {column} IS NULL', (self.fill_value(),))
-            empty = connection.execute(f'SELECT "id" FROM {table} WHERE {column} IS NULL ORDER BY "id" LIMIT 1').fetchone()
+                connection.run(qb.update(table, **{column: self.fill_value()}).where(qb.is_null(column)))
+            empty = connection.run(qb.select(table, 'id').where(qb.is_null(column)).order_by('id').limit(1)).one()
             if empty is not None:
-                count = connection.execute(f'SELECT count(*) FROM {table} WHERE {column} IS NULL').fetchone()[0]
+                count = connection.run(qb.select(table, qb.count()).where(qb.is_null(column))).value()
                 raise SchemaError(f'{self.table}.{self.name} cannot become required: {count} record{"s have" if count != 1 else " has"} '
                                   f'no value, the first #{RecordId(empty[0])}. Give AlterField a fill= value, or fill them '
                                   'with a RunData step in an earlier migration')
-            if postgres:
-                connection.execute(f'ALTER TABLE {table} ALTER COLUMN {column} SET NOT NULL')
-            else:
-                _require(connection, self.table, self.name)
+            connection.set_required(self.table, self.name, True)
         elif was_required and not self.field.required:
-            if postgres:
-                connection.execute(f'ALTER TABLE {table} ALTER COLUMN {column} DROP NOT NULL')
-            else:
-                _relax(connection, self.table, [self.name])
+            connection.set_required(self.table, self.name, False)
         # Every stored value must pass the new definition (bounds, length, choices), not only its type.
         after = 0
         while True:
-            rows = connection.execute(f'SELECT "id", {column} FROM {table} WHERE "id" > ? ORDER BY "id" LIMIT 1000', (after,)).fetchall()
+            rows = connection.run(qb.select(table, 'id', column).where(qb.gt('id', after)).order_by('id').limit(1000)).all()
             if not rows:
                 return
             for record_id, stored in rows:
@@ -914,7 +836,7 @@ class Applied(list):
     posted = 0
 
 
-def _recompute(connection, registry, operations, versions, *, postgres=False, include_posted=False):
+def _recompute(connection, registry, operations, versions, *, include_posted=False):
     """Run Recompute operations in order. versions(connection) tells whether formula versions are recorded.
 
     A record with posted effects (voided or not) keeps its saved results, so it is skipped, unless an admin runs the
@@ -950,17 +872,16 @@ def _recompute(connection, registry, operations, versions, *, postgres=False, in
         if stored <= done and versions(connection):
             # Every stored result was recalculated, so the documents now match the active formulas; kept ones do not.
             kept = {record_id for model, record_id in skipped if model is root}
-            table = identifier(registry.name_for(root))
-            ids = [record_id for (record_id,) in connection.execute(f'SELECT "id" FROM {table} ORDER BY "id"').fetchall()
+            ids = [record_id for (record_id,) in connection.run(qb.select(registry.name_for(root), 'id').order_by('id'))
                    if record_id not in kept]
             for start in range(0, len(ids), 500):
                 part = ids[start:start + 500]
-                connection.execute(f'UPDATE evlet_calculation_versions SET plan_hash=? WHERE resource=? AND record_id IN ({", ".join("?" for _ in part)})',
-                                   (registry.formula_hashes[root], registry.name_for(root), *part))
+                connection.run(qb.update('evlet_calculation_versions', plan_hash=registry.formula_hashes[root])
+                               .where(qb.in_('record_id', part), resource=registry.name_for(root)))
     changed_posted = sorted((key for key in changes if key in (posted or ())), key=lambda key: (registry.name_for(key[0]), key[1]))
     for key in changed_posted:
         changes[key]['posted'] = True
-    recomputed(connection, registry, changes, postgres=postgres)
+    recomputed(connection, registry, changes)
     if skipped:
         logger.info('Recompute kept the saved results of %d posted records', len(skipped))
     if changed_posted:
@@ -979,8 +900,8 @@ def _skip(session, model, record, skipped, posted):
     key = (model, record.id)
     if getattr(model, 'confirmable', False):
         # Revision snapshots are permanent; migrate draft calculations explicitly after reopening.
-        row = session.connection.execute('SELECT revision FROM evlet_document_lifecycle WHERE model=? AND record_id=?',
-                                         (session.registry.name_for(model), record.id)).fetchone()
+        row = session.connection.run(qb.select('evlet_document_lifecycle', 'revision')
+                                     .where(model=session.registry.name_for(model), record_id=record.id)).one()
         if row is not None and row[0]:
             skipped.add(key)
             return True
@@ -1046,8 +967,7 @@ def _recompute_finite(session, registry, plan, model, operation, skipped, change
             values['children'] = children
         return values
     today = datetime.now(timezone.utc).date().isoformat()
-    table = identifier(registry.name_for(root))
-    for (record_id,) in session.connection.execute(f'SELECT "id" FROM {table} ORDER BY "id"').fetchall():
+    for (record_id,) in session.connection.run(qb.select(registry.name_for(root), 'id').order_by('id')).all():
         record, saved = session.get(root, record_id), {}
         if _skip(session, root, record, skipped, posted):
             continue
@@ -1091,8 +1011,7 @@ def _recompute_legacy(session, model, operation, skipped, changes, posted=None):
             or any(child.model is model for child in session.registry.children):
         raise SchemaError(f'{operation.table}: Recompute supports string formulas only on models without tables or queries')
     nodes, order = graph(session.registry, model)
-    table = identifier(session.registry.name_for(model))
-    for (record_id,) in session.connection.execute(f'SELECT "id" FROM {table} ORDER BY "id"').fetchall():
+    for (record_id,) in session.connection.run(qb.select(session.registry.name_for(model), 'id').order_by('id')).all():
         record = session.get(model, record_id)
         if _skip(session, model, record, skipped, posted):
             continue
@@ -1114,8 +1033,7 @@ def _recompute_legacy(session, model, operation, skipped, changes, posted=None):
 def _write(session, model, record_id, values):
     from .database import storage_columns
     names, stored = storage_columns(model, values, values)
-    assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
-    session.connection.execute(f'UPDATE {identifier(session.registry.name_for(model))} SET {assignments} WHERE "id" = ?', [*stored, record_id])
+    session.connection.run(qb.update(session.registry.name_for(model), **dict(zip(names, stored))).where(id=record_id))
 
 
 OPERATIONS = (AddField, RenameField, AddIndex, CreateModel, AddTable, RetireField, DropField, AlterField, RunData, Recompute,
@@ -1374,15 +1292,12 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
     `allow_destructive=True` (`--allow-destructive`) permits DropField, and `allow_maintenance=True`
     (`--allow-maintenance`) RunData steps declared with maintenance=True."""
     migrations, checksums = _migration_plan(migrations)
-    database.path.parent.mkdir(parents=True, exist_ok=True)
-    with database._connection() as connection:
-        connection.execute('PRAGMA journal_mode = WAL')
-        connection.execute('BEGIN IMMEDIATE')
+    with database.schema_transaction() as connection:
         try:
             fresh = not _tables(connection)
             _metadata(connection)
             history = _history(connection, migrations, checksums)
-            saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone()
+            saved = connection.run(qb.select('evlet_schema', 'definition').where(id=1)).one()
             # Amounts move to 6 places before any app step reads or writes them (an explicit migration, after evlet migrate's backup).
             saved = _moved(money_scale(connection, database.registry, saved and saved[0]))
             if not fresh and not saved:
@@ -1410,42 +1325,35 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 # Data migrations write through Session, which fills the record time columns, so existing
                 # tables get them before any step runs (framework step 0004 does the same without migrations).
                 for table in sorted(_tables(connection) - ledger_tables(database.registry)):
-                    add_audit_columns(connection, False, table)
+                    add_audit_columns(connection, table)
             for position, migration in enumerate(pending, len(history) + 1):
                 if not fresh and not baseline:
                     for operation in migration.operations:
                         operation.apply(connection, *step_arguments(operation, steps))
                     run_data(connection, database.registry, migration)
-                connection.execute('INSERT INTO evlet_migrations (position, name, checksum) VALUES (?, ?, ?)',
-                                   (position, migration.name, checksums[position - 1]))
+                connection.run(qb.insert('evlet_migrations', position=position, name=migration.name, checksum=checksums[position - 1]))
             if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
                 from .lifecycle import ensure_tables
                 ensure_tables(connection)
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
-                applied.skipped, applied.posted = _recompute(connection, database.registry, recomputes(pending), lambda db: db.execute(
-                    "SELECT 1 FROM sqlite_master WHERE type='table' AND name='evlet_calculation_versions'").fetchone() is not None,
+                applied.skipped, applied.posted = _recompute(connection, database.registry, recomputes(pending), lambda db: db.table_exists('evlet_calculation_versions'),
                     include_posted=recompute_posted)
             # The batch ends with the models' standard name and title columns (framework step 0003 does
             # the same for instances that have no app migration to run).
             from .naming import add_columns, fill_titles
             for table, model in database.registry.models.items():
-                add_columns(connection, False, table, model)
+                add_columns(connection, table, model)
                 fill_titles(connection, table, model)
                 # A rebuilt table loses its triggers; every table refuses id changes again (evlet/identity.py).
-                add_id_guard(connection, False, table)
+                add_id_guard(connection, table)
             _check(connection, database.registry, rows=True)
             _save_definition(connection, database.registry)
-            connection.commit()
             return applied
-        except (sqlite3.Error, ValueError, TypeError) as exc:
-            connection.rollback()
+        except (DatabaseError, ValueError, TypeError) as exc:
             if isinstance(exc, SchemaError):
                 raise
             raise SchemaError(f'Migration rolled back: {exc}') from exc
-        except BaseException:
-            connection.rollback()
-            raise
 
 
 @dataclass(frozen=True)
@@ -1691,18 +1599,14 @@ def plan_from(saved, history, migrations, registry, *, tables=True):
 
 
 def plan(database, migrations):
-    """What migrate(database, migrations) would do. Reads the SQLite file read-only and writes nothing."""
-    if not database.path.exists():
-        return plan_from(None, [], migrations, database.registry, tables=False)
-    connection = sqlite3.connect(database.path.absolute().as_uri() + '?mode=ro', uri=True)
-    try:
-        def exists(name):
-            return connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (name,)).fetchone() is not None
-        saved = connection.execute('SELECT definition FROM evlet_schema WHERE id = 1').fetchone() if exists('evlet_schema') else None
+    """What migrate(database, migrations) would do. Reads the database read-only and writes nothing."""
+    with database.read_only() as connection:
+        if connection is None:
+            return plan_from(None, [], migrations, database.registry, tables=False)
+        exists = connection.table_exists
+        saved = connection.run(qb.select('evlet_schema', 'definition').where(id=1)).one() if exists('evlet_schema') else None
         if saved and not exists('evlet_money'):
             saved = (upgraded_definition(saved[0]),)  # migrate() moves the amounts to 6 places first
-        history = connection.execute('SELECT name, checksum FROM evlet_migrations ORDER BY position').fetchall() \
+        history = connection.run(qb.select('evlet_migrations', 'name', 'checksum').order_by('position')).all() \
             if exists('evlet_migrations') else []
         return plan_from(saved and saved[0], history, migrations, database.registry, tables=bool(_tables(connection)))
-    finally:
-        connection.close()

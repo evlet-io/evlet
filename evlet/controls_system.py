@@ -167,7 +167,7 @@ class System:
         if self.controls.business.jobs is None:
             return []
         with self.controls.database._connection() as connection:
-            if not self.controls.database.columns(connection, 'evlet_schedules'):
+            if not connection.columns('evlet_schedules'):
                 return []
             return [row[0] for row in connection.execute('SELECT name FROM evlet_schedules ORDER BY name')]
 

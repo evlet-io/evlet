@@ -238,7 +238,7 @@ def void_record(context, model, record, reason):
     # A record in a closed period (Meta.period) is neither voided nor unposted.
     periods.check(tx, model, before=record._values)
     tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (VOID, record.id))
-    touch(tx.connection, identifier(business.registry.name_for(model)), record.id, actor_id(user))
+    touch(tx.connection, business.registry.name_for(model), record.id, actor_id(user))
     reversed_rows = reverse_effects(context, model, record.id, previous)
     reaction = getattr(model, 'changed', None)
     if reaction is not None:
@@ -562,7 +562,7 @@ def unpost(context, model, record_id, reason):
     to = unpost_state(context, model, record.id)
     periods.check(tx, model, before=record._values)
     tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (to, record.id))
-    touch(tx.connection, identifier(business.registry.name_for(model)), record.id, actor_id(user))
+    touch(tx.connection, business.registry.name_for(model), record.id, actor_id(user))
     reversed_rows = reverse_effects(context, model, record.id, previous)
     reaction = getattr(model, 'changed', None)
     if reaction is not None:

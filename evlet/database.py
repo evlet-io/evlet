@@ -1,4 +1,7 @@
-"""Small SQLite persistence API with explicit transaction boundaries."""
+"""The SQLite database and the record API (Session) with explicit transaction boundaries.
+
+The database adapter boundary is described in docs/database-adapters.md: a Database subclass that opens
+connections and runs transactions, and a connection class that implements evlet.adapter.Connection."""
 
 from contextlib import contextmanager
 from pathlib import Path
@@ -11,14 +14,15 @@ from .fields import ACTIVE, EMPTY_LAYER, Image, Link, MISSING, Reference, RichTe
 from . import audit
 from .identity import FIXED_ID, RecordId, new_id, sequential
 from .currencies import check_amounts
-from .models import ValidationError, identifier
+from .models import ValidationError
 from .query import SqlQuery
 from .naming import has_title, title_of
 from . import images, ledger, periods
 from .ledger import is_ledger
 from .permissions import CALLER
 from .sequences import name_new, raw_write
-from . import writes
+from . import qb, writes
+from .sqlite import SQLiteConnection
 
 # Most rows one list call returns, and most rows one child collection may hold in an editor.
 ROW_LIMIT = 100
@@ -35,18 +39,18 @@ class ConflictError(ValueError):
 CONSTRAINT = 'A unique value or linked record constraint was violated'
 
 
-def conflict(registry, exc):
-    """The Evlet error for a database integrity failure, the same on SQLite and PostgreSQL: ValidationError
-    naming the fields of a unique Meta.indexes entry (evlet/indexes.py), ConflictError for a write an
-    append-only table refuses (evlet/ledger.py) or an id change (evlet/identity.py), and ConflictError for any other unique or foreign key."""
+def conflict(registry, failure):
+    """The Evlet error for a database integrity failure (an adapter.IntegrityFailure, from the connection's
+    integrity_failure): ValidationError naming the fields of a unique Meta.indexes entry (evlet/indexes.py),
+    ConflictError for a write an append-only table refuses (evlet/ledger.py) or an id change
+    (evlet/identity.py), and ConflictError for any other unique or foreign key."""
     from .indexes import violated
-    diag = getattr(exc, 'diag', None)
-    text = (diag.message_primary or '') if diag is not None else str(exc)
+    text = failure.message
     if text.endswith(' ' + ledger.APPEND_ONLY):
         return ConflictError(f'{text}: its rows are never changed or deleted')
     if text.endswith(': ' + FIXED_ID):
         return ConflictError(text)
-    return violated(registry, exc) or ConflictError(CONSTRAINT)
+    return violated(registry, failure.table, failure.columns) or ConflictError(CONSTRAINT)
 
 
 @contextmanager
@@ -109,7 +113,7 @@ class Database:
 
     def _open(self, sides):
         target = self.path.absolute().as_uri() + '?mode=rw' if self.must_exist else self.path
-        connection = sqlite3.connect(target, timeout=self.write_wait, uri=self.must_exist, factory=writes.Connection,
+        connection = sqlite3.connect(target, timeout=self.write_wait, uri=self.must_exist, factory=SQLiteConnection,
                                      check_same_thread=False)
         connection.row_factory = sqlite3.Row
         try:
@@ -201,13 +205,53 @@ class Database:
 
     def owns(self, session):
         """Check the physical database before accepting a bound feature write."""
-        if not isinstance(session.connection, sqlite3.Connection):
+        if not isinstance(session.connection, SQLiteConnection):
             return False
         path = session.connection.execute('PRAGMA database_list').fetchone()[2]
         return Path(path).resolve() == self.path.resolve()
 
-    def columns(self, connection, table):
-        return {row['name'] for row in connection.execute(f'PRAGMA table_info({identifier(table)})')}
+    @contextmanager
+    def schema_transaction(self):
+        """A connection inside one transaction that holds every write lock, for initialize() and migrate().
+        The database's folder and main file are created when missing."""
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with self._connection() as connection:
+            connection.execute('PRAGMA journal_mode = WAL')
+            connection.execute('BEGIN IMMEDIATE')
+            try:
+                yield connection
+                connection.commit()
+            except BaseException:
+                connection.rollback()
+                raise
+
+    @contextmanager
+    def read_only(self):
+        """A read-only connection to the main file, or None when there is no database yet. plan() uses it."""
+        if not self.path.exists():
+            yield None
+            return
+        connection = sqlite3.connect(self.path.absolute().as_uri() + '?mode=ro', uri=True, factory=SQLiteConnection)
+        try:
+            yield connection
+        finally:
+            connection.close()
+
+    def upgrade_storage(self):
+        """Move each side table still in the main file into its own file (framework step 0010_split_files), before
+        the framework steps' transaction, since a file cannot be attached inside a transaction."""
+        writes.split_files(self)
+
+    def backup(self):
+        """A consistent copy of the database in backups/ next to it, named by the time; returns its file name.
+        Controls calls it before it changes instance fields."""
+        from datetime import datetime, timezone
+        from .cli.install import snapshot
+        folder = self.path.parent / 'backups'
+        folder.mkdir(mode=0o700, exist_ok=True)
+        target = folder / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
+        snapshot(self.path, target)
+        return target.name
 
     def initialize(self):
         from .migrations import initialize
@@ -246,7 +290,7 @@ class Database:
                     connection.commit()
                 except sqlite3.IntegrityError as exc:
                     connection.rollback()
-                    raise conflict(self.registry, exc) from exc
+                    raise conflict(self.registry, connection.integrity_failure(exc)) from exc
                 except sqlite3.DatabaseError as exc:
                     connection.rollback()
                     if turns.failed == 'busy':
@@ -301,13 +345,13 @@ class Database:
         """Declared Meta.measures: model-level values, or per-record values when record_id is given."""
         from .measures import measures
         with self._connection() as connection:
-            connection.execute("BEGIN")
+            connection.snapshot()
             return measures(Session(connection, self.registry), model, record_id, filters)
 
     def page(self, model, **query):
         """Return records and their filtered count from one read snapshot."""
         with self._connection() as connection:
-            connection.execute("BEGIN")
+            connection.snapshot()
             session = Session(connection, self.registry)
             records = session.list(model, **query)
             total = session.count(model, filters=query.get('filters'), search=query.get('search', ''))
@@ -368,7 +412,7 @@ def insert(connection, table, names, values, *, id_title=False, actor=None):
     names, values = [*names, *stamp_names], [*values, *stamp_values]
     record_id = _insert(connection, table, names, values, position)
     if position is not None and sequential():
-        connection.execute(f'UPDATE {table} SET "title" = ? WHERE "id" = ?', (str(record_id), record_id))
+        connection.run(qb.update(table, title=str(record_id)).where(id=record_id))
     return record_id
 
 
@@ -382,18 +426,13 @@ def stored_values(model, values, record_id=None):
 def _insert(connection, table, names, values, title_position=None):
     if sequential():
         # Recorded fixtures: the table's own autoincrement numbers rows 1, 2, 3 and never reuses one.
-        sql = f'INSERT INTO {table} ({", ".join(identifier(name) for name in names)}) VALUES ({", ".join("?" for _ in names)})' \
-            if names else f'INSERT INTO {table} DEFAULT VALUES'
-        return RecordId(connection.execute(sql, values).lastrowid)
-    columns = ', '.join(['"id"', *(identifier(name) for name in names)])
-    placeholders = ', '.join('?' for _ in range(len(names) + 1))
+        return RecordId(connection.run(qb.insert(table, **dict(zip(names, values))).returning_id()).id)
     for _ in range(8):
         record_id = new_id()
         if title_position is not None:
             values = [*values[:title_position], str(record_id), *values[title_position + 1:]]
-        cursor = connection.execute(f'INSERT INTO {table} ({columns}) VALUES ({placeholders}) ON CONFLICT ("id") DO NOTHING',
-                                    [record_id, *values])
-        if cursor.rowcount == 1:
+        row = qb.insert(table, id=record_id, **dict(zip(names, values))).on_conflict('id').do_nothing()
+        if connection.run(row).rowcount == 1:
             return record_id
     raise ConflictError('Could not find a free record id')
 
@@ -517,7 +556,7 @@ class Session:
     def _create(self, model, values):
         self._guard(model)
         self._state(model, values.get(getattr(model, '__state__', None) or '', MISSING), None)
-        table = identifier(self.registry.name_for(model))
+        table = self.registry.name_for(model)
         record = model(**values)
         numbers = raw_write(self, model, values, None, record._values)
         # A trusted session may give a naming field a value (imports); otherwise the series names it.
@@ -539,10 +578,7 @@ class Session:
             record_id = ledger_id(record_id) if is_ledger(model) else RecordId(record_id)
         except ValueError as exc:
             raise ValidationError({"id": str(exc) if is_ledger(model) else "Use a record id"}) from None
-        table = identifier(self.registry.name_for(model))
-        row = self.connection.execute(
-            f'SELECT * FROM {table} WHERE "id" = ?', (record_id,)
-        ).fetchone()
+        row = self.connection.run(qb.select(self.registry.name_for(model)).where(id=record_id)).one()
         if row is None:
             raise NotFoundError("Record not found")
         return model._from_row(row)
@@ -552,15 +588,10 @@ class Session:
             raise ValidationError({"limit": f"Use an integer between 1 and {ROW_LIMIT}"})
         if type(offset) is not int or not 0 <= offset <= 2**63 - 1:
             raise ValidationError({"offset": "Use a non-negative 64-bit integer"})
-        table = identifier(self.registry.name_for(model))
         # Trusted code: `in` lists may be long (evlet/query.py TRUSTED_IN_VALUES).
         query = SqlQuery(self.registry, model, trusted=True)
-        where, values = query.where(filters, search)
-        order = query.ordering(order_by)
-        rows = self.connection.execute(
-            f'SELECT "record".* FROM {table} AS "record"{where}{order} LIMIT ? OFFSET ?',
-            [*values, limit, offset],
-        ).fetchall()
+        records = qb.select(qb.table(self.registry.name_for(model), 'record')).where(query.where(filters, search))
+        rows = self.connection.run(records.order_by(*query.ordering(order_by)).limit(limit).offset(offset)).all()
         return [model._from_row(row) for row in rows]
 
     def update(self, model, record_id, /, **changes):
@@ -583,13 +614,11 @@ class Session:
             periods.check(self, model, before=current._values, after=record._values)
             self.check_references(model, {name: record._values[name] for name in changes})
             check_amounts(self, model, record._values)
-            table = identifier(self.registry.name_for(model))
             values = stored_values(model, record._values, current.id)
             names, stored = storage_columns(model, values, [*changes, *(['title'] if has_title(model) and 'title' not in changes else [])])
             stamp_names, stamp_values = audit.modified(self.actor)
-            names, stored = [*names, *stamp_names], [*stored, *stamp_values]
-            assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
-            self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', stored + [current.id])
+            columns = dict(zip([*names, *stamp_names], [*stored, *stamp_values]))
+            self.connection.run(qb.update(self.registry.name_for(model), **columns).where(id=current.id))
             if any(isinstance(model.__fields__.get(name), (RichText, Image)) for name in changes):
                 images.settle(self, model, current.id, record._values)
         return self.get(model, current.id)
@@ -629,23 +658,16 @@ class Session:
                              'transaction the application opened (an action, a move run, a job, business.context()), '
                              'or inside session.maintenance() for an audited repair that skips derive()')
         self._savepoints = getattr(self, '_savepoints', 0) + 1
-        name = f'evlet_derive_{self._savepoints}'
-        self.connection.execute(f'SAVEPOINT {name}')
         try:
-            # A row names its document before the write (a deleted row is gone after it) and after it.
-            documents = [] if record_id is None or model is owner else [owner_of(self, model, record_id)]
-            written = []
-            yield written
-            documents += [written[0] if model is owner else owner_of(self, model, written[0]) for _ in written[:1]]
-            for document in dict.fromkeys(documents):
-                if document is not None:
-                    settle_saved(self, owner, document, children)
-        except BaseException:
-            self.connection.execute(f'ROLLBACK TO SAVEPOINT {name}')
-            self.connection.execute(f'RELEASE SAVEPOINT {name}')
-            raise
-        else:
-            self.connection.execute(f'RELEASE SAVEPOINT {name}')
+            with self.connection.savepoint(f'evlet_derive_{self._savepoints}'):
+                # A row names its document before the write (a deleted row is gone after it) and after it.
+                documents = [] if record_id is None or model is owner else [owner_of(self, model, record_id)]
+                written = []
+                yield written
+                documents += [written[0] if model is owner else owner_of(self, model, written[0]) for _ in written[:1]]
+                for document in dict.fromkeys(documents):
+                    if document is not None:
+                        settle_saved(self, owner, document, children)
         finally:
             self._savepoints -= 1
 
@@ -657,16 +679,15 @@ class Session:
                 target = (self.registry.exposed if CALLER.get() else self.registry.models).get(value[0])
                 if target is None:
                     raise ValidationError({name: 'Use a registered model name'})
-                if self.connection.execute(f'SELECT 1 FROM {identifier(value[0])} WHERE "id" = ?', (value[1],)).fetchone() is None:
+                if self.connection.run(qb.select(value[0], 'id').where(id=value[1])).one() is None:
                     raise ValidationError({name: 'The referenced record does not exist'})
 
     def add_standard_columns(self, model):
         """For a data migration that fills names: give the model's table the standard name and title
         columns now instead of in framework step 0003, which runs after app migrations. Idempotent."""
         from .naming import add_columns
-        postgres = not isinstance(self.connection, sqlite3.Connection)
-        add_columns(self.connection, postgres, self.registry.name_for(model), model)
-        audit.add_columns(self.connection, postgres, self.registry.name_for(model))
+        add_columns(self.connection, self.registry.name_for(model), model)
+        audit.add_columns(self.connection, self.registry.name_for(model))
 
     def delete(self, model, record_id):
         if is_ledger(model):
@@ -684,10 +705,9 @@ class Session:
         current = self.get(model, record_id)
         periods.check(self, model, before=current._values)
         record_id = current.id
-        table = identifier(self.registry.name_for(model))
         from .sections import forget
         forget(self.connection, self.registry, model, [record_id])
-        self.connection.execute(f'DELETE FROM {table} WHERE "id" = ?', (record_id,))
+        self.connection.run(qb.delete(self.registry.name_for(model)).where(id=record_id))
         # The record's images (rich text and Image fields) go with it.
         images.remove(self, model, record_id)
 
@@ -705,7 +725,7 @@ class Session:
         rows = list(rows)
         if not rows:
             return []
-        table = identifier(self.registry.name_for(model))
+        table = self.registry.name_for(model)
         stamps = {key: ledger.now() for key in ('created_at', 'modified_at') if key in model.__fields__}
         names = list(model.__fields__)
         records, stored, given = [], [], []
@@ -731,27 +751,19 @@ class Session:
             records.append(record)
             stored.append(storage_columns(model, record._values, names)[1])
         columns = storage_columns(model, records[0]._values, names)[0]
-        sql = f'INSERT INTO {table} ({", ".join(identifier(name) for name in columns)}) VALUES ({", ".join("?" for _ in columns)})' \
-            if columns else f'INSERT INTO {table} DEFAULT VALUES'
         if any(row_id is not None for row_id in given):
             # Reserved ids are below the table's next id, so rows without one still take new ids.
-            named = ', '.join(identifier(name) for name in ('id', *columns))
-            with_id = f'INSERT INTO {table} ({named}) VALUES ({", ".join("?" for _ in range(len(columns) + 1))})'
             ids = []
             for row_id, values in zip(given, stored):
+                row = dict(zip(columns, values))
                 if row_id is None:
-                    ids.append(self.connection.execute(sql, values).lastrowid)
+                    ids.append(self.connection.run(qb.insert(table, **row).returning_id()).id)
                 else:
-                    self.connection.execute(with_id, [row_id, *values])
+                    self.connection.run(qb.insert(table, id=row_id, **row))
                     ids.append(row_id)
             reserved.difference_update(given)
-        elif isinstance(self.connection, sqlite3.Connection):
-            # One writer at a time (BEGIN IMMEDIATE) and AUTOINCREMENT ids: the rows take the next ids in order.
-            self.connection.executemany(sql, stored)
-            last = self.connection.execute('SELECT last_insert_rowid()').fetchone()[0]
-            ids = list(range(last - len(stored) + 1, last + 1))
         else:
-            ids = [self.connection.execute(sql, values).lastrowid for values in stored]
+            ids = self.connection.insert_many(table, columns, stored)
         if model in getattr(self.registry, 'journals', {}):
             for record_id, record in zip(ids, records):
                 self._ledger_journal(model, record_id, 'created', None, record)
@@ -762,24 +774,11 @@ class Session:
         this transaction can name each other (or themselves) before insert_many stores them with those ids.
 
         Rows inserted later without an id never take a reserved one. On SQLite the ids follow the table's last
-        id, under the write transaction (BEGIN IMMEDIATE), and a rollback returns them. On PostgreSQL they come
-        from the table's identity sequence (nextval), so they may have gaps and a rollback leaves a gap."""
+        id, under the write transaction, and a rollback returns them."""
         model = self._ledger(model, 'reserve_ids')
         if type(count) is not int or not 1 <= count <= RESERVE_LIMIT:
             raise ValidationError({'count': f'Use an integer between 1 and {RESERVE_LIMIT}'})
-        table = self.registry.name_for(model)
-        if isinstance(self.connection, sqlite3.Connection):
-            if not self.connection.in_transaction:
-                raise ValueError('tx.reserve_ids works inside database.transaction()')
-            row = self.connection.execute('SELECT seq FROM sqlite_sequence WHERE name = ?', (table,)).fetchone()
-            top = max(row[0] if row else 0, self.connection.execute(f'SELECT coalesce(max("id"), 0) FROM {identifier(table)}').fetchone()[0])
-            if row is None:
-                self.connection.execute('INSERT INTO sqlite_sequence (name, seq) VALUES (?, ?)', (table, top + count))
-            else:
-                self.connection.execute('UPDATE sqlite_sequence SET seq = ? WHERE name = ?', (top + count, table))
-            ids = list(range(top + 1, top + count + 1))
-        else:
-            ids = self.connection.reserve(table, count)
+        ids = self.connection.reserve_ids(self.registry.name_for(model), count)
         self._reserved.setdefault(model, set()).update(ids)
         return ids
 
@@ -801,10 +800,8 @@ class Session:
             return current
         periods.check(self, model, before=current._values, after=record._values)
         check_amounts(self, model, record._values)
-        table = identifier(self.registry.name_for(model))
         names, stored = storage_columns(model, record._values, list(changes))
-        assignments = ', '.join(f'{identifier(name)} = ?' for name in names)
-        self.connection.execute(f'UPDATE {table} SET {assignments} WHERE "id" = ?', [*stored, current.id])
+        self.connection.run(qb.update(self.registry.name_for(model), **dict(zip(names, stored))).where(id=current.id))
         if model in getattr(self.registry, 'journals', {}):
             self._ledger_journal(model, current.id, 'changed', current, record)
         return self.get(model, current.id)
@@ -814,7 +811,7 @@ class Session:
             raise ValueError(f'{model.__name__} is append only: its rows are never deleted. Insert a row that reverses it instead')
         current = self.get(model, record_id)
         periods.check(self, model, before=current._values)
-        self.connection.execute(f'DELETE FROM {identifier(self.registry.name_for(model))} WHERE "id" = ?', (current.id,))
+        self.connection.run(qb.delete(self.registry.name_for(model)).where(id=current.id))
         if model in getattr(self.registry, 'journals', {}):
             self._ledger_journal(model, current.id, 'deleted', current, None)
 
@@ -822,8 +819,7 @@ class Session:
         """A Journal entry for a ledger row, as the engine or `session.actor`, in this transaction."""
         from . import journal
         if not getattr(self, '_journal_ready', False):
-            journal.ensure_table(self.connection, postgres=not isinstance(self.connection, sqlite3.Connection),
-                                 hashed=[self.registry.name_for(item) for item, value in self.registry.journals.items() if value.tamper_evident])
+            journal.ensure_table(self.connection, hashed=[self.registry.name_for(item) for item, value in self.registry.journals.items() if value.tamper_evident])
             self._journal_ready = True
         old = {} if before is None else before._values
         new = {} if after is None else after._values
@@ -837,19 +833,14 @@ class Session:
         """Hold named locks until this transaction commits or rolls back, such as
         `tx.lock(("stock", item_id, warehouse_id))`. Each key is a nonempty tuple of text and integer parts.
 
-        Take every lock the transaction needs in one call, at its start. On PostgreSQL each key is a
-        transaction advisory lock, taken in a fixed order so callers cannot deadlock each other; with a
-        `timeout` in seconds, a longer wait raises LockTimeout and the transaction rolls back. On SQLite a
-        write transaction already holds the database's only write lock, so the call only checks the keys."""
+        Take every lock the transaction needs in one call, at its start. The keys are taken in a fixed order,
+        so callers cannot deadlock each other; with a `timeout` in seconds, a longer wait raises LockTimeout and
+        the transaction rolls back. On SQLite a write transaction already holds the file's only write lock, so
+        the call only checks the keys."""
         if not keys:
             raise ValueError('tx.lock needs at least one key, such as ("stock", item_id, warehouse_id)')
         numbers = sorted({ledger.lock_hash(key) for key in keys})
-        milliseconds = ledger.lock_timeout(timeout)
-        if isinstance(self.connection, sqlite3.Connection):
-            if not self.connection.in_transaction:
-                raise ValueError('tx.lock works inside database.transaction()')
-            return
-        self.connection.lock(numbers, milliseconds)
+        self.connection.lock(numbers, ledger.lock_timeout(timeout))
 
     def related(self, record, field_name):
         self.registry.name_for(type(record))
@@ -869,8 +860,5 @@ class Session:
         return aggregate(self, model, measures, group_by, filters, limit, after)
 
     def count(self, model, *, filters=None, search=""):
-        table = identifier(self.registry.name_for(model))
-        where, values = SqlQuery(self.registry, model, trusted=True).where(filters, search)
-        return self.connection.execute(
-            f'SELECT count(*) FROM {table} AS "record"{where}', values,
-        ).fetchone()[0]
+        where = SqlQuery(self.registry, model, trusted=True).where(filters, search)
+        return self.connection.run(qb.select(qb.table(self.registry.name_for(model), 'record'), qb.count()).where(where)).value()

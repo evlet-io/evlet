@@ -15,7 +15,7 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from evlet import Application, Currency, Database, Integer, LocalAuth, Model, PostgreSQLDatabase, Registry, Text
+from evlet import Application, Currency, Database, Integer, LocalAuth, Model, Registry, Text
 
 
 class GLEntry(Model):
@@ -62,8 +62,7 @@ def request(app, cookie):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--sqlite', type=Path)
-    parser.add_argument('--postgres', action='store_true', help='Read EVLET_BENCHMARK_DSN; database must be empty')
+    parser.add_argument('--sqlite', type=Path, required=True)
     parser.add_argument('--gl', type=int, default=2_000_000)
     parser.add_argument('--stock', type=int, default=500_000)
     parser.add_argument('--users', type=int, default=50)
@@ -71,18 +70,12 @@ def main():
     parser.add_argument('--seconds', type=int, default=60)
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
-    if bool(args.sqlite) == args.postgres or min(args.gl,args.stock,args.users,args.requests,args.seconds) < 1 or args.gl < 20000:
-        parser.error('Choose one database and positive sizes; GL needs at least 20000 rows')
+    if min(args.gl,args.stock,args.users,args.requests,args.seconds) < 1 or args.gl < 20000:
+        parser.error('Choose positive sizes; GL needs at least 20000 rows')
     registry = Registry(GLEntry, StockEntry, Invoice)
-    if args.postgres:
-        db = PostgreSQLDatabase(os.environ['EVLET_BENCHMARK_DSN'], registry, timeout=120)
-        with db._connection() as c:
-            if c.execute("SELECT 1 FROM pg_tables WHERE schemaname='public' LIMIT 1").fetchone():
-                raise SystemExit('Benchmark requires an empty PostgreSQL database')
-    else:
-        args.sqlite.parent.mkdir(parents=True, exist_ok=True)
-        with args.sqlite.open('xb'): pass
-        db = Database(args.sqlite, registry)
+    args.sqlite.parent.mkdir(parents=True, exist_ok=True)
+    with args.sqlite.open('xb'): pass
+    db = Database(args.sqlite, registry)
     auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False)
     app = Application(db, auth=auth); app.initialize()
     # Dedicated synthetic benchmark session. Password hashing is outside measured requests.
@@ -97,16 +90,12 @@ def main():
                     ('stockentry', ('item','quantity'), ((i%1000, 1 if i%2 == 0 else -1) for i in range(args.stock)))]
         with db.transaction() as tx:
             for table, columns, rows in datasets:
-                if args.postgres:
-                    with tx.connection.raw.cursor().copy(f'COPY {table} ({",".join(columns)}) FROM STDIN') as copy:
-                        for row in rows: copy.write_row(row)
-                else:
-                    tx.connection.executemany(f'INSERT INTO {table} ({",".join(columns)}) VALUES ({",".join("?" for _ in columns)})', rows)
+                tx.connection.executemany(f'INSERT INTO {table} ({",".join(columns)}) VALUES ({",".join("?" for _ in columns)})', rows)
     load_ms, _ = timing(load)
     with db._connection() as c:
         c.execute('ANALYZE')
-        version = c.execute('SELECT version()' if args.postgres else 'SELECT sqlite_version()').fetchone()[0]
-        settings = {name: c.execute('SHOW '+name).fetchone()[0] for name in ('shared_buffers','max_connections','fsync','synchronous_commit','full_page_writes')} if args.postgres else {name: c.execute('PRAGMA '+name).fetchone()[0] for name in ('journal_mode','synchronous','busy_timeout')}
+        version = c.execute('SELECT sqlite_version()').fetchone()[0]
+        settings = {name: c.execute('PRAGMA '+name).fetchone()[0] for name in ('journal_mode','synchronous','busy_timeout')}
     hardware = {}
     if sys.platform == 'darwin':
         for key in ('machdep.cpu.brand_string', 'hw.memsize'):
@@ -156,12 +145,12 @@ def main():
     assert db.count(Invoice) == len(writes)
     assert report('SELECT SUM(amount) FROM glentry')[0][0] == (100 if args.gl%2 else 0)
     with db._connection() as c:
-        size = c.execute('SELECT pg_database_size(current_database())').fetchone()[0] if args.postgres else sum(p.stat().st_size for p in args.sqlite.parent.glob(args.sqlite.name+'*'))
+        size = sum(p.stat().st_size for p in args.sqlite.parent.glob(args.sqlite.name+'*'))
     assets = list((Path(__file__).resolve().parents[1]/'frontend/dist/assets').glob('*'))
-    result = {'adapter': 'postgresql' if args.postgres else 'sqlite', 'database_version': version,
+    result = {'adapter': 'sqlite', 'database_version': version,
               'platform': platform.platform(), 'machine': platform.machine(), 'cpu_count': os.cpu_count(),
               'python': platform.python_version(), 'hardware': hardware, 'database_settings': settings, 'dataset': {'gl': args.gl, 'stock': args.stock},
-              'users': args.users, 'max_connections': db.max_connections if args.postgres else None, 'requests': stats(latencies), 'request_phase_seconds': round(read_elapsed,3),
+              'users': args.users, 'requests': stats(latencies), 'request_phase_seconds': round(read_elapsed,3),
               'requests_per_second': round(len(latencies)/read_elapsed,3), 'elapsed_seconds': round(elapsed,3),
               'invoice_transactions': stats(writes), 'invoice_interval_seconds': 3, 'errors': errors,
               'trial_balance': stats(trial), 'stock_balance': stats(stock),
@@ -171,7 +160,7 @@ def main():
               'client_peak_rss_native_units': resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
               'frontend_asset_bytes': sum(p.stat().st_size for p in assets),
               'frontend_asset_gzip_bytes': sum(len(gzip.compress(p.read_bytes())) for p in assets),
-              'method': 'Local authenticated ASGI calls, no network/TLS. SQL reports use trusted adapter connections. Separate PostgreSQL server CPU/RSS excluded. Bulk load bypasses model construction. Writes serialize per database.'}
+              'method': 'Local authenticated ASGI calls, no network/TLS. SQL reports use trusted adapter connections. Bulk load bypasses model construction. Writes serialize per database.'}
     args.output.write_text(json.dumps(result, indent=2)+'\n')
     db.close()
     print(json.dumps(result, indent=2))

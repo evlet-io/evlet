@@ -584,7 +584,7 @@ class Eva:
             # and the schedule of a task that is gone stops.
             for table in ('evlet_eva_conversations', 'evlet_eva_files', 'evlet_eva_tasks'):
                 tx.connection.execute(f'DELETE FROM {table} WHERE user_id NOT IN (SELECT id FROM evlet_users)')
-            if self.business.jobs is not None and self.database.columns(tx.connection, 'evlet_schedules'):
+            if self.business.jobs is not None and tx.connection.columns('evlet_schedules'):
                 tasks = {f'eva_task_{row[0]}' for row in tx.connection.execute('SELECT id FROM evlet_eva_tasks')}
                 for (name,) in tx.connection.execute("SELECT name FROM evlet_schedules WHERE name LIKE 'eva_task_%'").fetchall():
                     if name not in tasks:
@@ -1132,7 +1132,7 @@ class Eva:
             conversation = connection.execute('SELECT * FROM evlet_eva_conversations WHERE id=?', (run['conversation_id'],)).fetchone()
             rows = connection.execute('SELECT * FROM evlet_eva_messages WHERE conversation_id=? ORDER BY id DESC LIMIT 400', (run['conversation_id'],)).fetchall()
             profile = connection.execute('SELECT full_name FROM evlet_user_profile WHERE user_id=?', (user.id,)).fetchone() \
-                if self.database.columns(connection, 'evlet_user_profile') else None
+                if connection.columns('evlet_user_profile') else None
         zone = self.zone()
         now = datetime.now(zone)
         system = SYSTEM.format(app=(getattr(self.business, 'application', None) or {}).get('name', 'Evlet'), person=(profile and profile['full_name']) or user.username,
@@ -1284,10 +1284,10 @@ class Eva:
         from .database import Session
         with self.database._connection() as connection:
             # One read snapshot for the search and the permission checks.
-            connection.execute('BEGIN')
+            connection.snapshot()
             session = Session(connection, self.business.registry)
             rows = connection.execute("SELECT id, model, record_id, name, COALESCE(file_size,length(content)) AS size FROM evlet_attachments WHERE name LIKE ? ESCAPE '\\' "
-                                      'ORDER BY id DESC LIMIT 200', (text,)).fetchall() if self.database.columns(connection, 'evlet_attachments') else []
+                                      'ORDER BY id DESC LIMIT 200', (text,)).fetchall() if connection.columns('evlet_attachments') else []
             own = connection.execute("SELECT f.id, f.name, f.size, f.created_at, c.title FROM evlet_eva_files f LEFT JOIN evlet_eva_conversations c ON c.id=f.conversation_id "
                                      "WHERE f.user_id=? AND f.name LIKE ? ESCAPE '\\' ORDER BY f.id DESC LIMIT 20", (user.id, text)).fetchall()
             for row in rows:

@@ -10,6 +10,7 @@ import re
 import secrets
 import threading
 import time
+from . import qb
 
 ALPHABET = '0123456789abcdefghjkmnpqrstvwxyz'
 LENGTH = 13
@@ -164,39 +165,17 @@ def checked(value):
 FIXED_ID = 'record ids never change'
 
 
-def id_guard_name(table):
-    """The SQLite trigger that refuses an UPDATE of a model table's id."""
-    return f'evlet_{table}_fixed_id'
-
-
-def add_id_guard(connection, postgres, table):
-    """Refuse any UPDATE that changes `id` on a model table, record or ledger, like the append-only triggers
+def add_id_guard(connection, table):
+    """Refuse any UPDATE that changes `id` on a model table, record or ledger, like the append-only tables
     of evlet/ledger.py. Inserts are untouched (the framework draws ids in evlet/database.py). Idempotent."""
-    from .models import identifier
-    quoted = identifier(table)
-    if postgres:
-        connection.execute("CREATE OR REPLACE FUNCTION evlet_fixed_id() RETURNS trigger LANGUAGE plpgsql AS "
-                           f"$$ BEGIN RAISE EXCEPTION '%: {FIXED_ID}', TG_TABLE_NAME USING ERRCODE = 'integrity_constraint_violation'; END $$")
-        present = connection.execute('SELECT 1 FROM pg_trigger WHERE tgrelid = ?::regclass AND tgname = ? AND NOT tgisinternal',
-                                     (quoted, 'evlet_fixed_id')).fetchone()
-        if present is None:
-            connection.execute(f'CREATE TRIGGER evlet_fixed_id BEFORE UPDATE OF "id" ON {quoted} FOR EACH ROW '
-                               'WHEN (NEW."id" IS DISTINCT FROM OLD."id") EXECUTE FUNCTION evlet_fixed_id()')
-        return
-    connection.execute(f'CREATE TRIGGER IF NOT EXISTS {identifier(id_guard_name(table))} BEFORE UPDATE OF "id" ON {quoted} '
-                       f"WHEN NEW.\"id\" IS NOT OLD.\"id\" BEGIN SELECT RAISE(ABORT, '{table}: {FIXED_ID}'); END")
+    connection.guard_id(table, f'{table}: {FIXED_ID}')
 
 
-def has_id_guard(connection, postgres, table):
-    from .models import identifier
-    if postgres:
-        return connection.execute('SELECT 1 FROM pg_trigger WHERE tgrelid = ?::regclass AND tgname = ? AND NOT tgisinternal',
-                                  (identifier(table), 'evlet_fixed_id')).fetchone() is not None
-    return connection.execute("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = ?",
-                              (id_guard_name(table),)).fetchone() is not None
+def has_id_guard(connection, table):
+    return connection.has_id_guard(table)
 
 
-def check_ids(connection, postgres, registry):
+def check_ids(connection, registry):
     """Problems with the ids of model tables, as text lines; empty when there are none. Nothing is written.
 
     The framework draws every record id, and the primary key keeps ids present and distinct, but rows written
@@ -205,9 +184,9 @@ def check_ids(connection, postgres, registry):
     from .models import identifier
     lines = []
     for table, model in sorted(registry.models.items()):
-        bad = connection.execute(f'SELECT count(*) FROM {identifier(table)} WHERE "id" IS NULL OR "id" < 1').fetchone()[0]
+        bad = connection.run(qb.select(table, qb.count()).where(qb.or_(qb.is_null('id'), qb.lt('id', 1)))).value()
         if bad:
             lines.append(f'{table}: {bad} row(s) with an id that is empty, zero or negative')
-        if not has_id_guard(connection, postgres, table):
+        if not has_id_guard(connection, table):
             lines.append(f'{table}: the database does not refuse id changes; run evlet migrate')
     return lines

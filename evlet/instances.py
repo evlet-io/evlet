@@ -48,7 +48,7 @@ class Instance:
         object.__setattr__(self, 'trusted_proxies', proxy_networks(self.trusted_proxies))
         ZoneInfo(self.timezone)
         if self.database != 'sqlite':
-            raise ValueError('The instance CLI supports isolated SQLite databases; use the existing PostgreSQL API for separately configured databases')
+            raise ValueError('The instance CLI supports isolated SQLite databases')
         if self.storage != 'local':
             raise ValueError('The instance CLI supports local private file storage')
         if self.domain is not None and (not isinstance(self.domain, str) or not re.fullmatch(r'[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?', self.domain) or '..' in self.domain):

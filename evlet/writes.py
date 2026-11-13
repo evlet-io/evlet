@@ -15,7 +15,6 @@ file it changes, so a long job step on database.sqlite3 does not hold up a sign-
 
 SQLite cannot enforce a foreign key from one file to another; Evlet checks those links itself. After a crash,
 the main file is atomic as before, while the other files are best effort for the last moment of writes.
-PostgreSQL keeps one database: the split applies to SQLite only.
 """
 
 from collections import deque
@@ -79,12 +78,17 @@ def data_files(path):
     return files(Path(path) / 'data' / 'database.sqlite3')
 
 
-def connect(main, *, uri=False, **options):
-    """A plain sqlite3 connection to a main file with its side files attached, for server-shell commands that
-    open the database themselves. uri=True opens the main file with mode=rw (it must exist)."""
+def connect(main, *, uri=False, named_rows=False, **options):
+    """A SQLite connection to a main file with its side files attached, for server-shell commands that open the
+    database themselves. uri=True opens the main file with mode=rw (it must exist); named_rows=True reads rows
+    by column name as well as by index."""
+    from .sqlite import SQLiteConnection
     main = Path(main)
     sides = {store: side_path(main, store) for store in STORES}
-    connection = sqlite3.connect(main.absolute().as_uri() + '?mode=rw' if uri else str(main), uri=uri, **options)
+    connection = sqlite3.connect(main.absolute().as_uri() + '?mode=rw' if uri else str(main), uri=uri,
+                                 factory=SQLiteConnection, **options)
+    if named_rows:
+        connection.row_factory = sqlite3.Row
     try:
         for store, path in sides.items():
             connection.execute(f'ATTACH DATABASE ? AS {store}', (path.absolute().as_uri() + '?mode=rwc' if uri else str(path),))
@@ -329,13 +333,6 @@ def placed(statement):
     if match and match[3] in STORE_OF:
         return statement[:match.start(2)] + f'{STORE_OF[match[3]]}.' + statement[match.start(2):]
     return statement
-
-
-class Connection(sqlite3.Connection):
-    """A SQLite connection that creates side tables in their own files."""
-
-    def execute(self, sql, *args):
-        return super().execute(placed(sql) if sql.lstrip()[:6].upper() == 'CREATE' else sql, *args)
 
 
 class LogBuffer:

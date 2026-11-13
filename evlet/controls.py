@@ -3,7 +3,6 @@
 import ipaddress
 import json
 import re
-import sqlite3
 from threading import Lock
 import time
 from types import MappingProxyType
@@ -14,6 +13,7 @@ from .controls_system import System
 from .customization import Customization, activated, instance_fields
 from .fields import Layer
 from .fields import Link
+from .adapter import IntegrityError
 from .database import NotFoundError
 from .identity import path_id
 from .models import ValidationError, checked_body, identifier
@@ -75,7 +75,7 @@ SCOPES = MappingProxyType({name: _field_scope(name) for name in ('created_by', '
 
 
 def ensure_schema(connection):
-    """Create the Controls tables on a framework or raw SQLite connection. The audit log is append-only."""
+    """Create the Controls tables on a framework or server-shell connection. The audit log is append-only."""
     overrides = ('CREATE TABLE IF NOT EXISTS {} (kind TEXT NOT NULL ' + OVERRIDE_KINDS +
                  ', key TEXT NOT NULL, value TEXT NOT NULL, changed_by INTEGER, changed_at INTEGER, PRIMARY KEY (kind, key))')
     for statement in (
@@ -83,34 +83,26 @@ def ensure_schema(connection):
         'CREATE TABLE IF NOT EXISTS evlet_audit (id INTEGER PRIMARY KEY AUTOINCREMENT, at INTEGER NOT NULL, actor TEXT NOT NULL, area TEXT NOT NULL, target TEXT NOT NULL, detail TEXT NOT NULL, before TEXT, after TEXT)',
         'CREATE TABLE IF NOT EXISTS evlet_config (id INTEGER PRIMARY KEY CHECK(id=1), version INTEGER NOT NULL)',
         'INSERT OR IGNORE INTO evlet_config(id,version) VALUES (1,1)',
-        PERIOD_LOCKS,
     ):
         connection.execute(statement)
+    connection.ensure_table(PERIOD_LOCKS)
     # Workspace overrides (kind "workspace") came later: widen the kind check of a table made before them.
-    if isinstance(connection, sqlite3.Connection):
-        sql = connection.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='evlet_overrides'").fetchone()[0]
-        if "'workspace'" not in sql:
-            connection.execute(overrides.format('evlet_overrides_widened'))
-            connection.execute('INSERT INTO evlet_overrides_widened(kind,key,value,changed_by,changed_at) '
-                               'SELECT kind,key,value,changed_by,changed_at FROM evlet_overrides')
-            connection.execute('DROP TABLE evlet_overrides')
-            connection.execute('ALTER TABLE evlet_overrides_widened RENAME TO evlet_overrides')
-    else:
-        checks = connection.execute("SELECT conname, pg_get_constraintdef(oid) FROM pg_constraint "
-                                    "WHERE conrelid = to_regclass('evlet_overrides') AND contype = 'c'").fetchall()
-        old = [row[0] for row in checks if 'kind' in row[1] and 'workspace' not in row[1]]
-        for name in old:
-            connection.execute(f'ALTER TABLE evlet_overrides DROP CONSTRAINT {identifier(name)}')
-        if old:
-            connection.execute(f'ALTER TABLE evlet_overrides ADD CONSTRAINT evlet_overrides_kind_check {OVERRIDE_KINDS}')
-    if isinstance(connection, sqlite3.Connection):
-        refuse = "BEGIN SELECT RAISE(ABORT, 'The audit log is append-only'); END"
-        connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_audit_no_update BEFORE UPDATE ON evlet_audit {refuse}')
-        connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_audit_no_delete BEFORE DELETE ON evlet_audit {refuse}')
-        connection.execute(f'CREATE TRIGGER IF NOT EXISTS evlet_audit_no_replace BEFORE INSERT ON evlet_audit WHEN EXISTS (SELECT 1 FROM evlet_audit WHERE id=NEW.id) {refuse}')
-    else:
-        connection.execute("CREATE OR REPLACE FUNCTION evlet_audit_append_only() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'The audit log is append-only'; END $$")
-        connection.execute('CREATE OR REPLACE TRIGGER evlet_audit_append_only BEFORE UPDATE OR DELETE ON evlet_audit FOR EACH ROW EXECUTE FUNCTION evlet_audit_append_only()')
+    # A probe row inside a savepoint tells whether the table takes the kind; it never stays.
+    connection.execute('SAVEPOINT evlet_overrides_kind')
+    try:
+        connection.execute("INSERT INTO evlet_overrides(kind,key,value) VALUES ('workspace','evlet_kind_probe','')")
+        widen = False
+    except IntegrityError:
+        widen = True
+    connection.execute('ROLLBACK TO SAVEPOINT evlet_overrides_kind')
+    connection.execute('RELEASE SAVEPOINT evlet_overrides_kind')
+    if widen:
+        connection.execute(overrides.format('evlet_overrides_widened'))
+        connection.execute('INSERT INTO evlet_overrides_widened(kind,key,value,changed_by,changed_at) '
+                           'SELECT kind,key,value,changed_by,changed_at FROM evlet_overrides')
+        connection.execute('DROP TABLE evlet_overrides')
+        connection.execute('ALTER TABLE evlet_overrides_widened RENAME TO evlet_overrides')
+    connection.make_append_only('evlet_audit', 'The audit log is append-only')
 
 
 def audit(connection, actor, area, target, detail, before=None, after=None):
@@ -131,7 +123,7 @@ def grant(database_path, username):
     connection = writes.connect(database_path, isolation_level=None)
     try:
         connection.execute('BEGIN IMMEDIATE')
-        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone():
+        if not connection.table_exists('evlet_users'):
             raise ValueError('This instance has no users yet. Open it in a browser to create the first admin.')
         ensure_schema(connection)
         row = connection.execute('SELECT id, role, active FROM evlet_users WHERE username=?', (username.lower(),)).fetchone()
@@ -161,16 +153,15 @@ def reset_two_step_from_shell(database_path, username):
     from .settings import reset_two_step
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
-    connection = writes.connect(database_path, isolation_level=None)
-    connection.row_factory = sqlite3.Row
+    connection = writes.connect(database_path, isolation_level=None, named_rows=True)
     try:
         connection.execute('BEGIN IMMEDIATE')
         ensure_schema(connection)
         row = connection.execute('SELECT id, username FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+            if connection.table_exists('evlet_users') else None
         if row is None:
             raise ValueError(f'No user is named {username}.')
-        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_user_profile'").fetchone():
+        if not connection.table_exists('evlet_user_profile'):
             raise ValueError(f'{username} has no two-step sign-in to reset.')
         reset_two_step(connection, 'cli', row['id'], row['username'])
         connection.execute('COMMIT')
@@ -193,16 +184,15 @@ def set_email_from_shell(database_path, username, email):
         address = None
     if not address:
         raise ValueError(f'{email} is not a valid email address.')
-    connection = writes.connect(database_path, isolation_level=None)
-    connection.row_factory = sqlite3.Row
+    connection = writes.connect(database_path, isolation_level=None, named_rows=True)
     try:
         connection.execute('BEGIN IMMEDIATE')
         ensure_schema(connection)
         row = connection.execute('SELECT id, username FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+            if connection.table_exists('evlet_users') else None
         if row is None:
             raise ValueError(f'No user is named {username}.')
-        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_user_profile'").fetchone():
+        if not connection.table_exists('evlet_user_profile'):
             raise ValueError('This instance has no profiles yet. Start it once first.')
         connection.execute('INSERT OR IGNORE INTO evlet_user_profile(user_id) VALUES (?)', (row['id'],))
         before = connection.execute('SELECT email FROM evlet_user_profile WHERE user_id=?', (row['id'],)).fetchone()['email']
@@ -226,13 +216,12 @@ def set_password_from_shell(database_path, username, password, file_minimum=15):
     from .auth import password_hash
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
-    connection = writes.connect(database_path, isolation_level=None)
-    connection.row_factory = sqlite3.Row
+    connection = writes.connect(database_path, isolation_level=None, named_rows=True)
     try:
         connection.execute('BEGIN IMMEDIATE')
         ensure_schema(connection)
         row = connection.execute('SELECT id, username, role FROM evlet_users WHERE username=?', (username.lower(),)).fetchone() \
-            if connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone() else None
+            if connection.table_exists('evlet_users') else None
         if row is None:
             raise ValueError(f'No user is named {username}.')
         minimum = file_minimum
@@ -372,7 +361,7 @@ class Controls:
             return
         with self.lock:
             with self.database._connection() as connection:
-                connection.execute('BEGIN')
+                connection.snapshot()
                 version = connection.execute('SELECT version FROM evlet_config WHERE id=1').fetchone()[0]
                 if version == self.version and not force:
                     return

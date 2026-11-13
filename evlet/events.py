@@ -52,7 +52,7 @@ class EventStore:
         if after is not None and after != '0' and (not isinstance(after, str) or not re.fullmatch('[0-9a-f]{48}', after)):
             raise ValidationError({'cursor': 'Invalid event cursor'})
         with self.database._connection() as db:
-            db.execute('BEGIN')
+            db.snapshot()
             tx = Session(db, self.database.registry)
             latest = db.execute('SELECT id,token FROM evlet_events ORDER BY id DESC LIMIT 1').fetchone()
             end = latest['token'] if latest else '0'

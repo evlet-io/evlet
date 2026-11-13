@@ -242,11 +242,11 @@ class Business:
         if any(getattr(model, 'confirmable', False) for model in self.registry.models.values()):
             from .lifecycle import ensure_tables
             with self.database.transaction() as tx:
-                ensure_tables(tx.connection, postgres=getattr(self.database, 'driver', None) is not None)
+                ensure_tables(tx.connection)
         if self.journals:
             from .journal import ensure_table
             with self.database.transaction() as tx:
-                ensure_table(tx.connection, postgres=getattr(self.database, 'driver', None) is not None,
+                ensure_table(tx.connection,
                              hashed=[self.registry.name_for(model) for model, journal in self.journals.items() if journal.tamper_evident])
         if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
             self.forms.initialize()
@@ -1352,7 +1352,7 @@ class Business:
                 loaded['partial'] = True
             if not readable:
                 continue
-            found = owned_rows(tx, child, list(results), scope=self.policy.scope_sql(user, child.model), limit=row_limit)
+            found = owned_rows(tx, child, list(results), scope=self.policy.scope(user, child.model), limit=row_limit)
             if loaded is not None:
                 loaded.update({(child, owner): found.get(owner, ((), 0))[0] for owner in results})
             records = [record for owner in results for record in found.get(owner, ((), 0))[0]]
@@ -1393,7 +1393,7 @@ class Business:
         if len(path) % 2 != 1:
             raise AccessError(404, 'Route not found')
         with self.database._connection() as connection:
-            connection.execute('BEGIN')
+            connection.snapshot()
             tx = Session(connection, self.registry)
             self.policy.record(tx, user, model, record_id)
             owner, owner_id = model, record_id
@@ -1483,14 +1483,14 @@ class Business:
         source = relation.source
         order = self.relation_order(user, relation)
         with self.database._connection() as connection:
-            connection.execute('BEGIN')
+            connection.snapshot()
             tx = Session(connection, self.registry)
             self.policy.record(tx, user, model, record_id)
             where, values = self.policy.scope_sql(user, source)
             where += (' AND ' if where else ' WHERE ') + f'record.{identifier(relation.link)} = ?'
             values = [*values, record_id]
             table = identifier(self.registry.name_for(source))
-            ordering = SqlQuery(self.registry, source).ordering(order)
+            ordering = SqlQuery(self.registry, source).ordering_sql(order)
             rows = [source._from_row(row) for row in connection.execute(
                 f'SELECT record.* FROM {table} AS record{where}{ordering} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()]
             total = connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
@@ -1519,15 +1519,15 @@ class Business:
         compiler = SqlQuery(self.registry, model, children=children)
         readable = self.policy.fields(user, model)
         search_fields = [name for name in view_for(model)['search_fields'] if name in readable]
-        where, values = compiler.where(filters, query.get('q', [''])[0], search_fields=search_fields)
+        where, values = compiler.where_sql(filters, query.get('q', [''])[0], search_fields=search_fields)
         scoped, parameters = self.policy.scope_sql(user, model)
         if scoped:
             where += (' AND ' if where else ' WHERE ') + scoped.removeprefix(' WHERE ')
             values.extend(parameters)
-        ordering = compiler.ordering(order)
+        ordering = compiler.ordering_sql(order)
         table = identifier(self.registry.name_for(model))
         with self.database._connection() as connection:
-            connection.execute('BEGIN')
+            connection.snapshot()
             tx = Session(connection, self.registry)
             rows = connection.execute(f'SELECT record.* FROM {table} AS record{where}{ordering} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()
             total = connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]

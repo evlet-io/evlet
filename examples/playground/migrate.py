@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 
 from evlet import (AddField, AddIndex, AlterField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Image, Integer,
-                   Link, LongText, Migration, Model, PostgreSQLDatabase, Recompute, Registry, RenameField, RetireField, RichText, RunData, Select, Text)
+                   Link, LongText, Migration, Model, Recompute, Registry, RenameField, RetireField, RichText, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, Invoice, registry
 
@@ -250,9 +250,6 @@ def legacy_registry():
 
 
 def configured_database():
-    dsn = os.environ.get('EVLET_POSTGRES_DSN')
-    if dsn:
-        return PostgreSQLDatabase(dsn, registry, migrations=migrations)
     path = os.environ.get('EVLET_DATABASE', str(Path(__file__).parent / '.data' / 'playground.sqlite3'))
     return Database(path, registry, migrations=migrations)
 
@@ -275,11 +272,7 @@ def upgrade(path):
 def main():
     database = configured_database()
     try:
-        if isinstance(database, PostgreSQLDatabase):
-            applied = database.migrate(migrations)
-            print('Applied: ' + ', '.join(applied) if applied else 'Schema is current.')
-        else:
-            upgrade(database.path)
+        upgrade(database.path)
     finally:
         database.close()
 

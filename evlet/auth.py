@@ -11,7 +11,6 @@ import json
 import logging
 import re
 import secrets
-import sqlite3
 import time
 from threading import BoundedSemaphore, Lock
 from urllib.parse import urlsplit
@@ -77,7 +76,7 @@ class Security:
 
 def is_administrator(user):
     """Whether user (a User or an account row) is the built-in Administrator."""
-    if isinstance(user, (dict, sqlite3.Row)) or hasattr(user, 'keys'):
+    if isinstance(user, dict) or hasattr(user, 'keys'):
         return user['username'] == ADMINISTRATOR and user['role'] == 'admin'
     # A job's system identity (User.system) is never the Administrator, whatever name it is given.
     return getattr(user, 'username', None) == ADMINISTRATOR and getattr(user, 'role', None) == 'admin' and not getattr(user, 'system', None)
@@ -294,15 +293,15 @@ class LocalAuth:
         with self.database.transaction() as tx:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE, password TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)')
             # Allow Eva and Allow MCP (Controls, Users): both off for new people. They open Eva or MCP and grant no record access.
-            users = self.database.columns(tx.connection, 'evlet_users')
+            users = tx.connection.columns('evlet_users')
             for name in ('allow_eva', 'allow_mcp'):
                 if name not in users:
                     tx.connection.execute(f'ALTER TABLE evlet_users ADD COLUMN {name} INTEGER NOT NULL DEFAULT 0')
-            if 'allow_mcp' not in users and self.database.columns(tx.connection, 'evlet_mcp_clients'):
+            if 'allow_mcp' not in users and tx.connection.columns('evlet_mcp_clients'):
                 # On upgrade, people with a connected assistant keep MCP; everyone else starts without it.
                 tx.connection.execute('UPDATE evlet_users SET allow_mcp=1 WHERE id IN (SELECT user_id FROM evlet_mcp_clients WHERE revoked_at IS NULL)')
             tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_sessions (token TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE, csrf TEXT NOT NULL, expires INTEGER NOT NULL, realm TEXT NOT NULL DEFAULT 'desk')")
-            columns = self.database.columns(tx.connection, 'evlet_sessions')
+            columns = tx.connection.columns('evlet_sessions')
             if 'realm' not in columns:
                 tx.connection.execute("ALTER TABLE evlet_sessions ADD COLUMN realm TEXT NOT NULL DEFAULT 'desk'")
             for name, kind in (('started', 'INTEGER'), ('agent', "TEXT NOT NULL DEFAULT ''"), ('two_step', 'INTEGER')):
@@ -338,13 +337,13 @@ class LocalAuth:
                 tx.connection.execute(statement)
             tx.connection.execute("CREATE TABLE IF NOT EXISTS evlet_roles (id TEXT PRIMARY KEY, kind TEXT NOT NULL CHECK(kind IN ('framework','custom')), base TEXT, realm TEXT NOT NULL DEFAULT 'desk' CHECK(realm IN ('desk','portal')), opens_controls INTEGER NOT NULL DEFAULT 0, description TEXT NOT NULL DEFAULT '')")
             # Customize workspaces (Controls, Roles): edit the site's workspace overrides. Admin always may.
-            if 'customize_workspaces' not in self.database.columns(tx.connection, 'evlet_roles'):
+            if 'customize_workspaces' not in tx.connection.columns('evlet_roles'):
                 tx.connection.execute('ALTER TABLE evlet_roles ADD COLUMN customize_workspaces INTEGER NOT NULL DEFAULT 0')
             # A role's realm decides where its users sign in: desk roles on desk hosts, portal roles on portal hosts.
             for role, realm, description in (('admin', 'desk', 'Full access to every app. Opens Controls.'), ('editor', 'desk', 'Reads and changes records.'),
                                              ('viewer', 'desk', 'Reads records only.'), (PORTAL, 'portal', 'Signs in on portal hosts. Sees only what an app grants.')):
                 tx.connection.execute("INSERT OR IGNORE INTO evlet_roles(id,kind,base,realm,opens_controls,description) VALUES (?,'framework',NULL,?,?,?)", (role, realm, int(role == 'admin'), description))
-            ensure_administrator(tx.connection, getattr(self.database, 'driver', None) is not None)
+            ensure_administrator(tx.connection)
 
     def roles(self):
         """Every role by id, with its kind, base, realm and whether it opens Controls."""
@@ -549,16 +548,13 @@ class LocalAuth:
         (access and refresh tokens) and their unused authorization codes. keys=True also revokes their API keys,
         for takeover recovery: a two-step reset, deactivation and the break-glass grant."""
         now = int(time.time())
-        present = None
-        if isinstance(connection, sqlite3.Connection):
-            # The server-shell commands may meet a database from before assistants or keys existed.
-            present = {row[0] for row in connection.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         connection.execute('DELETE FROM evlet_sessions WHERE user_id=?' + (' AND token<>?' if keep else ''), (user_id,) + ((keep,) if keep else ()))
-        if present is None or 'evlet_mcp_clients' in present:
+        # The server-shell commands may meet a database from before assistants or keys existed.
+        if connection.table_exists('evlet_mcp_clients'):
             connection.execute('DELETE FROM evlet_oauth_codes WHERE user_id=?', (user_id,))
             connection.execute('DELETE FROM evlet_mcp_tokens WHERE client_id IN (SELECT id FROM evlet_mcp_clients WHERE user_id=?)', (user_id,))
             connection.execute('UPDATE evlet_mcp_clients SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', (now, user_id))
-        if keys and (present is None or 'evlet_api_keys' in present):
+        if keys and connection.table_exists('evlet_api_keys'):
             connection.execute('UPDATE evlet_api_keys SET revoked_at=? WHERE user_id=? AND revoked_at IS NULL', (now, user_id))
 
     def create_key(self, user_id, name, scope, check=None):
@@ -781,7 +777,7 @@ class LocalAuth:
         if type(offset) is not int or not 0 <= offset <= 2**63-1:
             raise ValidationError({'offset': 'Use a nonnegative offset'})
         with self.database._connection() as connection:
-            connection.execute('BEGIN')
+            connection.snapshot()
             items = [dict(row) for row in connection.execute('SELECT id,username,role,active FROM evlet_users ORDER BY id LIMIT 100 OFFSET ?', (offset,))]
             total = connection.execute('SELECT count(*) FROM evlet_users').fetchone()[0]
             return {'items': items, 'total': total, 'offset': offset, 'limit': 100}
@@ -818,14 +814,7 @@ class LocalAuth:
                 after()
 
 
-def _user_columns(connection, postgres):
-    if postgres:
-        return {row[0] for row in connection.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name='evlet_users'")}
-    return {row[1] for row in connection.execute('PRAGMA table_info(evlet_users)')}
-
-
-def ensure_administrator(connection, postgres=False):
+def ensure_administrator(connection):
     """Create the built-in Administrator (username admin) when it is missing: role admin, no password, so it cannot sign
     in until one is set. Returns True when it was created.
 
@@ -835,7 +824,7 @@ def ensure_administrator(connection, postgres=False):
     a password). Any other admin account is refused, never taken over. A changed role or status is put back.
     """
     from .migrations import SchemaError
-    if 'builtin' not in _user_columns(connection, postgres):
+    if 'builtin' not in connection.columns('evlet_users'):
         connection.execute('ALTER TABLE evlet_users ADD COLUMN builtin INTEGER NOT NULL DEFAULT 0')
     marked = connection.execute('SELECT id, username, password FROM evlet_users WHERE builtin=1 ORDER BY id').fetchone()
     named = connection.execute('SELECT id, role, active, builtin FROM evlet_users WHERE username=?', (ADMINISTRATOR,)).fetchone()

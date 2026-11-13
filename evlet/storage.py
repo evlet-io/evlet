@@ -23,7 +23,7 @@ class SQLiteStorage:
         with database.transaction() as tx:
             tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_attachments (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, name TEXT NOT NULL, content BLOB NOT NULL)')
             tx.connection.execute('CREATE INDEX IF NOT EXISTS evlet_attachment_owner ON evlet_attachments(model,record_id)')
-            columns = database.columns(tx.connection, 'evlet_attachments')
+            columns = tx.connection.columns('evlet_attachments')
             for name, kind in (('storage_key', 'TEXT'), ('file_size', 'INTEGER'), ('storage_kind', 'TEXT')):
                 if name not in columns:
                     tx.connection.execute(f'ALTER TABLE evlet_attachments ADD COLUMN {name} {kind}')
