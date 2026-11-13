@@ -342,37 +342,6 @@ class SqlQuery:
             raise ValidationError({'order_by': str(exc)}) from exc
         return tuple(orders)
 
-    # Temporary bridge for modules not yet moved onto the query builder (docs/database-adapters.md): the same
-    # conditions and orders as SQLite text. Removed once the last of them builds statements with qb.
-
-    def where_sql(self, filters, search="", *, search_fields=None):
-        """(" WHERE ...", values), or ("", []) when there is nothing to check."""
-        from .sqlite import compile_condition
-        condition = self.where(filters, search, search_fields=search_fields)
-        if qb.always(condition):
-            return '', []
-        sql, values = compile_condition(condition)
-        return ' WHERE ' + sql, values
-
-    def reference_sql(self, path):
-        """The SQL of one field path's column (not a Reference)."""
-        from .sqlite import Compiler
-        column, _ = self.reference(path)
-        compiler = Compiler()
-        text = compiler.expression(column)
-        if compiler.values or isinstance(column, tuple):
-            raise ValueError(f'{path} is not a single column')
-        return text
-
-    def ordering_sql(self, order_by):
-        """" ORDER BY ..." for order_by."""
-        from .sqlite import Compiler
-        compiler = Compiler()
-        text = ', '.join(compiler.order(item) for item in self.ordering(order_by))
-        if compiler.values:
-            raise ValueError('An ordering takes no values')
-        return ' ORDER BY ' + text
-
 
 # Earlier name, kept so existing imports of evlet.query.Query keep working.
 Query = SqlQuery

@@ -51,6 +51,10 @@ class Expression:
         """Division; two integers divide to an integer, rounding toward zero."""
         return Arithmetic(self, '/', expression(other))
 
+    def __mod__(self, other):
+        """The remainder of integer division; it keeps the sign of the left side."""
+        return Arithmetic(self, '%', expression(other))
+
 
 @dataclass(frozen=True, eq=False)
 class Column(Expression):

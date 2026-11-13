@@ -11,6 +11,8 @@ from dataclasses import dataclass
 import re
 from urllib.parse import parse_qs, quote
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .audit import actor_id, detail as audit_detail
 from .auth import ADMINISTRATOR, AccessError, has_role
 from .identity import RecordId, checked as item_id, path_id
@@ -26,6 +28,17 @@ from .jobs import JobReceipt
 from .discovery import Discovery
 
 logger = logging.getLogger(__name__)
+
+# Calls of public API endpoints per client and window (evlet/services.py).
+PUBLIC_LIMITS = TableDefinition('evlet_public_limits', (
+    Column('client', 'TEXT', required=True), Column('period', 'INTEGER', required=True),
+    Column('calls', 'INTEGER', required=True), Column('resets', 'INTEGER', required=True)), primary_key=('client', 'period'))
+# The plan each saved finite-v1 document was calculated with (history guard).
+CALCULATION_VERSIONS = TableDefinition('evlet_calculation_versions', (
+    Column('resource', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True),
+    Column('plan_hash', 'TEXT', required=True)), primary_key=('resource', 'record_id'))
+# A record's files beside its rich text images (purpose "image").
+FILES = qb.or_(qb.is_null('purpose'), qb.ne('purpose', 'image'))
 
 
 @dataclass(frozen=True)
@@ -224,16 +237,15 @@ class Business:
         self.unsaved.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
             with self.database.transaction() as tx:
-                tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_public_limits (client TEXT NOT NULL, period INTEGER NOT NULL, calls INTEGER NOT NULL, resets INTEGER NOT NULL, PRIMARY KEY (client, period))')
+                tx.connection.ensure_table(PUBLIC_LIMITS)
         if self.registry.plans:
             with self.database.transaction() as tx:
-                # The plan each saved finite-v1 document was calculated with (history guard).
-                tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_calculation_versions (resource TEXT NOT NULL, record_id INTEGER NOT NULL, plan_hash TEXT NOT NULL, PRIMARY KEY (resource, record_id))')
+                tx.connection.ensure_table(CALCULATION_VERSIONS)
                 # Earlier releases recorded the whole plan's hash; rows saved under the active plan
                 # move to its formula hash so they keep saving without a recalculation round trip.
                 for root, plan in self.registry.plans.items():
-                    tx.connection.execute('UPDATE evlet_calculation_versions SET plan_hash=? WHERE plan_hash=?',
-                                          (self.registry.formula_hashes[root], plan['model_schema_hash']))
+                    tx.connection.run(qb.update('evlet_calculation_versions', plan_hash=self.registry.formula_hashes[root])
+                                      .where(plan_hash=plan['model_schema_hash']))
         if self.registry.sequences or self.registry.naming:
             from .sequences import upgrade_counters
             with self.database.transaction() as tx:
@@ -264,7 +276,7 @@ class Business:
             self.schedule_image_purge()
             if self.application is not None:
                 with self.database._connection() as connection:
-                    namespace = connection.execute('SELECT namespace FROM evlet_job_namespace WHERE id=1').fetchone()[0]
+                    namespace = connection.run(qb.select('evlet_job_namespace', 'namespace').where(id=1)).value()
                 self.application['id'] = hashlib.sha256(namespace.encode()).hexdigest()
 
     def changed(self, tx, model, record_id, *, deleted=False, journal=False):
@@ -934,7 +946,7 @@ class Business:
                                 tx.delete(child.model, row.id)
                 self.changed(tx, model, record_id, deleted=True)
                 tx.delete(model, record_id)
-                tx.connection.execute('DELETE FROM evlet_attachments WHERE model=? AND record_id=?', (parts[2], record_id))
+                tx.connection.run(qb.delete('evlet_attachments').where(model=parts[2], record_id=record_id))
                 self.unsaved.record_deleted(tx.connection, parts[2], record_id)
                 return 204, None, []
             if method == 'PATCH':
@@ -1409,14 +1421,12 @@ class Business:
                 if getattr(row, child.link) != owner_id:
                     raise AccessError(404, 'Record not found')
                 owner, owner_id = child.model, row.id
-            where, values = self.policy.scope_sql(user, child.model)
-            where += (' AND ' if where else ' WHERE ') + f'record.{identifier(child.link)} = ?'
-            values = [*values, owner_id]
-            table = identifier(self.registry.name_for(child.model))
-            order = ' ORDER BY record."evlet_position", record.id' if 'evlet_position' in child.model.__fields__ else ' ORDER BY record.id'
-            rows = [child.model._from_row(row) for row in connection.execute(
-                f'SELECT record.* FROM {table} AS record{where}{order} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()]
-            total = connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
+            where = [item for item in (self.policy.scope(user, child.model), qb.eq(f'record.{child.link}', owner_id)) if not qb.always(item)]
+            table = qb.table(self.registry.name_for(child.model), 'record')
+            order = ('record.evlet_position', 'record.id') if 'evlet_position' in child.model.__fields__ else ('record.id',)
+            rows = [child.model._from_row(row) for row in connection.run(
+                qb.select(table).where(*where).order_by(*order).limit(limit).offset(offset)).all()]
+            total = connection.run(qb.select(table, qb.count()).where(*where)).value()
             items = dict(zip((row.id for row in rows), self.policy.serialize_many(tx, user, rows)))
             for item in items.values():
                 item.pop(child.link, None)
@@ -1435,8 +1445,8 @@ class Business:
             if headings:
                 # A page carries the section rows placed after the previous page's last row and up to its own last row
                 # (the last page also those after it).
-                before = connection.execute(f'SELECT record."evlet_position", record.id FROM {table} AS record{where}{order} LIMIT 1 OFFSET ?',
-                                            [*values, offset - 1]).fetchone() if offset else None
+                before = connection.run(qb.select(table, 'record.evlet_position', 'record.id').where(*where).order_by(*order)
+                                        .limit(1).offset(offset - 1)).one() if offset else None
                 floor = (before[0], before[1]) if before else None
                 headings = [item for item in headings if floor is None or (item._values['evlet_position'], item.id) > floor]
                 listed = sections.payload([(row.evlet_position, row.id, items[row.id]) for row in rows], headings,
@@ -1486,14 +1496,12 @@ class Business:
             connection.snapshot()
             tx = Session(connection, self.registry)
             self.policy.record(tx, user, model, record_id)
-            where, values = self.policy.scope_sql(user, source)
-            where += (' AND ' if where else ' WHERE ') + f'record.{identifier(relation.link)} = ?'
-            values = [*values, record_id]
-            table = identifier(self.registry.name_for(source))
-            ordering = SqlQuery(self.registry, source).ordering_sql(order)
-            rows = [source._from_row(row) for row in connection.execute(
-                f'SELECT record.* FROM {table} AS record{where}{ordering} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()]
-            total = connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
+            where = [item for item in (self.policy.scope(user, source), qb.eq(f'record.{relation.link}', record_id)) if not qb.always(item)]
+            table = qb.table(self.registry.name_for(source), 'record')
+            ordering = SqlQuery(self.registry, source).ordering(order)
+            rows = [source._from_row(row) for row in connection.run(
+                qb.select(table).where(*where).order_by(*ordering).limit(limit).offset(offset)).all()]
+            total = connection.run(qb.select(table, qb.count()).where(*where)).value()
             items = self.policy.serialize_many(tx, user, rows)
         return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
 
@@ -1519,18 +1527,15 @@ class Business:
         compiler = SqlQuery(self.registry, model, children=children)
         readable = self.policy.fields(user, model)
         search_fields = [name for name in view_for(model)['search_fields'] if name in readable]
-        where, values = compiler.where_sql(filters, query.get('q', [''])[0], search_fields=search_fields)
-        scoped, parameters = self.policy.scope_sql(user, model)
-        if scoped:
-            where += (' AND ' if where else ' WHERE ') + scoped.removeprefix(' WHERE ')
-            values.extend(parameters)
-        ordering = compiler.ordering_sql(order)
-        table = identifier(self.registry.name_for(model))
+        where = [item for item in (compiler.where(filters, query.get('q', [''])[0], search_fields=search_fields),
+                                   self.policy.scope(user, model)) if not qb.always(item)]
+        ordering = compiler.ordering(order)
+        table = qb.table(self.registry.name_for(model), 'record')
         with self.database._connection() as connection:
             connection.snapshot()
             tx = Session(connection, self.registry)
-            rows = connection.execute(f'SELECT record.* FROM {table} AS record{where}{ordering} LIMIT ? OFFSET ?', [*values, limit, offset]).fetchall()
-            total = connection.execute(f'SELECT count(*) FROM {table} AS record{where}', values).fetchone()[0]
+            rows = connection.run(qb.select(table).where(*where).order_by(*ordering).limit(limit).offset(offset)).all()
+            total = connection.run(qb.select(table, qb.count()).where(*where)).value()
             # One visibility check per Link target for the page, not per row.
             items = self.policy.serialize_many(tx, user, [model._from_row(row) for row in rows])
         return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
@@ -1543,7 +1548,7 @@ class Business:
             return
         self.jobs.tasks.setdefault(images.PURGE_TASK, Task(images.PURGE_TASK, images.purge_job(self), max_attempts=1, external=True))
         with self.database.transaction() as tx:
-            exists = tx.connection.execute('SELECT 1 FROM evlet_schedules WHERE name=?', (images.PURGE_TASK,)).fetchone()
+            exists = tx.connection.run(qb.select('evlet_schedules', 'name').where(name=images.PURGE_TASK)).one()
         if not exists:
             self.jobs.schedule(images.PURGE_TASK, images.PURGE_TASK, {}, every=3600)
 
@@ -1586,7 +1591,8 @@ class Business:
             if model not in self.attachments and (method != 'GET' or file_id is None):
                 raise AccessError(404, 'Attachments unavailable')
             if method == 'GET' and file_id is None:
-                rows = tx.connection.execute("SELECT id,name,COALESCE(file_size,length(content)) AS size FROM evlet_attachments WHERE model=? AND record_id=? AND (purpose IS NULL OR purpose <> 'image') ORDER BY id", args)
+                rows = tx.connection.run(qb.select('evlet_attachments', 'id', 'name', qb.named(qb.coalesce('file_size', qb.length('content')), 'size'))
+                                         .where(FILES, model=name, record_id=record_id).order_by('id'))
                 return 200, {'items': [dict(row) for row in rows]}, []
             if method == 'POST' and file_id is None:
                 filename = body.get('name')
@@ -1600,14 +1606,14 @@ class Business:
                 limits = self.attachment_limits[model]
                 if not 1 <= len(content) <= limits.max_size:
                     raise ValidationError({'attachment': f'Use a nonempty file up to {size_text(limits.max_size)}'})
-                if tx.connection.execute("SELECT count(*) FROM evlet_attachments WHERE model=? AND record_id=? AND (purpose IS NULL OR purpose <> 'image')", args).fetchone()[0] >= limits.max_files:
+                if tx.connection.run(qb.select('evlet_attachments', qb.count()).where(FILES, model=name, record_id=record_id)).value() >= limits.max_files:
                     raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
                 file_id = self.storage.add(tx, *args, filename, content)
                 from .journal import file
                 file(self, tx, user, model, record_id, 'added', {'id': file_id, 'name': filename, 'size': len(content)})
                 self.changed(tx, model, record_id)
                 return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
-            row = tx.connection.execute('SELECT * FROM evlet_attachments WHERE model=? AND record_id=? AND id=?', (*args, file_id)).fetchone()
+            row = tx.connection.run(qb.select('evlet_attachments').where(model=name, record_id=record_id, id=file_id)).one()
             if row is None or (model not in self.attachments and row['purpose'] != 'image'):
                 raise AccessError(404, 'Attachment not found')
             if method == 'GET' and row['purpose'] == 'image':
@@ -1620,7 +1626,7 @@ class Business:
             if method == 'GET':
                 return 200, Download(self.storage.read(row)), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
             if method == 'DELETE':
-                tx.connection.execute('DELETE FROM evlet_attachments WHERE id=?', (file_id,))
+                tx.connection.run(qb.delete('evlet_attachments').where(id=file_id))
                 from .journal import file
                 file(self, tx, user, model, record_id, 'removed', {'id': file_id, 'name': row['name']})
                 self.changed(tx, model, record_id)

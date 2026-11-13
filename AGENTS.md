@@ -29,7 +29,8 @@ never bypass account, tenant, row, field, or action checks.
   `connection.run(...)`) and the connection's schema methods, never raw SQL text. SQL lives only
   in the dialect (`evlet/sqlite.py`, `evlet/writes.py`, `Database` in `evlet/database.py`), and
   no module outside it may ask which database it runs on. `tests/test_query_builder_boundary.py`
-  enforces this; when you move a module onto the query builder, lower its count there.
+  fails on SQL text outside the dialect; a condition the builder cannot express is a missing builder
+  function, added to `qb.py` and the dialect with a conformance test.
 - Parameterize SQL values and validate SQL identifiers. Validate on the backend.
   Preserve transaction boundaries, exact currency values, and foreign keys.
 - Keep the Playground authenticated and development servers on loopback. Backend

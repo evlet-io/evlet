@@ -312,7 +312,7 @@ class Compiler:
     """Turns one evlet/qb.py statement into SQLite SQL text and its bound values, in order."""
 
     COMPARE = {'=', '!=', '<', '<=', '>', '>='}
-    ARITHMETIC = {'+', '-', '*', '/'}
+    ARITHMETIC = {'+', '-', '*', '/', '%'}
 
     def __init__(self, *, literal=False):
         # literal: write values into the SQL (table definitions take no parameters); otherwise bind them.
@@ -535,11 +535,4 @@ def compile_statement(statement):
     """(sql, values) for one query builder statement."""
     compiler = Compiler()
     sql = compiler.statement(statement)
-    return sql, compiler.values
-
-
-def compile_condition(condition):
-    """(sql, values) for one condition, for modules not yet moved onto the query builder (temporary bridge)."""
-    compiler = Compiler()
-    sql = compiler.expression(condition)
     return sql, compiler.values

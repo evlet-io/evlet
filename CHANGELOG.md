@@ -36,11 +36,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   subclass, passed explicitly where the app builds its database. See
   [docs/database-adapters.md](docs/database-adapters.md). The query builder and the adapter
   interface are provisional.
-- **This release moves the data layer onto the query builder:** the record API in `database.py`,
-  `query.py`, `migrations.py`, `documents.py`, row scopes in `permissions.py`, and the record
-  helpers (naming, audit times, ids, ledgers, period locks, sequences, sections, images, lifecycle,
-  journal). The other framework modules follow in later releases, one area at a time;
-  `tests/test_query_builder_boundary.py` tracks what is left and stops new raw SQL.
+- **Every framework module is on the query builder:** the record API, queries, migrations, row
+  scopes and record helpers, accounts and sign-in, Controls and customization, jobs, events, mail,
+  connectors and tools, Eva and assistants, reports (measures), printing, storage and the rest.
+  Framework tables are `TableDefinition`s created with `connection.ensure_table`. Only the instance
+  tools that open SQLite files themselves (backups, restores, the instance catalog) still write
+  SQL; deciding which of them stay SQLite tools is the next step.
+  `tests/test_query_builder_boundary.py` fails on SQL text anywhere else outside the dialect.
+  Query plans and the number of statements per operation are unchanged.
+- `database.logs.add(store, statement)` (the batched log writes) takes a query builder statement
+  instead of SQL text and values.
 - **Conformance tests.** `tests/test_database_adapter.py` is the checklist a new dialect must pass:
   every query builder statement and condition, value round trips, exact amounts, foreign keys, ids,
   the table shape, every schema change, framework table rules, append-only tables, the id guard,
@@ -50,8 +55,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `audit.add_columns`, `journal.ensure_table`, framework step functions).
   `Database.columns(connection, table)` is now `connection.columns(table)`.
   `SqlQuery.where()` and `ordering()` return query builder objects, and `Policy.scope()` returns a row
-  scope as a condition; the text forms (`where_sql`, `ordering_sql`, `Policy.scope_sql`) stay for one
-  release while the remaining modules move. These are internal names; apps that used them must update.
+  scope as a condition. The text forms (`SqlQuery.where_sql`, `ordering_sql`, `reference_sql`,
+  `Policy.scope_sql`) and `evlet.sqlite.compile_condition` are removed. These are internal names; apps
+  that used them build a statement with `evlet.qb` and pass the condition to `.where(...)`.
 - New SQLite databases write the CREATE statements of framework tables and the append-only guards
   of `evlet_journal`, `evlet_audit` and `evlet_document_revisions` in a slightly different text with
   the same rules. Existing databases keep theirs.

@@ -223,7 +223,7 @@ Apps must not depend on these. They can change in any release without a deprecat
   They are documented for framework work and for people who write a dialect, and are provisional:
   they may change in a minor release, with a `CHANGELOG.md` note.
 - Names that start with an underscore, and dunder attributes such as `__fields__`.
-- Methods of exported classes that the app guides do not document, such as `Policy.scope_sql`
+- Methods of exported classes that the app guides do not document, such as `Policy.scope`
   or `Registry.plan_for`.
 - The stored layout of tables Evlet manages (`evlet_*`), and the browser framework in
   `frontend/`.

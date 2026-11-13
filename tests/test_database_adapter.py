@@ -455,6 +455,7 @@ def test_distinct_having_searched_case_division_and_text_functions(people):
     assert (totals['teams'], totals['older'], totals['younger']) == (2, 2, 1)
     assert connection.run(qb.select('adapter_person', qb.col('age') / 2).where(given='Chen')).value() == 22
     assert connection.run(qb.select('adapter_person', qb.col('age') / -2).where(given='Chen')).value() == -22
+    assert connection.run(qb.select('adapter_person', qb.col('age') % 7, (qb.value(0) - qb.col('age')) % 7).where(given='Chen')).one()[:] == (3, -3)
     assert names(connection, qb.select('adapter_person', 'given').where(qb.ends_with('given', 'en')).order_by('id')) == ['Chen']
     assert names(connection, qb.select('adapter_person', 'given').where(qb.ends_with('given', 'EN'))) == []
     assert names(connection, qb.select('adapter_person', 'given').where(qb.ends_with('given', 'xxAisha'))) == []

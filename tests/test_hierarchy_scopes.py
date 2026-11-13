@@ -237,9 +237,11 @@ def test_sqlite_plan_walks_the_parent_index(tmp_path):
     app = serve(Database(tmp_path / 'plan.sqlite3', Registry(*MODELS)))
     people(app, reports=20)
     user = User(99, 'manager', 'viewer', (('employee', 2),))
-    where, values = app.business.policy.scope_sql(user, Payslip)
+    from evlet import qb
+    from evlet.sqlite import compile_statement
+    sql, values = compile_statement(qb.select(qb.table('payslip', 'record'), qb.count()).where(app.business.policy.scope(user, Payslip)))
     with app.database.transaction() as tx:
-        plan = [row[-1] for row in tx.connection.execute(f'EXPLAIN QUERY PLAN SELECT count(*) FROM payslip AS record{where}', values)]
+        plan = [row[-1] for row in tx.connection.execute('EXPLAIN QUERY PLAN ' + sql, values)]
     # The team is computed once (not per row), each level is an index lookup on reports_to, and the
     # team's payslips are found through the employee index.
     assert 'MATERIALIZE evlet_team' in plan, plan

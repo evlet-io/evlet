@@ -112,9 +112,8 @@ class Connection:
     migrations use, ids, locks and error reading, plus commit(), rollback() and in_transaction. Rows read by
     index and by column name.
 
-    Framework code outside the dialect never writes SQL text; it builds statements with evlet/qb.py. Modules
-    not yet moved onto the query builder still call execute() with SQLite SQL (see the plan in
-    docs/database-adapters.md); that bridge goes away module by module."""
+    Framework code outside the dialect never writes SQL text; it builds statements with evlet/qb.py
+    (tests/test_query_builder_boundary.py checks this)."""
 
     # Running statements
 

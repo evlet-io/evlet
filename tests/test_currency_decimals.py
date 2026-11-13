@@ -218,6 +218,23 @@ def test_raising_is_free_lowering_is_refused_until_an_explicit_step_rounds(app):
     assert save(admin, {'KWD': {'decimals': 2}})[0] == 409
 
 
+def test_rounding_stored_amounts_is_half_up_away_from_zero_for_negatives(app):
+    admin = login(app)
+    assert save(admin, {'AED': {'decimals': 3}})[0] == 200
+    with app.database.transaction() as tx:
+        client = tx.create(Client, currency='AED')
+        ids = [tx.create(Deposit, client=client.id, dirhams=dirhams, amount=amount, billed=billed).id for dirhams, amount, billed in (
+            ('-0.005', '-0.004', '-1.006'), ('0.005', '0.004', '-0.001'), ('-10.995', '-10.994', '-0.01'))]
+    with app.database._connection() as connection:
+        assert stored_excess(connection, app.database.registry, 'AED', 2)[0] == 8
+    assert round_stored_money(app, 'AED', 2) == 8
+    with app.database.transaction() as tx:
+        rows = [(row.dirhams, row.amount, row.billed) for row in (tx.get(Deposit, item) for item in ids)]
+    assert rows == [(D('-0.01'), D('0.00'), D('-1.01')), (D('0.01'), D('0.00'), D('0.00')), (D('-11.00'), D('-10.99'), D('-0.01'))]
+    with app.database._connection() as connection:
+        assert stored_excess(connection, app.database.registry, 'AED', 2) == (0, None)
+
+
 # ---- calculations ------------------------------------------------------------------------------
 
 def test_finite_formulas_round_to_each_rows_currency_and_follow_a_change_of_currency(app):

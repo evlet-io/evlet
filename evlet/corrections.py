@@ -20,8 +20,8 @@ from .audit import actor_id, touch
 from .auth import AccessError, has_role
 from .fields import Link, Reference
 from .identity import RecordId
-from .models import ValidationError, checked_body, identifier
-from . import periods, sections
+from .models import ValidationError, checked_body
+from . import periods, qb, sections
 from .permissions import CHUNK, corrects, trusted
 
 VOID = 'void'
@@ -98,9 +98,8 @@ def clean_reason(reason):
 
 def has_revision(business, tx, model, record_id):
     """The id of a saved revision of this record, or None; `revises` is indexed, so this is an index search."""
-    table = identifier(business.registry.name_for(model))
-    row = tx.connection.execute(f'SELECT id FROM {table} WHERE "revises"=? ORDER BY id LIMIT 1', (record_id,)).fetchone()
-    return None if row is None else row[0]
+    return tx.connection.run(qb.select(business.registry.name_for(model), 'id').where(qb.eq('revises', qb.value(record_id)))
+                             .order_by('id').limit(1)).value()
 
 
 def state_problem(context, model, record, operation):
@@ -237,7 +236,7 @@ def void_record(context, model, record, reason):
     name, previous = model.__state__, record._values.get(model.__state__)
     # A record in a closed period (Meta.period) is neither voided nor unposted.
     periods.check(tx, model, before=record._values)
-    tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (VOID, record.id))
+    tx.connection.run(qb.update(business.registry.name_for(model), **{name: VOID}).where(id=record.id))
     touch(tx.connection, business.registry.name_for(model), record.id, actor_id(user))
     reversed_rows = reverse_effects(context, model, record.id, previous)
     reaction = getattr(model, 'changed', None)
@@ -336,8 +335,8 @@ def unpost_state(context, model, record_id):
         return starts[0]
     if model not in business.journals:
         return None
-    rows = context._tx.connection.execute("SELECT data FROM evlet_journal WHERE model=? AND record_id=? AND kind='moved' ORDER BY id DESC",
-                                          (business.registry.name_for(model), record_id)).fetchall()
+    rows = context._tx.connection.run(qb.select('evlet_journal', 'data').where(model=business.registry.name_for(model), record_id=record_id,
+                                                                              kind='moved').order_by('-id')).all()
     for (data,) in rows:
         data = json.loads(data)
         if data.get('to') in posting and data.get('from') in starts:
@@ -367,13 +366,12 @@ def roots(business, tx, model, ids):
     current = model
     while current in owners and result:
         child = owners[current]
-        table, link = identifier(business.registry.name_for(current)), identifier(child.link)
+        table = business.registry.name_for(current)
         wanted = list({item[1] for item in result.values()})
         parents = {}
         for start in range(0, len(wanted), CHUNK):
             part = wanted[start:start + CHUNK]
-            parents.update((row[0], row[1]) for row in tx.connection.execute(
-                f'SELECT id, {link} FROM {table} WHERE id IN ({", ".join("?" for _ in part)})', part).fetchall())
+            parents.update((row[0], row[1]) for row in tx.connection.run(qb.select(table, 'id', child.link).where(qb.in_('id', part))))
         result = {key: (child.parent, parents[item[1]]) for key, item in result.items() if parents.get(item[1]) is not None}
         current = child.parent
     return result
@@ -386,7 +384,7 @@ def live_record(context, model, record_id):
     state = model.__state__
     if state is None:
         return False
-    row = tx.connection.execute(f'SELECT * FROM {identifier(business.registry.name_for(model))} WHERE id=?', (record_id,)).fetchone()
+    row = tx.connection.run(qb.select(business.registry.name_for(model)).where(id=record_id)).one()
     if row is None:
         return False
     record = model._from_row(row)
@@ -408,11 +406,10 @@ def owned(business, tx, model, record_id):
             parents = level.get(child.parent)
             if not parents:
                 continue
-            table, link = identifier(business.registry.name_for(child.model)), identifier(child.link)
+            table = business.registry.name_for(child.model)
             for start in range(0, len(parents), CHUNK):
                 part = parents[start:start + CHUNK]
-                ids = [row[0] for row in tx.connection.execute(
-                    f'SELECT id FROM {table} WHERE {link} IN ({", ".join("?" for _ in part)})', part).fetchall()]
+                ids = [row[0] for row in tx.connection.run(qb.select(table, 'id').where(qb.in_(child.link, part)))]
                 following.setdefault(child.model, []).extend(ids)
         level = {key: ids for key, ids in following.items() if ids}
         for key, ids in level.items():
@@ -440,22 +437,22 @@ def dependents(context, model, record_id):
     names = {registry.name_for(item): ids for item, ids in mine.items()}
     found = {}
     for other in registry.models.values():
-        table = identifier(registry.name_for(other))
+        table = registry.name_for(other)
         for field_name, field in other.__declared_fields__.items():
             if not field.stored:
                 continue
             if isinstance(field, Link) and field.target in mine:
-                queries = [(f'SELECT id FROM {table} WHERE {identifier(field_name)} IN ', (), mine[field.target])]
+                queries = [(qb.select(table, 'id'), field_name, mine[field.target])]
             elif isinstance(field, Reference) and not (other in targets and field_name == SOURCE):
-                queries = [(f'SELECT id FROM {table} WHERE {identifier(field_name + "_model")}=? AND {identifier(field_name + "_id")} IN ',
-                            (name,), ids) for name, ids in names.items()]
+                queries = [(qb.select(table, 'id').where(**{field_name + '_model': name}), field_name + '_id', ids)
+                           for name, ids in names.items()]
             else:
                 continue
             ids = []
-            for sql, first, values in queries:
+            for query, column, values in queries:
                 for start in range(0, len(values), CHUNK):
                     part = values[start:start + CHUNK]
-                    ids += [row[0] for row in tx.connection.execute(sql + f'({", ".join("?" for _ in part)})', (*first, *part)).fetchall()]
+                    ids += [row[0] for row in tx.connection.run(query.where(qb.in_(column, part)))]
             # Rows of this record linking to its own rows are not dependents.
             ids = [item for item in dict.fromkeys(ids) if item not in set(mine.get(other, ()))]
             if not ids:
@@ -464,8 +461,7 @@ def dependents(context, model, record_id):
                 # An effect row: the record that posted it depends on this one.
                 for start in range(0, len(ids), CHUNK):
                     part = ids[start:start + CHUNK]
-                    for row in tx.connection.execute(f'SELECT "{SOURCE}_model", "{SOURCE}_id" FROM {table} '
-                                                     f'WHERE id IN ({", ".join("?" for _ in part)})', part).fetchall():
+                    for row in tx.connection.run(qb.select(table, f'{SOURCE}_model', f'{SOURCE}_id').where(qb.in_('id', part))):
                         source = registry.models.get(row[0])
                         if source is not None and row[1] is not None:
                             found[source, row[1]] = None
@@ -561,7 +557,7 @@ def unpost(context, model, record_id, reason):
     name, previous = model.__state__, record._values.get(model.__state__)
     to = unpost_state(context, model, record.id)
     periods.check(tx, model, before=record._values)
-    tx.connection.execute(f'UPDATE {identifier(business.registry.name_for(model))} SET {identifier(name)}=? WHERE id=?', (to, record.id))
+    tx.connection.run(qb.update(business.registry.name_for(model), **{name: to}).where(id=record.id))
     touch(tx.connection, business.registry.name_for(model), record.id, actor_id(user))
     reversed_rows = reverse_effects(context, model, record.id, previous)
     reaction = getattr(model, 'changed', None)

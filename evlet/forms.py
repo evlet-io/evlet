@@ -5,6 +5,8 @@ import hashlib
 import json
 import re
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .auth import AccessError, has_role
 from .identity import jsonable, path_id
 from .models import Model, ValidationError
@@ -12,6 +14,15 @@ from .documents import Draft, Snapshot, settle
 from .permissions import trusted
 from .ui.metadata import field_schema, source_schema
 from .reactivity import plans, serialized
+
+
+# Dialog submits and slip hand-ins by idempotency key, so a retried request returns the first result.
+OPERATIONS = TableDefinition('evlet_operations', (
+    Column('key', 'TEXT', primary=True),
+    Column('actor', 'INTEGER', required=True),
+    Column('request', 'TEXT', required=True),
+    Column('result', 'TEXT', required=True),
+))
 
 
 class Dialog(Model):
@@ -214,7 +225,7 @@ class Forms:
 
     def initialize(self):
         with self.business.database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_operations (key TEXT PRIMARY KEY, actor INTEGER NOT NULL, request TEXT NOT NULL, result TEXT NOT NULL)')
+            tx.connection.ensure_table(OPERATIONS)
 
     def check(self, report):
         registry, columns = self.business.registry, {column.name: column for column in report.columns}
@@ -439,7 +450,7 @@ class Forms:
                 if submit:
                     if not isinstance(key, str) or not 8 <= len(key) <= 128: raise ValidationError({'key': 'Supply an idempotency key of 8 to 128 characters'})
                     key = f'{user.id}:{model.__name__}:{record_id}:{parts[2]}:{key}'
-                    old = context._tx.connection.execute('SELECT * FROM evlet_operations WHERE key=?', (key,)).fetchone()
+                    old = context._tx.connection.run(qb.select('evlet_operations').where(key=key)).one()
                     if old:
                         if old['request'] != signature or old['actor'] != user.id: raise AccessError(409, 'Idempotency key has different input')
                         return 200, json.loads(old['result']), []
@@ -472,7 +483,7 @@ class Forms:
                 outcome = jsonable(outcome)
                 encoded = json.dumps(outcome, allow_nan=False)
                 if len(encoded) > 65536: raise ValueError('Dialog result exceeds 64 KiB')
-                context._tx.connection.execute('INSERT INTO evlet_operations(key,actor,request,result) VALUES (?,?,?,?)', (key, user.id, signature, encoded))
+                context._tx.connection.run(qb.insert('evlet_operations', key=key, actor=user.id, request=signature, result=encoded))
                 return 200, outcome, []
         return None
 

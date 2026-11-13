@@ -567,16 +567,6 @@ class Policy:
             return qb.TRUE
         return scope_condition(self.registry, model, rule.scope(user))
 
-    def scope_sql(self, user, model):
-        """The row scope as SQLite text, (" WHERE ...", values), for modules not yet moved onto the query
-        builder (a temporary bridge, docs/database-adapters.md)."""
-        from .sqlite import compile_condition
-        condition = self.scope(user, model)
-        if qb.always(condition):
-            return '', []
-        clause, values = compile_condition(condition)
-        return ' WHERE ' + clause, values
-
     def record(self, tx, user, model, record_id, operation='read'):
         self.require(user, model, operation)
         try:

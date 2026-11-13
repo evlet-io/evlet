@@ -30,8 +30,8 @@ from .auth import AccessError, User
 from .identity import RecordId, jsonable
 from .naming import standard
 from .fields import Boolean, Link, Reference
-from .models import Model, ValidationError, identifier
-from . import periods, sections
+from .models import Model, ValidationError
+from . import periods, qb, sections
 from .permissions import CHUNK, Policy, Rule
 
 NUMERIC = ('integer', 'decimal', 'currency', 'percent')
@@ -349,17 +349,17 @@ class EnginePolicy(Policy):
     def fields(self, user, model, *, write=False):
         return set(model.__declared_fields__)
 
-    def scope_sql(self, user, model):
-        return '', []
+    def scope(self, user, model):
+        return qb.TRUE
 
     def load(self, tx, model, record_ids):
         """Read the records not read yet, one statement per model and chunk; absent ids are remembered too."""
         wanted = [record_id for record_id in dict.fromkeys(record_ids) if (model, record_id) not in self.cache]
-        table = identifier(self.registry.name_for(model))
+        table = self.registry.name_for(model)
         for start in range(0, len(wanted), CHUNK):
             part = wanted[start:start + CHUNK]
             self.cache.update(((model, record_id), None) for record_id in part)
-            for row in tx.connection.execute(f'SELECT * FROM {table} WHERE id IN ({", ".join("?" for _ in part)})', part).fetchall():
+            for row in tx.connection.run(qb.select(table).where(qb.in_('id', part))):
                 self.cache[model, row['id']] = model._from_row(row)
 
     def _scoped(self, tx, user, model, record_ids, operation, columns):
@@ -609,12 +609,11 @@ def posted(tx, registry, bound, record_ids):
 
     The `source` index covers (source_model, source_id), so this is an index search.
     """
-    table, name = identifier(registry.name_for(bound.target)), registry.name_for(bound.source)
+    table, name = registry.name_for(bound.target), registry.name_for(bound.source)
     ids, found = list(dict.fromkeys(record_ids)), {}
     for start in range(0, len(ids), CHUNK):
         part = ids[start:start + CHUNK]
-        rows = tx.connection.execute(f'SELECT * FROM {table} WHERE "{SOURCE}_model"=? AND "{SOURCE}_id" IN ({", ".join("?" for _ in part)}) '
-                                     'ORDER BY id', [name, *part]).fetchall()
+        rows = tx.connection.run(qb.select(table).where(qb.eq(f'{SOURCE}_model', name), qb.in_(f'{SOURCE}_id', part)).order_by('id'))
         for row in rows:
             record = bound.target._from_row(row)
             found.setdefault(record._values[SOURCE][1], []).append(record)
@@ -634,8 +633,8 @@ def has_postings(connection, registry, model, record, *, voided=False):
         return False
     name = registry.name_for(model)
     for bound in bounds:
-        row = connection.execute(f'SELECT "{REVERSAL}" FROM {identifier(registry.name_for(bound.target))} '
-                                 f'WHERE "{SOURCE}_model"=? AND "{SOURCE}_id"=? ORDER BY id DESC LIMIT 1', (name, record.id)).fetchone()
+        row = connection.run(qb.select(registry.name_for(bound.target), REVERSAL).where(**{f'{SOURCE}_model': name, f'{SOURCE}_id': record.id})
+                             .order_by('-id').limit(1)).one()
         if row is not None and (void or not row[0]):
             return True
     return False
@@ -645,8 +644,8 @@ def ever_posted(connection, registry, model, record_id):
     """Whether a record ever posted rows of an effect, live or reversed since. Such a record is never deleted:
     its rows name it as their source."""
     name = registry.name_for(model)
-    return any(connection.execute(f'SELECT 1 FROM {identifier(registry.name_for(bound.target))} '
-                                  f'WHERE "{SOURCE}_model"=? AND "{SOURCE}_id"=? LIMIT 1', (name, record_id)).fetchone()
+    return any(connection.run(qb.select(registry.name_for(bound.target), qb.value(1))
+                              .where(**{f'{SOURCE}_model': name, f'{SOURCE}_id': qb.value(record_id)}).limit(1)).one()
                for bound in registry.effects.get(model, ()))
 
 
@@ -787,12 +786,12 @@ def check(application):
             tx = Session(connection, registry)
             engine = engine_context(business, tx)
             for model, bounds in registry.effects.items():
-                table, name = identifier(registry.name_for(model)), registry.name_for(model)
+                name = registry.name_for(model)
                 state_name = model.__state__
                 last = 0
                 while True:
-                    records = [model._from_row(row) for row in tx.connection.execute(
-                        f'SELECT * FROM {table} WHERE id > ? ORDER BY id LIMIT ?', (last, BATCH)).fetchall()]
+                    records = [model._from_row(row) for row in tx.connection.run(
+                        qb.select(name).where(qb.gt('id', last)).order_by('id').limit(BATCH))]
                     if not records:
                         break
                     last = records[-1].id
@@ -807,19 +806,18 @@ def check(application):
                                 document = load_document(business, tx, model, record.id)
                             differences += compare(engine, bound, name, record.id, state, document, rows)
                 for bound in bounds:
-                    differences += orphans(tx, registry, bound, name, table)
+                    differences += orphans(tx, registry, bound, name)
         finally:
             connection.rollback()
     return differences
 
 
-def orphans(tx, registry, bound, name, table):
+def orphans(tx, registry, bound, name):
     """Rows whose source record no longer exists, read in batches."""
-    target_table = identifier(registry.name_for(bound.target))
+    target_table = registry.name_for(bound.target)
     result, last = [], 0
     while True:
-        rows = tx.connection.execute(f'SELECT * FROM {target_table} WHERE "{SOURCE}_model"=? AND id > ? ORDER BY id LIMIT ?',
-                                     (name, last, BATCH)).fetchall()
+        rows = tx.connection.run(qb.select(target_table).where(qb.eq(f'{SOURCE}_model', name), qb.gt('id', last)).order_by('id').limit(BATCH)).all()
         if not rows:
             return result
         items = [bound.target._from_row(row) for row in rows]
@@ -828,8 +826,7 @@ def orphans(tx, registry, bound, name, table):
         existing = set()
         for start in range(0, len(sources), CHUNK):
             part = sources[start:start + CHUNK]
-            existing |= {row[0] for row in tx.connection.execute(
-                f'SELECT id FROM {table} WHERE id IN ({", ".join("?" for _ in part)})', part).fetchall()}
+            existing |= {row[0] for row in tx.connection.run(qb.select(name, 'id').where(qb.in_('id', part)))}
         result += [difference(bound, name, item._values[SOURCE][1], 'extra', item._values[REVERSAL], actual=item,
                               message='The source record does not exist') for item in items if item._values[SOURCE][1] not in existing]
 

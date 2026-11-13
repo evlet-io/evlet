@@ -28,8 +28,9 @@ dialect. App developers do not need it: they use `Database`, `Session` and `Cont
 | `evlet/writes.py` | SQLite only: the four files and the fair write line-up. |
 
 Framework modules outside the dialect never write SQL text and never ask which database they
-run on. A test, `tests/test_query_builder_boundary.py`, enforces this (see "The plan" below for
-the modules that are still being moved).
+run on. A test, `tests/test_query_builder_boundary.py`, enforces this: it fails on a string that
+reads as an SQL statement, or an `execute()` call given text, anywhere outside the dialect (see "The
+plan" below for the instance tools still listed).
 
 ## The query builder
 
@@ -51,7 +52,8 @@ entry_id = connection.run(qb.insert('evlet_journal', model=name, record_id=recor
 | `qb.select(table, *columns)` | `SELECT`. No columns means every column. `table` is a name or `qb.table(name, alias)`. |
 | `.where(*conditions, **equals)` | `WHERE`. Everything given must hold. `name=value` is equality, `name=None` is `IS NULL`. |
 | `.join(table, on, left=False)` | `JOIN` or `LEFT JOIN`. |
-| `.group_by(*columns)`, `.order_by(*orders)` | `GROUP BY`, `ORDER BY`. `'-name'` sorts down. `qb.asc(column, nulls='first')` and `qb.desc(column, nulls='last')` place empty values. |
+| `.distinct()` | `SELECT DISTINCT`. |
+| `.group_by(*columns)`, `.having(*conditions)`, `.order_by(*orders)` | `GROUP BY`, `HAVING`, `ORDER BY`. `'-name'` sorts down. `qb.asc(column, nulls='first')` and `qb.desc(column, nulls='last')` place empty values. |
 | `.limit(n)`, `.offset(n)` | One page of rows. |
 | `qb.insert(table, **values)` | `INSERT`. `.returning_id()` returns the new id as `Result.id`. `.returning(column)` returns another column, such as an upsert's counter. |
 | `.on_conflict(*columns).do_nothing()` | Insert unless a row with the same key exists. |
@@ -66,15 +68,21 @@ entry_id = connection.run(qb.insert('evlet_journal', model=name, record_id=recor
 - Empty values: `qb.is_null`, `qb.not_null`.
 - Lists and subqueries: `qb.in_(column, values_or_query)`, `qb.not_in`. An empty list matches no row.
 - Text: `qb.contains` (matching case), `qb.contains_ci` (ignoring case), `qb.excludes_ci`
-  (empty or not containing, ignoring case), `qb.starts_with`.
+  (empty or not containing, ignoring case), `qb.starts_with`, `qb.ends_with` (both matching case).
 - Logic: `qb.and_`, `qb.or_`, `qb.not_`, `qb.exists`, `qb.not_exists`, `qb.TRUE`, `qb.FALSE`.
 - Hierarchies: `qb.in_tree(column, table, parent, roots, include_roots=...)`, the rows at or
   below some roots following a parent link (team row scopes). A cycle stops the walk.
-- Functions: `qb.count()`, `qb.count(column)`, `qb.sum`, `qb.min`, `qb.max`, `qb.coalesce`,
-  `qb.nullif`, `qb.lower`, `qb.length`.
+- Functions: `qb.count()`, `qb.count(column)`, `qb.count_distinct`, `qb.sum`, `qb.min`, `qb.max`,
+  `qb.coalesce`, `qb.nullif`, `qb.lower`, `qb.upper`, `qb.trim`, `qb.length`, `qb.substr(column, start, size)`,
+  `qb.replace_text(column, old, new)`, `qb.abs`.
+- Choices: `qb.case(column, {key: value})` (the value matching what the column holds) and
+  `qb.when((condition, value), ..., otherwise=None)` (the value of the first condition that holds).
 - Windows: `qb.over(qb.row_number(), partition_by=[...], order_by=[...])`.
-- Other: `qb.col('alias.name')`, `qb.named(expression, 'name')`, `qb.case(column, {key: value})`,
-  `qb.all_columns('alias')`, `qb.from_query(query, alias)`, and `+`, `-`, `*` on expressions.
+- Other: `qb.col('alias.name')`, `qb.value(item)`, `qb.named(expression, 'name')`,
+  `qb.all_columns('alias')`, `qb.from_query(query, alias)`, and `+`, `-`, `*`, `/` and `%` on
+  expressions (two integers divide to an integer, rounding toward zero; `%` keeps the left side's sign).
+- `name=None` and `qb.eq(column, None)` mean `IS NULL`. Where a value that may be `None` must
+  never match an empty column, pass `qb.value(item)`.
 
 ### Rules
 
@@ -106,7 +114,8 @@ Migrations and framework tables use named methods on the connection instead of D
 | `add_column`, `rename_column`, `drop_column`, `cannot_drop_columns()` | Column changes, keeping data. |
 | `set_required(table, column, required)`, `drop_reference(table, column)` | Constraint changes, keeping the stored rows. |
 | `create_index(table, base, columns, unique=, partial=)`, `drop_index(name)` | Model indexes. `partial` names a column: only rows where it is set are covered. |
-| `ensure_table(TableDefinition)`, `ensure_index(name, table, columns, unique=)` | Framework tables (`evlet_*`), created when missing. A `TableDefinition` lists columns, a numbered id, a primary key, unique groups and checks (query builder conditions). |
+| `ensure_table(TableDefinition)`, `ensure_index(name, table, columns, unique=)` | Framework tables (`evlet_*`), created when missing. A `TableDefinition` lists columns, a numbered id, a primary key, unique groups and checks (query builder conditions). Its columns may give a `default` (an integer or text) and, for a reference, `on_delete='cascade'` or `'set null'`. |
+| `drop_table(table)`, `rename_table(old, new)` | Rebuilding a framework table: create the new shape, copy the rows with `qb.insert_rows_from`, drop, rename. |
 | `make_append_only`, `drop_append_only`, `is_append_only` | Refuse `UPDATE`, `DELETE` and replacing inserts on a table. |
 | `guard_id`, `has_id_guard` | Refuse an `UPDATE` that changes a row's `id`. |
 
@@ -185,20 +194,18 @@ and their own fixtures, so a full run means changing those to build the new data
 
 ## The plan
 
-The move onto the query builder is done in steps, each its own pull request, so each stays
-reviewable. `tests/test_query_builder_boundary.py` lists the modules not moved yet with the
-number of raw `execute()` calls each still has. The numbers may only go down.
+The move onto the query builder was done in steps, one commit each, in the 0.5 pull request.
 
 | Step | Modules | State |
 | --- | --- | --- |
-| 1 (0.5) | Remove PostgreSQL. Add the query builder, the SQLite compiler and the conformance tests. Move the data layer: `database.py` (the record API), `query.py`, `migrations.py`, `documents.py`, row scopes in `permissions.py`, and the record helpers `naming`, `audit`, `identity`, `ledger`, `periods`, `sequences`, `sections`, `images`, `lifecycle`, `journal`. | This pull request |
-| 2 | Accounts and sign-in: `auth.py`, `settings.py`, `secrets.py`, `unsaved.py`. | Follow-up |
-| 3 | Controls: `controls.py`, `controls_system.py`, `customization.py`, the rest of `permissions.py`. | Follow-up |
-| 4 | Jobs and messages: `jobs.py`, `events.py`, `mailboxes.py`, `mentions.py`, `connectors.py`, `tools.py`, `devlink.py`, `services.py`. | Follow-up |
-| 5 | Eva: `eva.py`, `assistants.py`. | Follow-up |
-| 6 | The rest: `measures.py`, `business.py`, `effects.py`, `corrections.py`, `currencies.py`, `forms.py`, `printing.py`, `slips.py`, `framework.py`, `storage.py`, `object_storage.py`. Then remove the temporary text bridge (`SqlQuery.where_sql`, `ordering_sql`, `reference_sql`, `Policy.scope_sql`, `compile_condition`). | Follow-up |
-| 7 | The instance tools that open SQLite files directly (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/journal.py`, `cli/serve.py`, `cli/site.py`): decide which stay SQLite tools and which go through `Database`. | Follow-up |
+| 1 | Remove PostgreSQL. Add the query builder, the SQLite compiler and the conformance tests. Move the data layer: `database.py` (the record API), `query.py`, `migrations.py`, `documents.py`, row scopes in `permissions.py`, and the record helpers `naming`, `audit`, `identity`, `ledger`, `periods`, `sequences`, `sections`, `images`, `lifecycle`, `journal`. | Done |
+| 2 | Accounts and sign-in: `auth.py`, `settings.py`, `secrets.py`, `unsaved.py`, and the batched log writes. | Done |
+| 3 | Controls: `controls.py`, `controls_system.py`, `customization.py`. | Done |
+| 4 | Jobs and messages: `jobs.py`, `events.py`, `mailboxes.py`, `mentions.py`, `connectors.py`, `tools.py`, `devlink.py`, `services.py`, `framework.py`. | Done |
+| 5 | Eva: `eva.py`, `assistants.py`. | Done |
+| 6 | The rest: `measures.py`, `business.py`, `effects.py`, `corrections.py`, `currencies.py`, `forms.py`, `printing.py`, `slips.py`, `storage.py`, `object_storage.py`. The temporary text bridge (`SqlQuery.where_sql`, `ordering_sql`, `reference_sql`, `Policy.scope_sql`, `compile_condition`) is removed. | Done |
+| 7 | The instance tools that open SQLite files directly (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/journal.py`, `cli/main.py`, `cli/serve.py`, `cli/site.py`): decide which stay SQLite tools and which go through `Database`. | Next |
 
-Until a module is moved, it calls `execute()` with SQLite SQL, and the modules that still
-consume filters or row scopes as text use the bridge. Both go away step by step. New framework
-code uses the query builder from the start.
+`tests/test_query_builder_boundary.py` lists the step 7 tools with the SQL they still hold; the
+numbers may only go down. Everywhere else, SQL text outside the dialect fails the test, so new
+framework code uses the query builder from the start.
