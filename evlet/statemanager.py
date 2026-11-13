@@ -113,7 +113,7 @@ def _by(value, what):
 
 class Level:
     """One approval level of a rule: Level(by=("cfo",), when=F("total") >= 10000, pending="Pending CFO approval")."""
-    def __init__(self, by, *, when=None, pending):
+    def __init__(self, by, *, when=None, pending=None):
         self.roles, self.users = _by(by, 'A level by')
         if not self.roles and not self.users:
             raise ValueError('A level needs at least one approver')
@@ -499,8 +499,8 @@ def remark_required(context, guards, model, rule):
 
 
 def begin_move(context, model, draft, before, key, remark):
-    """Check a move on the saved record and return (rule, remark); the pipeline sets the new state after the
-    @state.exit hooks.
+    """Check a move on the saved record and return (rule, remark, level); the pipeline sets the new state after
+    the @state.exit hooks. `level` is the approval level this move approves (an index), or None.
 
     A role that cannot read the State gets one answer for every refused move, so it cannot learn which
     states and rules exist."""
@@ -517,7 +517,6 @@ def begin_move(context, model, draft, before, key, remark):
 def checked_move(context, model, draft, before, key, remark):
     from .guards import Guards, check_guard
     from .models import ValidationError
-    from .permissions import CALLER
     rule = find_rule(context, model, key) if isinstance(key, str) else None
     if rule is None:
         raise AccessError(404, 'Move not found')
@@ -526,29 +525,170 @@ def checked_move(context, model, draft, before, key, remark):
         raise AccessError(409, f'This record is {current}, which is final; it has no moves')
     if current not in rule.sources:
         raise AccessError(409, f'This record cannot move from {current} to {rule.to}')
-    if rule.system:
-        # Only trusted app code (a job, an action or a hook) uses a rule with by=(); a caller never does.
-        if CALLER.get():
-            raise AccessError(403, f'{rule.label} is made by the application only')
-    elif not allowed(context.user, rule.roles, rule.users, before._values):
-        raise AccessError(403, f'Your role cannot use {rule.label}')
     guards = Guards(context, model, before._values, lambda: before)
+    level = who_may(context, model, before, rule, guards)
+    if level is False:
+        raise AccessError(403, f'{rule.label} is made by the application only' if rule.system else f'Your role cannot use {rule.label}')
     check_guard(context, guards, context._business.registry.guards.get(model, {}).get('rule:' + rule.key), rule.label, 'move')
     remark = clean_remark(remark)
     if remark is not None and rule.remark is None:
         raise ValidationError({'remark': f'{rule.label} takes no remark'})
     if remark is None and remark_required(context, guards, model, rule):
         raise ValidationError({'remark': f'{rule.label} needs a remark'})
-    return rule, remark
+    return rule, remark, level
 
 
-def moved(context, model, record_id, previous, rule, remark, before, after):
-    """The Journal's `moved` entry, with the rule key, the remark and anything else the move changed."""
+def moved(context, model, record, previous, rule, remark, level, before, after):
+    """The Journal's `moved` entry, with the rule key, the remark, the level it approved, the levels that apply
+    in the new state (see entering) and anything else the move changed."""
     from . import journal
+    context.__dict__.get('_stays', {}).pop(record.id, None)
     if journal.journals(context, model):
         data = journal.tree_changes(context._business, model, before, after, skip=(model.__state__,))
-        journal.append(context._business, context._tx, context.user, model, record_id, 'moved',
-                       {**data, 'from': previous, 'to': rule.to, 'move': rule.label}, rule=rule.key, remark=remark)
+        journal.append(context._business, context._tx, context.user, model, record.id, 'moved',
+                       {**data, 'from': previous, 'to': rule.to, 'move': rule.label, **entering(context, model, record)},
+                       rule=rule.key, remark=remark, level=level)
+
+
+# Approvals: a rule with levels moves once its last level that applies is approved
+
+STAY = 200  # Approvals one stay in a state may hold before its entry is out of reach (then levels are decided now).
+
+
+def entering(context, model, record):
+    """{"levels": {rule key: [level indexes that apply]}} for the approval rules out of the record's (new) state,
+    decided on the saved record as it enters the state; {} when no approval rule leaves it."""
+    from .guards import Guards
+    if model.__state__ is None:
+        return {}
+    state_name = record._values.get(model.__state__)
+    rules = [rule for rule in rules_of(context, model) if rule.levels and state_name in rule.sources]
+    if not rules:
+        return {}
+    from .documents import load_draft
+    guards = Guards(context, model, record._values, lambda: load_draft(context, model, record.id, {}, preview=True)[0])
+    compiled = context._business.registry.guards.get(model, {})
+
+    def applies(guard):
+        if guard is None:
+            return True
+        outcome = guards.result(guard)
+        return outcome.state == 'ready' and outcome.value is True
+    return {'levels': {rule.key: [index for index in range(len(rule.levels)) if applies(compiled.get(f'rule:{rule.key}:level:{index}'))]
+                       for rule in rules}}
+
+
+def stay(context, model, record):
+    """(approvals, levels) of the record's stay in its state: the `approved` entries since the entry that brought
+    it there (approvals expire when it leaves) and the levels that entry logged; one statement per record."""
+    import json
+    from . import qb
+    cache = context.__dict__.setdefault('_stays', {})
+    if model not in context._business.journals:
+        return [], None
+    if record.id not in cache:
+        rows = context._tx.connection.run(qb.select('evlet_journal', 'kind', 'actor', 'level', 'rule', 'data')
+                                          .where(qb.in_('kind', ('created', 'moved', 'restored', 'approved')),
+                                                 model=context._business.registry.name_for(model), record_id=record.id)
+                                          .order_by('-id').limit(STAY)).all()
+        approvals = []
+        for row in rows:
+            if row['kind'] != 'approved':
+                cache[record.id] = approvals, json.loads(row['data']).get('levels')
+                break
+            approvals.append(row)
+        else:
+            cache[record.id] = approvals, None
+    return cache[record.id]
+
+
+def waiting(context, model, record, rule):
+    """(index of the level waiting or None, approvals of this rule in this stay)."""
+    approvals, levels = stay(context, model, record)
+    applicable = (levels or {}).get(rule.key)
+    if applicable is None:
+        applicable = entering(context, model, record).get('levels', {}).get(rule.key, [])
+    mine = [row for row in approvals if row['rule'] == rule.key]
+    done = {row['level'] for row in mine}
+    return next((index for index in applicable if index not in done), None), mine
+
+
+def may_approve(context, model, record, rule, index, approvals):
+    """Whether the user may approve this level: named by it, approved no other level of this rule in this stay,
+    and not the record's creator unless the rule says self_approve=True."""
+    from .audit import actor_id
+    from .journal import actor_of
+    level, user = rule.levels[index], context.user
+    if not allowed(user, level.roles, level.users, record._values) or actor_of(user) in {row['actor'] for row in approvals}:
+        return False
+    if rule.self_approve:
+        return True
+    from . import qb
+    creator = context._tx.connection.run(qb.select(context._business.registry.name_for(model), 'evlet_created_by').where(id=record.id)).value()
+    return creator is None or creator != actor_id(user)
+
+
+def who_may(context, model, record, rule, guards=None):
+    """False when this user may not use the rule on the saved record now; otherwise the approval level it approves
+    (an index) or None. An approval with no level that applies is an ordinary move for those who may change the
+    record. A reject rule is for the approvers of the level waiting on an approval rule out of the same state."""
+    from .permissions import CALLER
+    if rule.system:
+        # Only trusted app code (a job, an action or a hook) uses a rule with by=(); a caller never does.
+        return False if CALLER.get() else None
+    if rule.levels:
+        index, approvals = waiting(context, model, record, rule)
+        return index if index is None or may_approve(context, model, record, rule, index, approvals) else False
+    if rule.reject:
+        current = record._values.get(model.__state__)
+        open_levels = [(other, *waiting(context, model, record, other)) for other in rules_of(context, model)
+                       if other.levels and current in other.sources]
+        open_levels = [item for item in open_levels if item[1] is not None]
+        if open_levels:
+            return None if any(may_approve(context, model, record, *item) for item in open_levels) else False
+    return None if allowed(context.user, rule.roles, rule.users, record._values) else False
+
+
+def approve(context, model, record, rule, level, remark, values):
+    """Record the approval of one level that is not the last: an `approved` entry, and no change to the record."""
+    from . import journal
+    from .models import ValidationError
+    if values:
+        raise ValidationError({'_form': f'{rule.label} saves values with its last approval'})
+    if not journal.journals(context, model):
+        raise ValidationError({'_form': 'Approval levels need the journal'})
+    context.__dict__.get('_stays', {}).pop(record.id, None)
+    journal.append(context._business, context._tx, context.user, model, record.id, 'approved',
+                   {'from': record._values.get(model.__state__), 'move': rule.label, 'pending': rule.levels[level].pending},
+                   rule=rule.key, remark=remark, level=level)
+    context._business.changed(context._tx, model, record.id)
+    return context._business.detail(context._tx, context.user, context._tx.get(model, record.id), row_limit=None)
+
+
+def last_level(context, model, record, rule, level):
+    """Whether approving `level` completes the rule (no later level applies)."""
+    levels = stay(context, model, record)[1] or entering(context, model, record).get('levels', {})
+    return level is None or level == levels.get(rule.key, [level])[-1]
+
+
+def awaiting(context, model):
+    """Ids of the records whose waiting approval level this user may approve now ("Awaiting my approval")."""
+    from . import qb
+    from .permissions import CHUNK
+    rules = [rule for rule in rules_of(context, model) if rule.levels] if model.__state__ else []
+    states = sorted({source for rule in rules for source in rule.sources})
+    ids, last = [], 0
+    while states:
+        batch = [model._from_row(row) for row in context._tx.connection.run(
+            qb.select(context._business.registry.name_for(model)).where(qb.in_(model.__state__, states), qb.gt('id', last))
+            .order_by('id').limit(CHUNK))]
+        if not batch:
+            break
+        last = batch[-1].id
+        ids += [record.id for record in batch if any(
+            record._values.get(model.__state__) in rule.sources and who_may(context, model, record, rule) is not False
+            and waiting(context, model, record, rule)[0] is not None for rule in rules)]
+    return ids
 
 
 # Values a move asks for
@@ -644,7 +784,9 @@ def state_schema(business, user, model):
         asks = writable_asks(business, user, model, rule)
         rules.append({'key': rule.key, 'from': list(rule.sources), 'to': rule.to, 'label': rule.label, 'by': list(rule.roles),
                       'guarded': guard is not None, 'when': guard.ir if guard is not None and readable(business.policy, user, guard) else None,
-                      'primary': rule.primary, 'reject': rule.reject, 'remark': remark_schema(rule), **({'asks': asks} if asks else {})})
+                      'primary': rule.primary, 'reject': rule.reject, 'remark': remark_schema(rule), **({'asks': asks} if asks else {}),
+                      **({'levels': [{'by': list(level.roles), 'pending': level.pending, 'guarded': f'rule:{rule.key}:level:{index}' in guards}
+                                     for index, level in enumerate(rule.levels)], 'self_approve': rule.self_approve} if rule.levels else {})})
     return {'field': name, 'default': field.default, 'show': field.show, 'steps': [step.public() for step in field.steps.values()],
             'rules': rules}
 
@@ -665,10 +807,17 @@ def moves_available(business, context, model, record, guards_now, updatable, loc
     for rule in rules_of(context, model):
         if current not in rule.sources or rule.system:
             continue
-        reason = None
-        if not allowed(user, rule.roles, rule.users, record._values):
-            reason = 'Your role cannot use this move'
-        elif not updatable or read_only:
+        reason, extra = None, {}
+        if rule.levels:
+            # An approval shows the level waiting and whether this user may approve it.
+            index, approvals = waiting(context, model, record, rule)
+            if index is not None:
+                can = may_approve(context, model, record, rule, index, approvals)
+                extra = {'level': index + 1, 'pending': rule.levels[index].pending, 'can_approve': can}
+                reason = None if can else 'Waiting for another approver'
+        if reason is None and who_may(context, model, record, rule) is False:
+            reason = 'Only the approvers of the waiting level can use this move' if rule.reject else 'Your role cannot use this move'
+        elif reason is None and not updatable or read_only:
             reason = 'You cannot change this record'
         elif closed is not None:
             reason = 'This record is in a closed period'
@@ -689,5 +838,5 @@ def moves_available(business, context, model, record, guards_now, updatable, loc
         remark = None if rule.remark is None else {**rule.remark.public(), 'required': remark_required(context, guards_now, model, rule)}
         moves.append({'key': rule.key, 'to': rule.to, 'label': rule.label, 'allowed': reason is None, **({'primary': True} if rule.primary else {}),
                       **({'reason': reason} if reason else {}), **({'asks': asks} if asks else {}),
-                      **({'remark': remark} if remark else {})})
+                      **({'remark': remark} if remark else {}), **extra})
     return {'_moves': moves, '_locked': current in field.locked}

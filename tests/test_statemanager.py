@@ -311,3 +311,161 @@ def test_a_journal_from_before_the_state_manager_gains_its_columns(tmp_path):
         # The step is idempotent, and the old entry keeps its values.
         framework._state_manager(connection)
         assert connection.run(journal.qb.select('evlet_journal', 'kind', 'rule')).all()[0][:] == ('created', None)
+
+
+# Approval levels
+
+APPROVERS = {**ROLES, 'manager': Rule(('read', 'create', 'update')), 'cfo': Rule(('read', 'update')), 'director': Rule(('read', 'update'))}
+Level = State.Level
+
+
+def levels():
+    return (Level(by=('manager',), pending='Pending manager approval'),
+            Level(by=('cfo', 'manager'), when=F('total') >= 10000, pending='Pending CFO approval'),
+            Level(by=('director',), when=F('total') >= 50000, pending='Pending director approval'))
+
+
+class Purchase(Model):
+    permissions = APPROVERS
+    total = Integer(default=0)
+    status = State(
+        State.Step('draft'), State.Step('review', 'In review', lock=True), State.Step('approved', lock=True, final=True),
+        rules=(State.Rule('draft', 'review', 'Submit', key='submit', by=('editor', 'manager')),
+               State.Rule('review', 'approved', 'Approve', key='approve', levels=levels(), remark='optional'),
+               State.Rule('review', 'draft', 'Reject', key='reject', reject=True, remark='required'),
+               State.Rule('review', 'draft', 'Withdraw', key='withdraw', by=('editor',))))
+
+
+class Expense(Model):
+    permissions = APPROVERS
+    total = Integer(default=0)
+    status = State(State.Step('draft'), State.Step('approved', final=True),
+                   rules=(State.Rule('draft', 'approved', 'Approve', key='approve', self_approve=True,
+                                     levels=(Level(by=('manager',), pending='Pending manager approval'),)),))
+
+
+@pytest.fixture
+def approvals(tmp_path):
+    app = start(Counting(tmp_path / 'approvals.sqlite3', Registry(Purchase, Expense)))
+    admin = client(app)
+    for role in ('manager', 'cfo', 'director'):
+        assert admin('POST', '/api/_controls/roles', {'id': role, 'base': 'editor'})[0] == 201
+    return app, {role: add_user(app, role) for role in ('editor', 'manager', 'cfo', 'director')}
+
+
+def submitted(people, total, by='editor'):
+    status, body, _ = people[by]('POST', '/api/purchase', {'total': total})
+    assert status == 201, body
+    url = f"/api/purchase/{body['id']}"
+    assert move(people[by], url, 'submit')[0] == 200
+    return url
+
+
+def approval(user, url):
+    return next(item for item in user('GET', url)[1]['_moves'] if item['key'] == 'approve')
+
+
+def test_levels_run_in_order_skip_what_does_not_apply_and_take_one_person_each(approvals):
+    app, people = approvals
+    url = submitted(people, 20000)
+    # The CFO waits for the manager; the manager sees level 1 with its pending text.
+    assert approval(people['cfo'], url) == {'key': 'approve', 'to': 'approved', 'label': 'Approve', 'allowed': False,
+                                            'reason': 'Waiting for another approver', 'remark': {'mode': 'optional', 'label': None, 'required': False},
+                                            'level': 1, 'pending': 'Pending manager approval', 'can_approve': False}
+    assert move(people['cfo'], url, 'approve')[0] == 403
+    status, body, _ = move(people['manager'], url, 'approve', {'remark': 'Within budget'})
+    assert status == 200 and body['status'] == 'review'
+    entry = people['manager']('GET', url + '/journal')[1]['items'][0]
+    assert (entry['kind'], entry['rule'], entry['level'], entry['remark']) == ('approved', 'approve', 0, 'Within budget')
+    # Level 2 names managers too, but the manager approved level 1 already.
+    assert approval(people['manager'], url)['level'] == 2 and approval(people['manager'], url)['can_approve'] is False
+    assert move(people['manager'], url, 'approve')[0] == 403
+    assert approval(people['cfo'], url)['pending'] == 'Pending CFO approval'
+    # The director level does not apply under 50,000: the CFO's approval is the last, and moves the record.
+    status, body, _ = move(people['cfo'], url, 'approve')
+    assert status == 200 and body['status'] == 'approved', body
+    moved = people['cfo']('GET', url + '/journal')[1]['items'][0]
+    assert (moved['kind'], moved['rule'], moved['level']) == ('moved', 'approve', 1)
+    # All three levels when the total is high enough.
+    url = submitted(people, 60000)
+    for role in ('manager', 'cfo'):
+        assert move(people[role], url, 'approve')[1]['status'] == 'review'
+    assert approval(people['director'], url)['pending'] == 'Pending director approval'
+    assert move(people['director'], url, 'approve')[1]['status'] == 'approved'
+
+
+def test_levels_are_decided_on_entry_and_approvals_expire_on_leaving(approvals):
+    app, people = approvals
+    url = submitted(people, 20000)
+    record_id = url.rsplit('/', 1)[1]
+    assert move(people['manager'], url, 'approve')[0] == 200
+    # A change after entry (outside the engine) does not add the director level to this stay.
+    with app.database.transaction() as tx, tx.maintenance():
+        tx.update(Purchase, record_id, total=90000)
+    assert approval(people['cfo'], url)['level'] == 2
+    # Withdrawing ends the stay: resubmitted, it starts again at level 1, with levels decided anew.
+    assert move(people['editor'], url, 'withdraw')[1]['status'] == 'draft'
+    assert move(people['editor'], url, 'submit')[0] == 200
+    assert approval(people['manager'], url)['level'] == 1
+    for role in ('manager', 'cfo'):
+        assert move(people[role], url, 'approve')[1]['status'] == 'review'
+    assert approval(people['director'], url)['level'] == 3
+
+
+def test_only_the_waiting_level_rejects_and_one_rejection_ends_the_round(approvals):
+    app, people = approvals
+    url = submitted(people, 20000)
+    assert move(people['editor'], url, 'reject', {'remark': 'No'})[0] == 403
+    assert move(people['cfo'], url, 'reject', {'remark': 'No'})[0] == 403
+    reject = next(item for item in people['cfo']('GET', url)[1]['_moves'] if item['key'] == 'reject')
+    assert reject['allowed'] is False and reject['reason'] == 'Only the approvers of the waiting level can use this move'
+    assert move(people['manager'], url, 'reject')[1]['fields'] == {'remark': 'Reject needs a remark'}
+    assert move(people['manager'], url, 'reject', {'remark': 'Quote missing'})[1]['status'] == 'draft'
+    assert move(people['editor'], url, 'submit')[0] == 200 and approval(people['manager'], url)['level'] == 1
+
+
+def test_the_creator_approves_only_with_self_approve(approvals):
+    app, people = approvals
+    url = submitted(people, 100, by='manager')
+    assert approval(people['manager'], url)['can_approve'] is False and move(people['manager'], url, 'approve')[0] == 403
+    expense = people['manager']('POST', '/api/expense', {'total': 5})[1]
+    expense_url = f"/api/expense/{expense['id']}"
+    assert move(people['manager'], expense_url, 'approve')[1]['status'] == 'approved'
+
+
+def test_awaiting_my_approval_lists_what_each_approver_may_approve_now(approvals):
+    app, people = approvals
+    first, second = submitted(people, 20000), submitted(people, 100)
+    move(people['manager'], first, 'approve')
+
+    def waiting(user):
+        return sorted(item['id'] for item in user('GET', '/api/purchase?awaiting=me')[1]['items'])
+    assert waiting(people['manager']) == [second.rsplit('/', 1)[1]]
+    assert waiting(people['cfo']) == [first.rsplit('/', 1)[1]]
+    assert waiting(people['director']) == [] and waiting(people['editor']) == []
+    assert people['cfo']('GET', '/api/purchase?awaiting=you')[0] == 422
+
+
+def test_the_schema_lists_levels_and_bad_declarations_are_refused():
+    entry = next(m for m in State.Rule('a', 'b', levels=levels()).levels if m.pending.startswith('Pending CFO'))
+    assert entry.roles == ('cfo', 'manager')
+    for bad in (lambda: Level(by=(), pending='x'), lambda: Level(by=('cfo',)), lambda: State.Rule('a', 'b', self_approve=True),
+                lambda: State.Rule('a', 'b', levels=levels(), reject=True), lambda: State.Rule('a', 'b', levels=levels(), by=('cfo',)),
+                lambda: State.Rule('a', 'b', levels=('cfo',))):
+        with pytest.raises(ValueError):
+            bad()
+    quiet = type('Quiet', (Model,), {'Meta': type('Meta', (), {'journal': None}),
+                                     'status': State(State.Step('a'), State.Step('b'), rules=(State.Rule('a', 'b', levels=levels()[:1]),))})
+    with pytest.raises(ValueError, match='approval levels are kept in the journal'):
+        Registry(quiet)
+
+
+def test_moves_with_an_approval_waiting_cost_a_bounded_number_of_statements(approvals):
+    app, people = approvals
+    url = submitted(people, 60000)
+    move(people['manager'], url, 'approve')
+    (status, body, _), reading = counted(people['cfo'], 'GET', url)
+    assert status == 200 and approval(people['cfo'], url)['can_approve']
+    # Measured 15 on 13-11-2026: the record's stay in the journal is one statement, the creator one more, for
+    # all three rules out of the state together.
+    assert reading <= 17, reading

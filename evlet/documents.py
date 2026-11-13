@@ -1639,11 +1639,14 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     person, context._person = context._person == (model, record_id) and action is None and move is None, None
     if (action is not None or move is not None) and not record_id:
         raise AccessError(404, 'Record not found')
-    rule = None
+    rule = level = None
     if move is not None:
         # The rule is checked on the saved record before its values, so values never reveal which rules exist.
         draft, before = load_draft(context, model, record_id, {})
-        rule, remark = statemanager.begin_move(context, model, draft, before, move, remark)
+        rule, remark, level = statemanager.begin_move(context, model, draft, before, move, remark)
+        if not statemanager.last_level(context, model, before, rule, level):
+            # An approval level that is not the last is logged; the record stays as it is.
+            return statemanager.approve(context, model, before, rule, level, remark, values)
         if values:
             statemanager.check_move_values(context, model, rule, values)
             draft, before = load_draft(context, model, record_id, values)
@@ -1737,10 +1740,11 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if rule is not None:
         from .effects import post
         posted_rows = post(context, model, record.id, rule.to)
-        statemanager.moved(context, model, record.id, before._values.get(model.__state__), rule, remark, before, draft)
+        statemanager.moved(context, model, record, before._values.get(model.__state__), rule, remark, level, before, draft)
         journal.effects_posted(context, model, record.id, reversed_rows + posted_rows)
     else:
-        journal.written(context, model, record.id, before, draft, action=action)
+        journal.written(context, model, record.id, before, draft, action=action,
+                        entering=statemanager.entering(context, model, record) if before is None else None)
     for name, number in numbers:
         sequences.assigned(context, model, record.id, name, number)
     business.changed(tx, model, record.id)

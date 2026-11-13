@@ -61,8 +61,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - `State(*steps, rules=(), default=, show=)` with `State.Step(key, label, color=, lock=,
   release=, final=)` and `State.Rule(from_, to, label, key=, by=, when=, remark=, ask=, primary=,
   reject=)`. `by` takes role names and `F("field")` user fields. `State.Remark(mode, label=,
-  required_when=)` asks for a remark; `State.Level` and `self_approve=` are declared for approval
-  levels, which come in PR 2.
+  required_when=)` asks for a remark.
+- Approval levels: `State.Rule(..., levels=(State.Level(by=, when=, pending=), ...),
+  self_approve=)` moves once the last level that applies is approved; each approval is an
+  `approved` journal entry. `reject=True` rules are for the waiting level's approvers.
+  `_moves` carries `level`, `pending` and `can_approve`; `GET /api/{model}?awaiting=me` lists what
+  the user may approve now.
 - The hooks `@validate`, `@state(...)`, `@state.exit(...)` and `@release` (declared; it runs from
   PR 3), with `self.is_new` and `self.before` inside them.
 - `POST /api/{model}/{id}/moves/{key}` with `{"remark": ..., ...values}`, and
