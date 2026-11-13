@@ -56,9 +56,8 @@ A relation is a reverse Link: the records of another model whose Link holds this
 record's id.
 
 **Discovery.** Every Link on a root model is a relation of the model it points to.
-This includes several Links from one model and Links from a model to itself. A
-model with `Meta.revisable = True` gets a relation named `Revisions` through its
-`revises` Link. Not discovered:
+This includes several Links from one model and Links from a model to itself. Not
+discovered:
 
 - Links on Table rows. Rows belong to their document, which has no route of its
   own for them, so they cannot be listed as related records.
@@ -156,8 +155,6 @@ Table rows and `ChildTable` models cannot declare `Meta.attachments`,
 model in `Application(attachments=...)` is still accepted, as in earlier releases,
 but its rows have no route of their own, so no files can be added to them.
 
-A revision (see [states-actions.md](states-actions.md)) starts with no attachments:
-`revise` does not copy them. The original keeps its files.
 
 Uploads above the limits answer 422 with a plain message, for example
 `Use a nonempty file up to 256 KiB` or `Use at most 5 attachments per record`.

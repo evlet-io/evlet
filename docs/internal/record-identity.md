@@ -81,15 +81,12 @@ are left out of the app schema that app migrations compare, like `id`.
 
 Without `Meta.naming` the name stays empty and read only, and forms do not show it.
 
-**When.** `assign_on="create"` (the default), `"confirm"` for a confirmable model, or a state of the
-model. A confirm-time name is taken in the confirm transaction, so drafts never use a number.
-Until then forms show "Assigned on save" or "Assigned on confirm".
+**When.** `assign_on="create"` (the default) or a state of the model. A name given on entering a
+state is taken in that move's transaction, so drafts never use a number. Until then forms show
+"Assigned on save" or "Assigned on <state>".
 
-**Revisions and amendments.** Following `docs/lifecycle-specification.md`, a lifecycle revision
-(reopen and confirm again) is the same record, so it keeps its id and name, and the name is fixed
-after the first confirmation. An amendment made by `revise` is a new record: its `name` is cleared
-(revisions clear unique values) and assigned again by the same rules, and `revises` links it to
-the original.
+**Reopening.** A document reopened and confirmed again (rules of its State) is the same record,
+so it keeps its id and name. Revise and its copies were removed in 0.4.6.
 
 **Changing a name** (owner, 03-11-2026). `id` is the primary key and the only thing Links, child
 rows, revisions, the journal and URLs point to, so changing `name` is a plain one-row update with

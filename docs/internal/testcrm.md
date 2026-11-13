@@ -49,16 +49,15 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 | Contact | `Link` with an index, `Email`, a stored calculation through a Link path (`F("organization.emirate")`), `Meta.journal = Journal()` and `Meta.mail = Mail(match=("email",), kind="contact")`, so emails with the person from a salesperson's own mailbox show in its Activity |
 | Product | `unique` field, `Boolean`, read only for sales |
 | Booking | Effect target (`source = Reference()`, `reversal`), read only for every role, a measure |
-| Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with guarded moves (`when=`), a role-limited move, locked, final and voidable states, `Meta.revisable`, `run=` on a move, `@action` with `inputs` and `available_when`, `applies_when` and `editable_when_locked`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, an `Effect` with `Negate`, model and per-record measures (won this month through `month_start()`), `key_fields`, `relations`, `Attachments`, a row scope with `default=CurrentUser` on the owner, and field lists per role |
+| Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with steps and guarded rules (`when=`), admin-only rules (Reopen, Void with a required remark), locked, release and final steps, a `@state("won")` hook, `@action` with `inputs` and `available_when`, `applies_when` and `versioned=False`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, an `Effect` with `Negate`, model and per-record measures (won this month through `month_start()`), `key_fields`, `relations`, `Attachments`, a row scope with `default=CurrentUser` on the owner, and field lists per role |
 | Deal line | `initial=` from the product (description, rate, taxable), a discount `Percent`, an auto-rounded amount, VAT through `when()` and `parent.vat_rate` |
 | Task | `Time`, `Duration` with `applies_when`, a virtual `Boolean` from `today()`, Links to Deal and Contact |
 | Lead | `State` with a guard on the score, `applies_when` with `required_when` on a reason that Mark lost asks for, an action that creates other records, `Meta.mail = Mail(match=("email",), kind="lead")` |
 
 ### Permissions
 
-- admin: everything, plus void and revise on deals, and unpost and repost of a won deal
-  (Mark won books it; unpost cancels the booking and takes the deal back to negotiation or
-  proposal, whichever it was won from).
+- admin: everything, plus the admin-only rules on deals: Reopen a won deal (back to
+  negotiation, with a remark; it cancels the booking) and Void it (with a remark).
 - Sales people (editor): read and write organizations, contacts, leads and tasks; read products
   and bookings; on deals a row scope (`owner` is their username) and field lists without
   `internal_notes`. A deal they create is theirs: the owner fills in with their username.
@@ -66,10 +65,10 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 
 ### Interconnected work
 
-- **Winning a deal** (`Move(..., "won", run="on_won")`) sets `won_on` and the next step, makes the
+- **Winning a deal** (the `won` rule and `@state("won")` on `on_won`) sets `won_on` and the next step, makes the
   organization a customer through `context.update`, creates a kick-off task through
   `context.create`, and posts one booking through the effect, all in the move's transaction.
-  Voiding or revising a won deal writes the reversing booking.
+  Reopening or voiding a won deal writes the reversing booking.
 - **Schedule follow up** (an action with a date and a note) sets the next step and creates a call
   task for the owner.
 - **Convert to deal** on a qualified lead creates the organization, the contact and a deal, moves
@@ -79,7 +78,7 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 
 | Where | How | What |
 |---|---|---|
-| `tests/test_testcrm.py` | The installed app, real SQLite, authenticated ASGI requests | Sign in; schema per role; list sort, search, filter, paging and measures; field edits; line change sets (add from a product, edit, reorder, remove) and totals; 150 lines with paging; the lost reason that Mark lost asks for; guarded moves and their reasons; win: task, customer, booking, revise and its reversal; actions; the row scope and hidden fields for sales and viewers; two sessions editing one deal; the journal of a won deal, notes and follow ups |
+| `tests/test_testcrm.py` | The installed app, real SQLite, authenticated ASGI requests | Sign in; schema per role; list sort, search, filter, paging and measures; field edits; line change sets (add from a product, edit, reorder, remove) and totals; 150 lines with paging; the lost reason that Mark lost asks for; guarded moves and their reasons; win: task, customer, booking, reopen and its reversal; actions; the row scope and hidden fields for sales and viewers; two sessions editing one deal; the journal of a won deal, notes and follow ups |
 | `frontend/src/evlet/tests/testcrm-*.test.ts` | The real screens in jsdom over responses recorded from testCRM (`testcrm-fixture.json`) | Sign in and the sidebar; list search, saved views per stage, sorting; the board moved with the keyboard; the command palette; lines edited, added from a product, reordered, saved and removed with instant totals; moves to won with the lock, the posting and the created task; a blocked move; Mark lost with its reason dialog, then the reason edited in place; the lead's reason checked in the dialog; 150 lines paged in and one edit saved as a change set; a conflict and Reload; another person's deal; a viewer and an admin; the Activity tab and a note |
 | `npm run bench:ui` | jsdom | The 100-deal list, the 1,000-line deal and one line edit ([performance.md](../performance.md)) |
 
