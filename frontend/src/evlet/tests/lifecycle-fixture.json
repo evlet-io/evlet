@@ -285,7 +285,8 @@
           "permissions": {
             "create": true,
             "update": true,
-            "delete": true
+            "delete": true,
+            "release": true
           },
           "child_only": false,
           "children": [
@@ -671,6 +672,11 @@
       "_journal": {
         "count": 1,
         "open_follow_ups": 0
+      },
+      "_version": {
+        "number": null,
+        "released": false,
+        "state": null
       }
     },
     "etag": "\"fixture-etag\""
@@ -742,6 +748,11 @@
       "_journal": {
         "count": 2,
         "open_follow_ups": 0
+      },
+      "_version": {
+        "number": 0,
+        "released": true,
+        "state": "confirmed"
       }
     },
     "etag": "\"fixture-etag\""
@@ -807,8 +818,13 @@
       "_locked": false,
       "_actions": [],
       "_journal": {
-        "count": 3,
+        "count": 4,
         "open_follow_ups": 0
+      },
+      "_version": {
+        "number": 0,
+        "released": true,
+        "state": "confirmed"
       }
     },
     "etag": "\"fixture-etag\""
@@ -883,8 +899,13 @@
       "_locked": false,
       "_actions": [],
       "_journal": {
-        "count": 4,
+        "count": 5,
         "open_follow_ups": 0
+      },
+      "_version": {
+        "number": 0,
+        "released": false,
+        "state": "confirmed"
       }
     },
     "etag": "\"fixture-etag\""
@@ -960,8 +981,13 @@
       "_locked": true,
       "_actions": [],
       "_journal": {
-        "count": 5,
+        "count": 6,
         "open_follow_ups": 0
+      },
+      "_version": {
+        "number": 1,
+        "released": true,
+        "state": "confirmed"
       }
     },
     "etag": "\"fixture-etag\""
@@ -1014,8 +1040,13 @@
       "_locked": true,
       "_actions": [],
       "_journal": {
-        "count": 6,
+        "count": 8,
         "open_follow_ups": 0
+      },
+      "_version": {
+        "number": 1,
+        "released": true,
+        "state": "confirmed"
       }
     },
     "etag": "\"fixture-etag\""
@@ -1025,7 +1056,7 @@
     "body": {
       "items": [
         {
-          "id": 6,
+          "id": 8,
           "kind": "moved",
           "actor": 1,
           "at": "fixture-at",
@@ -1038,19 +1069,32 @@
           "remark": "Customer withdrew the order"
         },
         {
-          "id": 5,
+          "id": 7,
+          "kind": "snapshot",
+          "actor": 1,
+          "at": "fixture-at",
+          "data": {
+            "drifted": false,
+            "number": 1
+          },
+          "base": 1
+        },
+        {
+          "id": 6,
           "kind": "moved",
           "actor": 1,
           "at": "fixture-at",
           "data": {
             "from": "draft",
             "to": "confirmed",
-            "move": "Confirm"
+            "move": "Confirm",
+            "release": 1
           },
-          "rule": "draft_to_confirmed"
+          "rule": "draft_to_confirmed",
+          "base": 0
         },
         {
-          "id": 4,
+          "id": 5,
           "kind": "changed",
           "actor": 1,
           "at": "fixture-at",
@@ -1095,10 +1139,11 @@
                 ]
               }
             }
-          }
+          },
+          "base": 0
         },
         {
-          "id": 3,
+          "id": 4,
           "kind": "moved",
           "actor": 1,
           "at": "fixture-at",
@@ -1109,6 +1154,17 @@
           },
           "rule": "confirmed_to_draft",
           "remark": "Customer and lines changed"
+        },
+        {
+          "id": 3,
+          "kind": "snapshot",
+          "actor": 1,
+          "at": "fixture-at",
+          "data": {
+            "drifted": false,
+            "number": 0
+          },
+          "base": 0
         },
         {
           "id": 2,
@@ -1124,7 +1180,8 @@
             },
             "from": "draft",
             "to": "confirmed",
-            "move": "Confirm"
+            "move": "Confirm",
+            "release": 0
           },
           "rule": "draft_to_confirmed"
         },
@@ -1191,7 +1248,7 @@
           }
         }
       ],
-      "total": 6,
+      "total": 8,
       "limit": 50,
       "offset": 0,
       "users": {

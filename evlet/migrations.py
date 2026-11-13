@@ -988,6 +988,7 @@ def _recompute_finite(session, registry, plan, model, operation, skipped, change
             old = saved[model, row.id]
             values = {name: value for name, value in values.items() if old._values.get(name) != value}
             if values:
+                _keep_release(session, root, record_id)
                 _write(session, model, row.id, values)
                 steps, parent = [], row
                 while parent.parent is not None:
@@ -1019,8 +1020,17 @@ def _recompute_legacy(session, model, operation, skipped, changes, posted=None):
                     raise SchemaError(f'{operation.table} #{record_id}.{key}: {exc}') from exc
         values = {name: draft._values[name] for name in operation.fields if draft._values[name] != record._values.get(name)}
         if values:
+            _keep_release(session, model, record_id)
             _write(session, model, record_id, values)
             _changed(changes, ((model, record_id), []), record, values)
+
+
+def _keep_release(session, model, record_id):
+    """Before Recompute changes a released document, keep its release's content (evlet/statemanager.py)."""
+    from .framework import _saved
+    from .statemanager import keep, releasing, tree
+    if releasing(model):
+        keep(session.connection, session.registry, model, record_id, tree(_saved(session, session.registry, model, record_id)), 'engine')
 
 
 def _write(session, model, record_id, values):

@@ -4855,6 +4855,11 @@
      "to": "void"
     }
    ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {
@@ -5027,6 +5032,11 @@
      "to": "issued"
     }
    ],
+   "_version": {
+    "number": null,
+    "released": false,
+    "state": null
+   },
    "children": {
     "lines": [
      {
@@ -5105,6 +5115,11 @@
      "to": "issued"
     }
    ],
+   "_version": {
+    "number": null,
+    "released": false,
+    "state": null
+   },
    "children": {
     "lines": []
    },
@@ -5128,19 +5143,19 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.717Z",
+     "at": "2026-11-13T17:02:31.466Z",
      "data": {
       "action": "added",
       "id": 1,
       "name": "signed-copy.pdf",
       "size": 5
      },
-     "id": 13,
+     "id": 14,
      "kind": "file"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.711Z",
+     "at": "2026-11-13T17:02:31.459Z",
      "data": {
       "fields": {
        "total": {
@@ -5197,12 +5212,12 @@
        }
       }
      },
-     "id": 12,
+     "id": 13,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.703Z",
+     "at": "2026-11-13T17:02:31.451Z",
      "data": {
       "fields": {
        "customer": {
@@ -5235,7 +5250,7 @@
        }
       }
      },
-     "id": 11,
+     "id": 12,
      "kind": "created"
     }
    ],
@@ -5320,6 +5335,11 @@
      "to": "void"
     }
    ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {
@@ -5420,6 +5440,11 @@
      "to": "void"
     }
    ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {
@@ -5458,62 +5483,62 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-13T15:15:47.740Z",
+     "at": "2026-11-13T17:02:31.491Z",
      "data": {
       "direction": "out",
       "party": null,
       "subject": "Balance due",
       "text": "Payment reminder logged"
      },
-     "id": 22,
+     "id": 23,
      "kind": "message"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.739Z",
+     "at": "2026-11-13T17:02:31.490Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
       "text": "Send the statement"
      },
      "done": null,
-     "id": 21,
+     "id": 22,
      "kind": "follow_up"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.738Z",
+     "at": "2026-11-13T17:02:31.489Z",
      "data": {
-      "follow_up": 19,
+      "follow_up": 20,
       "text": "Balance due by the end of the month"
      },
-     "id": 20,
+     "id": 21,
      "kind": "follow_up_done"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.737Z",
+     "at": "2026-11-13T17:02:31.488Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
       "text": "Call about the balance"
      },
-     "done": 20,
-     "id": 19,
+     "done": 21,
+     "id": 20,
      "kind": "follow_up"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.736Z",
+     "at": "2026-11-13T17:02:31.487Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
-     "id": 18,
+     "id": 19,
      "kind": "note"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.729Z",
+     "at": "2026-11-13T17:02:31.479Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5523,22 +5548,22 @@
        }
       }
      },
-     "id": 17,
+     "id": 18,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.723Z",
+     "at": "2026-11-13T17:02:31.473Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
      },
-     "id": 16,
+     "id": 17,
      "kind": "number"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.723Z",
+     "at": "2026-11-13T17:02:31.473Z",
      "data": {
       "targets": [
        {
@@ -5549,12 +5574,12 @@
        }
       ]
      },
-     "id": 15,
+     "id": 16,
      "kind": "effects"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.723Z",
+     "at": "2026-11-13T17:02:31.473Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5568,27 +5593,28 @@
       },
       "from": "draft",
       "move": "Issue",
+      "release": 0,
       "to": "issued"
      },
-     "id": 14,
+     "id": 15,
      "kind": "moved",
      "rule": "issue"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.717Z",
+     "at": "2026-11-13T17:02:31.466Z",
      "data": {
       "action": "added",
       "id": 1,
       "name": "signed-copy.pdf",
       "size": 5
      },
-     "id": 13,
+     "id": 14,
      "kind": "file"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.711Z",
+     "at": "2026-11-13T17:02:31.459Z",
      "data": {
       "fields": {
        "total": {
@@ -5645,12 +5671,12 @@
        }
       }
      },
-     "id": 12,
+     "id": 13,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.703Z",
+     "at": "2026-11-13T17:02:31.451Z",
      "data": {
       "fields": {
        "customer": {
@@ -5683,7 +5709,7 @@
        }
       }
      },
-     "id": 11,
+     "id": 12,
      "kind": "created"
     }
    ],
@@ -5700,14 +5726,14 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-13T15:15:47.737Z",
+   "at": "2026-11-13T17:02:31.488Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
     "text": "Call about the balance"
    },
    "done": null,
-   "id": 19,
+   "id": 20,
    "kind": "follow_up"
   },
   "etag": null,
@@ -5716,12 +5742,12 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-13T15:15:47.738Z",
+   "at": "2026-11-13T17:02:31.489Z",
    "data": {
-    "follow_up": 19,
+    "follow_up": 20,
     "text": "Balance due by the end of the month"
    },
-   "id": 20,
+   "id": 21,
    "kind": "follow_up_done"
   },
   "etag": null,
@@ -5730,11 +5756,11 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-13T15:15:47.736Z",
+   "at": "2026-11-13T17:02:31.487Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
-   "id": 18,
+   "id": 19,
    "kind": "note"
   },
   "etag": null,
@@ -5848,6 +5874,11 @@
      "to": "void"
     }
    ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {
@@ -5997,7 +6028,7 @@
     }
    ],
    "_journal": {
-    "count": 6,
+    "count": 7,
     "open_follow_ups": 0
    },
    "_locked": false,
@@ -6010,6 +6041,11 @@
      "to": "issued"
     }
    ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {
@@ -6108,6 +6144,11 @@
      "to": "void"
     }
    ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {
@@ -6208,6 +6249,11 @@
      "to": "void"
     }
    ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {
@@ -7697,6 +7743,7 @@
      "permissions": {
       "create": true,
       "delete": false,
+      "release": false,
       "update": true
      },
      "plural": "Invoices",
@@ -8414,6 +8461,11 @@
      "to": "void"
     }
    ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {
@@ -8452,62 +8504,62 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-13T15:15:47.740Z",
+     "at": "2026-11-13T17:02:31.491Z",
      "data": {
       "direction": "out",
       "party": null,
       "subject": "Balance due",
       "text": "Payment reminder logged"
      },
-     "id": 22,
+     "id": 23,
      "kind": "message"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.739Z",
+     "at": "2026-11-13T17:02:31.490Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
       "text": "Send the statement"
      },
      "done": null,
-     "id": 21,
+     "id": 22,
      "kind": "follow_up"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.738Z",
+     "at": "2026-11-13T17:02:31.489Z",
      "data": {
-      "follow_up": 19,
+      "follow_up": 20,
       "text": "Balance due by the end of the month"
      },
-     "id": 20,
+     "id": 21,
      "kind": "follow_up_done"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.737Z",
+     "at": "2026-11-13T17:02:31.488Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
       "text": "Call about the balance"
      },
-     "done": 20,
-     "id": 19,
+     "done": 21,
+     "id": 20,
      "kind": "follow_up"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.736Z",
+     "at": "2026-11-13T17:02:31.487Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
-     "id": 18,
+     "id": 19,
      "kind": "note"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.729Z",
+     "at": "2026-11-13T17:02:31.479Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8517,30 +8569,30 @@
        }
       }
      },
-     "id": 17,
+     "id": 18,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.723Z",
+     "at": "2026-11-13T17:02:31.473Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
      },
-     "id": 16,
+     "id": 17,
      "kind": "number"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.723Z",
+     "at": "2026-11-13T17:02:31.473Z",
      "data": {},
-     "id": 15,
+     "id": 16,
      "kind": "changed",
      "partial": true
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.723Z",
+     "at": "2026-11-13T17:02:31.473Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8554,27 +8606,28 @@
       },
       "from": "draft",
       "move": "Issue",
+      "release": 0,
       "to": "issued"
      },
-     "id": 14,
+     "id": 15,
      "kind": "moved",
      "rule": "issue"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.717Z",
+     "at": "2026-11-13T17:02:31.466Z",
      "data": {
       "action": "added",
       "id": 1,
       "name": "signed-copy.pdf",
       "size": 5
      },
-     "id": 13,
+     "id": 14,
      "kind": "file"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.711Z",
+     "at": "2026-11-13T17:02:31.459Z",
      "data": {
       "fields": {
        "total": {
@@ -8631,12 +8684,12 @@
        }
       }
      },
-     "id": 12,
+     "id": 13,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-13T15:15:47.703Z",
+     "at": "2026-11-13T17:02:31.451Z",
      "data": {
       "fields": {
        "customer": {
@@ -8669,7 +8722,7 @@
        }
       }
      },
-     "id": 11,
+     "id": 12,
      "kind": "created"
     }
    ],
@@ -9722,6 +9775,7 @@
      "permissions": {
       "create": false,
       "delete": false,
+      "release": false,
       "update": false
      },
      "plural": "Invoices",
@@ -10413,11 +10467,16 @@
     }
    ],
    "_journal": {
-    "count": 6,
+    "count": 7,
     "open_follow_ups": 0
    },
    "_locked": true,
    "_moves": [],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {
@@ -10518,6 +10577,11 @@
      "to": "void"
     }
    ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
    "children": {
     "lines": [
      {

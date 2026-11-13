@@ -251,6 +251,10 @@ class Business:
             with self.database.transaction() as tx:
                 # Document number and naming counters, updated in each assigning write transaction.
                 upgrade_counters(tx.connection)
+        from .statemanager import ensure_releases, releasing
+        if any(releasing(model) for model in self.registry.models.values()):
+            with self.database.transaction() as tx:
+                ensure_releases(tx.connection)
         if self.journals:
             from .journal import ensure_table
             with self.database.transaction() as tx:
@@ -796,6 +800,9 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         method = scope['method']
+        if len(parts) >= 5 and parts[4] in ('release', 'versions'):
+            from .statemanager import route
+            return route(self, scope, body, user, model, parts)
         if len(parts) == 5 and parts[4] == 'history':
             from .journal import history_route
             return history_route(self, scope, user, model, parts)
@@ -1047,6 +1054,9 @@ class Business:
         from .guards import availability
         reader = context.read_context()
         from .effects import summary
+        from .statemanager import releasing, state_shown, version_of
+        if releasing(model) and state_shown(reader, model):
+            result['_version'] = version_of(reader, model, record)
         return {**availability(self, reader, model, record, loaded), **summary(self, reader, model, record), **result}
 
     def field_expressions(self, user, model):

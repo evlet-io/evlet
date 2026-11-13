@@ -252,7 +252,7 @@ replaces a base's hook by defining a method of the same name. Each is a method t
 | `@validate` | every save (create, update, move) and every draft preview, on documents, `Table` rows and forms (Dialog, Slip, Report filters) | read only; assigning raises |
 | `@state("a", "b")` | when a move enters one of the states | the draft; `self.context.session` is open |
 | `@state.exit("a")` | when a move leaves one of the states | the draft; `self.context.session` is open |
-| `@release` | when a release is made | declared now; runs from 0.4.6, PR 3 |
+| `@release` | when a release is made ([Releases](#releases-and-versions)) | the draft, with `self.release.number` and `self.release.previous`; the session is open |
 
 * Inside a hook, `self.is_new` is true on create, and `self.before` is the document as last
   saved, read only (`None` on create). `self.context` is the operation's context.
@@ -278,8 +278,10 @@ The order of a move:
 5. `@state(new)` hooks run.
 6. The document settles: calculations, then `@validate`.
 7. Document numbers due in the new state are assigned.
-8. The record is written, effects on the new state post, and the Journal gets its `moved`
-   entry with the rule key and the remark.
+8. Entering a `release=True` step whose content changed since the last release: `@release`
+   runs, then calculations and `@validate` again, and the release is stored.
+9. The record is written, effects on the new state post, and the Journal gets its `moved`
+   entry with the rule key and the remark; a move that released names it in `data.release`.
 
 Everything commits in one transaction. A failure anywhere rolls all of it back, and no
 Sequence number is used up.
@@ -292,6 +294,47 @@ Sequence number is used up.
 | `Model.validate()` | `@validate` |
 | `check_lifecycle`, `@validate.confirm/.cancel` | `@validate` reading `self.status` and `self.before` |
 | `@action.confirm/.cancel` | `@state("confirmed")`, `@state.exit("confirmed")` |
+
+## Releases and versions
+
+A release is a numbered version of a document: v0, v1, v2. It happens when a move enters a
+`release=True` step, or from `POST /api/{model}/{id}/release` (`{"remark": ...}`, If-Match,
+`context.release(model, id, remark=...)`), which needs the `release` permission (admin by
+default; a Rule may grant it). A release changes no number of the document and is never edited
+or deleted.
+
+* **Nothing changed, nothing released.** A release stores a SHA-256 hash of the document's
+  versioned content: every stored field and row except the State, `versioned=False` fields and
+  `tracking="exclude"` fields. Entering the step again with the same content makes no release and
+  runs no `@release`. A Release with nothing changed answers 409.
+* **Lazy snapshots.** A release keeps its number, state, hash, actor, time, approvals and remark,
+  not a copy of the document: while nothing changes, the record is the release. The copy (a
+  snapshot) is saved once, in the same transaction, just before the record first diverges: when
+  a rule leaves the release step, at the first versioned edit after a Release, and before a
+  Recompute migration changes the stored values of a released record. A record released and
+  never reopened has no snapshot.
+* **Drift.** On taking a snapshot, its hash is compared with the release's. A mismatch means the
+  row changed outside the engine; the snapshot is kept, marked `drifted`, logged, and its
+  `snapshot` journal entry says so.
+* `@release` gets `self.release.number` and `self.release.previous` (the previous version's
+  content, or `None` for v0). It usually sets `versioned=False` fields, such as a posting
+  reference.
+* A document with a release cannot be deleted; move it to a final state such as void.
+* The detail carries `_version: {"number": 2, "released": false, "state": "issued"}`. `number`
+  is `null` before v0. `released` is false once the journal has an entry that changed versioned
+  content since v2: every such entry carries `base` 2 ("changes after v2"), so this is one indexed
+  read, and the content is hashed only to release, snapshot and check for drift.
+* `GET /api/{model}/{id}/versions` lists the releases, newest first; `.../versions/{n}` returns
+  one version's document, and `.../versions/{a}/diff/{b}` (or `/diff/current`) compares two.
+  Today's field, Link and row permissions apply to old versions too. An API key needs the
+  `versions` extra.
+* Releases live in `evlet_releases`, append only. Framework step `0011_state_manager` turns
+  confirmable revisions into releases with their snapshots and gives every record already in a
+  release step a v0 release.
+
+Effects are not tied to releases: rows post when the record enters the effect's `on` step and are
+reversed when a rule leaves it, so an unchanged reissue posts again after its reversal and the
+rows always match the record. A `@release` hook runs only for a real release.
 
 ## Ordinary writes and locks
 
@@ -556,7 +599,6 @@ include keys that are not part of the ETag:
 
 ## Not yet
 
-* Releases, versions and the `@release` hook (0.4.6, PR 3); restore
-  (PR 4); rules changed on an instance (PR 5).
+* Restore (0.4.6, PR 4); rules changed on an instance (PR 5).
 * Draft previews (`/api/_draft`) do not report the State lock; the save does. A preview of a
   locked or posted record shows the calculated values it keeps, like the save.

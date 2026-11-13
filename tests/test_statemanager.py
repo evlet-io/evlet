@@ -1,9 +1,12 @@
 """The state manager (evlet/statemanager.py): steps, rules, remarks, asks and the four hooks, on real SQLite
 through the ASGI routes, Context, and the Eva and MCP tool route."""
 
+import json
+
 import pytest
 
-from evlet import Database, Integer, Model, Registry, Rule, State, Text, ValidationError, state, validate
+from evlet import Child, Database, Integer, Model, Registry, Rule, State, Table, Text, ValidationError, release, state, validate
+from evlet.identity import RecordId
 from evlet.auth import User
 from evlet.calc import F
 from test_business import client
@@ -306,10 +309,10 @@ def test_a_journal_from_before_the_state_manager_gains_its_columns(tmp_path):
         raw.execute("INSERT INTO evlet_journal (model, record_id, kind, actor, at, data) VALUES ('ticket', 1, 'created', '1', 'now', '{}')")
     database = Database(path, Registry(Note, Ticket))
     with database.schema_transaction() as connection:
-        framework._state_manager(connection)
+        framework._state_manager(connection, database.registry)
         assert set(journal.SCALARS) <= set(connection.columns('evlet_journal'))
         # The step is idempotent, and the old entry keeps its values.
-        framework._state_manager(connection)
+        framework._state_manager(connection, database.registry)
         assert connection.run(journal.qb.select('evlet_journal', 'kind', 'rule')).all()[0][:] == ('created', None)
 
 
@@ -469,3 +472,162 @@ def test_moves_with_an_approval_waiting_cost_a_bounded_number_of_statements(appr
     # Measured 15 on 13-11-2026: the record's stay in the journal is one statement, the creator one more, for
     # all three rules out of the state together.
     assert reading <= 17, reading
+
+
+# Releases, lazy snapshots and versions
+
+RELEASED = []
+
+
+class BillLine(Child):
+    item = Text(default='')
+    qty = Integer(default=1)
+
+
+class Bill(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'release')), 'editor': Rule(('read', 'create', 'update')),
+                   'viewer': Rule(('read',), read_fields=('title', 'status'))}
+    title = Text(default='')
+    secret = Text(default='')
+    note = Text(versioned=False)
+    lines = Table(BillLine)
+    status = State(
+        State.Step('draft'), State.Step('issued', lock=True, release=True), State.Step('void', lock=True, final=True),
+        rules=(State.Rule('draft', 'issued', 'Issue', key='issue'), State.Rule('issued', 'draft', 'Reopen', key='reopen', remark='required'),
+               State.Rule('issued', 'void', 'Void', key='void', remark='required')))
+
+    @release
+    def stamp(self):
+        RELEASED.append((self.release.number, self.release.previous))
+        self.note = f'released v{self.release.number}'
+
+
+@pytest.fixture
+def bills(tmp_path):
+    RELEASED.clear()
+    app = start(Database(tmp_path / 'bills.sqlite3', Registry(Bill)))
+    c = client(app)
+    status, body, _ = c('POST', '/api/bill', {'title': 'Desk', 'secret': 's1', 'children': {'lines': [{'item': 'a'}]}})
+    assert status == 201, body
+    return app, c, f"/api/bill/{body['id']}"
+
+
+def rows(app, url, snapshot=None):
+    with app.database.transaction() as tx:
+        query = 'SELECT number, snapshot, drifted, data FROM evlet_releases WHERE record_id=?' + ('' if snapshot is None else f' AND snapshot={snapshot}')
+        return [tuple(row) for row in tx.connection.execute(query + ' ORDER BY number, snapshot', (int(RecordId(url.rsplit('/', 1)[1])),))]
+
+
+def test_entering_a_release_step_releases_and_snapshots_only_on_leaving(bills):
+    app, c, url = bills
+    body = move(c, url, 'issue')[1]
+    # v0: the @release hook ran with no previous version and set an unversioned field.
+    assert RELEASED == [(0, None)] and body['note'] == 'released v0'
+    assert body['_version'] == {'number': 0, 'released': True, 'state': 'issued'}
+    assert [row[:2] for row in rows(app, url)] == [(0, 0)]
+    issued = c('GET', url + '/journal')[1]['items'][0]
+    assert issued['data']['release'] == 0 and 'base' not in issued
+    # Leaving the release snapshots it, once; the content is unchanged, so it still reads as v0.
+    body = move(c, url, 'reopen', {'remark': 'Price'})[1]
+    assert [row[:2] for row in rows(app, url)] == [(0, 0), (0, 1)] and body['_version']['released'] is True
+    assert [item['kind'] for item in c('GET', url + '/journal')[1]['items'][:2]] == ['moved', 'snapshot']
+    # Issued again unchanged: no new release, no @release.
+    assert move(c, url, 'issue')[1]['_version'] == {'number': 0, 'released': True, 'state': 'issued'} and RELEASED == [(0, None)]
+    move(c, url, 'reopen', {'remark': 'Again'})
+    assert len(rows(app, url, snapshot=1)) == 1
+    # An unversioned change does not make the document modified; a versioned one does.
+    assert c('PATCH', url, {'note': 'checked'}, headers=etag(c, url))[1]['_version']['released'] is True
+    assert c('PATCH', url, {'title': 'Desk 2'}, headers=etag(c, url))[1]['_version'] == {'number': 0, 'released': False, 'state': 'issued'}
+    body = move(c, url, 'issue')[1]
+    assert body['_version'] == {'number': 1, 'released': True, 'state': 'issued'}
+    assert RELEASED[-1][0] == 1 and RELEASED[-1][1]['title'] == 'Desk' and 'note' not in RELEASED[-1][1] and 'status' not in RELEASED[-1][1]
+    # A document with a release cannot be deleted.
+    move(c, url, 'reopen', {'remark': 'x'})
+    assert c('DELETE', url, headers=etag(c, url))[0] == 409
+
+
+def test_a_manual_release_and_the_first_edit_after_it(bills):
+    app, c, url = bills
+    editor = add_user(app, 'editor')
+    assert editor('POST', url + '/release', {}, headers=etag(editor, url))[0] == 403
+    status, body, _ = c('POST', url + '/release', {'remark': 'Quote sent'}, headers=etag(c, url))
+    assert status == 200 and body['_version'] == {'number': 0, 'released': True, 'state': 'draft'} and body['status'] == 'draft'
+    entry = c('GET', url + '/journal')[1]['items'][0]
+    assert (entry['kind'], entry['base'], entry['remark']) == ('released', 0, 'Quote sent')
+    assert c('POST', url + '/release', {}, headers=etag(c, url))[:2] == (409, {'error': 'Nothing changed since the last release'})
+    # The first versioned edit keeps v0 first; later edits add nothing.
+    c('PATCH', url, {'note': 'n'}, headers=etag(c, url))
+    assert rows(app, url, snapshot=1) == []
+    c('PATCH', url, {'title': 'Chair'}, headers=etag(c, url))
+    c('PATCH', url, {'title': 'Sofa'}, headers=etag(c, url))
+    snapshots = rows(app, url, snapshot=1)
+    assert len(snapshots) == 1 and json.loads(snapshots[0][3])['title'] == 'Desk'
+
+
+def test_drift_is_marked_and_logged(bills, caplog):
+    app, c, url = bills
+    move(c, url, 'issue')
+    with app.database.transaction() as tx, tx.maintenance():
+        tx.update(Bill, url.rsplit('/', 1)[1], title='Changed outside')
+    with caplog.at_level('WARNING', logger='evlet.statemanager'):
+        move(c, url, 'reopen', {'remark': 'Fix'})
+    assert rows(app, url, snapshot=1)[0][2] == 1 and 'changed outside the engine' in caplog.text
+    entry = next(item for item in c('GET', url + '/journal')[1]['items'] if item['kind'] == 'snapshot')
+    assert entry['data'] == {'number': 0, 'drifted': True}
+
+
+def test_versions_list_one_version_and_diff_with_field_permissions(bills):
+    app, c, url = bills
+    viewer = add_user(app, 'viewer')
+    move(c, url, 'issue')
+    move(c, url, 'reopen', {'remark': 'x'})
+    c('PATCH', url, {'title': 'Desk 2', 'secret': 's2', 'children': {'lines': [{'item': 'b'}]}}, headers=etag(c, url))
+    move(c, url, 'issue')
+    listed = c('GET', url + '/versions')[1]['items']
+    assert [(item['number'], item['state']) for item in listed] == [(1, 'issued'), (0, 'issued')]
+    first = c('GET', url + '/versions/0')[1]['document']
+    assert (first['title'], first['secret'], [line['item'] for line in first['children']['lines']]) == ('Desk', 's1', ['a'])
+    # Field permissions apply to old versions too: the viewer reads the title only.
+    assert set(viewer('GET', url + '/versions/0')[1]['document']) == {'id', 'title', 'children'}
+    changes = c('GET', url + '/versions/0/diff/1')[1]['changes']
+    assert changes['fields'] == {'secret': {'old': 's1', 'new': 's2'}, 'title': {'old': 'Desk', 'new': 'Desk 2'}}
+    assert [row['item'] for row in changes['rows']['lines']['added']] == ['b'] and len(changes['rows']['lines']['removed']) == 1
+    assert c('GET', url + '/versions/1/diff/current')[1]['changes'] == {}
+    assert c('GET', url + '/versions/7')[0] == 404 and c('GET', url + '/versions/x')[0] == 422
+
+
+def test_the_framework_step_converts_old_rows_and_backfills_v0(tmp_path):
+    import sqlite3
+    from evlet import framework
+    from evlet.migrations import SchemaError
+    app = start(Database(tmp_path / 'old.sqlite3', Registry(Bill)))
+    c = client(app)
+    issued, draft = (c('POST', '/api/bill', {'title': title})[1]['id'] for title in ('Issued before', 'Revised before'))
+    with app.database.transaction() as tx, tx.maintenance():
+        tx.update(Bill, issued, status='issued')
+    path = tmp_path / 'old.sqlite3'
+    with sqlite3.connect(path) as raw:
+        # A 0.4.4 database: no releases yet, a confirmable lifecycle row and a revision.
+        raw.execute('DROP TABLE evlet_releases')
+        raw.execute('CREATE TABLE evlet_document_lifecycle (model TEXT NOT NULL, record_id INTEGER NOT NULL, state TEXT NOT NULL, '
+                    'revision INTEGER NOT NULL, confirmation_id TEXT, PRIMARY KEY (model, record_id))')
+        raw.execute('CREATE TABLE evlet_document_revisions (model TEXT NOT NULL, record_id INTEGER NOT NULL, revision INTEGER NOT NULL, '
+                    'execution_id TEXT NOT NULL, at TEXT NOT NULL, actor TEXT NOT NULL, data TEXT NOT NULL, hash TEXT NOT NULL, '
+                    'PRIMARY KEY (model, record_id, revision))')
+        raw.execute("INSERT INTO evlet_document_lifecycle VALUES ('bill', ?, 'draft', 1, 'x')", (int(RecordId(draft)),))
+        raw.execute("INSERT INTO evlet_document_revisions VALUES ('bill', ?, 1, 'e1', 'now', '1', ?, 'h')",
+                    (int(RecordId(draft)), json.dumps({'document': {'id': draft, 'title': 'Revised before', 'secret': '', 'note': 'n', 'children': {}}})))
+    with app.database.schema_transaction() as connection:
+        framework._state_manager(connection, app.database.registry)
+        assert not connection.table_exists('evlet_document_revisions') and not connection.table_exists('evlet_document_lifecycle')
+    assert [row[:2] for row in rows(app, f'/api/bill/{issued}')] == [(0, 0)]
+    assert [row[:2] for row in rows(app, f'/api/bill/{draft}')] == [(0, 0), (0, 1)]
+    assert 'note' not in json.loads(rows(app, f'/api/bill/{draft}', snapshot=1)[0][3])
+    assert c('GET', f'/api/bill/{issued}')[1]['_version'] == {'number': 0, 'released': True, 'state': 'issued'}
+    # A lifecycle state the model's State does not have is refused, so nothing is lost.
+    with sqlite3.connect(path) as raw:
+        raw.execute('CREATE TABLE evlet_document_lifecycle (model TEXT, record_id INTEGER, state TEXT, revision INTEGER, confirmation_id TEXT)')
+        raw.execute("INSERT INTO evlet_document_lifecycle VALUES ('bill', 1, 'confirmed', 1, 'x')")
+    with pytest.raises(SchemaError, match='no State with those steps'):
+        with app.database.schema_transaction() as connection:
+            framework._state_manager(connection, app.database.registry)
