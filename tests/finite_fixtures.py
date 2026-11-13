@@ -268,14 +268,14 @@ SCENARIOS = [
       ['add', '', 'items', {'_key': 'n', 'qty': '1', 'rate': '0.05', 'vat_rate': '100'}], ['remove', 'items.r1'],
       ['set', '', 'grand_total', '1'], ['set', 'items.n', 'rate', 'abc']]),
     ('invoice-structure', 'invoice', {'inclusive': False, 'children': {'items': [{'id': 7, 'qty': '1', 'rate': '10', 'vat_rate': '5', 'taxable': True}]}},
-     [['replace', '', 'items', [{'id': 7, 'qty': '2'}, {'_key': 'b', 'qty': '1', 'rate': '1'}]], ['reorder', '', 'items', ['items.b', 'items.7']],
-      ['replace', '', 'items', [{'id': 8}]], ['add', '', 'items', {'_key': 'b'}]]),
+     [['set', 'items.7', 'qty', '2'], ['add', '', 'items', {'_key': 'b', 'qty': '1', 'rate': '1'}], ['reorder', '', 'items', ['items.b', 'items.7']],
+      ['add', '', 'items', {'id': 8}], ['add', '', 'items', {'_key': 'b'}]]),
     ('project-nested', 'project', {'children': {'phases': [
         {'_key': 'A', 'children': {'tasks': [{'_key': 'a1', 'hours': '2'}, {'_key': 'a2', 'hours': '3'}]}},
         {'_key': 'B', 'children': {'tasks': [{'_key': 'b1', 'hours': '4'}]}}]}},
      [['set', '', 'hourly_rate', '120'], ['set', '', 'hourly_rate', '100'], ['set', 'phases.A.tasks.a1', 'hours', '5'],
-      ['move', 'phases.A.tasks.a2', 'phases.B', 'tasks', 0], ['add', 'phases.B', 'tasks', {'_key': 'b2', 'hours': '1.5'}],
-      ['remove', 'phases.A'], ['move', 'phases.B', 'phases.B', 'tasks', 0],
+      ['remove', 'phases.A.tasks.a2'], ['add', 'phases.B', 'tasks', {'_key': 'a2', 'hours': '3'}], ['add', 'phases.B', 'tasks', {'_key': 'b2', 'hours': '1.5'}],
+      ['remove', 'phases.A'], ['reorder', 'phases.B', 'tasks', ['phases.B.tasks.b2', 'phases.B.tasks.a2', 'phases.B.tasks.b1']],
       ['add', '', 'phases', {'_key': 'C', 'children': {'tasks': [{'_key': 'c1', 'hours': '1'}]}}]]),
     ('cost-round-trip', 'cost', {'children': {'lines': items({'qty': '2', 'rate': '50'}, {'qty': '3', 'rate': '100'})}},
      [['set', '', 'exchange_rate', '2'], ['set', 'lines.r0', 'qty', '0'], ['set', 'lines.r1', 'qty', '0'],
@@ -318,12 +318,12 @@ SCENARIOS = [
     ('saved-locks-and-resends', 'offer', {'id': 5, 'customer': 7, 'stage': 'won', 'price': '150', 'terms': 45, 'remark': 'kept',
                                           'children': {'lines': [{'id': 2, 'qty': '1', 'rate': '3'}]}},
      [['lookup', 'customer', 7, {'credit_days': 30, 'rate': '2.50'}], ['set', '', 'stage', 'lost'], ['set', '', 'customer', 7], ['set', '', 'stage', 'open'],
-      ['set', '', 'customer', 8], ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25'}], ['rebase'],
+      ['set', '', 'customer', 8], ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25'}],
       ['set', '', 'terms', 60], ['set', '', 'customer', 8], ['set', '', 'stage', 'won'], ['set', '', 'customer', 7],
       ['add', '', 'lines', {'_key': 'n', 'qty': '1'}], ['set', 'lines.2', 'qty', '1'], ['set', '', 'stage', 'lost']]),
     ('table-limits', 'capped', {'children': {'lines': items({'qty': '1'})}},
      [['add', '', 'lines', {'_key': 'n1', 'qty': '2'}], ['add', '', 'lines', {'_key': 'n2', 'qty': '4'}],
-      ['replace', '', 'lines', [{'_key': 'a'}, {'_key': 'b'}, {'_key': 'c'}]], ['remove', 'lines.r0'],
+      ['batch', [['add', '', 'lines', {'_key': 'a'}], ['add', '', 'lines', {'_key': 'b'}]]], ['remove', 'lines.r0'],
       ['add', '', 'lines', {'_key': 'n3', 'qty': '5'}], ['batch', [['remove', 'lines.n1'], ['add', '', 'lines', {'_key': 'n4'}]]],
       ['add', '', 'lines', {'_key': 'n5'}]]),
     ('money-places', 'money', {'customer': 7, 'qty': '1.5', 'rate': '1.3335'},
@@ -380,13 +380,10 @@ def apply(document, command):
     if kind == 'set': document.set(handle(document, args[0]), args[1], args[2])
     elif kind == 'add': document.add_row(handle(document, args[0]), args[1], args[2])
     elif kind == 'remove': document.remove_row(handle(document, args[0]))
-    elif kind == 'move': document.move_row(handle(document, args[0]), handle(document, args[1]), args[2], args[3])
     elif kind == 'reorder': document.reorder(handle(document, args[0]), args[1], [handle(document, label) for label in args[2]])
-    elif kind == 'replace': document.replace_rows(handle(document, args[0]), args[1], args[2])
     elif kind == 'today': document.set_today(args[0])
     elif kind == 'lookup': document.set_lookups(args[0], args[1], args[2])
     elif kind == 'batch': document.batch(lambda _: [apply(document, item) for item in args[0]])
-    elif kind == 'rebase': document.rebase()
 
 
 def rule_map(document):

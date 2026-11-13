@@ -369,9 +369,10 @@ export const LIMITS = {expression_nodes: 128, expression_depth: 32, table_depth:
 export function checkPlan(plan: any) {
   if (!plan || plan.plan_version !== 1 || plan.language !== LANGUAGE || plan.numeric_profile !== PROFILE || plan.expression_version !== 1)
     throw new CalcError('SCHEMA_VERSION_MISMATCH', 'Unsupported calculation plan, language or profile');
-  if (plan.model_schema_hash !== fingerprint(plan))
-    throw new CalcError('SCHEMA_VERSION_MISMATCH', 'The calculation plan does not match its fingerprint');
-  if (canonical(plan.limits) !== canonical(LIMITS)) throw new CalcError('SCHEMA_VERSION_MISMATCH', 'The calculation plan uses different engine limits');
+  // The plan and its hash come from the server in one response; a save echoes the hash and the server refuses
+  // a mismatch, so the browser checks the plan's shape but does not hash it again.
+  if (typeof plan.model_schema_hash !== 'string' || !sameLimits(plan.limits))
+    throw new CalcError('SCHEMA_VERSION_MISMATCH', 'The calculation plan uses different engine limits');
   for (const field of plan.fields) {
     if (field.scale !== null && (integer(field.scale) === null || field.scale < 0 || field.scale > MAX_SCALE))
       throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid target scale');
@@ -391,6 +392,11 @@ export function checkPlan(plan: any) {
   }
 }
 
+function sameLimits(limits: any) {
+  if (!limits || typeof limits !== 'object' || Object.keys(limits).length !== Object.keys(LIMITS).length) return false;
+  return Object.entries(LIMITS).every(([name, value]) => ownValue(limits, name) === value);
+}
+
 // Where a Currency target finds the code it rounds to: {code}, {setting} (a host input), or {expression, reads}
 // reading a field of the row or of a linked record; those reads are also the entry's reads.
 function checkMoney(field: any) {
@@ -399,10 +405,10 @@ function checkMoney(field: any) {
   if (ok && own(money, 'code')) ok = keys.length === 1 && typeof money.code === 'string' && /^[A-Z]{3}$/.test(money.code);
   else if (ok && own(money, 'setting')) ok = keys.length === 1 && typeof money.setting === 'string' && /^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$/.test(money.setting);
   else if (ok) {
-    const reads = new Set((field.reads || []).map((read: any) => canonical(read)));
+    const reads = new Set((field.reads || []).map((read: any) => JSON.stringify(read)));
     ok = keys.length === 2 && own(money, 'expression') && own(money, 'reads') && !!money.expression && typeof money.expression === 'object'
       && !Array.isArray(money.expression) && ['ref', 'hop'].includes(ownValue(money.expression, '$expr')) && Array.isArray(money.reads)
-      && money.reads.every((read: any) => reads.has(canonical(read)));
+      && money.reads.every((read: any) => reads.has(JSON.stringify(read)));
     if (ok) checkNode(money.expression, 0, {count: 0});
   }
   if (!ok) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Invalid currency source');
@@ -447,58 +453,11 @@ function checkNode(node: any, depth: number, counter: {count: number}, scale = f
   if (!ok) throw new CalcError('UNSUPPORTED_EXPRESSION', 'Unknown or malformed calculation node');
 }
 
-// Python-compatible canonical JSON (sorted keys, compact, ASCII escapes) and SHA-256.
-export function canonical(value: any): string {
-  if (value === null) return 'null';
-  if (typeof value === 'boolean') return value ? 'true' : 'false';
-  if (typeof value === 'number') return String(value);
-  if (typeof value === 'string') {
-    let out = '"';
-    for (let index = 0; index < value.length; index++) {
-      const code = value.charCodeAt(index), char = value[index];
-      const named: Record<string, string> = {'"': '\\"', '\\': '\\\\', '\b': '\\b', '\f': '\\f', '\n': '\\n', '\r': '\\r', '\t': '\\t'};
-      out += own(named, char) ? named[char] : code < 0x20 || code > 0x7e ? '\\u' + code.toString(16).padStart(4, '0') : char;
-    }
-    return out + '"';
-  }
-  if (Array.isArray(value)) return '[' + value.map(canonical).join(',') + ']';
-  return '{' + Object.keys(value).sort().map(key => canonical(key) + ':' + canonical(value[key])).join(',') + '}';
-}
-export function fingerprint(plan: any) {
-  const body = Object.fromEntries(Object.entries(plan).filter(([key]) => key !== 'model_schema_hash'));
-  return 'sha256:' + sha256(canonical(body));
-}
-const K = Uint32Array.from([0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5, 0xd807aa98, 0x12835b01,
-  0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174, 0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa,
-  0x5cb0a9dc, 0x76f988da, 0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967, 0x27b70a85, 0x2e1b2138,
-  0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85, 0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624,
-  0xf40e3585, 0x106aa070, 0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3, 0x748f82ee, 0x78a5636f,
-  0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2]);
-// Synchronous SHA-256 over an ASCII string (canonical() output is always ASCII).
-export function sha256(ascii: string) {
-  const length = ascii.length, total = ((length + 9 + 63) >> 6) << 6, bytes = new Uint8Array(total);
-  for (let index = 0; index < length; index++) bytes[index] = ascii.charCodeAt(index);
-  bytes[length] = 0x80;
-  const view = new DataView(bytes.buffer);
-  view.setUint32(total - 4, length * 8);
-  view.setUint32(total - 8, Math.floor(length / 0x20000000));
-  const hash = Uint32Array.from([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
-  const w = new Uint32Array(64), rotate = (x: number, n: number) => (x >>> n) | (x << (32 - n));
-  for (let offset = 0; offset < total; offset += 64) {
-    for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4);
-    for (let i = 16; i < 64; i++) {
-      const s0 = rotate(w[i - 15], 7) ^ rotate(w[i - 15], 18) ^ (w[i - 15] >>> 3), s1 = rotate(w[i - 2], 17) ^ rotate(w[i - 2], 19) ^ (w[i - 2] >>> 10);
-      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) >>> 0;
-    }
-    let [a, b, c, d, e, f, g, h] = hash;
-    for (let i = 0; i < 64; i++) {
-      const t1 = (h + (rotate(e, 6) ^ rotate(e, 11) ^ rotate(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) >>> 0;
-      const t2 = ((rotate(a, 2) ^ rotate(a, 13) ^ rotate(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
-      h = g; g = f; f = e; e = (d + t1) >>> 0; d = c; c = b; b = a; a = (t1 + t2) >>> 0;
-    }
-    [a, b, c, d, e, f, g, h].forEach((value, index) => { hash[index] = (hash[index] + value) >>> 0; });
-  }
-  return [...hash].map(value => value.toString(16).padStart(8, '0')).join('');
+// A batch callback must finish synchronously; an async one would change the document after the batch closed.
+function runSync(run: (commands: FiniteDocument) => unknown, document: FiniteDocument) {
+  const value: any = run(document);
+  if (value && typeof value.then === 'function')
+    throw new CalcError('ASYNC_BATCH_UNSUPPORTED', 'A calculation batch cannot await; apply network results as a later batch');
 }
 
 // A browser document session: one bound graph, synchronous batches, one publication per batch.
@@ -515,13 +474,12 @@ export class FiniteDocument {
   // this.order with each node's row, plan field, inputs, target and target meta, built by bind().
   private steps: Array<{node: Node; handle: string; name: string; row: Row; field: any; inputs: Set<Node>; target: Node; meta: any}> = [];
   observers = new Map<Node, Array<(result: Result) => void>>();
-  tableObservers = new Map<Node, Array<(handles: string[]) => void>>();
   ruleObservers = new Map<string, Array<(states: Record<string, RuleState>) => void>>();
   // Initial suggestions waiting to be written, and fields the host set in the current write (touched).
   armed = new Set<Node>();
   touched = new Set<Node>();
   // Lock results of the document as loaded (handle -> field -> true, false or null when undecided).
-  // Saved rows keep them until rebase(); host inputs such as lookups refine them until the first edit.
+  // Saved rows keep them for the life of the session; host inputs such as lookups refine them until the first edit.
   locks = new Map<string, Record<string, boolean | null>>();
   private pristine = true;
   revision = 0; structureRevision = 0; trace: any = {};
@@ -558,7 +516,7 @@ export class FiniteDocument {
     const created = new Set([...this.deps.keys()].filter(node => this.rows.get(nodeParts(node)[0])!.created && node.endsWith(':initial')));
     this.settle(new Set(), new Set(this.deps.keys()), this.touched, created);
     this.touched = new Set();
-    this.takeLocks(true);
+    this.takeLocks();
     this.revision = 1;
   }
 
@@ -767,17 +725,12 @@ export class FiniteDocument {
 
   batch(run: (commands: FiniteDocument) => unknown) {
     this.usable();
-    // An async callback would run its tail after the batch closed, outside any rollback.
-    if ((run as any)?.constructor?.name === 'AsyncFunction')
-      throw new CalcError('ASYNC_BATCH_UNSUPPORTED', 'A calculation batch cannot await; apply network results as a later batch');
     const outer = this.current === null;
     // A nested batch is one command: if its error is caught, its changes are undone.
-    if (!outer) { this.command(() => { if ((run(this) as any)?.then instanceof Function) throw new CalcError('ASYNC_BATCH_UNSUPPORTED', 'A calculation batch cannot await; apply network results as a later batch'); }); return; }
-    if (outer) this.current = {snapshot: this.capture(), bound: new Set(this.deps.keys()), sources: new Set<Node>(), membership: new Set<Node>(), moved: new Set<string>(), structure: false, order: new Set<Node>(), touched: new Set<Node>()};
+    if (!outer) { this.command(() => runSync(run, this)); return; }
+    this.current = {snapshot: this.capture(), bound: new Set(this.deps.keys()), sources: new Set<Node>(), membership: new Set<Node>(), structure: false, order: new Set<Node>(), touched: new Set<Node>()};
     try {
-      const value: any = run(this);
-      if (value && typeof value.then === 'function')
-        throw new CalcError('ASYNC_BATCH_UNSUPPORTED', 'A calculation batch cannot await; apply network results as a later batch');
+      runSync(run, this);
     } catch (exc) {
       if (outer) { this.restore(this.current.snapshot); this.current = null; }
       throw exc;
@@ -801,7 +754,7 @@ export class FiniteDocument {
     this.usable();
     // A command whose error the batch catches must not leave the document half changed.
     const snapshot = this.capture(), state = {...this.current, sources: new Set(this.current.sources), membership: new Set(this.current.membership),
-      moved: new Set(this.current.moved), order: new Set(this.current.order), touched: new Set(this.current.touched)};
+      order: new Set(this.current.order), touched: new Set(this.current.touched)};
     try { return run(); }
     catch (exc) { this.restore(snapshot); this.current = state; throw exc; }
   }
@@ -891,37 +844,6 @@ export class FiniteDocument {
     });
   }
 
-  replaceRows(owner: string, table: string, items: any[]) {
-    this.command(() => {
-      const parent = this.row(owner);
-      if (!this.schema.get(parent.path.join('/')).tables.includes(table) || !Array.isArray(items)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown collection ' + table);
-      const existing = new Map(parent.children[table].filter(row => row.id !== null).map(row => [row.id, row]));
-      const old = [...parent.children[table]], seen = new Set<RowId>(), placed = {keys: new Set<string>(), ids: new Set<RowId | null>()};
-      parent.children[table] = [];
-      for (const data of items) {
-        const rawId = ownValue(data, 'id') ?? null, id: RowId | null = rawId === null || linkKey(rawId) === null ? null : rawId;
-        if (rawId !== null && id === null) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be record ids');
-        let row: Row;
-        if (id !== null) {
-          if (!existing.has(id) || seen.has(id)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must belong to this collection and appear once');
-          seen.add(id);
-          row = existing.get(id)!;
-          for (const [name, value] of Object.entries(data)) {
-            if (name === 'id' || name === '_key' || name === 'children') continue;
-            const meta = ownValue(this.schema.get(row.path.join('/')).fields, name);
-            if (!meta || meta.computed) throw new CalcError(meta ? 'COMPUTED_FIELD_WRITE' : 'DOCUMENT_STRUCTURE_ERROR', name + ' cannot be written');
-            this.current.touched.add(nodeKey(row.handle, name));
-            if (!sameValue(row.values, name, value)) { row.values[name] = value; this.current.sources.add(nodeKey(row.handle, name)); }
-          }
-        } else row = this.build(data, [...parent.path, table], parent, true);
-        this.place(parent, table, row, parent.children[table].length, placed);
-      }
-      const kept = new Set(parent.children[table]);
-      for (const row of old) if (!kept.has(row)) this.drop(row);
-      this.structure(owner, table);
-    });
-  }
-
   reorder(owner: string, table: string, handles: string[]) {
     this.command(() => {
       const parent = this.row(owner), items = parent.children[table];
@@ -931,25 +853,6 @@ export class FiniteDocument {
       parent.children[table] = handles.map(handle => this.rows.get(handle)!);
       this.current.order.add(nodeKey(owner, table));
       this.current.structure = true;
-    });
-  }
-
-  moveRow(handle: string, owner: string, table: string, at: number) {
-    this.command(() => {
-      const row = this.row(handle), destination = this.row(owner);
-      if ([...destination.path, table].join('/') !== row.path.join('/')) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Rows move only between collections of the same embedding');
-      for (let ancestor: Row | null = destination; ancestor; ancestor = ancestor.parent)
-        if (ancestor === row) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'A row cannot move into its own subtree');
-      const source = row.parent!;
-      const position = integer(at);
-      if (position === null || position < 0 || position > destination.children[table].length - (destination === source ? 1 : 0))
-        throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position');
-      source.children[table] = source.children[table].filter(item => item !== row);
-      this.structure(source.handle, table);
-      this.place(destination, table, row, position);
-      this.structure(owner, table);
-      const stack = [row];
-      while (stack.length) { const item = stack.pop()!; this.current.moved.add(item.handle); for (const items of Object.values(item.children)) stack.push(...items); }
     });
   }
 
@@ -969,8 +872,7 @@ export class FiniteDocument {
       results: new Map(this.results), next: this.next, counts: new Map(this.counts), trace: this.trace,
       today: this.today, lookups: this.lookups, misses: new Map(this.misses), armed: new Set(this.armed),
       rules: new Map([...this.ruleObservers].map(([handle, items]) => [handle, [...items]])),
-      observers: new Map([...this.observers].map(([node, items]) => [node, [...items]])),
-      tables: new Map([...this.tableObservers].map(([node, items]) => [node, [...items]]))};
+      observers: new Map([...this.observers].map(([node, items]) => [node, [...items]]))};
   }
 
   private restore(snapshot: any) {
@@ -986,7 +888,6 @@ export class FiniteDocument {
     this.armed = snapshot.armed;
     this.ruleObservers = snapshot.rules;
     this.observers = snapshot.observers;
-    this.tableObservers = snapshot.tables;
     this.bind();
   }
 
@@ -996,18 +897,17 @@ export class FiniteDocument {
     if (batch.structure) this.bind();
     const live = new Set(this.deps.keys());
     for (const node of old) if (!live.has(node)) { this.results.delete(node); this.counts.delete(node); this.misses.delete(node); }
-    const fresh = new Set([...live].filter(node => !old.has(node) || batch.moved.has(nodeParts(node)[0])));
+    const fresh = new Set([...live].filter(node => !old.has(node)));
     const updated = this.settle(new Set([...batch.sources, ...batch.membership]), fresh, batch.touched,
       new Set([...fresh].filter(node => node.endsWith(':initial'))));
     if (!updated.size && !batch.sources.size && !batch.structure) return [];
     if (batch.structure || [...batch.sources].some((key: string) => !key.startsWith('@'))) this.pristine = false;
-    else if (this.pristine) this.takeLocks(true);
+    else if (this.pristine) this.takeLocks();
     this.revision++;
     if (batch.structure) this.structureRevision++;
     // Only a change of structure removes rows, and with them their observers.
     if (batch.structure) {
       for (const node of [...this.observers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.observers.delete(node);
-      for (const node of [...this.tableObservers.keys()]) if (!this.rows.has(nodeParts(node)[0])) this.tableObservers.delete(node);
       for (const handle of [...this.ruleObservers.keys()]) if (!this.rows.has(handle)) this.ruleObservers.delete(handle);
     }
     const notify: Array<() => void> = [];
@@ -1015,12 +915,6 @@ export class FiniteDocument {
       if (!updated.has(node) && !batch.sources.has(node)) continue;
       const [handle, field] = nodeParts(node), outcome = this.result(this.rows.get(handle)!, field);
       for (const listener of [...listeners]) notify.push(() => listener(outcome));
-    }
-    for (const [node, listeners] of [...this.tableObservers]) {
-      const [handle, table] = nodeParts(node);
-      if (!batch.membership.has(nodeKey(handle, '#' + table)) && !batch.order.has(node)) continue;
-      const handles = this.rows.get(handle)!.children[table].map(row => row.handle);
-      for (const listener of [...listeners]) notify.push(() => listener(handles));
     }
     const ruled = new Set([...updated].filter(node => RULES.includes(nodeParts(node)[1].split(':')[1])).map(node => nodeParts(node)[0]));
     for (const [handle, listeners] of [...this.ruleObservers]) {
@@ -1040,15 +934,6 @@ export class FiniteDocument {
     return () => { const items = this.observers.get(node); if (items?.includes(listener)) items.splice(items.indexOf(listener), 1); };
   }
 
-  observeTable(handle: string, table: string, listener: (handles: string[]) => void) {
-    this.usable();
-    if (!this.schema.get(this.row(handle).path.join('/')).tables.includes(table)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown collection ' + table);
-    const node = nodeKey(handle, table);
-    if (!this.tableObservers.has(node)) this.tableObservers.set(node, []);
-    this.tableObservers.get(node)!.push(listener);
-    return () => { const items = this.tableObservers.get(node); if (items?.includes(listener)) items.splice(items.indexOf(listener), 1); };
-  }
-
   // Call listener(ruleStates(handle)) after each batch that changes one of this row's rule results.
   observeRules(handle: string, listener: (states: Record<string, RuleState>) => void) {
     this.usable();
@@ -1066,23 +951,15 @@ export class FiniteDocument {
     return result && result.state === 'ready' && result.value !== null ? result.value as boolean : undecided;
   }
 
-  // Record lock results as the saved state: rows loaded with an ID, or every row on rebase().
-  private takeLocks(saved: boolean) {
+  // Record lock results as the saved state of rows loaded with an ID.
+  private takeLocks() {
     this.locks = new Map();
     for (const [handle, row] of this.rows) {
-      if (saved && row.created) continue;
+      if (row.created) continue;
       const locks: Record<string, boolean | null> = {};
       for (const [, entry] of this.templates.get(row.path.join('/')) || []) if (entry.kind === 'locked_when') locks[entry.field] = this.decided(row, entry.field, 'locked_when', null);
       this.locks.set(handle, locks);
     }
-  }
-
-  // After the host saves this document: its current locks become the saved state.
-  rebase() {
-    this.usable();
-    this.takeLocks(false);
-    for (const row of this.rows.values()) row.created = false;
-    this.pristine = true;
   }
 
   // A field's lock as the server enforces it: decided on the row as saved. A new record or row has no saved
@@ -1105,19 +982,6 @@ export class FiniteDocument {
     return Object.fromEntries(Object.keys(states).sort().map(name => [name, states[name]]));
   }
 
-  subscriptions() {
-    return [...this.observers.values(), ...this.tableObservers.values(), ...this.ruleObservers.values()].reduce((sum, items) => sum + items.length, 0);
-  }
-
-  explain(handle: string, field: string) {
-    const row = this.row(handle), node = nodeKey(handle, field), computed = this.deps.has(node);
-    return {role: computed ? 'computed' : 'source', target: row.label + field, owner: row.parent ? row.parent.label.replace(/\.$/, '') : null,
-      inputs: [...(this.deps.get(node) || [])].map(item => this.address(item)).sort(),
-      dependents: [...(this.dependents.get(node) || [])].map(item => this.address(item)).sort(),
-      state: publicResult(this.result(row, field)), evaluations: this.counts.get(node) || 0,
-      language: this.plan.language, profile: this.plan.numeric_profile, plan: this.plan.model_schema_hash, revision: this.revision};
-  }
-
   find(label: string) {
     for (const [handle, row] of this.rows) if (row.label.replace(/\.$/, '') === label) return handle;
     throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown row ' + label);
@@ -1138,18 +1002,10 @@ export class FiniteDocument {
     return result;
   }
 
-  sources(row: Row = this.root, identities = true): any {
-    const result: any = {...row.values};
-    if (identities) Object.assign(result, row.id !== null ? {id: row.id} : {}, row.parent ? {_key: row.key} : {});
-    if (Object.keys(row.children).length)
-      result.children = Object.fromEntries(Object.entries(row.children).map(([table, items]) => [table, items.map(item => this.sources(item, identities))]));
-    return result;
-  }
-
   dispose() {
     if (this.disposed) return;
     if (this.publishing) throw new CalcError('REACTIVE_REENTRANCY', 'Observers cannot dispose the document during publication');
-    this.observers.clear(); this.tableObservers.clear(); this.ruleObservers.clear(); this.armed.clear(); this.rows.clear(); this.results.clear(); this.misses.clear();
+    this.observers.clear(); this.ruleObservers.clear(); this.armed.clear(); this.rows.clear(); this.results.clear(); this.misses.clear();
     this.deps = new Map(); this.dependents = new Map(); this.order = []; this.steps = [];
     this.disposed = true;
   }

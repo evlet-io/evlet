@@ -10,7 +10,7 @@ from evlet import Model, Child, Table, Decimal, Currency, Boolean, Integer, Text
 from evlet.calc import (D, F, parent, row, round, coalesce, safe_divide, Document, CalcError, Num, parse, text,
                         add, sub, mul, div, quantize, total, compare)
 from evlet.declarations import Ref
-from finite_fixtures import sources
+from finite_fixtures import sources, Capped as CappedFixture
 
 
 class FiniteMeta:
@@ -522,15 +522,15 @@ def test_structure_commands_and_batches():
         doc.add_row(root, 'items', {'_key': 'r0'})
 
 
-def test_nested_moves_and_removal_leave_no_rows_behind():
+def test_nested_additions_and_removal_leave_no_rows_behind():
     doc = document(Project, project_data())
     root = doc.root.handle
-    task = doc.find('phases.A.tasks.a2')
-    doc.move_row(task, doc.find('phases.B'), 'tasks', 0)
+    doc.remove_row(doc.find('phases.A.tasks.a2'))
+    doc.add_row(doc.find('phases.B'), 'tasks', {'_key': 'a2', 'hours': '3'})
     snap = doc.snapshot()
     assert [phase['total'] for phase in snap['children']['phases']] == ['200.00', '700.00'] and snap['total'] == '900.00'
     with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
-        doc.move_row(doc.find('phases.A'), doc.find('phases.B'), 'tasks', 0)
+        doc.add_row(doc.find('phases.A'), 'phases', {})
     for _ in range(20):
         phase = doc.add_row(root, 'phases', {'children': {'tasks': [{'hours': '1'}]}})
         doc.remove_row(phase)
@@ -548,6 +548,10 @@ def test_replace_rows_validates_ids_and_keeps_handles():
         with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
             doc.replace_rows(root, 'items', bad)
     assert doc.snapshot()['grand_total'] == '22.05'
+    capped = Document(Registry(CappedFixture).plans[CappedFixture], {'children': {'lines': [{'_key': 'a'}]}})
+    with pytest.raises(CalcError, match='CALCULATION_LIMIT_EXCEEDED'):
+        capped.replace_rows(capped.root.handle, 'lines', [{'_key': 'a'}, {'_key': 'b'}, {'_key': 'c'}])
+    assert len(capped.snapshot()['children']['lines']) == 1
 
 
 def test_duplicate_recompute():
@@ -759,14 +763,14 @@ def test_second_review_engine_regressions():
     a = doc.find('items.a')
 
     def run(commands):
-        for attempt in (lambda: commands.move_row(a, doc.root.handle, 'items', 99),
-                        lambda: commands.move_row(a, doc.root.handle, 'items', 2),
+        for attempt in (lambda: commands.reorder(doc.root.handle, 'items', [a]),
+                        lambda: commands.reorder(doc.root.handle, 'items', [a, a]),
                         lambda: commands.add_row(doc.root.handle, 'items', {'_key': 'b', 'qty': '5'})):
             with pytest.raises(CalcError):
                 attempt()
     doc.batch(run)
     assert doc.snapshot() == before and len(doc.rows) == rows
-    doc.move_row(a, doc.root.handle, 'items', 1)
+    doc.reorder(doc.root.handle, 'items', [doc.find('items.b'), a])
     assert [item['_key'] for item in doc.snapshot()['children']['items']] == ['b', 'a']
 
     # Malformed plans fail as calculation errors, never as Python exceptions.

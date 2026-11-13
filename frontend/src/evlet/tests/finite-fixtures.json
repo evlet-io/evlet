@@ -7932,6 +7932,47 @@
       "items.7.net_raw",
       "items.7.total",
       "items.7.vat",
+      "net_total",
+      "taxable_net",
+      "vat_total"
+     ],
+     "command": [
+      "set",
+      "items.7",
+      "qty",
+      "2"
+     ],
+     "requests": [],
+     "snapshot": {
+      "children": {
+       "items": [
+        {
+         "_key": "7",
+         "effective_rate": "5.0000",
+         "entered_amount": "20.00",
+         "id": 7,
+         "net": "20.00",
+         "net_raw": "20",
+         "qty": "2",
+         "rate": "10",
+         "taxable": true,
+         "total": "21.00",
+         "vat": "1.00",
+         "vat_rate": "5"
+        }
+       ]
+      },
+      "grand_total": "21.00",
+      "inclusive": false,
+      "line_count": "1",
+      "net_total": "20.00",
+      "taxable_net": "20.00",
+      "vat_total": "1.00"
+     }
+    },
+    {
+     "changed": [
+      "grand_total",
       "items.b.effective_rate",
       "items.b.entered_amount",
       "items.b.net",
@@ -7944,20 +7985,14 @@
       "vat_total"
      ],
      "command": [
-      "replace",
+      "add",
       "",
       "items",
-      [
-       {
-        "id": 7,
-        "qty": "2"
-       },
-       {
-        "_key": "b",
-        "qty": "1",
-        "rate": "1"
-       }
-      ]
+      {
+       "_key": "b",
+       "qty": "1",
+       "rate": "1"
+      }
      ],
      "requests": [],
      "snapshot": {
@@ -8054,14 +8089,12 @@
     },
     {
      "command": [
-      "replace",
+      "add",
       "",
       "items",
-      [
-       {
-        "id": 8
-       }
-      ]
+      {
+       "id": 8
+      }
      ],
      "error": "DOCUMENT_STRUCTURE_ERROR",
      "requests": [],
@@ -8450,17 +8483,14 @@
     },
     {
      "changed": [
+      "hours",
       "phases.A.hours",
       "phases.A.total",
-      "phases.B.hours",
-      "phases.B.total"
+      "total"
      ],
      "command": [
-      "move",
-      "phases.A.tasks.a2",
-      "phases.B",
-      "tasks",
-      0
+      "remove",
+      "phases.A.tasks.a2"
      ],
      "requests": [],
      "snapshot": {
@@ -8487,14 +8517,74 @@
          "children": {
           "tasks": [
            {
-            "_key": "a2",
-            "amount": "300.00",
-            "hours": "3"
-           },
+            "_key": "b1",
+            "amount": "400.00",
+            "hours": "4"
+           }
+          ]
+         },
+         "hourly_rate": "100.00",
+         "hours": "4.0000",
+         "name": "",
+         "total": "400.00"
+        }
+       ]
+      },
+      "hourly_rate": "100",
+      "hours": "9.0000",
+      "total": "900.00"
+     }
+    },
+    {
+     "changed": [
+      "hours",
+      "phases.B.hours",
+      "phases.B.tasks.a2.amount",
+      "phases.B.total",
+      "total"
+     ],
+     "command": [
+      "add",
+      "phases.B",
+      "tasks",
+      {
+       "_key": "a2",
+       "hours": "3"
+      }
+     ],
+     "requests": [],
+     "snapshot": {
+      "children": {
+       "phases": [
+        {
+         "_key": "A",
+         "children": {
+          "tasks": [
+           {
+            "_key": "a1",
+            "amount": "500.00",
+            "hours": "5"
+           }
+          ]
+         },
+         "hourly_rate": "100.00",
+         "hours": "5.0000",
+         "name": "",
+         "total": "500.00"
+        },
+        {
+         "_key": "B",
+         "children": {
+          "tasks": [
            {
             "_key": "b1",
             "amount": "400.00",
             "hours": "4"
+           },
+           {
+            "_key": "a2",
+            "amount": "300.00",
+            "hours": "3"
            }
           ]
          },
@@ -8552,14 +8642,14 @@
          "children": {
           "tasks": [
            {
-            "_key": "a2",
-            "amount": "300.00",
-            "hours": "3"
-           },
-           {
             "_key": "b1",
             "amount": "400.00",
             "hours": "4"
+           },
+           {
+            "_key": "a2",
+            "amount": "300.00",
+            "hours": "3"
            },
            {
             "_key": "b2",
@@ -8598,14 +8688,14 @@
          "children": {
           "tasks": [
            {
-            "_key": "a2",
-            "amount": "300.00",
-            "hours": "3"
-           },
-           {
             "_key": "b1",
             "amount": "400.00",
             "hours": "4"
+           },
+           {
+            "_key": "a2",
+            "amount": "300.00",
+            "hours": "3"
            },
            {
             "_key": "b2",
@@ -8627,14 +8717,17 @@
      }
     },
     {
+     "changed": [],
      "command": [
-      "move",
-      "phases.B",
+      "reorder",
       "phases.B",
       "tasks",
-      0
+      [
+       "phases.B.tasks.b2",
+       "phases.B.tasks.a2",
+       "phases.B.tasks.b1"
+      ]
      ],
-     "error": "DOCUMENT_STRUCTURE_ERROR",
      "requests": [],
      "snapshot": {
       "children": {
@@ -8644,6 +8737,11 @@
          "children": {
           "tasks": [
            {
+            "_key": "b2",
+            "amount": "150.00",
+            "hours": "1.5"
+           },
+           {
             "_key": "a2",
             "amount": "300.00",
             "hours": "3"
@@ -8652,11 +8750,6 @@
             "_key": "b1",
             "amount": "400.00",
             "hours": "4"
-           },
-           {
-            "_key": "b2",
-            "amount": "150.00",
-            "hours": "1.5"
            }
           ]
          },
@@ -8706,6 +8799,11 @@
          "children": {
           "tasks": [
            {
+            "_key": "b2",
+            "amount": "150.00",
+            "hours": "1.5"
+           },
+           {
             "_key": "a2",
             "amount": "300.00",
             "hours": "3"
@@ -8714,11 +8812,6 @@
             "_key": "b1",
             "amount": "400.00",
             "hours": "4"
-           },
-           {
-            "_key": "b2",
-            "amount": "150.00",
-            "hours": "1.5"
            }
           ]
          },
@@ -15778,77 +15871,6 @@
      }
     },
     {
-     "changed": [
-      "discount",
-      "discount:initial",
-      "terms:initial"
-     ],
-     "command": [
-      "rebase"
-     ],
-     "requests": [],
-     "rules": {
-      "$root": {
-       "note": {
-        "applies": true,
-        "locked": false,
-        "required": true
-       },
-       "price": {
-        "applies": true,
-        "locked": false,
-        "required": false
-       },
-       "reason": {
-        "applies": false,
-        "locked": false,
-        "required": false
-       },
-       "remark": {
-        "applies": true,
-        "locked": false,
-        "required": false
-       },
-       "terms": {
-        "applies": true,
-        "locked": false,
-        "required": false
-       }
-      }
-     },
-     "snapshot": {
-      "_states": {
-       "billable": {
-        "causes": [
-         "billable"
-        ],
-        "code": "COMPUTE_INPUT_MISSING",
-        "state": "pending"
-       }
-      },
-      "billable": null,
-      "children": {
-       "lines": [
-        {
-         "_key": "2",
-         "amount": "3.00",
-         "id": 2,
-         "qty": "1",
-         "rate": "3"
-        }
-       ]
-      },
-      "customer": 8,
-      "discount": "1.25",
-      "id": 5,
-      "price": "150",
-      "remark": "kept",
-      "stage": "open",
-      "terms": 45,
-      "total": "3.00"
-     }
-    },
-    {
      "changed": [],
      "command": [
       "set",
@@ -15866,7 +15888,7 @@
        },
        "price": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "reason": {
@@ -15876,12 +15898,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        }
       }
@@ -15936,7 +15958,7 @@
        },
        "price": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "reason": {
@@ -15946,12 +15968,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        }
       }
@@ -16010,7 +16032,7 @@
        },
        "price": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "reason": {
@@ -16020,12 +16042,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        }
       }
@@ -16066,7 +16088,6 @@
      "changed": [
       "discount",
       "discount:initial",
-      "terms",
       "terms:initial"
      ],
      "command": [
@@ -16085,7 +16106,7 @@
        },
        "price": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "reason": {
@@ -16095,12 +16116,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        }
       }
@@ -16133,7 +16154,7 @@
       "price": "150",
       "remark": "kept",
       "stage": "won",
-      "terms": "30",
+      "terms": 60,
       "total": "3.00"
      }
     },
@@ -16165,7 +16186,7 @@
        },
        "price": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "reason": {
@@ -16175,12 +16196,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        }
       }
@@ -16220,7 +16241,7 @@
       "price": "150",
       "remark": "kept",
       "stage": "won",
-      "terms": "30",
+      "terms": 60,
       "total": "153.00"
      }
     },
@@ -16242,7 +16263,7 @@
        },
        "price": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "reason": {
@@ -16252,12 +16273,12 @@
        },
        "remark": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        }
       }
@@ -16297,7 +16318,7 @@
       "price": "150",
       "remark": "kept",
       "stage": "won",
-      "terms": "30",
+      "terms": 60,
       "total": "153.00"
      }
     },
@@ -16306,7 +16327,6 @@
       "price:locked_when",
       "reason:applies_when",
       "reason:required_when",
-      "remark",
       "remark:applies_when",
       "remark:locked_when",
       "terms:locked_when"
@@ -16327,7 +16347,7 @@
        },
        "price": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "reason": {
@@ -16337,12 +16357,12 @@
        },
        "remark": {
         "applies": false,
-        "locked": false,
+        "locked": true,
         "required": false
        },
        "terms": {
         "applies": true,
-        "locked": false,
+        "locked": true,
         "required": false
        }
       }
@@ -16380,9 +16400,9 @@
       "discount": "2.50",
       "id": 5,
       "price": "150",
-      "remark": null,
+      "remark": "kept",
       "stage": "lost",
-      "terms": "30",
+      "terms": 60,
       "total": "153.00"
      }
     }
@@ -16479,19 +16499,24 @@
     },
     {
      "command": [
-      "replace",
-      "",
-      "lines",
+      "batch",
       [
-       {
-        "_key": "a"
-       },
-       {
-        "_key": "b"
-       },
-       {
-        "_key": "c"
-       }
+       [
+        "add",
+        "",
+        "lines",
+        {
+         "_key": "a"
+        }
+       ],
+       [
+        "add",
+        "",
+        "lines",
+        {
+         "_key": "b"
+        }
+       ]
       ]
      ],
      "error": "CALCULATION_LIMIT_EXCEEDED",

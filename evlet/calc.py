@@ -1245,14 +1245,14 @@ class Document:
         # Initial suggestions waiting to be written, and fields the host set in the current write (touched).
         self.armed, self.touched = set(), set()
         # Lock results of the document as loaded (handle -> field -> True, False or None when undecided).
-        # Saved rows keep them until rebase(); host inputs such as lookups refine them until the first edit.
+        # Saved rows keep them for the life of the document; host inputs such as lookups refine them until the first edit.
         self.locks, self._pristine = {}, True
         self.root = self._build(data or {}, (), None)
         self._bind()
         created = {node for node in self.deps if self.rows[node[0]].created and node[1].endswith(':initial')}
         self._settle(set(), set(self.deps), self.touched, created)
         self.touched = set()
-        self._take_locks(saved=True)
+        self._take_locks()
         self.revision = 1
 
     # Structure
@@ -1498,7 +1498,7 @@ class Document:
     def batch(self, run):
         outer = self._batch is None
         if outer:
-            self._batch = {'snapshot': self._capture(), 'bound': set(self.deps), 'sources': set(), 'membership': set(), 'moved': set(), 'structure': False, 'touched': set()}
+            self._batch = {'snapshot': self._capture(), 'bound': set(self.deps), 'sources': set(), 'membership': set(), 'structure': False, 'touched': set()}
         if not outer:
             # A nested batch is one command: if its error is caught, its changes are undone.
             return self._command(lambda: check_async(run(self)))
@@ -1648,31 +1648,6 @@ class Document:
             self._batch['structure'] = True
         self._command(run)
 
-    def move_row(self, handle, owner, table, at):
-        def run():
-            row, destination = self._row(handle), self._row(owner)
-            if destination.path + (table,) != row.path:
-                raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Rows move only between collections of the same embedding')
-            ancestor = destination
-            while ancestor is not None:
-                if ancestor is row:
-                    raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'A row cannot move into its own subtree')
-                ancestor = ancestor.parent
-            source = row.parent
-            position = integer(at)
-            if position is None or not 0 <= position <= len(destination.children[table]) - (destination is source):
-                raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position')
-            source.children[table].remove(row)
-            self._structure(source.handle, table)
-            self._place(destination, table, row, position)
-            self._structure(owner, table)
-            stack = [row]
-            while stack:
-                item = stack.pop()
-                self._batch['moved'].add(item.handle)
-                stack.extend(child for items in item.children.values() for child in items)
-        self._command(run)
-
     def _row(self, handle):
         row = self.rows.get(handle)
         if row is None:
@@ -1713,7 +1688,7 @@ class Document:
             self.results.pop(node, None)
             self.counts.pop(node, None)
             self.misses.pop(node, None)
-        fresh = (live - old) | {node for node in live if node[0] in batch['moved']}
+        fresh = live - old
         updated = self._settle(batch['sources'] | batch['membership'], fresh, batch['touched'],
                                {node for node in fresh if node[1].endswith(':initial')})
         if not (updated or batch['sources'] or batch['structure']):
@@ -1721,7 +1696,7 @@ class Document:
         if batch['structure'] or any(not key[0].startswith('@') for key in batch['sources']):
             self._pristine = False
         elif self._pristine:
-            self._take_locks(saved=True)
+            self._take_locks()
         self.revision += 1
 
     def decided(self, row, field, kind, undecided):
@@ -1731,18 +1706,11 @@ class Document:
             return None
         return result.value if result is not None and result.state == 'ready' and result.value is not None else undecided
 
-    def _take_locks(self, saved):
-        """Record lock results as the saved state: rows loaded with an ID, or every row on rebase()."""
+    def _take_locks(self):
+        """Record lock results as the saved state of rows loaded with an ID."""
         self.locks = {handle: {entry['field']: self.decided(row, entry['field'], 'locked_when', None)
                                for _, entry in self.templates.get(row.path, ()) if entry.get('kind') == 'locked_when'}
-                      for handle, row in self.rows.items() if not (saved and row.created)}
-
-    def rebase(self):
-        """After the host saves this document: its current locks become the saved state."""
-        self._take_locks(saved=False)
-        for row in self.rows.values():
-            row.created = False
-        self._pristine = True
+                      for handle, row in self.rows.items() if not row.created}
 
     def locked(self, row, field):
         """A field's lock as the server enforces it: decided on the row as saved.

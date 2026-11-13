@@ -40,6 +40,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   server engines must still agree on values, states, causes, rule states, Link lookup
   requests, refused commands and which results changed. They no longer have to evaluate
   formulas in the same order or count the same steps. Nothing changes for apps.
+- **The browser formula engine is smaller.** `FiniteDocument` no longer has `explain`,
+  `subscriptions`, `moveRow`, `replaceRows`, `sources`, `observeTable` or `rebase`, and Python's
+  `calc.Document` no longer has `move_row` or `rebase`. No app or framework code called them.
+  The browser also stops hashing each plan again with its own SHA-256 code; it still checks
+  the plan's shape, and the server still refuses a save made against a different plan. Code
+  that called one of these methods directly should rebuild the session instead (after a save,
+  for `rebase`) or use `addRow`, `removeRow` and `reorder`.
 - **Eva asks before every change once a chat has read stored data.** Records, journals,
   reports and files can hold text written to steer Eva. After a chat has read any of them,
   every create, update, move or action asks first, even when Controls → AI → Eva says "Never
