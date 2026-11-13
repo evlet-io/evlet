@@ -469,3 +469,55 @@ def test_read_only_tasks_get_no_writing_tools_and_the_provider_address_stays_saf
     assert safe_address('https://api.openai.com/v1') and safe_address('http://127.0.0.1:9000/v1')
     for address in ('http://api.example.test/v1', 'https://user:secret@example.test/v1', 'ftp://example.test', 'https://example.test/v1?x=1'):
         assert not safe_address(address), address
+
+
+def test_the_provider_client_never_follows_a_redirect():
+    """A provider that answers 302 gets an error, and the key never reaches the address it points to."""
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    import threading
+    from evlet.connectors import ConnectionFailed
+    from evlet.eva import OpenAI, ProviderError, provider_test
+
+    reached = []
+
+    class Target(BaseHTTPRequestHandler):
+        def do_GET(self):
+            reached.append(dict(self.headers))
+            self.send_response(200)
+            self.end_headers()
+
+        do_POST = do_GET
+
+        def log_message(self, *args):
+            pass
+
+    target = ThreadingHTTPServer(('127.0.0.1', 0), Target)
+
+    class Redirect(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header('Location', f'http://127.0.0.1:{target.server_address[1]}/stolen')
+            self.send_header('Content-Length', '0')
+            self.end_headers()
+
+        do_POST = do_GET
+
+        def log_message(self, *args):
+            pass
+
+    provider = ThreadingHTTPServer(('127.0.0.1', 0), Redirect)
+    for server in (target, provider):
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        base_url = f'http://127.0.0.1:{provider.server_address[1]}/v1'
+        request = {'model': 'gpt-test', 'messages': [{'role': 'user', 'content': 'Hello'}], 'max_output_tokens': 10}
+        with pytest.raises(ProviderError, match='redirect') as raised:
+            list(OpenAI(base_url, 'sk-secret-key', timeout=5).stream(request))
+        assert raised.value.retry is False
+        with pytest.raises(ConnectionFailed, match='redirect'):
+            provider_test({'base_url': base_url, 'api_key': 'sk-secret-key'})
+        assert reached == []
+    finally:
+        for server in (target, provider):
+            server.shutdown()
+            server.server_close()

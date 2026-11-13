@@ -661,8 +661,10 @@ Trusted server code reads a saved connector with `business.connectors.values("wh
   reserved addresses, and then connect to the address they checked. Loopback is allowed only
   with security None, and None only reaches loopback. Mail ports are 25, 465 and 587 for SMTP
   and 143 and 993 for IMAP unless security is None (`Connector(ports=...)` sets this for app
-  connectors with a `port` field). App connectors that open connections should call
-  `evlet.connectors.safe_address(host, port)` before connecting.
+  connectors with a `port` field). Admin connectors may use private ranges, so an office mail
+  server on 10.x or 192.168.x works when an admin sets it up. App connectors that open
+  connections should call `evlet.connectors.safe_address(host, port)` before connecting, and pass
+  `public=True` when the address was typed in by someone who is not an admin.
 - **Error messages.** Messages from a test are scrubbed of secrets, including quoted,
   escaped, URL-encoded and partial copies, but an app's `ConnectionFailed` messages must
   still never include a secret or a full server reply.
@@ -757,9 +759,14 @@ Organization has no email field).
   returned. Rotation (`evlet secrets rotate`) covers them.
 - The servers and token address are fixed when the person connects. A later change to the
   connector can't send someone's tokens to another server; it applies when they connect again.
-- Personal servers follow the connector address rules: link-local, metadata, multicast,
-  unspecified and reserved addresses are refused, loopback only with security None, and mail
-  ports 143/993 and 25/465/587. Token addresses must be https, or http on this machine. Every
+- A mailbox connected with a password reaches only public mail servers. Private ranges
+  (10/8, 172.16/12, 192.168/16, 100.64/10, fc00::/7), loopback, link-local, metadata, multicast,
+  unspecified and reserved addresses are refused, security must be SSL/TLS or STARTTLS, and the
+  ports must be 143/993 and 25/465/587. The check runs again on every sync and send, so a saved
+  mailbox on a private server stops with an error. For a mail server on a private network, an
+  admin sets it up as an Email sending or Email receiving connector instead. Microsoft 365 and
+  Google mailboxes use the servers the admin set on their connector, with the connector address
+  rules. Token addresses must be https, or http on this machine. Every
   connection has the 10-second time limit, and connecting and Sync now count toward the
   connection test rate.
 
