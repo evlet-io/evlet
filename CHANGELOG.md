@@ -27,6 +27,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   the plan's shape, and the server still refuses a save made against a different plan. Code
   that called one of these methods directly should rebuild the session instead (after a save,
   for `rebase`) or use `addRow`, `removeRow` and `reorder`.
+- **Formula batches no longer copy the whole document.** Both formula engines used to copy
+  every row and result at the start of each batch so a failure could be undone, which made
+  each keystroke on a large document cost more. Every command now checks its input before it
+  changes anything, so a refused command still changes nothing. What changes: if code inside
+  a `batch` callback throws after some commands ran, those commands are now kept and settled
+  before the error is raised again, instead of being undone. If a batch cannot settle (an
+  engine limit), the document refuses further commands, and an open record starts a new
+  calculation session. Apps only call these engines through records, so nothing changes for
+  them.
 
 ### Fixed
 

@@ -207,7 +207,7 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     expect(new FiniteDocument(wide, {children: {lines: Array.from({length: 1000}, () => ({qty: '1'}))}}).snapshot().total).toBe('1000.0000');
   });
 
-  it('keeps rows added before a rolled-back command and undoes caught nested batches', () => {
+  it('changes nothing for a refused command and keeps what ran before a failing callback', () => {
     const document = new FiniteDocument(plans.invoice, {inclusive: false, children: {items: []}});
     const root = document.root.handle;
     document.batch(commands => {
@@ -215,11 +215,32 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
       expect(() => commands.set('nope', 'qty', '1')).toThrow(CalcError);
       expect(() => commands.batch(inner => { inner.set(root, 'inclusive', true); throw new Error('stop'); })).toThrow('stop');
     });
-    expect(document.snapshot().grand_total).toBe('21.00');
-    expect(document.snapshot().inclusive).toBe(false);
+    // The refused set changed nothing; the nested batch's set ran before its error, so it is kept.
+    expect(document.snapshot().grand_total).toBe('20.00');
+    expect(document.snapshot().inclusive).toBe(true);
     const bounded = structuredClone(plans.invoice);
     bounded.tables.$root.fields.grand_total.maximum = '1E+3';
     expect(() => new FiniteDocument(bounded, {})).toThrow(CalcError);
+  });
+
+  it('leaves no half-built rows when a new row is refused', () => {
+    const document = new FiniteDocument(plans.project, {children: {phases: [{_key: 'A', children: {tasks: [{_key: 'a1', hours: '2'}]}}]}});
+    const root = document.root.handle, rows = document.rows.size, nodes = document.deps.size;
+    expect(() => document.addRow(root, 'phases', {_key: 'C', children: {tasks: [{hours: '1'}, {hours: '2', nope: '1'}]}})).toThrow('DOCUMENT_STRUCTURE_ERROR');
+    expect(() => document.addRow(root, 'phases', {_key: 'A', children: {tasks: [{hours: '1'}]}})).toThrow('DOCUMENT_STRUCTURE_ERROR');
+    expect([document.rows.size, document.deps.size, document.revision]).toEqual([rows, nodes, 1]);
+    document.addRow(root, 'phases', {_key: 'C', children: {tasks: [{hours: '1'}]}});
+    expect(document.rows.size).toBe(rows + 2);
+  });
+
+  it('refuses every command after a batch fails to settle', () => {
+    const items = Array.from({length: 5}, () => ({qty: '1'}));
+    const document = new FiniteDocument(plans.invoice, {children: {items}}, 400);
+    const root = document.root.handle;
+    expect(() => document.batch(commands => { for (let index = 0; index < 20; index++) commands.addRow(root, 'items', {qty: '1'}); }))
+      .toThrow('CALCULATION_LIMIT_EXCEEDED');
+    expect(document.broken).toBe(true);
+    expect(() => document.set(root, 'inclusive', true)).toThrow('DOCUMENT_STRUCTURE_ERROR');
   });
 
   it('publishes one revision per batch and blocks observer mutation', () => {
@@ -250,11 +271,12 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     document.setLookups('customer', 7, {rate: '5'});
     expect(document.trace.changed).toEqual(['discount', 'net']);
     expect(document.snapshot().discount).toBe('5.00');
-    // Rejected lookups and a failed batch leave the session unchanged.
+    // Rejected lookups leave the session unchanged; one supplied before a failing callback is kept.
     expect(() => document.setLookups('customer', 7, {secret: 1})).toThrow('DOCUMENT_STRUCTURE_ERROR');
     expect(() => document.setLookups('customer', -1, {rate: '1'})).toThrow('DOCUMENT_STRUCTURE_ERROR');
-    expect(() => document.batch(commands => { commands.setLookups('customer', 7, {rate: '9'}); throw new Error('stop'); })).toThrow('stop');
     expect(document.snapshot().discount).toBe('5.00');
+    expect(() => document.batch(commands => { commands.setLookups('customer', 7, {rate: '9'}); throw new Error('stop'); })).toThrow('stop');
+    expect(document.snapshot().discount).toBe('9.00');
     const schedule = new FiniteDocument(plans.schedule, {start: '2024-02-28'});
     expect(schedule.snapshot()._states.age.causes).toEqual(['@today']);
     schedule.setToday('2024-03-01');

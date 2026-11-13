@@ -536,6 +536,14 @@ saved state moves on. A batch publishes once; observers cannot mutate during pub
 (`REACTIVE_REENTRANCY`); a batch callback that returns a promise is rejected
 (`ASYNC_BATCH_UNSUPPORTED`).
 
+Every command checks its input before it changes anything, so a refused command (an unknown
+field, a repeated row key, a full table) leaves the document exactly as it was. Batches do not
+copy the document to undo a failure. If a batch callback throws after some commands ran, those
+commands are kept, the document settles and publishes once, and the error is thrown again. If
+settling itself fails, for example on the evaluation budget or the graph limit, the session is
+marked `broken` and refuses every later command; the record session then builds a new one from
+the current rows. Python's `Document.batch` follows the same rules.
+
 The browser checks a plan's shape (versions, limits, table limits, expression nodes and
 currency sources) before it uses it. It does not hash the plan again: the plan and its
 `model_schema_hash` come from the server in one response, a save sends the hash back, and the

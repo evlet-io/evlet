@@ -18,6 +18,8 @@ export class Session {
   private lookups = new Map<string, Record<string, unknown>>();
   private tried = new Set<string>();
   private work = new Set<Promise<unknown>>();
+  // The record rows the session was started on, to build a new engine if one fails.
+  private root: Row | null = null;
 
   /**
    * `currencies` gives the engine the places of each currency code and the code of each app setting a Currency
@@ -33,6 +35,7 @@ export class Session {
    */
   start(root: Row) {
     this.stop();
+    this.root = root;
     const plan = this.plan, doc = new FiniteDocument(plan, this.data(root), undefined, this.currencies());
     this.engine = doc;
     bindHandles(doc.root, root);
@@ -109,11 +112,23 @@ export class Session {
     let result!: T;
     try {
       this.engine!.batch(doc => { result = command(doc); });
+    } catch (exc) {
+      // An engine that failed to settle refuses every later command: start a new one from the rows.
+      if (this.engine?.broken) this.restart();
+      throw exc;
     } finally {
       const updates = this.publish.splice(0);
       batch(() => updates.forEach(update => update()));
     }
     return result;
+  }
+
+  private restart() {
+    const root = this.root;
+    this.stop();
+    if (!root) return;
+    // If the rows themselves exceed an engine limit, the record goes on without previews; the server still calculates.
+    try { this.start(root); } catch { this.stop(); }
   }
 
   // The document as the engine takes it: plan fields only, new rows without empty values so

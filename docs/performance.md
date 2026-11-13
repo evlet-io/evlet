@@ -484,6 +484,11 @@ In branch `ui-final/06-testcrm-findings`:
   of splitting node keys and copying input sets on every batch;
 * observers of removed rows are looked for only when rows were added or removed.
 
+Later, `addRow`, `removeRow` and `reorder` also check before they change anything, so no batch
+copies the document at all any more. On the opt-in engine bench a task edit in a
+1,000-task project went from 2.0 ms to 0.35 ms (median) and an invoice row edit from 0.63 ms
+to 0.36 ms.
+
 Measured with `npm run bench:ui` on the same machine, before and after:
 
 | Case | Before | After | Budget |
