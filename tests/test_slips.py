@@ -322,3 +322,27 @@ def test_playground_slips_estimate_then_plan_a_project_and_review_an_invoice(sec
     schema = viewer('GET', '/api/schema')[1]
     assert schema['slips'] == [] and 'slips' not in next(model for model in schema['models'] if model['name'] == 'customer')
     assert viewer('POST', '/api/_slips/plan_project/present', {'source': {'model': 'customer', 'id': customer}})[0] == 403
+
+
+def test_slips_reports_and_dialogs_refuse_finite_expressions_until_they_have_plans():
+    # Slips, Report filter forms and Dialogs still run the string rules. A finite expression on them used to be
+    # ignored (applies_when) or fail when the form was checked (compute=F(...)), so they are refused up front.
+    from evlet import Dialog, Report
+    from evlet.calc import F
+
+    for base in (Slip, Report, Dialog):
+        for field in (Text(applies_when=F('kind') == 'y'), Text(required_when=F('kind') == 'y'),
+                      Text(locked_when=F('kind') == 'y'), Text(initial=F('kind')), Text(compute=F('kind'))):
+            with pytest.raises(ValueError, match=r"Probe\.note: .*visible_if.*required_if.*read_only_if.*compute='\.\.\.'"):
+                type('Probe', (base,), {'kind': Text(), 'note': field})
+
+    # A finite expression on a row of the form's table is refused too, naming the row field.
+    class Row(Child):
+        hours = Decimal()
+        doubled = Decimal(compute=F('hours') * 2, stored=False)
+    with pytest.raises(ValueError, match=r'Probe\.rows\.doubled: '):
+        type('Probe', (Slip,), {'rows': Table(Row)})
+
+    # The string rules keep working.
+    type('Probe', (Slip,), {'kind': Text(), 'note': Text(visible_if="kind == 'y'", required_if="kind == 'y'"),
+                            'shown': Text(compute='kind', stored=False)})
