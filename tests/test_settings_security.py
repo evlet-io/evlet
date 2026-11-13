@@ -368,6 +368,24 @@ def test_a_code_cannot_be_used_twice_by_requests_that_race(settled):
         assert settings._use_code(tx.connection, editor_id, stale, code) is False
 
 
+def test_a_backup_code_cannot_be_used_twice_by_requests_that_race(settled):
+    app = settled
+    _, _, codes = enrol(app, 'editor')
+    editor_id, settings = user_id(app, 'editor'), app.business.settings
+    with app.database._connection() as db:
+        stale = dict(db.execute('SELECT * FROM evlet_user_profile WHERE user_id=?', (editor_id,)).fetchone())
+    # The first request uses the code and writes the remaining codes back.
+    assert sign_in(app, 'editor', codes[0])[0] == 200
+    # A second request that read the codes before that write still loses, with the same code or another one.
+    with app.database.transaction() as tx:
+        assert settings._use_code(tx.connection, editor_id, stale, codes[0]) is False
+        assert settings._use_code(tx.connection, editor_id, stale, codes[1]) is False
+    # Nothing was lost: the other seven codes are still there and still work.
+    with app.database._connection() as db:
+        assert len(settings.codes(db.execute('SELECT * FROM evlet_user_profile WHERE user_id=?', (editor_id,)).fetchone())) == 7
+    assert sign_in(app, 'editor', codes[1])[0] == 200
+
+
 def test_a_new_personal_api_key_asks_a_code_when_two_step_is_on(settled):
     app = settled
     editor, raw, codes = enrol(app, 'editor')

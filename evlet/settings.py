@@ -753,9 +753,20 @@ class Settings:
     def _store_codes(self, connection, user_id, hashes=None):
         codes = [] if hashes is not None else ['-'.join(''.join(secrets.choice(CODE_ALPHABET) for _ in range(4)) for _ in range(2)) for _ in range(8)]
         hashes = hashes if hashes is not None else [_code_hash(user_id, code) for code in codes]
-        sealed = self.seal(connection, json.dumps(hashes).encode(), f'backup_codes:{user_id}')
-        connection.execute('UPDATE evlet_user_profile SET backup_codes=? WHERE user_id=?', (base64.b64encode(sealed).decode(), user_id))
+        connection.execute('UPDATE evlet_user_profile SET backup_codes=? WHERE user_id=?', (self._sealed_codes(connection, user_id, hashes), user_id))
         return codes
+
+    def _sealed_codes(self, connection, user_id, hashes):
+        sealed = self.seal(connection, json.dumps(hashes).encode(), f'backup_codes:{user_id}')
+        return base64.b64encode(sealed).decode()
+
+    def _spend_backup_code(self, connection, user_id, before, hashes):
+        """Write back the backup codes left after one was used, only if nobody else changed them since we read
+        them. Two requests racing with the same code (on PostgreSQL, say) then cannot both use it."""
+        after = self._sealed_codes(connection, user_id, hashes)
+        changed = connection.execute('UPDATE evlet_user_profile SET backup_codes=? WHERE user_id=? AND backup_codes=?',
+                                     (after, user_id, before)).rowcount
+        return changed == 1
 
     def _need_vault(self):
         if not self.possible():
@@ -805,8 +816,7 @@ class Settings:
             digest = _code_hash(user_id, code if '-' in code else code[:4] + '-' + code[4:])
             if digest in hashes:
                 hashes.remove(digest)
-                self._store_codes(connection, user_id, hashes)
-                return True
+                return self._spend_backup_code(connection, user_id, profile['backup_codes'], hashes)
         return False
 
     def _check_password(self, user, password, field):
