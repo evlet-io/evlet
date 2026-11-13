@@ -78,6 +78,15 @@ def test_row_edit_only_recalculates_that_row_and_its_aggregates():
     assert doc.snapshot()['grand_total'] == text(Num(47250 + 31500 + 31500, 2), 2)
 
 
+def test_row_edit_work_does_not_grow_with_the_number_of_rows():
+    # The shared fixtures no longer compare evaluation counts, so each engine guards this itself.
+    def evaluated(count):
+        doc = document(Invoice, {'inclusive': False, **lines(*[{'qty': '2', 'rate': '150'} for _ in range(count)])})
+        doc.set(doc.find('items.r0'), 'qty', '3')
+        return doc.trace['evaluated']
+    assert evaluated(3) == evaluated(30)
+
+
 def test_parent_toggle_settles_in_one_revision():
     doc = document(Invoice, {'inclusive': True, **lines(*[{'qty': '1', 'rate': '105'} for _ in range(3)])})
     doc.set(doc.root.handle, 'inclusive', False)

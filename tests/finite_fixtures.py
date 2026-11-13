@@ -1,5 +1,10 @@
 """Shared finite-v1 scenarios: Python compiles the plans and records the authoritative results.
 
+The contract is what users see: values, result states and causes, rule states, Link lookup
+requests, refused commands and which results changed. Internal counters (formulas evaluated,
+skipped, budget steps, revision numbers) are not part of it, so each engine may schedule its
+work its own way.
+
 scripts/generate_finite_fixtures.py writes them for the browser evaluator; the pytest suite
 checks that the checked-in JSON still matches. Both runtimes consume the same serialized plan.
 """
@@ -432,15 +437,15 @@ def collect():
         document = Document(plans[model], data, currencies=HOSTS.get(name))
         ruled = any(field.get('kind') for field in plans[model]['fields'])
         extra = (lambda: {'rules': rule_map(document)}) if ruled else dict
-        steps = [{'snapshot': strip(document.snapshot()), 'revision': document.revision, 'trace': document.trace,
+        steps = [{'snapshot': strip(document.snapshot()), 'changed': document.trace['changed'],
                   'requests': document.lookup_requests(), **extra()}]
         for command in commands:
             try:
                 apply(document, command)
-                steps.append({'command': command, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
-                              'trace': document.trace, 'requests': document.lookup_requests(), **extra()})
+                steps.append({'command': command, 'snapshot': strip(document.snapshot()), 'changed': document.trace['changed'],
+                              'requests': document.lookup_requests(), **extra()})
             except CalcError as exc:
-                steps.append({'command': command, 'error': exc.code, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
+                steps.append({'command': command, 'error': exc.code, 'snapshot': strip(document.snapshot()),
                               'requests': document.lookup_requests(), **extra()})
         scenarios.append({'name': name, 'model': model, 'data': data, 'steps': steps, **({'currencies': HOSTS[name]} if name in HOSTS else {})})
     return {'plans': plans, 'scenarios': scenarios, 'numeric': numeric_cases(),

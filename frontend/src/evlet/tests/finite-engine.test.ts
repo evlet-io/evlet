@@ -86,11 +86,11 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
   });
 
   for (const scenario of fixtures.scenarios as any[]) {
-    it(`replays ${scenario.name} with identical snapshots, states and evaluation counts`, () => {
+    it(`replays ${scenario.name} with identical snapshots, states and changed results`, () => {
       const document = new FiniteDocument(plans[scenario.model], structuredClone(scenario.data), undefined, scenario.currencies ?? null);
       const [initial, ...steps] = scenario.steps;
       expect(strip(document.snapshot())).toEqual(initial.snapshot);
-      expect(document.trace).toEqual(initial.trace);
+      expect(document.trace.changed).toEqual(initial.changed);
       expect(document.lookupRequests()).toEqual(initial.requests);
       if (initial.rules) expect(ruleMap(document)).toEqual(initial.rules);
       for (const step of steps) {
@@ -100,10 +100,9 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
           expect(code).toBe(step.error);
         } else {
           apply(document, structuredClone(step.command));
-          expect(document.trace).toEqual(step.trace);
+          expect(document.trace.changed).toEqual(step.changed);
         }
         expect(strip(document.snapshot())).toEqual(step.snapshot);
-        expect(document.revision).toBe(step.revision);
         expect(document.lookupRequests()).toEqual(step.requests);
         if (step.rules) expect(ruleMap(document)).toEqual(step.rules);
         // A rebuilt session would treat unsaved edits as saved, which changes what saved locks keep.
@@ -111,6 +110,18 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
       }
     });
   }
+
+  it('does not re-evaluate other rows when one row changes', () => {
+    // The shared fixtures do not compare evaluation counts, so each engine guards this itself.
+    const evaluated = (count: number) => {
+      const items = Array.from({length: count}, (_, index) => ({_key: 'r' + index, qty: '2', rate: '150'}));
+      const document = new FiniteDocument(plans.invoice, {inclusive: false, children: {items}});
+      document.set(document.find('items.r0'), 'qty', '3');
+      expect(document.trace.changed).not.toContain('items.r1.net');
+      return document.trace.evaluated;
+    };
+    expect(evaluated(3)).toBe(evaluated(30));
+  });
 
   it('publishes rule states once per batch and keeps a touched value over its initial', () => {
     const document = new FiniteDocument(plans.offer, {customer: 7});
