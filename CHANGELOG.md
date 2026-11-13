@@ -29,6 +29,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Naming-series conditions run on the formula evaluator.** A condition such as
+  `total >= 250000 and status == "sent"` is still parsed by the same rules with the same error
+  messages, but it now compiles to finite-v1 expression nodes and runs on the finite-v1
+  evaluator, instead of a third evaluator of its own. Every condition decides exactly as
+  before; a test compares both over many conditions and records. Nothing to change.
 - **`evlet controls grant` keeps the allowed networks set in Controls.** It used to clear them
   every time and only its output said so. Now it clears them only with `--clear-allowlist`. When
   networks remain, it lists them, and on an SSH session it says whether the address you
