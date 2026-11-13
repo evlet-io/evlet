@@ -17,7 +17,7 @@ from .query import Condition, SqlQuery, child_tables, conditions
 # IDs per batched permission or row statement; well under SQLite's bound-parameter limit.
 CHUNK = 500
 # State manager operations beyond moves: admin has them by default and a Rule may grant them to other roles.
-CORRECTIONS = ()
+CORRECTIONS = ('release',)
 # Operations that change a record or what is kept with it; Meta.api = "read" refuses them to callers.
 WRITES = frozenset(('create', 'update', 'delete', 'journal', *CORRECTIONS))
 # Meta.api values: what callers (HTTP routes, MCP, Eva, connectors) reach of a model.

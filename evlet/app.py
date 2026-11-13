@@ -269,6 +269,8 @@ class Application:
             need = ('action', parts[5])
         elif len(parts) == 5 and parts[4] == 'history':
             need = ('extra', 'history')
+        elif len(parts) >= 5 and parts[4] == 'versions':
+            need = ('extra', 'versions')
         elif len(parts) >= 5 and parts[4] in ('related', 'lines', 'attachments', 'prints'):
             need = ('extra', parts[4])
         else:

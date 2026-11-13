@@ -352,7 +352,24 @@ class Context:
         journal.deleted(self, model, record.id)
         business.changed(tx, model, record_id, deleted=True)
 
-    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, remark=None):
+    def release(self, model, record_id, *, remark=None):
+        """Release the record as it is (the Release button): @release runs; the same checks as POST .../release."""
+        return self._write(model, record_id, {}, release=True, remark=remark)
+
+    def versions(self, model, record_id):
+        from .statemanager import versions
+        return versions(self, self._model(model), known_id(record_id))
+
+    def version(self, model, record_id, number):
+        from .statemanager import version
+        return version(self, self._model(model), known_id(record_id), number)
+
+    def version_diff(self, model, record_id, first, second):
+        """Compare two versions; `second` may be "current"."""
+        from .statemanager import version_diff
+        return version_diff(self, self._model(model), known_id(record_id), first, second)
+
+    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, release=False):
         if self.readonly:
             raise AccessError(403, 'This context is read only')
         model = self._model(model)
@@ -366,7 +383,7 @@ class Context:
         self._active.append(key)
         try:
             with self._savepoint():
-                return operate(self, model, record_id, values, action=action, arguments=arguments, move=move, remark=remark)
+                return operate(self, model, record_id, values, action=action, arguments=arguments, move=move, remark=remark, release=release)
         except ValidationError as exc:
             raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:
@@ -1620,7 +1637,7 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     return tx.get(model, draft.id) if reload else None
 
 
-def operate(context, model, record_id, values, *, action=None, arguments=None, move=None, remark=None):
+def operate(context, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, release=False):
     """Create, update, run an action or make a move through the document pipeline, in one transaction.
 
     Ordinary writes respect a locked State. Actions and moves are declared, role-checked code: they may
@@ -1637,8 +1654,10 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         tx.actor = actor_id(user)
     # Required fields and retired options set in Controls apply to what people send, not to app code.
     person, context._person = context._person == (model, record_id) and action is None and move is None, None
-    if (action is not None or move is not None) and not record_id:
+    if (action is not None or move is not None or release) and not record_id:
         raise AccessError(404, 'Record not found')
+    if release and not (statemanager.releasing(model) and business.policy.allows(user, model, 'release')):
+        raise AccessError(403, 'Your role cannot release this record')
     rule = level = None
     if move is not None:
         # The rule is checked on the saved record before its values, so values never reveal which rules exist.
@@ -1680,6 +1699,9 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     outcome, reversed_rows = None, []
     if rule is not None:
         previous = before._values.get(model.__state__)
+        if previous in model.__declared_fields__[model.__state__].releases:
+            # Leaving a release keeps its content first (the snapshot is taken once, lazily).
+            statemanager.diverge(context, model, before, draft, leaving=True)
         if any(bound.on == previous for bound in business.registry.effects.get(model, ())):
             # Leaving a posting state reverses what it posted, before any hook runs.
             from .effects import reverse
@@ -1716,9 +1738,20 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if sequences.name_due(rules, draft._values, created=before is None, move=rule):
         draft._values[rules.field] = sequences.issue(tx.connection, business.registry, model, rules, draft._values, host_today(business),
                                                      user.username, record=draft, context=context, record_id=draft.id)
+    # Entering a release step (or a Release) whose content changed since the last release releases it: @release,
+    # then calculations and @validate again. The write that changes a released content snapshots that release first.
+    released = None
+    if release or rule is not None and rule.to in model.__declared_fields__[model.__state__].releases:
+        released = statemanager.prepare_release(context, model, draft)
+        if released is not None:
+            settle(context, draft, complete=True, previous=before, kept=kept)
+        elif release:
+            raise AccessError(409, 'Nothing changed since the last release')
+    if rule is None or rule.sources and before._values.get(model.__state__) not in model.__declared_fields__[model.__state__].releases:
+        statemanager.diverge(context, model, before, draft)
     prior = before.stored_values() if before else None
     after = draft.stored_values()
-    if prior == after and rule is None and (before is None or sections.signature(before) == sections.signature(draft)):
+    if prior == after and rule is None and released is None and (before is None or sections.signature(before) == sections.signature(draft)):
         if plan is not None:
             record_plan(tx, business.registry.name_for(model), record_id, version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
@@ -1735,13 +1768,17 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     business.policy.record(tx, user, model, record.id, 'update' if before else 'create')
     keys = {}
     persist_rows(context, model, draft, before, record.id, keys)
+    if released is not None:
+        statemanager.finish_release(context, model, record, draft, released, rule, remark)
     # The Journal entry of this write: `moved` for a move, otherwise `created` or `changed`.
     from . import journal
     if rule is not None:
         from .effects import post
         posted_rows = post(context, model, record.id, rule.to)
-        statemanager.moved(context, model, record, before._values.get(model.__state__), rule, remark, level, before, draft)
+        statemanager.moved(context, model, record, before._values.get(model.__state__), rule, remark, level, before, draft, base=released)
         journal.effects_posted(context, model, record.id, reversed_rows + posted_rows)
+    elif release:
+        pass
     else:
         journal.written(context, model, record.id, before, draft, action=action,
                         entering=statemanager.entering(context, model, record) if before is None else None)

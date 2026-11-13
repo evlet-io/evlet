@@ -944,8 +944,8 @@ def check_the_journal_records_postings_and_reversals(books):
     assert posted['kind'] == 'effects' and 'partial' not in posted
     assert posted['data'] == {'targets': [{'target': 'ledgerentry', 'rows': 3, 'reversal': False, 'balanced': True},
                                           {'target': 'stockmove', 'rows': 2, 'reversal': False}]}
-    # Moving on reverses the rows, in an `effects` entry after the move's.
-    assert move(c, url, 'paid')[0] == 200 and [item['kind'] for item in history(c, url)][:3] == ['effects', 'moved', 'effects']
+    # Moving on snapshots the release it leaves, then reverses the rows in an `effects` entry after the move's.
+    assert move(c, url, 'paid')[0] == 200 and [item['kind'] for item in history(c, url)][:3] == ['effects', 'moved', 'snapshot']
     url = invoice(c, account)
     move(c, url, 'issued')
     assert c('POST', f'{url}/moves/void', {'remark': 'Wrong customer'}, headers=etag(c, url))[0] == 200

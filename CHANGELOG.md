@@ -62,6 +62,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   release=, final=)` and `State.Rule(from_, to, label, key=, by=, when=, remark=, ask=, primary=,
   reject=)`. `by` takes role names and `F("field")` user fields. `State.Remark(mode, label=,
   required_when=)` asks for a remark.
+- Releases: entering a `release=True` step, or `POST /api/{model}/{id}/release` (`release`
+  permission), makes a numbered version when the content changed; `@release` runs then. Snapshots
+  are lazy and drift is detected. `_version` in details; `GET .../versions`, `.../versions/{n}`
+  and `.../versions/{a}/diff/{b|current}`. Framework step `0011_state_manager` converts
+  confirmable lifecycle and revision rows and backfills v0 for records already in a release step.
 - Approval levels: `State.Rule(..., levels=(State.Level(by=, when=, pending=), ...),
   self_approve=)` moves once the last level that applies is approved; each approval is an
   `approved` journal entry. `reject=True` rules are for the waiting level's approvers.

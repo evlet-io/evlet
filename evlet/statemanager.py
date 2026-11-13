@@ -446,6 +446,8 @@ def locked_message(context, model, record, what):
 
 def check_delete(context, model, record):
     locked_message(context, model, record, ' and cannot be deleted')
+    if releasing(model) and latest(context._tx.connection, context._business.registry.name_for(model), record.id) is not None:
+        raise AccessError(409, 'This record has a release, so it cannot be deleted. Move it to a final state instead.')
     from .effects import ever_posted
     if ever_posted(context._tx.connection, context._business.registry, model, record.id):
         # Its effect rows, reversed or not, name it as their source, and its number stays used.
@@ -538,7 +540,7 @@ def checked_move(context, model, draft, before, key, remark):
     return rule, remark, level
 
 
-def moved(context, model, record, previous, rule, remark, level, before, after):
+def moved(context, model, record, previous, rule, remark, level, before, after, base=None):
     """The Journal's `moved` entry, with the rule key, the remark, the level it approved, the levels that apply
     in the new state (see entering) and anything else the move changed."""
     from . import journal
@@ -547,7 +549,7 @@ def moved(context, model, record, previous, rule, remark, level, before, after):
         data = journal.tree_changes(context._business, model, before, after, skip=(model.__state__,))
         journal.append(context._business, context._tx, context.user, model, record.id, 'moved',
                        {**data, 'from': previous, 'to': rule.to, 'move': rule.label, **entering(context, model, record)},
-                       rule=rule.key, remark=remark, level=level)
+                       rule=rule.key, remark=remark, level=level, base=base)
 
 
 # Approvals: a rule with levels moves once its last level that applies is approved
@@ -840,3 +842,283 @@ def moves_available(business, context, model, record, guards_now, updatable, loc
                       **({'reason': reason} if reason else {}), **({'asks': asks} if asks else {}),
                       **({'remark': remark} if remark else {}), **extra})
     return {'_moves': moves, '_locked': current in field.locked}
+
+
+# Releases: numbered versions of a document, with lazy snapshots
+
+def releases_table():
+    from .adapter import Column, TableDefinition
+    # A release row (snapshot 0) keeps number, state, hash, actor, time and {approvals, remark}; a snapshot row
+    # (snapshot 1) is appended once, before the document first diverges from that release. Nothing is updated.
+    return TableDefinition('evlet_releases', (
+        Column('model', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True), Column('number', 'INTEGER', required=True),
+        Column('snapshot', 'INTEGER', required=True), Column('at', 'TEXT', required=True), Column('actor', 'TEXT', required=True),
+        Column('state', 'TEXT', required=True), Column('hash', 'TEXT', required=True), Column('drifted', 'INTEGER', required=True, default=0),
+        Column('data', 'TEXT', required=True)), primary_key=('model', 'record_id', 'number', 'snapshot'))
+
+
+def ensure_releases(connection):
+    connection.ensure_table(releases_table())
+    connection.make_append_only('evlet_releases', 'Releases are never changed')
+
+
+def releasing(model):
+    """Whether a model has a release step."""
+    return model.__state__ is not None and bool(model.__declared_fields__[model.__state__].releases)
+
+
+def tree(item):
+    """A saved document tree (a Draft, or a record with `_rows`) as JSON values: every stored field, at every depth."""
+    definition = item._definition if hasattr(item, '_definition') else type(item)
+    result = {'id': str(item.id)}
+    for name, field in definition.__fields__.items():
+        if name not in getattr(definition, '__internal_fields__', ()):
+            result[name] = field.serialize(item._values.get(name))
+    result['children'] = {name: [tree(row) for row in rows] for name, rows in getattr(item, '_rows', {}).items()}
+    return result
+
+
+def versioned(model, data, registry):
+    """The content of a document tree: versioned fields only (not the State, not versioned=False, not excluded)."""
+    tables = {child.name: child.model for child in registry.children if child.parent is model}
+    result = {key: value for key, value in data.items() if key in ('id', 'children') or (
+        key in model.__fields__ and model.__fields__[key].versioned and model.__fields__[key].tracking != 'exclude' and key != model.__state__)}
+    result['children'] = {name: [versioned(tables[name], row, registry) for row in rows]
+                          for name, rows in data.get('children', {}).items() if name in tables}
+    return result
+
+
+def digest(model, data, registry):
+    import hashlib
+    from .journal import canonical
+    return hashlib.sha256(canonical(versioned(model, data, registry)).encode()).hexdigest()
+
+
+def latest(connection, name, record_id):
+    """The latest release of a record ({number, hash, state, snapshotted}) or None, in one statement. Once it has its
+    snapshot, the hash is the snapshot's: the content the record had when it first diverged."""
+    from . import qb
+    row = connection.run(qb.select('evlet_releases', 'number', 'snapshot', 'hash', 'state').where(model=name, record_id=record_id)
+                         .order_by('-number', '-snapshot').limit(1)).one()
+    return None if row is None else {'number': row['number'], 'hash': row['hash'], 'state': row['state'], 'snapshotted': bool(row['snapshot'])}
+
+
+def store(connection, registry, model, record_id, number, *, snapshot, state, data, hash, actor, drifted=False):
+    import json
+    from . import journal, qb
+    connection.run(qb.insert('evlet_releases', model=registry.name_for(model), record_id=record_id, number=number, snapshot=int(snapshot),
+                             at=journal.now(), actor=actor, state=state, hash=hash, drifted=int(drifted),
+                             data=json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=False)))
+
+
+def keep(connection, registry, model, record_id, data, actor):
+    """Save the snapshot of the latest release, once, before the record first diverges from it. A hash that differs
+    from the release's means the row changed outside the engine: the snapshot is kept, marked drifted, and logged."""
+    import logging
+    from . import journal
+    if not releasing(model):
+        return
+    last = latest(connection, registry.name_for(model), record_id)
+    if last is None or last['snapshotted']:
+        return
+    drifted = digest(model, data, registry) != last['hash']
+    if drifted:
+        logging.getLogger('evlet.statemanager').warning('%s %s changed outside the engine since v%s', registry.name_for(model), record_id, last['number'])
+    store(connection, registry, model, record_id, last['number'], snapshot=True, state=last['state'], data=versioned(model, data, registry),
+          hash=digest(model, data, registry), actor=actor, drifted=drifted)
+    if model in registry.journals:
+        journal.insert(connection, registry, model, record_id, 'snapshot', actor, {'number': last['number'], 'drifted': drifted},
+                       base=last['number'])
+
+
+def diverge(context, model, before, draft, leaving=False):
+    """Snapshot the latest release before this write when it leaves a release step or changes the content."""
+    from .journal import actor_of
+    registry = context._business.registry
+    if before is None or not releasing(model):
+        return
+    last = latest(context._tx.connection, registry.name_for(model), before.id)
+    if last is not None and not last['snapshotted'] and (leaving or digest(model, tree(draft), registry) != last['hash']):
+        keep(context._tx.connection, registry, model, before.id, tree(before), actor_of(context.user))
+
+
+def prepare_release(context, model, draft, manual=False):
+    """Before the write: when the content changed since the last release (or there is none), run @release with
+    self.release.number and .previous and return the number; otherwise None."""
+    import json
+    from types import SimpleNamespace
+    from . import qb
+    registry = context._business.registry
+    name = registry.name_for(model)
+    last = latest(context._tx.connection, name, draft.id) if draft.id else None
+    if last is not None and digest(model, tree(draft), registry) == last['hash']:
+        return None
+    previous = None
+    if last is not None:
+        row = context._tx.connection.run(qb.select('evlet_releases', 'data').where(model=name, record_id=draft.id, number=last['number'], snapshot=1)).one()
+        previous = json.loads(row[0]) if row else None
+    number = 0 if last is None else last['number'] + 1
+    object.__setattr__(draft, 'release', SimpleNamespace(number=number, previous=previous))
+    run_hooks(context, draft, 'release')
+    return number
+
+
+def finish_release(context, model, record, draft, number, rule=None, remark=None):
+    """After the write: store release `number` and its `released` journal entry."""
+    from . import journal
+    registry = context._business.registry
+    approvals = [{'actor': row['actor'], 'level': row['level']} for row in stay(context, model, record)[0]] if rule is not None else []
+    store(context._tx.connection, registry, model, record.id, number, snapshot=False, state=record._values.get(model.__state__),
+          data={'approvals': approvals, 'remark': remark}, hash=digest(model, tree(draft), registry), actor=journal.actor_of(context.user))
+    # A move's release is its `moved` entry (with base = the number); the Release button writes its own entry.
+    if rule is None and journal.journals(context, model):
+        journal.append(context._business, context._tx, context.user, model, record.id, 'released', {'number': number},
+                       remark=remark, base=number)
+
+
+# Versions: the release list, one version (field permissions applied) and a comparison
+
+def saved(context, model, record_id):
+    from .documents import load_draft
+    return load_draft(context, model, record_id, {}, preview=True)[0]
+
+
+def version_of(context, model, record, loaded=None):
+    """`_version` for a detail: {number, released, state}; number is None before the first release. The rows the
+    detail read (`loaded`) are reused when it read them all."""
+    from .guards import loaded_document
+    last = latest(context._tx.connection, context._business.registry.name_for(model), record.id)
+    if last is None:
+        return {'number': None, 'released': False, 'state': None}
+    document = loaded_document(context._business, model, record, loaded) or saved(context, model, record.id)
+    clean = digest(model, tree(document), context._business.registry) == last['hash']
+    return {'number': last['number'], 'released': clean, 'state': last['state']}
+
+
+def readable_version(context, model, record_id):
+    if not releasing(model):
+        raise AccessError(404, 'This record has no versions')
+    if model.__state__ not in context._business.policy.fields(context.user, model):
+        raise AccessError(404, 'This record has no versions')
+    context._business.policy.record(context._tx, context.user, model, record_id)
+
+
+def versions(context, model, record_id):
+    """Every release of the record, newest first, as {items: [{number, state, at, actor, remark, approvals}]}."""
+    import json
+    from . import qb
+    readable_version(context, model, record_id)
+    rows = context._tx.connection.run(qb.select('evlet_releases', 'number', 'state', 'at', 'actor', 'data')
+                                      .where(model=context._business.registry.name_for(model), record_id=record_id, snapshot=0)
+                                      .order_by('-number')).all()
+    items = []
+    for row in rows:
+        data = json.loads(row['data'])
+        items.append({'number': row['number'], 'state': row['state'], 'at': row['at'],
+                      'actor': None if row['actor'] == 'engine' else int(row['actor']),
+                      'remark': data.get('remark'), 'approvals': data.get('approvals', [])})
+    return {'items': items}
+
+
+def content_of(context, model, record_id, number):
+    """The versioned content of release `number`: its snapshot, or the live record while it still is that release."""
+    import json
+    from . import qb
+    name = context._business.registry.name_for(model)
+    row = context._tx.connection.run(qb.select('evlet_releases', 'data').where(model=name, record_id=record_id, number=number, snapshot=1)).one()
+    if row is not None:
+        return json.loads(row[0])
+    last = latest(context._tx.connection, name, record_id)
+    if last is None or last['number'] != number:
+        raise AccessError(404, 'Version not found')
+    return versioned(model, tree(saved(context, model, record_id)), context._business.registry)
+
+
+def shown_tree(context, model, data):
+    """A version as this user may read it: today's field, Link and row permissions, also on rows deleted since."""
+    from .identity import RecordId
+    from .journal import Visibility, shown_value
+    business, policy = context._business, context._business.policy
+    visibility = Visibility(business, context._tx, context.user)
+
+    def project(definition, item):
+        allowed = policy.fields(context.user, definition)
+        result = {'id': item['id']}
+        for name, field in definition.__fields__.items():
+            if name in allowed and name in item:
+                result[name] = '[masked]' if field.tracking == 'mask' and item[name] is not None else \
+                    shown_value(business, context.user, field, item[name], visibility)[0]
+        result['children'] = {}
+        for child in business.children.values():
+            if child.parent is definition and policy.allows(context.user, child.model, 'read'):
+                scoped = policy.rule(context.user, child.model).scope is not None
+                result['children'][child.name] = [project(child.model, row) for row in item.get('children', {}).get(child.name, [])
+                                                  if not scoped or visibility(child.model, RecordId(row['id']))]
+        return result
+    first = project(model, data)
+    return project(model, data) if visibility.resolve() else first
+
+
+def version(context, model, record_id, number):
+    readable_version(context, model, record_id)
+    return {'number': number, 'document': shown_tree(context, model, content_of(context, model, record_id, number))}
+
+
+def compare(old, new):
+    """Changed fields, and rows added, removed and changed (matched by row id), between two document trees."""
+    fields = {key: {'old': old.get(key), 'new': new.get(key)} for key in sorted(set(old) | set(new))
+              if key not in ('id', 'children') and old.get(key) != new.get(key)}
+    rows = {}
+    for name in sorted(set(old.get('children', {})) | set(new.get('children', {}))):
+        left, right = old.get('children', {}).get(name, []), new.get('children', {}).get(name, [])
+        before, after = {row['id']: row for row in left}, {row['id']: row for row in right}
+        table = {'added': [row for row in right if row['id'] not in before], 'removed': [row for row in left if row['id'] not in after],
+                 'updated': [{'id': row['id'], **delta} for row in right if row['id'] in before for delta in [compare(before[row['id']], row)] if delta]}
+        table = {key: value for key, value in table.items() if value}
+        if table:
+            rows[name] = table
+    return {**({'fields': fields} if fields else {}), **({'rows': rows} if rows else {})}
+
+
+def version_diff(context, model, record_id, first, second):
+    readable_version(context, model, record_id)
+    old = shown_tree(context, model, content_of(context, model, record_id, first))
+    current = versioned(model, tree(saved(context, model, record_id)), context._business.registry) if second == 'current' else None
+    new = shown_tree(context, model, current if current is not None else content_of(context, model, record_id, second))
+    return {'from': first, 'to': second, 'changes': compare(old, new)}
+
+
+def route(business, scope, body, user, model, parts):
+    """POST /api/{model}/{id}/release, GET .../versions, .../versions/{n} and .../versions/{a}/diff/{b or current}."""
+    from .identity import path_id
+    from .models import ValidationError, checked_body
+    record_id = path_id(parts[3]) if len(parts) > 3 else None
+    if record_id is None:
+        raise AccessError(404, 'Record not found')
+    if parts[4] == 'release':
+        if len(parts) != 5 or scope['method'] != 'POST':
+            raise AccessError(405, 'Method not allowed')
+        checked_body(body, {'remark'}, 'Send only a remark')
+        with business.context(user) as context:
+            record = business.policy.record(context._tx, user, model, record_id, 'update')
+            if b'if-match' not in dict(scope.get('headers', [])):
+                raise AccessError(428, 'A current If-Match revision is required')
+            business.check_revision(scope, context._tx, user, record)
+            result = context.release(model, record_id, remark=body.get('remark'))
+            extra = business.availability(context, model, context._tx.get(model, record_id))
+        return 200, {**business.embedded(result), **extra}, [(b'etag', business.revision(result))]
+    if scope['method'] != 'GET':
+        raise AccessError(405, 'Method not allowed')
+    tail = parts[5:]
+    try:
+        numbers = [int(part) for part in tail if part not in ('diff', 'current')]
+    except ValueError:
+        raise ValidationError({'version': 'Use a version number'}) from None
+    with business.context(user, readonly=True) as context:
+        if not tail:
+            return 200, context.versions(model, record_id), []
+        if len(tail) == 1:
+            return 200, context.version(model, record_id, numbers[0]), []
+        if len(tail) == 3 and tail[1] == 'diff':
+            return 200, context.version_diff(model, record_id, numbers[0], 'current' if tail[2] == 'current' else numbers[1]), []
+    raise AccessError(404, 'Route not found')
