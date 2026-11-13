@@ -72,6 +72,10 @@ in again at the same path. Network, permission, and server
 failures retain the file for a later attempt. There is no password storage,
 refresh credential, or automatic sign-in.
 
+After logout, `describe` and `mcp` with the same `--session` say you're signed out and
+show the `evlet login` command to run, instead of a file error. `logout` again says you're
+already signed out.
+
 ## Discovery contract
 
 Both routes use the same authentication as `/api/schema`:
