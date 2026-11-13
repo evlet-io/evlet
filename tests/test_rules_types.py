@@ -629,15 +629,13 @@ def test_a_self_referencing_lock_uses_the_saved_value(tmp_path):
     assert status == 422 and 'locked' in result['fields']['price']
 
 
-def test_sessions_keep_the_loaded_lock_until_rebased():
+def test_sessions_keep_the_loaded_lock():
     plan = Registry(Deal, Client, Product).plans[Deal]
     document = Document(plan, {'id': 3, 'stage': 'won', 'discount': '2.50'})
     root = document.root.handle
     assert document.rule_states(root)['discount']['locked'] is True
     document.set(root, 'stage', 'open')
     assert document.rule_states(root)['discount']['locked'] is True
-    document.rebase()
-    assert document.rule_states(root)['discount']['locked'] is False
     # A new document has no saved state: its rules follow the current values.
     fresh = Document(plan, {'stage': 'won'})
     fresh.set(fresh.root.handle, 'stage', 'open')

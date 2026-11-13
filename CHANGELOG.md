@@ -8,6 +8,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Formula helpers: `choose`, `isin`, `is_empty`, `has_value`, `least`, `greatest` and
+  `absolute`** (from `evlet.calc`). `choose(F("stage"), {"won": 100, "lost": 0}, default=10)`
+  replaces a chain of nested `when()`, and `F("status").isin("new", "failed")` replaces
+  several `==` joined with `|`. `is_empty(x)` and `has_value(x)` replace `x == None` and
+  `x != None`, which needed `# noqa` comments. Each helper builds exactly the formula of its
+  long form, so rewriting a model with them changes no formula hash and needs no
+  recalculation. The testCRM deal's stage probability now uses `choose`. See
+  [docs/finite-calculations.md](docs/finite-calculations.md#helpers).
 - **`evlet restart <instance>` checks before it restarts.** On a server set up with
   `evlet setup --host --apply`, it checks that the instance loads, its apps match `apps.lock`
   and import, its routes resolve, no framework or app migration is pending, and the
@@ -18,9 +26,26 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   prints the last 20 journal lines. `--check` runs the checks only, `--yes` skips the
   question, `--service` names another unit and `--timeout` changes the wait
   ([docs/cli.md](docs/cli.md#restart-a-site-safely)).
+- **`evlet upgrade <instance>` moves an instance to a newer Evlet.** It runs pip in the project's
+  `.venv`, prints `evlet migrate --plan`, and after one question runs `evlet backup`,
+  `sudo systemctl stop`, `evlet migrate` and `evlet restart --yes`. Every step after pip runs as
+  its own `.venv/bin/python -P -m evlet` process, so none mixes old and new code. On 0.x it stays
+  within the current minor (0.4.\*); `--to VERSION` picks another. When a step fails it prints
+  the rollback commands ([docs/cli.md](docs/cli.md#upgrade-evlet-on-a-server)).
+- **`evlet --version`** prints the Evlet version and, inside a project, the one in its `.venv`.
+  When the two differ, every project command says so before it runs with the `.venv` one.
+- **`evlet migrate --plan` says `Planned with Evlet X`.**
 
 ### Changed
 
+- **Hints say `evlet restart`.** `evlet host add` and `host remove` with `--routes-only`, and
+  `evlet proxy --write`, now suggest `evlet restart <instance>` instead of
+  `sudo systemctl restart`.
+- **Naming-series conditions run on the formula evaluator.** A condition such as
+  `total >= 250000 and status == "sent"` is still parsed by the same rules with the same error
+  messages, but it now compiles to finite-v1 expression nodes and runs on the finite-v1
+  evaluator, instead of a third evaluator of its own. Every condition decides exactly as
+  before; a test compares both over many conditions and records. Nothing to change.
 - **`evlet controls grant` keeps the allowed networks set in Controls.** It used to clear them
   every time and only its output said so. Now it clears them only with `--clear-allowlist`. When
   networks remain, it lists them, and on an SSH session it says whether the address you
@@ -36,6 +61,26 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   an admin now sets it up as an Email sending or Email receiving connector in Controls. Admin
   connectors still accept private addresses. `evlet.connectors.safe_address` takes a new
   `public=True` argument for addresses typed in by people who are not admins.
+- **The shared formula fixtures check results, not internal counters.** The browser and
+  server engines must still agree on values, states, causes, rule states, Link lookup
+  requests, refused commands and which results changed. They no longer have to evaluate
+  formulas in the same order or count the same steps. Nothing changes for apps.
+- **The browser formula engine is smaller.** `FiniteDocument` no longer has `explain`,
+  `subscriptions`, `moveRow`, `replaceRows`, `sources`, `observeTable` or `rebase`, and Python's
+  `calc.Document` no longer has `move_row` or `rebase`. No app or framework code called them.
+  The browser also stops hashing each plan again with its own SHA-256 code; it still checks
+  the plan's shape, and the server still refuses a save made against a different plan. Code
+  that called one of these methods directly should rebuild the session instead (after a save,
+  for `rebase`) or use `addRow`, `removeRow` and `reorder`.
+- **Formula batches no longer copy the whole document.** Both formula engines used to copy
+  every row and result at the start of each batch so a failure could be undone, which made
+  each keystroke on a large document cost more. Every command now checks its input before it
+  changes anything, so a refused command still changes nothing. What changes: if code inside
+  a `batch` callback throws after some commands ran, those commands are now kept and settled
+  before the error is raised again, instead of being undone. If a batch cannot settle (an
+  engine limit), the document refuses further commands, and an open record starts a new
+  calculation session. Apps only call these engines through records, so nothing changes for
+  them.
 - **Eva asks before every change once a chat has read stored data.** Records, journals,
   reports and files can hold text written to steer Eva. After a chat has read any of them,
   every create, update, move or action asks first, even when Controls → AI → Eva says "Never

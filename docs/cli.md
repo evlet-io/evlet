@@ -86,6 +86,8 @@ evlet install site --instance acme --trust --yes
 evlet serve acme --port 8000
 evlet restart acme
 evlet restart acme --check
+evlet upgrade acme
+evlet --version
 evlet dev --instance acme
 evlet dev-link
 evlet migrate acme --trust
@@ -118,7 +120,9 @@ evlet docs --port 8001
 `sys.path` before loading apps, but modules Python imports at startup can still be
 shadowed by files there; run it with `python -P -m evlet` (or set
 `PYTHONSAFEPATH=1`) when working inside an app folder. Project commands that
-delegate to `.venv` already use `-P`. The original `new` command keeps its
+delegate to `.venv` already use `-P`. When the `evlet` you typed and the Evlet in the project's
+`.venv` differ, the command prints a note naming both versions before it runs with the `.venv` one.
+`evlet --version` prints this Evlet's version and, inside a project, the version in its `.venv`. The original `new` command keeps its
 existing contract. `evlet controls grant` makes a user an active admin from the server shell when nobody can open Controls; it keeps the allowed networks set in Controls and says when they still lock you out, and `--clear-allowlist` clears them too ([controls.md](controls.md#access)). `evlet users set-password <instance> <username>` asks twice for a new password (no echo, never printed), applies the password minimum (config.py's `Security(password_min=...)` for admins, the Controls setting for everyone else) and the normal password rules, ends the user's sessions, AI assistants and API keys, and is audited as `cli`. `evlet users set-email <instance> <username> <email>` checks the address, sets it as the user's email for notifications and is audited as `cli`; use it to give the Administrator an address or to recover one. `evlet users reset-two-step` clears a user's two-step sign-in so they set it up again ([settings.md](settings.md#set-up-at-sign-in-trust-on-first-use)). `evlet secrets rotate` re-encrypts connector secrets, mailbox sign-ins, two-step secrets and backup codes under a new `secret.key` ([controls.md](controls.md)). `login`, `logout`, `describe` and `mcp` are the connector
 commands described in the [connector guide](connector.md). Each one shows its
 options with `--help`, for example `evlet login --help`.
@@ -129,7 +133,7 @@ runs the existing queue. It watches `apps/` and the instance folder; when Evlet 
 runs from a source checkout or an editable install (`pip install -e`), it watches the
 Evlet package too, so framework edits reload the same way. It never applies model migrations
 implicitly. Stop the server and run `migrate` after adding a migration.
-`migrate --plan` writes nothing: it builds the apps against a temporary copy of the
+`migrate --plan` writes nothing and says `Planned with Evlet X`, the version that made the plan. It builds the apps against a temporary copy of the
 instance database and prints the pending migrations, the pending Evlet framework migrations
 ([app-upgrades.md](app-upgrades.md#upgrade-evlet)), each model, field and property that
 differs from the migrations, and for each app a suggested migration to review
@@ -573,6 +577,43 @@ On a machine without systemd, such as a Mac, or for an instance with no unit, th
 check says so and nothing is restarted. Stop the server and start it again with
 `evlet serve acme` instead. `evlet dev` reloads by itself. A unit that does not run
 `evlet serve` is not Evlet's: restart it by hand with `sudo systemctl restart NAME`.
+
+### Upgrade Evlet on a server
+
+On a server set up with `evlet setup --host --apply`, move an instance to a newer Evlet with:
+
+```sh
+evlet upgrade acme
+```
+
+It works in this order and shows each command before it runs it:
+
+1. It checks that the project has the `.venv` that `evlet setup` made and that
+   `evlet-acme.service` serves this instance, like the Service check of `evlet restart`.
+   Without these, nothing changes.
+2. It runs pip in the project's `.venv`. On 0.x it stays within the current minor: 0.4.3
+   installs the newest 0.4.\*, never 0.5, since a 0.x minor can break things. From 1.0 it stays
+   within the current major. `--to VERSION` installs one exact version, such as the next minor
+   once you have read its release notes; an older version is refused, since going back means
+   restoring a backup. When no newer release exists, it stops here.
+3. It prints `evlet migrate acme --plan`, which says `Planned with Evlet X` for the new version.
+4. It asks once: `Back up acme, stop evlet-acme, migrate it and restart it on Evlet X?`
+5. It runs `evlet backup`, `sudo systemctl stop evlet-acme`, `evlet migrate acme`, then
+   `evlet restart acme --yes`, which runs its checks and waits for `/health`.
+
+pip replaces the code of the command that is running. So every step after pip runs as its own
+`.venv/bin/python -P -m evlet ...` process with the new code, and no step mixes old and new
+modules. The running service keeps its old code until it stops.
+
+When a step fails, the upgrade stops and prints the commands that put everything back: stop the
+service, install the old version with pip, `evlet restore` the backup from step 5, start the
+service. When you answer no at step 4, the service keeps running the old version and it prints
+the pip command that puts the old version back in `.venv`.
+
+Options: `--yes` upgrades without asking (needed without a terminal), `--service NAME` stops and
+restarts another unit, `--to VERSION` picks the version. The first upgrade to 0.4.4 runs by hand,
+since 0.4.3 has no `evlet upgrade`: install 0.4.4 with `.venv/bin/python -m pip install
+'evlet==0.4.4'`, then follow [app-upgrades.md](app-upgrades.md#upgrade-evlet).
 
 ### Serve a website on its own host
 

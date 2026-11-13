@@ -4,7 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { createClient } from '../api';
 import { mount } from '../dom';
-import { canonical, CalcError, FiniteDocument, fingerprint } from '../model/finite';
+import { CalcError, FiniteDocument } from '../model/finite';
 import { currencyDecimals, currencyDecimalsTable, formatMoney, moneyWire, setCurrencyDecimals, setCurrencyDisplays } from '../model/format';
 import { currencyInput, RecordStore } from '../model/record';
 import { SchemaIndex, type AppSchema, type FieldSchema } from '../model/schema';
@@ -216,7 +216,7 @@ const source = (kind: string, type: string, scale: number | null = null) => ({ c
 function moneyPlan(currency: any, extraReads: any[][] = [], initial = false) {
   const plan: any = {
     compiler_version: 'evlet-finite-1', expression_version: 1, language: 'finite-v1', numeric_profile: 'finite40-hu18-v1', plan_version: 1,
-    limits: LIMITS, root_resource: 'deal',
+    limits: LIMITS, root_resource: 'deal', model_schema_hash: 'sha256:test',
     fields: [{ expression: { $expr: 'ref', scope: 'self', field: 'amount' }, field: 'total', path: [],
       reads: [['self', null, 'amount'], ...extraReads], result_type: 'decimal', rounding: 'half_up', scale: 6, stored: true,
       target: initial ? 'total:initial' : 'total', target_type: 'currency', ...(initial ? { kind: 'initial' } : {}), currency }],
@@ -224,7 +224,6 @@ function moneyPlan(currency: any, extraReads: any[][] = [], initial = false) {
       amount: source('decimal', 'decimal', 6), currency: source('text', 'text'), customer: source('link', 'link'),
       total: { ...source('currency', 'decimal', 6), computed: !initial } } } },
   };
-  plan.model_schema_hash = fingerprint(plan);
   return plan;
 }
 const DECIMALS = { decimals: { KWD: 3, JPY: 0, XCL: 5 }, settings: { 'billing.currency': 'KWD' } };
@@ -281,7 +280,6 @@ describe('finite engine: Currency targets round to their currency', () => {
     const refused = (currency: any, extra: any = {}) => {
       const plan = moneyPlan(currency);
       Object.assign(plan.fields[0], extra);
-      plan.model_schema_hash = fingerprint(plan);
       try { new FiniteDocument(plan, {}); return null; } catch (error) { return (error as CalcError).message; }
     };
     expect(refused({ code: 'kwd' })).toContain('Invalid currency source');
@@ -300,7 +298,7 @@ describe('finite engine: Currency targets round to their currency', () => {
     const index = new SchemaIndex({ models: [{ name: 'deal', label: 'Deal', plural: 'Deals', title_field: 'currency', list_fields: [],
       fields: [{ name: 'total', type: 'currency', label: 'Total', required: false, read_only: false, scale: 6, currency: 'OMR' }] }] } as unknown as AppSchema);
     const input = currencyInput(plan, index);
-    expect(canonical(input)).toBe(canonical({ decimals: SITE, settings: { 'billing.currency': 'OMR' } }));
+    expect(input).toEqual({ decimals: SITE, settings: { 'billing.currency': 'OMR' } });
     expect(new FiniteDocument(plan, { amount: '1.00049' }, undefined, input).snapshot().total).toBe('1.00');
   });
 });
