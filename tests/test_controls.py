@@ -608,7 +608,9 @@ def test_break_glass_clears_the_controls_allowlist(secured):
     admin = client(secured)
     assert save(admin, ('setting', 'security.controls_ips', ['10.0.0.0/8']))[0] == 200
     assert admin('GET', '/api/_controls/state', headers={b'x-forwarded-for': b'10.1.1.1'})[0] == 404
-    grant(secured.database.path, 'admin')
+    assert grant(secured.database.path, 'admin') == ['10.0.0.0/8']
+    assert client(secured)('GET', '/api/_controls/state')[0] == 404
+    grant(secured.database.path, 'admin', clear_allowlist=True)
     assert client(secured)('GET', '/api/_controls/state')[0] == 200
     with secured.database._connection() as db:
         assert [tuple(row) for row in db.execute("SELECT actor, target FROM evlet_audit WHERE area='Security' ORDER BY id")][-1] == ('cli', 'security.controls_ips')
