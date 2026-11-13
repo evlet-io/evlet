@@ -87,7 +87,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - The record page asks for a rule's remark in the move dialog and reads a cancelled look from a
   final step coloured `rose`, never from state names.
 
-## Unreleased (0.4.5)
+## 0.4.5 (13-11-2026)
 
 ### Upgrading to 0.4.5
 
