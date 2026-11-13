@@ -1478,7 +1478,7 @@
       "autosave": true,
       "list_tabs": {
         "field": "status",
-        "kind": "select",
+        "kind": "state",
         "default": "active"
       },
       "side_blocks": [
@@ -1494,7 +1494,6 @@
         "tabs": [
           "activity",
           "postings",
-          "revisions",
           "tasks"
         ],
         "blocks": [
@@ -1602,6 +1601,11 @@
             "active",
             "done"
           ],
+          "colors": {
+            "active": "blue",
+            "done": "green"
+          },
+          "state": true,
           "label": "Status",
           "help_text": "",
           "placeholder": "",
@@ -1812,6 +1816,31 @@
           "locked_when": null
         }
       ],
+      "document_version": 1,
+      "resource": "project",
+      "behavior": {
+        "title": {},
+        "customer": {},
+        "status": {},
+        "budget": {},
+        "progress": {},
+        "starts_on": {},
+        "brief": {},
+        "notes": {},
+        "name": {}
+      },
+      "order": [
+        "title",
+        "customer",
+        "status",
+        "budget",
+        "progress",
+        "starts_on",
+        "brief",
+        "notes",
+        "name"
+      ],
+      "sources": {},
       "permissions": {
         "create": true,
         "update": true,
@@ -1824,7 +1853,7 @@
           "model": "projecttask",
           "link": "project",
           "label": "Tasks",
-          "row_changes": false,
+          "row_changes": true,
           "filterable": true,
           "min_rows": 0,
           "max_rows": 100
@@ -1832,18 +1861,77 @@
       ],
       "actions": [
         {
-          "name": "start",
-          "label": "Start project"
-        },
-        {
-          "name": "complete",
-          "label": "Complete project"
-        },
-        {
           "name": "refresh_progress",
           "label": "Recalculate progress"
         }
       ],
+      "state": {
+        "field": "status",
+        "default": "planned",
+        "show": "badge",
+        "steps": [
+          {
+            "key": "planned",
+            "label": "Planned",
+            "color": null,
+            "lock": false,
+            "release": false,
+            "final": false
+          },
+          {
+            "key": "active",
+            "label": "Active",
+            "color": "blue",
+            "lock": false,
+            "release": false,
+            "final": false
+          },
+          {
+            "key": "done",
+            "label": "Done",
+            "color": "green",
+            "lock": true,
+            "release": false,
+            "final": false
+          }
+        ],
+        "rules": [
+          {
+            "key": "start",
+            "from": [
+              "planned"
+            ],
+            "to": "active",
+            "label": "Start project",
+            "by": [
+              "admin",
+              "editor"
+            ],
+            "guarded": false,
+            "when": null,
+            "primary": true,
+            "reject": false,
+            "remark": null
+          },
+          {
+            "key": "complete",
+            "from": [
+              "active"
+            ],
+            "to": "done",
+            "label": "Complete project",
+            "by": [
+              "admin",
+              "editor"
+            ],
+            "guarded": false,
+            "when": null,
+            "primary": false,
+            "reject": false,
+            "remark": null
+          }
+        ]
+      },
       "attachments": true,
       "measures": [
         {
@@ -1919,6 +2007,16 @@
       "attachment_limits": {
         "max_files": 10,
         "max_size": 1048576
+      },
+      "journal": {
+        "tamper_evident": false,
+        "kinds": [
+          "note",
+          "message",
+          "call",
+          "follow_up",
+          "follow_up_done"
+        ]
       },
       "cards": [
         "invoiced",

@@ -372,7 +372,11 @@ class Context:
     def restore(self, model, record_id, *, version, remark):
         """Restore a release's content as a new change; the same checks as POST /api/{model}/{id}/restore."""
         from .statemanager import restore
-        return restore(self, self._model(model), known_id(record_id), version, remark)
+        if self.readonly:
+            raise AccessError(403, 'This context is read only')
+        # One savepoint for the re-created rows and the write: a refusal anywhere leaves nothing behind.
+        with self._savepoint():
+            return restore(self, self._model(model), known_id(record_id), version, remark)
 
     def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, release=False, restored=None):
         if self.readonly:
@@ -1771,6 +1775,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if plan is not None:
         record_plan(tx, business.registry.name_for(model), record.id, version)
     context._active[-1] = (model, record.id)
+    context.__dict__.pop('_stays', None)  # A write may end a stay's approvals (statemanager.stay).
     business.policy.record(tx, user, model, record.id, 'update' if before else 'create')
     keys = {}
     persist_rows(context, model, draft, before, record.id, keys)

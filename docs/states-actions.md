@@ -134,7 +134,10 @@ State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="requi
 * Someone who approved a level cannot approve a later level of the same rule. The record's creator
   cannot approve unless the rule says `self_approve=True`.
 * Approvals belong to one stay in the state: leaving it (a reject, a withdraw) clears them, and a
-  resubmit starts at level 1.
+  resubmit starts at level 1. A change to versioned content while the record waits (an edit, an
+  action, a restore, a Recompute) clears them too, and the levels are decided again from the new
+  values: approvers always approve what the record says now. Changes to `versioned=False` fields
+  keep them.
 * A `reject=True` rule is offered only to the waiting level's approvers. Any other rule out of
   the state (such as a Withdraw by the submitter) follows its own `by`.
 * A rule whose levels all do not apply is an ordinary move for whoever may change the record.
@@ -142,7 +145,8 @@ State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="requi
   with a required remark).
 * `_moves` shows, for an approval, `level` (1 for the first), `pending` and `can_approve`; the
   schema's rule lists `levels` (`by`, `pending`, `guarded`) and `self_approve`.
-* `GET /api/{model}?awaiting=me` lists the records whose waiting level this user may approve now
+* `GET /api/{model}?awaiting=me` lists the records whose waiting level this user may approve now,
+  when the rule's `when` holds and the user may change the record
   ("Awaiting my approval"). It is computed from the rules and the journal, so approvals need the
   journal: `Meta.journal = None` with `levels` is refused.
 
@@ -345,7 +349,8 @@ entry (`data.number`, the remark), and the next release takes the next number.
 * It is refused while another record links to this one (a Link or a Reference, from it or its
   rows), naming them.
 * Table rows come back as the version had them: rows deleted since are created again under their
-  original ids, and rows added since are removed.
+  original ids (with the row model's create permission, the fields the role may write and readable
+  Links, as any create), and rows added since are removed.
 * `versioned=False` fields keep their current values. A field the model no longer has is dropped,
   and one added since takes its default. A unique value another record took since keeps the
   current value. The detail's `_restore` lists them: `{"version", "dropped", "kept"}`.
@@ -617,8 +622,36 @@ include keys that are not part of the ETag:
   renders.
 * Field entries carry `versioned: false` where declared, and the State field has `state: true`.
 
-## Not yet
+## Rules changed on an instance
 
-* Rules changed on an instance (0.4.6, PR 5).
+States stay as the model declares them; an instance may change a step's label and colour, change
+or turn off code rules by key, and add rules between existing steps. Changes are Controls
+overrides (`POST /api/_controls/overrides`, audited under "Approval Rules"), kinds:
+
+| Kind | Key | Value |
+| --- | --- | --- |
+| `state` | `Model.step` | `{"label": "Posted", "color": "green"}` |
+| `rule` | `Model.rule_key` of a code rule | any of `label`, `by`, `when`, `remark`, `levels`, `ask`, `primary`, `reject`, `self_approve`; or `{"off": true}` |
+| `rule` | a new key | the same, with `from` (a list of steps) and `to` |
+
+* `by` is a list of role names (custom roles included) and `{"field": "approver"}` user fields.
+* `when`, a level's `when` and a remark's `required_when` are condition text in the expression
+  language (`total >= 10000 and customer_group == "Export"`), parsed and checked against the
+  model's fields on save; no Python runs. `levels` is a list of `{"by", "when", "pending"}`.
+* A value of `null` resets the item to the code. A code rule cannot be deleted, only turned off,
+  because an upgrade would bring it back.
+* **Saving is checked** for the whole rule set of the model, with every change of the request: an
+  unknown step, a rule out of a final step, an unknown role or field, a level without approver or
+  pending text, or a step that is not final and that no rule leaves (where the code had one) is
+  refused with 422. A step no rule reaches is reported as a problem.
+* **Orphans.** An override whose code rule no longer exists (after an upgrade) is kept, ignored
+  and listed in the overrides' `problems`; it does not block other saves.
+* The rule set is compiled once per config version (`evlet_config.version`), which every process
+  checks once per request, so all processes follow a change from their next request. Every move
+  and approval logs the rule key and the rule set version (`rules_version`) it used.
+* Changes take effect when saved; the Approval Rule document with its own versions, and the
+  Controls page for it, come later.
+
+## Not yet
 * Draft previews (`/api/_draft`) do not report the State lock; the save does. A preview of a
   locked or posted record shows the calculated values it keeps, like the save.

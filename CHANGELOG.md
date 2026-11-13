@@ -70,6 +70,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - Restore: `POST /api/{model}/{id}/restore` with `{version, remark}` (`restore` permission, unlocked
   steps only) writes a release's content back as a new change, re-creating deleted rows under their
   ids; it is refused while other records link to the document.
+- Rules on an instance: Controls overrides of kind `state` (a step's label and colour) and `rule`
+  (change or turn off a code rule by key, or add one, with conditions as expression text), checked
+  on save as a whole rule set, compiled once per config version; orphans are ignored and reported.
 - Approval levels: `State.Rule(..., levels=(State.Level(by=, when=, pending=), ...),
   self_approve=)` moves once the last level that applies is approved; each approval is an
   `approved` journal entry. `reject=True` rules are for the waiting level's approvers.
