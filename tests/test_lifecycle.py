@@ -588,3 +588,43 @@ def test_journal_can_filter_native_lifecycle_events(app):
     assert status == 200, page
     assert page['total'] == 1 and page['items'][0]['kind'] == 'confirmed'
     assert c('GET', path + '/journal?kind=unknown')[0] == 422
+
+
+def test_confirmed_document_shows_kept_results_in_preview_detail_and_save(tmp_path):
+    from evlet import Link
+    from evlet.calc import F
+    everything = Rule(('read', 'create', 'update', 'confirm', 'cancel', 'reopen'))
+
+    class Product(Model):
+        permissions = {'admin': Rule(('read', 'create', 'update'))}
+        price = Currency(default='0')
+
+    class Quote(Model):
+        confirmable = True
+        permissions = {'admin': everything}
+        product = Link(Product)
+        price = Currency(compute=F('product.price'))
+        doubled = Currency(compute=F('price') * 2, stored=False)
+        remarks = Text(editable_when_locked=True)
+        class Meta:
+            calculation_language = 'finite-v1'
+
+    database = Database(tmp_path / 'kept.sqlite3', Registry(Product, Quote))
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
+    app.initialize()
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
+    with app.business.context(ADMIN) as context:
+        product = context.create(Product, price='10')['id']
+        quote = context.create(Quote, product=product)['id']
+        context.confirm(Quote, quote)
+        # The linked price changes after the quote was confirmed.
+        context.update(Product, product, price='99')
+    c = client(app)
+    url = f'/api/quote/{quote}'
+    # The draft preview, the record detail and the save all keep the confirmed price.
+    preview = c('POST', '/api/_draft/quote', {'id': quote, 'values': {'remarks': 'Called'}})[1]['values']
+    assert (preview['price'], preview['doubled']) == ('10.00', '20.00')
+    detail = c('GET', url)[1]
+    assert (detail['price'], detail['doubled']) == ('10.00', '20.00')
+    saved = c('PATCH', url, {'remarks': 'Called'}, headers={b'if-match': c('GET', url)[2][b'etag']})[1]
+    assert (saved['remarks'], saved['price'], saved['doubled']) == ('Called', '10.00', '20.00')

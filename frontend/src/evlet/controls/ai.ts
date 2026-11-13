@@ -26,7 +26,7 @@ export const TOOLS: Array<[string, string, boolean]> = [
   ['job_status', 'Read the status of a queued action.', false],
   ['create_record', 'Create a record through backend validation.', true],
   ['update_record', 'Update supplied values only.', true],
-  ['change_state', 'Confirm, cancel or reopen a document. Approved in Evlet.', true],
+  ['change_state', 'Move a document to another state, or confirm, cancel or reopen it. Approved in Evlet.', true],
   ['run_action', 'Run one registered action on a record. Approved in Evlet.', true],
   ['call_service', 'Call a business service. Approved in Evlet.', true],
   ['delete_record', 'Delete a record and its owned children. Approved in Evlet.', true],
