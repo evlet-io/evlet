@@ -391,7 +391,7 @@ def test_routes_proxy_and_link_user_commands(project, capsys, tmp_path, hashed):
     main(['proxy', 'acme', '--caddy', '--write', str(target), '--project', str(project)])
     out = capsys.readouterr().out
     assert target.read_text() == CADDY and 'Reload the proxy yourself' in out
-    assert 'Add this line to Instance(...) in instances/acme/config.py, then restart Evlet:\n    trusted_proxies=("127.0.0.1", "::1"),' in out
+    assert 'Add this line to Instance(...) in instances/acme/config.py, then run evlet restart acme:\n    trusted_proxies=("127.0.0.1", "::1"),' in out
     assert target.stat().st_mode & 0o777 == 0o644
     with pytest.raises(SystemExit):
         main(['proxy', 'acme', '--caddy', '--port', '70000', '--project', str(project)])

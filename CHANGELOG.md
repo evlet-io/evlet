@@ -26,9 +26,21 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   prints the last 20 journal lines. `--check` runs the checks only, `--yes` skips the
   question, `--service` names another unit and `--timeout` changes the wait
   ([docs/cli.md](docs/cli.md#restart-a-site-safely)).
+- **`evlet upgrade <instance>` moves an instance to a newer Evlet.** It runs pip in the project's
+  `.venv`, prints `evlet migrate --plan`, and after one question runs `evlet backup`,
+  `sudo systemctl stop`, `evlet migrate` and `evlet restart --yes`. Every step after pip runs as
+  its own `.venv/bin/python -P -m evlet` process, so none mixes old and new code. On 0.x it stays
+  within the current minor (0.4.\*); `--to VERSION` picks another. When a step fails it prints
+  the rollback commands ([docs/cli.md](docs/cli.md#upgrade-evlet-on-a-server)).
+- **`evlet --version`** prints the Evlet version and, inside a project, the one in its `.venv`.
+  When the two differ, every project command says so before it runs with the `.venv` one.
+- **`evlet migrate --plan` says `Planned with Evlet X`.**
 
 ### Changed
 
+- **Hints say `evlet restart`.** `evlet host add` and `host remove` with `--routes-only`, and
+  `evlet proxy --write`, now suggest `evlet restart <instance>` instead of
+  `sudo systemctl restart`.
 - **Naming-series conditions run on the formula evaluator.** A condition such as
   `total >= 250000 and status == "sent"` is still parsed by the same rules with the same error
   messages, but it now compiles to finite-v1 expression nodes and runs on the finite-v1
