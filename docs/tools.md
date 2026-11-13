@@ -23,7 +23,7 @@ it.
 | `list_files`, `read_file` | Read |
 | `list_services`, `job_status` | Read |
 | `create_record`, `update_record` | Write |
-| `change_state` (confirm, cancel, reopen), `run_action`, `call_service` | Write |
+| `change_state` (State moves; confirm, cancel, reopen), `run_action`, `call_service` | Write |
 | `delete_record` | Destructive |
 
 A tool is listed only when it can apply (an app with reports, actions, documents, files or
@@ -31,6 +31,14 @@ journals), but listing grants nothing: every call is authorized again by the rou
 Changes to a saved record read it first and send its revision, so the change, and any
 approval, name the same version. `read_file` returns UTF-8 text only (2 MB at most, 60,000
 characters); other files report their size.
+
+`change_state` takes `{model, id, to, values?, reason?}`. For a model with a `State`, `to` is the
+state to move to, and the call goes to `POST /api/{model}/{id}/moves/{to}`, so the move's roles,
+`when` guard, closed periods and current state are checked as they are for the browser. `values`
+fills the fields the move asks for. For a confirmable document, `to` is `confirm`, `cancel` or
+`reopen`, and `cancel` takes a `reason`. The tool is listed when some model is confirmable or
+has a State with moves the role can see. A move into one of the State's `cancelled` states is
+in the destructive group; every other move is in the confirm group.
 
 Business services become tools only when the app marks them. Their docstring is what
 assistants read; public endpoints cannot be tools:
@@ -56,8 +64,8 @@ clients:
 | --- | --- |
 | Read, search, totals, files | Run |
 | Create or change a record | Run; the client asks its user |
-| Confirm a document, app actions, business services | Approved in Evlet |
-| Cancel, reopen, delete | Approved in Evlet |
+| Confirm or move a document, app actions, business services | Approved in Evlet |
+| Cancel, reopen, delete, a move into a cancelled state | Approved in Evlet |
 
 The API never asks: a key or session is the person's own program. Formal approvals in apps
 always apply as well.
@@ -67,7 +75,12 @@ it in Settings → AI assistants ("Waiting for your approval"), and the client c
 tool again with the same arguments. The approval covers that one call with those arguments on
 that revision of the record, from that client, once, for 24 hours. If the record changes first, a new approval
 is needed. Only a signed-in browser session can answer an approval, never a key or an
-assistant. A change the person's role cannot make is refused at once, without asking anyone.
+assistant. A change the person's role cannot make is refused at once, without asking anyone:
+an operation the role lacks, a field it can't write, or a move it can't make from the record's
+current state.
+
+Eva has its own settings for this, and one more rule: once an Eva chat has read stored data,
+every change asks ([eva.md](eva.md#when-eva-asks-first)).
 
 ## Routes
 

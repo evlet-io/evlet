@@ -3,11 +3,12 @@ import json
 
 import pytest
 
-from evlet import Application, Database, LocalAuth, Registry, api
+from evlet import Application, Database, LocalAuth, Model, Move, Registry, Rule, State, Text, api
 from evlet.services import Endpoint
 from evlet.tools import BY_NAME, arguments, redacted
 from evlet.connector import ConnectorError
 from test_business import PASSWORD, client, http
+from test_rules_types import add_user
 from test_forms_services import Ticket, Tickets, count_tickets
 
 
@@ -109,5 +110,96 @@ def test_arguments_and_redaction():
         arguments(tool, {'model': '../auth', 'id': '0000000000001', 'values': {}})
     with pytest.raises(ConnectorError):
         arguments(BY_NAME['change_state'], {'model': 'ticket', 'id': '0000000000001', 'operation': 'post'})
+    with pytest.raises(ConnectorError):
+        arguments(BY_NAME['change_state'], {'model': 'ticket', 'id': '0000000000001', 'to': '../actions/delete'})
     assert redacted({'model': 'x', 'values': {'salary': 1}, 'search': 'secret', 'filters': {'email': 'a@b'}}) == \
         {'model': 'x', 'values': ['salary'], 'search': '…', 'filters': ['email']}
+
+
+class Shipment(Model):
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update'))}
+    title = Text(default='')
+    status = State(('draft', 'packed', 'sent', 'lost'), moves=(
+        Move('draft', 'packed', 'Pack'),
+        Move('packed', 'sent', 'Send', roles=('admin',)),
+        Move(('draft', 'packed'), 'lost', 'Mark lost'),
+    ), cancelled=('lost',), final=('sent', 'lost'))
+
+
+@pytest.fixture
+def moves(tmp_path):
+    db = Database(tmp_path / 'moves.sqlite3', Registry(Shipment))
+    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
+    app.initialize()
+    assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
+    return app
+
+
+def test_change_state_makes_state_moves_through_the_move_route(moves):
+    admin, editor = client(moves), add_user(moves, 'editor')
+    assert 'change_state' in {tool['name'] for tool in editor('GET', '/api/_tools')[1]['tools']}
+    shipment = admin('POST', '/api/shipment', {'title': 'Box'})[1]['id']
+    # A move the role has.
+    moved = execute(editor, 'change_state', model='shipment', id=shipment, to='packed')
+    assert moved[0] == 200 and moved[1]['result']['status'] == 'packed'
+    # A move for other roles is refused as the route refuses it.
+    refused = execute(editor, 'change_state', model='shipment', id=shipment, to='sent')
+    assert refused[0] == 403 and admin('GET', f'/api/shipment/{shipment}')[1]['status'] == 'packed'
+    # A move that does not start from the current state is refused too.
+    assert execute(admin, 'change_state', model='shipment', id=shipment, to='draft')[0] == 409
+    assert execute(admin, 'change_state', model='shipment', id=shipment, to='sent')[1]['result']['status'] == 'sent'
+    assert execute(admin, 'change_state', model='shipment', id=shipment, to='lost')[0] == 409
+    assert execute(admin, 'change_state', model='shipment', id=shipment, to='a/../b')[0] == 422
+    log = admin('GET', '/api/_controls/tools?tool=change_state')[1]['items']
+    assert [item['outcome'] for item in log] == ['failed', 'failed', 'ok', 'failed', 'denied', 'ok']
+    assert log[-1]['inputs'] == {'model': 'shipment', 'id': shipment, 'to': 'packed'}
+
+
+def test_change_state_asks_before_a_move_and_never_for_one_the_role_lacks(moves):
+    from evlet.auth import KeyAccess, User
+    from evlet.tools import ApprovalNeeded
+    admin = client(moves)
+    add_user(moves, 'editor')
+    shipment = admin('POST', '/api/shipment', {'title': 'Box'})[1]['id']
+    with moves.database._connection() as connection:
+        editor_id = connection.execute("SELECT id FROM evlet_users WHERE username='editor'").fetchone()[0]
+    eva = User(editor_id, 'editor', 'editor', access=KeyAccess(True, None, None, None, 'eva'))
+    tools = moves.business.tools
+    # Packing is a move this role has: it waits for the person's click, in the confirm group.
+    with pytest.raises(ApprovalNeeded) as asked:
+        tools.execute(eva, 'change_state', {'model': 'shipment', 'id': shipment, 'to': 'packed'})
+    assert asked.value.approval['summary']['group'] == 'confirm' and asked.value.approval['summary']['operation'] == 'packed'
+    # Marking it lost is a move into a cancelled state, so it is destructive.
+    with pytest.raises(ApprovalNeeded) as asked:
+        tools.execute(eva, 'change_state', {'model': 'shipment', 'id': shipment, 'to': 'lost'})
+    assert asked.value.approval['summary']['group'] == 'destructive'
+    # Nobody is asked to approve a move for another role, or one that does not start here.
+    with pytest.raises(ConnectorError) as refused:
+        tools.execute(eva, 'change_state', {'model': 'shipment', 'id': shipment, 'to': 'sent'})
+    assert refused.value.status == 409
+    admin('POST', f'/api/shipment/{shipment}/moves/packed', {}, headers={b'if-match': admin('GET', f'/api/shipment/{shipment}')[2][b'etag']})
+    with pytest.raises(ConnectorError) as refused:
+        tools.execute(eva, 'change_state', {'model': 'shipment', 'id': shipment, 'to': 'sent'})
+    assert refused.value.status == 403
+    assert len(tools.approvals(eva, pending_only=True)) == 2
+
+
+class Voucher(Model):
+    confirmable = True
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'confirm', 'cancel', 'reopen'))}
+    title = Text(default='')
+
+
+def test_change_state_confirms_cancels_and_reopens_confirmable_documents(tmp_path):
+    db = Database(tmp_path / 'vouchers.sqlite3', Registry(Voucher))
+    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
+    app.initialize()
+    http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
+    admin = client(app)
+    assert 'change_state' in {tool['name'] for tool in admin('GET', '/api/_tools')[1]['tools']}
+    voucher = admin('POST', '/api/voucher', {'title': 'Fuel'})[1]['id']
+    assert execute(admin, 'change_state', model='voucher', id=voucher, to='posted')[0] == 422
+    assert execute(admin, 'change_state', model='voucher', id=voucher, to='confirm')[0] == 200
+    assert execute(admin, 'change_state', model='voucher', id=voucher, to='cancel', reason='Entered twice')[0] == 200
+    assert execute(admin, 'change_state', model='voucher', id=voucher, to='reopen')[0] == 200
+    assert admin('GET', f'/api/voucher/{voucher}')[1]['_lifecycle']['state'] == 'draft'

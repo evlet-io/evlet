@@ -216,6 +216,10 @@ Three Boolean expressions describe when an editable field applies, is required, 
 locked. They are the way forward; the legacy strings `visible_if`, `required_if` and
 `read_only_if` keep working for legacy documents.
 
+Slips, report filters and dialogs do not run finite expressions yet. Declaring `F(...)` in a
+`compute`, `initial` or rule on one of them is refused when the class is defined, with a message
+that names the field; use the string rules there for now.
+
 ```python
 class Deal(Model):
     stage = Select(("open", "won", "lost"), default="open")
@@ -491,8 +495,13 @@ route first. Formula changes never backfill stored totals on their own; use the 
 migration operation ([model-engine.md](model-engine.md#recalculating-stored-values)) to
 recalculate them explicitly.
 
-Locked records and records with posted [effects](effects.md) are the exception. A locked
-record keeps its saved results on ordinary writes. A record with postings keeps them on
+Locked records, confirmed or cancelled [confirmable](document-lifecycle.md) documents and records with
+posted [effects](effects.md) are the exception. A locked record keeps its saved results on
+ordinary writes. A confirmed or cancelled document keeps them on every write until it is
+reopened. The draft preview and the record's detail follow the same rule, so they show the
+values a save would keep. A trusted Session write to a `derive()` model is the one difference:
+only postings keep its results, because lifecycle handlers and app code write to a confirmed
+document and its derived values must follow. A record with postings keeps them on
 every write, moves and actions included, and needs no recalculation request; asking for
 one is refused with 409 (`This record has postings. To change its totals, void or revise
 it.`). Its actions and moves may not change what those results read (409, naming the
