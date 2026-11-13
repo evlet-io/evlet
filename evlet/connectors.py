@@ -35,6 +35,8 @@ UNREADABLE = 'Saved secrets could not be read. The secret key changed or the sto
 # One message for unreachable, silent and confused servers, so a test can't map ports.
 UNREACHABLE = "Couldn't connect to the service. Check the server, port and security, and try again."
 NOT_ALLOWED = "This server address is not allowed. Use the service's public address, or None with a mail server on this machine."
+PUBLIC_ONLY = ('A personal mailbox can only use a public mail server. '
+               'For a mail server on a private network, ask an admin to set it up in Controls, under Connectors.')
 REJECTED = 'The server rejected the username or password.'
 BUSY = 'Two connection tests are already running. Try again in a moment.'
 AGAIN = 'Enter the {label} again. The server details changed, so the saved one is not used.'
@@ -128,10 +130,12 @@ def _loopback(host):
         return False
 
 
-def safe_address(host, port, *, local=False):
+def safe_address(host, port, *, local=False, public=False):
     """Resolve host once and refuse link-local, metadata, multicast, unspecified and reserved addresses.
 
     Loopback is allowed only for a local connection, and a local connection only reaches loopback.
+    With public=True (a person's own mailbox) only public internet addresses pass: no loopback and no
+    private ranges such as 10/8, 192.168/16, 100.64/10 or fc00::/7. Admin connectors keep private ranges.
     Returns the (address, port) to connect to, so the checked address is the one used.
     """
     try:
@@ -143,6 +147,8 @@ def safe_address(host, port, *, local=False):
         address = ipaddress.ip_address(sockaddr[0].split('%')[0])
         if address.version == 6 and address.ipv4_mapped:
             address = address.ipv4_mapped
+        if public and not address.is_global:
+            raise ConnectionFailed(PUBLIC_ONLY)
         if (address.is_link_local or address.is_multicast or address.is_unspecified or address.is_reserved
                 or any(address in network for network in METADATA) or address.is_loopback != local):
             raise ConnectionFailed(NOT_ALLOWED)
@@ -233,7 +239,7 @@ def _plain(exc, values):
 def _smtp(values):
     host, port, security = values['host'], int(values['port']), values['security']
     context = ssl.create_default_context()
-    address = safe_address(host, port, local=security == 'none')
+    address = safe_address(host, port, local=security == 'none', public=values.get('public', False))
     if security == 'ssl':
         client = _SMTPSSL(address, host, port, TIMEOUT, context)
     else:
@@ -270,7 +276,7 @@ def open_imap(values):
     values['deadline'] (time.monotonic()) closes the connection at that time, however slowly the server answers.
     """
     host, port, security = values['host'], int(values['port']), values['security']
-    address = safe_address(host, port, local=security == 'none')
+    address = safe_address(host, port, local=security == 'none', public=values.get('public', False))
     deadline = values.get('deadline')
     try:
         if security == 'ssl':

@@ -33,7 +33,7 @@ from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from .auth import AccessError, User
 from . import secrets as vault
-from .connectors import (ADDRESS, NOT_ALLOWED, REJECTED, TIMEOUT, UNREACHABLE, ConnectionFailed, Connector, ConnectorField,
+from .connectors import (ADDRESS, NOT_ALLOWED, PUBLIC_ONLY, REJECTED, TIMEOUT, UNREACHABLE, ConnectionFailed, Connector, ConnectorField,
                          Connectors, SecretKeyError, _loopback, check_imap, check_smtp, mailbox_context, open_imap, run_with_timeout,
                          safe_address, scrub, state_context)
 from .controls import NOT_FOUND, audit
@@ -58,7 +58,11 @@ AREA = 'Email'
 MONTHS = ('Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec')
 OPTIONS = {'send_from': ('mine', 'shared'), 'link_replies': (True, False), 'only_crm': (True, False)}
 DEFAULT_OPTIONS = {'send_from': 'mine', 'link_replies': True, 'only_crm': True}
-PORTS = {'imap': (143, 993), 'smtp': (25, 465, 587)}  # unless the server is on this machine
+PORTS = {'imap': (143, 993), 'smtp': (25, 465, 587)}
+# A mailbox a person connects with a password reaches only public mail servers, encrypted, on the
+# standard mail ports. A private office server is set up by an admin as a connector instead.
+# The test suite turns this off to talk to stub mail servers on this machine.
+PUBLIC_SERVERS_ONLY = True
 
 # Provider defaults. The connector can replace each one; tests use a local fake provider.
 PROVIDERS = {
@@ -369,12 +373,17 @@ class Mailboxes:
                 errors[f'{kind}_port'] = 'Use a port from 1 to 65535.'
                 continue
             host = host.strip()
+            if PUBLIC_SERVERS_ONLY and _loopback(host):
+                errors[f'{kind}_host'] = PUBLIC_ONLY
+                continue
             security = body.get(f'{kind}_security', security_for(host, port))
             if security not in ('ssl', 'starttls', 'none'):
                 errors[f'{kind}_security'] = 'Choose SSL/TLS, STARTTLS or None.'
+            elif security == 'none' and PUBLIC_SERVERS_ONLY:
+                errors[f'{kind}_security'] = 'Choose STARTTLS or SSL/TLS. A personal mailbox needs an encrypted connection.'
             elif security == 'none' and not _loopback(host):
                 errors[f'{kind}_security'] = 'Without encryption the mail server must be on this machine. Choose STARTTLS or SSL/TLS.'
-            elif security != 'none' and port not in ports:
+            elif (security != 'none' or PUBLIC_SERVERS_ONLY) and port not in ports:
                 *head, last = (str(item) for item in ports)
                 errors[f'{kind}_port'] = f"Use port {', '.join(head)} or {last}."
             servers[kind] = {'host': host, 'port': port, 'security': security}
@@ -389,7 +398,7 @@ class Mailboxes:
         values = {'address': address, 'username': username, 'password': password}
         self.business.connectors.throttle(user)
         for kind, check in (('imap', check_imap), ('smtp', check_smtp)):
-            error = run_with_timeout(check, {**values, **servers[kind]}, self.business.connectors.slots)
+            error = run_with_timeout(check, {**values, **servers[kind], 'public': PUBLIC_SERVERS_ONLY}, self.business.connectors.slots)
             if error is not None:
                 raise ValidationError({'password' if error == REJECTED else f'{kind}_host': scrub(error, [password])})
         settings = {'imap': servers['imap'], 'smtp': servers['smtp'], 'username': username, **DEFAULT_OPTIONS}
@@ -628,7 +637,8 @@ class Mailboxes:
             raise Ended('The saved sign-in could not be read. Connect your mailbox again.') from None
         values = {'address': row['address'], **settings[kind]}
         if row['provider'] == 'imap':
-            return {**values, 'username': settings.get('username'), 'password': secret['password']}
+            # Typed in by the person, so checked again on every connection: public servers only.
+            return {**values, 'username': settings.get('username'), 'password': secret['password'], 'public': PUBLIC_SERVERS_ONLY}
         return {**values, 'token': self.token(row['id'])}
 
     def end(self, mailbox_id, message):

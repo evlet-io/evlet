@@ -291,6 +291,12 @@ def build(database):
     return app
 
 
+@pytest.fixture(autouse=True)
+def stub_mail_servers(monkeypatch):
+    """The stub mail servers listen on this machine, which personal mailboxes may not reach outside the tests."""
+    monkeypatch.setattr(module, 'PUBLIC_SERVERS_ONLY', False)
+
+
 @pytest.fixture
 def app(tmp_path, monkeypatch):
     monkeypatch.setenv('EVLET_SECRET_KEY', base64.urlsafe_b64encode(b'k' * 32).decode())
@@ -618,6 +624,61 @@ def test_personal_servers_follow_the_connector_address_rules(app, mail, host):
     assert status == 422 and 'must be on this machine' in payload['fields']['imap_security']
     status, payload, _ = editor('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp, imap_host='mail.example.test', imap_port=2525))
     assert status == 422 and payload['fields']['imap_port'] == 'Use port 143 or 993.'
+
+
+@pytest.mark.parametrize('host', ['10.0.0.5', '192.168.1.1', '172.16.0.9', '100.64.0.1', 'fc00::1'])
+def test_personal_mailboxes_reach_only_public_servers(app, mail, monkeypatch, host):
+    imap, smtp, _ = mail
+    monkeypatch.setattr(module, 'PUBLIC_SERVERS_ONLY', True)
+    switch(app, True)
+    editor = client(app, 'editor')
+    body = mailbox(imap, smtp, imap_host=host, imap_port=993, smtp_host=host, smtp_port=587)
+    status, payload, _ = editor('POST', '/api/_settings/me/mailbox', body)
+    assert status == 422 and payload['fields'] == {'imap_host': connectors_module.PUBLIC_ONLY}
+    assert 'ask an admin' in connectors_module.PUBLIC_ONLY
+    assert imap.log == [] and smtp.messages == []
+
+
+def test_personal_mailboxes_refuse_this_machine_and_plain_connections(app, mail, monkeypatch):
+    imap, smtp, _ = mail
+    monkeypatch.setattr(module, 'PUBLIC_SERVERS_ONLY', True)
+    switch(app, True)
+    editor = client(app, 'editor')
+    status, payload, _ = editor('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp))
+    assert status == 422 and payload['fields'] == {'imap_host': connectors_module.PUBLIC_ONLY, 'smtp_host': connectors_module.PUBLIC_ONLY}
+    # The port list and encryption apply whatever the security choice.
+    public = {'imap_host': '93.184.216.34', 'smtp_host': '93.184.216.34', 'smtp_port': 587}
+    status, payload, _ = editor('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp, **public, imap_port=993, imap_security='none'))
+    assert status == 422 and 'encrypted' in payload['fields']['imap_security']
+    status, payload, _ = editor('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp, **public, imap_port=2525))
+    assert status == 422 and payload['fields']['imap_port'] == 'Use port 143 or 993.'
+    assert imap.log == []
+
+
+def test_a_saved_personal_mailbox_is_checked_again_on_each_connection(app, mail, monkeypatch):
+    imap, smtp, _ = mail
+    switch(app, True)
+    editor = client(app, 'editor')
+    assert editor('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp))[0] == 200
+    monkeypatch.setattr(module, 'PUBLIC_SERVERS_ONLY', True)
+    imap.log.clear()
+    imap.mail.append(message(1, 'buyer@acme.test', 'Never read'))
+    drain(app)
+    state = editor('GET', '/api/_settings/me/mailbox')[1]['mailbox']
+    assert state['status'] == 'error' and state['error'] == connectors_module.PUBLIC_ONLY
+    assert imap.log == [] and links(app) == []
+    with pytest.raises(connectors_module.ConnectionFailed, match='public mail server'):
+        app.business.mailboxes.send_mail(User(app.ids['editor'], 'editor', 'editor'), 'buyer@acme.test', 'Hello', 'Hi')
+    assert smtp.messages == []
+
+
+def test_admin_connectors_may_use_private_mail_servers():
+    # An office mail server on a private network still works when an admin sets it up.
+    for host in ('10.0.0.5', '192.168.1.1', '100.64.0.1', 'fc00::1'):
+        assert connectors_module.safe_address(host, 587) == (host, 587)
+        with pytest.raises(connectors_module.ConnectionFailed, match='public mail server'):
+            connectors_module.safe_address(host, 587, public=True)
+    assert connectors_module.safe_address('93.184.216.34', 993, public=True) == ('93.184.216.34', 993)
 
 
 def test_provider_addresses_follow_the_rules_too(app, mail):
