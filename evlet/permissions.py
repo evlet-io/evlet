@@ -10,7 +10,7 @@ from . import qb
 from .identity import RecordId
 from .naming import title_sources
 from .fields import Link, Reference
-from .models import Model, ValidationError, refuse_id
+from .models import build_step, Model, refuse_id, ValidationError
 from .query import Condition, SqlQuery, child_tables, conditions
 
 
@@ -58,6 +58,7 @@ def read_only(model):
     return f'{model.__name__} records are read only here. The application changes them.'
 
 
+@build_step('api')
 def compile_api(registry):
     """{model: Meta.api} for every registered model; owned rows follow their document. A Link from a model
     callers reach to an api=None model must be hidden, and so must an effect target's source when the

@@ -25,7 +25,7 @@ from urllib.parse import parse_qs
 from .auth import AccessError, User
 from .fields import Link, Reference
 from .identity import RecordId, text as text_id
-from .models import ValidationError
+from .models import build_step, ValidationError
 from . import qb
 from .adapter import Column, TableDefinition
 
@@ -66,6 +66,13 @@ class Journal:
             raise ValueError('Journal(tamper_evident=...) is True or False')
 
 
+@build_step('journaled')
+def journaled(value):
+    """Whether Meta.journal turns the journal on, which makes the model a document."""
+    return isinstance(value, Journal)
+
+
+@build_step('journals')
 def compile_journals(models, child_models, effects=()):
     """{model: Journal} for root models that journal: declared with Meta.journal, or by default those
     with a State or Effects (`effects` holds the models that declare Meta.effects).

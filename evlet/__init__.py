@@ -1,5 +1,7 @@
 """Public APIs for models, persistence, queries, and explicit migrations."""
 
+# The modules that register model build steps (evlet/models.py BUILD_ORDER), before any model class exists.
+from . import effects, journal, ledger, lifecycle, meaning, measures, permissions, sequences, states  # noqa: F401
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,

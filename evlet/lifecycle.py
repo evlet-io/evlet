@@ -11,6 +11,7 @@ from .auth import AccessError
 from .identity import RecordId, path_id, text as text_id
 from . import qb
 from .adapter import Column, TableDefinition
+from .models import build_step
 
 SOURCES = ('User', 'API', 'Automation', 'Scheduler', 'System', 'Integration')
 OPERATIONS = {'confirm': ('draft', 'confirmed'), 'cancel': ('confirmed', 'cancelled'), 'reopen': ('cancelled', 'draft')}
@@ -37,6 +38,7 @@ def install_decorators(action):
     action.cancel = handler('action', 'cancel')
 
 
+@build_step('lifecycle')
 def configure_model(model):
     """Called after fields are collected; no stored columns are injected into existing tables."""
     for option in ('confirmable', 'track_changes'):

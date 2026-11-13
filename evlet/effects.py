@@ -30,7 +30,7 @@ from .auth import AccessError, User
 from .identity import RecordId, jsonable
 from .naming import standard
 from .fields import Boolean, Link, Reference
-from .models import Model, ValidationError
+from .models import build_step, Model, ValidationError
 from . import periods, qb, sections
 from .permissions import CHUNK, Policy, Rule
 
@@ -119,6 +119,7 @@ def index_source(target):
         field.index = True
 
 
+@build_step('effects')
 def compile_effects(registry, models, child_models):
     """({source model: (Bound, ...)}, frozenset of target models) for the models of one registry."""
     result, targets = {}, set()

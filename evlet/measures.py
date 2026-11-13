@@ -19,7 +19,7 @@ from . import qb
 from .auth import AccessError
 from .identity import path_id
 from .fields import COLORS, Boolean, Date, DateTime, Decimal, Integer, Link, LongText, Reference, Tags
-from .models import Model, ValidationError
+from .models import build_step, Model, ValidationError
 from .query import SqlQuery
 
 FUNCTIONS = ('count', 'count_distinct', 'sum', 'min', 'max')
@@ -389,6 +389,7 @@ def comparison(model, op, left, right, reads, zone):
     return matches(a, op, qb.value(value))
 
 
+@build_step('measures')
 def compile_declared(registry, models):
     """{model: {name: Compiled}} for every registered model with Meta.measures."""
     result = {}
