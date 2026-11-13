@@ -4,7 +4,7 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## 0.4.6 (unreleased)
+## 0.4.6 (13-11-2026)
 
 ### Upgrading to 0.4.6
 
@@ -15,10 +15,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `confirmable` or `track_changes`, fails when the class is created with a message naming the
   replacement. See [docs/states-actions.md](docs/states-actions.md) and
   [docs/document-lifecycle.md](docs/document-lifecycle.md).
-- **Apps that use `confirmable` must move to a State first.** The framework migration step that
-  converts the rows of `evlet_document_lifecycle` and `evlet_document_revisions` comes in a later
-  0.4.6 pull request (PR 3). Until then, declare draft, a locked release step and a final
-  cancelled step with rules, as the Lifecycle Playground does.
+- **Apps that use `confirmable` must move to a State.** Declare draft, a locked release step and a
+  final cancelled step with rules, as the Lifecycle Playground does. Framework step
+  `0011_state_manager` then converts the rows of `evlet_document_lifecycle` and
+  `evlet_document_revisions` and backfills v0 for records already in a release step.
 - **Rewriting a State.** `State(("draft", "issued"), moves=(Move("draft", "issued", "Issue"),),
   locked=("issued",), final=(...), voidable=(...))` becomes `State(State.Step("draft"),
   State.Step("issued", lock=True), rules=(State.Rule("draft", "issued", "Issue"),))`. Routes,
@@ -78,8 +78,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `approved` journal entry. `reject=True` rules are for the waiting level's approvers.
   `_moves` carries `level`, `pending` and `can_approve`; `GET /api/{model}?awaiting=me` lists what
   the user may approve now.
-- The hooks `@validate`, `@state(...)`, `@state.exit(...)` and `@release` (declared; it runs from
-  PR 3), with `self.is_new` and `self.before` inside them.
+- The hooks `@validate`, `@state(...)`, `@state.exit(...)` and `@release`, with `self.is_new` and `self.before` inside them.
 - `POST /api/{model}/{id}/moves/{key}` with `{"remark": ..., ...values}`, and
   `context.move(model, id, key, *, remark=None, **values)`. A missing required remark is 422
   `{"remark": "<Label> needs a remark"}`; an unknown key is 404 `Move not found`.
