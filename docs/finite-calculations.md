@@ -82,6 +82,34 @@ expressions. A field compared with another field or `MISSING` keeps Python ident
 semantics; comparing a field with any other value in plain code raises
 `EXPRESSION_TRUTH_TEST` when truth-tested, so use `is` (`value is None`) there.
 
+### Helpers
+
+These helpers are shorthand. Each builds exactly the formula of its long form, so a model
+rewritten with them keeps its plan and formula hash, and saved documents need no
+recalculation. Import them from `evlet.calc`.
+
+| Helper | Same formula as |
+| --- | --- |
+| `choose(F("stage"), {"won": 100, "lost": 0}, default=10)` | `when(F("stage") == "won", 100, when(F("stage") == "lost", 0, 10))`. Cases are checked in the order written. Without `default`, an unmatched value gives null. |
+| `F("status").isin("new", "failed")`, or `isin(F("status"), "new", "failed")` | `(F("status") == "new") \| (F("status") == "failed")` |
+| `is_empty(F("won_on"))` | `F("won_on") == None` |
+| `has_value(F("contact"))` | `F("contact") != None` |
+| `least(a, b, ...)` | `when(a <= b, a, b)`, repeated for each further value |
+| `greatest(a, b, ...)` | `when(a >= b, a, b)`, repeated for each further value |
+| `absolute(x)` | `when(x < 0, -x, x)` |
+
+`is_empty` and `has_value` read better than `== None` and need no `# noqa: E711`. For a
+Boolean filter on rows, `.where(recurring=True)` is the same formula as
+`.where(row.recurring == True)`. `least`, `greatest` and `absolute` repeat their inputs in
+the formula, so very long inputs count more than once toward the 128-node limit.
+`absolute` is not called `abs` so importing it never hides Python's built-in `abs()`.
+
+```python
+probability = Percent(compute=choose(F("stage"), {"won": 100, "negotiation": 75, "proposal": 50},
+                                     default=0))
+payout = Currency(compute=least(F("claimed"), F("limit")))
+```
+
 Rounded shares are not reconciled automatically. Expose the difference as a named field
 and validate or display it:
 

@@ -1998,6 +1998,736 @@
     }
    }
   },
+  "helpers": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "won"
+         }
+        ]
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "100"
+       },
+       {
+        "$expr": "when",
+        "args": [
+         {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "stage",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "text",
+            "value": "lost"
+           }
+          ]
+         },
+         {
+          "$expr": "literal",
+          "type": "decimal",
+          "value": "0"
+         },
+         {
+          "$expr": "literal",
+          "type": "decimal",
+          "value": "10"
+         }
+        ]
+       }
+      ]
+     },
+     "field": "weight",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "stage"
+      ],
+      [
+       "self",
+       null,
+       "stage"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 0,
+     "stored": true,
+     "target": "weight",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "or",
+      "args": [
+       {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "lead"
+         }
+        ]
+       },
+       {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "won"
+         }
+        ]
+       }
+      ]
+     },
+     "field": "open",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "stage"
+      ],
+      [
+       "self",
+       null,
+       "stage"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "open",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "or",
+      "args": [
+       {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "won"
+         }
+        ]
+       },
+       {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "stage",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "text",
+          "value": "lost"
+         }
+        ]
+       }
+      ]
+     },
+     "field": "closed",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "stage"
+      ],
+      [
+       "self",
+       null,
+       "stage"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "closed",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "a",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "null",
+        "value": null
+       }
+      ]
+     },
+     "field": "missing",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "missing",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "ne",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "a",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "null",
+        "value": null
+       }
+      ]
+     },
+     "field": "present",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "present",
+     "target_type": "boolean"
+    },
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "lte",
+        "args": [
+         {
+          "$expr": "when",
+          "args": [
+           {
+            "$expr": "lte",
+            "args": [
+             {
+              "$expr": "ref",
+              "field": "a",
+              "scope": "self"
+             },
+             {
+              "$expr": "ref",
+              "field": "b",
+              "scope": "self"
+             }
+            ]
+           },
+           {
+            "$expr": "ref",
+            "field": "a",
+            "scope": "self"
+           },
+           {
+            "$expr": "ref",
+            "field": "b",
+            "scope": "self"
+           }
+          ]
+         },
+         {
+          "$expr": "literal",
+          "type": "decimal",
+          "value": "5"
+         }
+        ]
+       },
+       {
+        "$expr": "when",
+        "args": [
+         {
+          "$expr": "lte",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "a",
+            "scope": "self"
+           },
+           {
+            "$expr": "ref",
+            "field": "b",
+            "scope": "self"
+           }
+          ]
+         },
+         {
+          "$expr": "ref",
+          "field": "a",
+          "scope": "self"
+         },
+         {
+          "$expr": "ref",
+          "field": "b",
+          "scope": "self"
+         }
+        ]
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "5"
+       }
+      ]
+     },
+     "field": "smaller",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "b"
+      ],
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "b"
+      ],
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "b"
+      ],
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "b"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": null,
+     "stored": false,
+     "target": "smaller",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "gte",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "a",
+          "scope": "self"
+         },
+         {
+          "$expr": "ref",
+          "field": "b",
+          "scope": "self"
+         }
+        ]
+       },
+       {
+        "$expr": "ref",
+        "field": "a",
+        "scope": "self"
+       },
+       {
+        "$expr": "ref",
+        "field": "b",
+        "scope": "self"
+       }
+      ]
+     },
+     "field": "larger",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "b"
+      ],
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "b"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": null,
+     "stored": false,
+     "target": "larger",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "when",
+      "args": [
+       {
+        "$expr": "lt",
+        "args": [
+         {
+          "$expr": "sub",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "a",
+            "scope": "self"
+           },
+           {
+            "$expr": "ref",
+            "field": "b",
+            "scope": "self"
+           }
+          ]
+         },
+         {
+          "$expr": "literal",
+          "type": "decimal",
+          "value": "0"
+         }
+        ]
+       },
+       {
+        "$expr": "neg",
+        "args": [
+         {
+          "$expr": "sub",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "a",
+            "scope": "self"
+           },
+           {
+            "$expr": "ref",
+            "field": "b",
+            "scope": "self"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "$expr": "sub",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "a",
+          "scope": "self"
+         },
+         {
+          "$expr": "ref",
+          "field": "b",
+          "scope": "self"
+         }
+        ]
+       }
+      ]
+     },
+     "field": "gap",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "b"
+      ],
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "b"
+      ],
+      [
+       "self",
+       null,
+       "a"
+      ],
+      [
+       "self",
+       null,
+       "b"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": null,
+     "stored": false,
+     "target": "gap",
+     "target_type": "decimal"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 1000,
+    "decimal_text": 128,
+    "document_rows": 5000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:9e793cf4fc23992290fb84e5c5113bc646aa25491ef26f5588e7cca98726b192",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "helpers",
+   "tables": {
+    "$root": {
+     "fields": {
+      "a": {
+       "computed": false,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      },
+      "b": {
+       "computed": false,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      },
+      "closed": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      },
+      "gap": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": false,
+       "type": "decimal"
+      },
+      "larger": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": false,
+       "type": "decimal"
+      },
+      "missing": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "open": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      },
+      "present": {
+       "computed": true,
+       "default": null,
+       "kind": "boolean",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "boolean"
+      },
+      "smaller": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": false,
+       "type": "decimal"
+      },
+      "stage": {
+       "computed": false,
+       "default": null,
+       "kind": "select",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "weight": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "model": "helpers",
+     "path": [],
+     "tables": []
+    }
+   }
+  },
   "invoice": {
    "compiler_version": "evlet-finite-1",
    "expression_version": 1,
@@ -17091,6 +17821,365 @@
       "rate": "2.0005",
       "shared": "-2.00",
       "suggested": "4.001"
+     }
+    }
+   ]
+  },
+  {
+   "data": {},
+   "model": "helpers",
+   "name": "helpers",
+   "steps": [
+    {
+     "changed": [
+      "closed",
+      "gap",
+      "larger",
+      "missing",
+      "open",
+      "present",
+      "smaller",
+      "weight"
+     ],
+     "requests": [],
+     "snapshot": {
+      "_states": {
+       "gap": {
+        "causes": [
+         "gap"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "larger": {
+        "causes": [
+         "larger"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "smaller": {
+        "causes": [
+         "smaller"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "closed": false,
+      "gap": null,
+      "larger": null,
+      "missing": true,
+      "open": false,
+      "present": false,
+      "smaller": null,
+      "weight": "10"
+     }
+    },
+    {
+     "changed": [
+      "closed",
+      "open",
+      "weight"
+     ],
+     "command": [
+      "set",
+      "",
+      "stage",
+      "won"
+     ],
+     "requests": [],
+     "snapshot": {
+      "_states": {
+       "gap": {
+        "causes": [
+         "gap"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "larger": {
+        "causes": [
+         "larger"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "smaller": {
+        "causes": [
+         "smaller"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "closed": true,
+      "gap": null,
+      "larger": null,
+      "missing": true,
+      "open": true,
+      "present": false,
+      "smaller": null,
+      "stage": "won",
+      "weight": "100"
+     }
+    },
+    {
+     "changed": [
+      "missing",
+      "present"
+     ],
+     "command": [
+      "set",
+      "",
+      "a",
+      "3"
+     ],
+     "requests": [],
+     "snapshot": {
+      "_states": {
+       "gap": {
+        "causes": [
+         "gap"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "larger": {
+        "causes": [
+         "larger"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "smaller": {
+        "causes": [
+         "smaller"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "a": "3",
+      "closed": true,
+      "gap": null,
+      "larger": null,
+      "missing": false,
+      "open": true,
+      "present": true,
+      "smaller": null,
+      "stage": "won",
+      "weight": "100"
+     }
+    },
+    {
+     "changed": [
+      "gap",
+      "larger",
+      "smaller"
+     ],
+     "command": [
+      "set",
+      "",
+      "b",
+      "-7.5"
+     ],
+     "requests": [],
+     "snapshot": {
+      "a": "3",
+      "b": "-7.5",
+      "closed": true,
+      "gap": "10.5",
+      "larger": "3",
+      "missing": false,
+      "open": true,
+      "present": true,
+      "smaller": "-7.5",
+      "stage": "won",
+      "weight": "100"
+     }
+    },
+    {
+     "changed": [
+      "open",
+      "weight"
+     ],
+     "command": [
+      "set",
+      "",
+      "stage",
+      "lost"
+     ],
+     "requests": [],
+     "snapshot": {
+      "a": "3",
+      "b": "-7.5",
+      "closed": true,
+      "gap": "10.5",
+      "larger": "3",
+      "missing": false,
+      "open": false,
+      "present": true,
+      "smaller": "-7.5",
+      "stage": "lost",
+      "weight": "0"
+     }
+    },
+    {
+     "changed": [
+      "gap",
+      "larger"
+     ],
+     "command": [
+      "set",
+      "",
+      "a",
+      "9"
+     ],
+     "requests": [],
+     "snapshot": {
+      "a": "9",
+      "b": "-7.5",
+      "closed": true,
+      "gap": "16.5",
+      "larger": "9",
+      "missing": false,
+      "open": false,
+      "present": true,
+      "smaller": "-7.5",
+      "stage": "lost",
+      "weight": "0"
+     }
+    },
+    {
+     "changed": [
+      "closed",
+      "open",
+      "weight"
+     ],
+     "command": [
+      "set",
+      "",
+      "stage",
+      "lead"
+     ],
+     "requests": [],
+     "snapshot": {
+      "a": "9",
+      "b": "-7.5",
+      "closed": false,
+      "gap": "16.5",
+      "larger": "9",
+      "missing": false,
+      "open": true,
+      "present": true,
+      "smaller": "-7.5",
+      "stage": "lead",
+      "weight": "10"
+     }
+    },
+    {
+     "changed": [
+      "gap",
+      "larger",
+      "smaller"
+     ],
+     "command": [
+      "set",
+      "",
+      "b",
+      "12"
+     ],
+     "requests": [],
+     "snapshot": {
+      "a": "9",
+      "b": "12",
+      "closed": false,
+      "gap": "3",
+      "larger": "12",
+      "missing": false,
+      "open": true,
+      "present": true,
+      "smaller": "5",
+      "stage": "lead",
+      "weight": "10"
+     }
+    },
+    {
+     "changed": [
+      "open"
+     ],
+     "command": [
+      "set",
+      "",
+      "stage",
+      null
+     ],
+     "requests": [],
+     "snapshot": {
+      "a": "9",
+      "b": "12",
+      "closed": false,
+      "gap": "3",
+      "larger": "12",
+      "missing": false,
+      "open": false,
+      "present": true,
+      "smaller": "5",
+      "stage": null,
+      "weight": "10"
+     }
+    },
+    {
+     "changed": [
+      "gap",
+      "larger",
+      "missing",
+      "present",
+      "smaller"
+     ],
+     "command": [
+      "set",
+      "",
+      "a",
+      null
+     ],
+     "requests": [],
+     "snapshot": {
+      "_states": {
+       "gap": {
+        "causes": [
+         "gap"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "larger": {
+        "causes": [
+         "larger"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       },
+       "smaller": {
+        "causes": [
+         "smaller"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "a": null,
+      "b": "12",
+      "closed": false,
+      "gap": null,
+      "larger": null,
+      "missing": true,
+      "open": false,
+      "present": false,
+      "smaller": null,
+      "stage": null,
+      "weight": "10"
      }
     }
    ]
