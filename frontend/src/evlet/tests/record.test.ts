@@ -3,6 +3,7 @@ import { createClient } from '../api';
 import { effect, scope } from '../reactive';
 import { buildChanges } from '../model/changes';
 import { PREVIEW_PAUSE_MS, RecordStore, sameValue, STALE_FORMULAS } from '../model/record';
+import { CalcError } from '../model/finite';
 import type { AppSchema } from '../model/schema';
 import { copy, id, responses, server, type Sent } from './server';
 
@@ -140,6 +141,19 @@ describe('editing', () => {
     expect(store.field('total').value.peek()).toBe('305.00');
     expect([amountRuns, totalRuns]).toEqual([1, 1]);
     stop();
+  });
+
+  it('starts a new calculation session when the engine fails to settle', async () => {
+    const { store } = backend();
+    await store.open(id(1));
+    await store.idle();
+    const failed = store.engine!;
+    failed.batch = () => { failed.broken = true; throw new CalcError('CALCULATION_LIMIT_EXCEEDED', 'The document graph exceeds its node or edge limit'); };
+    expect(() => line(store, 5).field('qty').set('3')).toThrow('CALCULATION_LIMIT_EXCEEDED');
+    expect(store.engine).not.toBe(failed);
+    expect(store.engine!.broken).toBe(false);
+    line(store, 5).field('qty').set('3');
+    expect(store.field('total').value.peek()).toBe('305.00');
   });
 
   it('tracks dirty fields and reverts to the saved values', async () => {

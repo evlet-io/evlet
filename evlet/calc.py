@@ -1240,7 +1240,7 @@ class Document:
                 if scope == 'lookup':
                     self.lookup_fields.setdefault(model, set()).add(name)
         self.revision, self._next = 0, 0
-        self._batch = None
+        self._batch, self._broken = None, None
         self.trace, self.deps = {}, {}
         # Initial suggestions waiting to be written, and fields the host set in the current write (touched).
         self.armed, self.touched = set(), set()
@@ -1496,39 +1496,44 @@ class Document:
     # Commands
 
     def batch(self, run):
-        outer = self._batch is None
-        if outer:
-            self._batch = {'snapshot': self._capture(), 'bound': set(self.deps), 'sources': set(), 'membership': set(), 'structure': False, 'touched': set()}
-        if not outer:
-            # A nested batch is one command: if its error is caught, its changes are undone.
-            return self._command(lambda: check_async(run(self)))
+        """Run commands as one batch; the document settles once at the end.
+
+        Every command checks its input before it changes anything, so a refused command
+        leaves the document as it was. If `run` raises after some commands ran, those
+        commands are kept and settled, and the error is raised again. If settling itself
+        fails (an engine limit), the document is broken and refuses further commands.
+        """
+        self._usable()
+        if self._batch is not None:
+            # A nested batch is part of the batch around it.
+            check_async(run(self))
+            return
+        self._batch = {'sources': set(), 'membership': set(), 'structure': False, 'touched': set()}
         try:
             check_async(run(self))
-        except BaseException:
-            if outer:
-                self._restore(self._batch['snapshot'])
-                self._batch = None
-            raise
-        if outer:
+        finally:
             batch, self._batch = self._batch, None
             try:
                 self._commit(batch)
-            except BaseException:
-                self._restore(batch['snapshot'])
+            except BaseException as exc:
+                self._broken = exc
                 raise
 
     def _command(self, run):
+        """Run one command, inside the current batch or as its own batch."""
         if self._batch is None:
             return self.batch(lambda _: run())
-        # A command whose error the batch catches must not leave the document half changed.
-        snapshot = self._capture(), {key: set(value) if isinstance(value, set) else value for key, value in self._batch.items()}
-        try:
-            return run()
-        except BaseException:
-            self._restore(snapshot[0])
-            self._batch.clear()
-            self._batch.update(snapshot[1])
-            raise
+        self._usable()
+        return run()
+
+    def _usable(self):
+        if self._broken is not None:
+            raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'This document failed to settle; build a new one')
+
+    def _forget_rows_after(self, last):
+        """Forget rows built after handle number `last` by a command that was then refused."""
+        for number in range(last + 1, self._next + 1):
+            self.rows.pop('h' + str(number), None)
 
     def set(self, handle, field, value):
         def run():
@@ -1557,8 +1562,8 @@ class Document:
             fields, key = self.lookup_fields.get(model), link_id(record_id)
             if fields is None or key is None or not isinstance(values, dict) or set(values) - fields:
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'This plan does not look up {model}')
-            # Copy on write so a rolled-back command restores the previous record.
-            self.lookups = {**self.lookups, model: {**self.lookups.get(model, {}), key: {**self.lookups.get(model, {}).get(key, {}), **values}}}
+            records = self.lookups.setdefault(model, {})
+            records[key] = {**records.get(key, {}), **values}
             self._batch['sources'].update(('@' + model, name) for name in values)
         self._command(run)
 
@@ -1582,8 +1587,14 @@ class Document:
             data = dict(values or {})
             if data.get('id') is not None:
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'New rows cannot carry persisted IDs')
-            row = self._build(data, parent_row.path + (table,), parent_row, created=True)
-            self._place(parent_row, table, row, len(parent_row.children[table]))
+            # Build the row first; if it or its place is refused, the half-built rows are forgotten.
+            last = self._next
+            try:
+                row = self._build(data, parent_row.path + (table,), parent_row, created=True)
+                self._place(parent_row, table, row, len(parent_row.children[table]))
+            except BaseException:
+                self._forget_rows_after(last)
+                raise
             self._structure(owner, table)
             created.append(row.handle)
         self._command(run)
@@ -1601,36 +1612,45 @@ class Document:
         self._command(run)
 
     def replace_rows(self, owner, table, items):
+        """Make a collection hold exactly `items`: rows with an id are kept and updated, others are new."""
         def run():
             parent_row = self._row(owner)
             if table not in self.schema[parent_row.path]['tables'] or not isinstance(items, list):
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Unknown collection {table}')
             existing = {row.id: row for row in parent_row.children[table] if row.id is not None}
-            old = list(parent_row.children[table])
+            old, last = parent_row.children[table], self._next
+            # Check every item and place the new list before any value changes; a refusal restores the old list.
+            writes, seen, placed = [], set(), (set(), set())
             parent_row.children[table] = []
-            seen, placed = set(), (set(), set())
-            for data in items:
-                record_id = data.get('id') if isinstance(data, dict) else None
-                if record_id is not None and link_id(record_id) is None:
-                    raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be record ids')
-                if record_id is not None:
-                    if record_id not in existing or record_id in seen:
-                        raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must belong to this collection and appear once')
-                    seen.add(record_id)
-                    row = existing[record_id]
-                    for name, value in data.items():
-                        if name in ('id', '_key', 'children'):
-                            continue
-                        meta = self.schema[row.path]['fields'].get(name)
-                        if meta is None or meta['computed']:
-                            raise CalcError('COMPUTED_FIELD_WRITE' if meta else 'DOCUMENT_STRUCTURE_ERROR', f'{name} cannot be written')
-                        self._batch['touched'].add((row.handle, name))
-                        if not same_value(row.values, name, value):
-                            row.values[name] = value
-                            self._batch['sources'].add((row.handle, name))
-                else:
-                    row = self._build(data, parent_row.path + (table,), parent_row, created=True)
-                self._place(parent_row, table, row, len(parent_row.children[table]), placed)
+            try:
+                for data in items:
+                    record_id = data.get('id') if isinstance(data, dict) else None
+                    if record_id is not None and link_id(record_id) is None:
+                        raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be record ids')
+                    if record_id is None:
+                        row = self._build(data, parent_row.path + (table,), parent_row, created=True)
+                    else:
+                        if record_id not in existing or record_id in seen:
+                            raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must belong to this collection and appear once')
+                        seen.add(record_id)
+                        row = existing[record_id]
+                        for name, value in data.items():
+                            if name in ('id', '_key', 'children'):
+                                continue
+                            meta = self.schema[row.path]['fields'].get(name)
+                            if meta is None or meta['computed']:
+                                raise CalcError('COMPUTED_FIELD_WRITE' if meta else 'DOCUMENT_STRUCTURE_ERROR', f'{name} cannot be written')
+                            writes.append((row, name, value))
+                    self._place(parent_row, table, row, len(parent_row.children[table]), placed)
+            except BaseException:
+                parent_row.children[table] = old
+                self._forget_rows_after(last)
+                raise
+            for row, name, value in writes:
+                self._batch['touched'].add((row.handle, name))
+                if not same_value(row.values, name, value):
+                    row.values[name] = value
+                    self._batch['sources'].add((row.handle, name))
             kept = {id(row) for row in parent_row.children[table]}
             for row in old:
                 if id(row) not in kept:
@@ -1665,30 +1685,18 @@ class Document:
             self.rows.pop(item.handle, None)
             stack.extend(child for items in item.children.values() for child in items)
 
-    def _capture(self):
-        return ({handle: (row, dict(row.values), {table: list(items) for table, items in row.children.items()}, row.parent)
-                 for handle, row in self.rows.items()}, dict(self.results), self._next, dict(self.counts),
-                dict(self.trace), (self.today, self.lookups, dict(self.misses)), set(self.armed))
-
-    def _restore(self, snapshot):
-        rows, results, counter, counts, trace, (self.today, self.lookups, self.misses), self.armed = snapshot
-        for handle, (row, values, children, owner) in rows.items():
-            row.values, row.children, row.parent = values, children, owner
-        self.rows = {handle: state[0] for handle, state in rows.items()}
-        self.results, self._next, self.counts, self.trace = results, counter, counts, trace
-        self._bind()
-
     def _commit(self, batch):
-        # Bindings as the batch began: a rolled-back command rebinds, so self.deps may already be newer.
-        old = batch['bound']
+        # Only a change of structure rebinds; the bindings as the batch began are then the old ones.
+        old = self.deps
         if batch['structure']:
             self._bind()
-        live = set(self.deps)
-        for node in old - live:
-            self.results.pop(node, None)
-            self.counts.pop(node, None)
-            self.misses.pop(node, None)
-        fresh = live - old
+        live, fresh = self.deps, set()
+        if live is not old:
+            for node in old.keys() - live.keys():
+                self.results.pop(node, None)
+                self.counts.pop(node, None)
+                self.misses.pop(node, None)
+            fresh = live.keys() - old.keys()
         updated = self._settle(batch['sources'] | batch['membership'], fresh, batch['touched'],
                                {node for node in fresh if node[1].endswith(':initial')})
         if not (updated or batch['sources'] or batch['structure']):

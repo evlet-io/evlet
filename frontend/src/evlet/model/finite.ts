@@ -493,6 +493,8 @@ export class FiniteDocument {
   private current: any = null;
   private publishing = false;
   private disposed = false;
+  // Set when a batch failed to settle; the session then refuses every command.
+  broken = false;
 
   // Host input for Currency targets (CurrencyInput); null gives every code 2 places.
   currencies: CurrencyInput | null;
@@ -723,51 +725,46 @@ export class FiniteDocument {
     return (this.rows.get(handle)?.label ?? handle + '.') + field;
   }
 
+  // Run commands as one batch; the document settles and publishes once at the end.
+  // Every command checks its input before it changes anything, so a refused command leaves the document as it was.
+  // If `run` throws after some commands ran, those commands are kept, settled and published, and the error is
+  // thrown again. If settling itself fails (an engine limit), the session is broken and the host builds a new one.
   batch(run: (commands: FiniteDocument) => unknown) {
     this.usable();
-    const outer = this.current === null;
-    // A nested batch is one command: if its error is caught, its changes are undone.
-    if (!outer) { this.command(() => runSync(run, this)); return; }
-    this.current = {snapshot: this.capture(), bound: new Set(this.deps.keys()), sources: new Set<Node>(), membership: new Set<Node>(), structure: false, order: new Set<Node>(), touched: new Set<Node>()};
-    try {
-      runSync(run, this);
-    } catch (exc) {
-      if (outer) { this.restore(this.current.snapshot); this.current = null; }
-      throw exc;
-    }
-    if (!outer) return;
+    // A nested batch is part of the batch around it.
+    if (this.current !== null) { runSync(run, this); return; }
+    this.current = {sources: new Set<Node>(), membership: new Set<Node>(), structure: false, order: new Set<Node>(), touched: new Set<Node>()};
+    let failed = false, failure: unknown;
+    try { runSync(run, this); } catch (exc) { failed = true; failure = exc; }
     const batch = this.current;
     this.current = null;
     let notify: Array<() => void>;
     try { notify = this.commit(batch); }
-    catch (exc) { this.restore(batch.snapshot); throw exc; }
-    // The batch is committed; observer failures are reported after publication, never rolled back.
+    catch (exc) { this.broken = true; throw exc; }
+    // The batch is committed; observer failures are reported after publication.
     const failures: unknown[] = [];
     this.publishing = true;
     try { for (const deliver of notify) { try { deliver(); } catch (exc) { failures.push(exc); } } }
     finally { this.publishing = false; }
+    if (failed) throw failure;
     if (failures.length) throw failures[0];
   }
 
-  private command<T>(run: () => T): T {
-    if (this.current === null) { let value!: T; this.batch(() => { value = run(); }); return value; }
-    this.usable();
-    // A command whose error the batch catches must not leave the document half changed.
-    const snapshot = this.capture(), state = {...this.current, sources: new Set(this.current.sources), membership: new Set(this.current.membership),
-      order: new Set(this.current.order), touched: new Set(this.current.touched)};
-    try { return run(); }
-    catch (exc) { this.restore(snapshot); this.current = state; throw exc; }
-  }
-
-  // A command that checks everything before it changes anything needs no snapshot to undo a failure.
+  // Run one command, inside the current batch or as its own batch.
   private checked(run: () => void) {
     if (this.current === null) { this.batch(run); return; }
     this.usable();
     run();
   }
 
+  // Forget rows built after handle number `last` by a command that was then refused.
+  private forgetRowsAfter(last: number) {
+    for (let number = last + 1; number <= this.next; number++) this.rows.delete('h' + number);
+  }
+
   private usable() {
     if (this.disposed) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'This document session was disposed');
+    if (this.broken) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'This document session failed to settle; build a new one');
     if (this.publishing) throw new CalcError('REACTIVE_REENTRANCY', 'Observers cannot change the document during publication');
   }
 
@@ -798,10 +795,9 @@ export class FiniteDocument {
       const fields = this.lookupFields.get(model), key = linkKey(id);
       if (!fields || key === null || !values || typeof values !== 'object' || Array.isArray(values) || Object.keys(values).some(name => !fields.has(name)))
         throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'This plan does not look up ' + model);
-      // Copy on write so a rolled-back command restores the previous record.
-      const records = new Map(this.lookups.get(model) || []);
+      if (!this.lookups.has(model)) this.lookups.set(model, new Map());
+      const records = this.lookups.get(model)!;
       records.set(key, Object.assign(Object.create(null), records.get(key), values));
-      this.lookups = new Map(this.lookups).set(model, records);
       for (const name of Object.keys(values)) this.current.sources.add(nodeKey('@' + model, name));
     });
   }
@@ -822,19 +818,26 @@ export class FiniteDocument {
   }
 
   addRow(owner: string, table: string, values: any = {}) {
-    return this.command(() => {
+    let handle = '';
+    this.checked(() => {
       const parent = this.row(owner);
       if (!this.schema.get(parent.path.join('/')).tables.includes(table)) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'Unknown collection ' + table);
       if (values?.id != null) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'New rows cannot carry persisted IDs');
-      const row = this.build({...values}, [...parent.path, table], parent, true);
-      this.place(parent, table, row, parent.children[table].length);
+      // Build the row first; if it or its place is refused, the half-built rows are forgotten.
+      const last = this.next;
+      let row: Row;
+      try {
+        row = this.build({...values}, [...parent.path, table], parent, true);
+        this.place(parent, table, row, parent.children[table].length);
+      } catch (exc) { this.forgetRowsAfter(last); throw exc; }
       this.structure(owner, table);
-      return row.handle;
+      handle = row.handle;
     });
+    return handle;
   }
 
   removeRow(handle: string) {
-    this.command(() => {
+    this.checked(() => {
       const row = this.row(handle);
       if (!row.parent) throw new CalcError('DOCUMENT_STRUCTURE_ERROR', 'The root cannot be removed');
       const table = row.path[row.path.length - 1];
@@ -845,7 +848,7 @@ export class FiniteDocument {
   }
 
   reorder(owner: string, table: string, handles: string[]) {
-    this.command(() => {
+    this.checked(() => {
       const parent = this.row(owner), items = parent.children[table];
       const wanted = Array.isArray(handles) ? handles.map(String).sort() : null, current = (items || []).map(row => row.handle).sort();
       if (!items || !wanted || wanted.length !== current.length || wanted.some((handle, index) => handle !== current[index]))
@@ -866,38 +869,15 @@ export class FiniteDocument {
     while (stack.length) { const item = stack.pop()!; this.rows.delete(item.handle); for (const items of Object.values(item.children)) stack.push(...items); }
   }
 
-  private capture() {
-    return {rows: new Map([...this.rows].map(([handle, row]) => [handle, {row, values: {...row.values},
-      children: Object.fromEntries(Object.entries(row.children).map(([table, items]) => [table, [...items]])), parent: row.parent}])),
-      results: new Map(this.results), next: this.next, counts: new Map(this.counts), trace: this.trace,
-      today: this.today, lookups: this.lookups, misses: new Map(this.misses), armed: new Set(this.armed),
-      rules: new Map([...this.ruleObservers].map(([handle, items]) => [handle, [...items]])),
-      observers: new Map([...this.observers].map(([node, items]) => [node, [...items]]))};
-  }
-
-  private restore(snapshot: any) {
-    for (const state of snapshot.rows.values()) { state.row.values = state.values; state.row.children = state.children; state.row.parent = state.parent; }
-    this.rows = new Map([...snapshot.rows].map(([handle, state]: any) => [handle, state.row]));
-    this.results = snapshot.results;
-    this.next = snapshot.next;
-    this.counts = snapshot.counts;
-    this.trace = snapshot.trace;
-    this.today = snapshot.today;
-    this.lookups = snapshot.lookups;
-    this.misses = snapshot.misses;
-    this.armed = snapshot.armed;
-    this.ruleObservers = snapshot.rules;
-    this.observers = snapshot.observers;
-    this.bind();
-  }
-
   private commit(batch: any): Array<() => void> {
-    // Bindings as the batch began: a rolled-back command rebinds, so this.deps may already be newer.
-    const old: Set<Node> = batch.bound;
+    // Only a change of structure rebinds; the bindings as the batch began are then the old ones.
+    const old = this.deps;
     if (batch.structure) this.bind();
-    const live = new Set(this.deps.keys());
-    for (const node of old) if (!live.has(node)) { this.results.delete(node); this.counts.delete(node); this.misses.delete(node); }
-    const fresh = new Set([...live].filter(node => !old.has(node)));
+    const live = this.deps, fresh = new Set<Node>();
+    if (live !== old) {
+      for (const node of old.keys()) if (!live.has(node)) { this.results.delete(node); this.counts.delete(node); this.misses.delete(node); }
+      for (const node of live.keys()) if (!old.has(node)) fresh.add(node);
+    }
     const updated = this.settle(new Set([...batch.sources, ...batch.membership]), fresh, batch.touched,
       new Set([...fresh].filter(node => node.endsWith(':initial'))));
     if (!updated.size && !batch.sources.size && !batch.structure) return [];

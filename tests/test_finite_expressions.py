@@ -503,9 +503,12 @@ def test_structure_commands_and_batches():
     def failing(cmds):
         cmds.set(doc.find('items.n'), 'qty', '100')
         raise RuntimeError('stop')
+    # A callback that fails part way keeps the commands that ran, settles them and raises again.
     with pytest.raises(RuntimeError):
         doc.batch(failing)
-    assert doc.snapshot()['grand_total'] == '44.10' and doc.revision == 2
+    assert doc.snapshot()['grand_total'] == '661.50' and doc.revision == 3
+    doc.set(doc.find('items.n'), 'qty', '2')
+    assert doc.snapshot()['grand_total'] == '44.10'
 
     async def later(cmds):
         return None
@@ -726,7 +729,36 @@ def test_review_regressions_for_engine_edges():
         raise RuntimeError('stop')
     with pytest.raises(RuntimeError):
         doc.batch(failing)
-    assert len(doc.rows) == 1
+    assert len(doc.rows) == 2 and doc.snapshot()['grand_total'] == '7.35'
+
+
+def test_a_refused_new_row_leaves_no_half_built_rows():
+    doc = document(Project, project_data())
+    rows, deps = len(doc.rows), len(doc.deps)
+    with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
+        doc.add_row(doc.root.handle, 'phases', {'_key': 'C', 'children': {'tasks': [{'hours': '1'}, {'hours': '2', 'nope': '1'}]}})
+    with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
+        doc.add_row(doc.root.handle, 'phases', {'_key': 'A', 'children': {'tasks': [{'hours': '1'}]}})
+    assert len(doc.rows) == rows and len(doc.deps) == deps and doc.revision == 1
+    doc.add_row(doc.root.handle, 'phases', {'_key': 'C', 'children': {'tasks': [{'hours': '1'}]}})
+    assert len(doc.rows) == rows + 2
+
+
+def test_a_refused_replace_changes_nothing():
+    doc = document(Invoice, {'inclusive': False, 'children': {'items': [{'id': 7, 'qty': '1', 'rate': '10'}]}})
+    before, rows = doc.snapshot(), len(doc.rows)
+    for bad in ([{'id': 7, 'qty': '5'}, {'_key': 'n', 'nope': 1}], [{'id': 7, 'qty': '5'}, {'id': 7}], [{'id': 7, 'net': '1'}]):
+        with pytest.raises(CalcError):
+            doc.replace_rows(doc.root.handle, 'items', bad)
+    assert doc.snapshot() == before and len(doc.rows) == rows
+
+
+def test_a_batch_that_cannot_settle_breaks_the_document():
+    doc = Document(plan(Invoice), lines(*[{'qty': '1'} for _ in range(5)]), budget=400)
+    with pytest.raises(CalcError, match='CALCULATION_LIMIT_EXCEEDED'):
+        doc.batch(lambda commands: [commands.add_row(doc.root.handle, 'items', {'qty': '1'}) for _ in range(20)])
+    with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
+        doc.set(doc.root.handle, 'inclusive', True)
 
 
 def test_allocation_residuals_are_explicit_not_silently_lost():
@@ -802,7 +834,7 @@ def test_second_review_engine_regressions():
     assert field in [{'k': 1}, field] and [object(), field].index(field) == 1 and (field == 1.5) is False
 
 
-def test_rolled_back_commands_keep_earlier_batch_rows_and_bounds_accept_exponents():
+def test_refused_commands_change_nothing_and_bounds_accept_exponents():
     doc = document(Invoice, {'inclusive': False})
     root = doc.root.handle
 
@@ -813,8 +845,9 @@ def test_rolled_back_commands_keep_earlier_batch_rows_and_bounds_accept_exponent
         with pytest.raises(RuntimeError):
             commands.batch(lambda inner: (inner.set(root, 'inclusive', True), (_ for _ in ()).throw(RuntimeError('stop'))))
     doc.batch(run)
-    assert doc.snapshot()['grand_total'] == Document(plan(Invoice), sources(doc)).snapshot()['grand_total'] == '21.00'
-    assert doc.snapshot()['inclusive'] is False
+    # The refused set changed nothing; the nested batch's set ran before its error, so it is kept.
+    assert doc.snapshot()['inclusive'] is True
+    assert doc.snapshot()['grand_total'] == Document(plan(Invoice), sources(doc)).snapshot()['grand_total'] == '20.00'
 
     class Capped(Model):
         Meta = FiniteMeta
@@ -954,11 +987,13 @@ def test_link_paths_are_validated_at_registry_build():
     doc.set_lookups('country', 1, {'offset': '5'})
     assert doc.snapshot()['result'] == '15.0000' and doc.lookup_requests() == []
     assert ('@country', 'offset') in doc.deps[doc.root.handle, 'result']
-    # A failed command inside a batch leaves the lookups as they were.
+    # A refused lookup leaves the lookups as they were; one that ran before a failing callback is kept.
     doc.batch(lambda session: pytest.raises(CalcError, session.set_lookups, 'country', 1, {'nope': 1}))
+    assert doc.lookups['country'][1] == {'offset': '5'} and doc.snapshot()['result'] == '15.0000'
     with pytest.raises(RuntimeError):
         doc.batch(lambda session: (session.set_lookups('country', 1, {'offset': '6'}), (_ for _ in ()).throw(RuntimeError())))
-    assert doc.lookups['country'][1] == {'offset': '5'} and doc.snapshot()['result'] == '15.0000'
+    assert doc.lookups['country'][1] == {'offset': '6'} and doc.snapshot()['result'] == '16.0000'
+    doc.set_lookups('country', 1, {'offset': '5'})
     doc.set_lookups('area', 2, {'country': None})
     assert doc.snapshot()['_states']['result']['code'] == 'COMPUTE_INPUT_MISSING' and doc.lookup_requests() == []
     doc.set(doc.root.handle, 'party', True)
