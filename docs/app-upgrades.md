@@ -65,6 +65,10 @@ framework versioning have no `evlet` entry and are treated the same way. To upgr
    The output lists the framework migrations it applied and the backup path.
 4. Start the instance and check it.
 
+On a server set up with `evlet setup --host --apply`, `evlet upgrade acme` runs these steps
+for you after one question, and prints the rollback commands when one fails
+([cli.md](cli.md#upgrade-evlet-on-a-server)).
+
 Framework migrations are ordered, checksummed steps recorded in the
 `evlet_framework_migrations` table with the Evlet version that applied them. The
 first step, `0001_startup_tables`, adopts the tables that Evlet 0.2.0 and earlier
