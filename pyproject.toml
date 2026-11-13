@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evlet"
-version = "0.4.3"
+version = "0.4.4"
 description = "A small Python application framework with SQLite and a neutral UI schema"
 readme = "README.md"
 license = "MIT"
