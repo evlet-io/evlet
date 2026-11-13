@@ -1,7 +1,7 @@
 import pytest
 
 from evlet import (Application, Child, Currency, Database, Date, Decimal, Link, LocalAuth, Model, Outcome, Registry,
-                   Rule, Select, Slip, Table, Text, ValidationError, action, present)
+                   Rule, Select, Slip, Table, Text, ValidationError, action, present, validate)
 from evlet.auth import password_hash
 from test_business import PASSWORD, client, http, secured, hashed  # noqa: F401 (fixtures)
 
@@ -53,6 +53,8 @@ class StartJob(Slip):
 
     def load(self, source):
         self.client = source.id
+
+    @validate
 
     def validate(self):
         if self.starts_on is not None and self.starts_on.year < 2000:

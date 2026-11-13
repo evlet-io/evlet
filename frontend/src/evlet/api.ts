@@ -277,13 +277,13 @@ export class ApiClient {
   }
 
   /**
-   * Move a record to another state (POST /api/{model}/{id}/moves/{to}). `values` fill the fields the
-   * move asks for (`asks` in `_moves`); the server answers with the record and its new `_moves`,
+   * Move a record by a State rule (POST /api/{model}/{id}/moves/{key}). `values` hold the remark and the fields
+   * the move asks for (`remark` and `asks` in `_moves`); the server answers with the record and its new `_moves`,
    * 422 with field errors, or 409 when the move is not available.
    */
-  async move(model: string, id: string, to: string, etag: string | null, values: Record<string, unknown> = {}) {
-    if (!SEGMENT.test(to)) throw new ApiError(`Unknown state ${to}`, 0, 'response');
-    return this.request<RecordData>('POST', `${recordPath(model, id)}/moves/${to}`, { body: values, ifMatch: etag });
+  async move(model: string, id: string, key: string, etag: string | null, values: Record<string, unknown> = {}) {
+    if (!SEGMENT.test(key)) throw new ApiError(`Unknown move ${key}`, 0, 'response');
+    return this.request<RecordData>('POST', `${recordPath(model, id)}/moves/${key}`, { body: values, ifMatch: etag });
   }
 }
 

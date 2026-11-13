@@ -33,8 +33,8 @@ MODEL = {'type': 'string', 'pattern': '^[a-z][a-z0-9_]{0,127}$'}
 ID = {'type': 'integer', 'minimum': 1, 'maximum': SAFE_INTEGER}
 # A record id is its 13-character text form; ID is for jobs and files.
 RECORD = dict(ID_SCHEMA)
-# A state name or confirmable operation: it becomes one path segment of the move route.
-STATE = {'type': 'string', 'pattern': '^[A-Za-z0-9_][A-Za-z0-9_ -]{0,127}$'}
+# A rule key: it becomes one path segment of the move route.
+RULE_KEY = {'type': 'string', 'pattern': '^[a-z][a-z0-9_]{0,62}$'}
 PAGE = {'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100}, 'offset': {'type': 'integer', 'minimum': 0, 'maximum': SAFE_INTEGER}}
 ORIGINS = ('eva', 'schedule', 'mcp', 'api')
 # Confirmation groups: which kinds of allowed change can still need an approval click.
@@ -127,11 +127,11 @@ TOOLS = (
          {'model': MODEL, 'values': {'type': 'object'}}, ('model', 'values'), kind='write', group='create', label='Creating {model}'),
     Tool('update_record', 'Update supplied values only. Supplied child collections replace their rows; omit children to preserve them.',
          {'model': MODEL, 'id': RECORD, 'values': {'type': 'object'}}, ('model', 'id', 'values'), kind='write', group='update', label='Updating {model} {id}'),
-    Tool('change_state', "Move a document to another state with one of its moves, such as draft to posted. Use a move's to from describe_model "
-         "(state.moves) or the record's _moves. values fills the fields a move asks for. For confirmable documents, to is confirm, cancel or reopen, "
-         'and cancel needs a reason.',
-         {'model': MODEL, 'id': RECORD, 'to': STATE, 'values': {'type': 'object'}, 'reason': {'type': 'string', 'maxLength': 500}},
-         ('model', 'id', 'to'), kind='write', label='Moving {model} {id} to {to}'),
+    Tool('change_state', "Move a document with one of its rules, such as draft to posted, or approve its current approval level. "
+         "Use a rule's key from the record's _moves (or describe_model state.rules). remark is the note the rule asks for; "
+         'values fills the fields a move asks for.',
+         {'model': MODEL, 'id': RECORD, 'rule': RULE_KEY, 'remark': {'type': 'string', 'maxLength': 1000}, 'values': {'type': 'object'}},
+         ('model', 'id', 'rule'), kind='write', label='Moving {model} {id} with {rule}'),
     Tool('run_action', 'Execute one registered permitted action on a record. It may modify records or enqueue work.',
          {'model': MODEL, 'id': RECORD, 'action': MODEL}, ('model', 'id', 'action'), kind='write', group='action', label='Running {action} on {model} {id}',
          content=True),
@@ -144,8 +144,6 @@ TOOLS = (
 BY_NAME = {tool.name: tool for tool in TOOLS}
 NAMES = tuple(BY_NAME)
 CONTENT = tuple(tool.name for tool in TOOLS if tool.content)
-# The operations of a confirmable document, which change_state takes as its to.
-LIFECYCLE = ('confirm', 'cancel', 'reopen')
 
 
 class ApprovalNeeded(Exception):
@@ -302,8 +300,8 @@ class Tools:
         operations = {name for entry in schema['models'] for name, allowed in entry['permissions'].items() if allowed}
         # Dialogs are listed with actions in the schema, but they are forms, not tool calls.
         actions = any(not action.get('dialog') for entry in schema['models'] for action in entry.get('actions') or ())
-        # Confirmable documents, or a State with moves this role can see.
-        states = any(entry.get('lifecycle') or (entry.get('state') or {}).get('moves') for entry in schema['models'])
+        # A State with rules, on a model this role may change.
+        states = any((entry.get('state') or {}).get('rules') and entry['permissions'].get('update') for entry in schema['models'])
         files = any(entry.get('attachments') for entry in schema['models'])
         journals = any(entry.get('journal') for entry in schema['models'])
         services = bool(self.services(user))
@@ -533,28 +531,20 @@ class Tools:
                              lambda: request('POST', f"{path}/actions/{values['action']}", {}, headers)[0], revision)
 
     def change_state(self, user, origin, tool, values, run_id, client, request, path, record, revision, summary):
-        """A State move through POST .../moves/{to}, or confirm, cancel or reopen on a confirmable document.
-
-        Moving into a cancelled state, cancelling and reopening are in the destructive group, so they always ask.
-        Other moves are in the confirm group."""
+        """A move through POST .../moves/{rule}. A move into a final state is in the destructive group, so it
+        always asks; other moves are in the confirm group."""
         headers = [(b'if-match', revision)] if revision else []
-        to = values['to']
         entry = self.model_entry(user, values['model'])
-        if entry.get('lifecycle'):
-            if to not in LIFECYCLE or 'values' in values:
-                raise ConnectorError(422, 'Use confirm, cancel or reopen for this document, without values.')
-            group = 'confirm' if to == 'confirm' else 'destructive'
-            body = {'reason': values['reason']} if to == 'cancel' and 'reason' in values else {}
-            route = f'{path}/{to}'
-        else:
-            # The route decides what this role may do and what a move needs; the schema only sorts the approval group.
-            group = 'destructive' if to in (entry.get('state') or {}).get('cancelled', ()) else 'confirm'
-            body = values.get('values', {})
-            route = f'{path}/moves/{to}'
-        # The approval card shows operation as the action and values as the new values.
-        shown = {**summary, 'operation': to, **({'values': body} if body and 'reason' not in body else {})}
+        state = entry.get('state') or {}
+        # The route decides what this role may do and what a move needs; the schema only sorts the approval group.
+        target = next((rule['to'] for rule in state.get('rules', ()) if rule['key'] == values['rule']), None)
+        final = any(step['key'] == target and step['final'] for step in state.get('steps', ()))
+        body = {**values.get('values', {}), **({'remark': values['remark']} if values.get('remark') else {})}
+        # The confirmation card shows operation as the action and values as the new values.
+        shown = {**summary, 'operation': values['rule'], **({'values': body} if body else {})}
         return self.approved(user, origin, tool, values, run_id, client, shown,
-                             lambda: request('POST', route, body, headers)[0], revision, group=group, record=record)
+                             lambda: request('POST', f"{path}/moves/{values['rule']}", body, headers)[0], revision,
+                             group='destructive' if final else 'confirm', record=record)
 
     def model_entry(self, user, model):
         """The model's schema entry for this user, as the screens get it. 404 when the user can't see the model."""
@@ -659,11 +649,9 @@ class Tools:
         entry = self.model_entry(user, values['model'])
         if tool.name == 'run_action':
             allowed = any(action['name'] == values['action'] and not action.get('dialog') for action in entry.get('actions') or ())
-        elif tool.name == 'change_state' and entry.get('lifecycle'):
-            allowed = bool((entry.get('lifecycle') or {}).get('permissions', {}).get(values['to']))
         elif tool.name == 'change_state':
             # The record's _moves say which moves this role has now, and why one is blocked.
-            move = next((item for item in (record or {}).get('_moves') or () if item['to'] == values['to']), None)
+            move = next((item for item in (record or {}).get('_moves') or () if item['key'] == values['rule']), None)
             if move is None:
                 raise ConnectorError(409, 'This record has no such move now')
             if not move['allowed'] and move.get('reason') != 'Your role cannot use this move':

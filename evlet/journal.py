@@ -29,20 +29,26 @@ from .models import ValidationError
 from . import qb
 from .adapter import Column, TableDefinition
 
+SCALARS = ('rule', 'remark', 'level', 'base', 'rules_version')
+SCALAR_COLUMNS = (Column('rule', 'TEXT'), Column('remark', 'TEXT'), Column('level', 'INTEGER'), Column('base', 'INTEGER'),
+                  Column('rules_version', 'INTEGER'))
 TABLE = TableDefinition('evlet_journal', (
     Column('model', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True), Column('kind', 'TEXT', required=True),
     Column('actor', 'TEXT', required=True), Column('at', 'TEXT', required=True), Column('data', 'TEXT', required=True),
-    Column('prev_hash', 'TEXT'), Column('hash', 'TEXT')), numbered=True)
+    Column('prev_hash', 'TEXT'), Column('hash', 'TEXT'),
+    # The state manager's scalars (evlet/statemanager.py): the rule key, the remark, the approval level, the
+    # release the entry builds on and the rule set version. Columns, so lists can filter on them.
+    *SCALAR_COLUMNS), numbered=True)
 # Models that have declared tamper_evident=True; verify() treats their unhashed entries as breaks.
 HASHED = TableDefinition('evlet_journal_hashed', (Column('model', 'TEXT', primary=True),))
 APPEND_ONLY = 'The journal is append only'
-# Kinds the engine writes; `effects` is written by effects_posted() after a move posts or a void or unpost reverses
-# effect rows, and `recomputed` by a Recompute migration that changed a record's stored results.
-ENGINE_KINDS = ('created', 'changed', 'moved', 'voided', 'revised', 'unposted', 'reposted', 'number', 'file', 'deleted',
-                'effects', 'recomputed', 'confirmed', 'reconfirmed', 'cancelled', 'reopened', 'approved', 'rejected',
-                'post_confirmation_edit')
+# Kinds the engine writes; `effects` is written by effects_posted() after a move posts or reverses effect rows,
+# and `recomputed` by a Recompute migration that changed a record's stored results. Entries of kinds earlier
+# releases wrote (voided, revised, unposted, reposted, confirmed, cancelled, reopened) stay readable.
+ENGINE_KINDS = ('created', 'changed', 'moved', 'approved', 'rejected', 'released', 'restored', 'snapshot', 'number', 'file',
+                'deleted', 'effects', 'recomputed')
 # Kinds about the State: shown as `changed` to a reader who cannot read it.
-STATE_KINDS = ('voided', 'revised', 'unposted', 'reposted', 'effects')
+STATE_KINDS = ('released', 'restored', 'snapshot', 'voided', 'revised', 'unposted', 'reposted', 'effects')
 # Kinds people write through HTTP (or journal.post), and the values each takes.
 USER_KINDS = ('note', 'message', 'call', 'follow_up', 'follow_up_done')
 HTML_LENGTH = 40000
@@ -83,9 +89,7 @@ def compile_journals(models, child_models, effects=()):
             if declared and value is not None and 'journal' in vars(meta):
                 raise ValueError(f'{model.__name__}: Meta.journal is for root documents; Table rows are journaled with their document')
             continue
-        if getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False):
-            value = value or Journal(tamper_evident=True)
-        elif not declared:
+        if not declared:
             value = Journal() if model.__state__ is not None or model in effects else None
         if value is not None:
             result[model] = value
@@ -112,11 +116,14 @@ def canonical(value):
     return json.dumps(value, sort_keys=True, separators=(',', ':'), ensure_ascii=False, default=str)
 
 
-def entry_hash(model, record_id, kind, actor, at, data, prev_hash):
-    """SHA-256 of the canonical JSON of an entry: [model, record_id, kind, actor, at, data, prev_hash].
+def entry_hash(model, record_id, kind, actor, at, data, prev_hash, scalars=None):
+    """SHA-256 of the canonical JSON of an entry: [model, record_id, kind, actor, at, data, prev_hash], plus
+    the state manager's scalars when the entry has any, so entries written before them verify as they were.
 
     `data` is the stored JSON text, itself canonical (sorted keys, no spaces)."""
-    return hashlib.sha256(canonical([model, record_id, kind, actor, at, data, prev_hash]).encode('utf-8')).hexdigest()
+    scalars = {key: value for key, value in (scalars or {}).items() if value is not None}
+    return hashlib.sha256(canonical([model, record_id, kind, actor, at, data, prev_hash, *([scalars] if scalars else [])])
+                          .encode('utf-8')).hexdigest()
 
 
 def now():
@@ -142,17 +149,16 @@ def via(tx, user):
     return row[0] if row is not None else 'Local MCP connector'
 
 
-def append(business, tx, user, model, record_id, kind, data):
+def append(business, tx, user, model, record_id, kind, data, **scalars):
     """Write one entry in this transaction and return its id. Callers have checked permissions.
-    An AI assistant's write keeps the person as the actor and names the assistant in data["via"]."""
-    if (getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False)) and 'event_id' not in data:
-        from .lifecycle import event_data
-        from .documents import Context
-        data = event_data(Context(business, tx, user), model, record_id, data)
+    An AI assistant's write keeps the person as the actor and names the assistant in data["via"].
+    `scalars` are the state manager's columns (SCALARS); the rule set version is added to entries with a rule."""
     through = via(tx, user)
     if through is not None:
         data = {**data, 'via': through}
-    return insert(tx.connection, business.registry, model, record_id, kind, actor_of(user), data)
+    if scalars.get('rule') is not None:
+        scalars.setdefault('rules_version', business.controls.version if getattr(business, 'controls', None) else None)
+    return insert(tx.connection, business.registry, model, record_id, kind, actor_of(user), data, **scalars)
 
 
 def tracking_values(registry, model, data):
@@ -182,7 +188,9 @@ def tracking_values(registry, model, data):
     return result
 
 
-def insert(connection, registry, model, record_id, kind, actor, data):
+def insert(connection, registry, model, record_id, kind, actor, data, **scalars):
+    if set(scalars) - set(SCALARS):
+        raise ValueError('Unknown journal column')
     data = tracking_values(registry, model, data)
     name = registry.name_for(model)
     at, text = now(), canonical(data)
@@ -192,9 +200,9 @@ def insert(connection, registry, model, record_id, kind, actor, data):
         # previous entry cannot change before this one commits.
         row = connection.run(qb.select('evlet_journal', 'hash').where(model=name, record_id=record_id).order_by('-id').limit(1)).one()
         prev_hash = None if row is None else row[0]
-        digest = entry_hash(name, record_id, kind, actor, at, text, prev_hash)
+        digest = entry_hash(name, record_id, kind, actor, at, text, prev_hash, scalars)
     entry = qb.insert('evlet_journal', model=name, record_id=record_id, kind=kind, actor=actor, at=at, data=text, prev_hash=prev_hash,
-                      hash=digest)
+                      hash=digest, **{key: value for key, value in scalars.items() if value is not None})
     return connection.run(entry.returning_id()).id
 
 
@@ -207,10 +215,6 @@ def recomputed(connection, registry, changes):
     ensure_table(connection,
                  hashed=[registry.name_for(model) for model, journal in registry.journals.items() if journal.tamper_evident])
     for (model, record_id), data in sorted(changes.items(), key=lambda item: (registry.name_for(item[0][0]), item[0][1])):
-        if getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False):
-            from uuid import uuid4
-            data = {**data, 'event_id': uuid4().hex, 'document_id': record_id, 'model': registry.name_for(model),
-                    'source': 'System', 'revision': 0, 'correlation_id': None}
         insert(connection, registry, model, record_id, 'recomputed', ENGINE, data)
 
 
@@ -282,49 +286,8 @@ def written(context, model, record_id, before, after, *, action=None):
     data = tree_changes(context._business, model, before, after)
     if action is not None:
         data['action'] = action
-    if before is None or data or getattr(model, 'confirmable', False) or getattr(model, 'track_changes', False):
-        from .lifecycle import event_data
-        data = event_data(context, model, record_id, data)
-        kind = 'created' if before is None else 'changed'
-        if before is not None and getattr(model, 'confirmable', False):
-            from .lifecycle import metadata
-            if metadata(context, model, record_id)['state'] != 'draft':
-                kind = 'post_confirmation_edit'
-        append(context._business, context._tx, context.user, model, record_id, kind, data)
-
-
-def moved(context, model, record_id, previous, move, before, after):
-    """`moved` with the states and the move's label, and anything else the move changed."""
-    if journals(context, model):
-        data = tree_changes(context._business, model, before, after, skip=(model.__state__,))
-        append(context._business, context._tx, context.user, model, record_id, 'moved',
-               {**data, 'from': previous, 'to': move.to, 'move': move.label})
-
-
-def voided(context, model, record_id, previous, reason):
-    if journals(context, model):
-        append(context._business, context._tx, context.user, model, record_id, 'voided',
-               {'from': previous, 'to': 'void', 'reason': reason})
-
-
-def revised(context, model, original_id, copy_id, reason):
-    """`revised` on the original, naming its copy; the copy's own history starts with `created`."""
-    if journals(context, model):
-        append(context._business, context._tx, context.user, model, original_id, 'revised', {'copy': copy_id, 'reason': reason})
-
-
-def unposted(context, model, record_id, previous, to, reason):
-    """`unposted` after an unpost: the record went back from `previous` to `to`, and what it posted was reversed."""
-    if journals(context, model):
-        append(context._business, context._tx, context.user, model, record_id, 'unposted',
-               {'from': previous, 'to': to, 'reason': reason})
-
-
-def reposted(context, model, record_id, move, reason):
-    """`reposted` after a repost, which follows the move's own `moved` and `effects` entries."""
-    if journals(context, model):
-        append(context._business, context._tx, context.user, model, record_id, 'reposted',
-               {'to': move.to, 'move': move.label, **({'reason': reason} if reason else {})})
+    if before is None or data:
+        append(context._business, context._tx, context.user, model, record_id, 'created' if before is None else 'changed', data)
 
 
 def number(context, model, record_id, name, value):
@@ -335,8 +298,7 @@ def number(context, model, record_id, name, value):
 def deleted(context, model, record_id):
     """`deleted`: the record is gone, its history stays (ids are never reused)."""
     if journals(context, model):
-        from .lifecycle import event_data
-        append(context._business, context._tx, context.user, model, record_id, 'deleted', event_data(context, model, record_id, {}))
+        append(context._business, context._tx, context.user, model, record_id, 'deleted', {})
 
 
 def file(business, tx, user, model, record_id, action, attachment):
@@ -346,7 +308,7 @@ def file(business, tx, user, model, record_id, action, attachment):
 
 
 def effects_posted(context, model, record_id, targets):
-    """`effects` after a move posted effect rows or a void wrote their mirror rows, in the same transaction.
+    """`effects` after a move posted effect rows or wrote their mirror rows, in the same transaction.
 
     `targets` lists, per target model that received rows, {"target", "rows", "reversal"} and, for a
     balanced effect, "balanced" (see `evlet.effects.journal_item`). Nothing is written without rows.
@@ -626,7 +588,8 @@ def present(business, user, model, row, visibility, done):
     readable = policy.fields(user, model)
     state_shown = model.__state__ is not None and model.__state__ in readable
     partial = False
-    if kind in ('created', 'changed', 'moved', 'recomputed', 'confirmed', 'reconfirmed', 'cancelled', 'reopened', 'approved', 'rejected', 'post_confirmation_edit'):
+    if kind in ('created', 'changed', 'moved', 'recomputed', 'approved', 'rejected', 'confirmed', 'reconfirmed', 'cancelled', 'reopened',
+                'post_confirmation_edit'):
         shown, partial = shown_changes(business, user, model, data, visibility)
         # Which action ran says something about the state it was available in.
         if 'action' in data and (model.__state__ is None or state_shown):
@@ -634,9 +597,9 @@ def present(business, user, model, row, visibility, done):
         if kind == 'recomputed' and data.get('posted') and state_shown:
             # Recompute changed a posted record because an admin asked it to include them.
             shown['posted'] = True
-        if kind == 'moved':
+        if kind in ('moved', 'approved', 'rejected'):
             if state_shown:
-                shown.update({key: data[key] for key in ('from', 'to', 'move')})
+                shown.update({key: data[key] for key in ('from', 'to', 'move', 'level', 'pending') if key in data})
             else:
                 kind, partial = 'changed', True
     elif kind in STATE_KINDS:
@@ -663,27 +626,12 @@ def present(business, user, model, row, visibility, done):
             shown['party'], partial = None, True
     else:
         shown = data
-    if data.get('event_id'):
-        shown.update({key: data[key] for key in ('event_id', 'source', 'revision', 'correlation_id', 'execution_id', 'confirmation_id', 'reason', 'from', 'to') if key in data})
-        # Application effect/approval references can reveal other protected records; only unrestricted
-        # readers of the complete document receive those application-owned details.
-        if not partial and policy.rule(user, model).scope is None and set(model.__fields__) <= readable:
-            if 'approval' in data:
-                shown['approval'] = data['approval']
-            if 'effects' in data:
-                effects = []
-                for effect in data['effects']:
-                    target = business.registry.models.get(effect.get('model'))
-                    if target is not None and policy.allows(user, target, 'read') and (policy.rule(user, target).scope is None or visibility(target, RecordId(effect.get('id')))):
-                        effects.append({**effect, 'id': text_id(effect.get('id'))})
-                shown['effects'] = effects
     actor = row['actor']
     item = {'id': row['id'], 'kind': kind, 'actor': None if actor == ENGINE else int(actor), 'at': row['at'], 'data': shown}
-    if data.get('event_id'):
-        item.update(event_id=data['event_id'], document_id=text_id(data.get('document_id')), model=data.get('model'),
-                    operation=kind, timestamp=row['at'], source=data.get('source'), revision=data.get('revision'),
-                    changes={key: shown[key] for key in ('fields', 'rows') if key in shown}, reason=shown.get('reason'),
-                    correlation_id=data.get('correlation_id'))
+    # The rule, remark, level and base release say what the state was, so only readers of the State see them.
+    columns = row.keys() if hasattr(row, 'keys') else ()
+    if state_shown:
+        item.update({key: row[key] for key in ('rule', 'remark', 'level', 'base') if key in columns and row[key] is not None})
     if kind == 'follow_up':
         item['done'] = done.get(row['id'])
     if through is not None:
@@ -715,7 +663,8 @@ def entries(context, model, record_id, *, limit=PAGE, offset=0, kind=None):
         raise ValidationError({'query': f'Use a limit of 1 to {MAX_PAGE} entries and a nonnegative offset'})
     name = business.registry.name_for(model)
     only = qb.TRUE if kind is None else qb.eq('kind', kind)
-    rows = tx.connection.run(qb.select('evlet_journal', 'id', 'kind', 'actor', 'at', 'data').where(only, model=name, record_id=record_id)
+    rows = tx.connection.run(qb.select('evlet_journal', 'id', 'kind', 'actor', 'at', 'data', 'rule', 'remark', 'level', 'base')
+                             .where(only, model=name, record_id=record_id)
                              .order_by('-id').limit(limit).offset(offset)).all()
     total = tx.connection.run(qb.select('evlet_journal', qb.count()).where(only, model=name, record_id=record_id)).value()
     items = shown(business, tx, user, model, record_id, rows)
@@ -787,6 +736,24 @@ def route(business, scope, body, user, model, record_id):
         return 200, entries(context, model, record_id, limit=int(limit), offset=int(offset), kind=kind), []
 
 
+def history_route(business, scope, user, model, parts):
+    """GET /api/{model}/{id}/history?limit=&offset=: the journal page Context.history returns."""
+    from .identity import path_id
+    if len(parts) != 5 or path_id(parts[3]) is None:
+        raise AccessError(404, 'Record not found')
+    if scope['method'] != 'GET':
+        raise AccessError(405, 'Method not allowed')
+    try:
+        query = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True)
+        if set(query) - {'limit', 'offset'} or any(len(values) != 1 for values in query.values()):
+            raise ValueError()
+        page = {key: int(values[0]) for key, values in query.items()}
+    except (ValueError, UnicodeError):
+        raise ValidationError({'query': 'Use a limit and a nonnegative offset'}) from None
+    with business.context(user, readonly=True) as context:
+        return 200, context.history(model, path_id(parts[3]), **page), []
+
+
 # Verification
 
 def hashed_models(connection):
@@ -807,7 +774,7 @@ def verify_connection(connection, *, hashed=(), batch=1000):
     hashed = set(hashed)
     last, breaks, checked, after = {}, [], 0, 0
     while True:
-        rows = connection.run(qb.select('evlet_journal', 'id', 'model', 'record_id', 'kind', 'actor', 'at', 'data', 'prev_hash', 'hash')
+        rows = connection.run(qb.select('evlet_journal', 'id', 'model', 'record_id', 'kind', 'actor', 'at', 'data', 'prev_hash', 'hash', *SCALARS)
                               .where(qb.gt('id', after)).order_by('id').limit(batch)).all()
         if not rows:
             return checked, breaks
@@ -824,7 +791,8 @@ def verify_connection(connection, *, hashed=(), batch=1000):
             checked += 1
             if row['prev_hash'] != previous:
                 breaks.append((row['id'], *key, 'the previous hash does not match the entry before it'))
-            if entry_hash(row['model'], row['record_id'], row['kind'], row['actor'], row['at'], row['data'], row['prev_hash']) != row['hash']:
+            if entry_hash(row['model'], row['record_id'], row['kind'], row['actor'], row['at'], row['data'], row['prev_hash'],
+                          {key: row[key] for key in SCALARS}) != row['hash']:
                 breaks.append((row['id'], *key, 'the hash does not match the entry'))
             last[key] = row['hash']
         after = rows[-1]['id']

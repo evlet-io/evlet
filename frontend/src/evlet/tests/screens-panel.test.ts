@@ -7,8 +7,8 @@ import { copy, type Recorded } from './server';
 afterEach(stopAll);
 
 // Ids as the server sends them: 13-character text.
-const [three, two, one] = [invoice.invoice_draft, invoice.invoice_revise_before, invoice.invoice_void].map(item => String(item.body.id));
-const details: Record<string, Recorded> = { [three]: invoice.invoice_draft, [two]: invoice.invoice_revise_before, [one]: invoice.invoice_void };
+const [three, two, one] = [invoice.invoice_draft, invoice.invoice_locked, invoice.invoice_void].map(item => String(item.body.id));
+const details: Record<string, Recorded> = { [three]: invoice.invoice_draft, [two]: invoice.invoice_locked, [one]: invoice.invoice_void };
 /** The recorded schema, with the invoice opening records in `openIn` (absent: the recorded default). */
 function schema(openIn?: 'page' | 'panel'): Recorded {
   const body = copy(invoice.schema).body;
@@ -23,7 +23,6 @@ const routes = (openIn: 'page' | 'panel' | undefined = 'panel'): Route[] => [
   ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
   ['GET', /\/api\/invoice\/\w+\/measures$/, invoice.invoice_record_measures],
   ['GET', /\/api\/invoice\/\w+\/related\/payment\.invoice/, invoice.invoice_related_payments],
-  ['GET', /\/api\/invoice\/\w+\/related\/invoice\.revises/, invoice.invoice_related_revisions],
   ['GET', /\/api\/invoice\/\w+\/journal/, invoice.invoice_journal],
   ['GET', /\/api\/invoice\/\w+\/attachments$/, invoice.invoice_attachments],
   ['GET', /\/api\/invoice\/\w{13}$/, sent => copy(details[sent.url.match(/\/api\/invoice\/(\w{13})$/)![1]])],

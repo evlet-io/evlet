@@ -1,6 +1,5 @@
 """Authoritative document operations sharing the existing transaction and policy."""
 
-from dataclasses import dataclass
 from types import MappingProxyType, MethodType
 from uuid import uuid4
 from contextlib import contextmanager
@@ -174,14 +173,8 @@ class Draft:
                 **{name: [row.stored_values() for row in rows] for name, rows in self._rows.items()}}
 
 
-@dataclass(frozen=True)
-class Change:
-    operation: str
-    actor: object
-    before: object
-    after: object
-    fields: tuple
-    children: object
+# Where a change came from, recorded with it.
+SOURCES = ('User', 'API', 'Automation', 'Scheduler', 'System', 'Integration')
 
 
 class Context:
@@ -189,7 +182,6 @@ class Context:
     def __init__(self, business, tx, user, *, readonly=False, active=None, source=None, correlation_id=None):
         if not business.database.owns(tx):
             raise ValueError('Document context belongs to another database')
-        from .lifecycle import SOURCES
         source = getattr(tx, '_change_source', 'API' if user is not None and user.access is not None else 'User') if source is None else source
         correlation_id = getattr(tx, '_change_correlation', None) if correlation_id is None else correlation_id
         if source not in SOURCES:
@@ -203,13 +195,12 @@ class Context:
             if actor_id(user) is not None:
                 tx.actor = actor_id(user)
         self.source, self.correlation_id = source, correlation_id
-        self._lifecycle_execution = None
         self._business, self._tx, self.user = business, tx, user
         self.readonly = readonly
         self._active = [] if active is None else active
         self._recalculate = None  # (model, record_id) explicitly allowed to recalculate under the active plan.
         self._person = None  # (model, record_id) of the write a person sent over HTTP; Controls rules apply to it.
-        # Set only on the private copy a Move run method or an @action handler gets while it runs (handler_context),
+        # Set only on the private copy a state manager hook or an @action handler gets while it runs (handler_context),
         # or 'read' on the read-only copy derive() and before_close() get (hook_context).
         self._session_open = False
 
@@ -217,7 +208,7 @@ class Context:
     def session(self):
         """The transaction session (evlet.Session) of the running move or action: trusted app code only.
 
-        Open only on the context a Move's run method or an @action handler gets as self.context while it
+        Open only on the context a @state, @state.exit or @release hook or an @action handler gets as self.context while it
         runs. Writes through it bypass row and field permissions and join the move or action's
         transaction, so a failure anywhere rolls back the State, its Sequence number and every row written.
         Every other context refuses it: business.context(), services, reports, jobs, and everything Eva,
@@ -229,14 +220,12 @@ class Context:
             from .database import ReadSession
             return ReadSession(self._tx)
         if not self._session_open:
-            raise AccessError(403, 'The transaction session is available only to a Move run method or an '
+            raise AccessError(403, 'The transaction session is available only to a state manager hook or an '
                                    '@action handler, as self.context.session while it runs')
         return self._tx
 
     def read_context(self):
-        result = Context(self._business, self._tx, self.user, readonly=True, active=self._active, source=self.source, correlation_id=self.correlation_id)
-        result._lifecycle_execution = self._lifecycle_execution
-        return result
+        return Context(self._business, self._tx, self.user, readonly=True, active=self._active, source=self.source, correlation_id=self.correlation_id)
 
     def _model(self, value):
         if self.user is None:
@@ -296,46 +285,9 @@ class Context:
         from .measures import scoped_measures
         return scoped_measures(self._business, self._tx, self.user, self._model(model), None if record_id is None else known_id(record_id), filters)
 
-    @property
-    def lifecycle_execution(self):
-        return self._lifecycle_execution
-
-    def document(self, model, record_id=None, **values):
-        from .lifecycle import BoundDocument
-        return BoundDocument(self, self._model(model), None if record_id is None else known_id(record_id), values)
-
-    def confirm(self, model, record_id):
-        return self._write(model, record_id, {}, lifecycle='confirm')
-
-    def cancel(self, model, record_id, *, reason):
-        return self._write(model, record_id, {}, lifecycle='cancel', reason=reason)
-
-    def reopen(self, model, record_id):
-        return self._write(model, record_id, {}, lifecycle='reopen')
-
     def history(self, model, record_id, **page):
         from .journal import entries
         return entries(self, model, known_id(record_id), **page)
-
-    def revisions(self, model, record_id, **page):
-        from .lifecycle import revisions
-        return revisions(self, self._model(model), known_id(record_id), **page)
-
-    def snapshot(self, model, record_id, *, revision):
-        from .lifecycle import snapshot
-        return snapshot(self, self._model(model), known_id(record_id), revision)
-
-    def diff(self, model, record_id, first, second):
-        from .lifecycle import diff
-        return diff(self, self._model(model), known_id(record_id), first, second)
-
-    def record_approval(self, model, record_id, *, approved, reason=None):
-        from .lifecycle import record_approval
-        return record_approval(self, self._model(model), known_id(record_id), approved, reason)
-
-    def reference_effect(self, model, record_id):
-        from .lifecycle import reference_effect
-        return reference_effect(self, model, known_id(record_id))
 
     def create(self, model, **values):
         return self._write(model, None, values)
@@ -353,44 +305,10 @@ class Context:
     def action(self, model, record_id, name, **arguments):
         return self._write(model, record_id, {}, action=name, arguments=arguments)
 
-    def move(self, model, record_id, to, **values):
-        """Move a record's State to `to` with the same checks as POST /api/{model}/{id}/moves/{to}. `values` fill
-        the fields the move asks for (see states.move_asks), checked with the move."""
-        return self._write(model, record_id, values, move=to)
-
-    def void(self, model, record_id, reason):
-        """Void a record with a reason; the same checks as POST /api/{model}/{id}/void."""
-        return self._correct(model, record_id, reason, 'void')
-
-    def revise(self, model, record_id, reason):
-        """Void a record and create its draft copy; returns the copy. The same checks as POST .../revise."""
-        return self._correct(model, record_id, reason, 'revise')
-
-    def unpost(self, model, record_id, reason):
-        """Take a posted record back to the state it posted from and cancel what it posted. The same checks as
-        POST /api/{model}/{id}/unpost."""
-        return self._correct(model, record_id, reason, 'unpost')
-
-    def repost(self, model, record_id, reason=None):
-        """Post an unposted record again through its posting move. The same checks as POST .../repost."""
-        return self._correct(model, record_id, reason, 'repost')
-
-    def _correct(self, model, record_id, reason, operation):
-        from . import corrections
-        if self.readonly:
-            raise AccessError(403, 'This context is read only')
-        model, record_id = self._model(model), known_id(record_id)
-        key = (model, record_id)
-        if key in self._active or len(self._active) >= 16:
-            raise ValidationError({'_form': 'Recursive document change detected'})
-        self._active.append(key)
-        try:
-            with self._savepoint():
-                return getattr(corrections, operation)(self, model, record_id, reason)
-        except ValidationError as exc:
-            raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
-        finally:
-            self._active.pop()
+    def move(self, model, record_id, key, *, remark=None, **values):
+        """Move a record by its rule `key`, with the same checks as POST /api/{model}/{id}/moves/{key}. `values`
+        fill the fields the move asks for (statemanager.move_asks), checked with the move."""
+        return self._write(model, record_id, values, move=key, remark=remark)
 
     def delete(self, model, record_id):
         if self.readonly: raise AccessError(403, 'This context is read only')
@@ -408,13 +326,9 @@ class Context:
     def _delete(self, model, record_id):
         business, tx, user = self._business, self._tx, self.user
         record = business.policy.record(tx, user, model, record_id, 'delete')
-        from .lifecycle import check_delete as lifecycle_delete
-        lifecycle_delete(self, model, record_id)
-        from .states import check_delete
+        from .statemanager import check_delete
         check_delete(self, model, record)
-        check_close(self, model, record_id, None)
         before, _ = load_draft(self, model, record_id, {}, preview=True)
-        child_changes = {}
         subtree = {}
         for prefix, item in walk(before):
             if item is not before:
@@ -426,7 +340,6 @@ class Context:
         for child in business.children.values():
             if child.parent is not model: continue
             rows = before._rows.get(child.name, [])
-            child_changes[child.name] = {'added': [], 'updated': [], 'removed': [row.id for row in rows], 'reordered': False}
             delete_rows(business, tx, child.model, [row.id for row in rows])
         with tx.maintenance():
             tx.delete(model, record.id)
@@ -435,16 +348,11 @@ class Context:
         tx.connection.run(qb.delete('evlet_attachments').where(model=business.registry.name_for(model), record_id=record_id))
         from .unsaved import Unsaved
         Unsaved.record_deleted(tx.connection, business.registry.name_for(model), record_id)
-        reaction = getattr(model, 'changed', None)
-        if reaction:
-            freeze_draft(before)
-            with trusted():
-                reaction(before, Change('delete', user, freeze(before.stored_values()), None, (), freeze(child_changes)))
         from . import journal
         journal.deleted(self, model, record.id)
         business.changed(tx, model, record_id, deleted=True)
 
-    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, lifecycle=None, reason=None):
+    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, remark=None):
         if self.readonly:
             raise AccessError(403, 'This context is read only')
         model = self._model(model)
@@ -458,11 +366,7 @@ class Context:
         self._active.append(key)
         try:
             with self._savepoint():
-                previous_execution = self._lifecycle_execution
-                try:
-                    return operate(self, model, record_id, values, action=action, arguments=arguments, move=move, lifecycle=lifecycle, reason=reason)
-                finally:
-                    self._lifecycle_execution = previous_execution
+                return operate(self, model, record_id, values, action=action, arguments=arguments, move=move, remark=remark)
         except ValidationError as exc:
             raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:
@@ -513,7 +417,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     scalars, collections = business.split_body(values)
     if current is None:
         drop_empty_name(business.registry, model, scalars)
-    from .states import state_write
+    from .statemanager import state_write
     from .sequences import sequence_write
     state_write(model, scalars, current)
     sequence_write(model, scalars, current, business.policy.fields(user, model))
@@ -1213,7 +1117,7 @@ def derive(context, draft, internal, errors, targets):
 
 @contextmanager
 def hook_context(context, draft):
-    """Give derive() or before_close() a read context with the session open read only, for as long as it runs."""
+    """Give derive() a read context with the session open read only, for as long as it runs."""
     inner = context.read_context()
     inner._session_open = 'read'
     previous = draft.context
@@ -1225,26 +1129,6 @@ def hook_context(context, draft):
         for _, part in walk(draft):
             if part.context is inner or part is draft:
                 object.__setattr__(part, 'context', previous)
-
-
-def check_close(context, model, record_id, to):
-    """Run the model's before_close(self, to) on the saved record before it closes: a move into a final
-    state (`to` is that state), a void ("void"), a lifecycle cancel ("cancelled") or a delete (None).
-
-    The record is read only, its session is read only, and a ValidationError (or ValueError) refuses
-    the change before anything is written."""
-    from .models import closes
-    if not closes(model):
-        return
-    record, _ = load_draft(context, model, record_id, {}, preview=True)
-    freeze_draft(record)
-    try:
-        with trusted(), hook_context(context, record):
-            record.before_close(to)
-    except ValidationError:
-        raise
-    except ValueError as exc:
-        raise ValidationError({'_form': str(exc)}) from None
 
 
 def current_user(item, field):
@@ -1437,8 +1321,8 @@ def validate_tree(context, all_drafts, internal, prior, errors, targets=None):
             if len(item._rows.get(name, ())) < table.min_rows:
                 errors[prefix + name] = 'Add at least one row' if table.min_rows == 1 else f'Add at least {table.min_rows} rows'
         if not errors:
-            try: item.validate()
-            except ValidationError as exc: errors.update({prefix + key: value for key, value in exc.errors.items()})
+            from .statemanager import check_item
+            errors.update({prefix + key: value for key, value in check_item(item).items()})
     if errors: raise ValidationError(errors)
 
 
@@ -1632,7 +1516,7 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
 
 @contextmanager
 def handler_context(context, draft):
-    """Give a Move run method or an @action handler its own copy of the context, with the transaction
+    """Give a state manager hook or an @action handler its own copy of the context, with the transaction
     session open, for as long as it runs. The caller's context (an HTTP route, a service, a tool) never
     gets an open session, and the copy closes when the handler returns, even if the handler kept it."""
     from copy import copy
@@ -1736,15 +1620,16 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     return tx.get(model, draft.id) if reload else None
 
 
-def operate(context, model, record_id, values, *, action=None, arguments=None, move=None, lifecycle=None, reason=None):
-    """Create, update, run an action or perform a move through the document pipeline, in one transaction.
+def operate(context, model, record_id, values, *, action=None, arguments=None, move=None, remark=None):
+    """Create, update, run an action or make a move through the document pipeline, in one transaction.
 
     Ordinary writes respect a locked State. Actions and moves are declared, role-checked code: they may
     change a record in a locked state but still obey each field's locked_when and every other rule.
     A record with posted effects keeps its stored calculated values on every write, and its actions and
-    moves may not change what those values read.
+    moves may not change what those values read. A move runs in the state manager's order: the rule,
+    @state.exit, the new state, @state, settle (with @validate), then the write and its journal entry.
     """
-    from . import states
+    from . import guards, statemanager
     business, tx, user = context._business, context._tx, context.user
     # Two Contexts for different users may share one transaction: this write is recorded under this one.
     from .audit import actor_id
@@ -1754,38 +1639,29 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     person, context._person = context._person == (model, record_id) and action is None and move is None, None
     if (action is not None or move is not None) and not record_id:
         raise AccessError(404, 'Record not found')
-    declared_move = None
+    rule = None
     if move is not None:
-        # The move is checked on the saved record before its values, so values never reveal which moves exist.
+        # The rule is checked on the saved record before its values, so values never reveal which rules exist.
         draft, before = load_draft(context, model, record_id, {})
-        declared_move = states.begin_move(context, model, draft, before, move)
-        if declared_move.to in model.__declared_fields__[model.__state__].final:
-            check_close(context, model, record_id, declared_move.to)
+        rule, remark = statemanager.begin_move(context, model, draft, before, move, remark)
         if values:
-            states.check_move_values(context, model, declared_move, values)
+            statemanager.check_move_values(context, model, rule, values)
             draft, before = load_draft(context, model, record_id, values)
-            draft._values[model.__state__] = move
     else:
         draft, before = load_draft(context, model, record_id, values)
-    from . import lifecycle as lifecycle_engine
-    if lifecycle is not None:
-        lifecycle_engine.begin(context, model, draft, lifecycle, reason)
-        if lifecycle == 'cancel':
-            check_close(context, model, record_id, 'cancelled')
-    else:
-        lifecycle_engine.check_write(context, model, draft, before)
+    statemanager.bind(draft, before)
     ordinary = action is None and move is None
     kept_by = keeps_saved_results(context, model, before, ordinary=ordinary)
     kept = bool(kept_by)
     # A record with postings keeps its stored calculated values for every writer.
     posted = 'posted' in kept_by
-    # An ordinary write on a locked record changes only editable_when_locked fields and keeps saved results.
-    locked_write = ordinary and bool(kept_by & {'confirmed', 'locked'})
+    # An ordinary write on a locked record changes only versioned=False fields and keeps saved results.
+    locked_write = ordinary and 'locked' in kept_by
     if context._recalculate == (model, record_id) and before is not None:
         if posted:
-            raise AccessError(409, 'This record has postings. To change its totals, void or revise it.')
+            raise AccessError(409, 'This record has postings. To change its totals, move it out of its posted state.')
         if locked_write:
-            states.check_recalculate(context, model, before)
+            statemanager.check_recalculate(context, model, before)
     plan = business.registry.plan_for(model)
     version = business.registry.formula_hashes.get(business.registry.root_of(model))
     # A write that keeps saved results does not recalculate, so it neither checks nor updates the recorded formula version.
@@ -1798,50 +1674,48 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         if row is not None and row[0] != version and context._recalculate != (model, record_id):
             raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
                                    'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
-    outcome = None
-    if declared_move is not None:
-        if declared_move.run is not None:
-            with trusted(), handler_context(context, draft):
-                outcome = getattr(model, declared_move.run)(draft)
+    outcome, reversed_rows = None, []
+    if rule is not None:
+        previous = before._values.get(model.__state__)
+        if any(bound.on == previous for bound in business.registry.effects.get(model, ())):
+            # Leaving a posting state reverses what it posted, before any hook runs.
+            from .effects import reverse
+            reversed_rows = reverse(context, model, record_id)
+        statemanager.run_hooks(context, draft, 'exit', previous)
+        draft._values[model.__state__] = rule.to
+        statemanager.run_hooks(context, draft, 'enter', rule.to)
     elif action is not None:
         method = getattr(model, action, None)
         declaration = getattr(method, '__action__', None)
         if declaration is None or not has_role(user, declaration['roles']):
             raise AccessError(403, 'Action is unavailable')
-        arguments = states.action_arguments(context, model, method, declaration, arguments, before)
+        arguments = guards.action_arguments(context, model, method, declaration, arguments, before)
         with trusted(), handler_context(context, draft):
             outcome = method(draft, **arguments)
     elif before is not None:
-        states.check_state_lock(context, draft, before)
+        statemanager.check_state_lock(context, draft, before)
+    # Settling runs @validate on the document and each row (validate_tree), after every value is final.
     settle(context, draft, complete=True, previous=before, kept=kept)
-    if lifecycle is not None:
-        lifecycle_engine.run(context, model, draft, lifecycle)
-        settle(context, draft, complete=True, previous=before, kept=kept)
-        if lifecycle != 'confirm' or lifecycle_engine.metadata(context, model, record_id)['revision']:
-            lifecycle_engine.check_write(context, model, draft, before)
-    else:
-        # Actions and settlement may also change protected fields.
-        lifecycle_engine.check_write(context, model, draft, before)
     if posted and not locked_write:
-        states.check_posted(context, draft, before)
+        guards.check_posted(context, draft, before)
     if locked_write:
-        states.keep_saved(draft, before)
+        statemanager.keep_saved(draft, before)
     if person:
         business.controls.custom.enforce(model, draft._values, before._values if before else None)
     # Document numbers and names are assigned on the settled draft, in this transaction.
     from . import sequences
-    numbers = sequences.assign(context, model, draft, before, declared_move)
+    numbers = sequences.assign(context, model, draft, before, rule)
     rules = sequences.naming_rules(business.registry, model)
     if rules is not None and rules.field == 'name' and rules.system and (before is None or before._values.get('name') in (None, '')) \
             and draft._values.get('name') not in (None, ''):
         # A series or autoname assigns the name; people may change it once it has one.
-        raise ValidationError({'name': 'Assigned on confirm' if rules.assign_on == 'confirm' else 'Assigned on save'})
-    if sequences.name_due(rules, draft._values, created=before is None, lifecycle=lifecycle, move=declared_move):
+        raise ValidationError({'name': 'Assigned on save'})
+    if sequences.name_due(rules, draft._values, created=before is None, move=rule):
         draft._values[rules.field] = sequences.issue(tx.connection, business.registry, model, rules, draft._values, host_today(business),
                                                      user.username, record=draft, context=context, record_id=draft.id)
     prior = before.stored_values() if before else None
     after = draft.stored_values()
-    if prior == after and lifecycle is None and (before is None or sections.signature(before) == sections.signature(draft)):
+    if prior == after and rule is None and (before is None or sections.signature(before) == sections.signature(draft)):
         if plan is not None:
             record_plan(tx, business.registry.name_for(model), record_id, version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
@@ -1857,28 +1731,15 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     context._active[-1] = (model, record.id)
     business.policy.record(tx, user, model, record.id, 'update' if before else 'create')
     keys = {}
-    child_changes = persist_rows(context, model, draft, before, record.id, keys)
-    after = draft.stored_values()
-    change = Change('create' if before is None else 'move' if move is not None else 'action' if action else 'update', user,
-                    freeze(prior) if prior is not None else None, freeze(after),
-                    tuple(name for name in model.__fields__ if before is None or before._values.get(name) != draft._values.get(name)),
-                    freeze(child_changes))
-    reaction = getattr(model, 'changed', None)
-    if reaction is not None:
-        freeze_draft(draft)
-        with trusted():
-            reaction(draft, change)
-    # The Journal entry of this write: `moved` through the move hook, otherwise `created` or `changed`.
-    if declared_move is not None:
+    persist_rows(context, model, draft, before, record.id, keys)
+    # The Journal entry of this write: `moved` for a move, otherwise `created` or `changed`.
+    from . import journal
+    if rule is not None:
         from .effects import post
-        from . import journal
-        posted = post(context, model, record.id, declared_move.to)
-        states.moved(context, model, record.id, before._values.get(model.__state__), declared_move, before, draft)
-        journal.effects_posted(context, model, record.id, posted)
-    elif lifecycle is not None:
-        lifecycle_engine.finish(context, model, record.id, before, draft, lifecycle, reason)
+        posted_rows = post(context, model, record.id, rule.to)
+        statemanager.moved(context, model, record.id, before._values.get(model.__state__), rule, remark, before, draft)
+        journal.effects_posted(context, model, record.id, reversed_rows + posted_rows)
     else:
-        from . import journal
         journal.written(context, model, record.id, before, draft, action=action)
     for name, number in numbers:
         sequences.assigned(context, model, record.id, name, number)
@@ -1895,7 +1756,6 @@ def keeps_saved_results(context, model, before, *, ordinary=True):
     This is the one rule for the save, the draft preview, a record's detail and a trusted settle. It returns
     the reasons that apply, and an empty set when the write recalculates:
     - 'posted': the record has posted effects. Every writer keeps its results.
-    - 'confirmed': a confirmable document is confirmed or cancelled.
     - 'locked': the record is in a locked State. Only an `ordinary` write keeps them; a move or an
       action settles normally.
     A new record (`before` is None) keeps nothing.
@@ -1903,13 +1763,11 @@ def keeps_saved_results(context, model, before, *, ordinary=True):
     if before is None or before.id is None:
         return frozenset()
     from .effects import has_postings
-    from . import lifecycle, states
+    from .statemanager import locked_state
     reasons = set()
     if has_postings(context._tx.connection, context._business.registry, model, before):
         reasons.add('posted')
-    if getattr(model, 'confirmable', False) and lifecycle.metadata(context, model, before.id)['state'] != 'draft':
-        reasons.add('confirmed')
-    if ordinary and states.locked_state(model, before._values) is not None:
+    if ordinary and locked_state(model, before._values) is not None:
         reasons.add('locked')
     return frozenset(reasons)
 
@@ -1939,9 +1797,8 @@ def settle_saved(tx, model, record_id, children=None):
     business.policy = SessionPolicy(tx._business.policy)
     context = Context(business, tx, ENGINE)
     current = tx.get(model, record_id)
-    # The shared rule, read for trusted code: only postings keep the saved results here. A confirmed or cancelled
-    # document and a locked State do not, because lifecycle handlers and app code write to a document while it is
-    # confirmed (a cancel handler runs before the state changes) and its derived values must follow those writes.
+    # The shared rule, read for trusted code: only postings keep the saved results here. A locked State does
+    # not, because hooks and app code write to a document while it is locked and its derived values must follow.
     kept_by = keeps_saved_results(context, model, Draft(model, dict(current._values), context=context, record_id=current.id),
                                   ordinary=False)
     if 'posted' in kept_by:

@@ -15,7 +15,7 @@ DESTINATION = Path(__file__).resolve().parents[1] / 'frontend/src/evlet/tests/li
 def normalize(value, key=None):
     if key == '_row_ids':
         return {'row-' + str(index): item for index, item in enumerate(value.values())}
-    if key in ('csrf', 'at', 'timestamp', 'hash', 'prev_hash', 'execution_id', 'confirmation_id', 'event_id', 'etag') and value is not None:
+    if key in ('csrf', 'at', 'timestamp', 'hash', 'prev_hash', 'execution_id', 'event_id', 'etag') and value is not None:
         return 1 if isinstance(value, int) else '"fixture-etag"' if key == 'etag' else 'fixture-' + key
     if isinstance(value, dict):
         return {key: normalize(item, key) for key, item in value.items()}
@@ -39,17 +39,14 @@ def record():
         capture('session', 'GET', '/api/auth/session')
         capture('schema', 'GET', '/api/schema')
         tag = capture('draft', 'POST', '/api/order', {'number': 'ORD-001', 'customer': 'A', 'children': {'lines': [{'description': 'First', 'rate': '10'}, {'description': 'Second', 'rate': '20'}]}})
-        tag = capture('confirmed', 'POST', '/api/order/0000000000001/confirm', {}, tag)
-        capture('snapshot1', 'GET', '/api/order/0000000000001/snapshot?revision=1')
-        tag = capture('cancelled', 'POST', '/api/order/0000000000001/cancel', {'reason': 'Customer and lines changed'}, tag)
-        tag = capture('reopened', 'POST', '/api/order/0000000000001/reopen', {}, tag)
-        lines = result['snapshot1']['body']['document']['children']['lines']
-        tag = capture('edited', 'PATCH', '/api/order/0000000000001', {'customer': 'B', 'children': {'lines': [{'id': lines[0]['id'], 'quantity': 2, 'description': 'First', 'rate': '10'}, {'description': 'Third', 'rate': '30'}]}}, tag)
-        capture('reconfirmed', 'POST', '/api/order/0000000000001/confirm', {}, tag)
-        capture('revisions', 'GET', '/api/order/0000000000001/revisions')
-        capture('snapshot2', 'GET', '/api/order/0000000000001/snapshot?revision=2')
-        capture('diff', 'GET', '/api/order/0000000000001/diff?from=1&to=2')
-        capture('history', 'GET', '/api/order/0000000000001/history')
+        o = '/api/order/0000000000001'
+        tag = capture('confirmed', 'POST', o + '/moves/draft_to_confirmed', {}, tag)
+        tag = capture('reopened', 'POST', o + '/moves/confirmed_to_draft', {'remark': 'Customer and lines changed'}, tag)
+        lines = result['reopened']['body']['children']['lines']
+        tag = capture('edited', 'PATCH', o, {'customer': 'B', 'children': {'lines': {'update': [{'id': lines[0]['id'], 'quantity': 2}], 'create': [{'description': 'Third', 'rate': '30'}]}}}, tag)
+        tag = capture('reconfirmed', 'POST', o + '/moves/draft_to_confirmed', {}, tag)
+        capture('cancelled', 'POST', o + '/moves/draft_confirmed_to_cancelled', {'remark': 'Customer withdrew the order'}, tag)
+        capture('history', 'GET', o + '/history')
         return result
 
 

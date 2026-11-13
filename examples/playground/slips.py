@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from evlet import Child, Currency, Date, Decimal, Link, Outcome, Select, Slip, Table, Text, ValidationError, present
+from evlet import Child, Currency, Date, Decimal, Link, Outcome, Select, Slip, Table, Text, ValidationError, present, validate
 
 from .models import Customer, Invoice, Project
 
@@ -34,6 +34,8 @@ class PlanProject(Slip):
     def load(self, source):
         self.customer = source.id
         self.name = f'{source.customer_name} project'
+
+    @validate
 
     def validate(self):
         if self.starts_on is not None and self.starts_on < date.today():

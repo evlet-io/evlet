@@ -37,7 +37,9 @@ describe('doc view blocks', () => {
     vi.useFakeTimers();
     const current = cell('draft');
     const moved = vi.fn((to: string) => current.set(to));
-    const { steps, good, bad } = flowFromState({ field: 'status', states: ['draft', 'issued', 'paid', 'void'], moves: [], final: ['paid', 'void'] });
+    const step = (key: string, label: string, color: string | null, final = false) => ({ key, label, color, lock: key !== 'draft', release: false, final });
+    const { steps, good, bad } = flowFromState({ field: 'status', rules: [],
+      steps: [step('draft', 'Draft', null), step('issued', 'Issued', 'blue'), step('paid', 'Paid', 'green', true), step('void', 'Void', 'rose', true)] });
     expect(good).toEqual(['paid']);
     expect(bad).toEqual(['void']);
     const dirty = cell(true);
@@ -119,9 +121,10 @@ describe('doc view blocks', () => {
     expect(move).toHaveBeenCalledOnce();
   });
 
-  it('LockBanner follows the lifecycle with Revise and Void only while locked', () => {
+  it('LockBanner follows the lifecycle and shows its actions only while locked', () => {
     const lifecycle = cell<Lifecycle>('draft');
-    const host = render(() => LockBanner({ lifecycle, state: 'Issued', reason: 'Customer cancelled the order.', onRevise: () => {}, onVoid: () => {} }));
+    const actions = ['Reopen', 'Void'].map(label => Button({ label }));
+    const host = render(() => LockBanner({ lifecycle, state: 'Issued', reason: 'Customer cancelled the order.', actions }));
     const banner = host.querySelector('.inv-banner')!;
     expect(banner.className).toContain('b-slate');
     expect(banner.textContent).toContain('Draft.');
@@ -129,7 +132,7 @@ describe('doc view blocks', () => {
     lifecycle.set('locked');
     expect(banner.className).toContain('b-blue');
     expect(banner.textContent).toContain('Issued and locked.');
-    expect([...banner.querySelectorAll('button')].map(button => button.textContent)).toEqual(['Revise', 'Void']);
+    expect([...banner.querySelectorAll('button')].map(button => button.textContent)).toEqual(['Reopen', 'Void']);
     lifecycle.set('void');
     expect(banner.className).toContain('b-rose');
     expect(banner.textContent).toContain('Customer cancelled the order.');

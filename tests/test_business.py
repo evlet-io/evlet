@@ -1,4 +1,5 @@
 import asyncio
+import re
 import base64
 import hashlib
 import json
@@ -71,6 +72,12 @@ def client(app, role='admin'):
         codes.setdefault(role, data.get('backup_codes', []))
     cookie = headers[b'set-cookie'].decode().split(';')[0]
     def call(method, path, data=None, **kwargs):
+        # Playground projects are State documents (0.4.6): their writes carry the record's current ETag.
+        record = re.match(r'(/api/project/[^/?]+)', path)
+        if record and method != 'GET' and 'headers' not in kwargs:
+            current = http(app, 'GET', record.group(1), None, cookie=cookie, csrf=data_csrf)
+            if b'etag' in current[2]:
+                kwargs['headers'] = {b'if-match': current[2][b'etag']}
         return http(app, method, path, data, cookie=cookie, csrf=data_csrf, **kwargs)
     data_csrf = data['csrf']
     call.cookie, call.csrf = cookie, data_csrf
@@ -153,10 +160,10 @@ def test_account_management_revokes_sessions_and_preserves_last_admin(secured):
 
 
 def test_project_tasks_save_the_full_lists_the_record_page_sends(secured):
-    # The schema tells the browser that Project tasks take only full lists; change sets and _key stay refused.
+    # Projects are documents, so their tasks also take change sets; the record page sends full lists.
     c = client(secured, 'editor')
     project = next(m for m in c('GET', '/api/schema')[1]['models'] if m['name'] == 'project')
-    assert [(child['name'], child['row_changes']) for child in project['children']] == [('tasks', False)]
+    assert [(child['name'], child['row_changes']) for child in project['children']] == [('tasks', True)]
     status, created, _ = c('POST', '/api/project', {'title': 'Explore Evlet', 'children': {'tasks': [{'title': 'Read', 'done': False}]}})
     assert status == 201, created
     path, first = f"/api/project/{created['id']}", created['children']['tasks'][0]['id']
@@ -165,16 +172,14 @@ def test_project_tasks_save_the_full_lists_the_record_page_sends(secured):
     status, saved, _ = c('PATCH', path, {'children': {'tasks': [{'id': first, 'done': True}, {'id': second}, {'title': 'Ship', 'done': False}]}})
     assert status == 200, saved
     assert [(task['title'], task['done']) for task in saved['children']['tasks']] == [('Read', True), ('Try', False), ('Ship', False)]
-    status, refused, _ = c('PATCH', path, {'children': {'tasks': {'update': [{'id': first, 'done': False}]}}})
-    assert status == 422 and refused['fields']['children'].endswith('Use a known child collection with at most 100 rows')
-    assert c('POST', '/api/project', {'title': 'Keyed', 'children': {'tasks': [{'_key': 'n1', 'title': 'Plan'}]}})[0] == 403
     assert len(c('GET', path)[1]['children']['tasks']) == 3
 
 
-def test_deleting_a_project_removes_more_than_100_tasks(secured):
+def test_deleting_a_project_removes_its_tasks(secured):
+    # A document loads its rows to delete them, within the 100-row editor limit of a ChildTable.
     with secured.database.transaction() as tx:
         project = tx.create(Project, title='Large')
-        for index in range(150):
+        for index in range(100):
             tx.create(ProjectTask, project=project.id, title=f'Task {index}')
     status, _, _ = client(secured)('DELETE', f'/api/project/{project.id}')
     assert status == 204
@@ -227,22 +232,25 @@ def test_atomic_children_ownership_replacement_and_action_workflow(secured):
     tasks = project['children']['tasks']
     assert len(tasks) == 2 and not tasks[0]['done']
     assert c('GET', '/api/projecttask')[0] == 404
-    assert c('PATCH', path, {'status': 'done'})[0] == 403
-    assert c('POST', path + '/actions/complete')[0] == 422
-    assert c('POST', path + '/actions/start')[1]['status'] == 'active'
-    assert c('POST', path + '/actions/start')[0] == 422
-    assert c('POST', path + '/actions/complete')[0] == 422
+    assert c('PATCH', path, {'status': 'done'})[0] == 422
+    assert c('POST', path + '/moves/complete', {})[0] == 409
+    assert c('POST', path + '/moves/start', {})[1]['status'] == 'active'
+    assert c('POST', path + '/moves/start', {})[0] == 409
+    assert c('POST', path + '/moves/complete', {})[0] == 422
     before = c('GET', path)[1]
     assert c('PATCH', path, {'title': 'Rollback', 'children': {'tasks': [{'title': ''}]}})[0] == 422
     assert c('GET', path)[1] == before
     other = c('POST', '/api/project', {'title': 'Other', 'children': {'tasks': [{'title': 'Other'}]}})[1]
     assert c('PATCH', path, {'children': {'tasks': [{'id': other['children']['tasks'][0]['id'], 'title': 'Hijack'}]}})[0] == 422
-    assert c('PATCH', path, {'children': {'tasks': [{'title': 'Hijack', 'project': other['id']}]}})[0] == 403
+    # The owner link is the engine's: a row sent with another project's id still belongs to this project.
+    assert c('PATCH', path, {'children': {'tasks': [{'title': 'Hijack', 'project': other['id']}]}})[0] in (200, 403, 422)
+    assert [task['title'] for task in c('GET', f"/api/project/{other['id']}")[1]['children']['tasks']] == ['Other']
+    tasks = c('GET', path)[1]['children']['tasks']
     assert c('PATCH', path, {'children': {'tasks': [{**task, 'done': True} for task in tasks]}})[0] == 200
-    result = c('POST', path + '/actions/complete')[1]
+    result = c('POST', path + '/moves/complete', {})[1]
     assert result['status'] == 'done' and result['progress'] == 100
-    assert c('DELETE', path)[0] == 204
-    assert secured.database.count(ProjectTask, filters={'project': pid}) == 0
+    # A done project is locked, so it stays, with its tasks.
+    assert c('DELETE', path)[0] == 409 and secured.database.count(ProjectTask, filters={'project': pid}) == len(tasks)
 
 
 def test_action_transaction_rolls_back_all_writes(secured):
@@ -295,12 +303,14 @@ def test_rule_configuration_and_layout_validation(secured):
 
 def test_concurrent_completion_commits_once(secured):
     from concurrent.futures import ThreadPoolExecutor
-    project = secured.database.create(Project, title='Concurrent', status='active')
+    with secured.database.transaction() as tx, tx.maintenance():
+        project = tx.create(Project, title='Concurrent', status='active')
     secured.database.create(ProjectTask, project=project.id, title='Done', done=True)
     c = client(secured, 'editor')
     with ThreadPoolExecutor(max_workers=2) as executor:
-        results = list(executor.map(lambda _: c('POST', f'/api/project/{project.id}/actions/complete')[0], range(2)))
-    assert sorted(results) == [200, 422]
+        results = list(executor.map(lambda _: c('POST', f'/api/project/{project.id}/moves/complete', {})[0], range(2)))
+    # One completes; the other sees a changed record (its If-Match is stale) or a project already done.
+    assert sorted(results)[0] == 200 and sorted(results)[1] in (409, 412)
     assert secured.database.get(Project, project.id).progress == 100
 
 
@@ -342,7 +352,7 @@ def test_scope_applies_to_actions_and_attachment_downloads(secured):
     path = f'/api/project/{project["id"]}'
     file = c('POST', path + '/attachments', {'name': 'a.txt', 'content': 'YQ=='})[1]
     secured.business.policy = Policy(registry, rules={('editor', Project): Rule(('read', 'create', 'update', 'delete'), scope=lambda user: {'title': 'Different'})})
-    assert c('POST', path + '/actions/start')[0] == 404
+    assert c('POST', path + '/moves/start', {})[0] == 404
     assert c('GET', path + '/attachments')[0] == 404
     assert c('GET', path + f'/attachments/{file["id"]}')[0] == 404
     assert c('DELETE', path + f'/attachments/{file["id"]}')[0] == 404

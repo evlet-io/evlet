@@ -233,11 +233,6 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 @media (max-width:1100px){.ev-doc-columns{grid-template-columns:1fr}.ev-doc-aside{border-left:0;padding-left:0;border-top:1px solid var(--border);padding-top:16px}}
 @media (max-width:760px){.ev-login-card{padding:22px 18px}.ev-savebar{margin:16px 0 0}}
 
-.ev-revisions { padding: 16px; overflow: auto; }
-.ev-revisions > label { display: inline-flex; align-items: center; gap: 8px; margin: 8px 16px 8px 0; }
-.ev-revisions input { width: 70px; }
-.ev-revisions table { width: 100%; border-collapse: collapse; }
-.ev-revisions th, .ev-revisions td { padding: 10px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
 .ev-revision-record dl { display: grid; grid-template-columns: minmax(100px, 1fr) 3fr; gap: 8px 16px; }
 .ev-revision-record dd { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ev-revision-record article { margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-lg); }

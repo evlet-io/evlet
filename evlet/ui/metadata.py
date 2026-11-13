@@ -25,7 +25,7 @@ def plural_for(label):
 OPEN_IN = ('page', 'panel')
 # The options a model's Meta may declare; each is public (docs/api-stability.md).
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
-                          'calculation_language', 'numeric_profile', 'revisable', 'measures', 'key_fields', 'relations', 'attachments',
+                          'calculation_language', 'numeric_profile', 'measures', 'key_fields', 'relations', 'attachments',
                           'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'panel_summary', 'ledger', 'append_only', 'timestamps', 'indexes',
                           'focus', 'cards', 'duplicate', 'derives', 'image'))
@@ -35,9 +35,9 @@ COLLAPSED = (False, True, 'empty')
 # How a section orders its fields, on screen and for the Tab key: across then down, or down the left column then the right.
 FLOWS = ('rows', 'columns')
 # The record page's own parts besides its sections, as Meta.panel and the schema's "panel" name them: Activity (the
-# side column), Details (every section), and the Revisions, Related and Postings rows of "more information". A Table
+# side column), Details (every section), and the Related and Postings rows of "more information". A Table
 # field is named by its own name. Record pages have no tabs (removed in 0.4).
-TABS = ('activity', 'details', 'revisions', 'related', 'postings')
+TABS = ('activity', 'details', 'related', 'postings')
 # The record page's side column blocks, for Meta.side_blocks: Key fields, Related, Files and Record info.
 SIDE_BLOCKS = ('key_fields', 'related', 'files', 'info')
 # What a list's side panel can leave out besides sections and fields: the summary strip and the side blocks.
@@ -710,7 +710,7 @@ def field_schema(field):
               'hidden': field.hidden or form_hidden(field), 'read_only': field.read_only,
               **({'stored': field.stored} if field.compute is not None or field.query is not None or not field.stored else {}),
               **currency_schema(field),
-              **({'editable_when_locked': True} if getattr(field, 'editable_when_locked', False) else {}),
+              **({'versioned': False} if not getattr(field, 'versioned', True) else {}),
               # Duplicate leaves this value out of the new record (display only).
               **({'copy': False} if getattr(field, 'copy', True) is False else {}),
               # Left out of the default list and Table columns (display only).

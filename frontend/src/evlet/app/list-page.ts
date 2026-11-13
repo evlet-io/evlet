@@ -30,7 +30,7 @@ import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
-import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, trendValues, numberField, screenModel, sources, stateLook, titleOf, type ScreenModel } from './meta';
+import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, trendValues, numberField, screenModel, stateLook, stepLabel, stepOf, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
 import { SCREEN_KEYS, useShortcuts } from './shortcuts';
 import { ariaKeys, withShortcut } from '../ui/shortcuts';
@@ -56,7 +56,7 @@ export function StateIcon(look: ReturnType<typeof stateLook>): HTMLElement {
 export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema, row: () => RecordData): Child {
   if (isStateField(model, meta) || meta.name === model.status) return StatusBadge({
     value: () => { const value = row()[meta.name]; return value === null || value === undefined ? null : String(value); },
-    tint: value => statusTint(meta, value), name: meta.label });
+    tint: value => statusTint(meta, value), name: meta.label, ...(isStateField(model, meta) ? { label: (value: string) => stepLabel(model, value) } : {}) });
   if (meta.type === 'link' || meta.type === 'tags' || meta.type === 'boolean' || meta.type === 'state') {
     const field = localField(meta as any, untrack(() => row()[meta.name]), {});
     effect(() => field.value.set(row()[meta.name]));
@@ -73,6 +73,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const model = screenModel(ctx.schema, name);
   const { icon, tint } = identity(model);
   const state = model.state && fieldOf(model, model.state.field) ? model.state : null;
+  const stateKeys = state ? state.steps.map(step => step.key) : [];
   // A board only when the model opts in (Meta.board) for its State field; otherwise the list is a table.
   const boarded = state && model.board === state.field ? state : null;
   const canCreate = model.api !== 'read' && model.permissions?.create !== false;
@@ -113,7 +114,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const tabMeta = tabSpec ? fieldOf(model, tabSpec.field)! : null;
   const linkTabs = tabSpec?.kind === 'link' ? tabMeta!.target ?? null : null;
   /** State and Select tabs: every value but retired choices. Link tabs come from the counts. */
-  const fixedTabs = !tabSpec || tabSpec.kind === 'link' ? [] : state && tabSpec.field === state.field ? state.states
+  const fixedTabs = !tabSpec || tabSpec.kind === 'link' ? [] : state && tabSpec.field === state.field ? stateKeys
     : (tabMeta!.choices ?? []).filter(value => !(tabMeta!.retired_choices ?? []).includes(value));
   const fits = (value: string | undefined): value is string => Boolean(tabSpec && value
     && (value === 'all' || (tabSpec.kind === 'link' ? Boolean(linkTabs) && isRecordId(value) : fixedTabs.includes(value))));
@@ -264,7 +265,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     if (!items || !state) return null;
     const amountOf = (item: Record<string, unknown> | undefined) => sumMeasure ? item?.[sumMeasure.name] ?? '0' : null;
     const all = items.reduce((sum, item) => sum + (Number(amountOf(item)) || 0), 0);
-    return Object.fromEntries(state.states.map(value => {
+    return Object.fromEntries(stateKeys.map(value => {
       const item = items.find(entry => String(entry[state.field]) === value);
       const amount = amountOf(item);
       return [value, { count: Number(item?.[countName] ?? 0), amount: valueField && amount !== null ? displayOf(valueField, amount) : undefined,
@@ -322,7 +323,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     return values.join('\n');
   }, { name: `${name}.tab values` });
   const tabCount = (value: string) => () => tabCounts.get() ? value === 'all' ? tabCounts.get()!.total : counts.get()![value] ?? 0 : tab.get() === value ? total.get() : null;
-  const tabLabel = (value: string) => linkTabs ? () => ctx.links.title(linkTabs, value).get() ?? '…' : humanize(value);
+  const tabLabel = (value: string) => linkTabs ? () => ctx.links.title(linkTabs, value).get() ?? '…' : state && tabSpec?.field === state.field ? stepLabel(model, value) : humanize(value);
   const tabs = tabSpec ? () => {
     if (finding.get()) return null;
     const values = tabValues.get() ? tabValues.get().split('\n') : [];
@@ -406,7 +407,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const loadingRows = () => html`<div class="ev-list-loading" role="status" aria-label=${`Loading ${model.plural.toLowerCase()}`}>
     ${[0, 1, 2, 3, 4].map(() => html`<span class="ev-sk"></span>`)}</div>`;
   const tablePrefs = ctx.prefs.cell<TablePrefs>(`list.${name}`, emptyPrefs());
-  const selectable = canDelete || Boolean(state?.moves.length);
+  const selectable = canDelete || Boolean(state?.rules.length);
   // Beside a panel the list keeps the title (with the number under it), the State and the first amount.
   const amountField = fields.find(meta => meta.type === 'currency') ?? fields.find(meta => ['decimal', 'integer'].includes(meta.type));
   const kept = new Set([fields[0]?.name, state?.field, amountField?.name]);
@@ -438,21 +439,27 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const linkField = keys.find(meta => meta.type === 'link');
   const dateField = keys.find(meta => meta.type === 'date') ?? model.fields.find(meta => meta.type === 'date');
   const role = ctx.user.role;
+  /** The rule that moves this row to a state: the first one from its current state that this role may use. */
+  const ruleFor = (row: RecordData, to: string) => {
+    const from = String(row[state!.field]), rules = state!.rules.filter(item => item.to === to && item.from.includes(from));
+    return rules.find(item => !item.by || item.by.includes(role)) ?? rules[0];
+  };
   const moveBlocked = (row: RecordData, to: string): string | null => {
     const from = String(row[state!.field]);
-    const move = state!.moves.find(item => item.to === to && sources(item).includes(from));
-    if (!move) return `${titleOf(model, row)} cannot move from ${humanize(from)} to ${humanize(to)}`;
-    if (move.roles && !move.roles.includes(role)) return `Your role cannot use ${move.label}`;
+    const move = ruleFor(row, to);
+    if (!move) return `${titleOf(model, row)} cannot move from ${stepLabel(model, from)} to ${stepLabel(model, to)}`;
+    if (move.by && !move.by.includes(role)) return `Your role cannot use ${move.label}`;
     if (model.api === 'read' || model.permissions?.update === false) return 'You cannot change this record';
-    // A move that asks for values (a reason, say) is made from the record, where its dialog asks for them.
-    if (move.asks?.length) return `Open ${titleOf(model, row)} to use ${move.label}: it asks for ${move.asks.map(field => fieldOf(model, field)?.label.toLowerCase() ?? field).join(' and ')}`;
+    // A move that asks for values or a remark is made from the record, where its dialog asks for them.
+    const asked = [...(move.asks ?? []).map(field => fieldOf(model, field)?.label.toLowerCase() ?? field), ...(move.remark?.mode === 'required' ? [(move.remark.label ?? 'a remark').toLowerCase()] : [])];
+    if (asked.length) return `Open ${titleOf(model, row)} to use ${move.label}: it asks for ${asked.join(' and ')}`;
     return null;
   };
   const setRow = (id: string, next: RecordData) => rows.set(rows.peek().map(item => item.id === id ? next : item));
   const moveRecord = async (row: RecordData, to: string): Promise<boolean> => {
     try {
       const { etag } = await api.get(name, row.id);
-      const { data } = await api.move(name, row.id, to, etag);
+      const { data } = await api.move(name, row.id, ruleFor(row, to)!.key, etag);
       setRow(row.id, data);
       totalsTick.set(totalsTick.peek() + 1);
       return true;
@@ -465,7 +472,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   // narrow the cards and keep every column.
   const boardOnly = derive(() => state && tabSpec?.field === state.field ? tab.get() : 'all');
   const boardView = (only: string) => state ? Board<RecordData>({
-    label: `${model.plural} by ${state.field}`, columns: state.states.filter(value => only === 'all' || value === only).map(value => ({ value, label: humanize(value), tint: stateTint(value) }) as BoardColumn),
+    label: `${model.plural} by ${state.field}`, columns: stateKeys.filter(value => only === 'all' || value === only).map(value => ({ value, label: stepLabel(model, value), tint: stepOf(model, value)?.color ?? stateTint(value) }) as BoardColumn),
     cards: rows, key: row => row.id, group: row => String(row[state.field]),
     totals: () => boardTotals.get(), amounts: Boolean(valueField),
     card: row => BoardCard({ title: () => titleOf(model, row()), tint, cancelled: () => isCancelled(row()), mark: state ? () => StateIcon(lookOf(row())) : undefined,
@@ -549,9 +556,9 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   };
   const bulkMove = () => {
     const list = chosen();
-    const targets = state!.states.filter(value => list.some(row => !moveBlocked(row, value)));
+    const targets = stateKeys.filter(value => list.some(row => !moveBlocked(row, value)));
     openModal({ title: `Move ${list.length} selected`, icon: 'arrow-right', tint: 'blue', narrow: true,
-      body: close => targets.length ? html`<div class="ev-choices">${targets.map(value => Button({ label: humanize(value), onClick: async () => {
+      body: close => targets.length ? html`<div class="ev-choices">${targets.map(value => Button({ label: stepLabel(model, value), onClick: async () => {
         close();
         const results = await runBulk(list, 'Moving', async row => {
           const why = moveBlocked(row, value);
@@ -560,18 +567,18 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
             const etag = await unchangedEtag(row);
             if (etag === null) return { kind: 'changed' };
             if (leaving.signal.aborted) return { kind: 'refused', text: 'stopped' };
-            const { data } = await api.move(name, row.id, value, etag);
+            const { data } = await api.move(name, row.id, ruleFor(row, value)!.key, etag);
             setRow(row.id, data);
             return { kind: 'done' };
           } catch (error) { return { kind: 'refused', text: `${titleOf(model, row)}: ${error instanceof ApiError ? error.message : 'not moved'}` }; }
         });
         if (!results) return;
         const done = results.filter(item => item.kind === 'done').length;
-        report(results, `Moved ${done} to ${humanize(value)}.`, 'could not move');
+        report(results, `Moved ${done} to ${stepLabel(model, value)}.`, 'could not move');
       } }))}</div>` : html`<p>None of the selected records has a move it can make now.</p>` });
   };
   const bulk = selectable ? BulkBar({ count: () => selection.get().size, noun: model.plural.toLowerCase(), onClear: () => selection.set(new Set()), actions: [
-    ...(state?.moves.length ? [{ label: 'Move', icon: 'arrow-right', onClick: bulkMove }] : []),
+    ...(state?.rules.length ? [{ label: 'Move', icon: 'arrow-right', onClick: bulkMove }] : []),
     ...(canDelete ? [{ label: 'Delete', icon: 'trash-2', onClick: bulkDelete }] : []),
   ] }) : null;
   onCleanup(() => closeDialogs());
@@ -615,8 +622,8 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     : view.get() === 'list' && panelOpen.get() ? (listWidth.get() && listWidth.get() < COMPACT_WIDTH ? 'compact' : 'narrow') : view.get());
   const content = html`<div class="ev-list-body" role=${tabs ? 'tabpanel' : null} id=${() => tabs ? `ev-${name}-views-${tab.get()}-panel` : null} aria-labelledby=${() => tabs ? `ev-${name}-views-${tab.get()}` : null}>
     ${match(mode, { error: () => body(), empty: () => body(), loading: () => loadingRows(), list: () => [table(), pager], narrow: () => [table(true), pager], compact: () => [compactRows(), pager],
-      board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => boardOnly.get() === 'all'}>${() => `Showing ${humanize(boardOnly.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
-        match(boardOnly, Object.fromEntries(['all', ...state!.states].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
+      board: () => [state ? html`<p class="muted ev-note ev-board-note" hidden=${() => boardOnly.get() === 'all'}>${() => `Showing ${stepLabel(model, boardOnly.get()).toLowerCase()} ${model.plural.toLowerCase()} only. Choose All ${model.plural.toLowerCase()} to see every column.`}</p>` : null,
+        match(boardOnly, Object.fromEntries(['all', ...stateKeys].map(value => [value, () => boardView(value)]))), when(() => (total.get() ?? 0) > BOARD_SIZE, () => html`<p class="muted ev-note">${() => `Showing the first ${BOARD_SIZE} of ${total.get()}. Use the list or a filter to see the rest.`}</p>`)] })}</div>`;
 
   const list = html`<div class="page ev-list" class:ev-list-narrow=${panelOpen} data-model=${name} aria-busy=${() => loading.get() ? 'true' : null}>${ctx.crumbBar?.()}${header}${when(() => !panelOpen.get(), () => strip)}<p class="muted ev-progress" role="status" hidden=${() => !progress.get()}>${progress}</p>
     <div class="ev-list-card" class:ev-list-card-board=${() => mode.get() === 'board'}>${tabs}${toolbar}${content}</div>${when(() => !panelOpen.get(), () => bulk)}</div>` as HTMLElement;

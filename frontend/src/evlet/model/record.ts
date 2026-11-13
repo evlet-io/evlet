@@ -686,9 +686,9 @@ export class RecordStore {
     return this.command(() => this.api.action(this.meta.name, this.root.id!, name, args, this.etag.peek()));
   }
 
-  /** Move to another state; `values` fill the fields the move asks for. */
-  async move(to: string, values: Record<string, unknown> = {}): Promise<boolean> {
-    return this.command(() => this.api.move(this.meta.name, this.root.id!, to, this.etag.peek(), values));
+  /** Move by a State rule's key; `values` hold its remark and the fields the move asks for. */
+  async move(key: string, values: Record<string, unknown> = {}): Promise<boolean> {
+    return this.command(() => this.api.move(this.meta.name, this.root.id!, key, this.etag.peek(), values));
   }
 
   private async command(send: () => Promise<{ data: any; etag: string | null }>) {

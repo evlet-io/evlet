@@ -2,7 +2,7 @@
 
 import pytest
 
-from evlet import Currency, Database, Model, Move, Registry, Rule, Select, State, Text
+from evlet import Currency, Database, Model, Registry, Rule, Select, State, Text
 from evlet.calc import F, when
 from test_business import client
 from test_meaning import serve
@@ -14,8 +14,13 @@ class Member(Model):
     """Active or left: not a pipeline, so it shows as a badge (the default)."""
     permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('title',))}
     title = Text(required=True)
-    standing = State(('active', 'left'), moves=(Move('active', 'left', 'Mark as left'),
-                                                Move('left', 'active', 'Reinstate', roles=('admin',))))
+    standing = State(
+        State.Step('active'),
+        State.Step('left'),
+        rules=(
+            State.Rule('active', 'left', 'Mark as left', key='left'),
+            State.Rule('left', 'active', 'Reinstate', key='active', by=('admin',)),
+        ))
 
 
 class Bill(Model):
@@ -28,8 +33,14 @@ class Bill(Model):
         status = 'payment_status'
 
     title = Text(required=True)
-    stage = State(('draft', 'submitted', 'approved'), moves=(Move('draft', 'submitted', 'Submit'),
-                                                             Move('submitted', 'approved', 'Approve')), show='bar')
+    stage = State(
+        State.Step('draft'),
+        State.Step('submitted'),
+        State.Step('approved'),
+        rules=(
+            State.Rule('draft', 'submitted', 'Submit', key='submitted'),
+            State.Rule('submitted', 'approved', 'Approve', key='approved'),
+        ), show='bar')
     total = Currency(default=0)
     paid = Currency(default=0)
     payment_status = Select(('unpaid', 'partly_paid', 'paid'), colors={'unpaid': 'rose', 'partly_paid': 'amber', 'paid': 'green'},
@@ -44,7 +55,12 @@ class Ledger(Model):
         api = 'read'
 
     title = Text(required=True)
-    phase = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'),), show='none')
+    phase = State(
+        State.Step('open'),
+        State.Step('closed'),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+        ), show='none')
 
 
 def entry(c, name):
@@ -57,12 +73,12 @@ def app(tmp_path):
 
 
 def test_show_is_validated():
-    assert State(('a', 'b')).show == 'badge'
-    assert State(('a', 'b'), show='bar').show == 'bar'
-    assert State(('a', 'b'), show='none').show == 'none'
+    assert State(State.Step('a'), State.Step('b')).show == 'badge'
+    assert State(State.Step('a'), State.Step('b'), show='bar').show == 'bar'
+    assert State(State.Step('a'), State.Step('b'), show='none').show == 'none'
     for wrong in ('stepper', None, True, 'Badge'):
         with pytest.raises(ValueError, match='State show is "badge", "bar" or "none"'):
-            State(('a', 'b'), show=wrong)
+            State(State.Step('a'), State.Step('b'), show=wrong)
 
 
 def test_select_colors_are_validated():
@@ -74,7 +90,7 @@ def test_select_colors_are_validated():
         Select(('a', 'b'), colors=['green'])
     with pytest.raises(ValueError, match='Select colors are blue, green'):
         Select(('a', 'b'), colors={'a': 'red'})
-    assert State(('a', 'b'), colors={'b': 'rose'}).metadata()['colors'] == {'b': 'rose'}
+    assert State(State.Step('a'), State.Step('b', color='rose')).metadata()['colors'] == {'b': 'rose'}
 
 
 @pytest.mark.parametrize('name, field, message', [
@@ -143,12 +159,12 @@ def test_moves_name_what_blocks_them(app):
     c = client(app)
     status, member, _ = c('POST', '/api/member', {'title': 'Sam'})
     assert status == 201
-    assert c('GET', f'/api/member/{member["id"]}')[1]['_moves'] == [{'to': 'left', 'label': 'Mark as left', 'allowed': True}]
+    assert c('GET', f'/api/member/{member["id"]}')[1]['_moves'] == [{'key': 'left', 'to': 'left', 'label': 'Mark as left', 'allowed': True}]
     # A model callers only read: its moves are listed but never allowed.
     with app.business.database.transaction() as tx:
         record = tx.create(Ledger, title='Q1')
     moves = c('GET', f'/api/ledger/{record.id}')[1]['_moves']
-    assert moves == [{'to': 'closed', 'label': 'Close', 'allowed': False, 'reason': 'You cannot change this record'}]
+    assert moves == [{'key': 'closed', 'to': 'closed', 'label': 'Close', 'allowed': False, 'reason': 'You cannot change this record'}]
 
 
 def test_moves_in_a_closed_period_are_blocked(tmp_path):
@@ -165,7 +181,12 @@ def test_moves_in_a_closed_period_are_blocked(tmp_path):
 
         title = Text(required=True)
         posted_on = Date()
-        stage = State(('draft', 'submitted'), moves=(Move('draft', 'submitted', 'Submit'),), show='bar')
+        stage = State(
+            State.Step('draft'),
+            State.Step('submitted'),
+            rules=(
+                State.Rule('draft', 'submitted', 'Submit', key='submitted'),
+            ), show='bar')
 
     app = serve(Database(tmp_path / 'closed.sqlite3', Registry(Claim)))
     c = client(app)
@@ -173,7 +194,7 @@ def test_moves_in_a_closed_period_are_blocked(tmp_path):
     new = c('POST', '/api/claim', {'title': 'New', 'posted_on': '2026-03-10'})[1]
     lock(app, date(2026, 1, 31))
     assert c('GET', f'/api/claim/{old["id"]}')[1]['_moves'] == [
-        {'to': 'submitted', 'label': 'Submit', 'allowed': False, 'reason': 'This record is in a closed period'}]
+        {'key': 'submitted', 'to': 'submitted', 'label': 'Submit', 'allowed': False, 'reason': 'This record is in a closed period'}]
     assert c('GET', f'/api/claim/{new["id"]}')[1]['_moves'][0]['allowed'] is True
 
 

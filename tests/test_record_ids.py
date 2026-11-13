@@ -9,8 +9,8 @@ import sqlite3
 
 import pytest
 
-from evlet import (Application, Child, ConflictError, Database, Integer, Link, Model, Move, Registry, Rule, State, Table, Text,
-                   ValidationError, action)
+from evlet import (Application, Child, ConflictError, Database, Integer, Link, Model, Registry, Rule, State, Table,
+                   Text, ValidationError, action)
 from evlet.auth import LocalAuth, User
 from evlet.framework import STEPS, upgrade
 from evlet.identity import RecordId, check_ids, has_id_guard
@@ -27,7 +27,12 @@ class Venture(Model):
 
     permissions = FULL
     title = Text(required=True, max_length=40)
-    stage = State(('draft', 'active'), default='draft', moves=(Move('draft', 'active', 'Start'),))
+    stage = State(
+        State.Step('draft'),
+        State.Step('active'),
+        rules=(
+            State.Rule('draft', 'active', 'Start', key='active'),
+        ), default='draft')
     steps = Table(Step)
 
     @action('Take id')

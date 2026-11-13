@@ -2,8 +2,8 @@
 
 import pytest
 
-from evlet import (Action, Application, Column, Count, Currency, Database, Link, Report, Model, Move, Policy, Reference, Registry, Rule, State, Text, ValidationError,
-                   action)
+from evlet import (Action, Application, Column, Count, Currency, Database, Link, Report, Model, Policy, Reference,
+                   Registry, Rule, State, Text, ValidationError, action)
 from evlet.auth import LocalAuth, User
 from evlet.permissions import calling
 from finite_fixtures import FiniteMeta
@@ -24,10 +24,17 @@ class Entry(Model):
 
 class Book(Model):
     """A read-only document: states, moves, void and actions exist, and still no caller may use them."""
-    Meta = type('Meta', (FiniteMeta,), {'api': 'read', 'revisable': True})
-    permissions = {**FULL, 'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise'))}
+    Meta = type('Meta', (FiniteMeta,), {'api': 'read'})
+    permissions = {**FULL, 'admin': Rule(('read', 'create', 'update', 'delete'))}
     memo = Text(default='')
-    status = State(('draft', 'open', 'void'), moves=(Move('draft', 'open', 'Open'),), locked=('open', 'void'), final=('void',), voidable=('open',))
+    status = State(
+        State.Step('draft'),
+        State.Step('open', lock=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'open', 'Open', key='open'),
+            State.Rule('open', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ))
 
     @action
     def rename(self):
@@ -137,7 +144,8 @@ def test_effect_rows_of_a_document_without_surface_hide_their_source():
     def models(hidden):
         target = type('Tally', (Model,), {'source': Reference(hidden=hidden), 'reversal': Boolean(default=False), 'amount': Currency(default=0)})
         meta = type('Meta', (), {'api': None, 'effects': (Effect(target, rows='rows', on='done', reverse=Negate('amount')),)})
-        state = State(('draft', 'done', 'void'), moves=(Move('draft', 'done', 'Done'),), locked=('done', 'void'), final=('void',), voidable=('done',))
+        state = State(State.Step('draft'), State.Step('done', lock=True, release=True), State.Step('void', lock=True, final=True),
+                      rules=(State.Rule('draft', 'done', 'Done'), State.Rule('done', 'void', 'Void', remark='required')))
         return type('Source', (Model,), {'Meta': meta, 'status': state, 'rows': lambda self: []}), target
     with pytest.raises(ValueError, match=r'Tally.source names Source records, which has Meta.api = None'):
         Registry(*models(False))
@@ -159,7 +167,7 @@ WRITES = [
     ('POST', '/api/_draft/book', {'values': {'memo': 'x'}}),
     ('POST', '/api/book/{book}/actions/rename', {}),
     ('POST', '/api/book/{book}/moves/open', {}),
-    *[('POST', f'/api/book/{{book}}/{operation}', {'reason': 'Wrong'}) for operation in ('void', 'revise', 'unpost', 'repost', 'confirm', 'cancel', 'reopen')],
+    ('POST', '/api/book/{book}/moves/void', {'remark': 'Wrong'}),
     ('POST', '/api/book/{book}/attachments', {'name': 'a.txt', 'content_type': 'text/plain', 'data': 'aGk='}),
     ('POST', '/api/book/{book}/prints/invoice/file', {}),
 ]

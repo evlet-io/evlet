@@ -30,7 +30,8 @@
               "fields": [
                 "number",
                 "customer",
-                "remarks"
+                "remarks",
+                "status"
               ],
               "collapsible": false,
               "collapsed": false,
@@ -45,17 +46,24 @@
             "id",
             "number",
             "customer",
-            "remarks"
+            "remarks",
+            "status"
           ],
           "search_fields": [
             "number",
             "customer",
             "remarks",
+            "status",
             "title",
             "name"
           ],
           "open_in": "page",
           "autosave": true,
+          "list_tabs": {
+            "field": "status",
+            "kind": "state",
+            "default": "all"
+          },
           "fields": [
             {
               "name": "number",
@@ -131,7 +139,7 @@
               "placeholder": "",
               "hidden": false,
               "read_only": false,
-              "editable_when_locked": true,
+              "versioned": false,
               "default_kind": "none",
               "stored": true,
               "operators": [
@@ -143,6 +151,44 @@
                 "icontains",
                 "nicontains",
                 "startswith",
+                "isnull"
+              ],
+              "compute": null,
+              "initial": null,
+              "applies_when": null,
+              "required_when": null,
+              "locked_when": null
+            },
+            {
+              "name": "status",
+              "type": "select",
+              "required": true,
+              "unique": false,
+              "index": false,
+              "max_length": 255,
+              "choices": [
+                "draft",
+                "confirmed",
+                "cancelled"
+              ],
+              "colors": {
+                "confirmed": "green",
+                "cancelled": "rose"
+              },
+              "state": true,
+              "label": "Status",
+              "help_text": "",
+              "placeholder": "",
+              "hidden": false,
+              "read_only": true,
+              "default_kind": "static",
+              "default": "draft",
+              "stored": true,
+              "operators": [
+                "eq",
+                "ne",
+                "in",
+                "nin",
                 "isnull"
               ],
               "compute": null,
@@ -220,6 +266,7 @@
             "number": {},
             "customer": {},
             "remarks": {},
+            "status": {},
             "name": {},
             "title": {}
           },
@@ -227,6 +274,7 @@
             "number",
             "customer",
             "remarks",
+            "status",
             "name",
             "title",
             "lines.description",
@@ -253,9 +301,100 @@
             }
           ],
           "actions": [],
+          "state": {
+            "field": "status",
+            "default": "draft",
+            "show": "bar",
+            "steps": [
+              {
+                "key": "draft",
+                "label": "Draft",
+                "color": null,
+                "lock": false,
+                "release": false,
+                "final": false
+              },
+              {
+                "key": "confirmed",
+                "label": "Confirmed",
+                "color": "green",
+                "lock": true,
+                "release": true,
+                "final": false
+              },
+              {
+                "key": "cancelled",
+                "label": "Cancelled",
+                "color": "rose",
+                "lock": true,
+                "release": false,
+                "final": true
+              }
+            ],
+            "rules": [
+              {
+                "key": "draft_to_confirmed",
+                "from": [
+                  "draft"
+                ],
+                "to": "confirmed",
+                "label": "Confirm",
+                "by": [
+                  "admin",
+                  "editor"
+                ],
+                "guarded": false,
+                "when": null,
+                "primary": true,
+                "reject": false,
+                "remark": null
+              },
+              {
+                "key": "confirmed_to_draft",
+                "from": [
+                  "confirmed"
+                ],
+                "to": "draft",
+                "label": "Reopen",
+                "by": [
+                  "admin",
+                  "editor"
+                ],
+                "guarded": false,
+                "when": null,
+                "primary": false,
+                "reject": false,
+                "remark": {
+                  "mode": "required",
+                  "label": null
+                }
+              },
+              {
+                "key": "draft_confirmed_to_cancelled",
+                "from": [
+                  "draft",
+                  "confirmed"
+                ],
+                "to": "cancelled",
+                "label": "Cancel",
+                "by": [
+                  "admin",
+                  "editor"
+                ],
+                "guarded": false,
+                "when": null,
+                "primary": false,
+                "reject": false,
+                "remark": {
+                  "mode": "required",
+                  "label": null
+                }
+              }
+            ]
+          },
           "attachments": false,
           "journal": {
-            "tamper_evident": true,
+            "tamper_evident": false,
             "kinds": [
               "note",
               "message",
@@ -263,22 +402,6 @@
               "follow_up",
               "follow_up_done"
             ]
-          },
-          "lifecycle": {
-            "confirmable": true,
-            "labels": {
-              "draft": "Draft",
-              "confirmed": "Confirmed",
-              "cancelled": "Cancelled",
-              "confirm": "Confirm",
-              "cancel": "Cancel",
-              "reopen": "Reopen"
-            },
-            "permissions": {
-              "confirm": true,
-              "cancel": true,
-              "reopen": true
-            }
           }
         },
         {
@@ -488,6 +611,7 @@
       "number": "ORD-001",
       "customer": "A",
       "remarks": null,
+      "status": "draft",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -505,11 +629,6 @@
             "rate": "20.00"
           }
         ]
-      },
-      "_lifecycle": {
-        "state": "draft",
-        "revision": 0,
-        "confirmation_id": null
       },
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
@@ -527,15 +646,32 @@
         "row-0": "0000000000001",
         "row-1": "0000000000002"
       },
+      "_moves": [
+        {
+          "key": "draft_to_confirmed",
+          "to": "confirmed",
+          "label": "Confirm",
+          "allowed": true,
+          "primary": true
+        },
+        {
+          "key": "draft_confirmed_to_cancelled",
+          "to": "cancelled",
+          "label": "Cancel",
+          "allowed": true,
+          "remark": {
+            "mode": "required",
+            "label": null,
+            "required": true
+          }
+        }
+      ],
+      "_locked": false,
+      "_actions": [],
       "_journal": {
         "count": 1,
         "open_follow_ups": 0
-      },
-      "_locked": false,
-      "_deletable": true,
-      "_lifecycle_actions": [
-        "confirm"
-      ]
+      }
     },
     "etag": "\"fixture-etag\""
   },
@@ -545,7 +681,8 @@
       "id": "0000000000001",
       "number": "ORD-001",
       "customer": "A",
-      "remarks": "Confirmed revision 1",
+      "remarks": "Confirmed by admin",
+      "status": "confirmed",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -563,11 +700,6 @@
             "rate": "20.00"
           }
         ]
-      },
-      "_lifecycle": {
-        "state": "confirmed",
-        "revision": 1,
-        "confirmation_id": "fixture-confirmation_id"
       },
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
@@ -581,64 +713,47 @@
           "name": "Administrator"
         }
       },
+      "_moves": [
+        {
+          "key": "confirmed_to_draft",
+          "to": "draft",
+          "label": "Reopen",
+          "allowed": true,
+          "remark": {
+            "mode": "required",
+            "label": null,
+            "required": true
+          }
+        },
+        {
+          "key": "draft_confirmed_to_cancelled",
+          "to": "cancelled",
+          "label": "Cancel",
+          "allowed": true,
+          "remark": {
+            "mode": "required",
+            "label": null,
+            "required": true
+          }
+        }
+      ],
+      "_locked": true,
+      "_actions": [],
       "_journal": {
         "count": 2,
         "open_follow_ups": 0
-      },
-      "_locked": true,
-      "_deletable": false,
-      "_lifecycle_actions": [
-        "cancel"
-      ]
+      }
     },
     "etag": "\"fixture-etag\""
   },
-  "snapshot1": {
-    "status": 200,
-    "body": {
-      "revision": 1,
-      "execution_id": "fixture-execution_id",
-      "at": "fixture-at",
-      "actor": "1",
-      "hash": "fixture-hash",
-      "document": {
-        "id": "0000000000001",
-        "number": "ORD-001",
-        "customer": "A",
-        "remarks": "Confirmed revision 1",
-        "name": null,
-        "title": "0000000000001",
-        "children": {
-          "lines": [
-            {
-              "id": "0000000000001",
-              "description": "First",
-              "quantity": 1,
-              "rate": "10.00",
-              "children": {}
-            },
-            {
-              "id": "0000000000002",
-              "description": "Second",
-              "quantity": 1,
-              "rate": "20.00",
-              "children": {}
-            }
-          ]
-        }
-      },
-      "effects": [],
-      "approval": null
-    },
-    "etag": null
-  },
-  "cancelled": {
+  "reopened": {
     "status": 200,
     "body": {
       "id": "0000000000001",
       "number": "ORD-001",
       "customer": "A",
-      "remarks": "Confirmed revision 1",
+      "remarks": "Confirmed by admin",
+      "status": "draft",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -656,11 +771,6 @@
             "rate": "20.00"
           }
         ]
-      },
-      "_lifecycle": {
-        "state": "cancelled",
-        "revision": 1,
-        "confirmation_id": "fixture-confirmation_id"
       },
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
@@ -674,25 +784,43 @@
           "name": "Administrator"
         }
       },
+      "_moves": [
+        {
+          "key": "draft_to_confirmed",
+          "to": "confirmed",
+          "label": "Confirm",
+          "allowed": true,
+          "primary": true
+        },
+        {
+          "key": "draft_confirmed_to_cancelled",
+          "to": "cancelled",
+          "label": "Cancel",
+          "allowed": true,
+          "remark": {
+            "mode": "required",
+            "label": null,
+            "required": true
+          }
+        }
+      ],
+      "_locked": false,
+      "_actions": [],
       "_journal": {
         "count": 3,
         "open_follow_ups": 0
-      },
-      "_locked": true,
-      "_deletable": false,
-      "_lifecycle_actions": [
-        "reopen"
-      ]
+      }
     },
     "etag": "\"fixture-etag\""
   },
-  "reopened": {
+  "edited": {
     "status": 200,
     "body": {
       "id": "0000000000001",
       "number": "ORD-001",
-      "customer": "A",
-      "remarks": "Confirmed revision 1",
+      "customer": "B",
+      "remarks": "Confirmed by admin",
+      "status": "draft",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -700,7 +828,7 @@
           {
             "id": "0000000000001",
             "description": "First",
-            "quantity": 1,
+            "quantity": 2,
             "rate": "10.00"
           },
           {
@@ -708,13 +836,14 @@
             "description": "Second",
             "quantity": 1,
             "rate": "20.00"
+          },
+          {
+            "id": "0000000000003",
+            "description": "Third",
+            "quantity": 1,
+            "rate": "30.00"
           }
         ]
-      },
-      "_lifecycle": {
-        "state": "draft",
-        "revision": 1,
-        "confirmation_id": "fixture-confirmation_id"
       },
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
@@ -728,72 +857,35 @@
           "name": "Administrator"
         }
       },
-      "_journal": {
-        "count": 4,
-        "open_follow_ups": 0
-      },
-      "_locked": false,
-      "_deletable": false,
-      "_lifecycle_actions": [
-        "confirm"
-      ]
-    },
-    "etag": "\"fixture-etag\""
-  },
-  "edited": {
-    "status": 200,
-    "body": {
-      "id": "0000000000001",
-      "number": "ORD-001",
-      "customer": "B",
-      "remarks": "Confirmed revision 1",
-      "name": null,
-      "title": "0000000000001",
-      "children": {
-        "lines": [
-          {
-            "id": "0000000000001",
-            "description": "First",
-            "quantity": 2,
-            "rate": "10.00"
-          },
-          {
-            "id": "0000000000003",
-            "description": "Third",
-            "quantity": 1,
-            "rate": "30.00"
-          }
-        ]
-      },
-      "_lifecycle": {
-        "state": "draft",
-        "revision": 1,
-        "confirmation_id": "fixture-confirmation_id"
-      },
-      "_audit": {
-        "created_at": "2026-11-04T06:00:00.000Z",
-        "created_by": {
-          "id": 1,
-          "name": "Administrator"
-        },
-        "modified_at": "2026-11-04T06:06:00.000Z",
-        "modified_by": {
-          "id": 1,
-          "name": "Administrator"
-        }
-      },
       "_row_ids": {
         "row-0": "0000000000003"
       },
-      "_journal": {
-        "count": 5,
-        "open_follow_ups": 0
-      },
+      "_moves": [
+        {
+          "key": "draft_to_confirmed",
+          "to": "confirmed",
+          "label": "Confirm",
+          "allowed": true,
+          "primary": true
+        },
+        {
+          "key": "draft_confirmed_to_cancelled",
+          "to": "cancelled",
+          "label": "Cancel",
+          "allowed": true,
+          "remark": {
+            "mode": "required",
+            "label": null,
+            "required": true
+          }
+        }
+      ],
       "_locked": false,
-      "_deletable": false,
-      "_lifecycle_actions": [
-        "confirm"
-      ]
+      "_actions": [],
+      "_journal": {
+        "count": 4,
+        "open_follow_ups": 0
+      }
     },
     "etag": "\"fixture-etag\""
   },
@@ -803,7 +895,8 @@
       "id": "0000000000001",
       "number": "ORD-001",
       "customer": "B",
-      "remarks": "Confirmed revision 2",
+      "remarks": "Confirmed by admin",
+      "status": "confirmed",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -815,6 +908,12 @@
             "rate": "10.00"
           },
           {
+            "id": "0000000000002",
+            "description": "Second",
+            "quantity": 1,
+            "rate": "20.00"
+          },
+          {
             "id": "0000000000003",
             "description": "Third",
             "quantity": 1,
@@ -822,10 +921,82 @@
           }
         ]
       },
-      "_lifecycle": {
-        "state": "confirmed",
-        "revision": 2,
-        "confirmation_id": "fixture-confirmation_id"
+      "_audit": {
+        "created_at": "2026-11-04T06:00:00.000Z",
+        "created_by": {
+          "id": 1,
+          "name": "Administrator"
+        },
+        "modified_at": "2026-11-04T06:08:00.000Z",
+        "modified_by": {
+          "id": 1,
+          "name": "Administrator"
+        }
+      },
+      "_moves": [
+        {
+          "key": "confirmed_to_draft",
+          "to": "draft",
+          "label": "Reopen",
+          "allowed": true,
+          "remark": {
+            "mode": "required",
+            "label": null,
+            "required": true
+          }
+        },
+        {
+          "key": "draft_confirmed_to_cancelled",
+          "to": "cancelled",
+          "label": "Cancel",
+          "allowed": true,
+          "remark": {
+            "mode": "required",
+            "label": null,
+            "required": true
+          }
+        }
+      ],
+      "_locked": true,
+      "_actions": [],
+      "_journal": {
+        "count": 5,
+        "open_follow_ups": 0
+      }
+    },
+    "etag": "\"fixture-etag\""
+  },
+  "cancelled": {
+    "status": 200,
+    "body": {
+      "id": "0000000000001",
+      "number": "ORD-001",
+      "customer": "B",
+      "remarks": "Confirmed by admin",
+      "status": "cancelled",
+      "name": null,
+      "title": "0000000000001",
+      "children": {
+        "lines": [
+          {
+            "id": "0000000000001",
+            "description": "First",
+            "quantity": 2,
+            "rate": "10.00"
+          },
+          {
+            "id": "0000000000002",
+            "description": "Second",
+            "quantity": 1,
+            "rate": "20.00"
+          },
+          {
+            "id": "0000000000003",
+            "description": "Third",
+            "quantity": 1,
+            "rate": "30.00"
+          }
+        ]
       },
       "_audit": {
         "created_at": "2026-11-04T06:00:00.000Z",
@@ -839,134 +1010,15 @@
           "name": "Administrator"
         }
       },
+      "_moves": [],
+      "_locked": true,
+      "_actions": [],
       "_journal": {
         "count": 6,
         "open_follow_ups": 0
-      },
-      "_locked": true,
-      "_deletable": false,
-      "_lifecycle_actions": [
-        "cancel"
-      ]
-    },
-    "etag": "\"fixture-etag\""
-  },
-  "revisions": {
-    "status": 200,
-    "body": {
-      "items": [
-        {
-          "revision": 1,
-          "execution_id": "fixture-execution_id",
-          "at": "fixture-at",
-          "actor": "1",
-          "hash": "fixture-hash"
-        },
-        {
-          "revision": 2,
-          "execution_id": "fixture-execution_id",
-          "at": "fixture-at",
-          "actor": "1",
-          "hash": "fixture-hash"
-        }
-      ],
-      "total": 2,
-      "limit": 50,
-      "offset": 0
-    },
-    "etag": null
-  },
-  "snapshot2": {
-    "status": 200,
-    "body": {
-      "revision": 2,
-      "execution_id": "fixture-execution_id",
-      "at": "fixture-at",
-      "actor": "1",
-      "hash": "fixture-hash",
-      "document": {
-        "id": "0000000000001",
-        "number": "ORD-001",
-        "customer": "B",
-        "remarks": "Confirmed revision 2",
-        "name": null,
-        "title": "0000000000001",
-        "children": {
-          "lines": [
-            {
-              "id": "0000000000001",
-              "description": "First",
-              "quantity": 2,
-              "rate": "10.00",
-              "children": {}
-            },
-            {
-              "id": "0000000000003",
-              "description": "Third",
-              "quantity": 1,
-              "rate": "30.00",
-              "children": {}
-            }
-          ]
-        }
-      },
-      "effects": [],
-      "approval": null
-    },
-    "etag": null
-  },
-  "diff": {
-    "status": 200,
-    "body": {
-      "from": 1,
-      "to": 2,
-      "changes": {
-        "fields": {
-          "customer": {
-            "old": "A",
-            "new": "B"
-          },
-          "remarks": {
-            "old": "Confirmed revision 1",
-            "new": "Confirmed revision 2"
-          }
-        },
-        "rows": {
-          "lines": {
-            "added": [
-              {
-                "id": "0000000000003",
-                "description": "Third",
-                "quantity": 1,
-                "rate": "30.00",
-                "children": {}
-              }
-            ],
-            "removed": [
-              {
-                "id": "0000000000002",
-                "description": "Second",
-                "quantity": 1,
-                "rate": "20.00",
-                "children": {}
-              }
-            ],
-            "updated": [
-              {
-                "id": "0000000000001",
-                "fields": {
-                  "quantity": {
-                    "old": 1,
-                    "new": 2
-                  }
-                }
-              }
-            ]
-          }
-        }
       }
     },
-    "etag": null
+    "etag": "\"fixture-etag\""
   },
   "history": {
     "status": 200,
@@ -974,47 +1026,31 @@
       "items": [
         {
           "id": 6,
-          "kind": "reconfirmed",
+          "kind": "moved",
           "actor": 1,
           "at": "fixture-at",
           "data": {
-            "fields": {
-              "remarks": {
-                "new": "Confirmed revision 2",
-                "old": "Confirmed revision 1"
-              }
-            },
-            "event_id": "fixture-event_id",
-            "source": "User",
-            "revision": 2,
-            "correlation_id": null,
-            "execution_id": "fixture-execution_id",
-            "confirmation_id": "fixture-confirmation_id",
-            "reason": null,
-            "from": "draft",
-            "to": "confirmed",
-            "effects": []
+            "from": "confirmed",
+            "to": "cancelled",
+            "move": "Cancel"
           },
-          "event_id": "fixture-event_id",
-          "document_id": "0000000000001",
-          "model": "order",
-          "operation": "reconfirmed",
-          "timestamp": "fixture-timestamp",
-          "source": "User",
-          "revision": 2,
-          "changes": {
-            "fields": {
-              "remarks": {
-                "new": "Confirmed revision 2",
-                "old": "Confirmed revision 1"
-              }
-            }
-          },
-          "reason": null,
-          "correlation_id": null
+          "rule": "draft_confirmed_to_cancelled",
+          "remark": "Customer withdrew the order"
         },
         {
           "id": 5,
+          "kind": "moved",
+          "actor": 1,
+          "at": "fixture-at",
+          "data": {
+            "from": "draft",
+            "to": "confirmed",
+            "move": "Confirm"
+          },
+          "rule": "draft_to_confirmed"
+        },
+        {
+          "id": 4,
           "kind": "changed",
           "actor": 1,
           "at": "fixture-at",
@@ -1056,200 +1092,41 @@
                       }
                     }
                   }
-                ],
-                "removed": [
-                  {
-                    "id": "0000000000002",
-                    "fields": {
-                      "description": {
-                        "new": null,
-                        "old": "Second"
-                      },
-                      "quantity": {
-                        "new": null,
-                        "old": 1
-                      },
-                      "rate": {
-                        "new": null,
-                        "old": "20.00"
-                      }
-                    }
-                  }
-                ]
-              }
-            },
-            "event_id": "fixture-event_id",
-            "source": "User",
-            "revision": 1,
-            "correlation_id": null
-          },
-          "event_id": "fixture-event_id",
-          "document_id": "0000000000001",
-          "model": "order",
-          "operation": "changed",
-          "timestamp": "fixture-timestamp",
-          "source": "User",
-          "revision": 1,
-          "changes": {
-            "fields": {
-              "customer": {
-                "new": "B",
-                "old": "A"
-              }
-            },
-            "rows": {
-              "lines": {
-                "added": [
-                  {
-                    "id": "0000000000003",
-                    "fields": {
-                      "description": {
-                        "new": "Third",
-                        "old": null
-                      },
-                      "quantity": {
-                        "new": 1,
-                        "old": null
-                      },
-                      "rate": {
-                        "new": "30.00",
-                        "old": null
-                      }
-                    }
-                  }
-                ],
-                "updated": [
-                  {
-                    "id": "0000000000001",
-                    "fields": {
-                      "quantity": {
-                        "new": 2,
-                        "old": 1
-                      }
-                    }
-                  }
-                ],
-                "removed": [
-                  {
-                    "id": "0000000000002",
-                    "fields": {
-                      "description": {
-                        "new": null,
-                        "old": "Second"
-                      },
-                      "quantity": {
-                        "new": null,
-                        "old": 1
-                      },
-                      "rate": {
-                        "new": null,
-                        "old": "20.00"
-                      }
-                    }
-                  }
                 ]
               }
             }
-          },
-          "reason": null,
-          "correlation_id": null
-        },
-        {
-          "id": 4,
-          "kind": "reopened",
-          "actor": 1,
-          "at": "fixture-at",
-          "data": {
-            "event_id": "fixture-event_id",
-            "source": "User",
-            "revision": 1,
-            "correlation_id": null,
-            "execution_id": "fixture-execution_id",
-            "confirmation_id": "fixture-confirmation_id",
-            "reason": null,
-            "from": "cancelled",
-            "to": "draft",
-            "effects": []
-          },
-          "event_id": "fixture-event_id",
-          "document_id": "0000000000001",
-          "model": "order",
-          "operation": "reopened",
-          "timestamp": "fixture-timestamp",
-          "source": "User",
-          "revision": 1,
-          "changes": {},
-          "reason": null,
-          "correlation_id": null
+          }
         },
         {
           "id": 3,
-          "kind": "cancelled",
+          "kind": "moved",
           "actor": 1,
           "at": "fixture-at",
           "data": {
-            "event_id": "fixture-event_id",
-            "source": "User",
-            "revision": 1,
-            "correlation_id": null,
-            "execution_id": "fixture-execution_id",
-            "confirmation_id": "fixture-confirmation_id",
-            "reason": "Customer and lines changed",
             "from": "confirmed",
-            "to": "cancelled",
-            "effects": []
+            "to": "draft",
+            "move": "Reopen"
           },
-          "event_id": "fixture-event_id",
-          "document_id": "0000000000001",
-          "model": "order",
-          "operation": "cancelled",
-          "timestamp": "fixture-timestamp",
-          "source": "User",
-          "revision": 1,
-          "changes": {},
-          "reason": "Customer and lines changed",
-          "correlation_id": null
+          "rule": "confirmed_to_draft",
+          "remark": "Customer and lines changed"
         },
         {
           "id": 2,
-          "kind": "confirmed",
+          "kind": "moved",
           "actor": 1,
           "at": "fixture-at",
           "data": {
             "fields": {
               "remarks": {
-                "new": "Confirmed revision 1",
+                "new": "Confirmed by admin",
                 "old": null
               }
             },
-            "event_id": "fixture-event_id",
-            "source": "User",
-            "revision": 1,
-            "correlation_id": null,
-            "execution_id": "fixture-execution_id",
-            "confirmation_id": "fixture-confirmation_id",
-            "reason": null,
             "from": "draft",
             "to": "confirmed",
-            "effects": []
+            "move": "Confirm"
           },
-          "event_id": "fixture-event_id",
-          "document_id": "0000000000001",
-          "model": "order",
-          "operation": "confirmed",
-          "timestamp": "fixture-timestamp",
-          "source": "User",
-          "revision": 1,
-          "changes": {
-            "fields": {
-              "remarks": {
-                "new": "Confirmed revision 1",
-                "old": null
-              }
-            }
-          },
-          "reason": null,
-          "correlation_id": null
+          "rule": "draft_to_confirmed"
         },
         {
           "id": 1,
@@ -1265,68 +1142,9 @@
               "number": {
                 "new": "ORD-001",
                 "old": null
-              }
-            },
-            "rows": {
-              "lines": {
-                "added": [
-                  {
-                    "id": "0000000000001",
-                    "fields": {
-                      "description": {
-                        "new": "First",
-                        "old": null
-                      },
-                      "quantity": {
-                        "new": 1,
-                        "old": null
-                      },
-                      "rate": {
-                        "new": "10.00",
-                        "old": null
-                      }
-                    }
-                  },
-                  {
-                    "id": "0000000000002",
-                    "fields": {
-                      "description": {
-                        "new": "Second",
-                        "old": null
-                      },
-                      "quantity": {
-                        "new": 1,
-                        "old": null
-                      },
-                      "rate": {
-                        "new": "20.00",
-                        "old": null
-                      }
-                    }
-                  }
-                ]
-              }
-            },
-            "event_id": "fixture-event_id",
-            "source": "User",
-            "revision": 0,
-            "correlation_id": null
-          },
-          "event_id": "fixture-event_id",
-          "document_id": "0000000000001",
-          "model": "order",
-          "operation": "created",
-          "timestamp": "fixture-timestamp",
-          "source": "User",
-          "revision": 0,
-          "changes": {
-            "fields": {
-              "customer": {
-                "new": "A",
-                "old": null
               },
-              "number": {
-                "new": "ORD-001",
+              "status": {
+                "new": "draft",
                 "old": null
               }
             },
@@ -1370,9 +1188,7 @@
                 ]
               }
             }
-          },
-          "reason": null,
-          "correlation_id": null
+          }
         }
       ],
       "total": 6,

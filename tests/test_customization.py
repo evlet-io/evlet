@@ -7,8 +7,8 @@ import threading
 
 import pytest
 
-from evlet import (Application, Database, Date, Decimal, LocalAuth, Link, LongText, Model, Move, Naming, Registry, Select, Series,
-                   State, Text)
+from evlet import (Application, Database, Date, Decimal, LocalAuth, Link, LongText, Model, Naming, Registry, Select,
+                   Series, State, Text)
 from evlet.expressions import ConditionError, UnknownField, parse
 from test_business import client, hashed, http  # noqa: F401
 from test_controls import add_user, password, save  # noqa: F401
@@ -43,7 +43,12 @@ def models(lead_meta=None):
     class Order(Model):
         reference = Text(unique=True)
         amount = Decimal(scale=2)
-        status = State(('draft', 'done'), moves=(Move('draft', 'done', 'Finish'),))
+        status = State(
+            State.Step('draft'),
+            State.Step('done'),
+            rules=(
+                State.Rule('draft', 'done', 'Finish', key='done'),
+            ))
 
         class Meta:
             naming = Naming('reference', Series('ORD-{#####}'))
@@ -227,7 +232,7 @@ def test_a_layout_sets_section_flow(app):
     state = admin('GET', '/api/_controls/state')[1]
     lead = next(model for model in state['models'] if model['name'] == 'Lead')
     # The record's parts the side panel can hide.
-    assert [tab['name'] for tab in lead['tabs']] == ['activity', 'details', 'revisions', 'related', 'postings']
+    assert [tab['name'] for tab in lead['tabs']] == ['activity', 'details', 'related', 'postings']
     # Sections alone are saved as the plain list they always were; rows is not stored.
     assert save(admin, ('layout', 'Lead', [{**sections[0], 'flow': 'rows'}, sections[1]]))[0] == 200
     saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')['value']
@@ -610,28 +615,6 @@ def test_an_instance_field_on_a_finite_document(tmp_path, hashed):
     assert (record['amount'], record['x_note']) == ('6.00', 'later')
 
 
-def test_a_revision_gets_a_new_name(tmp_path, hashed):
-    class Quote(Model):
-        reference = Text(unique=True)
-        status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued', 'void'),
-                       final=('void',), voidable=('issued',))
-
-        class Meta:
-            revisable = True
-            naming = Naming('reference', Series('Q-{###}'))
-
-    app = build(tmp_path, Quote)
-    add_user(app, 'admin', 'admin')
-    admin = client(app)
-    status, record, headers = admin('POST', '/api/quote', {})
-    assert (status, record['reference']) == (201, 'Q-001')
-    quote = f"/api/quote/{record['id']}"
-    status, record, headers = admin('POST', quote + '/moves/issued', {}, headers={b'if-match': headers[b'etag']})
-    assert status == 200, record
-    status, copy, _ = admin('POST', quote + '/revise', {'reason': 'Wrong price'}, headers={b'if-match': headers[b'etag']})
-    assert status == 201 and copy['reference'] == 'Q-002', copy
-
-
 # ---------- review findings ----------
 
 def test_two_applications_sharing_classes_keep_their_own_instance_fields(tmp_path, hashed):
@@ -767,7 +750,12 @@ def test_people_meet_required_overrides_and_app_code_does_not(tmp_path, hashed):
         title = Text(required=True)
         kind = Select(('bug', 'task', 'idea'), default='task')
         estimate = Integer()
-        status = State(('open', 'done'), moves=(Move('open', 'done', 'Close'),))
+        status = State(
+            State.Step('open'),
+            State.Step('done'),
+            rules=(
+                State.Rule('open', 'done', 'Close', key='done'),
+            ))
 
         @action('Spawn')
         def spawn(self):

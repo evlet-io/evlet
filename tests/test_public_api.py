@@ -23,12 +23,11 @@ SESSION = ("aggregate", "count", "create", "delete", "get", "insert_many", "list
            "unlocked_periods", "update")
 
 # Members of the document context (`self.context` in model code) that only trusted handler code uses, which
-# is not exported itself: `session` is open only in a Move run method or an @action handler.
-CONTEXT = ("session",)
+# is not exported itself: `session` is open only in a state manager hook or an @action handler.
+CONTEXT = ("session", "move")
 
 # Methods and decorators apps call on exported names, beyond their constructors.
-MEMBERS = {"Model": ("to_dict", "validate"), "Child": ("to_dict", "validate"), "validate": ("confirm", "cancel"),
-           "action": ("confirm", "cancel")}
+MEMBERS = {"Model": ("to_dict",), "Child": ("to_dict",), "State": ("Step", "Rule", "Level", "Remark"), "state": ("exit",)}
 
 
 def signature(value):

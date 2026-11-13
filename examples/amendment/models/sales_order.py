@@ -1,6 +1,6 @@
 from datetime import date
 from evlet import (Model, Child, Table, Dialog, Link, Text, Decimal, Currency,
-                   Boolean, Date, Rule, Ref, depends, action, ValidationError, Select, Related)
+                   Boolean, Date, Rule, Ref, depends, action, ValidationError, Select, Related, validate)
 from amendment.models.masters import Company, Warehouse, ItemMaster, BOM, WorkOrder
 from amendment.services.stock import available
 from amendment.services.planning import selection_rows, create_selected
@@ -33,6 +33,8 @@ class SalesOrder(Model):
         def stock(self):
             return available(self.context, self.item, self.warehouse)
         available_qty = Decimal(query=stock, stored=False)
+
+        @validate
 
         def validate(self):
             if self.qty <= 0: raise ValidationError({'qty': 'Enter a positive quantity'})

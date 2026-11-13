@@ -1,21 +1,24 @@
 // What the screens read from /api/schema and record details.
 //
-// The keys of later engine phases (State and moves, void and revise, Sequence, measures, key
+// The keys of later engine phases (State steps and rules, Sequence, measures, key
 // fields, relations, attachments, effects, journal) are optional here: a screen shows a section
 // only when the schema or the detail carries its key. Shapes follow docs/states-actions.md,
 // docs/sequences.md, docs/measures.md, docs/meaning.md, docs/effects.md and docs/journal.md.
 
 import type { RecordData } from '../api';
 import type { FieldSchema, ModelSchema, SchemaIndex } from '../model/schema';
-import { currencyOf, kindOf, moneyPlaces } from '../ui/kinds';
+import { currencyOf, humanize, kindOf, moneyPlaces } from '../ui/kinds';
 import { currencyDecimals } from '../model/format';
 import { moneyChild } from '../ui/money';
 import type { Child } from '../dom';
 import { tintFor, type Tint } from '../ui/core';
 
-export interface MoveSchema { from: string[] | string; to: string; label: string; roles?: string[]; guarded?: boolean; when?: unknown; asks?: string[] }
+export interface RemarkSchema { mode: 'optional' | 'required'; label: string | null }
+/** One State rule (docs/states-actions.md): its stable key names the move route, POST /api/{model}/{id}/moves/{key}. */
+export interface MoveSchema { key: string; from: string[]; to: string; label: string; by?: string[]; guarded?: boolean; when?: unknown; primary?: boolean; reject?: boolean; remark?: RemarkSchema | null; asks?: string[] }
+export interface StepSchema { key: string; label: string; color: Tint | null; lock: boolean; release: boolean; final: boolean }
 /** show: how the record page draws the State, a header badge (the default), the stage bar, or neither. */
-export interface StateMeta { field: string; states: string[]; default?: string; moves: MoveSchema[]; locked?: string[]; final?: string[]; voidable?: string[]; cancelled?: string[]; show?: StateShow }
+export interface StateMeta { field: string; default?: string; steps: StepSchema[]; rules: MoveSchema[]; show?: StateShow }
 export type StateShow = 'badge' | 'bar' | 'none';
 /** A declared measure's trend (docs/measures.md#trends): read the series from GET /api/{model}/aggregate with
  * measures=<name>, group_by=<field>:<grain> and the list filters plus <field>__gte the start of the first of the
@@ -43,11 +46,7 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   /** Meta.status: the Select or State shown as the record's status badge. */
   status?: string;
   actions?: ActionMeta[];
-  permissions?: { create: boolean; update: boolean; delete: boolean; void?: boolean; revise?: boolean; unpost?: boolean; repost?: boolean };
-  voidable?: boolean;
-  revisable?: boolean;
-  /** Posted records can be unposted and reposted (the model's effects can all be reversed). */
-  unpostable?: boolean;
+  permissions?: { create: boolean; update: boolean; delete: boolean };
   measures?: MeasureSchema[];
   key_fields?: string[];
   /** Meta.cards: up to five derived values for the top of a compact record page, each a field (compute, fetch or
@@ -63,30 +62,20 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   effect_target?: boolean;
   /** The record has a journal (Phase 8): whether entries are hash chained and the kinds this role may post. */
   journal?: { tamper_evident: boolean; kinds: string[] };
-  lifecycle?: { confirmable: true; labels: Record<string, string>; permissions: Record<string, boolean> };
   /** The field naming fills (the standard `name`, or an older target field), when, and what it shows until then. */
   naming?: { field: string; assign_on?: string; manual?: boolean; placeholder?: string | null };
 }
 
-/** Availability keys a detail may carry (outside the ETag). */
-export interface Availability { allowed: boolean; reason?: string }
+/** A rule out of the record's current state, as its detail lists it: blocked moves carry their reason. */
+export interface DetailMove { key: string; to: string; label: string; allowed: boolean; primary?: boolean; reason?: string; asks?: string[];
+  remark?: RemarkSchema & { required: boolean } }
 export interface DetailExtras {
-  _lifecycle?: { state: 'draft' | 'confirmed' | 'cancelled'; revision: number; confirmation_id: string | null };
-  _lifecycle_actions?: Array<'confirm' | 'cancel' | 'reopen'>;
   _locked?: boolean;
-  _moves?: Array<{ to: string; label: string; allowed: boolean; reason?: string; asks?: string[] }>;
+  _moves?: DetailMove[];
   _actions?: Array<{ name: string; label: string; allowed: boolean; reason?: string }>;
-  _void?: Availability;
-  _revise?: Availability;
-  /** Listed only for roles that may unpost, on a posted record. */
-  _unpost?: Availability;
-  /** Listed only for roles that may repost, on a record that was unposted. */
-  _repost?: Availability;
   /** false for a record that ever posted: it is kept, so delete is refused. */
   _deletable?: false;
   _effects?: Array<{ target: string; rows: number; reversals: number; balanced?: boolean }>;
-  revised_by?: number | null;
-  _original?: number;
   /** When and by whom the record was created and last changed (UTC). Who is null for the engine and for portal roles. */
   _audit?: RecordAudit;
 }
@@ -104,43 +93,30 @@ export const fieldOf = (model: ScreenModel, name: string): FieldSchema | undefin
 export const isStateField = (model: ScreenModel, field: FieldSchema) => model.state?.field === field.name || (field as any).state === true;
 
 /**
- * How a record's State reads in lists and headers, from the schema alone (never from state names):
- * - `cancelled`: a state the State lists in `cancelled` (State(cancelled=(...)), the void state included). Without
- *   that key (older schemas): a `final` state declared in red (`colors={...: 'rose'}`), or the framework's "void"
- *   state of a voidable State. Struck-through title, red "Cancelled" text, a soft red banner.
- * - `locked`: any other `locked` or `final` state, such as Confirmed or Done: a lock and the state name in grey.
- * - `draft`: the state a record starts in (the State's default, else its first state) while it is not locked:
- *   a dashed pill with a pencil.
+ * How a record's State reads in lists and headers, from its steps alone (never from state names):
+ * - `cancelled`: a `final` step coloured rose. Struck-through title, red "Cancelled" text, a soft red banner.
+ * - `locked`: any other `final` or `lock` step, such as Confirmed or Done: a lock and the step label in grey.
+ * - `draft`: the State's default step (else its first) while it is not locked: a dashed pill with a pencil.
  * - `open`: everything else, the coloured badge as before. Null without a State or a value.
  */
 export type StateLook = 'cancelled' | 'locked' | 'draft' | 'open';
 export function stateLook(model: ScreenModel, value: unknown): StateLook | null {
   const state = model.state;
   if (!state || value === null || value === undefined || value === '') return null;
-  const name = String(value), meta = model.fields.find(field => field.name === state.field);
-  const final = (state.final ?? []).includes(name), locked = (state.locked ?? []).includes(name);
-  const colors = (meta as { colors?: Record<string, string> } | undefined)?.colors;
-  // State(cancelled=(...)): the schema's own list of cancelled states (the void state included), on the state field
-  // or the State. Older schemas without it: a final state in red, or the framework's void state of a voidable State.
-  const marked = (meta as { cancelled?: unknown } | undefined)?.cancelled ?? (state as { cancelled?: unknown }).cancelled;
-  if (Array.isArray(marked)) {
-    if (marked.map(String).includes(name)) return 'cancelled';
-  } else {
-    const voids = Boolean((state as { voidable?: string[] }).voidable?.length) && name === 'void';
-    if (final && (voids || colors?.[name] === 'rose')) return 'cancelled';
-  }
-  if (final || locked) return 'locked';
-  const declared = (state as { default?: unknown }).default ?? meta?.default;
-  const start = declared !== undefined && declared !== null ? String(declared) : state.states[0];
-  return name === start ? 'draft' : 'open';
+  const name = String(value), step = state.steps.find(item => item.key === name);
+  if (step?.final && step.color === 'rose') return 'cancelled';
+  if (step?.final || step?.lock) return 'locked';
+  return name === (state.default ?? state.steps[0]?.key) ? 'draft' : 'open';
 }
+/** A State step by key, and its label (a value that is no step reads humanized). */
+export const stepOf = (model: ScreenModel, value: string): StepSchema | undefined => model.state?.steps.find(step => step.key === value);
+export const stepLabel = (model: ScreenModel, value: string): string => stepOf(model, value)?.label ?? humanize(value);
 /** Query keys of a list's address: search, sort, page, view, saved view, filters, and the side panel's record and tab. */
 export const LIST_KEYS = ['q', 'sort', 'page', 'view', 'tab', 'f', 'open'];
 
 export const sequenceField = (model: ScreenModel): FieldSchema | undefined => model.fields.find(field => field.type === 'sequence');
 /** The document number the server assigns: a Sequence field, or the field a naming series fills. */
 export const numberField = (model: ScreenModel): FieldSchema | undefined => sequenceField(model) ?? (model.naming ? fieldOf(model, model.naming.field) : undefined);
-export const sources = (move: MoveSchema): string[] => Array.isArray(move.from) ? move.from : [move.from];
 
 // ---------- identity ----------
 
@@ -346,7 +322,7 @@ export interface PanelView {
   hides: boolean;
   section(label: string): boolean;
   field(name: string): boolean;
-  /** A part of the record (the schema's panel "tabs"): activity, details, revisions, related, postings or a Table field. */
+  /** A part of the record (the schema's panel "tabs"): activity, details, related, postings or a Table field. */
   tab(name: string): boolean;
   /** summary, key_fields, related, files or info. */
   block(name: string): boolean;

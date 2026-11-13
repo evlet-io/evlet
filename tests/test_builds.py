@@ -128,7 +128,7 @@ def test_reference_app_full_public_flow(project):
     edit = lambda body: c('PATCH', url, body, headers={b'if-match': c('GET', url)[2][b'etag']})
     assert saved['payment_days'] == 45 and edit({'payment_days': 10})[1]['valid_until'] == '2026-11-11'
     # The stage is a State: ordinary writes cannot set it, and the lost reason does not apply to a draft.
-    assert edit({'stage': 'sent'})[1]['fields'] == {'stage': 'This changes only through its moves'}
+    assert edit({'stage': 'sent'})[1]['fields'] == {'stage': 'This changes only through its rules'}
     assert edit({'lost_reason': 'Ignored', 'labels': ['gold']})[1]['lost_reason'] is None
     # Row changes: add one line at the top without resending the others.
     kept = [row['id'] for row in c('GET', url)[1]['children']['lines']]
@@ -141,7 +141,7 @@ def test_reference_app_full_public_flow(project):
     # The quote number is null until the quote is sent, and only the engine writes it.
     assert saved['number'] is None and edit({'number': 'Q-1'})[1]['fields'] == {'number': 'This number is assigned by the system'}
     sent = move(url, 'sent')[1]
-    assert sent['stage'] == 'sent' and [item['to'] for item in sent['_moves']] == ['won', 'lost', 'draft']
+    assert sent['stage'] == 'sent' and [item['to'] for item in sent['_moves']] == ['won', 'lost', 'draft', 'void']
     assert re.fullmatch(r'Q-[0-9]{4}-0001', sent['number'])
     # The quote's journal: the move and its number, then a note added on the locked quote.
     number_entry, moved = c('GET', url + '/journal')[1]['items'][:2]
@@ -176,39 +176,28 @@ def test_reference_app_full_public_flow(project):
     # A reopened and resent quote keeps its number.
     assert move(lost_url, 'sent')[1]['number'] == reopened['number'] == sent['number'][:-1] + '2'
     quote_schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')
-    assert quote_schema['state']['final'] == ['won', 'void'] and quote_schema['actions'][0]['inputs'][0]['name'] == 'extra_days'
-    # A sent quote is revised: it becomes void and a new draft copy with the same lines links back to it.
-    assert quote_schema['revisable'] and quote_schema['permissions']['revise']
+    assert [step['key'] for step in quote_schema['state']['steps'] if step['final']] == ['won', 'void']
+    assert quote_schema['actions'][0]['inputs'][0]['name'] == 'extra_days'
+    # A sent quote is voided with a remark; it keeps its id and its number.
     sent_quote = c('POST', '/api/quote', {'title': 'Q-4', 'children': {'lines': [{'qty': '2', 'rate': '10'}, {'qty': '1', 'rate': '4'}]}})[1]
     sent_url = f"/api/quote/{sent_quote['id']}"
-    sent_body = move(sent_url, 'sent')[1]
-    sent_number = sent_body['number']
-    assert sent_body['_revise'] == {'allowed': True} and sent_number == sent['number'][:-1] + '3'
-    revise = lambda body: c('POST', sent_url + '/revise', body, headers={b'if-match': c('GET', sent_url)[2][b'etag']})
-    assert revise({})[1]['fields'] == {'reason': 'Give a reason'}
-    status, copy, _ = revise({'reason': 'New prices'})
-    assert status == 201 and copy['stage'] == 'draft' and copy['revises'] == sent_quote['id'] and copy['number'] is None
-    assert [row['amount'] for row in copy['children']['lines']] == ['20.00', '4.00'] and copy['grand_total'] == sent_quote['grand_total']
-    original = c('GET', sent_url)[1]
-    # The void original keeps its number; the revision is numbered when it is sent.
-    assert original['stage'] == 'void' and original['revised_by'] == copy['id'] and original['number'] == sent_number
-    assert quote_schema['key_fields'] == ['company', 'stage', 'payable', 'valid_until']
-    assert [(item['name'], item['label']) for item in quote_schema['relations']] == [('quote.revises', 'Revisions')]
-    revisions = c('GET', f"{sent_url}/related/quote.revises")[1]
-    assert revisions['total'] == 1 and revisions['items'][0]['id'] == copy['id']
-    copy_url = f"/api/quote/{copy['id']}"
-    assert c('PATCH', copy_url, {'title': 'Q-4 rev'}, headers={b'if-match': c('GET', copy_url)[2][b'etag']})[1]['title'] == 'Q-4 rev'
-    assert move(copy_url, 'sent')[1]['number'] == sent['number'][:-1] + '4'
+    sent_number = move(sent_url, 'sent')[1]['number']
+    assert sent_number == sent['number'][:-1] + '3'
+    void = lambda body: c('POST', sent_url + '/moves/void', body, headers={b'if-match': c('GET', sent_url)[2][b'etag']})
+    assert void({})[1]['fields'] == {'remark': 'Void needs a remark'}
+    voided = void({'remark': 'Customer cancelled'})[1]
+    assert (voided['stage'], voided['number']) == ('void', sent_number)
+    assert quote_schema['key_fields'] == ['company', 'stage', 'payable', 'valid_until'] and 'relations' not in quote_schema
     number = next(field for field in quote_schema['fields'] if field['name'] == 'number')
     assert (number['type'], number['read_only'], number['sequence']) == (
         'sequence', True, {'format': 'Q-{year}-{n:04}', 'scope': [], 'assign_on': 'sent', 'date': None})
-    # Declared measures: Q-1 is won; Q-3 and the revision of Q-4 are sent; Q-2 is a draft and the original Q-4 is void.
-    # Count() declares no condition, so the void original is counted.
+    # Declared measures: Q-1 is won; Q-3 is sent; Q-2 is a draft and Q-4 is void.
+    # Count() declares no condition, so the void quote is counted.
     assert [item['name'] for item in quote_schema['measures']] == ['open_total', 'won_total', 'quotes']
-    assert c('GET', '/api/quote/measures')[1] == {'measures': {'open_total': '35.70', 'won_total': '135.00', 'quotes': 5}}
+    assert c('GET', '/api/quote/measures')[1] == {'measures': {'open_total': '10.50', 'won_total': '135.00', 'quotes': 4}}
     by_stage = c('GET', '/api/quote/aggregate?measures=quotes,total:sum:grand_total&group_by=stage')[1]
     assert sorted((item['stage'], item['quotes'], item['total']) for item in by_stage['items']) == [
-        ('draft', 1, '0.00'), ('sent', 2, '35.70'), ('void', 1, '25.20'), ('won', 1, '135.00')]
+        ('draft', 1, '0.00'), ('sent', 1, '10.50'), ('void', 1, '25.20'), ('won', 1, '135.00')]
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest

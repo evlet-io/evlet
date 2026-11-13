@@ -139,7 +139,7 @@ def test_document_writes_actions_moves_effects_and_void_record_the_person(app):
     entries = books_module.entries(app)
     assert entries and all(entry['evlet_created_by'] == 1 and entry['evlet_created_at'] > changed[2] for entry in entries)
     # A void changes only the state, and still counts as a change by whoever voided.
-    assert editor('POST', f'{url}/void', {'reason': 'Wrong'}, headers=etag(editor, url))[0] == 200
+    assert editor('POST', f'{url}/moves/void', {'remark': 'Wrong'}, headers=etag(editor, url))[0] == 200
     voided = stamps(app, 'invoice', record_id)
     assert voided[3] == 2 and voided[2] > moved[2] and voided[:2] == created[:2]
 
