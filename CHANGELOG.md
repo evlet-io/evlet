@@ -4,32 +4,8 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.4 (13-11-2026)
 
-### Changed
-
-- **Roles that open Controls must use two-step sign-in.** A new Controls setting,
-  `security.controls_two_step`, is on by default: every desk role other than admin with "Opens
-  Controls" turned on must use two-step sign-in, as admins already do. Only an admin can switch
-  it off, in Controls > Security. See [Security](docs/controls.md#security-rules).
-- **Passwords set by a role that is not admin are named in the audit log.** A Controls role can
-  still set the password of someone who is not an admin, but the audit row now reads
-  `Password set by <username> (role <role>), who is not an admin`. Admin accounts stay refused.
-
-### Fixed
-
-- **A backup code works only once, also under a race.** Two sign-ins sending the same backup
-  code at the same moment (on PostgreSQL, say) could both succeed. The remaining codes are now
-  written back only if nobody changed them since they were read, like app codes.
-
-### Upgrading
-
-- People in a role that opens Controls (not admin) who have not set up two-step sign-in are
-  asked to set it up at their next sign-in, the same flow admins use. Their current browser
-  sessions stop working until they sign in again; API keys keep working. This needs the
-  instance to keep secrets (a secret key and the cryptography package); without them nothing
-  changes. To keep the old behaviour, an admin switches off "Roles that open Controls" under
-  Controls > Security > Two-step sign-in.
 ### Added
 
 - **Formula helpers: `choose`, `isin`, `is_empty`, `has_value`, `least`, `greatest` and
@@ -62,6 +38,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Roles that open Controls must use two-step sign-in.** A new Controls setting,
+  `security.controls_two_step`, is on by default: every desk role other than admin with "Opens
+  Controls" turned on must use two-step sign-in, as admins already do. Only an admin can switch
+  it off, in Controls > Security. See [Security](docs/controls.md#security-rules).
+- **Passwords set by a role that is not admin are named in the audit log.** A Controls role can
+  still set the password of someone who is not an admin, but the audit row now reads
+  `Password set by <username> (role <role>), who is not an admin`. Admin accounts stay refused.
 - **Hints say `evlet restart`.** `evlet host add` and `host remove` with `--routes-only`, and
   `evlet proxy --write`, now suggest `evlet restart <instance>` instead of
   `sudo systemctl restart`.
@@ -120,6 +103,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **A backup code works only once, also under a race.** Two sign-ins sending the same backup
+  code at the same moment (on PostgreSQL, say) could both succeed. The remaining codes are now
+  written back only if nobody changed them since they were read, like app codes.
 - **Connector commands after logout say you're signed out.** `evlet describe` and `evlet mcp`
   with a removed session file printed a raw `[Errno 2] No such file` error. They now say you're
   signed out and show the `evlet login` command to run; `evlet logout` again says you're already
@@ -170,6 +156,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `compute=F(...)` failed with a server error when the form was checked. Declaring one now raises
   `ValueError` when the class is defined, naming the field and pointing to `visible_if`,
   `required_if`, `read_only_if` and `compute='...'`. Move any such field to the string rules.
+
+### Upgrading
+
+- People in a role that opens Controls (not admin) who have not set up two-step sign-in are
+  asked to set it up at their next sign-in, the same flow admins use. Their current browser
+  sessions stop working until they sign in again; API keys keep working. This needs the
+  instance to keep secrets (a secret key and the cryptography package); without them nothing
+  changes. To keep the old behaviour, an admin switches off "Roles that open Controls" under
+  Controls > Security > Two-step sign-in.
 
 ## 0.4.3 (12-11-2026)
 
