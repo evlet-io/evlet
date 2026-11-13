@@ -14,7 +14,7 @@ import random
 from evlet import Model, Child, Table, Decimal, Currency, Boolean, Integer, Text, Date, DateTime, Link, Registry, Select
 from evlet.fields import Duration, Percent
 from evlet.calc import (D, F, parent, row, round, coalesce, safe_divide, when, days, today, Document, CalcError,
-                        parse, text, add, sub, mul, div, quantize)
+                        parse, text, add, sub, mul, div, quantize, choose, isin, is_empty, has_value, least, greatest, absolute)
 
 
 class FiniteMeta:
@@ -248,12 +248,28 @@ class Money(Model):
     suggested = Currency(currency='currency', initial=F('rate') * 2)
 
 
+class Helpers(Model):
+    """Helpers that compile to existing nodes; the browser runs them without knowing they exist."""
+    Meta = FiniteMeta
+    stage = Select(('lead', 'won', 'lost'))
+    a = Decimal()
+    b = Decimal()
+    weight = Decimal(scale=0, compute=choose(F('stage'), {'won': 100, 'lost': 0}, default=10))
+    open = Boolean(compute=isin(F('stage'), 'lead', 'won'))
+    closed = Boolean(compute=F('stage').isin('won', 'lost'))
+    missing = Boolean(compute=is_empty(F('a')))
+    present = Boolean(compute=has_value(F('a')))
+    smaller = Decimal(scale=None, stored=False, compute=least(F('a'), F('b'), 5))
+    larger = Decimal(scale=None, stored=False, compute=greatest(F('a'), F('b')))
+    gap = Decimal(scale=None, stored=False, compute=absolute(F('a') - F('b')))
+
+
 # Host inputs of a scenario's document, when it has any: the currency table and setting currencies.
 HOSTS = {'money-places': {'decimals': {'JPY': 0, 'KWD': 3, 'XCL': 5}, 'settings': {'billing.currency': 'JPY'}}}
 
 MODELS = {'invoice': Invoice, 'project': Project, 'cost': CostSheet, 'states': States,
           'rounding': Rounding, 'schedule': Schedule, 'sale': Sale, 'choice': Choice, 'moments': Moments,
-          'offer': Offer, 'capped': Capped, 'money': Money}
+          'offer': Offer, 'capped': Capped, 'money': Money, 'helpers': Helpers}
 LOOKUP_MODELS = (Region, Customer)
 
 
@@ -331,6 +347,9 @@ SCENARIOS = [
       ['set', '', 'currency', 'XCL'], ['set', '', 'rate', '0.0000033'], ['set', '', 'currency', ''], ['set', '', 'currency', 'AED'],
       ['set', '', 'rate', '-1.3335'], ['lookup', 'customer', 7, {'currency': 'JPY'}], ['set', '', 'customer', None],
       ['set', '', 'currency', 'KWD'], ['set', '', 'rate', '2.0005'], ['set', '', 'qty', '-1']]),
+    ('helpers', 'helpers', {},
+     [['set', '', 'stage', 'won'], ['set', '', 'a', '3'], ['set', '', 'b', '-7.5'], ['set', '', 'stage', 'lost'], ['set', '', 'a', '9'],
+      ['set', '', 'stage', 'lead'], ['set', '', 'b', '12'], ['set', '', 'stage', None], ['set', '', 'a', None]]),
     ('when', 'choice', {'a': '6'},
      [['set', '', 'flag', True], ['set', '', 'a', None], ['set', '', 'flag', False], ['set', '', 'a', '6'],
       ['set', '', 'zero', '4'], ['today', '2026-11-01'], ['set', '', 'flag', True], ['set', '', 'a', '0.5'], ['set', '', 'flag', None]]),

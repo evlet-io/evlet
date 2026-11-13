@@ -8,6 +8,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Formula helpers: `choose`, `isin`, `is_empty`, `has_value`, `least`, `greatest` and
+  `absolute`** (from `evlet.calc`). `choose(F("stage"), {"won": 100, "lost": 0}, default=10)`
+  replaces a chain of nested `when()`, and `F("status").isin("new", "failed")` replaces
+  several `==` joined with `|`. `is_empty(x)` and `has_value(x)` replace `x == None` and
+  `x != None`, which needed `# noqa` comments. Each helper builds exactly the formula of its
+  long form, so rewriting a model with them changes no formula hash and needs no
+  recalculation. The testCRM deal's stage probability now uses `choose`. See
+  [docs/finite-calculations.md](docs/finite-calculations.md#helpers).
 - **`evlet restart <instance>` checks before it restarts.** On a server set up with
   `evlet setup --host --apply`, it checks that the instance loads, its apps match `apps.lock`
   and import, its routes resolve, no framework or app migration is pending, and the

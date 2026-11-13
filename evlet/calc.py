@@ -268,6 +268,7 @@ class Expr:
     def __or__(self, other): return Expr('or', (self, lift(other)))
     def __ror__(self, other): return Expr('or', (lift(other), self))
     def __invert__(self): return Expr('not', (self,))
+    def isin(self, *choices): return isin(self, *choices)
 
 
 def lift(value):
@@ -369,6 +370,75 @@ def month_start():
 
 def safe_divide(numerator, denominator, *, default):
     return Expr('safe_divide', (lift(numerator), lift(denominator), lift(default)))
+
+
+# Helpers below build the same nodes as the operators above, so plans, hashes and both engines are unchanged.
+
+def is_empty(value):
+    """True when the value is empty (null). The same formula as `value == None`, without a lint warning."""
+    return Expr('eq', (lift(value), lift(None)))
+
+
+def has_value(value):
+    """True when the value is filled in. The same formula as `value != None`."""
+    return Expr('ne', (lift(value), lift(None)))
+
+
+def isin(value, *choices):
+    """True when the value equals one of the choices: `isin(F('status'), 'new', 'failed')`.
+
+    It is the same formula as `(F('status') == 'new') | (F('status') == 'failed')`.
+    """
+    if not choices:
+        raise CalcError('UNSUPPORTED_EXPRESSION', 'isin() needs at least one choice')
+    subject = lift(value)
+    result = Expr('eq', (subject, lift(choices[0])))
+    for choice in choices[1:]:
+        result = Expr('or', (result, Expr('eq', (subject, lift(choice)))))
+    return result
+
+
+def choose(value, cases, default=None):
+    """The result for the case the value equals, else `default`: `choose(F('stage'), {'won': 100, 'lost': 0}, default=10)`.
+
+    Cases are checked in the order written. It is the same formula as nested when(value == case, result, ...).
+    """
+    if not isinstance(cases, dict) or not cases:
+        raise CalcError('UNSUPPORTED_EXPRESSION', 'choose() takes a dict of {case: result} with at least one case')
+    subject = lift(value)
+    result = lift(default)
+    for case, outcome in reversed(list(cases.items())):
+        if isinstance(case, (Expr, _Scope)) or not operand_like(case) or case is None:
+            raise CalcError('UNSUPPORTED_EXPRESSION', 'choose() cases must be fixed values such as text, numbers or True')
+        result = Expr('when', (Expr('eq', (subject, lift(case))), lift(outcome), result))
+    return result
+
+
+def least(first, second, *more):
+    """The smallest of the values: `least(F('claimed'), F('limit'))`. The same formula as when(a <= b, a, b)."""
+    result = lift(first)
+    for value in (second, *more):
+        other = lift(value)
+        result = Expr('when', (Expr('lte', (result, other)), result, other))
+    return result
+
+
+def greatest(first, second, *more):
+    """The largest of the values: `greatest(F('balance'), 0)`. The same formula as when(a >= b, a, b)."""
+    result = lift(first)
+    for value in (second, *more):
+        other = lift(value)
+        result = Expr('when', (Expr('gte', (result, other)), result, other))
+    return result
+
+
+def absolute(value):
+    """The value without its sign. The same formula as when(value < 0, -value, value).
+
+    Named absolute, not abs, so importing it never hides Python's built-in abs().
+    """
+    subject = lift(value)
+    return Expr('when', (Expr('lt', (subject, lift(0))), Expr('neg', (subject,)), subject))
 
 
 class Selection:
