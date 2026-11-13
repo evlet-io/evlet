@@ -15,7 +15,7 @@ import { RecordStore, type Field, type Row, type Rules } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildTable, type ChildTableControls } from '../ui/childtable';
-import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow } from '../ui/doc';
+import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, type BadgeLook } from '../ui/doc';
 import { currencyFor, currencyPlaces, enterMovesToNextField, fieldFor, localField, RichTextView, statusTint, type FieldLike } from '../ui/fields';
 import { autofocusForm, initialFocusField, layoutFocusOrder } from '../ui/autofocus';
 import { flowGrid, Folds, isEmpty, revealField, revealFirstError } from '../ui/fold';
@@ -28,7 +28,7 @@ import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { JournalEntry, JournalPage, MeasureValues } from './client';
-import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, listFields, measureLabel, measureView, numberField, screenModel, sections, sequenceField, summaryFields, titleOf, LIST_KEYS, panelView, stateLook, stepLabel, stepOf, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
+import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, listFields, measureLabel, measureView, numberField, screenModel, sections, sequenceField, summaryFields, titleOf, LIST_KEYS, panelView, stateLook, stepLabel, stepOf, type ActionMeta, type DetailExtras, type DetailMove, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { blockFilters, declaresRelated, HtmlContent, MeasureChart, RelatedRecords, type BlockRecord } from './record-blocks';
 import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowNoun, rowsText, valueText } from './record-compact';
@@ -308,10 +308,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (!move) return;
     const label = move.label;
     // A move that takes a remark or asks for fields (a reason required once lost, say) collects them first.
-    const asked = (move.asks ?? []).map(field => model.fields.find(meta => meta.name === field)).filter(meta => meta !== undefined);
-    const remark = move.remark ? [{ name: 'remark', type: 'longtext', label: move.remark.label ?? 'Remark', required: move.remark.required, max_length: 1000 } as FieldSchema] : [];
-    if (asked.length || remark.length) {
-      const inputs = [...remark, ...asked.map(meta => ({ ...meta, read_only: false, required: Boolean(meta.required || meta.required_when), applies_when: null, required_when: null, locked_when: null }))];
+    const asked = askedFields(model, move);
+    const inputs = moveInputs(model, move);
+    if (inputs.length) {
       ActionDialog({ name: move.key, label } as ActionMeta, inputs, async values => {
         if (await store.move(move.key, values)) { moved(to, label); return null; }
         const errors = Object.fromEntries(asked.map(meta => [meta.name, store.field(meta.name).error.peek()]).filter(([, error]) => error));
@@ -396,15 +395,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // take) on it, the others behind its chevron. Actions, slips and Ask Eva are outline
   // buttons before it, as many as fit (OUTLINE_BUTTONS, one in a side panel); the rest, Print and the record's
   // own items (Copy link, Duplicate, Delete...) are in More.
-  type HeaderEntry = { label: string; icon: string; allowed: boolean; primary?: boolean; blocked: () => string | null; run: () => void };
+  type HeaderEntry = MoveEntry;
   const moveEntries = (): HeaderEntry[] => (extras.get()._moves ?? []).map(move => ({ label: move.label, icon: moveIcon(model, move.to), allowed: move.allowed,
     primary: move.primary, blocked: () => blockedMove(move.to), run: () => void runMove(move.to) }));
   const outlineEntries = (): HeaderEntry[] => [
     ...actions().map(action => ({ label: action.label, icon: actionIcon(action), allowed: true, blocked: () => actionBlocked(action), run: () => runAction(action) })),
     ...(model.slips ?? []).map(slip => ({ label: slip.label, icon: 'file-text', allowed: true, blocked: slipBlocked, run: () => openSlip(slip.name) })),
   ];
-  const menuEntry = (entry: HeaderEntry): MenuItem => ({ label: entry.label, icon: entry.icon,
-    onSelect: () => { const why = untrack(entry.blocked); if (why) toast(why, { icon: 'info' }); else entry.run(); } });
   const askEvaNow = () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek());
   /** Outline buttons in the title row: two on the page, one in a side panel; the rest join More. */
   const OUTLINE_BUTTONS = panel ? 1 : 2;
@@ -421,16 +418,14 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const shown = outline.slice(0, OUTLINE_BUTTONS), rest = outline.slice(OUTLINE_BUTTONS);
     const buttons = shown.map(entry => entry === eva ? Button({ label: 'Ask Eva', icon: 'sparkles', iconTint: 'violet', hideLabelOnPhone: true, onClick: askEvaNow })
       : MoveButton({ label: entry.label, icon: entry.icon, blocked: entry.blocked, onMove: entry.run }));
-    const main = moves.find(move => move.primary) ?? moves.find(move => move.allowed) ?? moves[0];
-    const split = main ? SplitButton({ main: MoveButton({ label: main.label, icon: main.icon, blocked: main.blocked, variant: 'primary', onMove: main.run }),
-      items: moves.filter(move => move !== main).map(menuEntry), menuLabel: 'Other moves' }) : null;
+    const split = MovesButton(moves);
     // Print, when the role may print this model and the server has the print extra: the preview is the server's PDF.
     const designs = ctx.schema.schema.printing?.available ? model.prints ?? [] : [];
     const printNow = () => openPrint(ctx, model, store.id!, titleText.peek(), designs);
     const items = (): MenuItem[] => {
-      const first: MenuItem[] = rest.map(menuEntry);
+      const first: MenuItem[] = rest.map(moveMenuEntry);
       if (designs.length) first.push({ label: 'Print', icon: 'printer', onSelect: printNow });
-      if (panel && eva) first.push(menuEntry(eva));
+      if (panel && eva) first.push(moveMenuEntry(eva));
       if (panel) first.push({ label: 'Open full page', icon: 'maximize-2', onSelect: () => expand() });
       return [...first, ...(first.length ? ['separator' as const] : []), ...moreItems()];
     };
@@ -455,8 +450,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // show="badge" draws it in the header; show="bar" draws the stage bar on the page and the badge in a side panel
   // (which has no bar); show="none" draws neither, unless Meta.status names the State.
   const stateBadge = state && !isNew && (show === 'badge' || (panel && show === 'bar') || statusMeta?.name === state.field) ? StatusBadge({
-    value: stateValue, label: value => stepLabel(model, value), tint: value => statusTint(fieldOf(model, state.field) ?? {}, value), name: 'Status',
-    look: value => { const kind = stateLook(model, value); return kind === null || kind === 'open' ? 'pill' : kind; },
+    value: stateValue, ...stateBadgeLook(model),
     moves: () => takeable().map(move => ({ to: move.to, label: move.label })), blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) }) : null;
   const statusBadge = statusMeta && statusMeta.name !== state?.field && has(statusMeta.name) && !isNew ? StatusBadge({
     value: () => store.field(statusMeta.name).value.get() as string | null, tint: value => statusTint(statusMeta, value), name: statusMeta.label }) : null;
@@ -557,18 +551,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   };
   const lifecycle = state && state.steps.some(step => step.lock) && !isNew ? () => {
     const value = stateValue(), now = extras.get();
-    if (now._locked) {
-      const editable = model.fields.filter(field => (field as any).versioned === false).map(field => field.label.toLowerCase());
-      const what = editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.';
-      // Cancelled: a soft red strip with when and by whom, and the remark when one was given.
-      if (lookNow() === 'cancelled') {
-        const line = cancelledLine(value);
-        return StateBanner({ tone: 'danger', icon: 'ban', title: line.title, text: [line.reason, what] });
-      }
-      return StateBanner({ tone: 'info', title: `${stepLabel(model, value)} and locked.`, text: what });
-    }
-    const next = state.rules.find(rule => rule.from.includes(value) && stepOf(model, rule.to)?.lock);
-    return StateBanner({ tone: 'neutral', icon: 'circle-alert', title: `${stepLabel(model, value)}.`, text: next ? `Everything can change until it is ${stepLabel(model, next.to).toLowerCase()}.` : 'Everything can change.' });
+    return LockBanner(model, value, Boolean(now._locked), () => cancelledLine(value));
   } : null;
   const problems = () => {
     const conflict = store.conflict.get(), form = store.formError.get(), load = store.loadError.get();
@@ -614,11 +597,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // The stage bar, for a State declared show="bar", above the key cards on the full page: only the states this person
   // can move to now are buttons. A side panel has none; its header's status badge does the same.
-  const flow = state && !isNew && show === 'bar' && !panel ? (() => {
-    const { steps, good, bad } = flowFromState(state as any);
-    return StatusFlow({ steps, good, bad, current: stateValue, label: `${model.label} status`, canMove: to => takeable().some(move => move.to === to),
-      blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) });
-  })() : null;
+  const flow = state && !isNew && show === 'bar' && !panel ? StageBar(model, { current: stateValue, canMove: to => takeable().some(move => move.to === to),
+    blocked: to => untrack(() => blockedMove(to)), onMove: to => void runMove(to) }) : null;
 
   const perRecord = (model.measures ?? []).filter(measure => measure.per_record);
   const recordMeasures = cell<MeasureValues | null>(null);
@@ -977,10 +957,66 @@ function withSaveKeys(button: HTMLButtonElement): HTMLButtonElement {
   return button;
 }
 
+// ---------- state display ----------
+// The pieces the record page draws its State with, exported so Docs (app/docs.ts) shows them live on sample schemas.
+
+/** How the State badge reads for a model: the step label, the step colour, and its look (stateLook). */
+export function stateBadgeLook(model: ScreenModel) {
+  const field = model.state ? fieldOf(model, model.state.field) ?? {} : {};
+  return { label: (value: string) => stepLabel(model, value), tint: (value: string) => statusTint(field, value), name: 'Status',
+    look: (value: string): BadgeLook => { const kind = stateLook(model, value); return kind === null || kind === 'open' ? 'pill' : kind; } };
+}
+
+/** The stage bar for a State declared show="bar": every step in order, the current one marked, final steps green or rose. */
+export function StageBar(model: ScreenModel, props: { current: () => string; canMove?: (to: string) => boolean; blocked?: (to: string) => string | null; onMove?: (to: string) => void }): HTMLElement {
+  const { steps, good, bad } = flowFromState(model.state as any);
+  return StatusFlow({ steps, good, bad, label: `${model.label} status`, ...props });
+}
+
+/** The strip above a record with locking steps: locked (cancelled in red, with when, by whom and why), or what can change until it locks. */
+export function LockBanner(model: ScreenModel, value: string, locked: boolean, cancelled: () => { title: string; reason: string }): HTMLElement {
+  if (locked) {
+    const editable = model.fields.filter(field => (field as any).versioned === false).map(field => field.label.toLowerCase());
+    const what = editable.length ? `Only ${editable.join(' and ')} can change.` : 'Nothing can change.';
+    // Cancelled: a soft red strip with when and by whom, and the remark when one was given.
+    if (stateLook(model, value) === 'cancelled') {
+      const line = cancelled();
+      return StateBanner({ tone: 'danger', icon: 'ban', title: line.title, text: [line.reason, what] });
+    }
+    return StateBanner({ tone: 'info', title: `${stepLabel(model, value)} and locked.`, text: what });
+  }
+  const next = model.state!.rules.find(rule => rule.from.includes(value) && stepOf(model, rule.to)?.lock);
+  return StateBanner({ tone: 'neutral', icon: 'circle-alert', title: `${stepLabel(model, value)}.`, text: next ? `Everything can change until it is ${stepLabel(model, next.to).toLowerCase()}.` : 'Everything can change.' });
+}
+
+/** A header move: what the split button and its menu need. */
+export interface MoveEntry { label: string; icon: string; allowed: boolean; primary?: boolean; blocked: () => string | null; run: () => void }
+
+/** A move (or action) in a menu: it runs, or says why it cannot. */
+export const moveMenuEntry = (entry: MoveEntry): MenuItem => ({ label: entry.label, icon: entry.icon,
+  onSelect: () => { const why = untrack(entry.blocked); if (why) toast(why, { icon: 'info' }); else entry.run(); } });
+
+/** The header's move button: the primary move (else the first allowed, else the first) on a split button, the others
+ * behind its chevron. Null without moves. */
+export function MovesButton(moves: MoveEntry[]): HTMLElement | null {
+  const main = moves.find(move => move.primary) ?? moves.find(move => move.allowed) ?? moves[0];
+  return main ? SplitButton({ main: MoveButton({ label: main.label, icon: main.icon, blocked: main.blocked, variant: 'primary', onMove: main.run }),
+    items: moves.filter(move => move !== main).map(moveMenuEntry), menuLabel: 'Other moves' }) : null;
+}
+
+/** The model fields a move asks for (its `asks`). */
+const askedFields = (model: ScreenModel, move: DetailMove) => (move.asks ?? []).map(field => model.fields.find(meta => meta.name === field)).filter(meta => meta !== undefined);
+
+/** What a move's dialog collects: its remark first, then the fields it asks for, writable here. Empty: it runs at once. */
+export function moveInputs(model: ScreenModel, move: DetailMove): FieldSchema[] {
+  const remark = move.remark ? [{ name: 'remark', type: 'longtext', label: move.remark.label ?? 'Remark', required: move.remark.required, max_length: 1000 } as FieldSchema] : [];
+  return [...remark, ...askedFields(model, move).map(meta => ({ ...meta, read_only: false, required: Boolean(meta.required || meta.required_when), applies_when: null, required_when: null, locked_when: null }))];
+}
+
 // ---------- action dialog ----------
 
 /** A move's icon, read from where it goes: a final rose step crosses, Resume plays, On hold pauses, Complete checks. */
-function moveIcon(model: ScreenModel, to: string): string {
+export function moveIcon(model: ScreenModel, to: string): string {
   const step = stepOf(model, to);
   if (step?.final && step.color === 'rose') return 'circle-x';
   if (/hold|pause|suspend|block/i.test(to)) return 'pause';
