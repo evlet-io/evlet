@@ -12,7 +12,7 @@ import re
 from types import MappingProxyType
 
 from .fields import Boolean, Date, Integer, LongText, MISSING, Tags, Text
-from .statemanager import State
+from .declarations import State
 from .models import ValidationError, identifier
 from . import qb
 from .adapter import Column, TableDefinition

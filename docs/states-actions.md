@@ -6,7 +6,7 @@ the document against ordinary edits. Hooks run code when a document is saved, en
 leaves one. Model actions are declared methods that may take validated inputs and may be
 available only in some states.
 
-The state manager is `evlet/statemanager.py`. Rows a document posts to other models when it
+The state manager is `evlet/statemanager.py`; its declarations (`State` and its steps, rules, levels and remarks) are in `evlet/declarations.py`. Rows a document posts to other models when it
 enters a state, and their reversal when it leaves, are described in [effects.md](effects.md).
 Each move is recorded in the record's [Journal](journal.md). Confirm, cancel, reopen and void
 are modelled as steps and rules ([document-lifecycle.md](document-lifecycle.md)).

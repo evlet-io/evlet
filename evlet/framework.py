@@ -36,7 +36,8 @@ class FrameworkStep:
     registry: bool = False
 
     def checksum(self):
-        target = None if self.run is None else f'{self.run.__module__}.{self.run.__qualname__}'
+        # The module part is fixed, not self.run.__module__: stored checksums must not change when this file moves.
+        target = None if self.run is None else f'evlet.framework.{self.run.__qualname__}'
         return sha256(json.dumps({'name': self.name, 'summary': self.summary, 'run': target}, sort_keys=True).encode()).hexdigest()
 
 
