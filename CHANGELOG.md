@@ -118,6 +118,17 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   fields were cached per role only. When a job, a schedule or start-up code checked a field
   first, a later request reused that answer, even for a field built from a `Meta.api = None`
   model that requests may not reach. Requests and trusted code now get separate answers.
+- **A PDF render no longer blocks saves.** Printing a record and the designer's preview read the
+  record first and render with no write transaction open. Before, the render ran inside the main
+  file's write transaction, so a heavy PDF made everyone else's saves wait or fail with Busy.
+  File a copy now keeps the PDF in a short write afterwards that checks `update` and `print`
+  again, and answers 409 when the record changed while it was printing.
+- **An idle job worker no longer writes.** Each pass first reads whether a job, an expired lease
+  or a schedule is due, and skips both writes when nothing is. When something is due, ticking
+  schedules and claiming the next job share one write transaction instead of two. A queued job
+  is still picked up on the next pass, and `wake()` still starts it at once.
+- **Opening kept unsaved changes is a read.** `GET /api/_unsaved/{model}/{id}` no longer opens two
+  write transactions. It writes only when an entry can no longer be used and is removed.
 - **Mention emails on PostgreSQL.** A mention that should send an email now sends it. The
   PostgreSQL adapter did not return the new inbox row's id, so every mention email was skipped
   without an error. SQLite was not affected.

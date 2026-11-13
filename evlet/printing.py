@@ -478,13 +478,22 @@ class Prints:
         if set(query) - {'download'}:
             raise ValidationError({'query': 'Use download=1 or nothing'})
         business = self.business
-        with business.database.transaction() as tx:
+        # Read the record, then render with no transaction open: a long render never holds up anyone's save.
+        with business.context(user, readonly=True) as context:
+            tx = context._tx
             record = business.policy.record(tx, user, model, record_id, 'update' if filing else 'read')
             business.policy.require(user, model, 'print')
-            context = document_context(business, tx, user, model, record)
-            content = render(design, context, business)
-            filename = safe_filename(context['doc'].get('name') or f'{model.__name__}-{record_id}') + '.pdf'
-            if filing:
+            data = document_context(business, tx, user, model, record)
+            revision = business.record_revision(tx, user, record) if filing else None
+        content = render(design, data, business)
+        filename = safe_filename(data['doc'].get('name') or f'{model.__name__}-{record_id}') + '.pdf'
+        if filing:
+            # A short write keeps the copy. The checks run again, and the record must be the one that was printed.
+            with business.database.transaction() as tx:
+                record = business.policy.record(tx, user, model, record_id, 'update')
+                business.policy.require(user, model, 'print')
+                if business.record_revision(tx, user, record) != revision:
+                    raise AccessError(409, 'This record changed while it was printing. Print it again to keep a copy.')
                 return self.file_copy(tx, user, model, record_id, filename, content)
         disposition = 'attachment' if query.get('download') == ['1'] else 'inline'
         return pdf_response(content, filename, disposition)
@@ -1395,9 +1404,10 @@ class Designer:
             except (ValueError, TypeError):
                 raise ValidationError({'record': 'Choose a record to preview with.'}) from None
             model = business.registry.resolve(design.model)
-            with business.database.transaction() as tx:
-                record = business.policy.record(tx, user, model, record_id)
-                content = render(design, document_context(business, tx, user, model, record), business)
+            with business.context(user, readonly=True) as context:
+                record = business.policy.record(context._tx, user, model, record_id)
+                data = document_context(business, context._tx, user, model, record)
+            content = render(design, data, business)
         else:
             if not has_role(user, design.report.roles):
                 raise AccessError(403, 'Report is unavailable')
