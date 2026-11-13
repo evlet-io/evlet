@@ -9,12 +9,14 @@ from pathlib import Path
 import re
 import secrets
 import shlex
-import sqlite3
 import subprocess
 import threading
 import time
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .app import Application
+from .writes import file_transaction
 from .storage import LocalFileStorage
 from .object_storage import S3Storage
 
@@ -57,6 +59,18 @@ class Tenant:
         return {'slug': self.slug, 'label': self.label}
 
 
+# The catalog file's tables (registry.sqlite3), created with the catalog.
+CATALOG = (
+    TableDefinition('settings', (Column('name', 'TEXT', primary=True), Column('value', 'TEXT', required=True))),
+    TableDefinition('tenants', (Column('slug', 'TEXT', primary=True), Column('label', 'TEXT', required=True),
+                                Column('active', 'INTEGER', required=True, default=0))),
+    TableDefinition('domains', (Column('hostname', 'TEXT', primary=True),
+                                Column('tenant', 'TEXT', required=True, references='tenants', referenced_column='slug'),
+                                Column('kind', 'TEXT', required=True), Column('token', 'TEXT'), Column('expires', 'INTEGER'),
+                                Column('verified_at', 'INTEGER'), Column('active', 'INTEGER', required=True, default=1))),
+)
+
+
 class TenantRegistry:
     """Trusted administration API. Runtime opens an existing catalog only."""
 
@@ -64,7 +78,7 @@ class TenantRegistry:
         self.root = Path(root).resolve()
         self.path = self.root / 'registry.sqlite3'
         with self._connection() as db:
-            settings = json.loads(db.execute('SELECT value FROM settings WHERE name=?', ('configuration',)).fetchone()[0])
+            settings = json.loads(db.run(qb.select('settings', 'value').where(name='configuration')).value())
         if settings.get('version') != 1:
             raise ValueError('Unsupported tenant catalog version')
         self.development = settings['development']
@@ -86,37 +100,29 @@ class TenantRegistry:
         # Exclusive creation prevents a repeated initialization replacing a catalog.
         with path.open('xb'):
             path.chmod(0o600)
-        with sqlite3.connect(path) as db:
-            db.executescript('''
-                CREATE TABLE settings (name TEXT PRIMARY KEY, value TEXT NOT NULL);
-                CREATE TABLE tenants (slug TEXT PRIMARY KEY, label TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 0);
-                CREATE TABLE domains (hostname TEXT PRIMARY KEY, tenant TEXT NOT NULL REFERENCES tenants(slug), kind TEXT NOT NULL, token TEXT, expires INTEGER, verified_at INTEGER, active INTEGER NOT NULL DEFAULT 1);
-            ''')
-            db.execute('INSERT INTO settings VALUES (?,?)', ('configuration', json.dumps({'version': 1, 'development': development, 'managed_domains': bases, 'ports': ports if development else ()})))
+        with file_transaction(path, write=True) as db:
+            for definition in CATALOG:
+                db.ensure_table(definition)
+            db.run(qb.insert('settings', name='configuration', value=json.dumps(
+                {'version': 1, 'development': development, 'managed_domains': bases, 'ports': ports if development else ()})))
         return cls(root)
 
     @contextmanager
     def _connection(self, *, write=False):
         if self.path.is_symlink():
             raise ValueError('Tenant catalog must not be a symbolic link')
-        db = sqlite3.connect(self.path.as_uri() + '?mode=rw', uri=True, timeout=5)
-        db.row_factory = sqlite3.Row
-        try:
-            db.execute('PRAGMA foreign_keys=ON')
-            db.execute('BEGIN IMMEDIATE' if write else 'BEGIN')
+        with file_transaction(self.path, write=write) as db:
             yield db
-            db.commit()
-        finally:
-            db.close()
 
     def _tenant(self, db, slug):
-        row = db.execute('SELECT * FROM tenants WHERE slug=?', (slug,)).fetchone()
+        row = db.run(qb.select('tenants').where(slug=slug)).one()
         if row is None:
             raise ValueError('Unknown tenant')
         directory = self.root / 'tenants' / row['slug']
         if directory.resolve() != directory:
             raise ValueError('Tenant directories must not use symbolic links')
-        hosts = tuple(row[0] for row in db.execute('SELECT hostname FROM domains WHERE tenant=? AND verified_at IS NOT NULL AND active=1 ORDER BY hostname', (slug,)))
+        hosts = tuple(row[0] for row in db.run(qb.select('domains', 'hostname').where(qb.eq('tenant', slug), qb.not_null('verified_at'), qb.eq('active', 1))
+                                                  .order_by('hostname')))
         return Tenant(row['slug'], row['label'], directory / 'application.sqlite3', directory / 'files', hosts, self.development, self.ports)
 
     def get(self, slug):
@@ -136,8 +142,8 @@ class TenantRegistry:
         if not allowed:
             raise ValueError('Managed hostname must be under a configured owned base domain')
         with self._connection(write=True) as db:
-            db.execute('INSERT INTO tenants(slug,label) VALUES (?,?)', (slug, label.strip()))
-            db.execute('INSERT INTO domains(hostname,tenant,kind,verified_at) VALUES (?,?,?,?)', (host, slug, 'managed', int(time.time())))
+            db.run(qb.insert('tenants', slug=slug, label=label.strip()))
+            db.run(qb.insert('domains', hostname=host, tenant=slug, kind='managed', verified_at=int(time.time())))
             return self._tenant(db, slug)
 
     def set_active(self, slug, active):
@@ -147,7 +153,7 @@ class TenantRegistry:
         if active and (not tenant.database_path.is_file() or tenant.database_path.is_symlink()):
             raise ValueError('Provision the tenant database before activation')
         with self._connection(write=True) as db:
-            db.execute('UPDATE tenants SET active=? WHERE slug=?', (active, slug))
+            db.run(qb.update('tenants', active=active).where(slug=slug))
 
     def add_domain(self, slug, host):
         host = hostname(host)
@@ -155,14 +161,15 @@ class TenantRegistry:
             raise ValueError('Custom domains require a production registry')
         self.get(slug)
         with self._connection(write=True) as db:
-            db.execute('INSERT INTO domains(hostname,tenant,kind) VALUES (?,?,?)', (host, slug, 'custom'))
+            db.run(qb.insert('domains', hostname=host, tenant=slug, kind='custom'))
         return self.challenge(host)
 
     def challenge(self, host):
         host = hostname(host)
         token = 'evlet-verification=' + secrets.token_urlsafe(32)
         with self._connection(write=True) as db:
-            changed = db.execute("UPDATE domains SET token=?,expires=?,verified_at=NULL WHERE hostname=? AND kind='custom'", (token, int(time.time()) + 86400, host)).rowcount
+            changed = db.run(qb.update('domains', token=token, expires=int(time.time()) + 86400, verified_at=None)
+                             .where(hostname=host, kind='custom')).rowcount
             if not changed:
                 raise ValueError('Unknown custom domain')
         return {'name': '_evlet-challenge.' + host, 'type': 'TXT', 'value': token}
@@ -170,13 +177,15 @@ class TenantRegistry:
     def verify_domain(self, host, *, resolver=dns_txt):
         host = hostname(host)
         with self._connection() as db:
-            row = db.execute("SELECT * FROM domains WHERE hostname=? AND kind='custom'", (host,)).fetchone()
+            row = db.run(qb.select('domains').where(hostname=host, kind='custom')).one()
         if row is None or not row['token'] or row['expires'] <= time.time():
             raise ValueError('Request a new domain challenge')
         if row['token'] not in resolver('_evlet-challenge.' + host):
             raise ValueError('The DNS TXT verification record does not match')
         with self._connection(write=True) as db:
-            changed = db.execute('UPDATE domains SET verified_at=?,token=NULL,expires=NULL WHERE hostname=? AND token=? AND expires>? AND active=1', (int(time.time()), host, row['token'], int(time.time()))).rowcount
+            now = int(time.time())
+            changed = db.run(qb.update('domains', verified_at=now, token=None, expires=None)
+                             .where(qb.eq('hostname', host), qb.eq('token', row['token']), qb.gt('expires', now), qb.eq('active', 1))).rowcount
             if not changed:
                 raise ValueError('Domain challenge changed, expired, or was disabled')
 
@@ -184,17 +193,20 @@ class TenantRegistry:
         if type(active) is not bool:
             raise ValueError('Use a boolean active flag')
         with self._connection(write=True) as db:
-            if not db.execute('UPDATE domains SET active=? WHERE hostname=?', (active, hostname(host))).rowcount:
+            if not db.run(qb.update('domains', active=active).where(hostname=hostname(host))).rowcount:
                 raise ValueError('Unknown domain')
 
     def inventory(self):
         with self._connection() as db:
-            return {'tenants': [dict(row) for row in db.execute('SELECT * FROM tenants ORDER BY slug')],
-                    'domains': [dict(row) for row in db.execute('SELECT hostname,tenant,kind,verified_at,active FROM domains ORDER BY hostname')]}
+            return {'tenants': [dict(row) for row in db.run(qb.select('tenants').order_by('slug'))],
+                    'domains': [dict(row) for row in db.run(qb.select('domains', 'hostname', 'tenant', 'kind', 'verified_at', 'active')
+                                                            .order_by('hostname'))]}
 
     def resolve(self, host):
         with self._connection() as db:
-            row = db.execute('SELECT d.tenant FROM domains d JOIN tenants t ON t.slug=d.tenant WHERE d.hostname=? AND d.verified_at IS NOT NULL AND d.active=1 AND t.active=1', (host,)).fetchone()
+            row = db.run(qb.select(qb.table('domains', 'd'), 'd.tenant')
+                         .join(qb.table('tenants', 't'), qb.eq('t.slug', qb.col('d.tenant')))
+                         .where(qb.eq('d.hostname', host), qb.not_null('d.verified_at'), qb.eq('d.active', 1), qb.eq('t.active', 1))).one()
             return None if row is None else self._tenant(db, row['tenant'])
 
 

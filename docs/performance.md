@@ -1,7 +1,7 @@
 # Performance and hardening measurements
 
 Milestone 8 includes real SQLite benchmarks and regression tests. Evlet 0.4 also
-measured PostgreSQL; PostgreSQL was removed in 0.5.
+measured PostgreSQL; PostgreSQL was removed in 0.4.5.
 Results are local measurements of this workload, not estimated scale or production
 capacity guarantees. The framework's larger tenant and employee-count targets
 remain unvalidated.

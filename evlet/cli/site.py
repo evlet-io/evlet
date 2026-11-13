@@ -4,7 +4,7 @@ Every step calls the code of its own command and skips work that is already done
 running the same command again resumes after a failure.
 """
 
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 import ipaddress
 import json
 from pathlib import Path
@@ -114,13 +114,12 @@ def has_users(path):
     database = path / 'data/database.sqlite3'
     if not database.is_file():
         return False
-    connection = sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)
-    try:
-        if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone():
+    from .. import qb
+    from ..writes import read_file
+    with closing(read_file(database)) as connection:
+        if not connection.table_exists('evlet_users'):
             return False
-        return connection.execute("SELECT 1 FROM evlet_users WHERE password<>'' LIMIT 1").fetchone() is not None
-    finally:
-        connection.close()
+        return connection.run(qb.select('evlet_users', qb.value(1)).where(qb.ne('password', '')).limit(1)).one() is not None
 
 
 def ask_admin():

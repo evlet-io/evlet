@@ -1,6 +1,7 @@
 """Serve packaged browser assets with the existing ASGI application."""
 
 import asyncio
+from contextlib import closing
 import logging
 import os
 from pathlib import Path
@@ -203,22 +204,22 @@ def proxy_warning(root, name, domain, port=8000):
 def administrator_hint(path, name):
     """One line when the built-in Administrator has no password yet (or will not, on a new database), else None.
     evlet serve prints it instead of a sign-in link; it only reads the database."""
-    import sqlite3
+    from .. import qb
+    from ..adapter import DatabaseError
+    from ..writes import read_file
     database = path / 'data/database.sqlite3'
     if database.is_file():
         try:
-            connection = sqlite3.connect(database.as_uri() + '?mode=ro', uri=True)
-            try:
-                if not connection.execute("SELECT 1 FROM sqlite_master WHERE name='evlet_users'").fetchone():
+            with closing(read_file(database)) as connection:
+                if not connection.table_exists('evlet_users'):
                     row = None
                 else:
-                    row = connection.execute("SELECT password FROM evlet_users WHERE username IN ('admin','administrator') AND role='admin' "
-                                             "ORDER BY username='admin' DESC").fetchone()
+                    row = connection.run(qb.select('evlet_users', 'password')
+                                         .where(qb.in_('username', ('admin', 'administrator')), qb.eq('role', 'admin'))
+                                         .order_by(qb.desc(qb.eq('username', 'admin')))).one()
                     if row is None:
                         return None  # A database from before the Administrator; evlet migrate adds it.
-            finally:
-                connection.close()
-        except sqlite3.Error:
+        except DatabaseError:
             return None
         if row is not None and row[0] != '':
             return None

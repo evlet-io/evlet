@@ -4,7 +4,7 @@ Evlet ships with one database: SQLite, in the four-file layout described in
 [performance.md](performance.md). SQLite needs no server, backs up as files, and is the
 right fit for the small and medium businesses Evlet is built for.
 
-Evlet 0.4 also had a PostgreSQL adapter. It was removed in 0.5. Its checks were spread
+Evlet 0.4.4 and earlier also had a PostgreSQL adapter. It was removed in 0.4.5. Its checks were spread
 over 26 framework files, 21 test files ran twice, it had its own copy of the schema engine,
 and it rewrote SQLite SQL into PostgreSQL SQL token by token. That rewriting caused parity
 bugs, for example a hardcoded list of tables whose inserts returned an id.
@@ -25,12 +25,11 @@ dialect. App developers do not need it: they use `Database`, `Session` and `Cont
 | `evlet/adapter.py` | The connection interface every dialect provides: `run(statement)`, the schema methods migrations use, ids, locks, savepoints and error reading. The neutral shapes (`Column`, `Index`, `TableShape`, `TableDefinition`, `IntegrityFailure`, `Result`) and the error types framework code catches. |
 | `evlet/sqlite.py` | The SQLite dialect: the compiler that turns statements into SQLite SQL, and `SQLiteConnection`. |
 | `evlet/database.py` | `Database` (the SQLite database: files, connections, transactions) and the neutral record API, `Session`. |
-| `evlet/writes.py` | SQLite only: the four files and the fair write line-up. |
+| `evlet/writes.py` | SQLite only: the four files, the fair write line-up, and the file tools the instance commands use to open, copy and check SQLite files. |
 
 Framework modules outside the dialect never write SQL text and never ask which database they
 run on. A test, `tests/test_query_builder_boundary.py`, enforces this: it fails on a string that
-reads as an SQL statement, or an `execute()` call given text, anywhere outside the dialect (see "The
-plan" below for the instance tools still listed).
+reads as an SQL statement, or an `execute()` call given text, anywhere outside the dialect.
 
 ## The query builder
 
@@ -113,7 +112,7 @@ Migrations and framework tables use named methods on the connection instead of D
 | `add_column`, `rename_column`, `drop_column`, `cannot_drop_columns()` | Column changes, keeping data. |
 | `set_required(table, column, required)`, `drop_reference(table, column)` | Constraint changes, keeping the stored rows. |
 | `create_index(table, base, columns, unique=, partial=)`, `drop_index(name)` | Model indexes. `partial` names a column: only rows where it is set are covered. |
-| `ensure_table(TableDefinition)`, `ensure_index(name, table, columns, unique=)` | Framework tables (`evlet_*`), created when missing. A `TableDefinition` lists columns, a numbered id, a primary key, unique groups and checks (query builder conditions). Its columns may give a `default` (an integer or text) and, for a reference, `on_delete='cascade'` or `'set null'`. |
+| `ensure_table(TableDefinition)`, `ensure_index(name, table, columns, unique=)` | Framework tables (`evlet_*`), created when missing. A `TableDefinition` lists columns, a numbered id, a primary key, unique groups and checks (query builder conditions). Its columns may give a `default` (an integer or text) and, for a reference, `on_delete='cascade'` or `'set null'` and `referenced_column` when it points at a key other than `id`. |
 | `drop_table(table)`, `rename_table(old, new)` | Rebuilding a framework table: create the new shape, copy the rows with `qb.insert_rows_from`, drop, rename. |
 | `make_append_only`, `drop_append_only`, `is_append_only` | Refuse `UPDATE`, `DELETE` and replacing inserts on a table. |
 | `guard_id`, `has_id_guard` | Refuse an `UPDATE` that changes a row's `id`. |
@@ -193,7 +192,7 @@ and their own fixtures, so a full run means changing those to build the new data
 
 ## The plan
 
-The move onto the query builder was done in steps, one commit each, in the 0.5 pull request.
+The move onto the query builder was done in steps, one commit each, in the 0.4.5 pull request.
 
 | Step | Modules | State |
 | --- | --- | --- |
@@ -203,8 +202,10 @@ The move onto the query builder was done in steps, one commit each, in the 0.5 p
 | 4 | Jobs and messages: `jobs.py`, `events.py`, `mailboxes.py`, `mentions.py`, `connectors.py`, `tools.py`, `devlink.py`, `services.py`, `framework.py`. | Done |
 | 5 | Eva: `eva.py`, `assistants.py`. | Done |
 | 6 | The rest: `measures.py`, `business.py`, `effects.py`, `corrections.py`, `currencies.py`, `forms.py`, `printing.py`, `slips.py`, `storage.py`, `object_storage.py`. The temporary text bridge (`SqlQuery.where_sql`, `ordering_sql`, `reference_sql`, `Policy.scope_sql`, `compile_condition`) is removed. | Done |
-| 7 | The instance tools that open SQLite files directly (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/journal.py`, `cli/main.py`, `cli/serve.py`, `cli/site.py`): decide which stay SQLite tools and which go through `Database`. | Next |
+| 7 | The instance tools (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/journal.py`, `cli/main.py`, `cli/serve.py`, `cli/site.py`). They keep working on SQLite files, which is what an instance is, but open them with the file tools in `evlet/writes.py` (`read_file`, `file_transaction`, `copy_set`, `copy_file`, `snapshot_set`, `check_file`, `settle`) and run query builder statements on the connection they get. The tenant catalog's tables are `TableDefinition`s. | Done |
 
-`tests/test_query_builder_boundary.py` lists the step 7 tools with the SQL they still hold; the
-numbers may only go down. Everywhere else, SQL text outside the dialect fails the test, so new
+`tests/test_query_builder_boundary.py` fails on SQL text anywhere outside the dialect, so new
 framework code uses the query builder from the start.
+
+A dialect for a server database would not change the instance tools: an instance is a set of
+SQLite files. A server database brings its own backup and restore, run by its operator.

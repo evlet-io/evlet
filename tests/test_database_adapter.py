@@ -482,6 +482,16 @@ def test_distinct_having_searched_case_division_and_text_functions(people):
     assert connection.run(qb.select('evlet_adapter_child', qb.count())).value() == 0
     assert connection.run(qb.select('evlet_adapter_note', 'parent')).all()[0][0] is None
     connection.drop_table('evlet_adapter_note')
+    # A reference to a text key other than "id" (the tenant catalog's domains point at tenants by slug).
+    connection.ensure_table(TableDefinition('evlet_adapter_slug', (Column('slug', 'TEXT', primary=True),)))
+    connection.ensure_table(TableDefinition('evlet_adapter_alias', (
+        Column('slug', 'TEXT', required=True, references='evlet_adapter_slug', referenced_column='slug'),), numbered=True))
+    connection.run(qb.insert('evlet_adapter_slug', slug='north'))
+    connection.run(qb.insert('evlet_adapter_alias', slug='north'))
+    with pytest.raises(IntegrityError):
+        connection.run(qb.insert('evlet_adapter_alias', slug='south'))
+    connection.drop_table('evlet_adapter_alias')
+    connection.drop_table('evlet_adapter_slug')
     # Rebuilding a framework table: copy, drop, rename.
     connection.run(qb.insert('evlet_adapter_parent', label='kept'))
     connection.ensure_table(TableDefinition('evlet_adapter_parent_new', (Column('label', 'TEXT', required=True),), numbered=True))
@@ -621,3 +631,11 @@ def test_a_0_4_3_database_keeps_its_guards(tmp_path):
     with pytest.raises((SchemaError, ValidationError, ValueError)):
         database.update(upgrade_fixture.Customer, next(iter(database.list(upgrade_fixture.Customer))).id, phone=None)
     database.close()
+
+
+@pytest.mark.parametrize('dsn', ['postgresql://evlet@localhost/app', 'postgres://localhost/app', 'host=127.0.0.1 dbname=app'])
+def test_a_postgresql_setup_is_told_which_version_still_supports_it(dsn):
+    with pytest.raises(ValueError, match='0.4.4 is the last version that supports it'):
+        Database(dsn, Registry())
+    with pytest.raises(ImportError, match='removed in Evlet 0.4.5'):
+        from evlet import PostgreSQLDatabase  # noqa: F401

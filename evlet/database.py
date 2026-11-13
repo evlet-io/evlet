@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from pathlib import Path
 import logging
 import os
+import re
 import sqlite3
 import threading
 
@@ -68,6 +69,12 @@ def using(database):
         ACTIVE.reset(token)
 
 
+# What a PostgreSQL setup is told: 0.4.5 runs on SQLite only.
+POSTGRESQL_REMOVED = ('PostgreSQL support was removed in Evlet 0.4.5; Evlet 0.4.4 is the last version that supports it. '
+                      'Pin evlet==0.4.4 to keep running on PostgreSQL, or move the data into a SQLite instance '
+                      '(CHANGELOG.md, "Upgrading to 0.4.5").')
+
+
 class Database:
     # Set by Controls: this database's instance fields and added options, and the instance timezone.
     layer = EMPTY_LAYER
@@ -81,6 +88,8 @@ class Database:
     def __init__(self, path, registry, *, migrations=None, must_exist=False):
         if str(path) == ":memory:":
             raise ValueError("Use a SQLite file (a temporary file in tests)")
+        if re.match(r'postgres(ql)?://|(host|dbname|user)=', str(path)):
+            raise ValueError(POSTGRESQL_REMOVED)
         configured = Path(path)
         self.path = configured.parent.resolve() / configured.name if must_exist else configured
         self.must_exist = must_exist
@@ -246,11 +255,10 @@ class Database:
         """A consistent copy of the database in backups/ next to it, named by the time; returns its file name.
         Controls calls it before it changes instance fields."""
         from datetime import datetime, timezone
-        from .cli.install import snapshot
         folder = self.path.parent / 'backups'
         folder.mkdir(mode=0o700, exist_ok=True)
         target = folder / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
-        snapshot(self.path, target)
+        writes.snapshot(self.path, target)
         return target.name
 
     def initialize(self):
