@@ -240,8 +240,7 @@ the dialog; `source` is the authorized persisted source snapshot. Load/evaluate
 never save it. Submit requires its current revision and a scoped idempotency
 key. A retry returns the stored outcome only for identical input and an actor
 who still has source access. Conflicting input under the same key fails.
-The operation uses the existing serialized write transaction, including the
-PostgreSQL advisory transaction lock.
+The operation uses the existing serialized write transaction.
 
 A `Report` defines title, roles, fields, typed `Column`s, `autorun` and `run()`.
 Set `roles = ('admin', 'editor')` to name the roles that may see and run it.
@@ -324,7 +323,7 @@ existing regressions:
 | Definitions, expressions, children, permissions | `test_documents.py`, `test_document_boundaries.py`, shared document fixtures/vectors, existing business/security suites |
 | Dialogs, reports, APIs, cron | `test_forms_services.py`, reference app end-to-end test, native document/report tests, existing queue tests |
 | Build failure, generation pinning, recovery | `test_builds.py`, existing install/backup/recovery and reload tests |
-| Adapter compatibility | Full Python suite, PostgreSQL regression suite plus declarative document rollback/revision test |
+| Adapter compatibility | Full Python suite, adapter conformance tests plus declarative document rollback/revision test |
 | UI and distribution | Native frontend suite/typecheck/build, installed-wheel HTTP smoke, clean flat-app wheel/sdist/editable imports |
 
 Run `python -m scripts.generate_document_fixtures` only after an intentional

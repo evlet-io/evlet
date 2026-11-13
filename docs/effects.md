@@ -293,7 +293,7 @@ evlet effects check acme
 
 The command recomputes the rows of every record of every model with effects and compares
 them with the saved rows. It writes nothing and takes no write lock: it reads one consistent
-snapshot (a read transaction on SQLite, `REPEATABLE READ READ ONLY` on PostgreSQL), so it may
+snapshot (a read transaction on SQLite), so it may
 run while the instance serves. It prints one line per difference and exits with status 1 when
 there is any, or prints `No differences` and exits with 0.
 
@@ -330,7 +330,7 @@ maintenance write, is reported as `changed`: the saved rows no longer match the 
 
 * The engine indexes the target's `source`: an effect sets `index=True` on it, which creates
   one index over `(source_model, source_id)`. Details, void and the check find a record's rows
-  with an index search. `Reference(index=True)` works on any model, on SQLite and PostgreSQL.
+  with an index search. `Reference(index=True)` works on any model.
   A target table created before it was an effect target needs a migration to gain the index:
 
   ```python

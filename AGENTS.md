@@ -10,8 +10,8 @@ working: sign-in lands on the first list, and Docs stays reachable after sign-in
 the routes, the public UI API and its boundaries. Read
 `docs/business-capabilities.md`, `docs/finite-calculations.md`, `docs/tenancy-deployment.md`,
 `docs/jobs-realtime.md`, `docs/connector.md`, `docs/tools.md`, `docs/eva.md`, and `docs/printing.md` for public APIs and permission
-boundaries. Read `docs/postgresql.md`, `docs/performance.md`, and
-`docs/production-operations.md` for adapter limits and validation. Connector writes must use the existing
+boundaries. Read `docs/database-adapters.md`, `docs/performance.md`, and
+`docs/production-operations.md` for the database adapter boundary, limits and validation. Connector writes must use the existing
 authenticated HTTP routes;
 never bypass account, tenant, row, field, or action checks.
 
@@ -25,6 +25,11 @@ never bypass account, tenant, row, field, or action checks.
   public exports; `frontend/` is the browser interface built on Evlet's own UI framework, with
   no runtime dependencies; `tests/` covers the
   core, SQLite integration, and ASGI interface.
+- New framework code reads and writes the database through the query builder (`evlet/qb.py`,
+  `connection.run(...)`) and the connection's schema methods, never raw SQL text. SQL lives only
+  in the dialect (`evlet/sqlite.py`, `evlet/writes.py`, `Database` in `evlet/database.py`), and
+  no module outside it may ask which database it runs on. `tests/test_query_builder_boundary.py`
+  enforces this; when you move a module onto the query builder, lower its count there.
 - Parameterize SQL values and validate SQL identifiers. Validate on the backend.
   Preserve transaction boundaries, exact currency values, and foreign keys.
 - Keep the Playground authenticated and development servers on loopback. Backend

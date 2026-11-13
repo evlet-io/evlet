@@ -152,8 +152,8 @@ class Leave(Model):
 - `any_of(*scopes)` allows a row when any of its scopes or filter objects allows it. An empty
   filter object among them allows every row.
 
-The team is resolved inside one SQL statement with a recursive query (`WITH RECURSIVE`) on
-SQLite and PostgreSQL, so it has no size limit and needs no Python lookups. The values bound
+The team is resolved inside one SQL statement with a recursive query (`WITH RECURSIVE`),
+so it has no size limit and needs no Python lookups. The values bound
 are the user's linked record IDs only. `UNION` stops at a cycle in the data. Policies check
 each declared team when they are built: the parent must be a Link to the same model, and the
 field must lead to it. Declare the parent Link with `index=True` so each level is an index

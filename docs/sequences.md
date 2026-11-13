@@ -122,12 +122,12 @@ because it changes after the number is assigned. Two companies can both have
 
 Counters live in the framework table
 `evlet_sequence(model, field, scope_key, period, last)`, created at startup when any model
-declares a Sequence, on SQLite and PostgreSQL. `scope_key` is the JSON list of the scope
+declares a Sequence. `scope_key` is the JSON list of the scope
 values (empty without a scope); `period` is `YYYY`, `YYYY-MM` or empty.
 
 Each assignment is one statement that inserts the counter or adds one to it, in the write
 transaction of the record. Evlet write transactions are serialized (SQLite `BEGIN
-IMMEDIATE`, a transaction lock on PostgreSQL), so parallel writers get distinct numbers.
+IMMEDIATE`), so parallel writers get distinct numbers.
 If anything later in the transaction fails, for example validation, a `changed()` reaction
 or a database constraint, the whole transaction rolls back, including the counter, and the
 number is given to the next committed record. Deleting a record does not give its number

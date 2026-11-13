@@ -455,8 +455,8 @@ application expects.
 This is a transport adapter, not a deployable Lambda version of the SQLite
 Playground. Lambda instance-local files do not provide the required persistent
 application database. A live serverless consumer needs an independently durable
-database adapter and a separate job execution arrangement. PostgreSQL support and
-broader deployment hardening remain later work. No Lambda deployment is included.
+database adapter ([database adapters](database-adapters.md)) and a separate job
+execution arrangement. Broader deployment hardening remains later work. No Lambda deployment is included.
 
 The protocol follows the official [HTTP API payload-v2 contract](https://docs.aws.amazon.com/apigateway/latest/developerguide/http-api-develop-integrations-lambda.html)
 and [Function URL format](https://docs.aws.amazon.com/lambda/latest/dg/urls-invocation.html).

@@ -49,8 +49,8 @@ Eva, the connector) must reach them.
 
 - **Lean rows.** The table has an integer primary key `id` and the declared columns, nothing
   else: no `name`, `title`, record time columns, revision or unsaved-change columns. The database
-  assigns ids in insert order (the SQLite rowid with `AUTOINCREMENT`, a PostgreSQL `bigint`
-  identity). They always increase, are never reused, and are plain `int` in Python. They are not
+  assigns ids in insert order (the SQLite rowid with `AUTOINCREMENT`). They always increase, are
+  never reused, and are plain `int` in Python. They are not
   the time-based [record ids](model-engine.md#record-ids) and have no text form.
 - **No public surface.** `ledger = True` means `Meta.api = None`, and any other `api` value is
   refused. The model is left out of every HTTP route, the schema, generated screens,
@@ -95,9 +95,9 @@ with database.transaction() as tx:
 - `tx.update` and `tx.delete` work on a mutable ledger model. On an append-only one they are
   refused before any SQL. Raw SQL that updates or deletes rows of an append-only table is refused
   by the database triggers, and Evlet raises `ConflictError` (`step is append only: its rows are
-  never changed or deleted`) on SQLite and PostgreSQL alike. The transaction rolls back.
+  never changed or deleted`). The transaction rolls back.
 - Field types validate values before SQL. All SQL is parameterised and identifiers are validated.
-- Measures (`Sum`, `Count`, `Min`, `Max`, grouping) are exact on SQLite and PostgreSQL. A report's
+- Measures (`Sum`, `Count`, `Min`, `Max`, grouping) are exact. A report's
   `run()` reads a ledger model through `self.context.aggregate` and `self.context.list`, which
   apply the person's `Rule(scope=...)` on the model, so declare `permissions` on a ledger model
   whose reports need row scopes ([reports.md](reports.md)).
@@ -111,7 +111,7 @@ with database.transaction() as tx:
 
 ## Ids
 
-A ledger row's id is the integer the database assigns (SQLite `AUTOINCREMENT`, a PostgreSQL identity),
+A ledger row's id is the integer the database assigns (SQLite `AUTOINCREMENT`),
 not a record id. A caller may give an `id` only when `tx.reserve_ids` handed it out in the same
 transaction (below). No update may change an id: `tx.update(model, row_id, id=...)` raises the same
 `ValidationError` as record models, and the database trigger every model table has refuses a raw
@@ -155,8 +155,6 @@ with database.transaction() as tx:
 - **SQLite.** The ids follow the table's last id, under the transaction's write lock
   (`BEGIN IMMEDIATE`, one writer at a time). A rollback hands them back, so the next transaction
   may reserve the same numbers.
-- **PostgreSQL.** The ids come from the table's identity sequence with `nextval`. A rollback does
-  not return them, so ids may have gaps. They are never handed out twice.
 
 Ids always increase, but gaps are normal. Never read meaning into them, such as a count of rows.
 
@@ -164,7 +162,7 @@ Ids always increase, but gaps are normal. Never read meaning into them, such as 
 
 | Option | Default | Meaning |
 | --- | --- | --- |
-| `append_only` | `False` | Database triggers refuse `UPDATE` and `DELETE` (and so `REPLACE`, upsert updates and, on PostgreSQL, `TRUNCATE`), as on `evlet_audit`. The session refuses updates and deletes first, with a clear error. Inserts work |
+| `append_only` | `False` | Database triggers refuse `UPDATE` and `DELETE` (and so `REPLACE` and upsert updates), as on `evlet_audit`. The session refuses updates and deletes first, with a clear error. Inserts work |
 | `journal` | `None` | The [Journal](journal.md): `created`, `changed` and `deleted` entries per row, written by the session as the engine or as `tx.actor`. `Journal(tamper_evident=True)` hashes them and `evlet journal verify` checks them |
 | `timestamps` | `None` | `"created"` adds `created_at`, `"modified"` adds `modified_at`, `"both"` adds both. The framework fills them on insert and update; a write that names them is refused |
 | `indexes` | `[]` | Composite and unique indexes: `("a", "b")` or `(("a", "b"), {"unique": True})`. An entry may name the row `id`, such as `("serial", "id")`. Normal models declare them the same way ([model-engine.md](model-engine.md#composite-and-unique-indexes)). A single field can also take `index=True` or `unique=True` |
@@ -268,20 +266,12 @@ with database.transaction() as tx:
 - **Take all locks in one call, at the start.** The method sorts the keys before locking, so two
   callers that pass the same keys in any order cannot deadlock each other. Two separate calls in
   different orders can.
-- **PostgreSQL.** Each key becomes a stable signed 64-bit number (BLAKE2b of the key's canonical
-  JSON, never Python's `hash()`), locked with `pg_advisory_xact_lock`. Two keys that share a
-  number only make a writer wait when it need not; they never let two writers in together. With
-  `timeout` (seconds), `lock_timeout` bounds the wait and is restored once the locks are held.
-  Without one, the database's own lock timeout (`PostgreSQLDatabase(timeout=...)`, 5 seconds by
-  default) bounds it. A wait that runs out raises `LockTimeout` ("busy, try again"), and the
-  transaction rolls back as usual.
-- **Evlet writes are serialised today.** Every PostgreSQL write transaction also takes one
-  database-wide advisory lock ([postgresql.md](postgresql.md)), so two Evlet transactions never
-  overlap and a key lock never waits on another Evlet transaction. `tx.lock` still waits for any
-  other holder of the same key. It is the business-key contract ledger writers code against, which
-  stays correct if the global lock is ever relaxed.
 - **SQLite.** A write transaction starts with `BEGIN IMMEDIATE`, so only one writer runs at a
-  time. `tx.lock` checks the keys and returns.
+  time per file. `tx.lock` checks the keys, checks that a write transaction is open, and returns.
+- **The contract.** `tx.lock` is the business-key contract ledger writers code against. It stays
+  correct on a database that lets writers overlap: an adapter for one holds each key until the
+  transaction ends, and a wait longer than `timeout` (seconds) raises `LockTimeout` ("busy, try
+  again"), and the transaction rolls back as usual ([database-adapters.md](database-adapters.md)).
 
 ```python
 from evlet import LockTimeout

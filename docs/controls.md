@@ -333,8 +333,7 @@ required field needs a default when the table has rows; the default fills them. 
 for on people's API writes only, so app code that does not know the field keeps working. Removing drops the column and takes the field out of every override that names it:
 its own field override, list columns and sort, layout, permission field lists (a role left with no
 readable field loses access) and naming series that use it. Removal needs SQLite 3.35 or later; on
-an older SQLite the page says so and only adding works. On PostgreSQL the change runs in one
-transaction and backups are the operator's job. Each tenant has its own instance fields.
+an older SQLite the page says so and only adding works. Each tenant has its own instance fields.
 
 Instance fields are plain values. No formula reads them, so finite calculation plans leave them
 out, and `Recompute` neither names nor changes them; it still skips records with posted effects (unless an
@@ -633,7 +632,6 @@ Trusted server code reads a saved connector with `business.connectors.values("wh
   containers. Once anything is sealed, a missing key file is an error and never replaced.
   An application built in code uses `Application(secret_key=path)` for both; without it,
   connector secrets use a key file next to its SQLite file and two-step sign-in stays off.
-  A PostgreSQL application needs `EVLET_SECRET_KEY` or `secret_key`.
   The instance refuses to start when the key file is a link, belongs to another user, or
   can be read by anyone but its owner.
 - **Rotation.** `evlet secrets rotate <instance>` writes a new key and re-encrypts every

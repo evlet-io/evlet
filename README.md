@@ -1,8 +1,9 @@
 # Evlet
 
 Evlet is a Python application framework. Define your models in Python and get
-forms, lists, permissions and APIs in the browser. SQLite is the default;
-PostgreSQL is optional.
+forms, lists, permissions and APIs in the browser. It runs on SQLite, with no
+database server to set up. Another database can be added later through one adapter
+boundary ([database adapters](docs/database-adapters.md)).
 
 ## Install, create a site, open it
 
@@ -111,10 +112,10 @@ else ([controls.md](docs/controls.md#security-rules)).
 
 ## Optional capabilities
 
-PostgreSQL, S3 and PDF printing are available as `evlet[postgres]`, `evlet[s3]` and
-`evlet[print]` ([print designs](docs/printing.md)). The existing
+S3 and PDF printing are available as `evlet[s3]` and `evlet[print]`
+([print designs](docs/printing.md)). The existing
 [tenant deployment](docs/tenancy-deployment.md), [jobs and live updates](docs/jobs-realtime.md),
-[connector](docs/connector.md), [Tool Engine](docs/tools.md), [Eva](docs/eva.md), [PostgreSQL](docs/postgresql.md) and
+[connector](docs/connector.md), [Tool Engine](docs/tools.md), [Eva](docs/eva.md), [database adapters](docs/database-adapters.md) and
 [operations](docs/production-operations.md) guides describe their limits.
 No database server, Redis, Docker or worker is required for a local SQLite app.
 

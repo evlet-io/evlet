@@ -4,10 +4,57 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## Unreleased (0.5)
+
+### Upgrading to 0.5
+
+- **PostgreSQL is removed.** SQLite, with the four-file layout and fair write line-up from 0.4.3,
+  is the only built-in database. `evlet.PostgreSQLDatabase`, the `evlet.postgres` and
+  `evlet.postgres_schema` modules, the `evlet[postgres]` extra, `requirements-postgres.lock`,
+  `docs/postgresql.md`, and the `--postgres` option of `scripts/benchmark.py` and
+  `scripts/benchmark_hierarchy.py` are gone. This removal skips the usual deprecation release:
+  it is an owner decision for 0.5.
+- **Apps and tools that import `evlet.postgres` or `PostgreSQLDatabase` must stop.** Remove the
+  import and the code path that builds a PostgreSQL database. For example, an app CLI option such
+  as Finance's `EVLET_FINANCE_POSTGRES_DSN` must be dropped, along with any `psycopg` dependency
+  the app added for it. The Playground no longer reads `EVLET_POSTGRES_DSN`.
+- **SQLite instances need no migration.** Stored data, schema and migration checksums are
+  unchanged. A test opens a database written by 0.4.3 and checks that nothing in it changes.
+- **Moving data off PostgreSQL.** An app that ran on PostgreSQL in 0.4 should export its records
+  (for example through the HTTP API) into a new SQLite instance before
+  upgrading, or stay on 0.4 until a PostgreSQL adapter exists again.
 
 ### Changed
 
+- **A query builder in front of the database.** Framework code describes what it reads and writes
+  with `evlet/qb.py` (select, insert, update, delete, upserts, conditions, joins, aggregates,
+  windows) and runs it with `connection.run(statement)`. A dialect compiles the statements to SQL;
+  SQLite (`evlet/sqlite.py`) is the one dialect. Schema changes go through named connection methods
+  (`inspect`, `create_table`, `set_required`, `ensure_table`, `make_append_only`, `guard_id` and a
+  few more), and migrations compare models against one neutral table shape. PostgreSQL, MariaDB or
+  another database can be added later as a dialect: a compiler, a connection class and a `Database`
+  subclass, passed explicitly where the app builds its database. See
+  [docs/database-adapters.md](docs/database-adapters.md). The query builder and the adapter
+  interface are provisional.
+- **This release moves the data layer onto the query builder:** the record API in `database.py`,
+  `query.py`, `migrations.py`, `documents.py`, row scopes in `permissions.py`, and the record
+  helpers (naming, audit times, ids, ledgers, period locks, sequences, sections, images, lifecycle,
+  journal). The other framework modules follow in later releases, one area at a time;
+  `tests/test_query_builder_boundary.py` tracks what is left and stops new raw SQL.
+- **Conformance tests.** `tests/test_database_adapter.py` is the checklist a new dialect must pass:
+  every query builder statement and condition, value round trips, exact amounts, foreign keys, ids,
+  the table shape, every schema change, framework table rules, append-only tables, the id guard,
+  error mapping, busy writers, savepoints and rollback, and a database written by 0.4.3.
+- Internal helpers changed shape. They lost their `postgres` argument (for example
+  `ledger.add_triggers`, `identity.add_id_guard`, `identity.check_ids`, `naming.add_columns`,
+  `audit.add_columns`, `journal.ensure_table`, framework step functions).
+  `Database.columns(connection, table)` is now `connection.columns(table)`.
+  `SqlQuery.where()` and `ordering()` return query builder objects, and `Policy.scope()` returns a row
+  scope as a condition; the text forms (`where_sql`, `ordering_sql`, `Policy.scope_sql`) stay for one
+  release while the remaining modules move. These are internal names; apps that used them must update.
+- New SQLite databases write the CREATE statements of framework tables and the append-only guards
+  of `evlet_journal`, `evlet_audit` and `evlet_document_revisions` in a slightly different text with
+  the same rules. Existing databases keep theirs.
 - **Personal mailboxes reach only public mail servers.** A mailbox a person connects with a
   password must use a public address, SSL/TLS or STARTTLS, and the standard mail ports. Private
   ranges such as 10.x, 192.168.x, 100.64.x and fc00::, and servers on this machine, are refused
@@ -33,9 +80,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   fields were cached per role only. When a job, a schedule or start-up code checked a field
   first, a later request reused that answer, even for a field built from a `Meta.api = None`
   model that requests may not reach. Requests and trusted code now get separate answers.
-- **Mention emails on PostgreSQL.** A mention that should send an email now sends it. The
-  PostgreSQL adapter did not return the new inbox row's id, so every mention email was skipped
-  without an error. SQLite was not affected.
+
 - **Eva's provider client no longer follows redirects.** A redirect from the AI provider (or
   from the Controls connector test) is now an error, so the API key is never sent to another
   address.

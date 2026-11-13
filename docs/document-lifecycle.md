@@ -109,7 +109,7 @@ reopened and reconfirmed document keeps its name; a revision copy gets a new one
 ## Transactions, permissions and business effects
 
 Operations acquire the database's existing writer lock before reading. SQLite
-uses `BEGIN IMMEDIATE`; PostgreSQL uses the database advisory transaction lock.
+uses `BEGIN IMMEDIATE`.
 These are database-wide locks, not distributed per-document locks. Each operation
 also has a savepoint. Validation, actions, document rows, snapshots, history and
 queued jobs roll back together, even when the caller catches an exception and
@@ -172,7 +172,7 @@ History pages remain newest first, matching the existing journal.
 `evlet_document_revisions` holds the immutable document tree, approval information,
 effect references, actor, time and execution ID. SHA-256 covers the canonical
 snapshot envelope and is verified on read. Triggers reject UPDATE, DELETE and
-SQLite replacement; PostgreSQL also rejects TRUNCATE. An administrator who can
+SQLite replacement. An administrator who can
 drop triggers or change the database is outside these guards' security boundary.
 Framework tables are installed idempotently. No columns are added to app models.
 Recompute migrations retain records with confirmed revision history.
