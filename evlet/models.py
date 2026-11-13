@@ -75,7 +75,7 @@ def declared_hooks(cls, name, meta, fields, tables, row):
     if len(set(derives)) != len(derives):
         raise ValueError(f'{name}: Meta.derives names each field or Table once')
     from .calc import is_finite
-    from .statemanager import State
+    from .declarations import State
 
     def source(owner, key, field):
         if not field.stored or field.compute is not None or field.query is not None or is_finite(field) or \
@@ -201,7 +201,7 @@ class ModelType(type):
         if getattr(cls, '__transient__', False):
             refuse_finite_expressions(name, fields, tables)
         cls.__sources__ = MappingProxyType(sources)
-        from .statemanager import State
+        from .declarations import State
         states = [key for key, value in fields.items() if isinstance(value, State)]
         if len(states) > 1:
             raise ValueError(f"{name} declares more than one State: " + ", ".join(states))

@@ -251,6 +251,7 @@ RELEASED_CHECKSUMS = {
     '0008_administrator': '2216c1887131fbdb40f77fc043d0223e79a6b92dd5793bc5f455bc017ba8f65b',
     '0009_admin_username': '93214ff2f9ded75e9ade48ef3a41159e9681fb95bd7ef5fe27ac64c270e117af',
     '0010_split_files': '025f9ac009fd65d7b0230fa3fb3694aeae047c50e959ba01b04a795cc1c4f545',
+    '0011_state_manager': '3a67380a952a2e5dd2b4a58e1d04878912cdafbfe5096296a823bda12236cf17',
 }
 
 
