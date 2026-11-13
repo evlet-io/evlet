@@ -473,13 +473,14 @@ class Policy:
     def derivation_allowed(self, user, model, name, visiting=frozenset()):
         """Whether this role may read a derived field: every path its formula or query reads is readable.
 
-        The answer depends only on the role (and API key), the registry and these fixed rules, so it is
-        memoised per policy (Controls builds a new policy when permissions change). Each formula is walked once
+        The answer depends only on the role (and API key), whether a caller is being served (Meta.api limits
+        callers, not trusted code), the registry and these fixed rules, so it is memoised per policy (Controls
+        builds a new policy when permissions change). Each formula is walked once
         per role; formulas that read other formulas reuse the stored answers instead of walking every path
         again, which grew exponentially with chained formulas.
         """
         cache = self.__dict__.setdefault('_derivations', {})
-        key = (user.role, is_administrator(user), getattr(user, 'access', None), model, name)
+        key = (user.role, is_administrator(user), getattr(user, 'access', None), CALLER.get(), model, name)
         if key in cache:
             return cache[key]
         if (model, name) in visiting:
@@ -508,7 +509,9 @@ class Policy:
             source = model.__sources__.get(parts[0]) if len(parts) == 2 else None
             if source is not None:
                 if parts[1] not in source.fields: return False
-                if isinstance(source.target, type) and (not self.allows(user, source.target, 'read') or not self.field_readable(user, source.target, parts[1], visiting)):
+                # A row rule on the source hides rows, so a result built from all of them would reveal them.
+                if isinstance(source.target, type) and (not self.allows(user, source.target, 'read') or self.rule(user, source.target).scope is not None
+                                                        or not self.field_readable(user, source.target, parts[1], visiting)):
                     return False
                 from .declarations import Ref
                 for dependency in [value.path for value in source.filters.values() if isinstance(value, Ref)] + list(getattr(source.target, '__depends__', ())):
@@ -531,10 +534,11 @@ class Policy:
     def expression_allowed(self, user, model, name, kind=None):
         """Whether this role may read every input of a field's finite calculation, initial or rule.
 
-        Finite plans are acyclic and rules depend only on the role, so results are cached.
+        Finite plans are acyclic and rules depend only on the role and whether a caller is being served,
+        so results are cached.
         """
         cache = self.__dict__.setdefault('_derived', {})
-        key = (user.role, is_administrator(user), getattr(user, 'access', None), model, name, kind)
+        key = (user.role, is_administrator(user), getattr(user, 'access', None), CALLER.get(), model, name, kind)
         if key not in cache:
             cache[key] = self.reads_allowed(user, self.registry.finite_reads(model, name, kind))
         return cache[key]
@@ -649,6 +653,16 @@ class Policy:
             raise ValueError('Serialize records of one model at a time')
         readable = self.fields(user, model)
         results = [{key: value for key, value in record.to_dict().items() if key == 'id' or key in readable} for record in records]
+        self.hide_unfollowable(tx, user, model, results)
+        return results
+
+    def hide_unfollowable(self, tx, user, model, results):
+        """Empty the Links and References in serialized values of one model that this user cannot follow.
+
+        Every read path that sends Link or Reference values calls this, so a record the user may not read never
+        shows its id. `results` are dicts keyed by field name; they are changed in place. Targets are checked in
+        batches (one statement per target model and chunk), not per row.
+        """
         for name, field in model.__fields__.items():
             if isinstance(field, Link) and field.ledger_target:
                 continue  # A ledger row id is shown as it is: there is no record to read behind it.
@@ -671,7 +685,6 @@ class Policy:
                 for result in results:
                     if result.get(name) is not None and RecordId(result[name]['id']) not in shown[result[name]['model']]:
                         result[name] = None
-        return results
 
     def _readable_ids(self, database, user, target, operator, value):
         """Whether an eq or in filter on a row-scoped Link names only records this user can read. `database` is a

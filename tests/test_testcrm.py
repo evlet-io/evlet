@@ -389,9 +389,11 @@ def test_activity_journal_records_moves_the_win_and_what_people_add(crm):
     assert login(crm, 'omar')('GET', url + '/journal?limit=50&offset=0')[0] == 404
 
 
-def test_an_email_from_a_contact_appears_in_its_activity(crm):
+def test_an_email_from_a_contact_appears_in_its_activity(crm, monkeypatch):
     """Meta.mail on Contact and Lead: a salesperson's own mailbox puts a matching message in the record's Activity."""
+    from evlet import mailboxes
     from test_mailboxes import _IMAP, _SMTP, APP_PASSWORD, mailbox, message, serve
+    monkeypatch.setattr(mailboxes, 'PUBLIC_SERVERS_ONLY', False)  # the stub mail servers are on this machine
     imap, smtp = serve(_IMAP), serve(_SMTP)
     try:
         for server in (imap, smtp):
