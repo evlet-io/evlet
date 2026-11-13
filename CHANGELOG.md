@@ -4,6 +4,25 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **The draft preview no longer shows records you can't read.** `POST /api/_draft/{Model}`
+  returned the id behind a Link or Reference even when a row rule hid that record, while a
+  normal read showed it as empty. The preview now empties them the same way, and so do
+  calculated Link and Reference values on record responses. All these read paths share one
+  check, `Policy.hide_unfollowable`.
+- **A formula over a `Query` source respects the source's row rule.** A calculated field that
+  reads a source model the role can only partly see (a row rule) is no longer shown to that
+  role, since it was built from rows the role cannot see. Fields over child tables and Link
+  lookups already worked this way. Roles with a row rule on a source model may now see fewer
+  calculated fields.
+- **Trusted code no longer decides what callers may read.** The read checks for calculated
+  fields were cached per role only. When a job, a schedule or start-up code checked a field
+  first, a later request reused that answer, even for a field built from a `Meta.api = None`
+  model that requests may not reach. Requests and trusted code now get separate answers.
+
 ## 0.4.3 (12-11-2026)
 
 ### Added

@@ -673,14 +673,18 @@ class Business:
                 kept = previous is not None and (locked_state(model, previous._values) is not None
                                                  or has_postings(context._tx.connection, self.registry, model, previous))
                 errors, states = settle(context, draft, complete=False, previous=previous, kept=kept)
+                # Every serialized row, by model, so Links the user cannot follow are emptied in one batch per model.
+                serialized = {}
                 def values(item):
                     allowed = self.policy.fields(user, item._definition)
                     def shown(field, value):
                         # Invalid submitted values are reported in errors; the preview sends null.
                         try: return field.serialize(value)
                         except Exception: return None
-                    return {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: shown(field, item._values.get(name))
-                            for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
+                    result = {'id': item.id, '_key': item.key, '_sources': source_values(item, allowed), **{name: shown(field, item._values.get(name))
+                              for name, field in item._definition.__declared_fields__.items() if name in allowed and not name.startswith('evlet_')}}
+                    serialized.setdefault(item._definition, []).append(result)
+                    return result
                 allowed_errors = set()
                 saved_rows = {}
                 for _, item in walk(draft):
@@ -706,6 +710,8 @@ class Business:
                         result['children'][child.name] = rows
                     return result
                 result = tree(draft, '')
+                for definition, rows in serialized.items():
+                    self.policy.hide_unfollowable(context._tx, user, definition, rows)
                 errors = {key: value for key, value in errors.items() if key in allowed_errors}
                 states = {key: value for key, value in states.items() if key in allowed_errors}
             return 200, {'values': result, 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
@@ -986,7 +992,7 @@ class Business:
         except (AccessError, ValidationError):
             # A result that reads what this user cannot, or a document over its row limit, is left out.
             return {}
-        result, readable = {}, {}
+        result, readable, serialized = {}, {}, {}
         for _, item in walk(draft):
             definition = item._definition
             if item.id is None or not any(not field.stored for field in definition.__declared_fields__.values()):
@@ -998,14 +1004,14 @@ class Business:
                 if field.stored or name not in readable[definition] or name.startswith('evlet_'):
                     continue
                 try:
-                    value = field.serialize(item._values.get(name))
+                    values[name] = field.serialize(item._values.get(name))
                 except Exception:
-                    value = None
-                if value is not None and isinstance(field, Link) and not field.ledger_target \
-                        and RecordId(value) not in self.policy.visible(context._tx, context.user, field.target, [RecordId(value)]):
-                    value = None
-                values[name] = value
+                    values[name] = None
             result[definition, item.id] = values
+            serialized.setdefault(definition, []).append(values)
+        # Calculated Links and References the user cannot follow are emptied, one batch per model.
+        for definition, rows in serialized.items():
+            self.policy.hide_unfollowable(context._tx, context.user, definition, rows)
         return result
 
     def apply_virtual_values(self, model, node, values):

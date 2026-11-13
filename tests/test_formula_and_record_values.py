@@ -40,6 +40,10 @@ def test_read_checks_on_chained_formulas_walk_each_formula_once(tmp_path):
     walks = policy._derivation_walks
     # One walk per declared field for the admin role, whatever reads what.
     assert walks <= len(Chain.__declared_fields__)
+    # Trusted code is answered separately from callers (Meta.api limits only callers): one more walk per field.
+    policy.fields(User(1, 'admin', 'admin'), Chain)
+    walks = policy._derivation_walks
+    assert walks <= 2 * len(Chain.__declared_fields__)
     for _ in range(3):
         policy.fields(User(1, 'admin', 'admin'), Chain)
         c('GET', f"/api/chain/{record['id']}")

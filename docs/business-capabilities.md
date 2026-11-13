@@ -106,7 +106,10 @@ A scope returns the same bounded typed filter object as an ordinary query, or on
 the team forms below. It is
 combined with client filters using AND in SQL, before pagination and counting.
 The same scope checks record reads, writes, actions, attachments, and referenced
-Link values. Creates and updates that leave the allowed scope roll back. Write
+Link values. A Link or Reference to a record outside the scope shows as empty on every
+read: lists, details, draft previews and calculated values. A calculated field that reads
+a child table, a Link lookup or a `Query` source with a scope for this role is not shown
+to the role at all, because it was built from rows the role cannot see. Creates and updates that leave the allowed scope roll back. Write
 permissions require read access. Omitted field sets mean all fields; empty tuples
 mean no fields. `read_only` fields also reject HTTP writes.
 
