@@ -20,6 +20,8 @@ import threading
 import time
 from urllib.parse import quote, quote_plus
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .auth import ROLE_ID, AccessError
 from .models import ValidationError, checked_body
 from . import secrets as vault
@@ -29,6 +31,11 @@ logger = logging.getLogger(__name__)
 TIMEOUT = 10
 TYPES = ('text', 'number', 'select', 'toggle', 'role', 'secret')
 ID = re.compile(r'[a-z][a-z0-9_]{1,30}')
+
+TABLE = TableDefinition('evlet_connectors', (
+    Column('id', 'TEXT', primary=True), Column('app', 'TEXT', required=True), Column('status', 'TEXT', required=True),
+    Column('settings', 'TEXT', required=True), Column('secrets', 'BLOB'), Column('changed_by', 'TEXT'), Column('changed_at', 'INTEGER')))
+
 ROW_ID = re.compile(r'([a-z][a-z0-9_]{1,30})(?::([a-z0-9][a-z0-9_-]{0,39}))?')
 ADDRESS = re.compile(r'[^@\s<>,;"]{1,64}@[^@\s<>,;"]{1,190}\.[^@\s<>,;".]{2,63}')
 UNREADABLE = 'Saved secrets could not be read. The secret key changed or the stored data was altered. Enter them again.'
@@ -372,7 +379,7 @@ class Connectors:
     def initialize(self):
         self.key.check()
         with self.database.transaction() as tx:
-            tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_connectors (id TEXT PRIMARY KEY, app TEXT NOT NULL, status TEXT NOT NULL, settings TEXT NOT NULL, secrets BLOB, changed_by TEXT, changed_at INTEGER)')
+            tx.connection.ensure_table(TABLE)
 
     # ---------- reading ----------
 
@@ -393,11 +400,11 @@ class Connectors:
                 'changed_by': row['changed_by'], 'changed_at': row['changed_at']}
 
     def row(self, connection, row_id):
-        return connection.execute('SELECT * FROM evlet_connectors WHERE id=?', (row_id,)).fetchone()
+        return connection.run(qb.select('evlet_connectors').where(id=row_id)).one()
 
     def listing(self):
         with self.database._connection() as connection:
-            rows = [self.public(row) for row in connection.execute('SELECT * FROM evlet_connectors ORDER BY id') if self.known(row['id'])]
+            rows = [self.public(row) for row in connection.run(qb.select('evlet_connectors').order_by('id')) if self.known(row['id'])]
         return {'connectors': [{'id': connector.id, 'title': connector.title, 'app': self.app_of[connector.id], 'category': connector.category,
                                 'description': connector.description, 'accounts': connector.accounts, 'testable': connector.test is not None,
                                 'fields': [field.public() for field in connector.fields]} for connector in self.declared.values()],
@@ -541,13 +548,14 @@ class Connectors:
                 secret_values = {name: value for name, value in secret_values.items() if name in kept}
             secret_values.update(replaced)
             default = bool(saved_settings.get('default')) if current is not None else (
-                connector is SMTP and not tx.connection.execute("SELECT 1 FROM evlet_connectors WHERE id LIKE 'smtp:%'").fetchone())
+                connector is SMTP and tx.connection.run(qb.select('evlet_connectors', 'id').where(qb.starts_with('id', 'smtp:'))).one() is None)
             stored = {**settings, **({'default': True} if default else {}), '_secrets': json.dumps(sorted(secret_values))}
             blob = self.seal(tx.connection, json.dumps(secret_values, sort_keys=True).encode(), row_id) if secret_values else None
-            tx.connection.execute('INSERT INTO evlet_connectors(id,app,status,settings,secrets,changed_by,changed_at) VALUES (?,?,?,?,?,?,?) '
-                                  'ON CONFLICT(id) DO UPDATE SET status=excluded.status, settings=excluded.settings, secrets=excluded.secrets, '
-                                  'changed_by=excluded.changed_by, changed_at=excluded.changed_at',
-                                  (row_id, self.app_of[connector.id], 'connected', json.dumps(stored, sort_keys=True), blob, actor.username, int(time.time())))
+            tx.connection.run(qb.insert('evlet_connectors', id=row_id, app=self.app_of[connector.id], status='connected',
+                                        settings=json.dumps(stored, sort_keys=True), secrets=blob, changed_by=actor.username,
+                                        changed_at=int(time.time()))
+                              .on_conflict('id').do_update(**{name: qb.col('excluded.' + name)
+                                                              for name in ('status', 'settings', 'secrets', 'changed_by', 'changed_at')}))
             before = None if existing is None else {key: value for key, value in saved_settings.items() if key != 'default'}
             details = ['Set up' if existing is None else 'Settings changed' if before != settings else None,
                        *(f'{label} replaced' for label in (field.label for field in connector.fields if field.name in replaced) if existing is not None)]
@@ -563,9 +571,10 @@ class Connectors:
             if row is None:
                 raise AccessError(404, 'This connector is not set up yet')
             settings = json.loads(row['settings'])
-            if settings.get('default') and tx.connection.execute("SELECT count(*) FROM evlet_connectors WHERE id LIKE 'smtp:%'").fetchone()[0] > 1:
+            if settings.get('default') and tx.connection.run(
+                    qb.select('evlet_connectors', qb.count()).where(qb.starts_with('id', 'smtp:'))).value() > 1:
                 raise AccessError(409, 'This is the default outgoing account. Make another one the default first.')
-            tx.connection.execute('DELETE FROM evlet_connectors WHERE id=?', (row_id,))
+            tx.connection.run(qb.delete('evlet_connectors').where(id=row_id))
             settings.pop('_secrets', None)
             settings.pop('default', None)
             audit(tx.connection, actor.username, self.area(connector), self.target(connector, account),
@@ -579,12 +588,12 @@ class Connectors:
         with self.database.transaction() as tx:
             if self.row(tx.connection, row_id) is None:
                 raise AccessError(404, 'This connector is not set up yet')
-            for row in tx.connection.execute("SELECT id, settings FROM evlet_connectors WHERE id LIKE 'smtp:%'").fetchall():
+            for row in tx.connection.run(qb.select('evlet_connectors', 'id', 'settings').where(qb.starts_with('id', 'smtp:'))).all():
                 settings = json.loads(row['settings'])
                 settings.pop('default', None)
                 if row['id'] == row_id:
                     settings['default'] = True
-                tx.connection.execute('UPDATE evlet_connectors SET settings=? WHERE id=?', (json.dumps(settings, sort_keys=True), row['id']))
+                tx.connection.run(qb.update('evlet_connectors', settings=json.dumps(settings, sort_keys=True)).where(id=row['id']))
             audit(tx.connection, actor.username, 'Email', account, 'Made the default outgoing account')
         return self.get(row_id)
 
@@ -642,14 +651,16 @@ class Connectors:
         # A test of exactly the saved values sets the status Controls shows.
         if row is not None and not to and not replaced and settings == saved:
             with self.database.transaction() as tx:
-                tx.connection.execute('UPDATE evlet_connectors SET status=? WHERE id=?', ('connected' if outcome['ok'] else 'error', row_id))
+                tx.connection.run(qb.update('evlet_connectors', status='connected' if outcome['ok'] else 'error').where(id=row_id))
         return outcome
 
     # ---------- sending mail ----------
 
     def accounts(self, connector_id='smtp'):
         with self.database._connection() as connection:
-            return [self.public(row) for row in connection.execute('SELECT * FROM evlet_connectors WHERE id LIKE ? ORDER BY id', (connector_id + ':%',))]
+            # Row ids are lower case (ROW_ID), as LIKE matched them.
+            return [self.public(row) for row in connection.run(
+                qb.select('evlet_connectors').where(qb.starts_with('id', connector_id.lower() + ':')).order_by('id'))]
 
     def send_mail(self, to, subject, text, *, account=None, html=None, reply_to=None, inline=()):
         """Send one email through a named outgoing account, or the default one. Returns the Message-ID."""

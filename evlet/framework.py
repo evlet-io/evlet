@@ -13,6 +13,8 @@ from importlib import metadata
 import json
 import time
 
+from . import qb
+from .adapter import Column, TableDefinition
 from .migrations import SchemaError
 
 
@@ -39,15 +41,16 @@ class FrameworkStep:
 
 
 def _tool_calls(connection):
-    from .tools import CALLS_TABLE
-    for statement in CALLS_TABLE:
-        connection.execute(statement)
+    from .tools import ensure_calls
+    ensure_calls(connection)
     if connection.table_exists('evlet_mcp_calls'):
         if connection.table_exists('evlet_mcp_clients'):
-            connection.execute("INSERT INTO evlet_tool_calls(at,user_id,origin,client,client_id,tool,model,kind,outcome) "
-                               "SELECT k.at, m.user_id, 'mcp', m.client_name, k.client_id, k.tool, k.model, k.kind, k.outcome "
-                               'FROM evlet_mcp_calls k JOIN evlet_mcp_clients m ON m.id=k.client_id ORDER BY k.id')
-        connection.execute('DROP TABLE evlet_mcp_calls')
+            calls = (qb.select(qb.table('evlet_mcp_calls', 'k'), 'k.at', 'm.user_id', qb.value('mcp'), 'm.client_name', 'k.client_id',
+                               'k.tool', 'k.model', 'k.kind', 'k.outcome')
+                     .join('evlet_mcp_clients', qb.eq('m.id', qb.col('k.client_id')), alias='m').order_by('k.id'))
+            connection.run(qb.insert_rows_from('evlet_tool_calls', ('at', 'user_id', 'origin', 'client', 'client_id', 'tool', 'model',
+                                                                    'kind', 'outcome'), calls))
+        connection.drop_table('evlet_mcp_calls')
 
 
 def _record_names(connection, registry):
@@ -118,8 +121,13 @@ STEPS = (
     FrameworkStep('0010_split_files', 'Move sign-in sessions, the tool-call log and Eva into their own SQLite files next to the database.'),
 )
 
-LEDGER = ('CREATE TABLE IF NOT EXISTS evlet_framework_migrations (position INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, '
-          'checksum TEXT NOT NULL, evlet_version TEXT NOT NULL, applied_at INTEGER NOT NULL)')
+LEDGER = TableDefinition('evlet_framework_migrations', (
+    Column('position', 'INTEGER', primary=True),
+    Column('name', 'TEXT', required=True),
+    Column('checksum', 'TEXT', required=True),
+    Column('evlet_version', 'TEXT', required=True),
+    Column('applied_at', 'INTEGER', required=True),
+), unique=(('name',),))
 
 
 def version():
@@ -135,7 +143,7 @@ def state():
 
 
 def _applied(connection):
-    rows = connection.execute('SELECT name, checksum FROM evlet_framework_migrations ORDER BY position').fetchall()
+    rows = connection.run(qb.select('evlet_framework_migrations', 'name', 'checksum').order_by('position')).all()
     if len(rows) > len(STEPS) or any(row[0] != step.name or row[1] != step.checksum() for row, step in zip(rows, STEPS)):
         raise SchemaError('This database was migrated by a different or newer Evlet release; install that release of Evlet')
     return len(rows)
@@ -144,7 +152,7 @@ def _applied(connection):
 def pending(database):
     """The steps `upgrade` would run, for `evlet migrate --plan`. Call it on a copy: it creates the ledger table."""
     with database.transaction() as tx:
-        tx.connection.execute(LEDGER)
+        tx.connection.ensure_table(LEDGER)
         return STEPS[_applied(tx.connection):]
 
 
@@ -156,7 +164,7 @@ def upgrade(database, *, apply=True):
     # Processes starting together take turns: one write transaction at a time, so later ones find the steps applied.
     with database.transaction() as tx:
         connection = tx.connection
-        connection.execute(LEDGER)
+        connection.ensure_table(LEDGER)
         waiting = STEPS[_applied(connection):]
         if waiting and not apply:
             raise SchemaError('Evlet was upgraded and framework migrations are pending (' + ', '.join(step.name for step in waiting)
@@ -164,6 +172,6 @@ def upgrade(database, *, apply=True):
         for position, step in enumerate(waiting, len(STEPS) - len(waiting) + 1):
             if step.run is not None:
                 step.run(connection, *((database.registry,) if step.registry else ()))
-            connection.execute('INSERT INTO evlet_framework_migrations (position, name, checksum, evlet_version, applied_at) VALUES (?, ?, ?, ?, ?)',
-                               (position, step.name, step.checksum(), version(), int(time.time())))
+            connection.run(qb.insert('evlet_framework_migrations', position=position, name=step.name, checksum=step.checksum(),
+                                     evlet_version=version(), applied_at=int(time.time())))
     return [step.name for step in waiting]
