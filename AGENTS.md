@@ -19,6 +19,8 @@ never bypass account, tenant, row, field, or action checks.
   components consume a neutral schema and never appear in Python model definitions.
 - Prefer the standard library. Justify every dependency. No mandatory Redis,
   Docker, external database, ORM, or background worker.
+- Place every new module in a package layer (`docs/architecture.md`, `tests/test_layers.py`);
+  never import from a higher layer.
 - Keep public APIs explicit, small, and readable. Use snake_case in Python,
   PascalCase for model and UI component names. Do not create unused modules.
 - `evlet/` contains the framework; `examples/playground/` is a consumer using only

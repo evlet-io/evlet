@@ -236,3 +236,30 @@ def test_concurrent_starts_apply_steps_once(tmp_path, monkeypatch):
     with ThreadPoolExecutor(4) as pool:
         results = list(pool.map(framework.upgrade, [Database(tmp_path / 'app.sqlite3', registry) for _ in range(4)]))
     assert sorted(results, key=len) == [[], [], [], [step.name for step in framework.STEPS]]
+
+
+# Existing databases store these in evlet_framework_migrations and startup refuses a database whose
+# stored checksums differ, so they must survive moving evlet/framework.py into a layer package.
+RELEASED_CHECKSUMS = {
+    '0001_startup_tables': 'fcf94383a319e164059c5bae99e98b355b9ddbfc88aa7c25a861595083774fb5',
+    '0002_tool_calls': '6a74154ddfb44cf78f1b2104f350c47205c6af6543c8ac3467d0f24f2c614726',
+    '0003_record_names': 'cbb8c4161abe35023adc77f3f2f57b1ccb2a57fbf8f10825b5299da1bf77c726',
+    '0004_record_times': '0f53a6cf4b12965ec44643521eb6fd1cb8e1ba5ecbfd53aed99002658d640ec9',
+    '0005_unsaved_changes': '8865d2f82ad60c9b3c0e98056196fbea3a7d1912558d572d6905900fcc49ee43',
+    '0006_fixed_ids': '58dc4f13eee9729cd65ce9ca36db181a90101d0db60d9f21d393e73a79c6cc1b',
+    '0007_money_scale': 'acd90b0531d10785b9c3c07dbb78455473e2da563b3eeba16325eb05b203314d',
+    '0008_administrator': '2216c1887131fbdb40f77fc043d0223e79a6b92dd5793bc5f455bc017ba8f65b',
+    '0009_admin_username': '93214ff2f9ded75e9ade48ef3a41159e9681fb95bd7ef5fe27ac64c270e117af',
+    '0010_split_files': '025f9ac009fd65d7b0230fa3fb3694aeae047c50e959ba01b04a795cc1c4f545',
+}
+
+
+def test_released_step_checksums_never_change():
+    assert {step.name: step.checksum() for step in framework.STEPS[:len(RELEASED_CHECKSUMS)]} == RELEASED_CHECKSUMS
+
+
+def test_step_checksum_does_not_depend_on_the_module_path(monkeypatch):
+    step = framework.STEPS[1]
+    before = step.checksum()
+    monkeypatch.setattr(step.run, '__module__', 'evlet.web.framework')
+    assert step.checksum() == before

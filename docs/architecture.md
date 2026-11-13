@@ -85,6 +85,29 @@ DOM for tests and `npm run bench:ui`). SolidJS, Vue, PrimeVue and their plugins 
 test libraries were removed with the earlier interfaces. `package-lock.json` pins the
 complete tree. No backend runtime dependency was added.
 
+## Package layers
+
+The modules in `evlet/` form eight layers, lowest first. A module imports only from its own
+layer or a layer below it. `tests/test_layers.py` holds the map and fails on an import that
+points upward; every module must be in the map.
+
+| # | Layer | Purpose | Modules |
+|---|---|---|---|
+| 1 | `core` | Pure definitions | adapter, qb, identity, fields, models, declarations, expressions, calc, reactivity, currencies, richtext, naming, indexes, query, audit, sections, periods |
+| 2 | `access` | Who may do what | auth, permissions |
+| 3 | `data` | SQL, files, migrations | database, sqlite, migrations, ledger, writes, storage, object_storage, secrets, sequences, images |
+| 4 | `engine` | Document behaviour | documents, states, lifecycle, effects, corrections, journal, measures, unsaved, mentions, meaning |
+| 5 | `web` | HTTP application and routes | app, routing, business, forms, slips, workspaces, services, events, jobs, framework, devlink, discovery |
+| 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing |
+| 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
+| 8 | `site` | Sites, apps, deployment | instances, packages, builds, deployment, tenancy, serverless |
+
+`evlet/ui/`, `evlet/cli/` and `evlet/resources/` sit above all eight layers. A module-level
+import never points upward. Some function-level imports still do; `ALLOWED_UPWARD` in the test
+lists each one as `(importing module, imported module)`, and the list only shrinks: the test fails
+when an entry no longer occurs. Remove an upward import by moving the code to the layer that owns
+its data, passing a value in, or letting the higher module register itself with the lower one.
+
 ## API and data flow
 
 `Model` definitions → `Registry` → `Database` → `Application` → JSON API → Evlet UI
