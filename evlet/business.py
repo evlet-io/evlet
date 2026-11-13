@@ -667,11 +667,9 @@ class Business:
                 self.check_calculation(model, body['calculation'])
             with self.context(user, readonly=True) as context:
                 draft, previous = load_draft(context, model, record_id, body.get('values', {}), preview=True)
-                # A locked or posted record keeps its saved results on a save, so the preview shows those.
-                from .effects import has_postings
-                from .states import locked_state
-                kept = previous is not None and (locked_state(model, previous._values) is not None
-                                                 or has_postings(context._tx.connection, self.registry, model, previous))
+                # A record that keeps its saved results on a save shows those in the preview too.
+                from .documents import keeps_saved_results
+                kept = bool(keeps_saved_results(context, model, previous))
                 errors, states = settle(context, draft, complete=False, previous=previous, kept=kept)
                 # Every serialized row, by model, so Links the user cannot follow are emptied in one batch per model.
                 serialized = {}
@@ -978,16 +976,15 @@ class Business:
         """
         if not getattr(model, '__declaration_mode__', False) or model in self.child_models or not self.virtual_models(model):
             return {}
-        from .documents import load_draft, settle, walk
-        from .effects import has_postings
-        from .states import locked_state, loaded_document
+        from .documents import keeps_saved_results, load_draft, settle, walk
+        from .states import loaded_document
         try:
             draft = loaded_document(self, model, record, loaded, context=context) if record is not None else None
             if draft is None:
                 draft, previous = load_draft(context, model, record_id, {}, preview=True)
             else:
                 previous = loaded_document(self, model, record, loaded, context=context)
-            kept = locked_state(model, previous._values) is not None or has_postings(context._tx.connection, self.registry, model, previous)
+            kept = bool(keeps_saved_results(context, model, previous))
             settle(context, draft, complete=False, previous=previous, kept=kept, checks=False)
         except (AccessError, ValidationError):
             # A result that reads what this user cannot, or a document over its row limit, is left out.

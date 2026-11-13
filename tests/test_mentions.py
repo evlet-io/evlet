@@ -7,7 +7,9 @@ import pytest
 
 from evlet import Database, Journal, Model, Registry, Rule, Text
 from evlet.richtext import mention_ids, sanitise
+from evlet import PostgreSQLDatabase
 from test_business import client
+from test_postgres import pg_dsn  # noqa: F401  (skips without EVLET_TEST_POSTGRES_DSN)
 from test_rules_types import add_user, start
 
 
@@ -22,6 +24,19 @@ class Case(Model):
 @pytest.fixture
 def app(tmp_path):
     app = start(Database(tmp_path / 'db.sqlite3', Registry(Case)))
+    add_user(app, 'editor')
+    add_user(app, 'viewer')
+    return app
+
+
+@pytest.fixture(params=['sqlite', 'postgresql'])
+def any_app(request, tmp_path):
+    """The same app on SQLite and, when EVLET_TEST_POSTGRES_DSN is set, on PostgreSQL."""
+    if request.param == 'sqlite':
+        database = Database(tmp_path / 'db.sqlite3', Registry(Case))
+    else:
+        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), Registry(Case))
+    app = start(database)
     add_user(app, 'editor')
     add_user(app, 'viewer')
     return app
@@ -129,14 +144,15 @@ def test_inactive_and_unknown_users_are_not_notified(app):
         assert tx.connection.execute('SELECT count(*) FROM evlet_inbox').fetchone()[0] == 0
 
 
-def test_preferences_decide_the_inbox_and_email(app, monkeypatch):
+def test_preferences_decide_the_inbox_and_email(any_app, monkeypatch):
+    app = any_app
     admin, editor = client(app), client(app, 'editor')
     ids = users(app)
     sent = []
     monkeypatch.setattr(app.business.connectors, 'accounts', lambda kind='smtp': [{'id': 'smtp:main'}])
     monkeypatch.setattr(app.business.connectors, 'send_mail', lambda to, subject, text, **options: sent.append((to, subject, text)))
     with app.database.transaction() as tx:
-        tx.connection.execute('INSERT OR IGNORE INTO evlet_user_profile(user_id) VALUES (?)', (ids['editor'],))
+        tx.connection.execute('INSERT INTO evlet_user_profile(user_id) VALUES (?) ON CONFLICT(user_id) DO NOTHING', (ids['editor'],))
         tx.connection.execute("UPDATE evlet_user_profile SET email='ed@example.test' WHERE user_id=?", (ids['editor'],))
     record = case(admin, 'Roof repair')
     admin('POST', f'/api/case/{record}/journal', {'kind': 'note', 'html': f'<p>{mention(ids["editor"], "Ed")} secret detail</p>'})

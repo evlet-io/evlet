@@ -1,6 +1,7 @@
 """Create apps, manage isolated instances, and use the bundled development tools."""
 
 import argparse
+import os
 from pathlib import Path
 import sqlite3
 import subprocess
@@ -92,6 +93,12 @@ def parser():
         command.add_argument('--debug', action='store_true', help='Show tracebacks for expected startup errors')
         command.add_argument('--host', default='127.0.0.1')
         command.add_argument('--port', type=int, default=8000)
+    restart = commands.add_parser('restart', help="Check an instance, then restart its systemd service and wait until it answers")
+    restart.add_argument('instance')
+    restart.add_argument('--check', action='store_true', help='Run the checks only; restart nothing')
+    restart.add_argument('--yes', action='store_true', help='Restart without asking')
+    restart.add_argument('--service', metavar='NAME', help='The systemd unit to restart (default: evlet-<instance>)')
+    restart.add_argument('--timeout', type=float, default=30.0, help='Seconds to wait for /health after the restart (default: 30)')
     routes = commands.add_parser('routes', help='Print the resolved hosts and paths of an instance')
     routes.add_argument('instance')
     routes.add_argument('--port', type=int, default=8000, help='Development port shown in loopback origins')
@@ -131,6 +138,8 @@ def parser():
     controls_grant = controls_commands.add_parser('grant', help='Make a user an active admin; audited as cli')
     controls_grant.add_argument('instance')
     controls_grant.add_argument('username')
+    controls_grant.add_argument('--clear-allowlist', action='store_true',
+                                help='Also clear the allowed networks set in Controls')
     controls_grant.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     users = commands.add_parser('users', help='Account recovery from the server shell')
     users_commands = users.add_subparsers(dest='users_command', required=True)
@@ -342,6 +351,12 @@ def main(argv=None):
                 hosts.add(root, args.instance, args.host, args.root, apply=args.apply, ips=args.ip, port=args.port, routes_only=args.routes_only)
             else:
                 hosts.remove(root, args.instance, args.host, apply=args.apply, port=args.port, routes_only=args.routes_only)
+        elif args.command == 'restart':
+            from .restart import restart
+            if not 1 <= args.timeout <= 3600:
+                raise ValueError('Use a --timeout between 1 and 3600 seconds')
+            if not restart(root, args.instance, service=args.service, check_only=args.check, yes=args.yes, timeout=args.timeout):
+                raise SystemExit(1)
         elif args.command == 'routes':
             from ..instances import load_runtime
             app = load_runtime(root, args.instance, port=args.port)
@@ -387,12 +402,27 @@ def main(argv=None):
                 app.database.close()
         elif args.command == 'controls':
             from .project import child
-            from ..controls import grant
+            from ..controls import grant, shell_address, within
             from ..instances import read_instance, read_routes
             path = child(root, 'instances', args.instance)
             read_instance(path)
-            grant(path / 'data/database.sqlite3', args.username)
-            print(f'{args.username} is now an active admin. Allowed networks set in Controls were cleared.')
+            networks = grant(path / 'data/database.sqlite3', args.username, clear_allowlist=args.clear_allowlist)
+            print(f'{args.username} is now an active admin.')
+            if networks and args.clear_allowlist:
+                print(f'Allowed networks set in Controls were cleared: {", ".join(map(str, networks))}.')
+            elif networks:
+                listed = ", ".join(map(str, networks))
+                address = shell_address(os.environ)
+                if address is None:
+                    print(f'Controls still opens only from {listed} (allowed networks set in Controls). '
+                          f'If you open it from another address you are still locked out: run this again with --clear-allowlist.')
+                elif within(address, networks):
+                    print(f'Controls still opens only from {listed} (allowed networks set in Controls). '
+                          f'Your SSH address {address} is in them.')
+                else:
+                    print(f'Controls still opens only from {listed} (allowed networks set in Controls), '
+                          f'and your SSH address {address} is not in them, so you are still locked out. '
+                          f'Run this again with --clear-allowlist to clear them.')
             try:
                 limits = getattr((read_routes(path) or {}).get('controls'), 'allow_ips', ())
             except Exception:

@@ -72,6 +72,10 @@ in again at the same path. Network, permission, and server
 failures retain the file for a later attempt. There is no password storage,
 refresh credential, or automatic sign-in.
 
+After logout, `describe` and `mcp` with the same `--session` say you're signed out and
+show the `evlet login` command to run, instead of a file error. `logout` again says you're
+already signed out.
+
 ## Discovery contract
 
 Both routes use the same authentication as `/api/schema`:
@@ -141,11 +145,11 @@ so the application decides what this person may call and logs every call.
 | `job_status` | Read a permitted queued action's status when jobs are configured |
 | `create_record` | Create with backend validation |
 | `update_record` | Apply partial values and any supplied child replacements |
-| `change_state` | Confirm, cancel or reopen a document |
+| `change_state` | Move a document to another state, or confirm, cancel or reopen a confirmable one |
 | `run_action` | Invoke a registered action, including queued actions |
 | `delete_record` | Delete a permitted record and owned children |
 
-`change_state` to confirm, `run_action`, `call_service`, and every cancel, reopen and delete
+`change_state`, `run_action`, `call_service`, and every cancel, reopen and delete
 wait for the person's approval in Evlet. The tool answers with an error naming the request;
 the person approves it in Settings, under AI, and the client calls the same tool again with
 the same arguments. The approval covers that one call on that revision of the record.
