@@ -841,7 +841,7 @@
       "autosave": true,
       "list_tabs": {
         "field": "status",
-        "kind": "select",
+        "kind": "state",
         "default": "active"
       },
       "side_blocks": [
@@ -856,8 +856,7 @@
         ],
         "tabs": [
           "activity",
-          "postings",
-          "revisions"
+          "postings"
         ],
         "blocks": [
           "files",
@@ -934,6 +933,11 @@
             "active",
             "done"
           ],
+          "colors": {
+            "active": "blue",
+            "done": "green"
+          },
+          "state": true,
           "label": "Status",
           "help_text": "",
           "placeholder": "",
@@ -1037,7 +1041,32 @@
           "read_only": true,
           "default_kind": "none"
         }
-      ]
+      ],
+      "document_version": 1,
+      "resource": "project",
+      "behavior": {
+        "title": {},
+        "customer": {},
+        "status": {},
+        "budget": {},
+        "progress": {},
+        "starts_on": {},
+        "brief": {},
+        "notes": {},
+        "name": {}
+      },
+      "order": [
+        "title",
+        "customer",
+        "status",
+        "budget",
+        "progress",
+        "starts_on",
+        "brief",
+        "notes",
+        "name"
+      ],
+      "sources": {}
     },
     {
       "name": "projecttask",
