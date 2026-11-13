@@ -442,11 +442,11 @@ class Business:
             if 'image' in entry and entry['image'] not in readable:
                 del entry['image']
             # The field naming fills: the record page shows it as the document number, and until it has one,
-            # when it will ("Assigned on save", "Assigned on confirm").
+            # when it will ("Assigned on save", "Assigned on issued").
             naming = self.registry.naming.get(model)
             if naming is not None and naming.field in readable:
                 placeholder = None if naming.manual else 'Assigned on save' if naming.assign_on == 'create' else \
-                    'Assigned on confirm' if naming.assign_on == 'confirm' else f'Assigned on {naming.assign_on.replace("_", " ")}'
+                    f'Assigned on {naming.assign_on.replace("_", " ")}'
                 entry['naming'] = {'field': naming.field, 'assign_on': naming.assign_on, 'manual': naming.manual, 'placeholder': placeholder}
                 for field in entry['fields']:
                     if field['name'] == naming.field and placeholder and not field.get('placeholder'):

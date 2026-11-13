@@ -3,7 +3,7 @@ through the ASGI routes, Context, and the Eva and MCP tool route."""
 
 import pytest
 
-from evlet import Integer, Model, Registry, Rule, State, Text, ValidationError, state, validate
+from evlet import Database, Integer, Model, Registry, Rule, State, Text, ValidationError, state, validate
 from evlet.auth import User
 from evlet.calc import F
 from test_business import client
@@ -294,3 +294,18 @@ def test_field_permissions_hide_rule_conditions_and_reasons(app):
     moves = viewer('GET', url)[1]['_moves']
     assert all(not item['allowed'] for item in moves)
     assert {item['reason'] for item in moves} <= {'Your role cannot use this move', 'You cannot change this record'}
+
+
+def test_a_journal_from_before_the_state_manager_gains_its_columns(tmp_path):
+    import sqlite3
+    from evlet import journal
+    path = tmp_path / 'old.sqlite3'
+    with sqlite3.connect(path) as raw:
+        raw.execute('CREATE TABLE evlet_journal (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, '
+                    'kind TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL, data TEXT NOT NULL, prev_hash TEXT, hash TEXT)')
+        raw.execute("INSERT INTO evlet_journal (model, record_id, kind, actor, at, data) VALUES ('ticket', 1, 'created', '1', 'now', '{}')")
+    app = start(Database(path, Registry(Note, Ticket)))
+    with app.database.transaction() as tx:
+        journal.ensure_table(tx.connection)
+        assert set(journal.SCALARS) <= set(tx.connection.columns('evlet_journal'))
+    assert journal.verify(app.database)[1] == []

@@ -127,7 +127,7 @@ TOOLS = (
          {'model': MODEL, 'values': {'type': 'object'}}, ('model', 'values'), kind='write', group='create', label='Creating {model}'),
     Tool('update_record', 'Update supplied values only. Supplied child collections replace their rows; omit children to preserve them.',
          {'model': MODEL, 'id': RECORD, 'values': {'type': 'object'}}, ('model', 'id', 'values'), kind='write', group='update', label='Updating {model} {id}'),
-    Tool('change_state', "Move a document with one of its rules, such as draft to posted, or approve its current approval level. "
+    Tool('change_state', "Move a document with one of its rules, such as draft to posted. "
          "Use a rule's key from the record's _moves (or describe_model state.rules). remark is the note the rule asks for; "
          'values fills the fields a move asks for.',
          {'model': MODEL, 'id': RECORD, 'rule': RULE_KEY, 'remark': {'type': 'string', 'maxLength': 1000}, 'values': {'type': 'object'}},

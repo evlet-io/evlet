@@ -155,7 +155,7 @@ class Docs:
 @dataclass(frozen=True)
 class ApiScope:
     """What a frontend may call from a sub-host: records of models, the named (Model, action) pairs (also
-    moves, "void", "revise", "unpost" and "repost"), service endpoints, and the extra record routes listed in extras."""
+    moves by rule key), service endpoints, and the extra record routes listed in extras."""
     name: str
     models: tuple = ()
     actions: tuple = ()

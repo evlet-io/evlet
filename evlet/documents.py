@@ -1803,7 +1803,7 @@ def settle_saved(tx, model, record_id, children=None):
                                   ordinary=False)
     if 'posted' in kept_by:
         if children:
-            raise ValidationError({'children': 'This record has postings. To change its rows, void or revise it.'})
+            raise ValidationError({'children': 'This record has postings. To change its rows, move it out of its posted state.'})
         return
     derived_write(model, {}, children or {}, '')
     draft = Draft(model, dict(current._values), context=context, record_id=current.id)

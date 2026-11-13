@@ -103,6 +103,11 @@ def ensure_table(connection, *, hashed=()):
     Every statement is idempotent, so a database created by an earlier release gets new guards on start.
     """
     connection.ensure_table(TABLE)
+    # Journals from before 0.4.6 gain the state manager's columns, empty on their old entries.
+    present = connection.columns('evlet_journal')
+    for column in SCALAR_COLUMNS:
+        if column.name not in present:
+            connection.add_column('evlet_journal', column)
     connection.ensure_index('evlet_journal_record', 'evlet_journal', ('model', 'record_id', 'id'))
     connection.ensure_table(HASHED)
     for name in hashed:
