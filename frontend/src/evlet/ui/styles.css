@@ -1223,6 +1223,30 @@ th:hover>.rz::after{background:var(--border-strong)}
 .in-link.input{display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer}
 .in-link.input>span:first-child{flex:1;min-width:0;display:flex;align-items:center;gap:8px;overflow:hidden;white-space:nowrap}
 .in-link.input:focus-visible{border-color:var(--accent);box-shadow:none;outline:none}
+/* Go to the linked record: read only, the value is a link; editable, hovering the field swaps the record's mark for the arrow. */
+.link-to{color:inherit;text-decoration:none;border-radius:var(--r-sm)}
+.link-to .tx{color:var(--accent)}
+.link-to:hover .tx{text-decoration:underline;text-underline-offset:2px}
+.link-to:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.in-link.input.ro{cursor:default;background:var(--bg-muted);color:var(--fg-2)}
+.in-link-box{position:relative;min-width:0;--link-at:11px}
+.fld .in-link-box{--link-at:15px}
+.g td.editing .in-link-box{--link-at:10px}
+.link-go{position:absolute;left:var(--link-at);top:50%;width:20px;height:20px;margin-top:-10px;display:grid;place-items:center;border-radius:var(--r-sm);
+  color:var(--accent);background:var(--surface);opacity:0;pointer-events:none;transition:opacity .15s ease}
+.link-go>svg{color:inherit;transition:transform .15s ease}
+.in-link-box:hover>.link-go,.link-go:focus-visible{opacity:1;pointer-events:auto}
+.iv-go{--link-at:0px}
+.ff .iv-go{--link-at:1px}
+.iv-go:hover>.fval{background:var(--bg-muted)}
+.iv-go:hover>.fval .pen{opacity:1}
+.in-link-box:has(>.link-go):hover .org-mark,.in-link-box:has(>.link-go:focus-visible) .org-mark{visibility:hidden}
+.link-go:hover>svg,.link-go:focus-visible>svg{transform:translate(2px,-2px)}
+.link-go:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.link-go-hint{position:absolute;left:calc(100% + 6px);top:50%;transform:translateY(-50%);white-space:nowrap;padding:2px 6px;border-radius:var(--r-sm);
+  font-size:11px;line-height:16px;color:var(--fg-2);background:var(--surface);border:1px solid var(--border);box-shadow:var(--shadow-sm,none);opacity:0;pointer-events:none;transition:opacity .15s ease}
+.link-go:hover>.link-go-hint,.link-go:focus-visible>.link-go-hint{opacity:1}
+@media (prefers-reduced-motion:reduce){.link-go,.link-go>svg,.link-go-hint{transition:none}.link-go:hover>svg,.link-go:focus-visible>svg{transform:none}}
 .in-tags:focus-within{border-color:var(--accent);box-shadow:none}
 .in-tags[aria-invalid="true"],.fld.invalid .in-tags,.fld.invalid .in-link{border-color:var(--t-rose)}
 .chip-x{display:grid;place-items:center;width:14px;height:14px;border-radius:3px;margin-right:-2px;color:var(--fg-3)}

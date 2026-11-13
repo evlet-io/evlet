@@ -352,7 +352,7 @@ function OneValue(meta: FieldSchema, value: () => unknown, set: (value: unknown)
   if (meta.type === 'multiselect') return Dropdown({ value: () => (value() as string | null) ?? null, ariaLabel: label, choices: () => (meta.choices ?? []).map(choice => ({ value: choice, label: humanize(choice) })), onChange: set });
   const field = localField(inputMeta(meta, suffix), untrack(value));
   effect(() => { const next = field.value.get(); if (JSON.stringify(next ?? null) !== JSON.stringify(untrack(value) ?? null)) set(next); });
-  return FieldControl(field, { links, label }).element;
+  return FieldControl(field, { links, label, goto: false }).element;
 }
 
 function ValueEditor(field: FilterField, kind: ValueKind, value: () => unknown, set: (value: unknown) => void, links: LinkSource): Child {
@@ -371,7 +371,7 @@ function ValueEditor(field: FilterField, kind: ValueKind, value: () => unknown, 
   if (meta.type === 'select') {
     const field = localField({ ...inputMeta(meta, 'list'), type: 'multiselect' }, untrack(list).length ? untrack(list) : null);
     effect(() => { const next = field.value.get() as unknown[] | null; if (JSON.stringify(next ?? []) !== JSON.stringify(untrack(list))) set(next ?? []); });
-    return FieldControl(field, { links, label }).element;
+    return FieldControl(field, { links, label, goto: false }).element;
   }
   if (meta.type === 'link') {
     // The picker adds one record at a time and is built again empty after each.

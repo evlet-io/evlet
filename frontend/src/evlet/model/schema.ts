@@ -264,6 +264,9 @@ export class SchemaIndex {
     return model;
   }
 
+  /** Whether this role's schema has the model: /api/schema leaves out models the role cannot read. */
+  has(name: string): boolean { return this.models.has(name); }
+
   field(model: string, name: string): FieldSchema | undefined { return this.fields.get(model)?.get(name); }
 
   /** The model of a child table, for example order + lines -> order_lines. */

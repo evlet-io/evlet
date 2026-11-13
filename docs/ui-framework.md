@@ -524,6 +524,24 @@ uses it, before the input for a prefix and after it for a suffix. Number formatt
 
 The Link field's record mark is the 20 px `org-mark`; it never stretches.
 
+#### Going to the linked record
+
+A Link value opens the record it points at. Read only (a locked step, a read-only field, a viewer),
+the value is an ordinary link (`a.link-to`) to the record page: the router opens it in the page, and
+Cmd or Ctrl click and a middle click open a new tab. Editable, the field keeps its input and mark; on
+hover the mark gives way to the `arrow-up-right` icon (`a.link-go`, the one Controls uses), nudged
+2 px up and right over 150 ms, with an `Open <title>` hint. The arrow is its own focusable link with
+that `aria-label`; a click anywhere else in the field still edits it. `prefers-reduced-motion` turns
+the nudge off. The record page's fields, the side blocks' InlineValues and child table cells all use it;
+lists and filter fields don't.
+
+Where a record opens comes from `LinkSource.href(model, id)`: `apiLinks(api, schema, { recordHref })`
+answers it with the app router's record URL, and with `null` when the target model is not in the
+person's `/api/schema` (the server leaves out models the role cannot read) or is a child table's model.
+No value, or `null`: no link and no arrow. It is display only. The record's route still checks the
+account, tenant and row, so a record the person can't see shows the page's normal 404 or 403. Pass
+`goto: false` to `FieldControl` to leave it out.
+
 ### Stat cards
 
 `StatCard` shows one number in a thin card, about 60 px high: a small muted label over the value

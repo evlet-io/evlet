@@ -571,7 +571,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const cellView = (row: Row, column: () => ChildColumn, rowEdit: () => string | null, rowActive: () => string | null, rowSpot: () => string | null) => {
     const key = column().key, field = row.field(key), meta = field.meta, kind = kindOf(meta.type);
     const canEdit = () => !column().calculated && !readOnly.get() && field.editable.get();
-    const shown = RICH.has(meta.type) ? () => displayValue(field, { links: props.links, empty: '' }) : () => textOf(() => kind.format(field.value.get(), meta));
+    // A read-only Link cell opens its record; an editable one edits on click and shows the arrow while editing.
+    const shown = meta.type === 'link' ? () => when(canEdit, () => displayValue(field, { links: props.links, empty: '' }), () => displayValue(field, { links: props.links, empty: '', open: true }))
+      : RICH.has(meta.type) ? () => displayValue(field, { links: props.links, empty: '' }) : () => textOf(() => kind.format(field.value.get(), meta));
     const blank = () => { const value = field.value.get(); return value === null || value === undefined || value === ''; };
     // Read as a live child, so opening or closing the row editor swaps the placeholder in or out.
     const display = () => () => expanded.get() !== null && blank() ? html`<span class="g-ph">${meta.placeholder || meta.label}</span>` : untrack(shown);

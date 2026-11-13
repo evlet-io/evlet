@@ -73,7 +73,7 @@ export function App(options: AppOptions): Node {
     unsaved.signedIn();
     unsaved.purge(settings?.unsaved?.limits);
     applyMe(settings);
-    const links = apiLinks(api, schema);
+    const links = apiLinks(api, schema, { recordHref: (model, id) => router.href('record', { model, id }) });
     setLinkSource(links);
     const ctx: AppContext = {
       api, router, schema, session: current, user: current.user!, prefs, unsaved, links, dev: Boolean(options.dev), libraryHref: options.libraryHref ?? '/evlet.html',
