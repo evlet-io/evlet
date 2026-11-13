@@ -6,6 +6,17 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Changed
+
+- **Personal mailboxes reach only public mail servers.** A mailbox a person connects with a
+  password must use a public address, SSL/TLS or STARTTLS, and the standard mail ports. Private
+  ranges such as 10.x, 192.168.x, 100.64.x and fc00::, and servers on this machine, are refused
+  with a message that says to ask an admin. The check also runs on every sync and send.
+  **What to change:** if people used a mail server on a private network for their own mailbox,
+  an admin now sets it up as an Email sending or Email receiving connector in Controls. Admin
+  connectors still accept private addresses. `evlet.connectors.safe_address` takes a new
+  `public=True` argument for addresses typed in by people who are not admins.
+
 ### Fixed
 
 - **The draft preview no longer shows records you can't read.** `POST /api/_draft/{Model}`
@@ -25,6 +36,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Mention emails on PostgreSQL.** A mention that should send an email now sends it. The
   PostgreSQL adapter did not return the new inbox row's id, so every mention email was skipped
   without an error. SQLite was not affected.
+- **Eva's provider client no longer follows redirects.** A redirect from the AI provider (or
+  from the Controls connector test) is now an error, so the API key is never sent to another
+  address.
 
 ## 0.4.3 (12-11-2026)
 
