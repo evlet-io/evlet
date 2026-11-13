@@ -23,6 +23,18 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   an admin now sets it up as an Email sending or Email receiving connector in Controls. Admin
   connectors still accept private addresses. `evlet.connectors.safe_address` takes a new
   `public=True` argument for addresses typed in by people who are not admins.
+- **Eva asks before every change once a chat has read stored data.** Records, journals,
+  reports and files can hold text written to steer Eva. After a chat has read any of them,
+  every create, update, move or action asks first, even when Controls → AI → Eva says "Never
+  asks" for that kind of change. Scheduled tasks skip such changes. A chat that only creates
+  records follows the settings. See [When Eva asks first](docs/eva.md#when-eva-asks-first).
+- **`change_state` moves State documents.** It now takes `{model, id, to, values?, reason?}` and
+  calls `POST /api/{model}/{id}/moves/{to}` with every role, guard and state check, so Eva and MCP
+  clients can post a document or move a record. For confirmable documents `to` is `confirm`,
+  `cancel` or `reopen`. Clients that sent `operation` send `to` instead. See
+  [tools.md](docs/tools.md#tools).
+- A tool approval is no longer requested for a field the role can't write: the call is refused
+  at once, as the route would refuse it.
 
 ### Fixed
 
