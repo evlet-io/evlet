@@ -1,4 +1,5 @@
-"""The Python shown next to the State display examples in Docs (frontend/src/evlet/app/docs.ts) runs on the real API."""
+"""The State Python shown in Docs (frontend/src/evlet/app/docs.ts) runs on the real API: the State display examples and
+the Screens and routes invoice. No Docs snippet uses the State API 0.4.6 removed."""
 import re
 from pathlib import Path
 
@@ -31,3 +32,27 @@ def test_show_snippets_are_the_deal_with_another_show(show):
     scope = {}
     exec(compile(snippets()['deal'].replace('show="badge"', f'show="{show}"'), f'docs:{show}', 'exec'), scope)
     assert scope['Deal'].__declared_fields__['stage'].show == show
+
+
+def test_screens_snippet_declares_its_state():
+    from evlet import Child, Currency, Model, Text
+
+    class Customer(Model):
+        name = Text(required=True)
+
+    class InvoiceLine(Child):
+        amount = Currency(default=0)
+
+    code = re.search(r'^const screensCode = `(.*?)`;$', SOURCE.read_text(), re.S | re.M).group(1)
+    scope = {'Customer': Customer, 'InvoiceLine': InvoiceLine}
+    exec(compile(code, 'docs:screens', 'exec'), scope)
+    field = scope['Invoice'].__declared_fields__['status']
+    assert list(field.steps) == ['draft', 'issued', 'paid']
+
+
+REMOVED = ('Move(', 'confirmable', 'locked=', 'voidable=', 'before_close', 'changed(', 'moves=', 'final=(')
+
+
+def test_no_docs_snippet_uses_the_removed_state_api():
+    for code in re.findall(r'^const \w+Code = `(.*?)`;$', SOURCE.read_text(), re.S | re.M) + list(snippets().values()):
+        assert not [name for name in REMOVED if name in code], code[:80]

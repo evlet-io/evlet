@@ -24,16 +24,20 @@ class Note(Model):
 
 app = App(name="notes", models=[Note])`;
 
-const screensCode = `from evlet import Currency, Date, Link, Model, Move, State, Table, Text
-from evlet.calc import F
+const screensCode = `from evlet import Currency, Date, Link, Model, State, Table, Text
 
 class Invoice(Model):
     customer = Link(Customer, required=True)
     due_on = Date()
     lines = Table(InvoiceLine)
     total = Currency(compute=lines.sum("amount"))
-    status = State(("draft", "issued", "paid"), moves=(Move("draft", "issued", "Issue"),),
-                   locked=("issued", "paid"), final=("paid",))
+    status = State(
+        State.Step("draft", "Draft"),
+        State.Step("issued", "Issued", color="blue", lock=True),
+        State.Step("paid", "Paid", color="green", lock=True, final=True),
+        rules=(State.Rule("draft", "issued", "Issue", key="issue", primary=True),
+               State.Rule("issued", "paid", "Mark paid", key="pay")),
+    )
 
     class Meta:
         list_fields = ("customer", "due_on", "status", "total")
