@@ -102,6 +102,8 @@ trigger that refuses an id change to every model table ([model-engine.md](model-
 Currency amount is stored at 6 places; `evlet migrate` moves the amounts before any app migration runs
 ([model-engine.md](model-engine.md#decimal-places-per-currency)). `0010_split_files` moves sign-in sessions, the
 tool-call log and Eva into their own SQLite files next to the database (see From 0.4.2 to 0.4.3 below).
+`0011_state_manager` adds the journal's `rule`, `remark`, `level`, `base` and `rules_version` columns
+([states-actions.md](states-actions.md)); old entries keep their values and their hashes.
 Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet

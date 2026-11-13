@@ -249,9 +249,9 @@ def test_the_framework_step_adds_the_guard_to_existing_tables(tmp_path):
     with sqlite3.connect(path) as connection:
         for table in registry.models:
             connection.execute(f'DROP TRIGGER "evlet_{table}_fixed_id"')
-        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files')")
+        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager')")
     assert STEPS[5].name == '0006_fixed_ids'
-    assert upgrade(database) == ['0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files']
+    assert upgrade(database) == ['0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager']
     with database.transaction() as tx:
         assert check_ids(tx.connection, registry) == []
 
