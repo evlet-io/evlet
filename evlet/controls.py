@@ -23,15 +23,18 @@ from . import qb, writes
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
-KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
+KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting', 'state', 'rule')
 # Workspace overrides share the table but have their own routes (/api/_controls/workspaces), not POST /overrides.
-OVERRIDE_KINDS = (*KINDS, 'workspace')
+OVERRIDE_KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting', 'workspace', 'state', 'rule')
 WORKSPACE_ACCESS = 'Customizing workspaces needs an admin, or a role with "Customize workspaces" on.'
 PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'periods', 'prints', 'currencies', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
     # Password minimum and two-step sign-in apply to everyone but admins, whose rules come only from config.py.
     'security.password_min': 15, 'security.session_hours': 12, 'security.lockout': 5,
     'security.two_step': False, 'security.two_step_roles': [], 'security.controls_ips': [],
+    # Roles that open Controls (other than admin, whose rule comes from config.py) must use two-step sign-in.
+    # On by default; only an admin can switch it off.
+    'security.controls_two_step': True,
     'mcp.enabled': True, 'mcp.allow_writes': False, 'mcp.rate': 60, 'mcp.disabled_tools': [], 'mcp.hidden_models': [],
     'mail.personal': False,
     # Images in rich text (evlet/richtext.py): separate from the general attachment limits.
@@ -52,9 +55,12 @@ IMAGE_LIMITS = {'files.image_max_kb': (64, 8192), 'files.images_per_record': (1,
 # Audit areas of setting overrides by key prefix; other settings are Security.
 SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva', 'files': 'Files', 'unsaved': 'Records', 'display': 'Display'}
 # Settings only an admin may change: what every page shows, not only what Controls openers manage.
-ADMIN_SETTINGS = ('display.currencies',)
+ADMIN_SETTINGS = ('display.currencies', 'security.controls_two_step')
+ADMIN_SETTING_REFUSALS = {'display.currencies': 'Only an admin can change how currencies are shown.',
+                          'security.controls_two_step': 'Only an admin can change two-step sign-in for roles that open Controls.'}
 NOT_FOUND = 'Route not found'
-AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
+AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming',
+         'state': 'Approval Rules', 'rule': 'Approval Rules'}
 # A paused schedule is a setting override: schedule.<name>.active = false.
 SCHEDULE = re.compile(r'schedule\.([a-z][a-z0-9_]{0,63})\.active')
 ADMIN_ONLY = 'Only an admin can do this: change admin accounts, give the admin role, manage roles or decide who opens Controls.'
@@ -94,11 +100,11 @@ def ensure_schema(connection):
     for definition in (OVERRIDES, AUDIT, CONFIG, PERIOD_LOCKS):
         connection.ensure_table(definition)
     connection.run(qb.insert('evlet_config', id=1, version=1).on_conflict().do_nothing())
-    # Workspace overrides (kind "workspace") came later: widen the kind check of a table made before them.
+    # Later kinds (workspace, then state and rule): widen the kind check of a table made before them.
     # A probe row inside a savepoint tells whether the table takes the kind; it never stays.
     try:
         with connection.savepoint('evlet_overrides_kind'):
-            connection.run(qb.insert('evlet_overrides', kind='workspace', key='evlet_kind_probe', value=''))
+            connection.run(qb.insert('evlet_overrides', kind=OVERRIDE_KINDS[-1], key='evlet_kind_probe', value=''))
             raise _KindProbe
     except _KindProbe:
         widen = False
@@ -124,8 +130,12 @@ def bump(connection):
     return connection.run(qb.select('evlet_config', 'version').where(id=1)).value()
 
 
-def grant(database_path, username):
-    """Break glass from the server shell: make a user an active admin and clear the Controls allowlist, audited as cli."""
+def grant(database_path, username, clear_allowlist=False):
+    """Break glass from the server shell: make a user an active admin, audited as cli.
+
+    Returns the allowed networks set in Controls, as they were. They are kept unless clear_allowlist is true;
+    the caller tells the person running it whether they still limit Controls.
+    """
     if not database_path.is_file():
         raise ValueError('This instance has no database yet. Start it once first.')
     with writes.shell_transaction(database_path) as connection:
@@ -139,12 +149,14 @@ def grant(database_path, username):
         LocalAuth.end_sessions(connection, row[0], keys=True)
         audit(connection, 'cli', 'Users', username.lower(), 'Made an active admin from the server shell · Sessions, AI assistants and API keys ended',
               {'role': row[1], 'active': bool(row[2])}, {'role': 'admin', 'active': True})
-        # An allowlist that shuts everyone out is cleared too; routes.py stays as it is.
+        # An allowlist that shuts everyone out is cleared only when asked; routes.py stays as it is.
         ips = connection.run(qb.select('evlet_overrides', 'value').where(kind='setting', key='security.controls_ips')).one()
-        if ips is not None:
+        networks = json.loads(ips[0]) if ips is not None else []
+        if ips is not None and clear_allowlist:
             connection.run(qb.delete('evlet_overrides').where(kind='setting', key='security.controls_ips'))
-            audit(connection, 'cli', 'Security', 'security.controls_ips', 'Allowed networks cleared from the server shell', json.loads(ips[0]), None)
+            audit(connection, 'cli', 'Security', 'security.controls_ips', 'Allowed networks cleared from the server shell', networks, None)
         bump(connection)
+    return networks if isinstance(networks, list) else []
 
 
 def reset_two_step_from_shell(database_path, username):
@@ -217,6 +229,30 @@ def set_password_from_shell(database_path, username, password, file_minimum=15):
         audit(connection, 'cli', 'Users', row['username'], 'Password set from the server shell. Sessions, AI assistants and API keys ended.')
 
 
+def shell_address(environ):
+    """The address an SSH session came from, if the server shell is one; None otherwise."""
+    for name in ('SSH_CONNECTION', 'SSH_CLIENT'):
+        value = (environ.get(name) or '').split()
+        if value:
+            try:
+                address = ipaddress.ip_address(value[0].split('%')[0])
+            except ValueError:
+                continue
+            return (address.ipv4_mapped or address) if address.version == 6 else address
+    return None
+
+
+def within(address, networks):
+    """True when an address is in one of the networks; values that are not networks are skipped."""
+    for value in networks:
+        try:
+            if address in ipaddress.ip_network(value, strict=False):
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
+
 def client_ip(scope, auth):
     """The address the Controls allowlist checks: LocalAuth.client_address, through trusted proxies only."""
     try:
@@ -236,7 +272,7 @@ def strictest(key, value, roles, file=None):
     number = type(value) is int
     if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal'):
         return False
-    if key == 'security.two_step':
+    if key in ('security.two_step', 'security.controls_two_step'):
         return True
     if key == 'display.currencies':
         return {}
@@ -359,6 +395,9 @@ class Controls:
             policy, settings = self.build(roles, stored, problems)
         self.database.layer = layer
         self.business.policy = policy
+        # The instance's state and rule overrides (evlet/statemanager.py), compiled once per version.
+        from .statemanager import load_overrides
+        load_overrides(self.business, [row for row in stored if row['kind'] in ('state', 'rule')], problems)
         if self.business.jobs is not None:
             self.business.jobs.policy = policy
         # Site workspace overrides (evlet.workspaces); /api/schema filters them by permission after applying them.
@@ -385,7 +424,7 @@ class Controls:
                     perms[role, model] = self.rule(role, model, self.check_perm(row['key'], value))
                 elif row['kind'] == 'setting':
                     settings[row['key']] = self.check_setting(row['key'], value)
-                elif row['kind'] not in ('field', 'layout', 'list', 'naming', 'workspace'):
+                elif row['kind'] not in ('field', 'layout', 'list', 'naming', 'workspace', 'state', 'rule'):
                     raise ValueError('This kind of change is not available yet.')
             except (ValueError, KeyError, TypeError) as exc:
                 problems.append({'kind': row['kind'], 'key': row['key'], 'error': str(exc)})
@@ -422,11 +461,15 @@ class Controls:
 
     def two_step_required(self, role):
         """Whether accounts with role must use two-step sign-in: config.py's admin_two_step for admin, else the
-        Controls settings (everyone, or the roles listed). The secret key and cryptography decide if it can run."""
+        Controls settings (everyone, roles that open Controls, or the roles listed). The secret key and
+        cryptography decide if it can run."""
         if role == 'admin':
             security = getattr(self.business.auth, 'security', None)
             return security.admin_two_step if security is not None else True
-        return bool(self.settings['security.two_step']) or role in self.settings['security.two_step_roles']
+        if self.settings['security.two_step'] or role in self.settings['security.two_step_roles']:
+            return True
+        row = self.roles.get(role)
+        return bool(self.settings['security.controls_two_step'] and row is not None and row['opens_controls'])
 
     @staticmethod
     def role_bases(roles):
@@ -568,10 +611,6 @@ class Controls:
             raise ValueError('Without read access, fields and rows must be empty.')
         if not set(ops) - {'read'} and write is not None:
             raise ValueError('Write fields need create or update access.')
-        if 'revise' in ops and 'create' not in ops:
-            raise ValueError('Revise needs create access.')
-        if 'repost' in ops and 'update' not in ops:
-            raise ValueError('Repost needs update access.')
         if read is not None and not read:
             raise ValueError('Keep at least one readable field, or turn off read instead.')
         if read is not None and write is not None and set(write) - set(read):
@@ -619,7 +658,7 @@ class Controls:
         number = type(value) is int
         if key == 'security.password_min' and not (number and 1 <= value <= 64):
             raise ValueError('Use a minimum password length from 1 to 64 characters. 1 means any password.')
-        if key == 'security.two_step' and type(value) is not bool:
+        if key in ('security.two_step', 'security.controls_two_step') and type(value) is not bool:
             raise ValueError('Use on or off.')
         if key == 'security.session_hours' and not (number and 1 <= value <= file):
             raise ValueError(f'Session length can only go down, from {file} hours to 1.')
@@ -686,6 +725,10 @@ class Controls:
             return None if value == self.files().get(key, True) else value
         if kind == 'custom':
             raise ValueError('Add and remove instance fields with Add field and Remove field.')
+        if kind in ('state', 'rule'):
+            from .statemanager import override_target
+            override_target(self.registry, key)
+            return value  # The whole batch is checked together in save().
         return self.custom.check(kind, key, value)
 
     def overrides(self):
@@ -739,10 +782,20 @@ class Controls:
                 checked.append((change['kind'], change['key'], self.check_change(change['kind'], change['key'], change['value'])))
             except (ValueError, TypeError) as exc:
                 errors[f'changes.{index}'] = str(exc) if isinstance(exc, ValueError) else 'Send kind, key and value.'
+        rules = [change for change in checked if change[0] in ('state', 'rule')]
+        if rules and not errors:
+            from .statemanager import check_overrides
+            try:
+                with self.database._connection() as connection:
+                    check_overrides(self.business, connection, rules)
+            except ValueError as exc:
+                errors[f'changes.{next(index for index, change in enumerate(changes) if change["kind"] in ("state", "rule"))}'] = str(exc)
         if errors:
             raise ValidationError(errors)
-        if user.role != 'admin' and any(kind == 'setting' and key in ADMIN_SETTINGS for kind, key, _ in checked):
-            raise AccessError(403, 'Only an admin can change how currencies are shown.')
+        if user.role != 'admin':
+            for kind, key, _ in checked:
+                if kind == 'setting' and key in ADMIN_SETTINGS:
+                    raise AccessError(403, ADMIN_SETTING_REFUSALS[key])
         now = int(time.time())
         with self.database.transaction() as tx:
             connection = tx.connection
@@ -926,7 +979,12 @@ class Controls:
             if 'active' in values and values['active'] != bool(row['active']):
                 details.append('Activated' if values['active'] else 'Deactivated')
             if 'password' in values:
-                details.append('Password set')
+                # Admins may set anyone's password. A non-admin Controls role may set a non-admin's, which lets
+                # it sign in as them, so the entry says plainly who did it and with which role.
+                if actor.role != 'admin' and actor.id != row['id']:
+                    details.append(f"Password set by {actor.username} (role {actor.role}), who is not an admin")
+                else:
+                    details.append('Password set')
             if 'sessions' in body:
                 details.append('Signed out everywhere')
             if revoke:

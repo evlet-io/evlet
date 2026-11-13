@@ -47,6 +47,10 @@ has no two-step sign-in, and nothing is listed for it.
   in with a code counts. Otherwise the answer is 403 `VERIFY_TWO_STEP: ...`; the page shows a code
   dialog, sends the code to `POST /api/_settings/me/two-step/verify` and sends the change again.
   Reading Controls never asks. An admin setting someone else's password is a Controls change.
+- **Passwords set by a role that is not admin.** A role that opens Controls can set the password
+  of someone who is not an admin, which lets it sign in as them. Admin accounts are refused (403).
+  The audit row says it plainly: `Password set by <username> (role <role>), who is not an admin`,
+  with the target and the time. An admin, or someone setting their own, gets `Password set`.
 - Admins can **Reset two-step** for a user (`PATCH /api/_controls/users/<id>`
   `{"two_step": "reset"}`), and `evlet users reset-two-step <instance> <username>` does the same
   from the server shell. Both are audited and revoke all the user's access, API keys included
@@ -58,9 +62,20 @@ has no two-step sign-in, and nothing is listed for it.
   evlet controls grant <instance> <username>
   ```
 
-  It makes the user an active admin, revokes all their access including API keys, clears the `security.controls_ips`
-  setting and writes audit rows by `cli`. It can't change `routes.py`: when `ControlsAccess`
-  there limits the networks, the command says so and you edit `routes.py`.
+  It makes the user an active admin, revokes all their access including API keys and writes an
+  audit row by `cli`. It keeps the allowed networks set in Controls (`security.controls_ips`).
+  When there are some, it says so. On an SSH session it also checks the address you connected
+  from: if that address is not in them, you are still locked out, and it tells you to run it again
+  with `--clear-allowlist`. Your browser may reach the server from another address than your SSH
+  session, so check the list it prints either way.
+
+  ```
+  evlet controls grant <instance> <username> --clear-allowlist
+  ```
+
+  `--clear-allowlist` also clears the allowed networks set in Controls, with a second audit row.
+  Running the command again revokes the user's sessions again. It can't change `routes.py`: when
+  `ControlsAccess` there limits the networks, the command says so and you edit `routes.py`.
 - Saving allowed networks that leave out your own address asks first.
 
 ### The Administrator
@@ -171,7 +186,7 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 
 **Permissions** (kind `perm`, key `role|Model`, value
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
-operations (`read`, `create`, `update`, `delete`, `journal`, `void`, `revise`, `unpost`, `repost`), readable and
+operations (`read`, `create`, `update`, `delete`, `journal`, `print`), readable and
 writable fields must stay within the file rule. Stricter only applies to the fields declared in
 app files. An instance field (`x_`, added by Controls) follows the record for every signed-in
 staff role, that is every desk role: each one that reads the model reads it, and each one that
@@ -183,9 +198,9 @@ Portal roles (customers) and public endpoints never get an instance field by def
 grants it to a portal role with a permission override, and fields added later stay hidden from
 it until ticked there.
 The API, generated screens, API keys, exports and AI assistants all read fields through the same
-`Policy`. Write needs read, no access clears fields and
-rows, revise needs create. Admin rules can't be overridden. The page shows the first four;
-`journal`, `void`, `revise`, `unpost` and `repost` named in the file rule are kept on save. A role based on the
+`Policy`. Write needs read, and no access clears fields and
+rows. Admin rules can't be overridden. The page shows the first four; `journal` and `print`
+named in the file rule are kept on save. A role based on the
 editor journals like the editor when its rule reads and updates the model (`docs/journal.md`).
 Row scopes are named presets: `created_by`, `owner`, `account_manager` and `assignee` (for
 models with that field), `own_customer` and the app's own (`AppDefinition(scopes={...})`).
@@ -231,6 +246,7 @@ Controls > Security shows the admin rules read-only above the settings it can ch
 | `security.session_hours` | 12, or `Security(session_hours=...)` | Down only, 1 at least. Sets the session and cookie length in every realm. Lowering it ends sessions already older than the new length, desk and portal alike. |
 | `security.lockout` | 5, or `Security(lockout=...)` | Down only, 3 at least. Failed sign-ins per network and account, and wrong current passwords per account in Settings. |
 | `security.two_step_roles` | `[]` | Desk roles other than admin that must use two-step sign-in even with `security.two_step` off. A list saved before 0.4.2 that names admin keeps working; admin is dropped from it, since config.py decides for admin. These roles must use two-step sign-in ([settings.md](settings.md#two-step-sign-in)) when the instance can keep secrets: people who have not set it up do so at their next sign-in (trust on first use), and Controls needs a verified session. |
+| `security.controls_two_step` | `True` | Every desk role other than admin that opens Controls must use two-step sign-in, like the roles in `security.two_step_roles`. On by default. Only an admin can switch it off (others get 403). Turning "Opens Controls" on for a role then requires it for that role at once. |
 | `security.controls_ips` | `[]` | IP addresses and ranges. |
 
 ## Models
@@ -287,7 +303,7 @@ Record pages have no tabs (0.4): a layout is saved as the plain list of sections
 order is dropped, and sending one now is refused. For a model whose `Meta.layout` declares `Main` or blocks
 ([record layouts](ui.md#record-layouts)), Controls moves fields and sections; the layout's blocks stay as the app
 declares them, a section keeps its place by title, and a section Controls adds goes last. Each model in
-`GET /api/_controls/state` lists its record parts in `tabs` (Activity, Details, Revisions, its child tables, Related,
+`GET /api/_controls/state` lists its record parts in `tabs` (Activity, Details, its child tables, Related,
 Postings), the names the side panel can hide.
 **Side panel**: what a record shows when a list opens it in a side panel. Each section, field and record part (Details aside) has
 a panel button, pressed while it shows there; the Side panel card has the summary strip, Files and Record info (the record footer). A layout
@@ -519,7 +535,7 @@ they are removed on the Models page.
 |---|---|---|
 | `perm` | `apps/<app>/<package>/permissions.py` | `rules = {("editor", Lead): Rule(operations=..., read_fields=..., write_fields=..., scope=...)}`. The `own_customer` preset is written as the public `own_customer()`, or `own_customer(field='id')` on the customer model |
 | `field`, `custom`, `naming`, `layout`, `list` | The file that declares the model, such as `apps/notes/models/item.py` | The field lines as models.py writes them, with the changes merged in, and the `Meta` options: `naming = Naming(...)`, `layout = (Section(...), ...)` with `tabs` and `default_tab`, and `list_fields`, `open_in`, `list_tabs` and `list_tab`. Pasted into the model, they reproduce the layout and list overrides. A model with a [record layout](ui.md#record-layouts) gets its whole `layout = (Tab(...), ...)`, with the Controls sections in place. Field widths (set by the field type) and a list's page size and sort have no `Meta` form, so they are comments. Instance fields keep their `x_` name; rename them while moving them, since apps can't declare `x_` names. Hidden options are a comment. Arguments set in code, such as a callable default or validator, are written as `...` with a comment to copy them from models.py, so the code always compiles. |
-| `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for session length, lockout, minimum password length and `two_step`, which config.py reads (in config.py `password_min` applies to admins too, as the block's comment says) (the block keeps what config.py sets today with the overrides on top; restart, then reset the overrides); `two_step_roles = (...)` for `security.two_step_roles`, `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read those three yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
+| `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for session length, lockout, minimum password length and `two_step`, which config.py reads (in config.py `password_min` applies to admins too, as the block's comment says) (the block keeps what config.py sets today with the overrides on top; restart, then reset the overrides); `two_step_roles = (...)` for `security.two_step_roles`, `controls_two_step = False` for `security.controls_two_step`, `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read those four yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.
 
@@ -979,8 +995,8 @@ local `evlet mcp` steps. "Can make changes" has effect only while
 `evlet_audit` is append-only: triggers refuse update, delete and replace. Users, roles,
 overrides, connectors, email accounts, personal mailboxes (connect, disconnect, options), API
 keys, AI assistants (consent, sign-out, "Can make changes", MCP settings), migrations and jobs all
-write to it. Records (area `Records`) lists each unpost and repost of a posted record (who, the
-record and the reason) and each migration run that recalculated posted records (actor `cli`). Periods lists
+write to it. Records (area `Records`) lists each migration run that recalculated posted records (actor
+`cli`). Periods lists
 each lock change and each `unlocked_periods` block (actor `python`). The Audit log page searches who, what and the detail, filters by area and pages
 newest first, 50 rows at a time.
 

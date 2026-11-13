@@ -313,12 +313,12 @@ trusted installation stages database changes and publishes a separate app lock
 with a recoverable journal. Existing framework modules retain their public names.
 See [the CLI guide](cli.md) for commands, resource packaging and boundaries.
 
-## Document lifecycle amendment
+## State manager
 
-Confirmable models now use decorator validators/actions, same-identity revisions,
-immutable snapshots and unified history. See [document lifecycle](document-lifecycle.md)
-for the APIs, permission and transaction contract, approval boundaries and adoption
-from existing State/Move applications.
+`evlet/statemanager.py` holds a document's State: its steps, the rules that move it between
+them, and the hooks `@validate`, `@state`, `@state.exit` and `@release`. Confirm, cancel,
+reopen and void are steps and rules, not separate operations. See
+[states-actions.md](states-actions.md) and [document lifecycle](document-lifecycle.md).
 
 ## Ledger models
 

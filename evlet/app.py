@@ -267,8 +267,10 @@ class Application:
             need = ('action', parts[4])
         elif len(parts) == 6 and parts[4] in ('actions', 'moves'):
             need = ('action', parts[5])
-        elif len(parts) == 5 and parts[4] in ('history', 'revisions', 'snapshot', 'diff'):
-            need = ('extra', 'history' if parts[4] == 'history' else 'revisions')
+        elif len(parts) == 5 and parts[4] == 'history':
+            need = ('extra', 'history')
+        elif len(parts) >= 5 and parts[4] == 'versions':
+            need = ('extra', 'versions')
         elif len(parts) >= 5 and parts[4] in ('related', 'lines', 'attachments', 'prints'):
             need = ('extra', parts[4])
         else:

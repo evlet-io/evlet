@@ -19,7 +19,7 @@ through that model's normal create path.
 ## Define a slip
 
 ```python
-from evlet import Child, Currency, Date, Decimal, Link, Outcome, Select, Slip, Table, Text, ValidationError
+from evlet import Child, Currency, Date, Decimal, Link, Outcome, Select, Slip, Table, Text, ValidationError, validate
 
 class Task(Child):
     title = Text(required=True)
@@ -44,7 +44,8 @@ class StartJob(Slip):
     def load(self, source):            # starting values, before the person's input
         self.client = source.id
 
-    def validate(self):                # rules across fields
+    @validate                          # rules across fields
+    def check_start(self):
         if self.starts_on.year < 2026:
             raise ValidationError({"starts_on": "Pick a date from 2026 on"})
 
@@ -78,6 +79,14 @@ A wrong one fails when the application starts, for example `StartJob.focus: clie
 field people fill in`. The surface carries it as `"focus"` only when it is set.
 `source` is the source record inside the slip (`self.source`), not a field. Every slip defines
 `hand_in()` or sets `becomes`, not both. Definitions are checked when the application starts.
+
+Slip fields use the string rules: `visible_if`, `required_if`, `read_only_if` and
+`compute="..."`. Slips do not run finite expressions yet ([finite-calculations.md](finite-calculations.md)).
+A slip field, or a field of its table rows, that declares `F(...)` in `compute`, `initial`,
+`applies_when`, `required_when` or `locked_when` is refused when the class is defined, for
+example `StartJob.rate: dialogs, reports and slips do not run finite expressions yet; use the
+string rules visible_if, required_if, read_only_if and compute='...' for now`. The same holds for
+report filters and dialogs.
 
 ## Outcomes
 

@@ -35,7 +35,7 @@ def classes(*, copy_options=True, meta=True):
 
 
 @pytest.mark.parametrize('make', [lambda: Text(copy='no'), lambda: Text(copy=0), lambda: Text(copy=None),
-                                  lambda: State(('draft', 'done'), copy=1), lambda: Sequence('T-{n:04}', copy='false')])
+                                  lambda: State(State.Step('draft'), State.Step('done'), copy=1), lambda: Sequence('T-{n:04}', copy='false')])
 def test_field_copy_must_be_a_boolean(make):
     with pytest.raises(ValueError, match='copy must be True or False'):
         make()
@@ -62,7 +62,7 @@ def test_meta_duplicate_must_be_a_boolean_when_the_registry_is_built(value):
 
 def test_every_field_kind_and_table_accepts_copy():
     assert Text(copy=False).copy is False and Text().copy is True
-    assert State(('draft', 'done'), copy=False).copy is False
+    assert State(State.Step('draft'), State.Step('done'), copy=False).copy is False
     assert Sequence('T-{n:04}', copy=False).copy is False
 
     class Line(Child):

@@ -89,7 +89,7 @@ class JobContext:
           The role's permissions apply (a row scope that names the account matches nothing), writes are
           recorded under no account, and the Journal names the system as `via`.
 
-        Job handlers are trusted code, so the context may also make system moves (Move(..., system=True)).
+        Job handlers are trusted code, so the context may also make system moves (rules with by=()).
         Writes commit or roll back with the job's own transaction (or the step of a resumable task)."""
         from .documents import Context
         business = self._business
@@ -359,46 +359,54 @@ class JobQueue:
         now = int(time.time()) if now is None else timestamp(now)
         with self.database.transaction() as tx:
             self._bound(tx)
-            rows = tx.connection.run(qb.select('evlet_schedules').where(qb.eq('enabled', 1), qb.le('next_run', now))
-                                     .order_by('next_run', 'name').limit(100)).all()
-            for row in rows:
-                # One occurrence after downtime; missed intervals are coalesced.
-                definition = self.tasks.get(row['task'])
-                if definition is None:
-                    tx.connection.run(qb.update('evlet_schedules', enabled=0).where(name=row['name']))
-                    logger.error('Disabled schedule %s: its task is not registered', row['name'])
-                    continue
-                key = f"schedule:{row['name']}:{row['next_run']}"
-                tx.connection.run(qb.insert('evlet_jobs', task=row['task'], payload=row['payload'], actor=row['actor'], model=row['model'],
-                                            record_id=row['record_id'], state='queued', max_attempts=definition.max_attempts, run_at=now,
-                                            created_at=now, dedupe=key).on_conflict().do_nothing())
-                calendar = tx.connection.run(qb.select('evlet_calendar_schedules', 'expression', 'timezone').where(name=row['name'])).one()
-                if calendar:
-                    from .services import Calendar
-                    next_run = Calendar(calendar['expression'], calendar['timezone']).next(now)
-                else:
-                    next_run = row['next_run'] + ((now - row['next_run']) // row['interval'] + 1) * row['interval']
-                tx.connection.run(qb.update('evlet_schedules', next_run=next_run).where(name=row['name']))
-            return len(rows)
+            return self._tick(tx, now)
 
-    def claim(self, *, now=None, lease_seconds=300):
+    def _tick(self, tx, now):
+        """Queue one job for each schedule that is due, inside the caller's write transaction."""
+        rows = tx.connection.run(qb.select('evlet_schedules').where(qb.eq('enabled', 1), qb.le('next_run', now))
+                                 .order_by('next_run', 'name').limit(100)).all()
+        for row in rows:
+            # One occurrence after downtime; missed intervals are coalesced.
+            definition = self.tasks.get(row['task'])
+            if definition is None:
+                tx.connection.run(qb.update('evlet_schedules', enabled=0).where(name=row['name']))
+                logger.error('Disabled schedule %s: its task is not registered', row['name'])
+                continue
+            key = f"schedule:{row['name']}:{row['next_run']}"
+            tx.connection.run(qb.insert('evlet_jobs', task=row['task'], payload=row['payload'], actor=row['actor'], model=row['model'],
+                                        record_id=row['record_id'], state='queued', max_attempts=definition.max_attempts, run_at=now,
+                                        created_at=now, dedupe=key).on_conflict().do_nothing())
+            calendar = tx.connection.run(qb.select('evlet_calendar_schedules', 'expression', 'timezone').where(name=row['name'])).one()
+            if calendar:
+                from .services import Calendar
+                next_run = Calendar(calendar['expression'], calendar['timezone']).next(now)
+            else:
+                next_run = row['next_run'] + ((now - row['next_run']) // row['interval'] + 1) * row['interval']
+            tx.connection.run(qb.update('evlet_schedules', next_run=next_run).where(name=row['name']))
+        return len(rows)
+
+    def claim(self, *, now=None, lease_seconds=LEASE):
         now = int(time.time()) if now is None else timestamp(now)
         if type(lease_seconds) is not int or not 1 <= lease_seconds <= 3600:
             raise ValueError('Use a lease of 1 to 3600 seconds')
         with self.database.transaction() as tx:
             self._bound(tx)
-            tx.connection.run(qb.update('evlet_jobs', state='failed', error='Worker attempts exhausted', lease=None, lease_until=None, completed_at=now)
-                              .where(qb.eq('state', 'running'), qb.le('lease_until', now), qb.ge('attempts', qb.col('max_attempts'))))
-            row = tx.connection.run(qb.select('evlet_jobs').where(qb.or_(
-                qb.and_(qb.eq('state', 'queued'), qb.le('run_at', now)),
-                qb.and_(qb.eq('state', 'running'), qb.le('lease_until', now), qb.lt('attempts', qb.col('max_attempts'))),
-            )).order_by('run_at', 'id').limit(1)).one()
-            if row is None:
-                return None
-            token = secrets.token_hex(24)
-            tx.connection.run(qb.update('evlet_jobs', state='running', attempts=qb.col('attempts') + 1, lease=token, lease_until=now + lease_seconds, error=None)
-                              .where(id=row['id']))
-            return row['id'], token
+            return self._claim(tx, now, lease_seconds)
+
+    def _claim(self, tx, now, lease_seconds):
+        """Fail jobs whose attempts ran out, then lease the next due job, inside the caller's write transaction."""
+        tx.connection.run(qb.update('evlet_jobs', state='failed', error='Worker attempts exhausted', lease=None, lease_until=None, completed_at=now)
+                          .where(qb.eq('state', 'running'), qb.le('lease_until', now), qb.ge('attempts', qb.col('max_attempts'))))
+        row = tx.connection.run(qb.select('evlet_jobs').where(qb.or_(
+            qb.and_(qb.eq('state', 'queued'), qb.le('run_at', now)),
+            qb.and_(qb.eq('state', 'running'), qb.le('lease_until', now), qb.lt('attempts', qb.col('max_attempts'))),
+        )).order_by('run_at', 'id').limit(1)).one()
+        if row is None:
+            return None
+        token = secrets.token_hex(24)
+        tx.connection.run(qb.update('evlet_jobs', state='running', attempts=qb.col('attempts') + 1, lease=token, lease_until=now + lease_seconds, error=None)
+                          .where(id=row['id']))
+        return row['id'], token
 
     def execute(self, claim, *, active=lambda: True, now=None):
         """Run a claimed job. A job passes the business's gate like a request, so adding or removing an
@@ -545,10 +553,26 @@ class JobQueue:
             return False
         if getattr(self, 'business', None) is not None:
             self.business.controls.refresh()
-        with job_writes('job queue'):
-            self.tick(now=now)
-            claim = self.claim(now=now)
+        at = int(time.time()) if now is None else timestamp(now)
+        # An idle worker only reads. It takes a write turn when a job, an expired lease or a schedule is due.
+        if not self._due(at):
+            return False
+        with job_writes('job queue'), self.database.transaction() as tx:
+            self._bound(tx)
+            self._tick(tx, at)
+            claim = self._claim(tx, at, LEASE)
         return False if claim is None else self.execute(claim, active=active, now=now)
+
+    def _due(self, now):
+        """True when a worker pass has something to write: a queued job that is due, a running job whose
+        lease ran out, or a schedule that is due. One read on a plain connection."""
+        with self.database._connection() as connection:
+            jobs = connection.run(qb.select('evlet_jobs', qb.value(1)).where(qb.or_(
+                qb.and_(qb.eq('state', 'queued'), qb.le('run_at', now)),
+                qb.and_(qb.eq('state', 'running'), qb.le('lease_until', now)))).limit(1)).one()
+            if jobs is not None:
+                return True
+            return connection.run(qb.select('evlet_schedules', qb.value(1)).where(qb.eq('enabled', 1), qb.le('next_run', now)).limit(1)).one() is not None
 
     def status(self, job_id, user):
         with self.database.transaction() as tx:

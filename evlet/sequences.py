@@ -11,7 +11,8 @@ import json
 import re
 from types import MappingProxyType
 
-from .fields import Boolean, Date, Integer, LongText, MISSING, State, Tags, Text
+from .fields import Boolean, Date, Integer, LongText, MISSING, Tags, Text
+from .statemanager import State
 from .models import ValidationError, identifier
 from . import qb
 from .adapter import Column, TableDefinition
@@ -297,16 +298,6 @@ def assigned(context, model, record_id, name, number):
     journal.number(context, model, record_id, name, number)
 
 
-def clear_for_copy(model, values):
-    """Values for a copy of a record (such as a revision): every Sequence is null, so the copy gets
-    its own number when it reaches assign_on. Returns a new dict; `values` is not changed."""
-    cleared = dict(values)
-    for name in fields_of(model):
-        if name in cleared:
-            cleared[name] = None
-    return cleared
-
-
 # Existing rows
 
 def backfill(session, model, name, *, filters=None, today=None):
@@ -447,9 +438,8 @@ class Naming:
     Naming(): the model's `autoname(self, context) -> str` method, run in the write transaction.
     Naming(manual=True): people type the name.
 
-    `assign_on` is "create" (the default), "confirm" for a confirmable model (the name is taken in the
-    confirm transaction, so drafts never use a number) or a state of the model. Until then the name is
-    empty. `date_field` is an optional Date field for the date tokens; without it they use the day the
+    `assign_on` is "create" (the default) or a state of the model: the name is taken in the transaction
+    of the move that enters it, so drafts never use a number. Until then the name is empty. `date_field` is an optional Date field for the date tokens; without it they use the day the
     name is assigned, in the instance timezone. A trusted Session may pass a name (imports); it is kept.
 
     The older form Naming("field", Series(...)) names a unique, optional Text field of the model instead,
@@ -473,7 +463,7 @@ class Naming:
         if manual and series:
             raise ValueError('Naming(manual=True) takes no series: people type the name')
         if not isinstance(assign_on, str) or not assign_on:
-            raise ValueError('Naming assign_on is "create", "confirm" or a state name')
+            raise ValueError('Naming assign_on is "create" or a state name')
         if field != 'name' and assign_on != 'create':
             raise ValueError('Naming of a field other than name assigns on create')
         if date_field is not None:
@@ -570,12 +560,10 @@ def compile_naming(model, naming, series=None):
                          'the server fills it on create')
     if naming.date_field is not None and not isinstance(fields.get(naming.date_field), Date):
         raise ValueError(f'{where}: date_field names {naming.date_field!r}, which is not a Date field of the model')
-    if naming.assign_on == 'confirm' and not getattr(model, 'confirmable', False):
-        raise ValueError(f'{where}: assign_on="confirm" needs a confirmable model')
-    if naming.assign_on not in ('create', 'confirm'):
+    if naming.assign_on != 'create':
         state = model.__state__
         if state is None or naming.assign_on not in fields[state].choices:
-            raise ValueError(f'{where}: assign_on is "create", "confirm" or a state of the model, not {naming.assign_on!r}')
+            raise ValueError(f'{where}: assign_on is "create" or a state of the model, not {naming.assign_on!r}')
     rules = naming.series if series is None else series
     if not rules and not naming.manual and not callable(getattr(model, 'autoname', None)):
         raise ValueError(f'{where}: give Series, manual=True, or an autoname(self, context) method on the model')
@@ -668,14 +656,12 @@ def naming_rules(registry, model):
     return active_layer().naming.get(model) or registry.naming.get(model)
 
 
-def name_due(rules, values, *, created=False, lifecycle=None, move=None):
+def name_due(rules, values, *, created=False, move=None):
     """Whether a record without a name gets one in this write (see Naming.assign_on)."""
     if rules is None or rules.manual or values.get(rules.field) not in (None, ''):
         return False
     if rules.assign_on == 'create':
         return created
-    if rules.assign_on == 'confirm':
-        return lifecycle == 'confirm'
     state = rules.model.__state__
     return (created and values.get(state) == rules.assign_on) or (move is not None and move.to == rules.assign_on)
 

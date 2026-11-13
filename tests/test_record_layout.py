@@ -140,7 +140,7 @@ def test_meta_panel_names_the_record_parts():
             panel = ('Extra', 'activity')
     panel = view_for(Kept)['panel']
     assert panel['order'] == ['details', 'activity'] and panel['sections'] == ['Main']
-    assert 'activity' not in panel['tabs'] and 'revisions' in panel['tabs']
+    assert 'activity' not in panel['tabs'] and 'related' in panel['tabs']
 
 
 def account_with(*blocks, models=()):

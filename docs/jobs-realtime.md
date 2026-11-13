@@ -114,7 +114,7 @@ checks, use the job's [business context](#a-jobs-business-context).
 
 ## Queue a job from an action
 
-An `@action` (or a Move `run` method, or any trusted code with a document context) queues a
+An `@action` (or a `@state` hook, or any trusted code with a document context) queues a
 registered task with `context.enqueue(task, payload, *, key=None, target=None, run_at=None)`:
 
 ```python
@@ -168,10 +168,8 @@ Who it acts as is always explicit:
   refused. An inactive account fails the job with `AccessError` (no retry).
 * Job handlers are trusted code, so the context may make
   [system moves](states-actions.md#system-moves). Every other check stays: update permission
-  and row scope, guards, `run` methods, calculations, rules, validation, closed periods and
-  locks. A move's `run` method still gets `self.context.session`.
-* Lifecycle entries carry source `Automation` for a user and `System` for the system, and
-  correlation id `job:<id>`.
+  and row scope, guards, hooks, calculations, rules, validation, closed periods and
+  locks. A `@state` hook still gets `self.context.session`.
 * The context shares the job's transaction. Its writes commit with the job, or with the step of
   a resumable task, and roll back with it. The context is only valid inside the handler.
 * An external task has no transaction, so it has no business context. Split it into a step
@@ -297,7 +295,10 @@ Calendar schedules pass `calendar=(expression, timezone)` so the schedule and it
 calendar are written in one transaction; apps normally declare `CalendarSchedule`
 instead of calling this directly.
 
-The worker calls `tick()` before claiming work. Each tick processes at most 100 due
+Each worker pass first reads, on a plain connection, whether anything is due: a queued job,
+a running job whose lease ran out, or a schedule. When nothing is due the pass writes nothing,
+so an idle instance never takes the write turn. When something is due, the worker ticks the
+schedules and claims the next job in one write transaction. Each tick processes at most 100 due
 schedules. An occurrence and its next due time commit together. After downtime,
 missed intervals coalesce into one job and the next time advances to the next
 anchored interval. An unknown task disables its schedule and writes a private log

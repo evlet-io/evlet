@@ -1,41 +1,17 @@
 """Stage installation, preserve a backup, and recover the database/lock boundary."""
 
-from contextlib import closing
 from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
-import sqlite3
 import tempfile
 
-from ..instances import (read_instance, require_consistent, database_state,
+from .. import qb
+from ..instances import (INSTALLED_APPS, read_instance, require_consistent, database_state,
                          build_instance, register_schedules)
 from ..packages import resolve_packages, portable_lock_entry
-from ..writes import files, release_idle, require_space
+from ..writes import files, release_idle, require_space, settle, snapshot_set
 from .project import child, instance_guard, atomic_json, json_text, sync_directory
-
-
-def snapshot(source, target):
-    with closing(sqlite3.connect(source)) as old, closing(sqlite3.connect(target)) as new:
-        old.backup(new)
-    os.chmod(target, 0o600)
-
-
-def snapshot_set(source, target):
-    """Copy a main SQLite file and each of its side files that exists (evlet/writes.py) with the online backup API."""
-    for old, new in zip(files(source), files(target)):
-        if old.exists():
-            snapshot(old, new)
-
-
-def settle(target):
-    """Fold a SQLite file's write-ahead log into it and leave it in rollback mode, ready to move into place.
-    Refuses when another process is still writing it."""
-    with closing(sqlite3.connect(target)) as connection:
-        busy, _, _ = connection.execute('PRAGMA wal_checkpoint(TRUNCATE)').fetchone()
-        if busy:
-            raise ValueError('Database is busy; stop all writers before installation')
-        connection.execute('PRAGMA journal_mode=DELETE').fetchone()
 
 
 def recover(path):
@@ -113,8 +89,9 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
             app.initialize()
             register_schedules(app, schedules)
             with app.database.transaction() as tx:
-                tx.connection.execute('CREATE TABLE IF NOT EXISTS evlet_installed_apps (id INTEGER PRIMARY KEY CHECK(id=1), manifest TEXT NOT NULL)')
-                tx.connection.execute('INSERT OR REPLACE INTO evlet_installed_apps VALUES (1,?)', (json_text(after),))
+                tx.connection.ensure_table(INSTALLED_APPS)
+                tx.connection.run(qb.insert('evlet_installed_apps', id=1, manifest=json_text(after))
+                                  .on_conflict('id').do_update(manifest=qb.col('excluded.manifest')))
             app.database.close()
             # Detect source edits during registration before publishing the result.
             if {'apps': {package.name: package.locked() for package in packages}, 'evlet': state()} != after:

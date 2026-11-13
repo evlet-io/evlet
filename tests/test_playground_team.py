@@ -124,14 +124,14 @@ def test_employee_skill_levels_are_derived_and_delete_waits_for_their_reports(se
     schema = editor('GET', '/api/schema')[1]
     employee = next(model for model in schema['models'] if model['name'] == 'employee')
     assert {child['name']: child.get('read_only', False) for child in employee['children']} == {'skills': False, 'skill_levels': True}
-    # The manager has two direct reports, so the delete is refused and names them; nothing is deleted.
+    # The manager has two direct reports, so the reports_to Link refuses the delete; nothing is deleted.
     manager = f"/api/employee/{accounts['manager']}"
     status, refused, _ = editor('DELETE', manager, None, headers={b'if-match': editor('GET', manager)[2][b'etag']})
-    assert status == 422 and refused['fields']['_form'].startswith('Move their reports to another manager first: ')
+    assert status == 409, refused
     assert editor('GET', manager)[0] == 200
     # So is the member's (Sara Nasser reports to them); someone nobody reports to can go.
     status, refused, _ = editor('DELETE', url, None, headers={b'if-match': editor('GET', url)[2][b'etag']})
-    assert status == 422 and refused['fields'] == {'_form': 'Move their reports to another manager first: Sara Nasser'}
+    assert status == 409, refused
     outsider = f"/api/employee/{accounts['outsider']}"
     assert editor('DELETE', outsider, None, headers={b'if-match': editor('GET', outsider)[2][b'etag']})[0] == 204
 

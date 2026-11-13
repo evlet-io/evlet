@@ -146,6 +146,25 @@ def test_oversize_entries_are_refused_with_a_clear_message(secured):
     assert editor('PUT', path(record), {'changes': {'values': {'notes': 'x' * (1100 * 1024)}}, 'base_revision': revision})[0] == 413
 
 
+def test_reading_an_entry_opens_no_write_transaction(secured, monkeypatch):
+    from evlet import User
+    record, _ = project(secured)
+    other, _ = project(secured)
+    editor = client(secured, 'editor')
+    revision = opened(editor, record)
+    assert editor('PUT', path(record), {'changes': {'values': {'title': 'Mine'}, 'base': {'title': 'Plan'}}, 'base_revision': revision})[0] == 200
+    with secured.database._connection() as connection:
+        person = User(*connection.execute("SELECT id, username, role FROM evlet_users WHERE username='editor'").fetchone())
+    opened_writes = []
+    original = secured.database.transaction
+    monkeypatch.setattr(secured.database, 'transaction', lambda *args, **kwargs: opened_writes.append(1) or original(*args, **kwargs))
+    unsaved = secured.business.unsaved
+    status, read, _ = unsaved.get(person, Project, 'project', record.id)
+    assert status == 200 and read['entry']['changes']['values'] == {'title': 'Mine'} and read['entry']['stale'] is False
+    assert unsaved.get(person, Project, 'project', other.id)[1] == {'entry': None, 'dropped': []}
+    assert opened_writes == []
+
+
 def test_a_moved_record_is_stale_and_lost_access_drops_the_entry(secured):
     record, _ = project(secured)
     admin, editor = client(secured), client(secured, 'editor')

@@ -5,7 +5,7 @@ import os
 from pathlib import Path
 import sqlite3
 
-from evlet import (AddField, AddIndex, AlterField, Boolean, CreateModel, Currency, Database, Date, DateTime, Decimal, Image, Integer,
+from evlet import (AddField, AddIndex, AlterField, Boolean, CreateModel, State, Currency, Database, Date, DateTime, Decimal, Image, Integer,
                    Link, LongText, Migration, Model, Recompute, Registry, RenameField, RetireField, RichText, RunData, Select, Text)
 from .items import core_fields, item_fields
 from .models import Customer, Invoice, registry
@@ -231,6 +231,11 @@ migrations.append(Migration('0019_more_currencies',
     AlterField('customer', 'currency', Select(['AED', 'SAR', 'USD', 'EUR', 'INR', 'KWD', 'XCR'], required=True, default='AED')),
     AlterField('payment', 'currency', Select(['AED', 'SAR', 'USD', 'EUR', 'INR', 'KWD', 'XCR'], required=True, default='AED')),
 ))
+
+# Project Start and Complete became rules of a State (0.4.6): the column and its values stay as they are.
+migrations.append(Migration('0020_project_state', AlterField('project', 'status', State(
+    State.Step('planned', 'Planned'), State.Step('active', 'Active', color='blue'), State.Step('done', 'Done', color='green', lock=True)))))
+
 
 
 def legacy_registry():

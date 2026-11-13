@@ -46,21 +46,6 @@ def playground_routes(port=8000):
                           port=port, roots={'playground': Path(__file__).parent})
 
 
-def start_project(tx, user, project):
-    if project.status != 'planned':
-        raise ValidationError({'_form': 'Only a planned project can be started'})
-    tx.update(Project, project.id, status='active')
-
-
-def complete_project(tx, user, project):
-    if project.status != 'active':
-        raise ValidationError({'_form': 'Start the project before completing it'})
-    tasks = tx.list(ProjectTask, filters={'project': project.id}, limit=100)
-    if not tasks or any(not task.done for task in tasks):
-        raise ValidationError({'_form': 'Complete every task before completing the project'})
-    tx.update(Project, project.id, status='done', progress=100)
-
-
 def post_invoice(tx, user, invoice):
     """Post to ledger: the only writer of ledger entries, since LedgerEntry has Meta.api = "read". An
     invoice or entry dated in a closed period (Controls, Periods) is refused with the lock date."""
@@ -185,9 +170,7 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=N
         return jobs.enqueue(tx, 'rebuild_points', {}, user=user)
     app = Application(database, name="Evlet Playground", playground=True, auth=auth, policy=policy, routes=routes,
                       storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
-                      actions=(Action(Project, 'start', 'Start project', start_project),
-                               Action(Project, 'complete', 'Complete project', complete_project),
-                               Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress),
+                      actions=(Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress),
                                Action(Invoice, 'post', 'Post to ledger', post_invoice),
                                Action(Customer, 'award_points', 'Award 10 points', award_points),
                                Action(Customer, 'rebuild_points', 'Rebuild all points balances', queue_rebuild, roles=('admin',))),

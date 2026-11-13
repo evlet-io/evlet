@@ -82,6 +82,34 @@ expressions. A field compared with another field or `MISSING` keeps Python ident
 semantics; comparing a field with any other value in plain code raises
 `EXPRESSION_TRUTH_TEST` when truth-tested, so use `is` (`value is None`) there.
 
+### Helpers
+
+These helpers are shorthand. Each builds exactly the formula of its long form, so a model
+rewritten with them keeps its plan and formula hash, and saved documents need no
+recalculation. Import them from `evlet.calc`.
+
+| Helper | Same formula as |
+| --- | --- |
+| `choose(F("stage"), {"won": 100, "lost": 0}, default=10)` | `when(F("stage") == "won", 100, when(F("stage") == "lost", 0, 10))`. Cases are checked in the order written. Without `default`, an unmatched value gives null. |
+| `F("status").isin("new", "failed")`, or `isin(F("status"), "new", "failed")` | `(F("status") == "new") \| (F("status") == "failed")` |
+| `is_empty(F("won_on"))` | `F("won_on") == None` |
+| `has_value(F("contact"))` | `F("contact") != None` |
+| `least(a, b, ...)` | `when(a <= b, a, b)`, repeated for each further value |
+| `greatest(a, b, ...)` | `when(a >= b, a, b)`, repeated for each further value |
+| `absolute(x)` | `when(x < 0, -x, x)` |
+
+`is_empty` and `has_value` read better than `== None` and need no `# noqa: E711`. For a
+Boolean filter on rows, `.where(recurring=True)` is the same formula as
+`.where(row.recurring == True)`. `least`, `greatest` and `absolute` repeat their inputs in
+the formula, so very long inputs count more than once toward the 128-node limit.
+`absolute` is not called `abs` so importing it never hides Python's built-in `abs()`.
+
+```python
+probability = Percent(compute=choose(F("stage"), {"won": 100, "negotiation": 75, "proposal": 50},
+                                     default=0))
+payout = Currency(compute=least(F("claimed"), F("limit")))
+```
+
 Rounded shares are not reconciled automatically. Expose the difference as a named field
 and validate or display it:
 
@@ -188,6 +216,10 @@ Three Boolean expressions describe when an editable field applies, is required, 
 locked. They are the way forward; the legacy strings `visible_if`, `required_if` and
 `read_only_if` keep working for legacy documents.
 
+Slips, report filters and dialogs do not run finite expressions yet. Declaring `F(...)` in a
+`compute`, `initial` or rule on one of them is refused when the class is defined, with a message
+that names the field; use the string rules there for now.
+
 ```python
 class Deal(Model):
     stage = Select(("open", "won", "lost"), default="open")
@@ -262,9 +294,9 @@ Rules may read fields or Link paths the user cannot read; the server enforces th
   never a count. Avoid tight `max_rows` or `min_rows` on collections whose hidden row count
   must stay private.
 
-### Move guards and action availability
+### Rule guards and action availability
 
-`Move(..., when=...)` and `@action(..., available_when=...)` use the same language and are
+`State.Rule(..., when=...)` and `@action(..., available_when=...)` use the same language and are
 decided like `locked_when`: on the record as saved, in the write's transaction, with pending
 or error results blocking. They are compiled with the document at registration but are not
 entries of the shipped plan, so they do not change any plan or formula hash. A State field is
@@ -463,18 +495,21 @@ route first. Formula changes never backfill stored totals on their own; use the 
 migration operation ([model-engine.md](model-engine.md#recalculating-stored-values)) to
 recalculate them explicitly.
 
-Locked records and records with posted [effects](effects.md) are the exception. A locked
-record keeps its saved results on ordinary writes. A record with postings keeps them on
-every write, moves and actions included, and needs no recalculation request; asking for
-one is refused with 409 (`This record has postings. To change its totals, void or revise
-it.`). Its actions and moves may not change what those results read (409, naming the
-field). `Recompute` skips posted records only and reports how many it kept, so the effect
-rows a record posted always match its saved totals; a locked record that never posted is
-recalculated. An admin may include posted records for one migration run with
+Locked records and records with posted [effects](effects.md) are the exception. A record in
+a locked step keeps its saved results on ordinary writes. The draft preview and the record's
+detail follow the same rule, so they show the values a save would keep. A trusted Session write
+to a `derive()` model is the one difference: only postings keep its results, because hooks and
+app code write to a locked document and its derived values must follow. A record with postings
+keeps them on every write, moves and actions included, and needs no recalculation request;
+asking for one is refused with 409 (`This record has postings. To change its totals, move it out
+of its posted state.`). Its actions and moves may not change what those results read (409,
+naming the field). `Recompute` skips records with live postings, and records that posted and
+are in a final state, and reports how many it kept, so the effect rows a record posted always
+match its saved totals; a locked record that never posted is recalculated. An admin may include posted records for one migration run with
 `evlet migrate <instance> --recompute-posted`; each changed one is journaled with
-`"posted": true` ([model-engine.md](model-engine.md#recalculating-stored-values)). An admin
-can also unpost a posted record, correct it and repost it
-([states-actions.md](states-actions.md#unpost-and-repost)). Draft previews of a locked or posted record show the values a save keeps.
+`"posted": true` ([model-engine.md](model-engine.md#recalculating-stored-values)). A rule out
+of the posting state reverses the rows, after which the record can be corrected and posted
+again ([effects.md](effects.md#leaving-the-posting-state)). Draft previews of a locked or posted record show the values a save keeps.
 
 ## Permissions and the browser plan
 
@@ -520,9 +555,10 @@ is calculated`, not the general "One or more values are invalid".
 
 ## Browser engine
 
-`frontend/src/evlet/model/finite.ts` evaluates the same plan with no imports and no DOM. A `FiniteDocument` session offers `set`, `addRow`, `removeRow`, `replaceRows`,
-`reorder`, `moveRow`, nested `batch`, `observe`, `observeTable`, `explain`, `snapshot`
-and `dispose`, plus the host inputs `setToday`, `setLookups` and `lookupRequests`.
+`frontend/src/evlet/model/finite.ts` evaluates the same plan with no imports and no DOM. A
+`FiniteDocument` session offers `set`, `addRow`, `removeRow`, `reorder`, nested `batch`,
+`observe`, `snapshot` and `dispose`, plus the host inputs `setToday`, `setLookups` and
+`lookupRequests`.
 `ruleStates(handle)` returns `{field: {applies, required, locked}}` for a row's fields that
 declare rules, already resolved with the undecided rules above, and `observeRules(handle,
 listener)` calls the listener after each batch that changes one of them. A field the host sets
@@ -530,15 +566,36 @@ in a batch, or supplies with a new row, is touched for that batch: its suggestio
 replace it. Values supplied when a session is created count as touched for new rows only.
 Setting a field to the value it already has changes nothing. `ruleStates` reports a saved row's
 lock as decided when the session was loaded (refined by lookups and `setToday` until the first
-edit), like the server; after a successful save call `rebase()` so the saved state moves on. A batch publishes once; observers cannot mutate during publication
-(`REACTIVE_REENTRANCY`); an async batch callback is rejected. Python's
-`evlet.calc.Document` has the same commands, host inputs, `rule_states` and `rebase` in
-snake_case. Observation (`observe`, `observeTable`, `observeRules`), `explain` and `dispose`
-are browser-only, since the server settles a document once and reads its snapshot.
+edit), like the server. After a save the record is loaded again and gets a new session, so the
+saved state moves on. A batch publishes once; observers cannot mutate during publication
+(`REACTIVE_REENTRANCY`); a batch callback that returns a promise is rejected
+(`ASYNC_BATCH_UNSUPPORTED`).
+
+Every command checks its input before it changes anything, so a refused command (an unknown
+field, a repeated row key, a full table) leaves the document exactly as it was. Batches do not
+copy the document to undo a failure. If a batch callback throws after some commands ran, those
+commands are kept, the document settles and publishes once, and the error is thrown again. If
+settling itself fails, for example on the evaluation budget or the graph limit, the session is
+marked `broken` and refuses every later command; the record session then builds a new one from
+the current rows. Python's `Document.batch` follows the same rules.
+
+The browser checks a plan's shape (versions, limits, table limits, expression nodes and
+currency sources) before it uses it. It does not hash the plan again: the plan and its
+`model_schema_hash` come from the server in one response, a save sends the hash back, and the
+server refuses a save whose hash differs from its own plan.
+
+Python's `evlet.calc.Document` has the same commands, host inputs and `rule_states` in snake_case,
+plus `replace_rows`, which the server uses to apply a saved table. Observation (`observe`,
+`observeRules`) and `dispose` are browser-only, since the server settles a document once and
+reads its snapshot.
 
 Shared fixtures (`frontend/src/evlet/tests/finite-fixtures.json`) are generated by
 `scripts/generate_finite_fixtures.py` from Python plans and results. The browser replays
-them and must match snapshots, states, causes, revisions and evaluation counts.
+them and must match what users see: values, states, causes, rule states, Link lookup
+requests, refused commands and which results changed. Internal counters (formulas evaluated
+or skipped, budget steps, revision numbers) are not compared, so each engine may order its
+work its own way. Each engine has its own test that editing one row does not re-evaluate the
+other rows.
 
 ## Limits
 

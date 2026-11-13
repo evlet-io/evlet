@@ -51,9 +51,9 @@ class Contact(Model):
   Callable defaults run when a new record is constructed. A partial update keeps
   omitted values, including their original defaults.
 - A field validator receives the cleaned non-null value and raises `ValueError`
-  on rejection. Override `Model.validate()` for cross-field rules and raise
+  on rejection. Decorate a method with `@validate` for cross-field rules and raise
   `ValidationError({"field": "message"})`. Both creation and updates run validation.
-  `validate()` is for checks only: it runs last, after calculations, so a value it assigns
+  `@validate` is for checks only, and the record is read only while it runs: it runs last, after calculations, so a value it assigns
   skips cleaning, calculations and the save response. Values a document builds for itself go
   in `derive()` ([Derived values](#derived-values)).
   Records remain immutable snapshots; change them through the database API.
@@ -104,8 +104,8 @@ class Visit(Model):
         self.parts = parts
 ```
 
-* **When it runs.** On every write of the document (create, update, move, action, lifecycle
-  operation, revise copy) and every preview (`POST /api/_draft/{model}`), after the caller's
+* **When it runs.** On every write of the document (create, update, move, action) and every
+  preview (`POST /api/_draft/{model}`), after the caller's
   values are checked and fetched and before calculations. Formulas may read what it set; it
   cannot read their results. A locked or posted record keeps its derived values on the writes
   that keep its saved results, so `derive()` does not run there
@@ -169,16 +169,16 @@ class Visit(Model):
   `aggregate`; no write methods), for looking up linked records. Reads through it bypass
   permissions, as in any Python session. Because it cannot write, a lookup never starts
   another settlement.
-* **Its model.** `self.model` is the model class on every draft `derive()` and `before_close()`
+* **Its model.** `self.model` is the model class on every draft `derive()` and the hooks
   see, and on each row (`line.model` is the row model). Use it for class attributes and shared
   helpers instead of a registry of subclasses. A field, Table or class attribute named `model`
   takes its place.
 * **Trusted session writes.** App code that writes through the transaction session (an
-  action's or move run's `self.context.session`, a job's `tx`, `database.transaction()` of an
+  action's or a `@state` hook's `self.context.session`, a job's `tx`, `database.transaction()` of an
   application) gets the same derived values. `session.create`, `session.update` and
   `session.delete` of a model that declares `derive()`, or of one of its Table rows, write the
   record and then settle the saved document like any other write: `derive()`, cleaning and
-  validation (`validate()`), then store what changed, and return the settled record. It runs as
+  validation (`@validate`), then store what changed, and return the settled record. It runs as
   the engine, without roles or row scopes, like the session write itself. A failure raises and
   undoes that write even when the calling code catches it, and the rest of the transaction
   goes on.
@@ -283,7 +283,7 @@ class Visit(Model):
 | `Tags` | TEXT JSON array | at most 20 distinct tags (ignoring case) of 1 to 40 characters, without quotes, backslashes, commas or control characters; a text value is split on commas | `contains` matches one whole tag exactly, including case (duplicates are detected ignoring case); equality matches the whole list |
 | `MultiSelect` | TEXT JSON array, like `Tags` | some of its choices, each once, saved in the order of the choices | `contains` matches one choice; equality matches the whole list |
 | `Reference` | two columns `<name>_model`, `<name>_id`, no SQL foreign key; `index=True` indexes both columns together (not `unique`) | a registered model and a record that exists, checked when the value changes | equality with `{"model", "id"}` and `isnull` |
-| `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its `Move`s; at most one per root document; see [states-actions.md](states-actions.md) | text filters |
+| `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its rules; at most one per root document; see [states-actions.md](states-actions.md) | text filters |
 | `Sequence` | TEXT, null until assigned, unique with its scope fields | a document number such as `INV-{year}-{n:05}` written only by the engine on create or when a move enters `assign_on`; root documents only; see [sequences.md](sequences.md) | text filters |
 
 Every field takes `help_text=` and `tooltip=`, both text. Forms show `help_text` in grey under
@@ -325,8 +325,8 @@ class Line(Child):
     net = Currency(currency="currency_code", compute=F("qty") * F("price"))
 ```
 
-Any editable field may declare `editable_when_locked=True` so that ordinary writes can still
-change it while its document is in a locked State (for example remarks).
+Any editable field may declare `versioned=False` so that ordinary writes can still change it
+while its document is in a locked step (for example remarks).
 
 `Reference` is the field type; `Ref("parent.warehouse")` keeps meaning a declared path for
 defaults and filters. A reference cannot be unique, indexed,
@@ -378,9 +378,8 @@ rich text images). The field's value is that attachment's id: an `int` in Python
   image of another person, an image that was purged, and the same image in two fields of one record,
   each with a `ValidationError` on the field (422). A database without the application's file
   storage (a bare `Database`) refuses any image value.
-- **Duplicate and revisions.** `copy=` is always `False`: the browser's Duplicate leaves the image
-  out, because an image belongs to one record. `copy=True` is refused with a `ValueError`. A revision
-  (`revise`) gets its own copy of each Image field's image.
+- **Duplicate.** `copy=` is always `False`: the browser's Duplicate leaves the image out, because
+  an image belongs to one record. `copy=True` is refused with a `ValueError`.
 - **Journal and audit.** A change is journaled like any value, as the old and new ids.
 - **Deleting the record** deletes its images, from the HTTP route and from trusted Python
   (`tx.delete`). Files on disk or in object storage are reclaimed by the storage's `collect()`.
@@ -496,7 +495,7 @@ currency, so changing a currency's places never rewrites stored values: the larg
 them is refused while a stored amount in that currency has more places; `round_stored_money(app,
 code, places, actor=...)` is the explicit step that rounds those amounts half up and then lowers
 the places. Rounding changes stored values, so a document's total may no longer equal the sum of
-its rounded lines until it is recalculated; Revisions and the Journal keep what they recorded, and
+its rounded lines until it is recalculated; the Journal keeps what it recorded, and
 rows of append-only ledgers are never changed (the step refuses instead). Values still travel as
 decimal strings with at least 2 places: `"12.50"`, `"1.500"` reads `"1.50"`, `"0.12345"`.
 
@@ -538,8 +537,8 @@ class Quotation(Model):
     total = Decimal(scale=2, compute=lines.sum("amount"))
 ```
 
-- **Python sees real lines.** Iterating `self.lines` in `derive()`, actions, Move run methods,
-  postings (`rows` methods) and `changed()` yields only real rows, so existing code, `len()`,
+- **Python sees real lines.** Iterating `self.lines` in `derive()`, actions, hooks and
+  postings (`rows` methods) yields only real rows, so existing code, `len()`,
   `lines.sum(...)` and every finite calculation stay correct without changes. Required checks,
   field validation, defaults, fetches and `derive()` never see a section row.
 - **The grouping.** `self.lines.sections()` returns `(label, rows)` pairs in order. Rows above the
@@ -550,7 +549,7 @@ class Quotation(Model):
   for label, rows in self.lines.sections():
       ...  # ("Goods", (line,)), ("Services and charges", (line, line)), ("Later", ())
   ```
-- **Writing them from Python.** An action or run method that assigns the rows may name section
+- **Writing them from Python.** An action or hook that assigns the rows may name section
   rows as `{"section": "Goods"}` (a new one) or `{"id": ..., "section": "Goods"}` (one the Table
   holds). A list that names none keeps the existing sections: each stays above the first of its
   rows that is still there, so `self.lines = [line for line in self.lines if line.qty]` does not
@@ -605,7 +604,7 @@ checks as rows:
   also carries the section rows placed after the previous page's last row, and the last page those
   after all rows.
 - The Journal records `"sections": {"added", "renamed", "removed", "moved"}` under the Table in a
-  `created` or `changed` entry. A revise copies section rows as new section rows.
+  `created` or `changed` entry.
 
 ## Updates, deletes, and relationships
 
@@ -631,7 +630,7 @@ sessions. Reverse traversal uses ordinary filters on the referencing model.
 
 ## Record ids
 
-Every record has an `id` that never changes. Links, child rows, revisions, the journal and
+Every record has an `id` that never changes. Links, child rows, the journal and
 URLs all point to it.
 
 - **In storage** it is a 63-bit integer: 42 bits of milliseconds since 01-01-2026 UTC, then
@@ -652,14 +651,14 @@ URLs all point to it.
 ### Only Evlet makes ids
 
 Evlet draws the id of every new record itself, on every create path: HTTP, `context.create`,
-`tx.create`, `database.create`, table rows, copies and revisions, effect rows, data migrations,
+`tx.create`, `database.create`, table rows, copies, effect rows, data migrations,
 seeds and fixtures, Eva, tools, MCP and the Connector (which all write through the HTTP routes),
 and `self.context.session` in handlers. An `id` given by the caller is **refused**, never silently
 dropped, with `ValidationError({'id': 'The id is assigned by Evlet when the record is created and
 never changes; leave it out'})`, HTTP 422 over the API. Ignoring it would hide a bug: the caller
 would go on using an id that no row has. The same error refuses an id change on every update path:
 PATCH, `context.update`, `tx.update` (inside `tx.maintenance()` too), `context.move` values, and
-`self.id = ...` in an action or run method.
+`self.id = ...` in an action or hook.
 
 Table rows name their saved rows by `id` to update, keep or reorder them, as before. A row id that is
 not one of the parent's saved rows is refused, and a new row never takes the id it is given.
@@ -736,10 +735,9 @@ not declare a field with one of these names.
 
 **Filled on every write**, in the same statement as the write and so in the same transaction:
 
-- the record routes and the document pipeline (create, update, actions, moves, confirm and cancel),
+- the record routes and the document pipeline (create, update, actions and moves),
   under the person who sent them, an API key's user included;
 - the rows an [effect](effects.md) posts, under the person whose move posted them;
-- void, unpost and repost, which change only the State, and revise, whose copy is a new record;
 - trusted Python: `business.context(user)` writes under that user. A raw `Session` writes as the
   engine unless code sets `session.actor` to a user id first;
 - imports and data migrations, which write through `Session`.
@@ -935,8 +933,7 @@ A table that only trusted code writes, at high volume, is usually a [ledger mode
 `Meta.ledger = True` gives it an integer id and its declared columns only, and no surface at all.
 
 **`api = "read"`.** Every write route answers 403 "Receipt records are read only here. The
-application changes them.": create, update, delete, drafts, actions, moves, void, revise,
-unpost, repost, confirm, cancel, reopen, journal entries, attachments and filing a print. So
+application changes them.": create, update, delete, drafts, actions, moves, journal entries, attachments and filing a print. So
 do the MCP and Eva write tools, which call the same routes. The schema carries `"api": "read"`
 and every write permission as false, so screens show no New, Edit, Delete, actions or moves.
 Controls overrides cannot grant a write back: the rule is checked before any `Rule`. It is the
@@ -999,7 +996,7 @@ with business.context(user) as context, context.unlocked_periods("Fix a mistyped
     context.update(Invoice, invoice_id, posting_date="2026-03-11")
 ```
 
-How unpost and void date their mirror rows in a closed period is in
+How a rule leaving the posting state dates its mirror rows in a closed period is in
 [effects.md](effects.md#closed-periods).
 
 ## Explicit migrations
@@ -1144,8 +1141,7 @@ how to transform existing data. Changes to runtime defaults alone do not require
 
 `RetireField(model, name)` takes a field out of the models: remove it from `models.py` and the
 field leaves schema checks, the HTTP API and every screen. Its column and stored values stay, and
-the column becomes nullable so new records leave it empty. Data in revisions and the Journal is
-not touched. Use it whenever a field stops being used; nothing is lost.
+the column becomes nullable so new records leave it empty. Data in the Journal is not touched. Use it whenever a field stops being used; nothing is lost.
 
 `DropField(model, name)` later deletes the column and its values. It needs a field an earlier
 migration retired (not one retired in the same migration, so the values can be checked or moved
@@ -1175,7 +1171,7 @@ defensive mode refuses this, and the migration then fails with a message saying 
 `minimum`, `maximum` and `required` may change too (below). `unique`, `index` and Link targets may not.
 Each stored row is converted and validated against the new definition inside the migration
 transaction; a value that overflows or fails (a bound, a length) names the record and rolls the
-batch back. Revisions and Journal entries keep the values they recorded.
+batch back. Journal entries keep the values they recorded.
 
 ```python
 from evlet import AlterField, Decimal, Migration
@@ -1244,8 +1240,8 @@ By default the session refuses writes to confirmed, tracked, posted and finite-v
 trusted session does. A step that must change them is declared `RunData(function, maintenance=True)`
 and runs only when the admin allows it for that run: `evlet migrate <instance> --allow-maintenance`,
 or `migrate(migrations, allow_maintenance=True)` from Python. Each such step writes a Controls
-audit row (actor `cli`, area `Records`, the migration's name) and logs a warning. Their revisions
-and Journal entries stay as they were; the step writes no Journal entries of its own.
+audit row (actor `cli`, area `Records`, the migration's name) and logs a warning. Their Journal entries
+stay as they were; the step writes no Journal entries of its own.
 
 The migration checksum covers the function's source and `maintenance`, so keep the function in
 the migration file and never change it once applied. Any exception rolls back the whole run,
@@ -1276,9 +1272,10 @@ fields whose `applies_when` is false are stored as null, matching the results. S
 models without tables or query sources. Like other operations, Recompute is not replayed
 when a database adopts its baseline (a fresh database, or one initialized without history).
 
-Recompute skips records whose document has posted effects, voided or not: they keep their
-saved results and their recorded formula version, so the effect rows they posted still match.
-A locked record that never posted, or was unposted, is recalculated and moves to the active
+Recompute skips records whose document has live posted effects, and records that posted and are
+in a final state (void): they keep their saved results and their recorded formula version, so the
+effect rows they posted, and their reversals, still match. A locked record that never posted, or
+left the posting state for a step that is not final, is recalculated and moves to the active
 formula version. `database.migrate()` returns the applied migration names as a list whose
 `skipped` attribute counts the records kept, and the `evlet.migrations` logger reports the
 count. Each record Recompute changes gets a `recomputed` [Journal](journal.md) entry when its
@@ -1288,11 +1285,10 @@ Posted records are recalculated only when an admin asks for it, for one migratio
 `evlet migrate <instance> --recompute-posted`, or `database.migrate(migrations,
 recompute_posted=True)` from Python. The default stays off. Every Recompute operation of that
 run then includes posted records; each one that changes gets a `recomputed` entry with
-`"posted": true` (void records are still skipped, so their rows and reversals keep matching
-them), the run writes one Controls audit row (actor `cli`, area `Records`) and logs
+`"posted": true`, the run writes one Controls audit row (actor `cli`, area `Records`) and logs
 a warning with the count, and `posted` on the returned list counts them. Their effect rows are
-not rewritten, so `evlet effects check` reports them as `changed` until each is unposted and
-reposted. Browser requests never run migrations, so Controls has no such switch.
+not rewritten, so `evlet effects check` reports them as `changed` until each leaves the posting
+state and enters it again. Browser requests never run migrations, so Controls has no such switch.
 
 Back up existing databases before migrating. A backup is not a rollback command:
 restoring it after later writes would discard those newer writes.
@@ -1320,7 +1316,7 @@ invoices, post a ledger, or trigger workflow actions. Existing email remains Tex
 so this upgrade does not retroactively reject previously accepted addresses.
 
 Stored rows are decoded without rerunning custom field validators or
-`Model.validate()`. New records and updates still run those rules, so an older row
+`@validate` checks. New records and updates still run those rules, so an older row
 can be read and repaired after a rule is tightened. Text fields reject NUL
 characters. Text collation and Unicode case folding
 can differ by database backend; explicit nullable ordering is shared.

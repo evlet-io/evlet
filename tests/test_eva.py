@@ -142,12 +142,12 @@ def test_changes_that_need_approval_wait_then_run_exactly_once(eva):
     app, script = eva
     editor = client(app, 'editor')
     project = editor('POST', '/api/project', {'title': 'Approval'})[1]
-    script.turns = [[call('run_action', model='project', id=project['id'], action='start')], [('text', 'Started.')]]
+    script.turns = [[call('change_state', model='project', id=project['id'], rule='start')], [('text', 'Started.')]]
     conversation, run, stored = ask(app, editor, 'Start the Approval project')
     assert stored['runs'][0]['status'] == 'awaiting_approval'
     [activity] = stored['runs'][0]['activities']
     approval = activity['approval']
-    assert activity['status'] == 'approval' and approval['summary']['action'] == 'start' and approval['summary']['record']['title'] == 'Approval'
+    assert activity['status'] == 'approval' and approval['summary']['operation'] == 'start' and approval['summary']['record']['title'] == 'Approval'
     assert editor('GET', f"/api/project/{project['id']}")[1]['status'] == 'planned'
     # Another message waits until this is answered; an API key or assistant can't answer it.
     assert editor('POST', f'/api/_eva/conversations/{conversation}/messages', {'text': 'And?'})[0] == 409
@@ -159,7 +159,7 @@ def test_changes_that_need_approval_wait_then_run_exactly_once(eva):
     assert stored['runs'][0]['activities'][0]['status'] == 'done'
     assert editor('GET', f"/api/project/{project['id']}")[1]['status'] == 'active'
     assert editor('POST', f"/api/_tools/approvals/{approval['id']}", {'approve': True})[0] == 409
-    log = client(app)('GET', '/api/_controls/tools?tool=run_action')[1]['items']
+    log = client(app)('GET', '/api/_controls/tools?tool=change_state')[1]['items']
     assert [item['outcome'] for item in log] == ['ok', 'approval']
 
 
@@ -521,3 +521,49 @@ def test_the_provider_client_never_follows_a_redirect():
         for server in (target, provider):
             server.shutdown()
             server.server_close()
+
+
+NEVER = {'create': 'never', 'update': 'never', 'confirm': 'never', 'action': 'never'}
+
+
+def test_after_reading_stored_data_every_change_asks_even_when_set_to_never(eva):
+    app, script = eva
+    setting(app, 'eva.confirm', NEVER)
+    editor = client(app, 'editor')
+    # Only creating, with nothing read: the setting holds and nobody is asked.
+    script.turns = [[call('create_record', model='project', values={'title': 'Fresh'})], [('text', 'Created.')]]
+    _, _, stored = ask(app, editor, 'Create a project called Fresh')
+    assert stored['runs'][0]['status'] == 'completed' and stored['runs'][0]['activities'][0]['status'] == 'done'
+    project = editor('GET', '/api/project?q=Fresh')[1]['items'][0]
+    # Reading the record first: its text could steer Eva, so the update waits for the person.
+    script.turns = [[call('get_record', model='project', id=project['id'])],
+                    [call('update_record', model='project', id=project['id'], values={'title': 'Steered'})], [('text', 'Updated.')]]
+    conversation, run, stored = ask(app, editor, 'Summarise Fresh')
+    assert stored['runs'][0]['status'] == 'awaiting_approval'
+    approval = stored['runs'][0]['activities'][-1]['approval']
+    assert approval['tool'] == 'update_record' and approval['summary']['after_reading'] is True
+    assert editor('GET', f"/api/project/{project['id']}")[1]['title'] == 'Fresh'
+    editor('POST', f"/api/_tools/approvals/{approval['id']}", {'approve': False})
+    app.business.eva.wait(run)
+    # A later message in the same chat still has that record text in view, so it asks too.
+    script.turns = [[call('create_record', model='project', values={'title': 'Second'})], [('text', 'Created.')]]
+    _, run, stored = ask(app, editor, 'Create Second', conversation)
+    assert stored['runs'][-1]['status'] == 'awaiting_approval'
+    assert editor('GET', '/api/project?q=Second')[1]['total'] == 0
+
+
+def test_a_scheduled_task_that_read_stored_data_skips_its_changes(eva):
+    app, script = eva
+    setting(app, 'eva.confirm', NEVER)
+    editor = client(app, 'editor')
+    project = editor('POST', '/api/project', {'title': 'Nightly'})[1]
+    task = editor('POST', '/api/_eva/tasks', {'name': 'Tidy', 'instructions': 'Tidy projects', 'cron': '0 9 * * 1', 'timezone': 'Asia/Dubai'})[1]
+    with app.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_eva_tasks SET allow_changes=1 WHERE id=?', (task['id'],))
+    script.turns = [[call('list_records', model='project')],
+                    [call('update_record', model='project', id=project['id'], values={'title': 'Changed at night'})], [('text', 'Done.')]]
+    assert editor('POST', f"/api/_eva/tasks/{task['id']}/run", {})[0] == 202
+    assert app.business.jobs.run_one()
+    assert editor('GET', f"/api/project/{project['id']}")[1]['title'] == 'Nightly'
+    failed = json.loads(script.requests[2]['messages'][-1]['content'])
+    assert failed['status'] == 403 and 'scheduled run' in failed['error']

@@ -101,7 +101,7 @@ class Field:
                  label=None, help_text="", tooltip="", placeholder="", suffix="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
-                 initial=None, applies_when=None, required_when=None, locked_when=None, editable_when_locked=False, tracking="value",
+                 initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking="value",
                  panel=True, copy=True, column=True):
         if tracking not in ("value", "mask", "exclude"):
             raise ValueError("tracking is value, mask or exclude")
@@ -160,12 +160,13 @@ class Field:
             raise ValueError("A field that may not apply cannot be required; use required_when instead")
         if required_when is not None and required_if is not None or locked_when is not None and read_only_if is not None:
             raise ValueError("Use required_when or required_if, and locked_when or read_only_if, not both")
-        if type(editable_when_locked) is not bool:
-            raise ValueError("editable_when_locked must be a boolean")
-        if editable_when_locked and (compute is not None or query is not None):
-            raise ValueError("Calculated fields are read only; editable_when_locked applies to editable fields")
-        # A locked State still lets ordinary writes change this field (for example remarks).
-        self.editable_when_locked = editable_when_locked
+        if type(versioned) is not bool:
+            raise ValueError("versioned must be a boolean")
+        if not versioned and (compute is not None or query is not None):
+            raise ValueError("Calculated fields are read only; versioned=False applies to editable fields")
+        # versioned=False: where the document is in its process, not what it says. Editable in a locked
+        # state, outside releases and their hash, and kept by a restore.
+        self.versioned = versioned
         if compute is not None or query is not None:
             self.read_only = True
 
@@ -215,6 +216,11 @@ class Field:
     def __or__(self, other): return _expr('or', self, other)
     def __ror__(self, other): return _expr('or', other, self)
     def __invert__(self): return _expr('not', self)
+
+    def isin(self, *choices):
+        """A finite expression: true when this field equals one of the choices."""
+        from .calc import isin
+        return isin(self, *choices)
 
     def clean(self, value):
         if value is MISSING:
@@ -569,81 +575,6 @@ class Select(Text):
 
     def metadata(self):
         return {**super().metadata(), "choices": list(self.choices), **({"colors": dict(self.colors)} if self.colors else {})}
-
-
-class State(Select):
-    """A Select whose value changes only through its moves (and, later, engine operations).
-
-    Ordinary writes may create a record in the default state and never set the value. `locked`
-    states refuse ordinary writes to the record and its Table rows, `final` states have no moves
-    out and `voidable` names the states a void (and a revise) may start from. A State with voidable
-    states must have a "void" state that is locked and final. `cancelled` names final states that
-    mean the record was called off, such as cancelled or lost; it only describes them, for display.
-
-    `show` is how the record page draws it: "badge" (a status badge in the header, the default),
-    "bar" (the stage bar, for pipelines such as draft, submitted, approved) or "none".
-    """
-    OPTIONS = ("label", "help_text", "tooltip", "placeholder", "hidden", "index", "max_length", "colors", "panel", "copy", "column")
-    SHOW = ("badge", "bar", "none")
-
-    def __init__(self, choices, *, default=MISSING, moves=(), locked=(), final=(), voidable=(), cancelled=(),
-                 show="badge", **kwargs):
-        from .declarations import Move
-        if set(kwargs) - set(self.OPTIONS):
-            raise ValueError("State takes choices, default, moves, locked, final, voidable, cancelled, show and " + ", ".join(self.OPTIONS))
-        if show not in self.SHOW:
-            raise ValueError('State show is "badge", "bar" or "none"')
-        self.show = show
-        if default is MISSING and isinstance(choices, (list, tuple)) and choices:
-            default = choices[0]
-        super().__init__(choices, default=default, required=True, read_only=True, **kwargs)
-        if default not in self.choices:
-            raise ValueError("A State default must be one of its states")
-        groups = {}
-        for name, value in (("locked", locked), ("final", final), ("voidable", voidable), ("cancelled", cancelled)):
-            if isinstance(value, str) or not isinstance(value, (list, tuple)) or len(set(value)) != len(value):
-                raise ValueError(f"State {name} must be a list of distinct state names")
-            if set(value) - set(self.choices):
-                raise ValueError(f"State {name} names an unknown state: " + ", ".join(sorted(set(value) - set(self.choices))))
-            groups[name] = tuple(value)
-        self.locked, self.final, self.voidable = groups["locked"], groups["final"], groups["voidable"]
-        self.cancelled = groups["cancelled"]
-        if set(self.cancelled) - set(self.final):
-            raise ValueError("State cancelled names a state that is not final: "
-                             + ", ".join(sorted(set(self.cancelled) - set(self.final))) + "; cancelled states must be final")
-        if set(self.voidable) - set(self.locked) or set(self.voidable) & set(self.final):
-            raise ValueError("Voidable states must be locked and not final")
-        # A void moves the record to the state named "void", which keeps it locked and ends its life.
-        if self.voidable and ("void" not in self.choices or "void" not in self.locked or "void" not in self.final):
-            raise ValueError('A State with voidable states needs a "void" state that is locked and final')
-        if not isinstance(moves, (list, tuple)) or any(not isinstance(move, Move) for move in moves):
-            raise ValueError("State moves must be a list of Move declarations")
-        self.moves, pairs = tuple(moves), set()
-        for move in self.moves:
-            unknown = {*move.sources, move.to} - set(self.choices)
-            if unknown:
-                raise ValueError(f"Move {move.label!r} names an unknown state: " + ", ".join(sorted(unknown)))
-            if set(move.sources) & set(self.final):
-                raise ValueError(f"Move {move.label!r} leaves a final state; final states have no moves out")
-            if self.voidable and move.to == "void":
-                raise ValueError(f'Move {move.label!r} goes to "void"; with voidable states a record is voided only '
-                                 'through void() with a reason, so the engine can reverse its effects and record it')
-            for source in move.sources:
-                if (source, move.to) in pairs:
-                    raise ValueError(f"Declare one move from {source} to {move.to}")
-                pairs.add((source, move.to))
-
-    @property
-    def cancelled_states(self):
-        """The declared cancelled states, plus "void" on a State with voidable states."""
-        return self.cancelled + (("void",) if self.voidable and "void" not in self.cancelled else ())
-
-    def move(self, current, to):
-        """The declared move from the current state to `to`, or None."""
-        return next((move for move in self.moves if current in move.sources and move.to == to), None)
-
-    def metadata(self):
-        return {**super().metadata(), "state": True}
 
 
 class Email(Text):

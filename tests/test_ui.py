@@ -2,7 +2,7 @@ import pytest
 from test_business import secured, hashed, client, http  # noqa: F401
 
 
-def test_revision_checks_prevent_stale_update_delete_and_action(secured):
+def test_revision_checks_prevent_stale_update_delete_and_move(secured):
     c = client(secured)
     record = c(
         "POST",
@@ -18,7 +18,7 @@ def test_revision_checks_prevent_stale_update_delete_and_action(secured):
     for method, suffix, body in [
         ("PATCH", "", {"title": "Stale"}),
         ("DELETE", "", None),
-        ("POST", "/actions/start", {}),
+        ("POST", "/moves/start", {}),
     ]:
         assert c(method, path + suffix, body, headers={b"if-match": revision})[0] == 409
     _, latest, headers = c("GET", path)

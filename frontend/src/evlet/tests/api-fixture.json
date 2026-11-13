@@ -4807,7 +4807,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
+    "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7"
    },
    "_deletable": false,
    "_effects": [
@@ -4826,16 +4826,39 @@
    "_moves": [
     {
      "allowed": false,
+     "key": "mark_paid",
      "label": "Mark paid",
      "reason": "Your role cannot use this move",
      "to": "paid"
+    },
+    {
+     "allowed": false,
+     "key": "reopen",
+     "label": "Reopen",
+     "reason": "Your role cannot use this move",
+     "remark": {
+      "label": null,
+      "mode": "required",
+      "required": true
+     },
+     "to": "draft"
+    },
+    {
+     "allowed": true,
+     "key": "void",
+     "label": "Void",
+     "remark": {
+      "label": "Reason",
+      "mode": "required",
+      "required": true
+     },
+     "to": "void"
     }
    ],
-   "_revise": {
-    "allowed": true
-   },
-   "_void": {
-    "allowed": true
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
    },
    "children": {
     "lines": [
@@ -4863,13 +4886,11 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "Paid 500.00 on 2026-11-10",
-   "revised_by": null,
-   "revises": null,
    "status": "issued",
    "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"710e4714871611b49e595ee7c000d81a0e3dad3b5d6b675d64bf80b9f42d5c8c\"",
+  "etag": "\"b6be86ac64eab4dc12dcf32292150ee41a2f0242cab0db6822e8d7d0c54710e4\"",
   "status": 200
  },
  "invoice_admin_session": {
@@ -5005,17 +5026,16 @@
    "_moves": [
     {
      "allowed": true,
+     "key": "issue",
      "label": "Issue",
+     "primary": true,
      "to": "issued"
     }
    ],
-   "_revise": {
-    "allowed": false,
-    "reason": "This record cannot be revised in its current state"
-   },
-   "_void": {
-    "allowed": false,
-    "reason": "This record cannot be voided in its current state"
+   "_version": {
+    "number": null,
+    "released": false,
+    "state": null
    },
    "children": {
     "lines": [
@@ -5043,13 +5063,11 @@
    "outstanding": "0.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "revised_by": null,
-   "revises": null,
    "status": "draft",
    "title": "0000000000003",
    "total": "2680.00"
   },
-  "etag": "\"62845e589422f8ab72f81e07cd2209b38f5770c9fb833afe6bb7e4d8de12e31d\"",
+  "etag": "\"dd42113b6e02e86e6ddf117fe66bc61f34afc93b85438f27327251283ae14b63\"",
   "status": 200
  },
  "invoice_draft_blocked": {
@@ -5090,18 +5108,17 @@
    "_moves": [
     {
      "allowed": false,
+     "key": "issue",
      "label": "Issue",
+     "primary": true,
      "reason": "The condition for this move is not met",
      "to": "issued"
     }
    ],
-   "_revise": {
-    "allowed": false,
-    "reason": "This record cannot be revised in its current state"
-   },
-   "_void": {
-    "allowed": false,
-    "reason": "This record cannot be voided in its current state"
+   "_version": {
+    "number": null,
+    "released": false,
+    "state": null
    },
    "children": {
     "lines": []
@@ -5114,13 +5131,11 @@
    "outstanding": "0.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "revised_by": null,
-   "revises": null,
    "status": "draft",
    "title": "0000000000003",
    "total": "0.00"
   },
-  "etag": "\"e91b1c1b703bc047b71776273087f7a9652bc010d56b93a1bf99ae360376a154\"",
+  "etag": "\"629d90bfec3ec4c94d226ad41e607b4d1d3868157043d2b8d7329e711f83f5b1\"",
   "status": 200
  },
  "invoice_draft_journal": {
@@ -5128,19 +5143,19 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.494Z",
+     "at": "2026-11-13T17:06:18.362Z",
      "data": {
       "action": "added",
       "id": 1,
       "name": "signed-copy.pdf",
       "size": 5
      },
-     "id": 13,
+     "id": 14,
      "kind": "file"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.476Z",
+     "at": "2026-11-13T17:06:18.355Z",
      "data": {
       "fields": {
        "total": {
@@ -5197,12 +5212,12 @@
        }
       }
      },
-     "id": 12,
+     "id": 13,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.463Z",
+     "at": "2026-11-13T17:06:18.347Z",
      "data": {
       "fields": {
        "customer": {
@@ -5235,7 +5250,7 @@
        }
       }
      },
-     "id": 11,
+     "id": 12,
      "kind": "created"
     }
    ],
@@ -5272,7 +5287,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
+    "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7"
    },
    "_deletable": false,
    "_effects": [
@@ -5291,16 +5306,39 @@
    "_moves": [
     {
      "allowed": false,
+     "key": "mark_paid",
      "label": "Mark paid",
      "reason": "Your role cannot use this move",
      "to": "paid"
+    },
+    {
+     "allowed": false,
+     "key": "reopen",
+     "label": "Reopen",
+     "reason": "Your role cannot use this move",
+     "remark": {
+      "label": null,
+      "mode": "required",
+      "required": true
+     },
+     "to": "draft"
+    },
+    {
+     "allowed": true,
+     "key": "void",
+     "label": "Void",
+     "remark": {
+      "label": "Reason",
+      "mode": "required",
+      "required": true
+     },
+     "to": "void"
     }
    ],
-   "_revise": {
-    "allowed": true
-   },
-   "_void": {
-    "allowed": true
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
    },
    "children": {
     "lines": [
@@ -5328,13 +5366,11 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "revised_by": null,
-   "revises": null,
    "status": "issued",
    "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"135f613b06d62972702b3a03b62d75972c387bb67722f8865f10d55ec8b59ffa\"",
+  "etag": "\"4d91d096e3c8d18f7714ee4f08f19c2bde21c073cb71769d10eaf890620cbbbc\"",
   "status": 200
  },
  "invoice_issued_detail": {
@@ -5375,16 +5411,39 @@
    "_moves": [
     {
      "allowed": false,
+     "key": "mark_paid",
      "label": "Mark paid",
      "reason": "Your role cannot use this move",
      "to": "paid"
+    },
+    {
+     "allowed": false,
+     "key": "reopen",
+     "label": "Reopen",
+     "reason": "Your role cannot use this move",
+     "remark": {
+      "label": null,
+      "mode": "required",
+      "required": true
+     },
+     "to": "draft"
+    },
+    {
+     "allowed": true,
+     "key": "void",
+     "label": "Void",
+     "remark": {
+      "label": "Reason",
+      "mode": "required",
+      "required": true
+     },
+     "to": "void"
     }
    ],
-   "_revise": {
-    "allowed": true
-   },
-   "_void": {
-    "allowed": true
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
    },
    "children": {
     "lines": [
@@ -5412,13 +5471,11 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "revised_by": null,
-   "revises": null,
    "status": "issued",
    "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"135f613b06d62972702b3a03b62d75972c387bb67722f8865f10d55ec8b59ffa\"",
+  "etag": "\"4d91d096e3c8d18f7714ee4f08f19c2bde21c073cb71769d10eaf890620cbbbc\"",
   "status": 200
  },
  "invoice_journal": {
@@ -5426,62 +5483,62 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-12T10:28:59.541Z",
+     "at": "2026-11-13T17:06:18.385Z",
      "data": {
       "direction": "out",
       "party": null,
       "subject": "Balance due",
       "text": "Payment reminder logged"
      },
-     "id": 22,
+     "id": 23,
      "kind": "message"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.539Z",
+     "at": "2026-11-13T17:06:18.384Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
       "text": "Send the statement"
      },
      "done": null,
-     "id": 21,
+     "id": 22,
      "kind": "follow_up"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.537Z",
+     "at": "2026-11-13T17:06:18.383Z",
      "data": {
-      "follow_up": 19,
+      "follow_up": 20,
       "text": "Balance due by the end of the month"
      },
-     "id": 20,
+     "id": 21,
      "kind": "follow_up_done"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.535Z",
+     "at": "2026-11-13T17:06:18.382Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
       "text": "Call about the balance"
      },
-     "done": 20,
-     "id": 19,
+     "done": 21,
+     "id": 20,
      "kind": "follow_up"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.532Z",
+     "at": "2026-11-13T17:06:18.381Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
-     "id": 18,
+     "id": 19,
      "kind": "note"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.514Z",
+     "at": "2026-11-13T17:06:18.374Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -5491,22 +5548,22 @@
        }
       }
      },
-     "id": 17,
+     "id": 18,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.505Z",
+     "at": "2026-11-13T17:06:18.368Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
      },
-     "id": 16,
+     "id": 17,
      "kind": "number"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.505Z",
+     "at": "2026-11-13T17:06:18.368Z",
      "data": {
       "targets": [
        {
@@ -5517,12 +5574,12 @@
        }
       ]
      },
-     "id": 15,
+     "id": 16,
      "kind": "effects"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.505Z",
+     "at": "2026-11-13T17:06:18.368Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5536,26 +5593,28 @@
       },
       "from": "draft",
       "move": "Issue",
+      "release": 0,
       "to": "issued"
      },
-     "id": 14,
-     "kind": "moved"
+     "id": 15,
+     "kind": "moved",
+     "rule": "issue"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.494Z",
+     "at": "2026-11-13T17:06:18.362Z",
      "data": {
       "action": "added",
       "id": 1,
       "name": "signed-copy.pdf",
       "size": 5
      },
-     "id": 13,
+     "id": 14,
      "kind": "file"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.476Z",
+     "at": "2026-11-13T17:06:18.355Z",
      "data": {
       "fields": {
        "total": {
@@ -5612,12 +5671,12 @@
        }
       }
      },
-     "id": 12,
+     "id": 13,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.463Z",
+     "at": "2026-11-13T17:06:18.347Z",
      "data": {
       "fields": {
        "customer": {
@@ -5650,7 +5709,7 @@
        }
       }
      },
-     "id": 11,
+     "id": 12,
      "kind": "created"
     }
    ],
@@ -5667,14 +5726,14 @@
  "invoice_journal_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-12T10:28:59.535Z",
+   "at": "2026-11-13T17:06:18.382Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
     "text": "Call about the balance"
    },
    "done": null,
-   "id": 19,
+   "id": 20,
    "kind": "follow_up"
   },
   "etag": null,
@@ -5683,12 +5742,12 @@
  "invoice_journal_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-12T10:28:59.537Z",
+   "at": "2026-11-13T17:06:18.383Z",
    "data": {
-    "follow_up": 19,
+    "follow_up": 20,
     "text": "Balance due by the end of the month"
    },
-   "id": 20,
+   "id": 21,
    "kind": "follow_up_done"
   },
   "etag": null,
@@ -5697,11 +5756,11 @@
  "invoice_journal_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-12T10:28:59.532Z",
+   "at": "2026-11-13T17:06:18.381Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
-   "id": 18,
+   "id": 19,
    "kind": "note"
   },
   "etag": null,
@@ -5746,6 +5805,111 @@
    "total": 3
   },
   "etag": null,
+  "status": 200
+ },
+ "invoice_locked": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": true,
+     "label": "Record payment",
+     "name": "record_payment"
+    }
+   ],
+   "_audit": {
+    "created_at": "2026-11-04T08:21:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:24:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
+   "_deletable": false,
+   "_effects": [
+    {
+     "balanced": true,
+     "reversals": 0,
+     "rows": 3,
+     "target": "ledgerentry"
+    }
+   ],
+   "_journal": {
+    "count": 4,
+    "open_follow_ups": 0
+   },
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": false,
+     "key": "mark_paid",
+     "label": "Mark paid",
+     "reason": "Your role cannot use this move",
+     "to": "paid"
+    },
+    {
+     "allowed": false,
+     "key": "reopen",
+     "label": "Reopen",
+     "reason": "Your role cannot use this move",
+     "remark": {
+      "label": null,
+      "mode": "required",
+      "required": true
+     },
+     "to": "draft"
+    },
+    {
+     "allowed": true,
+     "key": "void",
+     "label": "Void",
+     "remark": {
+      "label": "Reason",
+      "mode": "required",
+      "required": true
+     },
+     "to": "void"
+    }
+   ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": "0000000000003",
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": "0000000000004",
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": "0000000000001",
+   "due_on": "2026-12-01",
+   "id": "0000000000002",
+   "name": null,
+   "number": "INV-2026-00002",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "status": "issued",
+   "title": "INV-2026-00002",
+   "total": "2680.00"
+  },
+  "etag": "\"b71c2632c2eacaa3258ad01d6f46d49f52844df9abef0a03ceeef429e523a8aa\"",
   "status": 200
  },
  "invoice_measures": {
@@ -5828,191 +5992,7 @@
   "etag": null,
   "status": 200
  },
- "invoice_related_revisions": {
-  "body": {
-   "items": [],
-   "limit": 10,
-   "offset": 0,
-   "total": 0
-  },
-  "etag": null,
-  "status": 200
- },
- "invoice_repost": {
-  "body": {
-   "_actions": [
-    {
-     "allowed": true,
-     "label": "Record payment",
-     "name": "record_payment"
-    }
-   ],
-   "_audit": {
-    "created_at": "2026-11-04T08:45:00.000Z",
-    "created_by": {
-     "id": 2,
-     "name": "sara"
-    },
-    "modified_at": "2026-11-04T08:56:00.000Z",
-    "modified_by": {
-     "id": 1,
-     "name": "Administrator"
-    }
-   },
-   "_calculation": {
-    "language": "finite-v1",
-    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
-   },
-   "_deletable": false,
-   "_effects": [
-    {
-     "balanced": true,
-     "reversals": 3,
-     "rows": 6,
-     "target": "ledgerentry"
-    }
-   ],
-   "_journal": {
-    "count": 9,
-    "open_follow_ups": 0
-   },
-   "_locked": true,
-   "_moves": [
-    {
-     "allowed": true,
-     "label": "Mark paid",
-     "to": "paid"
-    }
-   ],
-   "_revise": {
-    "allowed": true
-   },
-   "_unpost": {
-    "allowed": true
-   },
-   "_void": {
-    "allowed": true
-   },
-   "children": {
-    "lines": [
-     {
-      "amount": "2500.00",
-      "id": "0000000000009",
-      "item": "Support hours",
-      "qty": "10.0000",
-      "rate": "250.00"
-     },
-     {
-      "amount": "180.00",
-      "id": "000000000000a",
-      "item": "Licence",
-      "qty": "2.0000",
-      "rate": "90.00"
-     }
-    ]
-   },
-   "customer": "0000000000001",
-   "due_on": "2026-12-01",
-   "id": "0000000000005",
-   "name": null,
-   "number": "INV-2026-00004",
-   "outstanding": "2680.00",
-   "posting_date": "2026-11-01",
-   "remarks": "",
-   "revised_by": null,
-   "revises": null,
-   "status": "issued",
-   "title": "INV-2026-00004",
-   "total": "2680.00"
-  },
-  "etag": "\"473208bb963be7647de3ba636f667a2ff2f4ee6802cc17af43649baa645ea409\"",
-  "status": 200
- },
- "invoice_revise_before": {
-  "body": {
-   "_actions": [
-    {
-     "allowed": true,
-     "label": "Record payment",
-     "name": "record_payment"
-    }
-   ],
-   "_audit": {
-    "created_at": "2026-11-04T08:21:00.000Z",
-    "created_by": {
-     "id": 2,
-     "name": "sara"
-    },
-    "modified_at": "2026-11-04T08:24:00.000Z",
-    "modified_by": {
-     "id": 2,
-     "name": "sara"
-    }
-   },
-   "_deletable": false,
-   "_effects": [
-    {
-     "balanced": true,
-     "reversals": 0,
-     "rows": 3,
-     "target": "ledgerentry"
-    }
-   ],
-   "_journal": {
-    "count": 4,
-    "open_follow_ups": 0
-   },
-   "_locked": true,
-   "_moves": [
-    {
-     "allowed": false,
-     "label": "Mark paid",
-     "reason": "Your role cannot use this move",
-     "to": "paid"
-    }
-   ],
-   "_revise": {
-    "allowed": true
-   },
-   "_void": {
-    "allowed": true
-   },
-   "children": {
-    "lines": [
-     {
-      "amount": "2500.00",
-      "id": "0000000000003",
-      "item": "Support hours",
-      "qty": "10.0000",
-      "rate": "250.00"
-     },
-     {
-      "amount": "180.00",
-      "id": "0000000000004",
-      "item": "Licence",
-      "qty": "2.0000",
-      "rate": "90.00"
-     }
-    ]
-   },
-   "customer": "0000000000001",
-   "due_on": "2026-12-01",
-   "id": "0000000000002",
-   "name": null,
-   "number": "INV-2026-00002",
-   "outstanding": "2680.00",
-   "posting_date": "2026-11-01",
-   "remarks": "",
-   "revised_by": null,
-   "revises": null,
-   "status": "issued",
-   "title": "INV-2026-00002",
-   "total": "2680.00"
-  },
-  "etag": "\"ba30d8552cf47eb938f3358107a10717b8b361ec408238874c7ef5b4d9303d75\"",
-  "status": 200
- },
- "invoice_revised_original": {
+ "invoice_reopen": {
   "body": {
    "_actions": [
     {
@@ -6023,16 +6003,20 @@
     }
    ],
    "_audit": {
-    "created_at": "2026-11-04T08:21:00.000Z",
+    "created_at": "2026-11-04T08:38:00.000Z",
     "created_by": {
      "id": 2,
      "name": "sara"
     },
-    "modified_at": "2026-11-04T08:38:00.000Z",
+    "modified_at": "2026-11-04T08:48:00.000Z",
     "modified_by": {
-     "id": 2,
-     "name": "sara"
+     "id": 1,
+     "name": "Administrator"
     }
+   },
+   "_calculation": {
+    "language": "finite-v1",
+    "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7"
    },
    "_deletable": false,
    "_effects": [
@@ -6047,105 +6031,20 @@
     "count": 7,
     "open_follow_ups": 0
    },
-   "_locked": true,
-   "_moves": [],
-   "_revise": {
-    "allowed": false,
-    "reason": "This record already has a revision"
-   },
-   "_void": {
-    "allowed": false,
-    "reason": "This record cannot be voided in its current state"
-   },
-   "children": {
-    "lines": [
-     {
-      "amount": "2500.00",
-      "id": "0000000000003",
-      "item": "Support hours",
-      "qty": "10.0000",
-      "rate": "250.00"
-     },
-     {
-      "amount": "180.00",
-      "id": "0000000000004",
-      "item": "Licence",
-      "qty": "2.0000",
-      "rate": "90.00"
-     }
-    ]
-   },
-   "customer": "0000000000001",
-   "due_on": "2026-12-01",
-   "id": "0000000000002",
-   "name": null,
-   "number": "INV-2026-00002",
-   "outstanding": "2680.00",
-   "posting_date": "2026-11-01",
-   "remarks": "",
-   "revised_by": "0000000000004",
-   "revises": null,
-   "status": "void",
-   "title": "INV-2026-00002",
-   "total": "2680.00"
-  },
-  "etag": "\"4d4c527109da0bf72e36366311f173d7f4c40a4fbbc288b04fe7e57efffe20d5\"",
-  "status": 200
- },
- "invoice_revision": {
-  "body": {
-   "_actions": [
-    {
-     "allowed": false,
-     "label": "Record payment",
-     "name": "record_payment",
-     "reason": "The condition for this action is not met"
-    }
-   ],
-   "_audit": {
-    "created_at": "2026-11-04T08:42:00.000Z",
-    "created_by": {
-     "id": 2,
-     "name": "sara"
-    },
-    "modified_at": "2026-11-04T08:42:00.000Z",
-    "modified_by": {
-     "id": 2,
-     "name": "sara"
-    }
-   },
-   "_calculation": {
-    "language": "finite-v1",
-    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
-   },
-   "_effects": [
-    {
-     "balanced": true,
-     "reversals": 0,
-     "rows": 0,
-     "target": "ledgerentry"
-    }
-   ],
-   "_journal": {
-    "count": 1,
-    "open_follow_ups": 0
-   },
    "_locked": false,
    "_moves": [
     {
      "allowed": true,
+     "key": "issue",
      "label": "Issue",
+     "primary": true,
      "to": "issued"
     }
    ],
-   "_original": "0000000000002",
-   "_revise": {
-    "allowed": false,
-    "reason": "This record cannot be revised in its current state"
-   },
-   "_void": {
-    "allowed": false,
-    "reason": "This record cannot be voided in its current state"
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
    },
    "children": {
     "lines": [
@@ -6169,18 +6068,234 @@
    "due_on": "2026-12-01",
    "id": "0000000000004",
    "name": null,
-   "number": null,
+   "number": "INV-2026-00004",
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "revised_by": null,
-   "revises": "0000000000002",
    "status": "draft",
-   "title": "0000000000004",
+   "title": "INV-2026-00004",
    "total": "2680.00"
   },
-  "etag": "\"248f94e2a1eeabce10b861ed7f0d7e1c90bfa7249af88b6150212bcbd2096392\"",
-  "status": 201
+  "etag": "\"1c31ba3e39fa4ae1729b176c3d5b7b558c1ab70126009c06327d3577e99eb2ac\"",
+  "status": 200
+ },
+ "invoice_reopen_before": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": true,
+     "label": "Record payment",
+     "name": "record_payment"
+    }
+   ],
+   "_audit": {
+    "created_at": "2026-11-04T08:38:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:41:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
+   "_deletable": false,
+   "_effects": [
+    {
+     "balanced": true,
+     "reversals": 0,
+     "rows": 3,
+     "target": "ledgerentry"
+    }
+   ],
+   "_journal": {
+    "count": 4,
+    "open_follow_ups": 0
+   },
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": true,
+     "key": "mark_paid",
+     "label": "Mark paid",
+     "to": "paid"
+    },
+    {
+     "allowed": true,
+     "key": "reopen",
+     "label": "Reopen",
+     "remark": {
+      "label": null,
+      "mode": "required",
+      "required": true
+     },
+     "to": "draft"
+    },
+    {
+     "allowed": true,
+     "key": "void",
+     "label": "Void",
+     "remark": {
+      "label": "Reason",
+      "mode": "required",
+      "required": true
+     },
+     "to": "void"
+    }
+   ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": "0000000000007",
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": "0000000000008",
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": "0000000000001",
+   "due_on": "2026-12-01",
+   "id": "0000000000004",
+   "name": null,
+   "number": "INV-2026-00004",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "status": "issued",
+   "title": "INV-2026-00004",
+   "total": "2680.00"
+  },
+  "etag": "\"8316a321290b8b6122d75882f7b917b07cf5a1bafd551fb9ac03e688995958cf\"",
+  "status": 200
+ },
+ "invoice_reopen_editor": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": true,
+     "label": "Record payment",
+     "name": "record_payment"
+    }
+   ],
+   "_audit": {
+    "created_at": "2026-11-04T08:38:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:41:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
+   "_deletable": false,
+   "_effects": [
+    {
+     "balanced": true,
+     "reversals": 0,
+     "rows": 3,
+     "target": "ledgerentry"
+    }
+   ],
+   "_journal": {
+    "count": 4,
+    "open_follow_ups": 0
+   },
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": false,
+     "key": "mark_paid",
+     "label": "Mark paid",
+     "reason": "Your role cannot use this move",
+     "to": "paid"
+    },
+    {
+     "allowed": false,
+     "key": "reopen",
+     "label": "Reopen",
+     "reason": "Your role cannot use this move",
+     "remark": {
+      "label": null,
+      "mode": "required",
+      "required": true
+     },
+     "to": "draft"
+    },
+    {
+     "allowed": true,
+     "key": "void",
+     "label": "Void",
+     "remark": {
+      "label": "Reason",
+      "mode": "required",
+      "required": true
+     },
+     "to": "void"
+    }
+   ],
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": "0000000000007",
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": "0000000000008",
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": "0000000000001",
+   "due_on": "2026-12-01",
+   "id": "0000000000004",
+   "name": null,
+   "number": "INV-2026-00004",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "status": "issued",
+   "title": "INV-2026-00004",
+   "total": "2680.00"
+  },
+  "etag": "\"8316a321290b8b6122d75882f7b917b07cf5a1bafd551fb9ac03e688995958cf\"",
+  "status": 200
+ },
+ "invoice_reopen_remark_missing": {
+  "body": {
+   "error": "Validation failed",
+   "fields": {
+    "remark": "Reopen needs a remark"
+   }
+  },
+  "etag": null,
+  "status": 422
  },
  "invoice_schema": {
   "body": {
@@ -6823,7 +6938,6 @@
       "outstanding": {},
       "posting_date": {},
       "remarks": {},
-      "revises": {},
       "status": {},
       "title": {},
       "total": {
@@ -6837,7 +6951,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776",
+      "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -6934,11 +7048,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:9acc5df75c905eb1088ee1d09c12ff4a16738f17293014ace3df19b7f60f8e9c",
+       "model_schema_hash": "sha256:c7b97a3a7f64830851bd84c9e65577b2ae943d4bef42d66d29f60aa2a5777c44",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "invoice",
-       "source_plan_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776",
+       "source_plan_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7",
        "tables": {
         "$root": {
          "fields": {
@@ -7024,17 +7138,6 @@
            "scale": null,
            "stored": true,
            "type": "text"
-          },
-          "revises": {
-           "computed": false,
-           "default": null,
-           "kind": "link",
-           "maximum": null,
-           "minimum": "1",
-           "required": false,
-           "scale": 0,
-           "stored": true,
-           "type": "link"
           },
           "status": {
            "computed": false,
@@ -7308,6 +7411,11 @@
         "paid",
         "void"
        ],
+       "colors": {
+        "issued": "green",
+        "paid": "teal",
+        "void": "rose"
+       },
        "compute": null,
        "default": "draft",
        "default_kind": "static",
@@ -7415,7 +7523,6 @@
        "compute": null,
        "default": "",
        "default_kind": "static",
-       "editable_when_locked": true,
        "help_text": "",
        "hidden": false,
        "index": false,
@@ -7441,36 +7548,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
-      },
-      {
-       "applies_when": null,
-       "compute": null,
-       "default_kind": "none",
-       "help_text": "",
-       "hidden": false,
-       "index": true,
-       "initial": null,
-       "label": "Revises",
-       "locked_when": null,
-       "maximum": null,
-       "minimum": 1,
-       "name": "revises",
-       "operators": [
-        "eq",
-        "ne",
-        "in",
-        "nin",
-        "isnull"
-       ],
-       "placeholder": "",
-       "read_only": true,
-       "required": false,
-       "required_when": null,
-       "stored": true,
-       "target": "invoice",
-       "type": "link",
-       "unique": false
+       "unique": false,
+       "versioned": false
       },
       {
        "applies_when": null,
@@ -7571,8 +7650,7 @@
        "fields": [
         "total",
         "outstanding",
-        "remarks",
-        "revises"
+        "remarks"
        ],
        "flow": "rows",
        "label": "Amounts"
@@ -7655,7 +7733,6 @@
       "total",
       "outstanding",
       "remarks",
-      "revises",
       "name",
       "title",
       "lines.item",
@@ -7666,11 +7743,9 @@
      "permissions": {
       "create": true,
       "delete": false,
-      "repost": false,
-      "revise": true,
-      "unpost": false,
-      "update": true,
-      "void": true
+      "release": false,
+      "restore": false,
+      "update": true
      },
      "plural": "Invoices",
      "relations": [
@@ -7683,20 +7758,9 @@
        "order": [
         "-paid_on"
        ]
-      },
-      {
-       "label": "Revisions",
-       "limit": 10,
-       "link": "revises",
-       "model": "invoice",
-       "name": "invoice.revises",
-       "order": [
-        "-id"
-       ]
       }
      ],
      "resource": "invoice",
-     "revisable": true,
      "search_fields": [
       "number",
       "title",
@@ -7704,31 +7768,23 @@
      ],
      "sources": {},
      "state": {
-      "cancelled": [
-       "void"
-      ],
       "default": "draft",
       "field": "status",
-      "final": [
-       "paid",
-       "void"
-      ],
-      "locked": [
-       "issued",
-       "paid",
-       "void"
-      ],
-      "moves": [
+      "rules": [
        {
+        "by": [
+         "admin",
+         "editor"
+        ],
         "from": [
          "draft"
         ],
         "guarded": true,
+        "key": "issue",
         "label": "Issue",
-        "roles": [
-         "admin",
-         "editor"
-        ],
+        "primary": true,
+        "reject": false,
+        "remark": null,
         "to": "issued",
         "when": {
          "$expr": "gt",
@@ -7747,32 +7803,98 @@
         }
        },
        {
+        "by": [
+         "admin"
+        ],
         "from": [
          "issued"
         ],
         "guarded": false,
+        "key": "mark_paid",
         "label": "Mark paid",
-        "roles": [
+        "primary": false,
+        "reject": false,
+        "remark": null,
+        "to": "paid",
+        "when": null
+       },
+       {
+        "by": [
          "admin"
         ],
-        "to": "paid",
+        "from": [
+         "issued"
+        ],
+        "guarded": false,
+        "key": "reopen",
+        "label": "Reopen",
+        "primary": false,
+        "reject": false,
+        "remark": {
+         "label": null,
+         "mode": "required"
+        },
+        "to": "draft",
+        "when": null
+       },
+       {
+        "by": [
+         "admin",
+         "editor"
+        ],
+        "from": [
+         "issued"
+        ],
+        "guarded": false,
+        "key": "void",
+        "label": "Void",
+        "primary": false,
+        "reject": false,
+        "remark": {
+         "label": "Reason",
+         "mode": "required"
+        },
+        "to": "void",
         "when": null
        }
       ],
       "show": "bar",
-      "states": [
-       "draft",
-       "issued",
-       "paid",
-       "void"
-      ],
-      "voidable": [
-       "issued"
+      "steps": [
+       {
+        "color": null,
+        "final": false,
+        "key": "draft",
+        "label": "Draft",
+        "lock": false,
+        "release": false
+       },
+       {
+        "color": "green",
+        "final": false,
+        "key": "issued",
+        "label": "Issued",
+        "lock": true,
+        "release": true
+       },
+       {
+        "color": "teal",
+        "final": true,
+        "key": "paid",
+        "label": "Paid",
+        "lock": true,
+        "release": false
+       },
+       {
+        "color": "rose",
+        "final": true,
+        "key": "void",
+        "label": "Void",
+        "lock": true,
+        "release": false
+       }
       ]
      },
-     "title_field": "number",
-     "unpostable": true,
-     "voidable": true
+     "title_field": "number"
     },
     {
      "actions": [],
@@ -8286,279 +8408,6 @@
   "etag": null,
   "status": 200
  },
- "invoice_unpost": {
-  "body": {
-   "_actions": [
-    {
-     "allowed": false,
-     "label": "Record payment",
-     "name": "record_payment",
-     "reason": "The condition for this action is not met"
-    }
-   ],
-   "_audit": {
-    "created_at": "2026-11-04T08:45:00.000Z",
-    "created_by": {
-     "id": 2,
-     "name": "sara"
-    },
-    "modified_at": "2026-11-04T08:52:00.000Z",
-    "modified_by": {
-     "id": 1,
-     "name": "Administrator"
-    }
-   },
-   "_calculation": {
-    "language": "finite-v1",
-    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
-   },
-   "_deletable": false,
-   "_effects": [
-    {
-     "balanced": true,
-     "reversals": 3,
-     "rows": 3,
-     "target": "ledgerentry"
-    }
-   ],
-   "_journal": {
-    "count": 6,
-    "open_follow_ups": 0
-   },
-   "_locked": false,
-   "_moves": [
-    {
-     "allowed": true,
-     "label": "Issue",
-     "to": "issued"
-    }
-   ],
-   "_repost": {
-    "allowed": true
-   },
-   "_revise": {
-    "allowed": false,
-    "reason": "This record cannot be revised in its current state"
-   },
-   "_void": {
-    "allowed": false,
-    "reason": "This record cannot be voided in its current state"
-   },
-   "children": {
-    "lines": [
-     {
-      "amount": "2500.00",
-      "id": "0000000000009",
-      "item": "Support hours",
-      "qty": "10.0000",
-      "rate": "250.00"
-     },
-     {
-      "amount": "180.00",
-      "id": "000000000000a",
-      "item": "Licence",
-      "qty": "2.0000",
-      "rate": "90.00"
-     }
-    ]
-   },
-   "customer": "0000000000001",
-   "due_on": "2026-12-01",
-   "id": "0000000000005",
-   "name": null,
-   "number": "INV-2026-00004",
-   "outstanding": "2680.00",
-   "posting_date": "2026-11-01",
-   "remarks": "",
-   "revised_by": null,
-   "revises": null,
-   "status": "draft",
-   "title": "INV-2026-00004",
-   "total": "2680.00"
-  },
-  "etag": "\"4f1b038cea66b83cb737e1b0f7207d805a89ae3fb3134765710f8674572a96d5\"",
-  "status": 200
- },
- "invoice_unpost_before": {
-  "body": {
-   "_actions": [
-    {
-     "allowed": true,
-     "label": "Record payment",
-     "name": "record_payment"
-    }
-   ],
-   "_audit": {
-    "created_at": "2026-11-04T08:45:00.000Z",
-    "created_by": {
-     "id": 2,
-     "name": "sara"
-    },
-    "modified_at": "2026-11-04T08:48:00.000Z",
-    "modified_by": {
-     "id": 2,
-     "name": "sara"
-    }
-   },
-   "_deletable": false,
-   "_effects": [
-    {
-     "balanced": true,
-     "reversals": 0,
-     "rows": 3,
-     "target": "ledgerentry"
-    }
-   ],
-   "_journal": {
-    "count": 4,
-    "open_follow_ups": 0
-   },
-   "_locked": true,
-   "_moves": [
-    {
-     "allowed": true,
-     "label": "Mark paid",
-     "to": "paid"
-    }
-   ],
-   "_revise": {
-    "allowed": true
-   },
-   "_unpost": {
-    "allowed": true
-   },
-   "_void": {
-    "allowed": true
-   },
-   "children": {
-    "lines": [
-     {
-      "amount": "2500.00",
-      "id": "0000000000009",
-      "item": "Support hours",
-      "qty": "10.0000",
-      "rate": "250.00"
-     },
-     {
-      "amount": "180.00",
-      "id": "000000000000a",
-      "item": "Licence",
-      "qty": "2.0000",
-      "rate": "90.00"
-     }
-    ]
-   },
-   "customer": "0000000000001",
-   "due_on": "2026-12-01",
-   "id": "0000000000005",
-   "name": null,
-   "number": "INV-2026-00004",
-   "outstanding": "2680.00",
-   "posting_date": "2026-11-01",
-   "remarks": "",
-   "revised_by": null,
-   "revises": null,
-   "status": "issued",
-   "title": "INV-2026-00004",
-   "total": "2680.00"
-  },
-  "etag": "\"473208bb963be7647de3ba636f667a2ff2f4ee6802cc17af43649baa645ea409\"",
-  "status": 200
- },
- "invoice_unpost_editor": {
-  "body": {
-   "_actions": [
-    {
-     "allowed": true,
-     "label": "Record payment",
-     "name": "record_payment"
-    }
-   ],
-   "_audit": {
-    "created_at": "2026-11-04T08:45:00.000Z",
-    "created_by": {
-     "id": 2,
-     "name": "sara"
-    },
-    "modified_at": "2026-11-04T08:48:00.000Z",
-    "modified_by": {
-     "id": 2,
-     "name": "sara"
-    }
-   },
-   "_deletable": false,
-   "_effects": [
-    {
-     "balanced": true,
-     "reversals": 0,
-     "rows": 3,
-     "target": "ledgerentry"
-    }
-   ],
-   "_journal": {
-    "count": 4,
-    "open_follow_ups": 0
-   },
-   "_locked": true,
-   "_moves": [
-    {
-     "allowed": false,
-     "label": "Mark paid",
-     "reason": "Your role cannot use this move",
-     "to": "paid"
-    }
-   ],
-   "_revise": {
-    "allowed": true
-   },
-   "_void": {
-    "allowed": true
-   },
-   "children": {
-    "lines": [
-     {
-      "amount": "2500.00",
-      "id": "0000000000009",
-      "item": "Support hours",
-      "qty": "10.0000",
-      "rate": "250.00"
-     },
-     {
-      "amount": "180.00",
-      "id": "000000000000a",
-      "item": "Licence",
-      "qty": "2.0000",
-      "rate": "90.00"
-     }
-    ]
-   },
-   "customer": "0000000000001",
-   "due_on": "2026-12-01",
-   "id": "0000000000005",
-   "name": null,
-   "number": "INV-2026-00004",
-   "outstanding": "2680.00",
-   "posting_date": "2026-11-01",
-   "remarks": "",
-   "revised_by": null,
-   "revises": null,
-   "status": "issued",
-   "title": "INV-2026-00004",
-   "total": "2680.00"
-  },
-  "etag": "\"473208bb963be7647de3ba636f667a2ff2f4ee6802cc17af43649baa645ea409\"",
-  "status": 200
- },
- "invoice_unpost_reason_missing": {
-  "body": {
-   "error": "Validation failed",
-   "fields": {
-    "reason": "Give a reason"
-   }
-  },
-  "etag": null,
-  "status": 422
- },
  "invoice_viewer_detail": {
   "body": {
    "_actions": [],
@@ -8583,18 +8432,40 @@
    "_moves": [
     {
      "allowed": false,
+     "key": "mark_paid",
      "label": "Mark paid",
      "reason": "Your role cannot use this move",
      "to": "paid"
+    },
+    {
+     "allowed": false,
+     "key": "reopen",
+     "label": "Reopen",
+     "reason": "Your role cannot use this move",
+     "remark": {
+      "label": null,
+      "mode": "required",
+      "required": true
+     },
+     "to": "draft"
+    },
+    {
+     "allowed": false,
+     "key": "void",
+     "label": "Void",
+     "reason": "Your role cannot use this move",
+     "remark": {
+      "label": "Reason",
+      "mode": "required",
+      "required": true
+     },
+     "to": "void"
     }
    ],
-   "_revise": {
-    "allowed": false,
-    "reason": "Your role cannot revise this record"
-   },
-   "_void": {
-    "allowed": false,
-    "reason": "Your role cannot void this record"
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
    },
    "children": {
     "lines": [
@@ -8622,13 +8493,11 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "Paid 500.00 on 2026-11-10",
-   "revised_by": null,
-   "revises": null,
    "status": "issued",
    "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"710e4714871611b49e595ee7c000d81a0e3dad3b5d6b675d64bf80b9f42d5c8c\"",
+  "etag": "\"b6be86ac64eab4dc12dcf32292150ee41a2f0242cab0db6822e8d7d0c54710e4\"",
   "status": 200
  },
  "invoice_viewer_journal": {
@@ -8636,62 +8505,62 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-12T10:28:59.541Z",
+     "at": "2026-11-13T17:06:18.385Z",
      "data": {
       "direction": "out",
       "party": null,
       "subject": "Balance due",
       "text": "Payment reminder logged"
      },
-     "id": 22,
+     "id": 23,
      "kind": "message"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.539Z",
+     "at": "2026-11-13T17:06:18.384Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
       "text": "Send the statement"
      },
      "done": null,
-     "id": 21,
+     "id": 22,
      "kind": "follow_up"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.537Z",
+     "at": "2026-11-13T17:06:18.383Z",
      "data": {
-      "follow_up": 19,
+      "follow_up": 20,
       "text": "Balance due by the end of the month"
      },
-     "id": 20,
+     "id": 21,
      "kind": "follow_up_done"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.535Z",
+     "at": "2026-11-13T17:06:18.382Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
       "text": "Call about the balance"
      },
-     "done": 20,
-     "id": 19,
+     "done": 21,
+     "id": 20,
      "kind": "follow_up"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.532Z",
+     "at": "2026-11-13T17:06:18.381Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
-     "id": 18,
+     "id": 19,
      "kind": "note"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.514Z",
+     "at": "2026-11-13T17:06:18.374Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8701,30 +8570,30 @@
        }
       }
      },
-     "id": 17,
+     "id": 18,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.505Z",
+     "at": "2026-11-13T17:06:18.368Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
      },
-     "id": 16,
+     "id": 17,
      "kind": "number"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.505Z",
+     "at": "2026-11-13T17:06:18.368Z",
      "data": {},
-     "id": 15,
+     "id": 16,
      "kind": "changed",
      "partial": true
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.505Z",
+     "at": "2026-11-13T17:06:18.368Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8738,26 +8607,28 @@
       },
       "from": "draft",
       "move": "Issue",
+      "release": 0,
       "to": "issued"
      },
-     "id": 14,
-     "kind": "moved"
+     "id": 15,
+     "kind": "moved",
+     "rule": "issue"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.494Z",
+     "at": "2026-11-13T17:06:18.362Z",
      "data": {
       "action": "added",
       "id": 1,
       "name": "signed-copy.pdf",
       "size": 5
      },
-     "id": 13,
+     "id": 14,
      "kind": "file"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.476Z",
+     "at": "2026-11-13T17:06:18.355Z",
      "data": {
       "fields": {
        "total": {
@@ -8814,12 +8685,12 @@
        }
       }
      },
-     "id": 12,
+     "id": 13,
      "kind": "changed"
     },
     {
      "actor": 2,
-     "at": "2026-11-12T10:28:59.463Z",
+     "at": "2026-11-13T17:06:18.347Z",
      "data": {
       "fields": {
        "customer": {
@@ -8852,7 +8723,7 @@
        }
       }
      },
-     "id": 11,
+     "id": 12,
      "kind": "created"
     }
    ],
@@ -9122,7 +8993,6 @@
       "outstanding": {},
       "posting_date": {},
       "remarks": {},
-      "revises": {},
       "status": {},
       "title": {},
       "total": {
@@ -9136,7 +9006,7 @@
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776",
+      "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -9233,11 +9103,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:9acc5df75c905eb1088ee1d09c12ff4a16738f17293014ace3df19b7f60f8e9c",
+       "model_schema_hash": "sha256:c7b97a3a7f64830851bd84c9e65577b2ae943d4bef42d66d29f60aa2a5777c44",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "invoice",
-       "source_plan_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776",
+       "source_plan_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7",
        "tables": {
         "$root": {
          "fields": {
@@ -9323,17 +9193,6 @@
            "scale": null,
            "stored": true,
            "type": "text"
-          },
-          "revises": {
-           "computed": false,
-           "default": null,
-           "kind": "link",
-           "maximum": null,
-           "minimum": "1",
-           "required": false,
-           "scale": 0,
-           "stored": true,
-           "type": "link"
           },
           "status": {
            "computed": false,
@@ -9591,6 +9450,11 @@
         "paid",
         "void"
        ],
+       "colors": {
+        "issued": "green",
+        "paid": "teal",
+        "void": "rose"
+       },
        "compute": null,
        "default": "draft",
        "default_kind": "static",
@@ -9698,7 +9562,6 @@
        "compute": null,
        "default": "",
        "default_kind": "static",
-       "editable_when_locked": true,
        "help_text": "",
        "hidden": false,
        "index": false,
@@ -9724,36 +9587,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
-      },
-      {
-       "applies_when": null,
-       "compute": null,
-       "default_kind": "none",
-       "help_text": "",
-       "hidden": false,
-       "index": true,
-       "initial": null,
-       "label": "Revises",
-       "locked_when": null,
-       "maximum": null,
-       "minimum": 1,
-       "name": "revises",
-       "operators": [
-        "eq",
-        "ne",
-        "in",
-        "nin",
-        "isnull"
-       ],
-       "placeholder": "",
-       "read_only": true,
-       "required": false,
-       "required_when": null,
-       "stored": true,
-       "target": "invoice",
-       "type": "link",
-       "unique": false
+       "unique": false,
+       "versioned": false
       },
       {
        "applies_when": null,
@@ -9848,8 +9683,7 @@
        "fields": [
         "total",
         "outstanding",
-        "remarks",
-        "revises"
+        "remarks"
        ],
        "flow": "rows",
        "label": "Amounts"
@@ -9932,7 +9766,6 @@
       "total",
       "outstanding",
       "remarks",
-      "revises",
       "name",
       "title",
       "lines.item",
@@ -9943,11 +9776,9 @@
      "permissions": {
       "create": false,
       "delete": false,
-      "repost": false,
-      "revise": false,
-      "unpost": false,
-      "update": false,
-      "void": false
+      "release": false,
+      "restore": false,
+      "update": false
      },
      "plural": "Invoices",
      "relations": [
@@ -9960,20 +9791,9 @@
        "order": [
         "-paid_on"
        ]
-      },
-      {
-       "label": "Revisions",
-       "limit": 10,
-       "link": "revises",
-       "model": "invoice",
-       "name": "invoice.revises",
-       "order": [
-        "-id"
-       ]
       }
      ],
      "resource": "invoice",
-     "revisable": true,
      "search_fields": [
       "number",
       "title",
@@ -9981,31 +9801,23 @@
      ],
      "sources": {},
      "state": {
-      "cancelled": [
-       "void"
-      ],
       "default": "draft",
       "field": "status",
-      "final": [
-       "paid",
-       "void"
-      ],
-      "locked": [
-       "issued",
-       "paid",
-       "void"
-      ],
-      "moves": [
+      "rules": [
        {
+        "by": [
+         "admin",
+         "editor"
+        ],
         "from": [
          "draft"
         ],
         "guarded": true,
+        "key": "issue",
         "label": "Issue",
-        "roles": [
-         "admin",
-         "editor"
-        ],
+        "primary": true,
+        "reject": false,
+        "remark": null,
         "to": "issued",
         "when": {
          "$expr": "gt",
@@ -10024,32 +9836,98 @@
         }
        },
        {
+        "by": [
+         "admin"
+        ],
         "from": [
          "issued"
         ],
         "guarded": false,
+        "key": "mark_paid",
         "label": "Mark paid",
-        "roles": [
+        "primary": false,
+        "reject": false,
+        "remark": null,
+        "to": "paid",
+        "when": null
+       },
+       {
+        "by": [
          "admin"
         ],
-        "to": "paid",
+        "from": [
+         "issued"
+        ],
+        "guarded": false,
+        "key": "reopen",
+        "label": "Reopen",
+        "primary": false,
+        "reject": false,
+        "remark": {
+         "label": null,
+         "mode": "required"
+        },
+        "to": "draft",
+        "when": null
+       },
+       {
+        "by": [
+         "admin",
+         "editor"
+        ],
+        "from": [
+         "issued"
+        ],
+        "guarded": false,
+        "key": "void",
+        "label": "Void",
+        "primary": false,
+        "reject": false,
+        "remark": {
+         "label": "Reason",
+         "mode": "required"
+        },
+        "to": "void",
         "when": null
        }
       ],
       "show": "bar",
-      "states": [
-       "draft",
-       "issued",
-       "paid",
-       "void"
-      ],
-      "voidable": [
-       "issued"
+      "steps": [
+       {
+        "color": null,
+        "final": false,
+        "key": "draft",
+        "label": "Draft",
+        "lock": false,
+        "release": false
+       },
+       {
+        "color": "green",
+        "final": false,
+        "key": "issued",
+        "label": "Issued",
+        "lock": true,
+        "release": true
+       },
+       {
+        "color": "teal",
+        "final": true,
+        "key": "paid",
+        "label": "Paid",
+        "lock": true,
+        "release": false
+       },
+       {
+        "color": "rose",
+        "final": true,
+        "key": "void",
+        "label": "Void",
+        "lock": true,
+        "release": false
+       }
       ]
      },
-     "title_field": "number",
-     "unpostable": true,
-     "voidable": true
+     "title_field": "number"
     },
     {
      "actions": [],
@@ -10571,7 +10449,7 @@
      "id": 2,
      "name": "sara"
     },
-    "modified_at": "2026-11-04T08:17:00.000Z",
+    "modified_at": "2026-11-04T08:20:00.000Z",
     "modified_by": {
      "id": 2,
      "name": "sara"
@@ -10579,7 +10457,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:70720dfae115428f9b3cb067e3b55111140a93d29306316848f6a151c4f3f776"
+    "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7"
    },
    "_deletable": false,
    "_effects": [
@@ -10591,17 +10469,15 @@
     }
    ],
    "_journal": {
-    "count": 6,
+    "count": 7,
     "open_follow_ups": 0
    },
    "_locked": true,
    "_moves": [],
-   "_revise": {
-    "allowed": true
-   },
-   "_void": {
-    "allowed": false,
-    "reason": "This record cannot be voided in its current state"
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
    },
    "children": {
     "lines": [
@@ -10629,13 +10505,11 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "revised_by": null,
-   "revises": null,
    "status": "void",
    "title": "INV-2026-00001",
    "total": "2680.00"
   },
-  "etag": "\"09ad6c200207f429b0d8d7a504da81f8e527f83a4a9217ed45abc66addb40b0e\"",
+  "etag": "\"14064fd9b9274b517334b202aa9e7b2e340335b1e894d129e5e6aaa1f487e37c\"",
   "status": 200
  },
  "invoice_void_before": {
@@ -10676,16 +10550,39 @@
    "_moves": [
     {
      "allowed": false,
+     "key": "mark_paid",
      "label": "Mark paid",
      "reason": "Your role cannot use this move",
      "to": "paid"
+    },
+    {
+     "allowed": false,
+     "key": "reopen",
+     "label": "Reopen",
+     "reason": "Your role cannot use this move",
+     "remark": {
+      "label": null,
+      "mode": "required",
+      "required": true
+     },
+     "to": "draft"
+    },
+    {
+     "allowed": true,
+     "key": "void",
+     "label": "Void",
+     "remark": {
+      "label": "Reason",
+      "mode": "required",
+      "required": true
+     },
+     "to": "void"
     }
    ],
-   "_revise": {
-    "allowed": true
-   },
-   "_void": {
-    "allowed": true
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
    },
    "children": {
     "lines": [
@@ -10713,20 +10610,18 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "revised_by": null,
-   "revises": null,
    "status": "issued",
    "title": "INV-2026-00001",
    "total": "2680.00"
   },
-  "etag": "\"8a9b0100d585cad778ed0d5a5b23a08d4319d97a27d151acb7dd4623c9449692\"",
+  "etag": "\"53a3a7a4def2976b37d7c58dc2b3cc7f9ddd76bb1c22de7f17fe1d52e3497cae\"",
   "status": 200
  },
  "invoice_void_reason_missing": {
   "body": {
    "error": "Validation failed",
    "fields": {
-    "reason": "Give a reason"
+    "remark": "Void needs a remark"
    }
   },
   "etag": null,
@@ -10744,7 +10639,6 @@
      "outstanding": "0.00",
      "posting_date": "2026-11-01",
      "remarks": "",
-     "revises": null,
      "status": "draft",
      "title": "0000000000003",
      "total": "2680.00"
@@ -10758,7 +10652,6 @@
      "outstanding": "2680.00",
      "posting_date": "2026-11-01",
      "remarks": "",
-     "revises": null,
      "status": "issued",
      "title": "INV-2026-00002",
      "total": "2680.00"
@@ -10772,7 +10665,6 @@
      "outstanding": "2680.00",
      "posting_date": "2026-11-01",
      "remarks": "",
-     "revises": null,
      "status": "void",
      "title": "INV-2026-00001",
      "total": "2680.00"

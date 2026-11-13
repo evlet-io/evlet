@@ -129,7 +129,7 @@ def test_host_add_checks_dns_writes_caddy_and_applies_with_sudo(web, capsys, mon
     assert listed.splitlines()[1].split() == ['erp.acme.com', 'evlet.desk', 'desk']
     assert listed.splitlines()[2].split() == ['www.acme.com', 'notes.www', 'public']
     main(['host', 'remove', 'acme', 'www.acme.com', '--routes-only', '--project', str(web)])
-    assert 'Restart the instance' in capsys.readouterr().out and 'www.acme.com' not in routes_text(web)
+    assert 'Restart the instance to stop serving it: evlet restart acme' in capsys.readouterr().out and 'www.acme.com' not in routes_text(web)
     with pytest.raises(SystemExit):
         main(['host', 'remove', 'acme', 'www.acme.com', '--project', str(web)])
     assert 'does not list www.acme.com' in capsys.readouterr().err
@@ -152,7 +152,8 @@ def test_host_add_refuses_before_writing(web, capsys, monkeypatch):
     assert not (web / 'instances/acme/routes.py').exists() and not (web / 'deploy').exists()
     # With on-demand TLS only routes.py changes; no DNS check and no Caddy file.
     main(['host', 'add', 'acme', 'www.acme.com', '--root', 'notes.www', '--routes-only', '--project', str(web)])
-    assert 'on-demand TLS' in capsys.readouterr().out and not (web / 'deploy').exists()
+    out = capsys.readouterr().out
+    assert 'on-demand TLS' in out and 'evlet restart acme' in out and not (web / 'deploy').exists()
     with pytest.raises(SystemExit):
         main(['host', 'add', 'acme', 'www.acme.com', '--root', 'notes.www', '--routes-only', '--apply', '--project', str(web)])
 

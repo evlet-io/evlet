@@ -251,10 +251,10 @@ class Business:
             with self.database.transaction() as tx:
                 # Document number and naming counters, updated in each assigning write transaction.
                 upgrade_counters(tx.connection)
-        if any(getattr(model, 'confirmable', False) for model in self.registry.models.values()):
-            from .lifecycle import ensure_tables
+        from .statemanager import ensure_releases, releasing
+        if any(releasing(model) for model in self.registry.models.values()):
             with self.database.transaction() as tx:
-                ensure_tables(tx.connection)
+                ensure_releases(tx.connection)
         if self.journals:
             from .journal import ensure_table
             with self.database.transaction() as tx:
@@ -446,11 +446,11 @@ class Business:
             if 'image' in entry and entry['image'] not in readable:
                 del entry['image']
             # The field naming fills: the record page shows it as the document number, and until it has one,
-            # when it will ("Assigned on save", "Assigned on confirm").
+            # when it will ("Assigned on save", "Assigned on issued").
             naming = self.registry.naming.get(model)
             if naming is not None and naming.field in readable:
                 placeholder = None if naming.manual else 'Assigned on save' if naming.assign_on == 'create' else \
-                    'Assigned on confirm' if naming.assign_on == 'confirm' else f'Assigned on {naming.assign_on.replace("_", " ")}'
+                    f'Assigned on {naming.assign_on.replace("_", " ")}'
                 entry['naming'] = {'field': naming.field, 'assign_on': naming.assign_on, 'manual': naming.manual, 'placeholder': placeholder}
                 for field in entry['fields']:
                     if field['name'] == naming.field and placeholder and not field.get('placeholder'):
@@ -460,10 +460,8 @@ class Business:
             designs = self.prints.for_model(user, model) if getattr(self, 'prints', None) is not None else []
             if designs:
                 entry['prints'] = designs
-            from .corrections import model_schema
-            flags, corrections = model_schema(self, user, model)
-            entry.update(flags)
-            entry['permissions'].update(corrections)
+            from .permissions import corrects
+            entry['permissions'].update({op: self.policy.allows(user, model, op) for op in CORRECTIONS if corrects(model, op)})
             entry['child_only'] = model in self.child_models
             from .documents import row_bounds
             from .sections import enabled as sections_enabled, total_fields
@@ -497,7 +495,8 @@ class Business:
                          and child['name'] not in panel['order'] and child['name'] not in panel.get('tabs', ())]
                 if extra:
                     entry['panel'] = {**panel, 'tabs': sorted({*panel.get('tabs', ()), *extra})}
-            from .states import action_schema, state_schema
+            from .guards import action_schema
+            from .statemanager import state_schema
             entry['actions'] = [{'name': action.name, 'label': action.label,
                                  **(action_schema(self, user, model, action.name) if hasattr(getattr(model, action.name, None), '__action__') else {})}
                                 for action in self.actions.values() if action.model is model and has_role(user, action.roles) and self.policy.allows(user, model, 'update')]
@@ -514,10 +513,6 @@ class Business:
                 entry['attachment_limits'] = self.attachment_limits[model].public()
             from .journal import schema as journal_schema
             entry.update(journal_schema(self, user, model))
-            if getattr(model, 'confirmable', False):
-                from .lifecycle import labels
-                entry['lifecycle'] = {'confirmable': True, 'labels': labels(model),
-                                      'permissions': {op: self.policy.allows(user, model, op) and self.policy.allows(user, model, 'update') for op in ('confirm', 'cancel', 'reopen')}}
             meaning = self.registry.meaning[model]
             if meaning.key_fields:
                 entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
@@ -679,11 +674,9 @@ class Business:
                 self.check_calculation(model, body['calculation'])
             with self.context(user, readonly=True) as context:
                 draft, previous = load_draft(context, model, record_id, body.get('values', {}), preview=True)
-                # A locked or posted record keeps its saved results on a save, so the preview shows those.
-                from .effects import has_postings
-                from .states import locked_state
-                kept = previous is not None and (locked_state(model, previous._values) is not None
-                                                 or has_postings(context._tx.connection, self.registry, model, previous))
+                # A record that keeps its saved results on a save shows those in the preview too.
+                from .documents import keeps_saved_results
+                kept = bool(keeps_saved_results(context, model, previous))
                 errors, states = settle(context, draft, complete=False, previous=previous, kept=kept)
                 # Every serialized row, by model, so Links the user cannot follow are emptied in one batch per model.
                 serialized = {}
@@ -807,15 +800,12 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         method = scope['method']
-        if len(parts) >= 5 and parts[4] in ('confirm', 'cancel', 'reopen', 'history', 'revisions', 'snapshot', 'diff'):
-            from .lifecycle import route
+        if len(parts) >= 5 and parts[4] in ('release', 'restore', 'versions'):
+            from .statemanager import route
             return route(self, scope, body, user, model, parts)
-        if len(parts) == 5 and parts[4] in CORRECTIONS:
-            if method != 'POST':
-                raise AccessError(405, 'Method not allowed')
-            if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
-            from .corrections import dispatch
-            return dispatch(self, scope, body, user, model, path_id(parts[3]), parts[4])
+        if len(parts) == 5 and parts[4] == 'history':
+            from .journal import history_route
+            return history_route(self, scope, user, model, parts)
         if len(parts) == 5 and parts[4] == 'mentionable':
             # People to mention in this record's journal, with whether each can open the record.
             if path_id(parts[3]) is None or method != 'GET': raise AccessError(404, 'Route not found')
@@ -869,8 +859,14 @@ class Business:
                     if b'if-match' not in dict(scope.get('headers', [])):
                         raise AccessError(428, 'A current If-Match revision is required')
                     self.check_revision(scope, context._tx, user, record)
-                result = context._write(model, record_id, {} if action else body, action=action,
-                                        arguments=body if action else None, move=move)
+                values = {} if action else body
+                remark = None
+                if move is not None:
+                    # A move's body holds its remark next to the values it asks for.
+                    values = dict(body)
+                    remark = values.pop('remark', None)
+                result = context._write(model, record_id, values, action=action, arguments=body if action else None,
+                                        move=move, remark=remark)
                 if record_id and not (action or move):
                     # A save replaces the saver's unsaved changes (docs/internal/unsaved-changes.md).
                     self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id)
@@ -990,16 +986,15 @@ class Business:
         """
         if not getattr(model, '__declaration_mode__', False) or model in self.child_models or not self.virtual_models(model):
             return {}
-        from .documents import load_draft, settle, walk
-        from .effects import has_postings
-        from .states import locked_state, loaded_document
+        from .documents import keeps_saved_results, load_draft, settle, walk
+        from .guards import loaded_document
         try:
             draft = loaded_document(self, model, record, loaded, context=context) if record is not None else None
             if draft is None:
                 draft, previous = load_draft(context, model, record_id, {}, preview=True)
             else:
                 previous = loaded_document(self, model, record, loaded, context=context)
-            kept = locked_state(model, previous._values) is not None or has_postings(context._tx.connection, self.registry, model, previous)
+            kept = bool(keeps_saved_results(context, model, previous))
             settle(context, draft, complete=False, previous=previous, kept=kept, checks=False)
         except (AccessError, ValidationError):
             # A result that reads what this user cannot, or a document over its row limit, is left out.
@@ -1049,13 +1044,6 @@ class Business:
         """
         from .journal import summary as journal_summary
         result = journal_summary(self, context._tx, model, record.id)
-        if getattr(model, 'confirmable', False):
-            from .lifecycle import metadata
-            lifecycle = metadata(context, model, record.id)
-            result['_locked'] = lifecycle['state'] != 'draft'
-            result['_deletable'] = lifecycle['state'] == 'draft' and lifecycle['revision'] == 0
-            result['_lifecycle_actions'] = [op for op, state in (('confirm', 'draft'), ('cancel', 'confirmed'), ('reopen', 'cancelled'))
-                                            if lifecycle['state'] == state and self.policy.allows(context.user, model, op) and self.policy.allows(context.user, model, 'update')]
         if model in self.registry.effects:
             from .effects import ever_posted
             if ever_posted(context._tx.connection, self.registry, model, record.id):
@@ -1063,12 +1051,13 @@ class Business:
                 result['_deletable'] = False
         if model.__state__ is None and model not in self.registry.guards:
             return result
-        from .states import availability
-        from . import corrections
+        from .guards import availability
         reader = context.read_context()
         from .effects import summary
-        return {**availability(self, reader, model, record, loaded), **corrections.availability(self, reader, model, record),
-                **summary(self, reader, model, record), **result}
+        from .statemanager import releasing, state_shown, version_of
+        if releasing(model) and state_shown(reader, model):
+            result['_version'] = version_of(reader, model, record)
+        return {**availability(self, reader, model, record, loaded), **summary(self, reader, model, record), **result}
 
     def field_expressions(self, user, model):
         """Serialized finite expressions per readable field: compute, initial and the three rules.
@@ -1340,14 +1329,6 @@ class Business:
         """
         result = self.policy.serialize(tx, user, record)
         self.embed(tx, user, type(record), {record.id: result}, row_limit, loaded)
-        if getattr(type(record), 'confirmable', False):
-            from .lifecycle import metadata
-            from .documents import Context
-            result['_lifecycle'] = metadata(Context(self, tx, user, readonly=True), type(record), record.id)
-        if getattr(type(record), '__revisable__', False) and 'revises' in self.policy.fields(user, type(record)):
-            # The other direction of `revises`, found by a lookup; there is no column for it.
-            from .corrections import revised_by
-            result['revised_by'] = revised_by(self, tx, user, type(record), record.id)
         info = audit_detail(self, tx, user, record)
         if info is not None:
             result['_audit'] = info
@@ -1512,7 +1493,8 @@ class Business:
             if len(raw) > 8192:
                 raise ValueError()
             query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=10)
-            if set(query) - {'limit', 'offset', 'filters', 'order_by', 'q'} or any(len(values) != 1 for values in query.values()):
+            if set(query) - {'limit', 'offset', 'filters', 'order_by', 'q', 'awaiting'} or any(len(values) != 1 for values in query.values()) \
+                    or query.get('awaiting', ['me']) != ['me']:
                 raise ValueError()
             import json
             filters = json.loads(query.get('filters', ['{}'])[0])
@@ -1534,6 +1516,11 @@ class Business:
         with self.database._connection() as connection:
             connection.snapshot()
             tx = Session(connection, self.registry)
+            if 'awaiting' in query:
+                # Awaiting my approval: records whose waiting approval level this user may approve.
+                from .documents import Context
+                from .statemanager import awaiting
+                where.append(qb.in_('id', awaiting(Context(self, tx, user, readonly=True), model) or [0]))
             rows = connection.run(qb.select(table).where(*where).order_by(*ordering).limit(limit).offset(offset)).all()
             total = connection.run(qb.select(table, qb.count()).where(*where)).value()
             # One visibility check per Link target for the page, not per row.
@@ -1580,7 +1567,7 @@ class Business:
             record = self.policy.record(tx, user, model, record_id, 'read' if method == 'GET' else 'update')
             if method in ('POST', 'DELETE'):
                 from .documents import Context
-                from .states import check_attachments
+                from .statemanager import check_attachments
                 check_attachments(Context(self, tx, user, readonly=True), model, record)
             args = (name, record_id)
             if method == 'POST' and file_id is None and body.get('purpose') == 'image':

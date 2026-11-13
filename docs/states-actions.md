@@ -1,19 +1,20 @@
-# States, moves and model actions
+# States, rules and model actions
 
-A `State` field holds where a document is in its life, for example draft, issued or
-paid. Its value changes only through declared moves. Some states lock the document
-against ordinary edits. Model actions are declared methods that may take validated
-inputs and may be available only in some states.
+A `State` field holds where a document is in its life, for example draft, issued or paid. Its
+steps are declared in order, and its value changes only through declared rules. Some steps lock
+the document against ordinary edits. Hooks run code when a document is saved, enters a state or
+leaves one. Model actions are declared methods that may take validated inputs and may be
+available only in some states.
 
-This guide covers Phases 4 and 5 of the model handoff: states, moves, actions, and the
-void and revise corrections. Rows a move posts to other models, and their reversal on void,
-are described in [effects.md](effects.md). Each move, void and revise is recorded in the
-record's [Journal](journal.md).
+The state manager is `evlet/statemanager.py`. Rows a document posts to other models when it
+enters a state, and their reversal when it leaves, are described in [effects.md](effects.md).
+Each move is recorded in the record's [Journal](journal.md). Confirm, cancel, reopen and void
+are modelled as steps and rules ([document-lifecycle.md](document-lifecycle.md)).
 
 ## Declaring a State
 
 ```python
-from evlet import Child, Currency, Date, Decimal, Model, Move, State, Table, Text, action
+from evlet import Child, Currency, Date, Decimal, Model, State, Table, Text, ValidationError, action, state, validate
 from evlet.calc import F
 
 
@@ -22,23 +23,30 @@ class Invoice(Model):
         qty = Decimal(default=1)
         rate = Currency(default=0)
         amount = Currency(compute=F("qty") * F("rate"))
-        note = Text(default="", editable_when_locked=True)
+        note = Text(default="", versioned=False)
 
     lines = Table(Line)
     total = Currency(compute=lines.sum("amount"))
-    remarks = Text(default="", editable_when_locked=True)
+    remarks = Text(default="", versioned=False)
     status = State(
-        ("draft", "issued", "paid", "void"),
-        default="draft",
-        moves=(
-            Move("draft", "issued", "Issue", when=F("total") > 0, run="on_issue"),
-            Move("issued", "paid", "Mark paid", roles=("admin",)),
+        State.Step("draft", "Draft"),
+        State.Step("issued", "Issued", color="blue", lock=True, release=True),
+        State.Step("paid", "Paid", color="green", lock=True, final=True),
+        State.Step("void", "Void", color="rose", lock=True, final=True),
+        rules=(
+            State.Rule("draft", "issued", "Issue", key="issue", when=F("total") > 0, primary=True),
+            State.Rule("issued", "paid", "Mark paid", key="pay", by=("admin",)),
+            State.Rule("issued", "void", "Void", key="void", by=("admin",), remark="required"),
         ),
-        locked=("issued", "paid", "void"),
-        final=("paid", "void"),
-        voidable=("issued",),
+        show="bar",
     )
 
+    @validate
+    def has_lines(self):
+        if self.status != "draft" and not self.lines:
+            raise ValidationError({"lines": "Add a line"})
+
+    @state("issued")
     def on_issue(self):
         self.remarks = "Issued"
 
@@ -48,141 +56,164 @@ class Invoice(Model):
         self.remarks = f"Paid {amount} on {paid_on}"
 ```
 
-`State(choices, default=..., moves=..., locked=..., final=..., voidable=..., cancelled=...)`:
+`State(*steps, rules=(), default=..., show="badge")`:
 
-* It is a `Select`. Its schema type is `select`, it is read only in forms, and finite
-  expressions read it like any other Select (`F("status") == "issued"`).
-* `default` is the first state when left out. A new record always starts in it.
+* It is a `Select` over the step keys. Its schema type is `select`, it is read only in forms,
+  and finite expressions read it like any other Select (`F("status") == "issued"`).
+* `default` is the first step when left out. A new record always starts in it. It cannot be
+  final.
 * A model has at most one State, and only root documents have one (not `Table` rows).
-* Every state named in a move, `locked`, `final`, `voidable` or `cancelled` must be one of the
-  choices. A final state has no moves out. Voidable states must be locked and not final.
-* A State with `voidable` states must also have a state named `void` that is locked and
-  final. Void and revise (below) start only from a voidable state and end in `void`. No
-  declared Move may then go to `void`: a record is voided only through void, with a reason,
-  so later phases can always reverse its effects and record it.
-* `cancelled` names the final states that mean the record was called off, such as cancelled
-  or lost. See [Cancelled states](#cancelled-states).
-* State also takes `label`, `help_text`, `placeholder`, `hidden`, `index`, `max_length` and
-  `colors` (as on a Select, below). It takes no rules, calculations or validators.
-* `show` says how the record page draws the State: `"badge"` (the default), `"bar"` or
-  `"none"`. See [How a state and a status show](#how-a-state-and-a-status-show).
+* It also takes `label`, `help_text`, `tooltip`, `placeholder`, `hidden`, `index`,
+  `max_length`, `panel`, `copy` and `column`. It takes no rules of the field kind,
+  calculations or validators.
+* `show` is how the record page draws it: `"badge"`, `"bar"` or `"none"`
+  ([below](#how-a-state-and-a-status-show)).
 
-`Move(from_, to, label, roles=("admin", "editor"), when=None, run=None, system=False)`:
+`State.Step(key, label=None, *, color=None, lock=False, release=False, final=False)`:
 
-* Write the states positionally: `Move("draft", "issued", "Issue")`. The first
-  argument is one state or a tuple of states. `label` defaults to the target name.
-* There is at most one move between two states, so a move is named by its target.
-* `roles` lists the roles that may use the move. Policy rules are not extended with
-  move names; the caller also needs update permission on the record within its row scope.
-  A move needs at least one role; `roles=()` fails with a pointer to `system=True`.
-* `system=True` declares a move only the application makes. See
-  [System moves](#system-moves).
-* `when` is a finite-v1 Boolean expression, the same language as `locked_when`. It is
-  decided on the record as saved, before the move. A guard that is pending (an input is
-  empty) or fails blocks the move, like an undecided lock.
-* `run` names a model method that takes only `self`, like an action. It runs after the
-  state changes and before the document settles, so calculations, rules and validation see
-  its changes.
+* `key` is a lowercase name (`draft`, `in_review`). `label` defaults to the key, humanized.
+* `color` is one of `blue`, `green`, `amber`, `rose`, `violet`, `teal` and `slate`. A step
+  without one is neutral; the UI never guesses a colour from the name.
+* `lock=True` makes the document read only to ordinary writes in this step, except fields
+  declared `versioned=False` ([below](#ordinary-writes-and-locks)).
+* `release=True` marks a step whose content counts as released. An [effect](effects.md)'s `on`
+  must be such a step. Release records, versions and the `@release` hook arrive in later 0.4.6
+  pull requests.
+* `final=True` means no rule leaves the step.
+
+`State.Rule(from_, to, label=None, *, key=None, by=None, when=None, remark=None, ask=(), primary=False, reject=False)`:
+
+* Write the states positionally: `State.Rule("draft", "issued", "Issue")`. `from_` is one
+  state or a tuple of states. `label` defaults to the target, humanized.
+* `key` is the rule's stable id, used in the route, the Journal and the schema. It defaults to
+  `<from>_to_<to>`, with tuple sources joined by `_` (`draft_issued_to_void`). Two rules with
+  the same key fail at declaration; give one its own `key=`.
+* `by` names who may use the rule: role names, built-in or custom, and `F("field")` user fields
+  that hold a user id or username on the saved record (`by=("manager", F("approver"))`). It
+  defaults to `("admin", "editor")`. The caller also needs update permission on the record
+  within its row scope. `by=()` makes a rule only the application uses
+  ([System moves](#system-moves)).
+* `when` is a finite-v1 Boolean expression, the same language as `locked_when`, decided on
+  the record as saved, before the move. A guard that is pending (an input is empty) or fails
+  blocks the move.
+* `remark` is `None` (the move takes no remark), `"optional"`, `"required"`, or
+  `State.Remark("optional", label="Why?", required_when=F("total") > 1000)`. `label` is what
+  the move dialog asks; `required_when` is a finite Boolean on the saved record that makes an
+  optional remark required.
+* `ask` adds fields the move dialog asks for to those it asks for anyway
+  ([Values a move asks for](#values-a-move-asks-for)).
+* `primary=True` marks the main button. Without one, screens use the first allowed rule.
+* `levels` makes the rule an approval, and `reject=True` marks a rule back from one
+  ([Approvals](#approvals)).
+
+`State.Rule`, `State.Step`, `State.Level` and `State.Remark` live on `State` because `evlet.Rule`
+is the permission rule.
+
+### Approvals
+
+A rule with `levels` moves when its last level that applies is approved. Each level names who
+approves, an optional condition and the text the record shows while it waits:
+
+```python
+Level = State.Level
+
+State.Rule("review", "approved", "Approve", key="approve", remark="optional",
+           levels=(Level(by=("manager",), pending="Pending manager approval"),
+                   Level(by=("cfo",), when=F("total") >= 10000, pending="Pending CFO approval"),
+                   Level(by=("director",), when=F("total") >= 50000, pending="Pending director approval"))),
+State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="required"),
+```
+
+* Levels run top to bottom; only the waiting level's approvers can approve. For a total of
+  20,000 this runs manager, then CFO, then the move; the director level is skipped.
+* Conditions are decided when the record enters the state and logged with that entry, so a later
+  change outside the engine does not add or drop a level.
+* Approving a level that is not the last writes an `approved` journal entry (with `rule`, `level`
+  and the remark) and changes nothing else; the last one is the `moved` entry, with its `level`.
+  Values the move asks for are taken with the last approval only.
+* Someone who approved a level cannot approve a later level of the same rule. The record's creator
+  cannot approve unless the rule says `self_approve=True`.
+* Approvals belong to one stay in the state: leaving it (a reject, a withdraw) clears them, and a
+  resubmit starts at level 1. A change to versioned content while the record waits (an edit, an
+  action, a restore, a Recompute) clears them too, and the levels are decided again from the new
+  values: approvers always approve what the record says now. Changes to `versioned=False` fields
+  keep them.
+* A `reject=True` rule is offered only to the waiting level's approvers. Any other rule out of
+  the state (such as a Withdraw by the submitter) follows its own `by`.
+* A rule whose levels all do not apply is an ordinary move for whoever may change the record.
+* There is no admin override; declare one as its own rule (for example `Force approve`, by admin,
+  with a required remark).
+* `_moves` shows, for an approval, `level` (1 for the first), `pending` and `can_approve`; the
+  schema's rule lists `levels` (`by`, `pending`, `guarded`) and `self_approve`.
+* `GET /api/{model}?awaiting=me` lists the records whose waiting level this user may approve now,
+  when the rule's `when` holds and the user may change the record
+  ("Awaiting my approval"). It is computed from the rules and the journal, so approvals need the
+  journal: `Meta.journal = None` with `levels` is refused.
+
+Eva's write confirmations (Eva asking before it changes a record) are a different feature: an
+approval level is part of the record's rules and applies to every caller.
+
+Declaration fails when a rule names an unknown state, leaves a final state, or does not change
+the state, and when a hook or `ask` names an unknown state or field.
 
 ### System moves
 
 Some state changes are made by the application, never by a person: a background job starts
-and finishes a build, or an action on one record closes another. Declare them with
-`system=True`:
+and finishes a build, or an action on one record closes another. Declare them with `by=()`:
 
 ```python
 class PriceList(Model):
-    status = State(("draft", "building", "ready", "failed"), moves=(
-        Move("draft", "building", "Start", system=True),
-        Move("building", "ready", "Finish", system=True, run="finished"),
-        Move("building", "failed", "Fail", system=True),
-        Move(("ready", "failed"), "draft", "Reopen"),
-    ))
+    status = State(
+        State.Step("draft"), State.Step("building"), State.Step("ready"), State.Step("failed"),
+        rules=(
+            State.Rule("draft", "building", "Start", key="building", by=()),
+            State.Rule("building", "ready", "Finish", key="ready", by=()),
+            State.Rule("building", "failed", "Fail", key="failed", by=()),
+            State.Rule(("ready", "failed"), "draft", "Reopen", key="draft"),
+        ), show="bar")
 ```
 
-* A system move has no roles. Passing `roles=` with `system=True` fails at declaration.
-* It is never offered: it is left out of `_moves`, of the schema's `state.moves` and of the
+* It is never offered: it is left out of `_moves`, of the schema's `state.rules` and of the
   list's bulk Move, so no button, badge menu or stage bar step offers it.
 * Every HTTP caller is refused it with 403 `Start is made by the application only`: a signed
   in person (an admin too), an API key, an AI assistant through MCP, the local connector and
   Eva. A role that cannot read the State gets the usual 409 `This record has no such move now`.
-  A repost through a system move is refused the same way, and `_repost` is not offered.
-* Trusted Python makes it with `context.move(Model, id, to)`: a job through
+* Trusted Python makes it with `context.move(Model, id, key)`: a job through
   [`job.business(tx)`](jobs-realtime.md#a-jobs-business-context), an `@action` handler or a
-  Move `run` method through `self.context.move(...)` on another record, and
-  `business.context(user)` in a script. Only the role check is left out. Everything else
-  applies: update permission and row scope of the context's user, the guard (`when`), the
-  `run` method, calculations, rules, validation, a closed period, the Journal's `moved` entry
-  and the one transaction.
+  hook through `self.context.move(...)` on another record, and `business.context(user)` in a
+  script. Only the `by` check is left out. Everything else applies: update permission and row
+  scope of the context's user, the guard, the hooks, calculations, validation, a closed period,
+  the Journal's `moved` entry and the one transaction.
 
-The [Background Playground](jobs-realtime.md#background-playground) declares these moves.
+The [Background Playground](jobs-realtime.md#background-playground) declares these rules.
 
 ## How a state and a status show
 
 Not every State is a pipeline, and not every status is set by hand. `show` and `Meta.status`
 say how the record page and lists draw them.
 
-```python
-class Member(Model):
-    # Active or left is not a pipeline: a badge in the header (the default).
-    standing = State(("active", "left"), moves=(Move("active", "left", "Mark as left"),
-                                                Move("left", "active", "Reinstate", roles=("admin",))))
-
-
-class Claim(Model):
-    # Draft, submitted, approved is a pipeline: the stage bar.
-    stage = State(("draft", "submitted", "approved"), show="bar",
-                  moves=(Move("draft", "submitted", "Submit"), Move("submitted", "approved", "Approve")))
-```
-
 * `show="badge"` (the default) draws the state as a coloured badge in the record header, with
   the key facts. The moves stay as buttons in the header actions.
-* `show="bar"` draws the stage bar under the header, every state in order, for pipelines such as
-  draft, submitted, approved.
-* `show="none"` draws neither, for an app that places the state itself. The moves stay as header
-  buttons.
-* Any other value fails at registration: `State show is "badge", "bar" or "none"`. The schema's
-  `state` entry carries it as `show`.
+* `show="bar"` draws the stage bar under the header, every step in order, for pipelines such
+  as draft, submitted, approved.
+* `show="none"` draws neither, for an app that places the state itself. The moves stay as
+  header buttons.
+* Lists and headers read a step's look from the step alone: a final step coloured `rose` reads
+  as cancelled (struck-through title), any other final or locked step shows a lock, and the
+  default step shows as a draft.
 
 Display never implies that a person can change the state:
 
 * Clicking the badge opens a menu of the moves this person may take now, and only those. A
   step of the bar is a button only when this person may move to that state now. Everything else
-  is plain text with no pointer or hover: states only the system reaches, moves for other roles,
-  and moves whose condition is not met. The header buttons still list those moves and say why
-  each is blocked.
-* "May take now" is `allowed` in `_moves` (below), so the server decides it: the move's roles, update
-  permission and the row scope, the move's condition, `Meta.api = "read"` and a closed period
-  (`Meta.period`). The record page also needs update permission on the model.
+  is plain text: states only the system reaches, moves for other roles, and moves whose
+  condition is not met. The header buttons still list those moves and say why each is blocked.
+* "May take now" is `allowed` in `_moves` (below), so the server decides it: the rule's `by`,
+  update permission and the row scope, the rule's condition, `Meta.api = "read"` and a closed
+  period (`Meta.period`).
 * The badge's accessible name is `Status: Active` (and `Status: Draft. Change status` while it
   offers moves). The bar is a list named after the model (`Invoice status`); the current step
   has `aria-current="step"`.
-
-### Cancelled states
-
-A final state can mean the work was done (paid, closed, won) or that it was called off
-(cancelled, lost). `cancelled` names the second kind, so the browser can tell them apart
-without guessing from names or colours:
-
-```python
-class Order(Model):
-    status = State(("open", "done", "cancelled", "lost"),
-                   moves=(Move("open", "done", "Done"), Move("open", "cancelled", "Cancel"),
-                          Move("open", "lost", "Mark lost")),
-                   locked=("done", "cancelled", "lost"), final=("done", "cancelled", "lost"),
-                   cancelled=("cancelled", "lost"))
-```
-
-* It is a list of distinct state names, empty by default. Each must be a state and must be
-  in `final`. Anything else fails when the class is created, for example
-  `State cancelled names a state that is not final: lost; cancelled states must be final`. A
-  state people can reopen is not final, so it cannot be marked cancelled.
-* On a State with `voidable` states, `"void"` counts as cancelled without being listed. Listing
-  it as well is allowed and changes nothing.
-* It is purely descriptive. It changes no moves, locks, permissions, voids or closing checks:
-  a cancelled state behaves exactly as the same final state without the marker.
-* The schema's `state` entry carries it as `cancelled`, the declared states plus `"void"` when
-  it applies, in declaration order, for the browser to show such records as cancelled.
 
 ### Meta.status
 
@@ -204,17 +235,131 @@ class Invoice(Model):
 * The field must be a visible Select or State of a root model; anything else fails at
   registration (`Meta.status names a visible Select or State field of the model`). The schema
   carries `status` (the field name) only for roles that can read the field.
-* The badge is never a button. A calculated or read-only Select cannot be edited anywhere. A Select
-  people may write still shows as a badge; they change it in the form, not from the badge.
+* The badge is never a button. A calculated or read-only Select cannot be edited anywhere. A
+  Select people may write still shows as a badge; they change it in the form, not from the badge.
 * When `Meta.status` names the model's State, the State's badge shows in the header whatever its
   `show`, with its moves. When it names another field, both badges show, the State's first (if
   its `show` is `"badge"`).
 * Lists draw the State's column and the `Meta.status` column as the same badges.
-* `Select(..., colors={...})` maps some choices to a badge colour: `blue`, `green`, `amber`,
-  `rose`, `violet`, `teal` or `slate`. Unknown choices or colours fail when the field is
-  declared. The schema carries `colors` on the field. Choices without a colour take the UI's
-  usual tint for the name (green for paid or approved, rose for void or lost, and so on).
-* A legacy string formula may calculate a Select. The value must be one of its choices.
+* `Select(..., colors={...})` maps some choices to a badge colour from the same list as steps.
+  Unknown choices or colours fail when the field is declared. The schema carries `colors` on the
+  field.
+
+## Hooks
+
+Four decorators run code on a document. Hooks of one kind run in class order; a subclass
+replaces a base's hook by defining a method of the same name. Each is a method that takes only
+`self`.
+
+| Hook | Runs | `self` |
+| --- | --- | --- |
+| `@validate` | every save (create, update, move) and every draft preview, on documents, `Table` rows and forms (Dialog, Slip, Report filters) | read only; assigning raises |
+| `@state("a", "b")` | when a move enters one of the states | the draft; `self.context.session` is open |
+| `@state.exit("a")` | when a move leaves one of the states | the draft; `self.context.session` is open |
+| `@release` | when a release is made ([Releases](#releases-and-versions)) | the draft, with `self.release.number` and `self.release.previous`; the session is open |
+
+* Inside a hook, `self.is_new` is true on create, and `self.before` is the document as last
+  saved, read only (`None` on create). `self.context` is the operation's context.
+* `@validate` checks; it does not change values. Raise `ValidationError({"field": "message"})`;
+  a plain `ValueError` becomes a `_form` error. A row's errors are keyed under its row. It runs
+  last in the settle, after calculations, so it sees the final values. A record built outside
+  the document pipeline (a `Session` write) runs its `@validate` checks too.
+* `@state` and `@state.exit` are trusted code, like an action: they change the record through
+  `self` and may write other rows through `self.context.session`
+  ([below](#the-transaction-session-in-hooks-and-actions)). A `ValidationError` or `ValueError`
+  refuses the move with 422 and rolls everything back. A new record starting in the default
+  state runs no `@state` hook.
+* A model that still declares `before_close`, `changed`, `check_lifecycle` or an undecorated
+  `validate()`, or sets `confirmable` or `track_changes`, fails when the class is created with a
+  message pointing here.
+
+The order of a move:
+
+1. The rule is checked on the saved record (below).
+2. When the record leaves an effect's `on` state, its posted rows are reversed.
+3. `@state.exit(old)` hooks run.
+4. The state changes.
+5. `@state(new)` hooks run.
+6. The document settles: calculations, then `@validate`.
+7. Document numbers due in the new state are assigned.
+8. Entering a `release=True` step whose content changed since the last release: `@release`
+   runs, then calculations and `@validate` again, and the release is stored.
+9. The record is written, effects on the new state post, and the Journal gets its `moved`
+   entry with the rule key and the remark; a move that released names it in `data.release`.
+
+Everything commits in one transaction. A failure anywhere rolls all of it back, and no
+Sequence number is used up.
+
+| Removed | Use |
+| --- | --- |
+| `Move(..., run="m")` | `@state("to")` on `m` |
+| `before_close(self, to)` | `@state.exit(...)` or `@validate` |
+| `changed(self, change)` | `@state(...)`, or a job queued from a hook |
+| `Model.validate()` | `@validate` |
+| `check_lifecycle`, `@validate.confirm/.cancel` | `@validate` reading `self.status` and `self.before` |
+| `@action.confirm/.cancel` | `@state("confirmed")`, `@state.exit("confirmed")` |
+
+## Releases and versions
+
+A release is a numbered version of a document: v0, v1, v2. It happens when a move enters a
+`release=True` step, or from `POST /api/{model}/{id}/release` (`{"remark": ...}`, If-Match,
+`context.release(model, id, remark=...)`), which needs the `release` permission (admin by
+default; a Rule may grant it). A release changes no number of the document and is never edited
+or deleted.
+
+* **Nothing changed, nothing released.** A release stores a SHA-256 hash of the document's
+  versioned content: every stored field and row except the State, `versioned=False` fields and
+  `tracking="exclude"` fields. Entering the step again with the same content makes no release and
+  runs no `@release`. A Release with nothing changed answers 409.
+* **Lazy snapshots.** A release keeps its number, state, hash, actor, time, approvals and remark,
+  not a copy of the document: while nothing changes, the record is the release. The copy (a
+  snapshot) is saved once, in the same transaction, just before the record first diverges: when
+  a rule leaves the release step, at the first versioned edit after a Release, and before a
+  Recompute migration changes the stored values of a released record. A record released and
+  never reopened has no snapshot.
+* **Drift.** On taking a snapshot, its hash is compared with the release's. A mismatch means the
+  row changed outside the engine; the snapshot is kept, marked `drifted`, logged, and its
+  `snapshot` journal entry says so.
+* `@release` gets `self.release.number` and `self.release.previous` (the previous version's
+  content, or `None` for v0). It usually sets `versioned=False` fields, such as a posting
+  reference.
+* A document with a release cannot be deleted; move it to a final state such as void.
+* The detail carries `_version: {"number": 2, "released": false, "state": "issued"}`. `number`
+  is `null` before v0. `released` is false once the journal has an entry that changed versioned
+  content since v2: every such entry carries `base` 2 ("changes after v2"), so this is one indexed
+  read, and the content is hashed only to release, snapshot and check for drift.
+* `GET /api/{model}/{id}/versions` lists the releases, newest first; `.../versions/{n}` returns
+  one version's document, and `.../versions/{a}/diff/{b}` (or `/diff/current`) compares two.
+  Today's field, Link and row permissions apply to old versions too. An API key needs the
+  `versions` extra.
+* Releases live in `evlet_releases`, append only. Framework step `0011_state_manager` turns
+  confirmable revisions into releases with their snapshots and gives every record already in a
+  release step a v0 release.
+
+### Restore
+
+`POST /api/{model}/{id}/restore` with `{"version": 1, "remark": "..."}` (If-Match;
+`context.restore(model, id, version=1, remark=...)`) writes version 1's content onto the
+document as a new change, then recalculates, so values read from linked records stay current. It
+moves forward: nothing in the history or the releases changes, the journal gets a `restored`
+entry (`data.number`, the remark), and the next release takes the next number.
+
+* It needs the `restore` permission (admin by default) and a remark, and the record must be in an
+  unlocked step; otherwise it answers 409 "Move back to an editable state first".
+* It is refused while another record links to this one (a Link or a Reference, from it or its
+  rows), naming them.
+* Table rows come back as the version had them: rows deleted since are created again under their
+  original ids (with the row model's create permission, the fields the role may write and readable
+  Links, as any create), and rows added since are removed.
+* `versioned=False` fields keep their current values. A field the model no longer has is dropped,
+  and one added since takes its default. A unique value another record took since keeps the
+  current value. The detail's `_restore` lists them: `{"version", "dropped", "kept"}`.
+* Sequence numbers, the name and calculated values are not restored; calculations run again.
+* Attachments are not versioned.
+
+Effects are not tied to releases: rows post when the record enters the effect's `on` step and are
+reversed when a rule leaves it, so an unchanged reissue posts again after its reversal and the
+rows always match the record. A `@release` hook runs only for a real release.
 
 ## Ordinary writes and locks
 
@@ -222,118 +367,106 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
 `Context.delete`, and dialogs and services that write through `Context`.
 
 * Create may leave the State out or send its default. Any other value is a field error:
-  `A new record starts as draft; use its moves to change it`.
-* Update may not set the State: `This changes only through its moves`. Sending the saved
+  `A new record starts as draft; use its rules to change it`.
+* Update may not set the State: `This changes only through its rules`. Sending the saved
   value back is not a change and is accepted.
-* Python code cannot assign the State on a document draft either, inside actions or `run`.
-* While the saved state is in `locked`, an ordinary write may not change the record or
-  any of its Table rows at any depth. Adding, removing or reordering rows is a change.
-  Each changed field gets the error `This record is issued, so it is locked`; a row
-  collection that gained, lost or reordered rows gets it under the collection name.
-* A field declared with `editable_when_locked=True` stays editable by ordinary writes, on
-  the record and on its rows. Its own `locked_when` still applies.
-* A locked record keeps its saved results. An ordinary write changes only the
-  `editable_when_locked` fields; every calculated value, at every depth, keeps the value it
-  had when the record was locked, even if a linked record or today's date changed since.
-  Moves and actions settle normally and recalculate, unless the record has postings (below).
-  So that this stays consistent, a
-  stored result (at any depth of the document) may not read an `editable_when_locked`
-  field; registration fails with a message naming the field. This covers finite formulas,
-  legacy string formulas (`compute="sum(lines.extra)"`), reads through virtual results,
-  Query fields and `fetch="customer.name"` copies whose Link is `editable_when_locked`.
-  A virtual result may read such a field. A creation default (`default=Ref(...)`) is not a
-  result: it applies once, on create.
+* Python code cannot assign the State on a document draft either, inside actions or hooks.
+* While the saved state is a `lock=True` step, an ordinary write may not change the record or
+  any of its Table rows at any depth. Adding, removing or reordering rows is a change. Each
+  changed field gets the error `This record is issued, so it is locked`; a row collection that
+  gained, lost or reordered rows gets it under the collection name.
+* A field declared `versioned=False` stays editable by ordinary writes, on the record and on its
+  rows: it says where the document is in its process, not what it says. Its own `locked_when`
+  still applies. Calculated fields cannot be `versioned=False`.
+* A locked record keeps its saved results. An ordinary write changes only the `versioned=False`
+  fields; every calculated value, at every depth, keeps the value it had when the record was
+  locked, even if a linked record or today's date changed since. Moves and actions settle
+  normally and recalculate, unless the record has postings (below). So that this stays
+  consistent, a stored result (at any depth) may not read a `versioned=False` field;
+  registration fails with a message naming the field. This covers finite formulas, legacy
+  string formulas, reads through virtual results, Query fields and `fetch="customer.name"`
+  copies whose Link is `versioned=False`. A virtual result may read such a field.
 * Rules and validation on such a write read the saved results too: `required_when`,
-  `applies_when`, `locked_when`, `required_if` and validators see the values the record
-  keeps, not values it would get if it were recalculated. Fetched copies are not refreshed.
+  `applies_when`, `locked_when`, `required_if` and validators see the values the record keeps.
+  Fetched copies are not refreshed.
 * `"_calculation": {"recalculate": true}` on a locked record is refused with 409.
-* An ordinary write on a locked record does not recalculate, so it does not need the
-  active formula version and does not change the version recorded for the record. Its
-  `editable_when_locked` fields stay editable after a deploy that changes formulas. A move
-  or action on such a record recalculates, so it answers 409 `SCHEMA_VERSION_MISMATCH`;
-  send `{"_calculation": {"model_schema_hash": "<active hash>", "recalculate": true}}` as
-  the body of the move (or with the action) to recalculate with the active formulas.
-* A record with posted [effects](effects.md) (it is the source of effect rows and is not
-  void) keeps its stored calculated values for every writer. Moves and actions on it keep
-  the saved values, at every depth, like ordinary locked writes do, even after a linked
-  record or a formula changed; they need no recalculation request. `"recalculate": true`
-  on such a record is refused with 409 `This record has postings. To change its totals,
-  void or revise it.` Corrections go through void or revise, or an admin's unpost (below).
-* Actions, move `run` methods and move values on a posted record may not change anything a
-  stored result reads: a source field (directly or through virtual results, fetched copies
-  and Link paths, where the Link field counts) or the rows of a Table that holds or feeds a
-  stored result (adding, removing or reordering them). Such a change is refused with 409
-  naming it, for example `Quantity feeds posted totals. To change it, void or revise the
-  record.` or `Lines feed posted totals. To change them, void or revise the record.` Fields
-  no stored result reads, such as notes and `editable_when_locked` fields, still change.
-* The `Recompute` migration operation skips only records with postings, unless an admin
-  migrates with `evlet migrate <instance> --recompute-posted` (see
-  [finite-calculations.md](finite-calculations.md)). A locked record that never posted, or
-  was unposted, is recalculated like any other and gets a `recomputed` Journal entry.
-* Deleting a record in a locked state is refused with 409. Corrections use void and revise
-  (below).
-* Uploading or removing an attachment is an ordinary write: on a locked record it is
-  refused with 409. Downloads still work.
+* An ordinary write on a locked record does not recalculate, so it does not need the active
+  formula version. A move or action on such a record recalculates, so it answers 409
+  `SCHEMA_VERSION_MISMATCH`; send `{"_calculation": {"model_schema_hash": "<active hash>",
+  "recalculate": true}}` with the move (or the action) to recalculate with the active formulas.
+* A record with live [effect](effects.md) rows keeps its stored calculated values for every
+  writer, moves and actions included, even after a linked record or a formula changed.
+  `"recalculate": true` on it is refused with 409 `This record has postings. To change its
+  totals, move it out of its posted state.` Actions, hooks and move values on it may not change
+  anything a stored result reads (a source field, or the rows of a Table that feeds a stored
+  result); such a change is refused with 409, for example `Quantity feeds posted totals. To
+  change it, move the record out of its posted state.` Fields no stored result reads still
+  change.
+* The `Recompute` migration operation keeps the saved results of records with live postings,
+  and of records that posted and are in a final state, unless an admin migrates with
+  `evlet migrate <instance> --recompute-posted` ([finite-calculations.md](finite-calculations.md)).
+* Deleting a record in a locked state is refused with 409, and so is deleting a record that
+  ever posted: `This record has posted before, so it cannot be deleted. Move it to a final
+  state instead.`
+* Uploading or removing an attachment is an ordinary write: on a locked record it is refused
+  with 409. Downloads still work.
 * A role that cannot read the State field gets `This record is locked` (and `This record is
   locked and cannot be deleted`) without the state's name.
 * Raw database writes (`Session.create` and `Session.update`, including legacy `Action`
-  handlers) may create a record in the default state and may send the saved state back,
-  but any other State change raises an error unless it runs inside `tx.maintenance()` for
-  an audited repair. Legacy handlers should use `context.move()` or a model action instead.
-  A move's `run` method or a model action that must write other rows in the same transaction
-  uses `self.context.session` ([below](#the-transaction-session-in-run-methods-and-actions)).
+  handlers) may create a record in the default state and may send the saved state back, but
+  any other State change raises an error unless it runs inside `tx.maintenance()` for an
+  audited repair. Use `context.move()` or a model action instead.
 
 ## Moves
 
-`POST /api/{model}/{id}/moves/{to}` with an empty JSON object performs a move.
+`POST /api/{model}/{id}/moves/{key}` makes a move by its rule key. The body is a JSON object:
+`{}`, or the remark and the values the move asks for. From Python,
+`context.move(Invoice, record_id, "void", remark="Entered twice")` does the same.
+
+```
+POST /api/invoice/01hc1sd9vc1ye/moves/void   {"remark": "Entered twice"}
+```
+
+* It requires `If-Match` with the record's current ETag: 428 without it, 409 when stale.
+* The checks run in this order. Update permission and row scope come first, as for any
+  update (403 or 404). Then: an unknown key, 404 `Move not found`. A final current state: 409
+  `This record is paid, which is final; it has no moves`. A rule that does not start from the
+  current state: 409 `This record cannot move from draft to paid`. A caller `by` does not name:
+  403 `Your role cannot use Mark paid`. A [system move](#system-moves): 403 `Start is made by
+  the application only`. A guard that is not true: 409, for example `Issue is not available:
+  the condition for this move is not met`. Then the remark: missing when required, 422
+  `{"remark": "Void needs a remark"}`; sent to a rule without one, 422 `{"remark": "Issue takes
+  no remark"}`. A remark is trimmed and has at most 1,000 characters.
+* A role that cannot read the State field gets 409 `This record has no such move now` for
+  every refused move, so it cannot tell which states and rules exist.
+* The response is the permission-filtered detail with a new ETag.
+* Moves and actions are declared, checked code. They may change a record in a locked state,
+  but each field's `locked_when`, `applies_when`, `required_when`, validation and the
+  permissions on what is returned still apply.
+
+### Values a move asks for
 
 A move may carry values for the fields its target state brings in. A move *asks* for a root
 field when the field's `applies_when` or `required_when` reads the State, is false in a source
-state of the move, and is true (or depends on other values) in the target state. Only fields the
-role may write are asked for.
+state of the rule, and is true (or depends on other values) in the target state, and for every
+field the rule lists in `ask`. Only fields the role may write are asked for.
 
 ```python
-lost_reason = Text(applies_when=F("stage") == "lost", required_when=F("stage") == "lost")
+lost_reason = Text(applies_when=F("stage") == "lost", required_when=F("stage") == "lost", versioned=False)
 # POST /api/deal/01hc1sd9vc1ye/moves/lost  {"lost_reason": "Chose another vendor"}
-context.move(Deal, 7, "lost", lost_reason="Chose another vendor")
+context.move(Deal, deal_id, "lost", lost_reason="Chose another vendor")
 ```
 
-* The values are applied with the move and checked by the same rules, validation and permissions
-  in its transaction. A required value that is missing fails the move with a field error (422)
-  and nothing changes.
-* Any other key is refused with `This move does not take this value`: as a field error when
-  the role can read the field, and as a form error (`_form`) for an unknown key or a field the
-  role cannot read, so the answer never confirms a hidden field.
-* The move itself is checked first (the order below), so values never reveal which moves
-  exist: an unknown target is 404 with or without values.
-* `_moves` and the schema's `state.moves` list the asked fields as `asks` (field names in
-  declaration order). A move that asks for nothing has no `asks` key. The schema lists what the
-  declaration asks for; `_moves` also leaves out a field whose `locked_when` holds on the record,
-  since a locked field cannot take a value.
-
-* It requires `If-Match` with the record's current ETag, like other document writes:
-  428 without it, 409 when it is stale.
-* The checks run in this order. Update permission and row scope come first, as for any
-  update (403 or 404). Then: a target that is not a state, 404. A final current state:
-  409 `This record is paid, which is final; it has no moves`. No declared move from the
-  current state: 409 `This record cannot move from draft to paid`. A role the move does
-  not list: 403 `Your role cannot use Mark paid`. A [system move](#system-moves): 403
-  `Start is made by the application only`. A guard that is not true: 409, for
-  example `Issue is not available: the condition for this move is not met`.
-* A role that cannot read the State field gets 409 `This record has no such move now` for
-  every refused move: a target that is not a state, a final state, no such move, a move
-  for other roles and a guard that is not true. It cannot tell which states and moves
-  exist. Roles that can read the State keep the detailed messages above.
-* The state change, the `run` method, calculations, rules, validation and the stored
-  rows commit in one transaction. Any failure rolls everything back.
-* The response is the permission-filtered detail with a new ETag.
-* From Python, `context.move(Invoice, record_id, "issued")` performs the same checks, except
-  that it may also make a system move.
-  The model's `changed()` hook receives the operation `"move"`.
-
-Moves and actions are declared, role-checked code. They may change a record in a locked
-state, but each field's `locked_when`, `applies_when`, `required_when`, validation and
-the permissions on what is returned still apply.
+* The values are applied with the move and checked by the same rules, validation and
+  permissions in its transaction. A required value that is missing fails the move with a field
+  error (422) and nothing changes.
+* Any other key is refused with `This move does not take this value`: as a field error when the
+  role can read the field, and as a form error (`_form`) for an unknown key or a field the role
+  cannot read, so the answer never confirms a hidden field.
+* The rule is checked first, so values never reveal which rules exist: an unknown key is 404
+  with or without values.
+* `_moves` and the schema's `state.rules` list the asked fields as `asks`. `_moves` also leaves
+  out a field whose `locked_when` holds on the record.
 
 ## Model actions
 
@@ -367,20 +500,20 @@ def record_payment(self, amount): ...
 * Actions registered with `Action(...)` on `Application` keep working unchanged. They run
   as trusted code with the transaction and are not limited by a State lock, but they cannot
   change the State itself outside `tx.maintenance()`. To change the State and write other
-  rows in one transaction, declare a move with a `run` method that uses `self.context.session`.
+  rows in one transaction, declare a rule and a `@state` hook that uses `self.context.session`.
 * An action changes Table rows through the draft: `self.lines[0].qty = 3` edits a row, and
   assigning a list replaces the rows, so `self.lines = [*self.lines, {"qty": "1", "rate": "2"}]`
   adds one. Rows already in the list keep their IDs; a dict is a new row, cleaned and
   calculated like submitted rows; rows left out are deleted.
 * An action may return `present(SomeSlip, source=self, values={...})`. The detail carries it as
   `_outcome`, and the record view presents that slip next. See [slips.md](slips.md).
-* A `run` method or action that raises something other than a validation error rolls
-  everything back and answers 500 `Internal server error`, without its message.
+* A hook or action that raises something other than a validation error rolls everything back
+  and answers 500 `Internal server error`, without its message.
 
-## The transaction session in run methods and actions
+## The transaction session in hooks and actions
 
-A move's `run` method and an `@action` handler change the record through `self`. When they must
-also write other rows in the same transaction, such as ledger rows that a move posts, they use
+A `@state` or `@state.exit` hook and an `@action` handler change the record through `self`.
+When they must also write other rows in the same transaction, such as ledger rows, they use
 `self.context.session`. It is the transaction session (`evlet.Session`, the `tx` of
 `database.transaction()`) of the move or action itself, with `tx.lock`, `tx.insert_many`,
 `tx.reserve_ids`, `tx.aggregate`, `tx.create` and the rest ([ledger.md](ledger.md)).
@@ -392,9 +525,10 @@ class Transfer(Model):
     destination = Text(default="site")
     quantity = Integer(default=1)
     number = Sequence("TR{n:04}", assign_on="sent")
-    status = State(("draft", "sent"), default="draft",
-                   moves=(Move("draft", "sent", "Send", run="post_movements"),), locked=("sent",))
+    status = State(State.Step("draft"), State.Step("sent", lock=True),
+                   rules=(State.Rule("draft", "sent", "Send", key="send"),))
 
+    @state("sent")
     def post_movements(self):
         tx = self.context.session
         tx.lock(("place", self.item, self.origin))
@@ -408,45 +542,43 @@ class Transfer(Model):
         ])
 ```
 
-* **One transaction.** The State change, the `run` method or action, the Sequence number, the
-  record's own changes and every row written through the session commit together. A failure
-  anywhere, in the method or after it (validation, a `changed()` hook, numbering), rolls all of
-  it back, and no Sequence number is used up. This holds when trusted code catches the failure
-  of `context.move()` or `context.action()` and its own transaction carries on.
+* **One transaction.** The State change, the hooks or action, the Sequence number, the record's
+  own changes and every row written through the session commit together. A failure anywhere
+  rolls all of it back, and no Sequence number is used up. This holds when trusted code catches
+  the failure of `context.move()` or `context.action()` and its own transaction carries on.
 * **Trusted code.** Writes through the session bypass row and field permissions and Controls,
   like any Python session ([AGENTS.md](../AGENTS.md): Python sessions and action handlers are
   trusted code). The checks that decide whether the move or action may run at all are
-  unchanged: update permission and row scope, the roles of the move or action, guards and
+  unchanged: update permission and row scope, the rule's `by` or the action's roles, guards and
   `If-Match`.
-* **Only while the method runs.** The session is open only on the context the `run` method or
-  action handler gets as `self.context`, and only until it returns. A context kept past that
-  refuses it, and so do the rows' own `context` and `context.read_context()`.
+* **Only while the method runs.** The session is open only on the context the hook or action
+  handler gets as `self.context`, and only until it returns. A context kept past that refuses
+  it, and so do the rows' own `context` and `context.read_context()`.
 * **Nowhere else.** Every other context refuses it with `AccessError` (403):
-  `business.context()`, business services (`@api`), reports, cron functions, change hooks,
-  lifecycle handlers, and everything Eva, assistants, tools, MCP and the connector reach. Those
-  callers may still run an action or move they are allowed to: the app's own handler then gets
-  the session, never the caller.
+  `business.context()`, business services (`@api`), reports, cron functions, `@validate`, and
+  everything Eva, assistants, tools, MCP and the connector reach. Those callers may still run
+  an action or move they are allowed to: the app's own hook then gets the session, never the
+  caller.
 * Change the record being moved through `self`, not through the session. The session cannot
   change the State either, outside `tx.maintenance()` for audited repairs.
-* `derive()` and `before_close()` get the session read only, for lookups
-  ([model-engine.md](model-engine.md#derived-values), [Before a record closes](#before-a-record-closes)).
-* A session write to another record whose model declares `derive()`, or to one of its rows, settles
-  that record too, so its derived values are stored with it
+* `derive()` gets the session read only, for lookups
   ([model-engine.md](model-engine.md#derived-values)).
+* A session write to another record whose model declares `derive()`, or to one of its rows,
+  settles that record too, so its derived values are stored with it.
 
 ## What the caller may do now
 
-Detail responses of a model with a State, or with an action that declares
-`available_when`, include three keys that are not part of the ETag:
+Detail responses of a model with a State, or with an action that declares `available_when`,
+include keys that are not part of the ETag:
 
 ```json
 {
   "_locked": false,
   "_moves": [
-    {"to": "issued", "label": "Issue", "allowed": false,
+    {"key": "issue", "to": "issued", "label": "Issue", "allowed": false, "primary": true,
      "reason": "The condition for this move needs values that are not filled in yet"},
-    {"to": "paid", "label": "Mark paid", "allowed": false, "reason": "Your role cannot use this move"},
-    {"to": "cancelled", "label": "Cancel", "allowed": true, "asks": ["cancel_reason"]}
+    {"key": "void", "to": "void", "label": "Void", "allowed": false, "reason": "Your role cannot use this move",
+     "remark": {"mode": "required", "label": null, "required": true}}
   ],
   "_actions": [
     {"name": "record_payment", "label": "Record payment", "allowed": false,
@@ -455,318 +587,71 @@ Detail responses of a model with a State, or with an action that declares
 }
 ```
 
-* `_moves` lists every move out of the current state, for every role, with the reason it
-  is blocked: the role, missing update access (`You cannot change this record`, also on a
+* `_moves` lists every rule out of the current state, except system moves, for every role that
+  can read the State, with the reason it is blocked: the rule's `by` (`Your role cannot use
+  this move`), missing update access (`You cannot change this record`, also on a
   `Meta.api = "read"` model), a record dated in a closed period (`This record is in a closed
-  period`), or the guard (not met, waiting for values, could not be checked).
+  period`), or the guard (not met, waiting for values, could not be checked). Of several rules
+  to one state, the first this person may use now is listed.
+* `primary` marks a rule declared `primary=True`; `asks` and `remark` appear when they apply,
+  `remark.required` decided on this record.
 * `_actions` lists the model actions this role may run.
 * When a guard reads a value the role cannot read, the reason is always
   `This move is not available now` (or `action`), so it does not tell whether a hidden
-  value is empty. Whether the operation is allowed is still shown, because the server
-  enforces it.
+  value is empty.
 * A role that cannot read the State field gets no `_moves`, no `_locked` and no `state`
   schema. It still gets `_actions`, because actions are not part of the State.
-* Guards that read only the record's own values (stored results included) are decided
-  without loading its rows. Guards that read owned rows or virtual results use the rows the
-  detail response already read when the caller can read every row; otherwise they load the
-  saved document once per request.
-
-## Before a record closes
-
-A record often may not close while other records still depend on it: a later document must be
-cancelled first. `before_close(self, to)` is the one place for that check, instead of a check in
-each Move's run method.
-
-```python
-class Booking(Model):
-    status = State(("open", "closed", "cancelled"), default="open",
-                   moves=(Move("open", "closed", "Close"), Move("open", "cancelled", "Cancel")),
-                   locked=("closed", "cancelled"), final=("cancelled",))
-
-    def before_close(self, to):
-        later = self.context.session.list(Booking, filters={"follows": self.id, "status__in": ["open"]})
-        if later:
-            raise ValidationError({"_form": "Cancel the later documents first: " + ", ".join(item.name for item in later)})
-```
-
-* **When it runs.** Before a move into a `final` state (`to` is that state), before a void or a
-  revise that voids (`to` is `"void"`), before a lifecycle cancel of a confirmable document
-  (`to` is `"cancelled"`), and before a delete (`to` is `None`). It runs after the checks that
-  decide whether the change may happen at all (permissions, row scope, the role of the move, its
-  guard, the locked and posted rules of delete) and before the Move's `run` method or anything
-  else is written. A move into a state that is not final does not call it.
-* **Refusing.** Raise `ValidationError` (a plain `ValueError` becomes a `_form` error). The
-  change is refused with 422 and nothing is written: not the State, a Sequence number, a Journal
-  entry or a row.
-* **Every surface.** HTTP routes, `Context.move()`, `delete()`, `void()` and `revise()`, actions
-  that move or delete other records, tools, MCP and the connector all reach it, since they all go
-  through the same document operations. Writes through a Python `Session` (trusted code) do not.
-* **Read only.** `self` is the saved record and its rows, read only. `self.context` is a
-  read-only context whose `session` is the transaction, read only (`get`, `list`, `count`,
-  `related`, `aggregate`). Reads through it bypass permissions, as in any Python session, so
-  name only what the caller may know in the message.
-* A `before_close` that does not take `self` and `to` is a `ValueError` when the class is
-  defined; a Table row cannot declare it. Record details do not run it: a move or Delete it would
-  refuse still shows, and the refusal comes when it is tried.
-
-## Void and revise
-
-A locked record is never edited to correct it. It is voided, or revised, which voids it and
-starts a new draft copy.
-
-```python
-class Invoice(Model):
-    class Meta:
-        calculation_language = "finite-v1"
-        numeric_profile = "finite40-hu18-v1"
-        revisable = True
-
-    status = State(("draft", "issued", "paid", "void"), moves=(Move("draft", "issued", "Issue"),),
-                   locked=("issued", "paid", "void"), final=("paid", "void"), voidable=("issued",))
-```
-
-### Void
-
-`POST /api/{model}/{id}/void` with `{"reason": "..."}`, or `context.void(Invoice, record_id,
-reason)` from Python.
-
-* The model must have voidable states, otherwise 404 `This record cannot be voided`.
-* Then the checks run in this order: the `void` permission and the row scope, as for any
-  record (403 or 404); `If-Match` over HTTP (428 without it, 409 when stale); the body and
-  the reason; the saved state. A missing record answers 404 whatever the body holds.
-* The reason is required. It is trimmed and may have up to 1,000 characters. The body takes
-  no other keys (`Send only a reason`). Errors are field errors (422).
-* Voiding starts only from a state in `voidable`; otherwise 409 `This record is draft, which
-  cannot be voided`. A role that cannot read the State gets `This record cannot be voided now`.
-* The engine writes the `void` state and, for a model with effects, the mirror rows that reverse
-  them (see [effects.md](effects.md)). A void is not an ordinary write and not
-  a declared Move: no State lock, move roles or guards apply, and the document is not
-  recalculated. Every other value, at every depth, stays as it was saved, saved results
-  included.
-* The model's `changed()` hook receives the operation `"void"`.
-* The response is the permission-filtered detail with a new ETag.
-
-### Revise
-
-`POST /api/{model}/{id}/revise` with `{"reason": "..."}`, or `context.revise(Invoice,
-record_id, reason)`. Only models with `Meta.revisable = True`; others answer 404 `This record
-cannot be revised`.
-
-* `Meta.revisable = True` needs a State with voidable states. The engine adds a read-only,
-  indexed field `revises = Link(<the model>, index=True, label="Revises")`, so a revision
-  always points at a record of the same model. A model may not declare its own `revises` or
-  `revised_by`. Ordinary writes cannot set `revises` (403).
-* A field that is both `unique` and `required` is not allowed on a revisable model or its
-  Table rows, because a revision clears unique values (below).
-* The checks are those of void, with the `revise` permission, and the role also needs create
-  permission on the model. A reason is required, because the original is voided.
-* Revise starts from a voidable state, or from `void` when the record has no revision yet,
-  for example because its revision draft was deleted. A void record stays void and gets a new
-  copy (no second void, so the void hooks do not run again). A record that has a revision
-  answers 409 `This record already has a revision`.
-* Before anything changes, the engine checks that the caller's copy could be created, and
-  answers 403 with a plain reason otherwise: `You cannot see every row of this record, so you
-  cannot revise it`, `Your role cannot add the rows of this record, so you cannot revise it`
-  or `This record links to a record you cannot read, so you cannot revise it`.
-* In one transaction the engine voids the original exactly as above, then creates a new
-  draft. It is an exact copy of the stored source values of the record and of its Table rows
-  at every depth, including fields the caller cannot read or write. Rows get new ids and keep
-  their order and positions, the State starts at its default, `revises` points at the
-  original, and unique fields are cleared. Calculated values are recalculated by the normal
-  pipeline, so a stored result over a linked record takes the linked value of today. A field
-  with an `initial` suggestion keeps the copied value. Fetched values are fetched again.
-  Attachments are not copied.
-* The copy is then checked like any new draft: rules, validation, the caller's row scope (the
-  copy must be inside it, 404 otherwise) and create permission for each row collection. Any
-  failure rolls back the void too.
-* The model's `changed()` hook receives `"void"` for the original and `"revise"` for the copy.
-* The HTTP response is 201 with the copy's detail, its ETag, a `Location` header and
-  `_original`, the id of the voided record.
-* The original's detail shows `revised_by`, the id of its revision, found through the index on
-  `revises` (there is no column for it). It is `null` until a revision exists, after the
-  revision is deleted, or when the caller cannot read the revision, and it is left out for
-  roles that cannot read `revises`.
-
-Adding `Meta.revisable = True` to a model that already has a table adds a column, so it
-needs a migration like any new field. Pass the model class as the Link target:
-
-```python
-Migration("0005_quote_revises", AddField("quote", "revises", Link(Quote, index=True)))
-```
-
-Without it, startup reports that the database columns differ from the models.
-
-### Permissions
-
-`Rule.operations` accepts `"void"` and `"revise"`, on models that support them (a Rule naming
-one on another model fails at startup).
-
-* Admin always has `void` while its Rule on the model allows `read` and `update`, and
-  `revise` while it also allows `create`. This holds for governed and ungoverned models.
-* A Rule naming `void` or `revise` adds that role. It never removes admin. So
-  `{"admin": Rule(("read", "create", "update", "delete")), "editor": Rule(("read", "update",
-  "void"))}` lets both the admin and the editor void.
-* A Rule naming `revise` must also name `create`; otherwise startup fails.
-* Void and revise are separate operations: revise does not need `void`. Neither changes what
-  `read`, `create`, `update` or `delete` allow, and neither is passed on to Table rows.
-* The row scope of the role's Rule applies, as for any record.
-
-### Availability in details
-
-Details of a voidable model add `_void`, and of a revisable model `_revise`, outside the
-ETag, for roles that can read the State:
-
-```json
-{"_void": {"allowed": false, "reason": "This record cannot be voided in its current state"},
- "_revise": {"allowed": true}}
-```
-
-Reasons are `Your role cannot void this record` (no permission, or for revise no create
-permission), `You cannot void this record` (outside the row scope), the state reason, which
-never names the state, `This record already has a revision`, and for revise the three copy
-reasons above. They never include counts or names.
-
-## Unpost and repost
-
-A posted record is a record with live [effect](effects.md) rows: it is the source of effect
-rows, and the latest row of some effect is an original, not a reversal. An admin may take
-such a record back to the state it posted from, correct it and post it again, without voiding
-it or creating a copy. The record keeps its id and its Sequence numbers.
-
-### Unpost
-
-`POST /api/{model}/{id}/unpost` with `{"reason": "..."}`, or `context.unpost(Invoice,
-record_id, reason)` from Python.
-
-* The model must declare `Meta.effects`, each with a `reverse`; otherwise 404 `This record
-  cannot be unposted`.
-* The checks run in the order of void: the `unpost` permission and the row scope (403 or
-  404), `If-Match` over HTTP (428 without it, 409 when stale), the body and the reason (422,
-  required, trimmed, up to 1,000 characters, no other keys), then the saved record (409):
-  * `This record is void, so it cannot be unposted`.
-  * `This record has nothing posted to cancel` for a record without live rows (never posted,
-    or unposted already).
-  * `This record cannot be unposted while Payment 4 depends on it. Void or unpost it first.`
-    when a live record depends on it (below). Up to five records the caller can open are
-    named, and the rest are counted (`2 records you cannot open`).
-  * `The state this record posted from is not known, so it cannot be unposted` (below).
-* In one transaction the engine writes the earlier state, writes one reversal row for each
-  live effect row (as a void does, see [effects.md](effects.md)), calls the model's
-  `changed()` hook with the operation `"unpost"`, and writes the Journal's `unposted` entry,
-  the `effects` entry of the reversal rows and a Controls audit row (area `Records`). Nothing
-  is deleted. A failure anywhere rolls all of it back.
-* The record is not recalculated: every value stays as saved. Its Sequence numbers stay, so no
-  number is taken or given back, and a number's scope fields and date period stay fixed.
-* Afterwards the record is an ordinary record in that state, with that state's rules. When it
-  posted from an unlocked state (draft), it can be edited, recalculated and moved like any
-  other, and `Recompute` recalculates it. When it posted from a locked state (for example
-  draft, then issued and locked, then paid, with the effect posting on paid), it goes back to
-  that locked state: that is the real state it was in before it posted, so it stays locked,
-  only its `editable_when_locked` fields change, and it posts again by Repost.
-* It is never deleted, even when its state would allow it: its reversed rows still name it as
-  their source and its number stays used. Delete answers 409 `This record has posted before,
-  so it cannot be deleted. Void it instead.` (or `Repost it and void it instead.` from a state
-  that cannot be voided), and details carry `_deletable: false` so screens do not offer it.
-* The response is the permission-filtered detail with a new ETag.
-
-**The state it returns to** is the state the posting move started from. The engine takes
-the states a record can be in before it posts (reachable from the default without entering a
-state an effect posts on) and keeps those a posting move starts from. When there is one, that
-is the state. When moves from several states post (testCRM's Mark won starts from proposal or
-negotiation), the record's Journal names the one it took last, in its latest `moved` entry
-into a posting state. A model without a journal and with several such states cannot unpost.
-
-**Dependent records.** A record depends on this one when it, or one of its Table rows, links
-with a `Link` or a `Reference` to the record, to one of its Table rows at any depth, or to one
-of the effect rows it posted (an allocation matching one of its ledger entries, say), or when
-it posted effect rows that do. It blocks the unpost while it is live: it has a State, is not
-void, and is in a locked state or has live postings itself. A draft payment does not block; a
-confirmed one does until it is voided or unposted. The record's own Table rows and effect rows
-are not dependents. Only Link fields whose target is the model, one of its Table row models
-or one of its effect targets are read, plus every `Reference` field (a Reference may name any
-model); see [performance.md](performance.md#unpost-dependents) for the cost.
-
-### Repost
-
-`POST /api/{model}/{id}/repost` with `{}` or `{"reason": "..."}`, or `context.repost(Invoice,
-record_id)`.
-
-* The record must have been unposted: it has effect rows, none of them live, and it is not
-  void. Otherwise 409 `This record is posted already`, `This record was never posted. Use its
-  moves to post it` or `This record is void, so it cannot be reposted`.
-* The reason is optional; when given it is checked like an unpost reason and recorded.
-* The move that posts from the current state must ask for no value it may require (a
-  `required` or `required_when` field it asks for); otherwise 409 `Send asks for values, so
-  post the record with Send itself`, since a repost sends no values.
-* The engine runs the move that posts from the record's current state, through the normal
-  move pipeline: the move's roles and guard, recalculation, validation and the version check
-  (a stale record answers 409 `SCHEMA_VERSION_MISMATCH` and is recalculated first), then the
-  effects post fresh rows. When no single move posts from the current state, the answer is 409
-  and the record's own moves are the way to post it.
-* The Journal gets the move's `moved` and `effects` entries, then `reposted` with `to`,
-  `move` and the reason when given. A Controls audit row is written. A failed check rolls
-  everything back.
-
-### Permissions for unpost and repost
-
-* `Rule.operations` accepts `"unpost"` and `"repost"` on models whose effects all declare a
-  `reverse`; naming them on another model fails at startup. A Rule naming `repost` must also
-  name `update` (a Controls override likewise), since a repost runs the posting move.
-* Admin always has both while its Rule on the model allows `read` and `update`, like void.
-  A Rule naming one adds that role and never removes admin. A Controls override can keep or
-  take away a role's grant, like `void`.
-* Every surface uses the same check: the HTTP routes (sessions, API keys, AI assistants and
-  scoped sub-host frontends, which must list `(Model, "unpost")` or `(Model, "repost")` in
-  their `ApiScope`), and `Context.unpost()` and `Context.repost()`. An API key needs write
-  access and the model in its scope. The connector and the MCP server do not offer them.
-
-### Availability in details
-
-For roles that have the operation and can read the State, details add `_unpost` on a posted
-record and `_repost` on an unposted one, outside the ETag:
-
-```json
-{"_unpost": {"allowed": true}}
-```
-
-They are left out for other roles and when they do not apply. `_repost` is also left out
-when the caller could not run the posting move: its role is not among the move's roles, it
-cannot update the record (permission or row scope), or the move asks for a required value. Dependent records are checked
-when the unpost is sent, not in details, so `_unpost` can be allowed and the unpost still be
-refused with the names of the records that depend on it.
 
 ## Schema metadata
 
-`/api/schema` model entries gain, additively:
+`/api/schema` model entries carry, for roles that can read the State:
 
-* Entries of voidable models gain `voidable: true` and `revisable`, and their `permissions`
-  gain `void` (and `revise` when revisable), for roles that can read the State. Entries of
-  models that can unpost gain `unpostable: true` and `unpost` and `repost` in `permissions`.
-  Other entries are unchanged. The `revises` field is listed with the other fields (type `link`, read only).
-* `state`: `field`, `states`, `default`, `locked`, `final`, `voidable`, `cancelled` (the
-  declared cancelled states plus `"void"` on a voidable State), `show` and `moves`, each
-  with `from`, `to`, `label`, `roles`, `guarded`, `when` and, when the move asks for values,
-  `asks`. System moves are left out. `when` is the serialized
-  finite-v1 expression when the role can read every value it reads, otherwise `null`.
-* Each model action gains `roles`, `inputs` (field schemas, as in `fields`),
-  `available_when` (the same readability rule), `guarded`, and `arguments` in the scalar
-  form the current form renders (text for everything except whole numbers and Booleans).
-* Field entries gain `editable_when_locked: true` where declared, and the State field has
-  `state: true`.
+```json
+"state": {"field": "status", "default": "draft", "show": "bar",
+          "steps": [{"key": "draft", "label": "Draft", "color": null, "lock": false, "release": false, "final": false}],
+          "rules": [{"key": "void", "from": ["issued"], "to": "void", "label": "Void", "by": ["admin"],
+                     "guarded": false, "when": null, "primary": false, "reject": false,
+                     "remark": {"mode": "required", "label": null}}]}
+```
+
+* System moves are left out. `by` lists role names. `when` is the serialized finite-v1
+  expression when the role can read every value it reads, otherwise `null`. `asks` appears when
+  the rule asks for fields.
+* Each model action has `roles`, `inputs` (field schemas, as in `fields`), `available_when`
+  (the same readability rule), `guarded`, and `arguments` in the scalar form the current form
+  renders.
+* Field entries carry `versioned: false` where declared, and the State field has `state: true`.
+
+## Rules changed on an instance
+
+States stay as the model declares them; an instance may change a step's label and colour, change
+or turn off code rules by key, and add rules between existing steps. Changes are Controls
+overrides (`POST /api/_controls/overrides`, audited under "Approval Rules"), kinds:
+
+| Kind | Key | Value |
+| --- | --- | --- |
+| `state` | `Model.step` | `{"label": "Posted", "color": "green"}` |
+| `rule` | `Model.rule_key` of a code rule | any of `label`, `by`, `when`, `remark`, `levels`, `ask`, `primary`, `reject`, `self_approve`; or `{"off": true}` |
+| `rule` | a new key | the same, with `from` (a list of steps) and `to` |
+
+* `by` is a list of role names (custom roles included) and `{"field": "approver"}` user fields.
+* `when`, a level's `when` and a remark's `required_when` are condition text in the expression
+  language (`total >= 10000 and customer_group == "Export"`), parsed and checked against the
+  model's fields on save; no Python runs. `levels` is a list of `{"by", "when", "pending"}`.
+* A value of `null` resets the item to the code. A code rule cannot be deleted, only turned off,
+  because an upgrade would bring it back.
+* **Saving is checked** for the whole rule set of the model, with every change of the request: an
+  unknown step, a rule out of a final step, an unknown role or field, a level without approver or
+  pending text, or a step that is not final and that no rule leaves (where the code had one) is
+  refused with 422. A step no rule reaches is reported as a problem.
+* **Orphans.** An override whose code rule no longer exists (after an upgrade) is kept, ignored
+  and listed in the overrides' `problems`; it does not block other saves.
+* The rule set is compiled once per config version (`evlet_config.version`), which every process
+  checks once per request, so all processes follow a change from their next request. Every move
+  and approval logs the rule key and the rule set version (`rules_version`) it used.
+* Changes take effect when saved; the Approval Rule document with its own versions, and the
+  Controls page for it, come later.
 
 ## Not yet
-
-* The Journal ([journal.md](journal.md)) records each move, void (with its reason),
-  revise, unpost and repost. `evlet.states.moved()`, `evlet.corrections.voided()`,
-  `evlet.corrections.revised()`, `evlet.corrections.unposted()` and
-  `evlet.corrections.reposted()` write those entries in the operation's transaction; the
-  last two also write the Controls audit row.
-* Effects are reversed in `evlet.corrections.reverse_effects()`; see [effects.md](effects.md).
-* Document numbers are described in [sequences.md](sequences.md). A void record keeps its
-  number; `evlet.corrections.prepare_copy()` clears the numbers on a revision's copy, which
-  is numbered again when it reaches `assign_on`.
-* Draft previews (`/api/_draft`) do not report the State lock; the save does. A preview
-  of a locked or posted record shows the calculated values it keeps, like the save.
-* The connector and the MCP server do not offer moves, void, revise, unpost or repost yet.
-* The record view shows the State as steps with its moves, and offers void and revise
-  from `_moves`, `_void` and `_revise`, and unpost and repost from `_unpost` and `_repost`.
+* Draft previews (`/api/_draft`) do not report the State lock; the save does. A preview of a
+  locked or posted record shows the calculated values it keeps, like the save.

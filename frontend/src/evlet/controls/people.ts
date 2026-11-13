@@ -33,7 +33,10 @@ export const field = (label: string, id: string, control: Node, hint: () => stri
 export function twoStepRequired(ctx: ControlsContext, role: string) {
   const state = ctx.state.get();
   if (role === 'admin') return state.admin_rules?.two_step ?? true;
-  return Boolean(state.settings['security.two_step']?.value) || (state.settings['security.two_step_roles'].value as string[]).includes(role);
+  if (Boolean(state.settings['security.two_step']?.value) || (state.settings['security.two_step_roles'].value as string[]).includes(role)) return true;
+  // Roles that open Controls need it too, unless an admin switched that off (older servers send no setting: on).
+  const opens = state.roles.some(item => item.id === role && item.opens_controls);
+  return opens && (state.settings['security.controls_two_step']?.value as boolean | undefined ?? true);
 }
 
 /** The shortest password for a role: config.py's for admin, the Controls setting for everyone else. */

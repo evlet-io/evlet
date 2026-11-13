@@ -1,18 +1,18 @@
-"""derive() with Meta.derives, and before_close(self, to): real SQLite, through the ASGI routes and Context.
+"""derive() with Meta.derives, and a state hook that refuses to close: real SQLite, through the ASGI routes and Context.
 
 derive() builds stored values formulas cannot express (one row per distinct value of another Table, rows
 built from a linked record with a remainder row). It runs before calculations on every write and preview;
 what it sets is cleaned, calculated, validated and returned, and callers cannot write it.
 
-before_close() refuses a move into a final state, a void or a delete while other records depend on the
+An @state("cancelled", "void") hook refuses a move into a final state while other records depend on the
 record, on every surface, before anything is written."""
 
 from decimal import Decimal as D
 
 import pytest
 
-from evlet import (Application, Boolean, Child, Database, Decimal, Integer, Link, Model, Move, Registry, Rule, State, Table,
-                   Text, ValidationError)
+from evlet import (Application, Boolean, Child, Database, Decimal, Integer, Link, Model, Registry, Rule, State, Table,
+                   Text, ValidationError, state)
 from evlet.auth import AccessError, KeyAccess, LocalAuth, User
 from evlet.connector import ConnectorError
 from evlet.tools import ApprovalNeeded
@@ -33,7 +33,7 @@ class Plan(Model):
 
 
 class Trip(Model):
-    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void'))}
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 
     class Meta:
         calculation_language = 'finite-v1'
@@ -54,7 +54,7 @@ class Trip(Model):
         remainder = Boolean(default=False)
 
     title_text = Text(max_length=40, default='trip')
-    remarks = Text(max_length=40, default='', editable_when_locked=True)
+    remarks = Text(max_length=40, default='', versioned=False)
     plan = Link(Plan)
     amount = Decimal(scale=2, default=0)
     stops = Table(Stop)
@@ -64,9 +64,16 @@ class Trip(Model):
     shares = Table(Share)
     # A calculation over rows derive() built: it runs after derive().
     total_minutes = Decimal(scale=2, compute=places.sum('minutes'))
-    status = State(('open', 'closed', 'cancelled', 'void'), default='open',
-                   moves=(Move('open', 'closed', 'Close'), Move('open', 'cancelled', 'Cancel'), Move('closed', 'cancelled', 'Cancel')),
-                   locked=('closed', 'cancelled', 'void'), final=('cancelled', 'void'), voidable=('closed',))
+    status = State(
+        State.Step('open'),
+        State.Step('closed', lock=True),
+        State.Step('cancelled', lock=True, final=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+            State.Rule(('open', 'closed'), 'cancelled', 'Cancel', key='cancelled'),
+            State.Rule('closed', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ), default='open')
 
     def derive(self):
         session = self.context.session
@@ -97,10 +104,9 @@ class Trip(Model):
             shares.append({'amount': self.amount - part * (plan.parts - 1), 'remainder': True})
         self.shares = shares
 
-    def before_close(self, to):
-        SEEN.append({'close': to, 'readonly': self.context.readonly})
-        if 'write' in MISBEHAVE:
-            self.context.create(Plan, parts=9)
+    @state('cancelled', 'void')
+    def check_dependents(self):
+        SEEN.append({'close': self.status})
         legs = self.context.session.list(Leg, filters={'trip': self.id, 'status__in': ['open']}, order_by=('id',))
         if legs:
             raise ValidationError({'_form': 'Cancel the later documents first: ' + ', '.join(leg.label for leg in legs)})
@@ -111,7 +117,12 @@ class Leg(Model):
     permissions = FULL
     label = Text(max_length=40, required=True)
     trip = Link(Trip)
-    status = State(('open', 'cancelled'), default='open', moves=(Move('open', 'cancelled', 'Cancel'),), final=('cancelled',))
+    status = State(
+        State.Step('open'),
+        State.Step('cancelled', final=True),
+        rules=(
+            State.Rule('open', 'cancelled', 'Cancel', key='cancelled'),
+        ), default='open')
 
 
 class Factor(Model):
@@ -367,16 +378,14 @@ def test_declarations_are_checked_when_the_model_is_defined():
             amount = Decimal(scale=2)
             total = Decimal(scale=2, compute=amount * 2)
             def derive(self): pass
-    with pytest.raises(ValueError, match='takes self and to'):
-        class WrongClose(Model):
+
+    with pytest.raises(ValueError, match='was removed'):
+        class OldClose(Model):
             name_text = Text()
-            def before_close(self): pass
-    with pytest.raises(ValueError, match='a Table row cannot declare it'):
-        class RowHook(Child):
             def before_close(self, to): pass
 
 
-# before_close(): moves into a final state, void and delete
+# Closing hooks: moves into a final state
 
 def leg(admin, trip_id, label='L-2'):
     status, body, _ = admin('POST', '/api/leg', {'label': label, 'trip': trip_id})
@@ -392,7 +401,7 @@ def test_a_move_into_a_final_state_is_refused_while_records_depend_on_it(app):
     status, body, _ = move(admin, 'trip', trip, 'cancelled')
     assert status == 422 and body['fields'] == {'_form': 'Cancel the later documents first: L-2'}
     assert admin('GET', f'/api/trip/{trip}')[1]['status'] == 'open' and journal_count(app) == entries
-    assert SEEN[-1] == {'close': 'cancelled', 'readonly': True}
+    assert SEEN[-1] == {'close': 'cancelled'}
     # A move into a state that is not final does not ask.
     calls = [item for item in SEEN if 'close' in item]
     assert move(admin, 'trip', trip, 'closed')[0] == 200
@@ -403,22 +412,15 @@ def test_a_move_into_a_final_state_is_refused_while_records_depend_on_it(app):
     assert status == 200 and body['status'] == 'cancelled'
 
 
-def test_void_and_delete_ask_too(app):
+def test_the_void_rule_asks_too(app):
     app, admin = app
     trip = create(admin)['id']
     leg(admin, trip)
     assert move(admin, 'trip', trip, 'closed')[0] == 200
     url = f'/api/trip/{trip}'
-    status, body, _ = admin('POST', f'{url}/void', {'reason': 'mistake'}, headers={b'if-match': admin('GET', url)[2][b'etag']})
+    status, body, _ = admin('POST', f'{url}/moves/void', {'remark': 'mistake'}, headers={b'if-match': admin('GET', url)[2][b'etag']})
     assert status == 422 and body['fields'] == {'_form': 'Cancel the later documents first: L-2'}
     assert admin('GET', url)[1]['status'] == 'closed' and SEEN[-1]['close'] == 'void'
-    other = create(admin)['id']
-    leg(admin, other, 'L-3')
-    status, body, _ = admin('DELETE', f'/api/trip/{other}', None, headers={b'if-match': admin('GET', f'/api/trip/{other}')[2][b'etag']})
-    assert status == 422 and body['fields'] == {'_form': 'Cancel the later documents first: L-3'}
-    assert SEEN[-1]['close'] is None
-    with app.database.transaction() as tx:
-        assert tx.count(Trip) == 2
 
 
 def test_python_and_tool_callers_are_refused_the_same_way(app):
@@ -428,33 +430,20 @@ def test_python_and_tool_callers_are_refused_the_same_way(app):
     with app.business.context(ADMIN) as context:
         with pytest.raises(ValidationError, match='later documents first'):
             context.move(Trip, trip, 'cancelled')
-        with pytest.raises(ValidationError, match='later documents first'):
-            context.delete(Trip, trip)
-        # The context carries on: nothing was written by the refused changes.
+        # The context carries on: nothing was written by the refused change.
         assert context.get(Trip, trip).status == 'open'
     assert admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'setting', 'key': 'mcp.allow_writes', 'value': True}]})[0] == 200
     tools = app.business.tools
     mcp = User(1, 'admin', 'admin', access=KeyAccess(True, None, None, 7))
     with pytest.raises(ConnectorError) as caught:
         try:
-            tools.execute(mcp, 'delete_record', {'model': 'trip', 'id': trip})
+            tools.execute(mcp, 'change_state', {'model': 'trip', 'id': trip, 'rule': 'cancelled'})
         except ApprovalNeeded as exc:
             tools.decide(ADMIN, exc.approval['id'], True)
-            tools.execute(mcp, 'delete_record', {'model': 'trip', 'id': trip})
+            tools.execute(mcp, 'change_state', {'model': 'trip', 'id': trip, 'rule': 'cancelled'})
     assert caught.value.status == 422 and caught.value.fields == {'_form': 'Cancel the later documents first: L-2'}
     with app.database.transaction() as tx:
         assert tx.get(Trip, trip).status == 'open'
-
-
-def test_before_close_cannot_write(app):
-    app, admin = app
-    trip = create(admin)['id']
-    MISBEHAVE.append('write')
-    with app.business.context(ADMIN) as context, pytest.raises(AccessError) as caught:
-        context.move(Trip, trip, 'cancelled')
-    assert caught.value.status == 403
-    with app.database.transaction() as tx:
-        assert tx.count(Plan) == 0 and tx.get(Trip, trip).status == 'open'
 
 
 # Derived fields on the rows of a Table callers edit ("table.field" in Meta.derives)

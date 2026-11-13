@@ -1,8 +1,21 @@
 # Upgrade or retire an app
 
-Apps are shared source code; instances hold separate data. There is no automated
-`upgrade`, `uninstall`, `restore` or backup-cleanup command yet. Use the explicit
-workflow below.
+Apps are shared source code; instances hold separate data. Evlet has no automated
+app `upgrade` or `uninstall` command and does not clean up old backups. Use the
+explicit workflow below.
+
+`evlet backup` and `evlet restore` save and put back an instance's database
+([cli.md](cli.md#back-up-and-restore)):
+
+```sh
+evlet backup --instance acme
+evlet restore instances/acme/data/backups/20261112T061500000000Z.sqlite3 --instance acme
+```
+
+`evlet backup` copies the instance's four SQLite files into `data/backups/` while the
+server may keep running. `evlet restore` puts a set back with the server stopped,
+after keeping a copy of the files it replaces. Both hold only the database: keep
+`secret.key`, `files/` and the app sources with them.
 
 ## Upgrade an app
 
@@ -10,8 +23,10 @@ workflow below.
    version, its dependency changes and appended migrations.
 2. Keep a copy of the project while it is stopped, including app source,
    `instances/*/config.py`, `apps.lock`, databases and private files. Keep the Python
-   environment's dependency lock too. An automatic SQLite backup contains only
-   database data, not uploaded files or app source.
+   environment's dependency lock too. `evlet backup --instance acme` makes a
+   database backup you can put back with `evlet restore`. It, like the automatic
+   backup `evlet migrate` writes, contains only database data, not uploaded files,
+   `secret.key` or app source.
 3. Update the app's source to the reviewed revision. For an app fetched from Git,
    fetch the remote and check out the app's reviewed tag or commit. For example:
 
@@ -37,7 +52,9 @@ workflow below.
 
 A changed installation is staged and checked before publication. On a migration
 failure the current database and lock remain intact. Restore the matching old
-source before restarting an instance whose migration failed. An unchanged
+source before restarting an instance whose migration failed. To go back to the
+database as it was before a migration that succeeded, stop the instance, restore
+the old source and run `evlet restore` with the backup `evlet migrate` printed. An unchanged
 `migrate`, with the same apps and the same Evlet version, validates the current
 instance without making another full backup.
 
@@ -65,6 +82,10 @@ framework versioning have no `evlet` entry and are treated the same way. To upgr
    The output lists the framework migrations it applied and the backup path.
 4. Start the instance and check it.
 
+On a server set up with `evlet setup --host --apply`, `evlet upgrade acme` runs these steps
+for you after one question, and prints the rollback commands when one fails
+([cli.md](cli.md#upgrade-evlet-on-a-server)).
+
 Framework migrations are ordered, checksummed steps recorded in the
 `evlet_framework_migrations` table with the Evlet version that applied them. The
 first step, `0001_startup_tables`, adopts the tables that Evlet 0.2.0 and earlier
@@ -81,6 +102,12 @@ trigger that refuses an id change to every model table ([model-engine.md](model-
 Currency amount is stored at 6 places; `evlet migrate` moves the amounts before any app migration runs
 ([model-engine.md](model-engine.md#decimal-places-per-currency)). `0010_split_files` moves sign-in sessions, the
 tool-call log and Eva into their own SQLite files next to the database (see From 0.4.2 to 0.4.3 below).
+`0011_state_manager` adds the journal's `rule`, `remark`, `level`, `base` and `rules_version` columns
+(old entries keep their values and their hashes), creates `evlet_releases`, lets `evlet_overrides` take the
+kinds `state` and `rule`, turns confirmable
+revisions into releases and lifecycle states into State values (it refuses, naming the models, when
+a model has no State with those steps), and gives every record already in a release step a v0
+release ([states-actions.md](states-actions.md#releases-and-versions)).
 Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet

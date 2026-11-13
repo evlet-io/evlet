@@ -3,7 +3,7 @@ from decimal import Decimal as D
 import pytest
 
 from evlet import (Model, Child, Table, Decimal, Currency, Text, Rule, Registry,
-                   Database, LocalAuth, Application, User, ValidationError, action, depends, Ref)
+                   Database, LocalAuth, Application, User, ValidationError, action, depends, Ref, validate)
 from evlet.identity import RecordId
 from evlet.reactivity import compile_expression, evaluate
 from test_business import http, client, PASSWORD
@@ -24,10 +24,12 @@ class Order(Model):
         def available(self):
             return self.qty + D(2)
         stock = Decimal(query=available, stored=False)
+        @validate
         def validate(self):
             if self.qty <= 0: raise ValidationError({'qty': 'Enter a positive quantity'})
     items = Table(Item, required=True)
     total = Currency(compute='sum(items.amount)')
+    @validate
     def validate(self):
         if not self.items: raise ValidationError({'items': 'Add an item'})
     @action

@@ -5,9 +5,8 @@ with the connection's named methods. Only the SQLite dialect (evlet/sqlite.py, e
 class in evlet/database.py) writes SQL text. This test fails on SQL text anywhere else in evlet/: a string that
 reads as an SQL statement, or an execute(), executemany() or executescript() call given text.
 
-The instance tools that open SQLite files themselves (backups, restores, the instance catalog) are listed in
-INSTANCE_TOOLS with the SQL they hold today; deciding which of them stay SQLite tools is the next step of the
-plan. Their numbers may only go down.
+The instance tools (backup, restore, install, the tenant catalog) open SQLite files with the file tools in
+evlet/writes.py and run query builder statements on the connection they get, like the rest of the framework.
 """
 
 import ast
@@ -18,12 +17,6 @@ ROOT = Path(__file__).resolve().parents[1] / 'evlet'
 
 # The dialect: SQL text is allowed here (in database.py, only inside class Database).
 DIALECT = {'sqlite.py', 'writes.py'}
-
-# SQL found per instance tool: statements in strings plus execute() calls given text.
-INSTANCE_TOOLS = {
-    'instances.py': 14, 'tenancy.py': 19, 'cli/backup.py': 7, 'cli/install.py': 4, 'cli/journal.py': 5, 'cli/main.py': 1,
-    'cli/serve.py': 2, 'cli/site.py': 2,
-}
 
 # The start of an SQL statement, keywords in capitals as Evlet writes SQL.
 STATEMENT = re.compile(r'\s*(SELECT\s|INSERT\s+(OR\s+\w+\s+)?INTO\s|UPDATE\s+\S+\s+SET\s|DELETE\s+FROM\s|'
@@ -95,13 +88,9 @@ def test_sql_text_stays_in_the_dialect():
         name = path.relative_to(ROOT).as_posix()
         if name in DIALECT:
             continue
-        found, allowed = sql_text(path), INSTANCE_TOOLS.get(name, 0)
-        if len(found) > allowed:
+        if found := sql_text(path):
             where = ', '.join(f'line {line} {what}' for line, what in found)
             problems.append(f'{name}: SQL text outside the dialect ({where}); build statements with evlet/qb.py')
-        elif len(found) < allowed:
-            problems.append(f'{name}: {len(found)} SQL texts left; lower INSTANCE_TOOLS to {len(found)}' if found
-                            else f'{name}: no SQL text left; remove it from INSTANCE_TOOLS')
     assert not problems, '\n'.join(problems)
 
 

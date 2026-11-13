@@ -9,20 +9,18 @@ This guide covers Phase 7 of the model handoff.
 ## Declaring a Sequence
 
 ```python
-from evlet import Date, Link, Model, Move, Sequence, State, Text
+from evlet import Date, Link, Model, Sequence, State, Text
 
 
 class Invoice(Model):
     company = Link(Company, required=True)
     posting_date = Date(required=True)
     number = Sequence("INV-{year}-{n:05}", scope=("company",), assign_on="issued", date="posting_date")
-    status = State(("draft", "issued", "void"), moves=(
-        Move("draft", "issued", "Issue"),
-    ), locked=("issued", "void"), final=("void",), voidable=("issued",))
+    status = State(State.Step("draft"), State.Step("issued", lock=True), State.Step("void", lock=True, final=True),
+                   rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")))
 
     class Meta:
         title_field = "number"
-        revisable = True
 ```
 
 `Sequence(format, scope=(), assign_on="create", date=None)` also takes `label`,
@@ -85,22 +83,17 @@ because it changes after the number is assigned. Two companies can both have
   whose default state is `assign_on` gets it on create.
 * A record keeps its number for life. Moving back to draft and issuing again keeps the same
   number. A voided record keeps its number, and a record voided before its number was due
-  stays without one. Voiding never assigns a number.
-* A revision (`revise`) is a new record: its copy starts with every Sequence null. With
-  `assign_on="create"`, or when the copy's starting state is `assign_on`, the engine gives
-  the copy a fresh number as it creates it; otherwise the copy gets one when a move enters
-  `assign_on`. The original is void and keeps its number. Until the copy is numbered its
-  scope fields and date may change like those of any draft.
+  stays without one. Only a move into `assign_on` assigns a number.
 * Once a number is assigned, the scope fields cannot change (`This is fixed once the number
   is assigned`) and the date field cannot move to another period (`This stays in the period
   of the assigned number`). It may change within the same period. A role that cannot read
   the number gets `This cannot change now` instead, so the message does not reveal that a
   number exists. Raw `Session.update` (and legacy `Action` handlers) get the same check
   unless they run inside `tx.maintenance()`.
-* The number is assigned after the `run` method, calculations, rules and validation, and
+* The number is assigned after the `@state` hooks, calculations, rules and validation, and
   before the record is written. Calculations, `initial` values and field rules of the same
   document cannot read a Sequence (registration fails), because they would see null on the
-  write that assigns it. Move guards, `available_when`, actions and other documents through
+  write that assigns it. Rule guards, `available_when`, actions and other documents through
   Link lookups can read it.
 * A Sequence belongs on a root document, not on `Table` rows.
 
@@ -110,7 +103,7 @@ because it changes after the number is assigned. Two companies can both have
   sending a value is a field error, `This number is assigned by the system`. Sending null on
   create, or the saved value on update, is not a change and is accepted. A role that cannot
   read the field gets 403 for any value, so it cannot test guesses.
-* Python code in actions and `run` methods cannot assign it on the draft (the same error).
+* Python code in actions and hooks cannot assign it on the draft (the same error).
 * Raw `Session.create` and `Session.update` (including legacy `Action` handlers) raise an
   error unless they send the saved value or run inside `tx.maintenance()` for an audited
   repair.
@@ -128,19 +121,19 @@ values (empty without a scope); `period` is `YYYY`, `YYYY-MM` or empty.
 Each assignment is one statement that inserts the counter or adds one to it, in the write
 transaction of the record. Evlet write transactions are serialized (SQLite `BEGIN
 IMMEDIATE`), so parallel writers get distinct numbers.
-If anything later in the transaction fails, for example validation, a `changed()` reaction
+If anything later in the transaction fails, for example validation, a hook
 or a database constraint, the whole transaction rolls back, including the counter, and the
 number is given to the next committed record. Deleting a record does not give its number
 back.
 
-Each document operation (create, update, move, action, delete, void, revise) runs inside a savepoint. If
+Each document operation (create, update, move, action, delete) runs inside a savepoint. If
 trusted code catches a failed operation inside one `Context` and the transaction still
 commits, the failed operation leaves nothing behind: no counter step, no state change, no
 number. A unique or foreign key violation inside an operation is raised as `ConflictError`.
 
-A move's `run` method that writes other rows through `self.context.session` shares this
+A `@state` hook that writes other rows through `self.context.session` shares this
 transaction and savepoint: if the move fails, those rows go too, and the number is not used up
-([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+([states-actions.md](states-actions.md#the-transaction-session-in-hooks-and-actions)).
 
 ### Clashes
 
@@ -256,10 +249,10 @@ class Project(Model):
         naming = Naming(Series("PRJ-{#####}"), label="Project number")
 ```
 
-**When.** `assign_on="create"` (the default), `"confirm"` for a confirmable model, or a state of the
-model. A confirm-time name is taken in the confirm transaction, so drafts never use a number and the
+**When.** `assign_on="create"` (the default) or a state of the model. A name given on entering a
+state such as `confirmed` is taken in that move's transaction, so drafts never use a number and the
 numbers of confirmed documents have no gaps, as UAE tax invoices need. Until then the name is
-empty and the form shows "Assigned on confirm".
+empty and the form shows "Assigned on confirmed".
 
 **Format.** `{YYYY}`, `{YY}`, `{MM}`, `{DD}`, exactly one counter `{###}` to `{########}` (the `#`
 count is the zero padding) and `{field}`, the value of a short text field of the model with `/` and
@@ -270,7 +263,10 @@ is longer is refused when saved, and a field value that makes a name longer is r
 **Conditions** are text, parsed by `evlet/expressions.py`: `field op value`, `field in (a, b)`,
 `and`, `or`, `not` and brackets, with `==`, `!=`, `>`, `>=`, `<`, `<=`. Values are quoted text,
 numbers, `true`, `false` or `empty` (matches null and ""). Numbers compare as decimals, dates as ISO
-text, a Link by its id. No functions, attributes, arithmetic or other names; 500 characters and 10
+text, a Link by its id number (`customer == 7`). A condition is always true or false: a comparison
+with an empty field is false, so `total > 5` does not match a record without a total. Conditions
+compile to the same expression nodes as finite-v1 formulas and run on the same evaluator
+([finite-calculations.md](finite-calculations.md)). No functions, attributes, arithmetic or other names; 500 characters and 10
 levels of brackets and `not` at most. Values must suit the field: an option of a choice field, a
 date as `"2026-01-31"`, and `empty` only with `==` or `!=`. Errors read like `Use == to compare, not =.`,
 `totl isn't a field on this model. Did you mean total?`, `Put text values in quotes, like "export".`
@@ -294,13 +290,10 @@ when the role can read the name. The New screen shows the name disabled with tha
 never sends it. The record page shows the title as its heading and the name next to it in a
 monospaced font.
 
-**Edits, reopening and revisions.** Once a record has a name, anyone who may write the `name`
+**Edits and reopening.** Once a record has a name, anyone who may write the `name`
 field can change it through the normal edit; the change is journaled like any field and a taken name
-is refused. Links point to the id, so nothing else changes. A confirmable document keeps its name
-through confirm, cancel, reopen and confirm again, and its name cannot change after its first
-confirmation; Evlet does not add `-1`, `-2` suffixes ([lifecycle-specification.md](lifecycle-specification.md)).
-A revision (`revise`) is a new record and gets a new name by the same rules; the voided original
-keeps its own.
+is refused. Links point to the id, so nothing else changes. A document keeps its name
+through confirm, reopen and confirm again; Evlet does not add `-1`, `-2` suffixes.
 
 **Gaps.** Issuing happens in the write transaction, so a write that fails and rolls back also
 rolls back its counter step, and the next committed record gets that number. Deleting a record
@@ -326,8 +319,6 @@ a migration like the Playground's: `RetireField` the old field and a `RunData` s
 
 ## For later phases
 
-* `evlet.sequences.clear_for_copy(model, values)` returns a copy of `values` with every
-  Sequence set to null. `evlet.corrections.prepare_copy()` calls it on a revision's copy.
 * `evlet.sequences.assigned(context, model, record_id, field, number)` is called once per
   assigned number after the record is saved, in its transaction. It writes the Journal's
   `number` entry ([journal.md](journal.md)).

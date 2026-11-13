@@ -139,7 +139,7 @@ def test_document_writes_actions_moves_effects_and_void_record_the_person(app):
     entries = books_module.entries(app)
     assert entries and all(entry['evlet_created_by'] == 1 and entry['evlet_created_at'] > changed[2] for entry in entries)
     # A void changes only the state, and still counts as a change by whoever voided.
-    assert editor('POST', f'{url}/void', {'reason': 'Wrong'}, headers=etag(editor, url))[0] == 200
+    assert editor('POST', f'{url}/moves/void', {'remark': 'Wrong'}, headers=etag(editor, url))[0] == 200
     voided = stamps(app, 'invoice', record_id)
     assert voided[3] == 2 and voided[2] > moved[2] and voided[:2] == created[:2]
 
@@ -200,7 +200,7 @@ def test_upgrade_adds_and_fills_the_columns_from_the_journal_and_the_id(tmp_path
                                (recent + 1, kind, actor, at))
     database = Database(path, Registry(Note))
     database.initialize()  # A table without the time columns is accepted until the framework step runs.
-    assert upgrade(database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files']
+    assert upgrade(database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager']
     with sqlite3.connect(path) as connection:
         rows = {row[0]: row[1:] for row in connection.execute(f'SELECT id, {", ".join(audit.COLUMNS)} FROM note')}
     assert rows[42] == (None, None, None, None)

@@ -2,8 +2,8 @@
 
 import pytest
 
-from evlet import (Action, Boolean, Child, Currency, Database, Date, Decimal, Integer, Link, Model, Move, Registry, Rule,
-                   State, Table, Text, ValidationError, action)
+from evlet import (Action, Boolean, Child, Currency, Database, Date, Decimal, Integer, Link, Model, Registry, Rule,
+                   State, Table, Text, ValidationError, action, state, validate)
 from evlet.auth import AccessError, User
 from evlet.calc import F
 from evlet.forms import Dialog
@@ -30,7 +30,7 @@ class InvoiceLine(Child):
     qty = Decimal(default=1)
     rate = Currency(default=0)
     amount = Currency(compute=F('qty') * F('rate'))
-    note = Text(default='', editable_when_locked=True)
+    note = Text(default='', versioned=False)
     parts = Table(Part)
 
 
@@ -39,24 +39,31 @@ class Invoice(Model):
     permissions = HIDDEN
     customer = Link(Customer)
     title = Text(default='')
-    remarks = Text(default='', editable_when_locked=True)
+    remarks = Text(default='', versioned=False)
     approved = Boolean(default=False)
     secret = Currency(default=0)
     lines = Table(InvoiceLine)
     total = Currency(compute=lines.sum('amount'))
     reference = Text(default='', locked_when=F('status') != 'draft')
-    status = State(('draft', 'issued', 'paid', 'void'), moves=(
-        Move('draft', 'issued', 'Issue', when=(F('total') > 0) & (F('customer.limit') >= 0) & (F('secret') < 1000), run='on_issue'),
-        Move('issued', 'paid', 'Mark paid', roles=('admin',), when=F('approved'), run='on_paid'),
-        Move(('draft', 'issued'), 'void', 'Void', roles=('admin',)),
-    ), locked=('issued', 'paid', 'void'), final=('paid', 'void'))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        State.Step('paid', lock=True, final=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued', when=(F('total') > 0) & (F('customer.limit') >= 0) & (F('secret') < 1000)),
+            State.Rule('issued', 'paid', 'Mark paid', key='paid', by=('admin',), when=F('approved')),
+            State.Rule(('draft', 'issued'), 'void', 'Void', key='void', by=('admin',)),
+        ))
 
+    @state('issued')
     def on_issue(self):
         if self.title == 'fail':
             raise ValidationError({'title': 'Run failed'})
         self.reference = 'INV-' + str(self.id)
         self.remarks = 'issued'
 
+    @state('paid')
     def on_paid(self):
         # Runs on a locked record: it may change `title`, but `reference` keeps its locked_when.
         self.title = 'Paid'
@@ -118,26 +125,33 @@ def new_invoice(c, customer=None, **values):
 
 # Declarations
 
-def test_state_and_move_declarations_are_checked():
-    for options in ({'locked': ('x',)}, {'final': ('x',)}, {'voidable': ('a',)}, {'default': 'x'}, {'locked': 'a'},
-                    {'moves': (Move('a', 'x'),)}, {'moves': (Move('b', 'a'),), 'final': ('b',)},
-                    {'moves': (Move('a', 'b'), Move(('a', 'c'), 'b'))}, {'moves': ('a',)},
-                    {'voidable': ('b',), 'locked': ('b',), 'final': ('b',)}, {'required': False}, {'locked_when': F('a')}):
+def test_state_and_rule_declarations_are_checked():
+    Step, R = State.Step, State.Rule
+    steps = (Step('a'), Step('b', lock=True), Step('c', final=True))
+    for bad in (lambda: State(), lambda: State(('a', 'b')), lambda: State(Step('a'), Step('a')), lambda: State(*steps, default='x'),
+                lambda: State(*steps, default='c'), lambda: State(*steps, rules=(R('a', 'x'),)), lambda: State(*steps, rules=(R('c', 'a'),)),
+                lambda: State(*steps, rules=(R('a', 'b'), R('a', 'b'))), lambda: State(*steps, rules=('a',)),
+                lambda: State(*steps, required=False), lambda: State(*steps, locked_when=F('a')), lambda: State(*steps, show='list'),
+                lambda: Step('A'), lambda: Step('a', color='pink'), lambda: Step('a', lock='yes'), lambda: Step('a', label='')):
         with pytest.raises(ValueError):
-            State(('a', 'b', 'c'), **options)
-    for arguments, options in ((('a', 'a'), {}), (((), 'b'), {}), (('a', 'b'), {'roles': ('owner',)}), (('a', 'b'), {'run': 'not valid'}),
-                               (('a', 'b'), {'when': 'total > 0'}), (('a', 'b'), {'label': ''}), (('a', ''), {})):
+            bad()
+    for arguments, options in ((('a', 'a'), {}), (((), 'b'), {}), (('a', 'b'), {'by': 'editor'}), (('a', 'b'), {'by': ('Not a role',)}),
+                               (('a', 'b'), {'when': 'total > 0'}), (('a', 'b'), {'label': ''}), (('a', ''), {}), (('a', 'b'), {'remark': 'maybe'}),
+                               (('a', 'b'), {'ask': 'note'}), (('a', 'b'), {'key': 'Bad key'}), (('a', 'b'), {'primary': 1})):
         with pytest.raises(ValueError):
-            Move(*arguments, **options)
-    assert State(('a', 'b')).default == 'a' and Move('a', 'b').label == 'B'
+            R(*arguments, **options)
+    rule = R('a', 'b')
+    assert State(*steps).default == 'a' and rule.label == 'B' and rule.key == 'a_to_b' and rule.roles == ('admin', 'editor')
+    assert R(('a', 'c'), 'b').key == 'a_c_to_b' and R('a', 'b', by=()).system and R('a', 'b', by=('manager', F('approver'))).users == ('approver',)
+    assert State(*steps, rules=(R('a', 'b'), R('a', 'b', key='other'))).locked == ('b',)
     with pytest.raises(ValueError, match='more than one State'):
-        type('Twice', (Model,), {'one': State(('a', 'b')), 'two': State(('a', 'b'))})
+        type('Twice', (Model,), {'one': State(Step('a'), Step('b')), 'two': State(Step('a'), Step('b'))})
     with pytest.raises(ValueError, match='root document'):
-        Registry(type('Holder', (Model,), {'rows': Table(type('Stated', (Child,), {'status': State(('a', 'b'))}))}))
-    with pytest.raises(ValueError, match='not a method'):
-        Registry(type('Runs', (Model,), {'status': State(('a', 'b'), moves=(Move('a', 'b', run='missing'),))}))
-    with pytest.raises(ValueError, match='editable_when_locked'):
-        Text(editable_when_locked='yes')
+        Registry(type('Holder', (Model,), {'rows': Table(type('Stated', (Child,), {'status': State(Step('a'), Step('b'))}))}))
+    with pytest.raises(ValueError, match='not a field'):
+        type('Asks', (Model,), {'status': State(Step('a'), Step('b'), rules=(R('a', 'b', ask=('missing',)),))})
+    with pytest.raises(ValueError, match='versioned'):
+        Text(versioned='yes')
     with pytest.raises(ValueError):
         action(inputs={'amount': 'Currency'})(lambda self, amount: None)
     with pytest.raises(ValueError):
@@ -163,9 +177,9 @@ def check_ordinary_writes_cannot_set_the_state(invoices):
     assert record['status'] == 'draft'
     assert new_invoice(c, customer, status='draft')[0]['status'] == 'draft'
     status, body, _ = c('POST', '/api/invoice', {'status': 'issued'})
-    assert status == 422 and body['fields'] == {'status': 'A new record starts as draft; use its moves to change it'}
+    assert status == 422 and body['fields'] == {'status': 'A new record starts as draft; use its rules to change it'}
     status, body, _ = c('PATCH', url, {'status': 'issued'}, headers=etag(c, url))
-    assert status == 422 and body['fields'] == {'status': 'This changes only through its moves'}
+    assert status == 422 and body['fields'] == {'status': 'This changes only through its rules'}
     # Sending the saved value back is not a change.
     assert c('PATCH', url, {'status': 'draft', 'title': 'Renamed'}, headers=etag(c, url))[1]['title'] == 'Renamed'
     with app.business.context(User(1, 'admin', 'admin')) as context:
@@ -202,8 +216,8 @@ def check_moves_check_state_role_guard_and_revision(invoices):
     assert status == 200, issued
     assert (issued['status'], issued['reference'], issued['remarks']) == ('issued', f"INV-{record['id']}", 'issued')
     assert headers[b'etag'] != before[b'if-match'] and headers[b'etag'] == editor('GET', url)[2][b'etag']
-    assert issued['_moves'] == [{'to': 'paid', 'label': 'Mark paid', 'allowed': False, 'reason': 'Your role cannot use this move'},
-                                {'to': 'void', 'label': 'Void', 'allowed': False, 'reason': 'Your role cannot use this move'}]
+    assert issued['_moves'] == [{'key': 'paid', 'to': 'paid', 'label': 'Mark paid', 'allowed': False, 'reason': 'Your role cannot use this move'},
+                                {'key': 'void', 'to': 'void', 'label': 'Void', 'allowed': False, 'reason': 'Your role cannot use this move'}]
     assert issued['_locked'] is True
     assert move(c, url, 'paid')[1]['error'] == 'Mark paid is not available: the condition for this move is not met'
     with app.business.context(User(1, 'admin', 'admin')) as context:
@@ -252,16 +266,22 @@ def test_moves_from_python_use_the_same_checks(invoices, tmp_path):
         assert context.get(Invoice, record['id']).status == 'issued'
 
     class Watched(Model):
-        status = State(('open', 'done'), moves=(Move('open', 'done', 'Finish'),))
+        status = State(
+            State.Step('open'),
+            State.Step('done'),
+            rules=(
+                State.Rule('open', 'done', 'Finish', key='done'),
+            ))
         changes = []
 
-        def changed(self, change):
-            Watched.changes.append((change.operation, change.before.status if change.before else None, change.after.status))
+        @validate
+        def seen(self):
+            Watched.changes.append((self.is_new, self.before.status if self.before else None, self.status))
     app = start(Database(tmp_path / 'watched.sqlite3', Registry(Watched)))
     with app.business.context(User(1, 'admin', 'admin')) as context:
         created = context.create(Watched)
         context.move(Watched, created['id'], 'done')
-    assert Watched.changes == [('create', None, 'open'), ('move', 'open', 'done')]
+    assert Watched.changes == [(True, None, 'open'), (False, 'open', 'done')]
 
 
 # Locks
@@ -351,8 +371,8 @@ def test_details_show_moves_and_actions_per_role_without_leaks(invoices):
     admin_view = c('GET', url)[1]
     assert admin_view['_locked'] is False
     assert admin_view['_moves'] == [
-        {'to': 'issued', 'label': 'Issue', 'allowed': False, 'reason': 'The condition for this move needs values that are not filled in yet'},
-        {'to': 'void', 'label': 'Void', 'allowed': True}]
+        {'key': 'issued', 'to': 'issued', 'label': 'Issue', 'allowed': False, 'reason': 'The condition for this move needs values that are not filled in yet'},
+        {'key': 'void', 'to': 'void', 'label': 'Void', 'allowed': True}]
     assert {item['name']: item for item in admin_view['_actions']}['record_payment'] == {
         'name': 'record_payment', 'label': 'Record payment', 'allowed': False, 'reason': 'The condition for this action is not met'}
     assert {item['name']: item['allowed'] for item in admin_view['_actions']} == {
@@ -361,8 +381,8 @@ def test_details_show_moves_and_actions_per_role_without_leaks(invoices):
     editor_view = editor('GET', url)[1]
     assert 'secret' not in editor_view
     assert editor_view['_moves'] == [
-        {'to': 'issued', 'label': 'Issue', 'allowed': False, 'reason': 'This move is not available now'},
-        {'to': 'void', 'label': 'Void', 'allowed': False, 'reason': 'Your role cannot use this move'}]
+        {'key': 'issued', 'to': 'issued', 'label': 'Issue', 'allowed': False, 'reason': 'This move is not available now'},
+        {'key': 'void', 'to': 'void', 'label': 'Void', 'allowed': False, 'reason': 'Your role cannot use this move'}]
     assert {item['name']: item for item in editor_view['_actions']}['hidden_check'] == {
         'name': 'hidden_check', 'label': 'Hidden check', 'allowed': True}
     with app.database.transaction() as tx, tx.maintenance():
@@ -385,15 +405,18 @@ def test_schema_describes_states_and_actions_per_role(invoices):
         return next(model for model in user('GET', '/api/schema')[1]['models'] if model['name'] == 'invoice')
     admin = entry(c)
     state = admin['state']
-    assert {key: state[key] for key in ('field', 'states', 'default', 'locked', 'final', 'voidable')} == {
-        'field': 'status', 'states': ['draft', 'issued', 'paid', 'void'], 'default': 'draft',
-        'locked': ['issued', 'paid', 'void'], 'final': ['paid', 'void'], 'voidable': []}
-    issue = state['moves'][0]
-    assert (issue['from'], issue['to'], issue['label'], issue['roles'], issue['guarded']) == (['draft'], 'issued', 'Issue', ['admin', 'editor'], True)
-    assert issue['when']['$expr'] == 'and' and state['moves'][2]['when'] is None and state['moves'][2]['guarded'] is False
+    assert (state['field'], state['default'], state['show']) == ('status', 'draft', 'badge')
+    assert state['steps'] == [{'key': 'draft', 'label': 'Draft', 'color': None, 'lock': False, 'release': False, 'final': False},
+                              {'key': 'issued', 'label': 'Issued', 'color': None, 'lock': True, 'release': False, 'final': False},
+                              {'key': 'paid', 'label': 'Paid', 'color': None, 'lock': True, 'release': False, 'final': True},
+                              {'key': 'void', 'label': 'Void', 'color': None, 'lock': True, 'release': False, 'final': True}]
+    issue = state['rules'][0]
+    assert (issue['key'], issue['from'], issue['to'], issue['label'], issue['by'], issue['guarded']) == (
+        'issued', ['draft'], 'issued', 'Issue', ['admin', 'editor'], True)
+    assert issue['when']['$expr'] == 'and' and state['rules'][2]['when'] is None and state['rules'][2]['guarded'] is False
     status_field = next(field for field in admin['fields'] if field['name'] == 'status')
     assert status_field['read_only'] and status_field['state'] and status_field['choices'] == ['draft', 'issued', 'paid', 'void']
-    assert next(field for field in admin['fields'] if field['name'] == 'remarks')['editable_when_locked'] is True
+    assert next(field for field in admin['fields'] if field['name'] == 'remarks')['versioned'] is False
     actions = {item['name']: item for item in admin['actions']}
     payment = actions['record_payment']
     assert [field['name'] for field in payment['inputs']] == ['amount', 'paid_on', 'memo']
@@ -404,18 +427,23 @@ def test_schema_describes_states_and_actions_per_role(invoices):
                                                                  {'$expr': 'literal', 'type': 'text', 'value': 'issued'}]}
     assert payment['roles'] == ['admin', 'editor'] and actions['hidden_check']['available_when'] is not None
     restricted = entry(editor)
-    assert restricted['state']['moves'][0]['when'] is None and restricted['state']['moves'][0]['guarded'] is True
+    assert restricted['state']['rules'][0]['when'] is None and restricted['state']['rules'][0]['guarded'] is True
     assert {item['name']: item for item in restricted['actions']}['hidden_check']['available_when'] is None
     # The viewer cannot read `approved`, which Mark paid reads.
-    assert entry(viewer)['actions'] == [] and entry(viewer)['state']['moves'][1]['when'] is None
+    assert entry(viewer)['actions'] == [] and entry(viewer)['state']['rules'][1]['when'] is None
 
 
 # Legacy roots and legacy actions
 
 class Ticket(Model):
     title = Text(default='')
-    status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'), Move('closed', 'open', 'Reopen', when=F('title') != '')),
-                   locked=('closed',))
+    status = State(
+        State.Step('open'),
+        State.Step('closed', lock=True),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+            State.Rule('closed', 'open', 'Reopen', key='open', when=F('title') != ''),
+        ))
 
 
 def force_open(tx, user, ticket):
@@ -443,7 +471,7 @@ def test_states_and_legacy_actions_work_on_roots_without_calculations(tmp_path):
     assert status == 200 and forced['title'] == ' (forced)'
     assert move(c, url, 'open')[1]['status'] == 'open'
     schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'ticket')
-    assert schema['actions'] == [{'name': 'force', 'label': 'Force'}] and schema['state']['moves'][1]['guarded'] is True
+    assert schema['actions'] == [{'name': 'force', 'label': 'Force'}] and schema['state']['rules'][1]['guarded'] is True
 
 
 # Review fixes
@@ -456,7 +484,7 @@ class Product(Model):
 class PricedLine(Child):
     product = Link(Product)
     price = Currency(compute=F('product.price'))
-    note = Text(default='', editable_when_locked=True)
+    note = Text(default='', versioned=False)
 
 
 class Priced(Model):
@@ -464,10 +492,16 @@ class Priced(Model):
     permissions = ALL
     product = Link(Product)
     price = Currency(compute=F('product.price'))
-    remarks = Text(default='', editable_when_locked=True)
+    remarks = Text(default='', versioned=False)
     lines = Table(PricedLine)
-    status = State(('draft', 'issued', 'paid'), moves=(Move('draft', 'issued', 'Issue'), Move('issued', 'paid', 'Pay')),
-                   locked=('issued', 'paid'))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        State.Step('paid', lock=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+            State.Rule('issued', 'paid', 'Pay', key='paid'),
+        ))
 
 
 def test_locked_records_keep_saved_results_on_ordinary_writes(tmp_path):
@@ -493,19 +527,19 @@ def test_locked_records_keep_saved_results_on_ordinary_writes(tmp_path):
 
 def test_stored_results_cannot_read_fields_editable_while_locked():
     class Line(Child):
-        note = Text(default='', editable_when_locked=True)
+        note = Text(default='', versioned=False)
         copied = Text(compute=F('note'))
 
-    for fields in ({'remarks': Text(default='', editable_when_locked=True), 'shown': Text(compute=F('remarks'))},
+    for fields in ({'remarks': Text(default='', versioned=False), 'shown': Text(compute=F('remarks'))},
                    {'lines': Table(Line)},
-                   {'remarks': Text(default='', editable_when_locked=True), 'legacy': Text(compute='remarks')}):
-        model = type('Bad', (Model,), {'status': State(('a', 'b'), locked=('b',)), **fields})
-        with pytest.raises(ValueError, match='editable while locked'):
+                   {'remarks': Text(default='', versioned=False), 'legacy': Text(compute='remarks')}):
+        model = type('Bad', (Model,), {'status': State(State.Step('a'), State.Step('b', lock=True)), **fields})
+        with pytest.raises(ValueError, match='versioned=False field'):
             Registry(model)
     # A virtual result may read it, and without a State the option changes nothing.
-    Registry(type('Fine', (Model,), {'status': State(('a', 'b'), locked=('b',)), 'remarks': Text(default='', editable_when_locked=True),
+    Registry(type('Fine', (Model,), {'status': State(State.Step('a'), State.Step('b', lock=True)), 'remarks': Text(default='', versioned=False),
                                      'shown': Text(compute=F('remarks'), stored=False)}))
-    Registry(type('Plain', (Model,), {'remarks': Text(default='', editable_when_locked=True), 'shown': Text(compute=F('remarks'))}))
+    Registry(type('Plain', (Model,), {'remarks': Text(default='', versioned=False), 'shown': Text(compute=F('remarks'))}))
 
 
 class Plain(Model):
@@ -514,7 +548,13 @@ class Plain(Model):
 
 class Folder(Model):
     title = Text(default='')
-    status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'), Move('closed', 'open', 'Open')), locked=('closed',))
+    status = State(
+        State.Step('open'),
+        State.Step('closed', lock=True),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+            State.Rule('closed', 'open', 'Open', key='open'),
+        ))
 
 
 def test_attachments_on_document_models_and_locked_records(tmp_path):
@@ -550,7 +590,14 @@ def test_attachments_on_document_models_and_locked_records(tmp_path):
 class Blind(Model):
     permissions = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'), read_fields=('title',), write_fields=('title',))}
     title = Text(default='')
-    status = State(('a', 'b', 'c'), moves=(Move('a', 'b', 'B'), Move('b', 'c', 'C', roles=('admin',))), locked=('b', 'c'), final=('c',))
+    status = State(
+        State.Step('a'),
+        State.Step('b', lock=True),
+        State.Step('c', lock=True, final=True),
+        rules=(
+            State.Rule('a', 'b', 'B', key='b'),
+            State.Rule('b', 'c', 'C', key='c', by=('admin',)),
+        ))
 
     @action('Touch')
     def touch(self):
@@ -573,14 +620,20 @@ def test_messages_do_not_name_the_state_to_roles_that_cannot_read_it(tmp_path):
     assert c('PATCH', url, {'title': 'x'}, headers=etag(c, url))[1]['fields'] == {'title': 'This record is b, so it is locked'}
     assert move(c, url, 'c')[0] == 200
     assert move(editor, url, 'a')[1] == {'error': 'This record has no such move now'}
-    assert move(c, url, 'a')[1] == {'error': 'This record is c, which is final; it has no moves'}
+    # A key no rule has is not found; the State's own rules are listed in the schema.
+    assert move(c, url, 'a')[1] == {'error': 'Move not found'}
 
 
 class Sheet(Model):
     title = Text(default='')
     qty = Integer(default=1)
     double = Integer(compute='qty * 2')
-    status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close', when=F('double') > 2),), locked=('closed',))
+    status = State(
+        State.Step('open'),
+        State.Step('closed', lock=True),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed', when=F('double') > 2),
+        ))
 
     @action('Bump', available_when=F('status') == 'open')
     def bump(self):
@@ -643,8 +696,14 @@ def test_action_inputs_are_copied_and_cannot_shadow_context_arguments():
 
 class Crashing(Model):
     title = Text(default='')
-    status = State(('a', 'b'), moves=(Move('a', 'b', 'Go', run='explode'),))
+    status = State(
+        State.Step('a'),
+        State.Step('b'),
+        rules=(
+            State.Rule('a', 'b', 'Go', key='b'),
+        ))
 
+    @state('b')
     def explode(self):
         self.title = 'half done'
         raise RuntimeError('secret internal detail')
@@ -678,7 +737,12 @@ class BigStated(Model):
     title = Text(default='')
     lines = Table(BigLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
-    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue', when=F('total') > 0),), locked=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued', when=F('total') > 0),
+        ))
 
     @action('Note', available_when=F('total') > 0)
     def note(self):
@@ -695,7 +759,7 @@ def test_reading_a_stated_document_costs_at_most_one_more_statement(tmp_path):
         record = c('POST', f'/api/{name}', {'children': {'lines': rows}})[1]
         (status, body, _), counts[name] = counted(c, 'GET', f"/api/{name}/{record['id']}")
         assert status == 200
-    assert body['_moves'] == [{'to': 'issued', 'label': 'Issue', 'allowed': True}] and body['_actions'][0]['allowed'] is True
+    assert body['_moves'] == [{'key': 'issued', 'to': 'issued', 'label': 'Issue', 'allowed': True}] and body['_actions'][0]['allowed'] is True
     # One statement for the guards over saved values, and one for the journal summary (`_journal`),
     # since a model with a State journals by default.
     assert body['_journal'] == {'count': 1, 'open_follow_ups': 0}
@@ -709,33 +773,33 @@ def test_stored_results_reading_editable_fields_through_legacy_formulas_and_fetc
         title = Text(default='')
 
     class Extra(Child):
-        extra = Integer(default=0, editable_when_locked=True)
+        extra = Integer(default=0, versioned=False)
 
     class Fixed(Child):
         qty = Integer(default=0)
 
     def build(fields, meta=False):
-        namespace = {'status': State(('a', 'b'), locked=('b',)), **fields}
+        namespace = {'status': State(State.Step('a'), State.Step('b', lock=True)), **fields}
         if meta:
             namespace['Meta'] = FiniteMeta
         return Registry(Owner, type('Bad', (Model,), namespace))
     rejected = (
         {'lines': Table(Extra), 'total': Integer(compute='sum(lines.extra)')},
-        {'remarks': Integer(default=0, editable_when_locked=True), 'v': Integer(compute='remarks * 2', stored=False),
+        {'remarks': Integer(default=0, versioned=False), 'v': Integer(compute='remarks * 2', stored=False),
          's': Integer(compute='v + 1')},
-        {'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.title')},
-        {'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.title', read_only=True)},
+        {'owner': Link(Owner, versioned=False), 'owner_name': Text(fetch='owner.title')},
+        {'owner': Link(Owner, versioned=False), 'owner_name': Text(fetch='owner.title', read_only=True)},
     )
     for fields in rejected:
-        with pytest.raises(ValueError, match='editable while locked'):
+        with pytest.raises(ValueError, match='versioned=False field'):
             build(fields)
     # A finite stored result that reads a fetched copy of an editable Link is rejected too.
-    with pytest.raises(ValueError, match='editable while locked'):
-        build({'owner': Link(Owner, editable_when_locked=True), 'owner_name': Text(fetch='owner.title'),
+    with pytest.raises(ValueError, match='versioned=False field'):
+        build({'owner': Link(Owner, versioned=False), 'owner_name': Text(fetch='owner.title'),
                'shown': Text(compute=F('owner_name'))}, meta=True)
     # Counting rows reads no field; a virtual result and a fetch over a fixed Link stay allowed.
     build({'lines': Table(Extra), 'n': Integer(compute='count(lines)')})
-    build({'lines': Table(Fixed), 'total': Integer(compute='sum(lines.qty)'), 'remarks': Integer(default=0, editable_when_locked=True),
+    build({'lines': Table(Fixed), 'total': Integer(compute='sum(lines.qty)'), 'remarks': Integer(default=0, versioned=False),
            'v': Integer(compute='remarks * 2', stored=False)})
     build({'owner': Link(Owner), 'owner_name': Text(fetch='owner.title', read_only=True)})
 
@@ -748,7 +812,7 @@ class Account(Model):
 
 class KeptLine(Child):
     qty = Decimal(default=1)
-    note = Text(default='', editable_when_locked=True)
+    note = Text(default='', versioned=False)
 
 
 class Kept(Model):
@@ -756,19 +820,29 @@ class Kept(Model):
     permissions = ALL
     account = Link(Account)
     limit = Currency(compute=F('account.limit'))
-    remarks = Text(default='', editable_when_locked=True, required_when=F('limit') > 50)
-    memo = Text(default='', editable_when_locked=True, applies_when=F('limit') <= 50)
+    remarks = Text(default='', versioned=False, required_when=F('limit') > 50)
+    memo = Text(default='', versioned=False, applies_when=F('limit') <= 50)
     lines = Table(KeptLine)
-    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+        ))
 
 
 class KeptLegacy(Model):
     permissions = ALL
     account = Link(Account)
     account_name = Text(fetch='account.title', read_only=True)
-    remarks = Text(default='', editable_when_locked=True, required_if='account_name == "Big"')
-    note = Text(default='', editable_when_locked=True)
-    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued',))
+    remarks = Text(default='', versioned=False, required_if='account_name == "Big"')
+    note = Text(default='', versioned=False)
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+        ))
 
 
 def test_rules_on_locked_records_read_the_saved_results(tmp_path):
@@ -794,9 +868,14 @@ class Versioned(Model):
     permissions = ALL
     qty = Decimal(default=1)
     double = Decimal(compute=F('qty') * 2)
-    remarks = Text(default='', editable_when_locked=True)
-    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'), Move('issued', 'draft', 'Reopen')),
-                   locked=('issued',))
+    remarks = Text(default='', versioned=False)
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+            State.Rule('issued', 'draft', 'Reopen', key='draft'),
+        ))
 
 
 def test_locked_records_saved_under_an_older_formula_stay_editable(tmp_path):
@@ -812,9 +891,14 @@ def test_locked_records_saved_under_an_older_formula_stay_editable(tmp_path):
         permissions = ALL
         qty = Decimal(default=1)
         double = Decimal(compute=F('qty') * 3)
-        remarks = Text(default='', editable_when_locked=True)
-        status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'), Move('issued', 'draft', 'Reopen')),
-                       locked=('issued',))
+        remarks = Text(default='', versioned=False)
+        status = State(
+            State.Step('draft'),
+            State.Step('issued', lock=True),
+            rules=(
+                State.Rule('draft', 'issued', 'Issue', key='issued'),
+                State.Rule('issued', 'draft', 'Reopen', key='draft'),
+            ))
     Newer.__name__ = 'Versioned'
     db = Database(tmp_path / 'versions.sqlite3', Registry(Newer))
     newer = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
@@ -839,8 +923,14 @@ def test_locked_records_saved_under_an_older_formula_stay_editable(tmp_path):
 class Veiled(Model):
     permissions = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'), read_fields=('title',), write_fields=('title',))}
     title = Text(default='')
-    status = State(('a', 'b', 'c'), moves=(Move('a', 'b', 'B', when=F('title') == 'go'), Move('b', 'c', 'C', roles=('admin',))),
-                   locked=('b', 'c'), final=('c',))
+    status = State(
+        State.Step('a'),
+        State.Step('b', lock=True),
+        State.Step('c', lock=True, final=True),
+        rules=(
+            State.Rule('a', 'b', 'B', key='b', when=F('title') == 'go'),
+            State.Rule('b', 'c', 'C', key='c', by=('admin',)),
+        ))
 
 
 def test_roles_that_cannot_read_the_state_get_one_answer_for_every_refused_move(tmp_path):
@@ -859,7 +949,7 @@ def test_roles_that_cannot_read_the_state_get_one_answer_for_every_refused_move(
     assert move(editor, url, 'zzz')[:2] == generic
     # Roles that can read the State keep the detailed messages.
     assert move(c, url, 'zzz')[:2] == (404, {'error': 'Move not found'})
-    assert move(c, url, 'a')[:2] == (409, {'error': 'This record cannot move from b to a'})
+    assert move(c, url, 'b')[:2] == (409, {'error': 'This record cannot move from b to b'})
 
 
 class BigRowGuard(Model):
@@ -869,7 +959,12 @@ class BigRowGuard(Model):
     lines = Table(BigLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
     shown = Currency(compute=lines.sum('amount'), stored=False)
-    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue', when=F('shown') > 0),), locked=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued', when=F('shown') > 0),
+        ))
 
     @action('Note', available_when=F('shown') > 0)
     def note(self):
@@ -886,80 +981,9 @@ def test_guards_over_rows_reuse_the_rows_the_detail_loaded(tmp_path):
         record = c('POST', f'/api/{name}', {'children': {'lines': rows}})[1]
         (status, body, _), counts[name] = counted(c, 'GET', f"/api/{name}/{record['id']}")
         assert status == 200
-    assert body['_moves'] == [{'to': 'issued', 'label': 'Issue', 'allowed': True}] and body['_actions'][0]['allowed'] is True
+    assert body['_moves'] == [{'key': 'issued', 'to': 'issued', 'label': 'Issue', 'allowed': True}] and body['_actions'][0]['allowed'] is True
     # The second extra statement is the journal summary (`_journal`) of a model with a State.
     assert counts['bigrowguard'] <= counts['bigplain'] + 2, counts
 
 
 # Cancelled states
-
-class Order(Model):
-    permissions = ALL
-    title = Text(default='')
-    status = State(('open', 'done', 'cancelled', 'lost'), moves=(
-        Move('open', 'done', 'Done'), Move('open', 'cancelled', 'Cancel'), Move('open', 'lost', 'Mark lost'),
-    ), locked=('done', 'cancelled', 'lost'), final=('done', 'cancelled', 'lost'), cancelled=('cancelled', 'lost'))
-
-
-class Bill(Model):
-    permissions = ALL
-    title = Text(default='')
-    status = State(('draft', 'issued', 'paid', 'void'), moves=(Move('draft', 'issued', 'Issue'), Move('issued', 'paid', 'Pay')),
-                   locked=('issued', 'paid', 'void'), final=('paid', 'void'), voidable=('issued',))
-
-
-class Receipt(Model):
-    permissions = ALL
-    title = Text(default='')
-    status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),),
-                   locked=('issued', 'void'), final=('void',), voidable=('issued',), cancelled=('void',))
-
-
-def test_cancelled_states_must_be_declared_final_states():
-    with pytest.raises(ValueError, match='cancelled names an unknown state: gone'):
-        State(('a', 'b'), final=('b',), cancelled=('gone',))
-    with pytest.raises(ValueError, match='cancelled names a state that is not final: b; cancelled states must be final'):
-        State(('a', 'b', 'c'), final=('c',), cancelled=('b', 'c'))
-    for value in ('b', ('b', 'b'), None):
-        with pytest.raises(ValueError, match='distinct state names'):
-            State(('a', 'b'), final=('b',), cancelled=value)
-    # Checked when the class is created, not on first use.
-    with pytest.raises(ValueError, match='not final'):
-        type('Broken', (Model,), {'status': State(('open', 'lost'), moves=(Move('open', 'lost', 'Lose'), Move('lost', 'open', 'Reopen')),
-                                                  cancelled=('lost',))})
-    assert State(('a', 'b')).cancelled == () and State(('a', 'b')).cancelled_states == ()
-    assert State(('a', 'b'), final=('b',), cancelled=['b']).cancelled == ('b',)
-
-
-@pytest.fixture
-def orders(tmp_path):
-    app = start(Database(tmp_path / 'db.sqlite3', Registry(Order, Bill, Receipt)))
-    return app, client(app)
-
-
-def test_schema_lists_cancelled_states_and_the_void_state(orders):
-    app, c = orders
-    entries = {model['name']: model for model in c('GET', '/api/schema')[1]['models']}
-    assert entries['order']['state']['cancelled'] == ['cancelled', 'lost']
-    # A voidable State's void counts as cancelled without being listed, and is not listed twice when it is.
-    assert entries['bill']['state']['cancelled'] == ['void']
-    assert entries['receipt']['state']['cancelled'] == ['void']
-    assert Bill.__declared_fields__['status'].cancelled == ()
-    # Unchanged: final, locked and voidable still say what they said.
-    assert entries['order']['state']['final'] == ['done', 'cancelled', 'lost'] and entries['bill']['state']['voidable'] == ['issued']
-
-
-def test_cancelled_changes_no_moves_or_locks(orders):
-    app, c = orders
-    record = c('POST', '/api/order', {'title': 'One'})[1]
-    url = f"/api/order/{record['id']}"
-    assert {item['to']: item['allowed'] for item in c('GET', url)[1]['_moves']} == {'done': True, 'cancelled': True, 'lost': True}
-    assert move(c, url, 'cancelled')[0] == 200
-    assert c('GET', url)[1]['status'] == 'cancelled'
-    assert move(c, url, 'open')[0] == 409
-    assert c('PATCH', url, {'title': 'Two'}, headers=etag(c, url))[0] == 422
-    bill = c('POST', '/api/bill', {'title': 'Bill'})[1]
-    bill_url = f"/api/bill/{bill['id']}"
-    assert move(c, bill_url, 'issued')[0] == 200
-    assert c('POST', f'{bill_url}/void', {'reason': 'Wrong customer'}, headers=etag(c, bill_url))[0] == 200
-    assert c('GET', bill_url)[1]['status'] == 'void'

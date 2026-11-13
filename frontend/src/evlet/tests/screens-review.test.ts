@@ -139,7 +139,7 @@ describe('bulk changes', () => {
       ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
       ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
       ['GET', new RegExp(`/api/invoice/${draftId}$`), () => { const changed = copy(invoice.invoice_draft); changed.body.total = '1.00'; return changed; }],
-      ['POST', /moves\/issued$/, invoice.invoice_issued],
+      ['POST', /moves\/issue$/, invoice.invoice_issued],
     ] as Route[], '/app/invoice');
     await until(() => expect(rowsShown(host)).toBe(3));
     click(host.querySelector(`tbody tr[data-key="${draftId}"] [role="checkbox"]`));
