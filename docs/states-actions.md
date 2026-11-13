@@ -215,6 +215,13 @@ Display never implies that a person can change the state:
   offers moves). The bar is a list named after the model (`Invoice status`); the current step
   has `aria-current="step"`.
 
+After sign-in, Docs, State display (`/docs/states`) shows each of these live: the badge, the stage
+bar, `show="none"`, step colours and final steps, the lock banners, the `_version` marker, an
+approval waiting at a level, the primary move against the others and a move's dialog. They are
+the record page's own pieces on sample schemas, next to the Python that declares them;
+`tests/test_docs_state_snippets.py` runs that Python. Records do not draw `_version` or an
+approval's `pending` text yet, so those two are drawn as status badges for judging.
+
 ### Meta.status
 
 `Meta.status` names a Select or a State to show as the record's status badge. Use it for a

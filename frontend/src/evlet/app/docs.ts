@@ -4,13 +4,17 @@
 
 import { html, type Child } from '../dom';
 import { Button, Icon, IconTile, SegmentedControl } from '../ui/base';
-import { copyText } from '../ui/layers';
+import { StatusBadge } from '../ui/doc';
+import { copyText, toast } from '../ui/layers';
 import { PageHeader } from '../ui/list';
 import type { AppContext } from './context';
-import { identity, rootModels } from './meta';
+import { identity, rootModels, stepLabel, type DetailMove, type ScreenModel } from './meta';
+import { ActionDialog, LockBanner, moveIcon, moveInputs, MovesButton, StageBar, stateBadgeLook, type MoveEntry } from './record-page';
+import type { FieldSchema } from '../model/schema';
 import { chooseTheme } from './settings';
-import { cell, effect } from '../reactive';
+import { cell, effect, type Cell } from '../reactive';
 import type { Theme } from '../ui/theme';
+import type { Tint } from '../ui/core';
 
 const startCode = `from evlet import App, Model, Text, Boolean
 
@@ -20,16 +24,20 @@ class Note(Model):
 
 app = App(name="notes", models=[Note])`;
 
-const screensCode = `from evlet import Currency, Date, Link, Model, Move, State, Table, Text
-from evlet.calc import F
+const screensCode = `from evlet import Currency, Date, Link, Model, State, Table, Text
 
 class Invoice(Model):
     customer = Link(Customer, required=True)
     due_on = Date()
     lines = Table(InvoiceLine)
     total = Currency(compute=lines.sum("amount"))
-    status = State(("draft", "issued", "paid"), moves=(Move("draft", "issued", "Issue"),),
-                   locked=("issued", "paid"), final=("paid",))
+    status = State(
+        State.Step("draft", "Draft"),
+        State.Step("issued", "Issued", color="blue", lock=True),
+        State.Step("paid", "Paid", color="green", lock=True, final=True),
+        rules=(State.Rule("draft", "issued", "Issue", key="issue", primary=True),
+               State.Rule("issued", "paid", "Mark paid", key="pay")),
+    )
 
     class Meta:
         list_fields = ("customer", "due_on", "status", "total")
@@ -64,9 +72,223 @@ class PlanProject(Slip):
 
 app = Application(database, auth=auth, slips=[PlanProject])`;
 
+// ---------- State display ----------
+// Live examples of how a State shows, drawn with the record page's own pieces (stateBadgeLook, StageBar, LockBanner,
+// MovesButton, moveInputs and ActionDialog in record-page.ts) over small in-memory schemas, each next to the Python
+// that declares it. Nothing here calls the server. tests/test_docs_state_snippets.py runs every STATE_CODE snippet.
+
+const STATE_CODE = {
+  deal: `from evlet import Currency, Model, State, Text
+from evlet.calc import F
+
+class Deal(Model):
+    name = Text(required=True)
+    amount = Currency()
+    competitor = Text()
+    stage = State(
+        State.Step("lead", "Lead"),
+        State.Step("qualified", "Qualified", color="blue"),
+        State.Step("proposal", "Proposal", color="violet"),
+        State.Step("negotiation", "Negotiation", color="amber"),
+        State.Step("won", "Won", color="green", final=True),
+        State.Step("lost", "Lost", color="rose", final=True),
+        rules=(
+            State.Rule("lead", "qualified", "Qualify"),
+            State.Rule("qualified", "proposal", "Send proposal"),
+            State.Rule("proposal", "negotiation", "Negotiate"),
+            State.Rule("negotiation", "proposal", "Revise proposal", key="revise"),
+            State.Rule("negotiation", "won", "Mark won", key="win", when=F("amount") > 0, primary=True),
+            State.Rule(("lead", "qualified", "proposal", "negotiation"), "lost", "Mark lost", key="lose",
+                       remark=State.Remark("required", label="Why was it lost?"), ask=("competitor",)),
+        ),
+        show="badge",  # the default: a coloured badge in the record header
+    )`,
+  bar: `stage = State(
+    ...,  # the same steps and rules
+    show="bar",  # the stage bar under the header
+)`,
+  none: `stage = State(
+    ...,
+    show="none",  # no badge, no bar: the app places the state itself
+)`,
+  invoice: `from evlet import Currency, Model, State, Text
+
+class Invoice(Model):
+    total = Currency(required=True)
+    remarks = Text(default="", versioned=False)  # stays editable while locked
+    status = State(
+        State.Step("draft", "Draft"),
+        State.Step("issued", "Issued", color="blue", lock=True, release=True),
+        State.Step("paid", "Paid", color="green", lock=True, final=True),
+        State.Step("void", "Void", color="rose", lock=True, final=True),
+        rules=(
+            State.Rule("draft", "issued", "Issue", key="issue", primary=True),
+            State.Rule("issued", "paid", "Mark paid", key="pay", by=("admin",)),
+            State.Rule("issued", "draft", "Reopen", key="reopen", by=("admin",)),
+            State.Rule("issued", "void", "Void", key="void", by=("admin",), remark="required"),
+        ),
+    )`,
+  expense: `from evlet import Currency, Model, State, Text
+from evlet.calc import F
+
+Level = State.Level
+
+class Expense(Model):
+    title = Text(required=True)
+    total = Currency(required=True)
+    status = State(
+        State.Step("draft", "Draft"),
+        State.Step("review", "In review", color="amber", lock=True),
+        State.Step("approved", "Approved", color="green", lock=True, final=True),
+        rules=(
+            State.Rule("draft", "review", "Submit", key="submit", primary=True),
+            State.Rule("review", "approved", "Approve", key="approve", primary=True, remark="optional",
+                       levels=(Level(by=("manager",), pending="Pending manager approval"),
+                               Level(by=("cfo",), when=F("total") >= 10000, pending="Pending CFO approval"))),
+            State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="required"),
+        ),
+        show="bar",
+    )`,
+};
+
+type SampleStep = [key: string, label: string, color: string | null, flags?: { lock?: boolean; release?: boolean; final?: boolean }];
+type SampleRule = { key: string; from: string[]; to: string; label: string; primary?: boolean; remark?: { mode: string; label: string | null }; asks?: string[] };
+
+const sampleField = (name: string, type: string, label: string, extra: Partial<FieldSchema> = {}) => ({ name, type, label, required: false, read_only: false,
+  hidden: false, default: null, help_text: '', placeholder: '', operators: [], applies_when: null, required_when: null, locked_when: null, ...extra }) as unknown as FieldSchema;
+
+/** A model as /api/schema sends it, cut down to what the State pieces read. */
+function sampleModel(name: string, label: string, field: string, steps: SampleStep[], rules: SampleRule[], fields: FieldSchema[] = [], show: 'badge' | 'bar' | 'none' = 'badge'): ScreenModel {
+  const colors = Object.fromEntries(steps.filter(step => step[2]).map(step => [step[0], step[2]]));
+  return { name, label, plural: `${label}s`, title_field: 'name', fields: [...fields, sampleField(field, 'select', humanizeKey(field), { read_only: true, required: true,
+    choices: steps.map(step => step[0]), colors } as Partial<FieldSchema>)],
+    state: { field, default: steps[0][0], show, rules, steps: steps.map(([key, text, color, flags]) => ({ key, label: text, color, lock: Boolean(flags?.lock || flags?.final),
+      release: Boolean(flags?.release), final: Boolean(flags?.final) })) } } as unknown as ScreenModel;
+}
+const humanizeKey = (key: string) => key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
+
+const DEAL = sampleModel('deal', 'Deal', 'stage', [['lead', 'Lead', null], ['qualified', 'Qualified', 'blue'], ['proposal', 'Proposal', 'violet'],
+  ['negotiation', 'Negotiation', 'amber'], ['won', 'Won', 'green', { final: true }], ['lost', 'Lost', 'rose', { final: true }]], [
+  { key: 'lead_to_qualified', from: ['lead'], to: 'qualified', label: 'Qualify' },
+  { key: 'qualified_to_proposal', from: ['qualified'], to: 'proposal', label: 'Send proposal' },
+  { key: 'proposal_to_negotiation', from: ['proposal'], to: 'negotiation', label: 'Negotiate' },
+  { key: 'revise', from: ['negotiation'], to: 'proposal', label: 'Revise proposal' },
+  { key: 'win', from: ['negotiation'], to: 'won', label: 'Mark won', primary: true },
+  { key: 'lose', from: ['lead', 'qualified', 'proposal', 'negotiation'], to: 'lost', label: 'Mark lost', remark: { mode: 'required', label: 'Why was it lost?' }, asks: ['competitor'] },
+], [sampleField('name', 'text', 'Name', { required: true }), sampleField('amount', 'currency', 'Amount'), sampleField('competitor', 'text', 'Competitor')]);
+
+const INVOICE = sampleModel('invoice', 'Invoice', 'status', [['draft', 'Draft', null], ['issued', 'Issued', 'blue', { lock: true, release: true }],
+  ['paid', 'Paid', 'green', { final: true }], ['void', 'Void', 'rose', { final: true }]], [
+  { key: 'issue', from: ['draft'], to: 'issued', label: 'Issue', primary: true },
+  { key: 'pay', from: ['issued'], to: 'paid', label: 'Mark paid' },
+  { key: 'reopen', from: ['issued'], to: 'draft', label: 'Reopen' },
+  { key: 'void', from: ['issued'], to: 'void', label: 'Void', remark: { mode: 'required', label: null } },
+], [sampleField('total', 'currency', 'Total', { required: true }), sampleField('remarks', 'text', 'Remarks', { versioned: false } as Partial<FieldSchema>)]);
+
+const EXPENSE = sampleModel('expense', 'Expense', 'status', [['draft', 'Draft', null], ['review', 'In review', 'amber', { lock: true }],
+  ['approved', 'Approved', 'green', { final: true }]], [
+  { key: 'submit', from: ['draft'], to: 'review', label: 'Submit', primary: true },
+  { key: 'approve', from: ['review'], to: 'approved', label: 'Approve', primary: true, remark: { mode: 'optional', label: null } },
+  { key: 'reject', from: ['review'], to: 'draft', label: 'Reject', remark: { mode: 'required', label: null } },
+], [sampleField('title', 'text', 'Title', { required: true }), sampleField('total', 'currency', 'Total', { required: true })], 'bar');
+
+/** `_moves` as the detail sends it for a record in `value`: every rule out of it, allowed unless `blocked` gives a reason. */
+function sampleMoves(model: ScreenModel, value: string, blocked: Record<string, string> = {}, extra: Record<string, Partial<DetailMove>> = {}): DetailMove[] {
+  return model.state!.rules.filter(rule => rule.from.includes(value)).map(rule => ({ key: rule.key, to: rule.to, label: rule.label, allowed: !blocked[rule.key],
+    ...(rule.primary ? { primary: true } : {}), ...(blocked[rule.key] ? { reason: blocked[rule.key] } : {}), ...(rule.asks ? { asks: rule.asks } : {}),
+    ...(rule.remark ? { remark: { ...rule.remark, required: rule.remark.mode === 'required' } } : {}), ...extra[rule.key] }) as DetailMove);
+}
+const notSaved = () => toast('An example: nothing is saved', { icon: 'info' });
+/** The header's moves for `_moves`, as the record page builds them. `onMove` runs an allowed one. */
+const sampleEntries = (model: ScreenModel, moves: DetailMove[], onMove: (move: DetailMove) => void = notSaved): MoveEntry[] => moves.map(move => ({ label: move.label,
+  icon: moveIcon(model, move.to), allowed: move.allowed, primary: move.primary, blocked: () => move.allowed ? null : move.reason ?? `${move.label} is not available now`, run: () => onMove(move) }));
+
+/** A labelled example: what it shows, then the live pieces. */
+const example = (name: string, caption: string, ...body: Child[]) => html`<figure class="ev-doc-example" data-example=${name}>
+  <figcaption>${caption}</figcaption><div class="ev-doc-example-body">${body}</div></figure>`;
+const labelled = (text: string, ...body: Child[]) => html`<div class="ev-doc-example-row"><span class="muted">${text}</span>${body}</div>`;
+/** The State badge for `model` at `value`, as the record header draws it; with `moves`, it opens their menu. */
+const badge = (model: ScreenModel, value: () => string, moves?: () => DetailMove[], onMove?: (to: string) => void) => StatusBadge({ value, ...stateBadgeLook(model),
+  ...(moves && onMove ? { moves: () => moves().filter(move => move.allowed).map(move => ({ to: move.to, label: move.label })), onMove } : {}) });
+/** A record's header, cut down: the title, the State badge when shown, and the move button. */
+const header = (title: string, status: Child, actions: Child) => html`<div class="ev-doc-head"><strong>${title}</strong>${status}<span class="grow"></span>${actions}</div>`;
+
+function StateDisplay(): Child {
+  // 1. Badge: a live deal. Click the badge to move it; the menu offers only the moves allowed now.
+  const badgeValue = cell('qualified', { name: 'docs.badge' });
+  const badgeMoves = () => sampleMoves(DEAL, badgeValue.get());
+  const restart = (value: Cell<string>, to: string) => Button({ label: 'Start again', size: 'small', variant: 'ghost', icon: 'rotate-ccw', onClick: () => value.set(to) });
+  // 2. Bar: the same deal as a stage bar. A step is a button only when this person may move to it now.
+  const barValue = cell('proposal', { name: 'docs.bar' });
+  const barMoves = () => sampleMoves(DEAL, barValue.get());
+  // 7. The primary move, then the same move blocked by its condition.
+  const negotiation = sampleMoves(DEAL, 'negotiation');
+  const blockedWin = sampleMoves(DEAL, 'negotiation', { win: 'The condition for this move is not met' });
+  const noPrimary = negotiation.map(move => ({ ...move, primary: undefined }));
+  // 6. An approval waiting at level 1: the manager may approve; the submitter sees why not.
+  const approval = { level: 1, pending: 'Pending manager approval' };
+  const managerMoves = sampleMoves(EXPENSE, 'review', {}, { approve: { ...approval, can_approve: true } as Partial<DetailMove> });
+  const submitterMoves = sampleMoves(EXPENSE, 'review', { approve: 'Waiting for another approver', reject: 'Only the approvers of the waiting level can use this move' },
+    { approve: { ...approval, can_approve: false } as Partial<DetailMove> });
+  // A status badge in a fixed tint, for the two markers records don't draw yet.
+  const marker = (label: string, color: Tint, name: string) => StatusBadge({ value: () => label, label: () => label, tint: () => color, name });
+  const pendingChip = (move: DetailMove & { level?: number; pending?: string }) => marker(`${move.pending} · level ${move.level}`, 'amber', 'Approval');
+  // 8. The Mark lost move takes a required remark and asks for the competitor.
+  const lose = sampleMoves(DEAL, 'negotiation').find(move => move.key === 'lose')!;
+  const loseInputs = moveInputs(DEAL, lose);
+  const openLose = () => ActionDialog({ name: lose.key, label: lose.label } as any, loseInputs, async () => { notSaved(); return null; });
+  const cancelled = () => ({ title: 'Void on 13-11-2026 by Sam Lee.', reason: 'Reason: Sent twice. ' });
+  // 5. The version marker: what the detail sends as _version, drawn as status badges. Records don't show it yet.
+  const version = (v: { number: number | null; released: boolean }) => v.number === null ? marker('Not released yet', 'slate', 'Version')
+    : v.released ? marker(`v${v.number} released`, 'green', 'Version') : marker(`v${v.number}, changed since`, 'amber', 'Version');
+
+  return html`<article class="ev-doc-article ev-doc-states">
+    ${section('How a State shows', p('A State is drawn from its steps alone: the label, the colour and the flags lock, release and final. The examples below are the record page\'s own badge, stage bar, banners and move button, fed small sample schemas in this page. Click them: they move the example, and nothing is saved.'),
+      code(STATE_CODE.deal))}
+    ${section('show="badge"', p('The default. The state is a coloured badge next to the record title. Clicking it opens a menu of the moves this person may take now, and only those; the moves also stay in the header button.'),
+      example('badge', 'A deal in Qualified. Choose a move from the badge.', header('Acme renewal', badge(DEAL, () => badgeValue.get(), badgeMoves, to => badgeValue.set(to)),
+        () => MovesButton(sampleEntries(DEAL, badgeMoves(), move => badgeValue.set(move.to)))), () => badgeMoves().length ? null : restart(badgeValue, 'qualified')))}
+    ${section('show="bar"', p('The stage bar sits under the header on the full page, every step in order. Done steps tick, the current step fills, and final steps end the bar: green, or red for a final step coloured rose. A step is a button only when this person may move to that state now. In a side panel the bar becomes the badge.'),
+      code(STATE_CODE.bar),
+      example('bar', 'The same deal in Proposal. Click Negotiation, or Lost.', StageBar(DEAL, { current: () => barValue.get(), canMove: to => barMoves().some(move => move.to === to && move.allowed),
+        onMove: to => barValue.set(to) }), () => barMoves().length ? null : restart(barValue, 'proposal')))}
+    ${section('show="none"', p('Neither a badge nor a bar: for an app that places the state itself, in a field or a custom block. The moves stay as the header button. When Meta.status names the State, its badge shows whatever show says.'),
+      code(STATE_CODE.none),
+      example('none', 'No state is drawn; the header keeps its moves.', header('Acme renewal', null, MovesButton(sampleEntries(DEAL, sampleMoves(DEAL, 'qualified'))))))}
+    ${section('Step colours and final steps', p('color is one of blue, green, amber, rose, violet, teal and slate; a step without one is neutral, and the screen never guesses a colour from the name. The default step reads as a dashed Draft pill. A final or locked step shows a lock and its label in grey, and a final step coloured rose reads as cancelled, in red with a ban icon.'),
+      example('colours', 'Every step of the deal, then the invoice\'s steps.',
+        labelled('Deal', DEAL.state!.steps.map(step => badge(DEAL, () => step.key))),
+        labelled('Invoice', INVOICE.state!.steps.map(step => badge(INVOICE, () => step.key)))))}
+    ${section('Locked and released steps', p('lock=True makes the record read only to ordinary writes, except fields declared versioned=False. release=True marks a step whose content counts as released: entering it with changed content makes the next version, v0, v1, v2. A banner over the record says what can still change.'),
+      code(STATE_CODE.invoice),
+      example('locked', 'The invoice\'s banner in each state, as the record shows it.',
+        LockBanner(INVOICE, 'draft', false, cancelled), LockBanner(INVOICE, 'issued', true, cancelled), LockBanner(INVOICE, 'void', true, cancelled)),
+      example('version', 'The version marker. The detail sends _version; records don\'t draw it yet (the 0.4.7 status rework will). They are drawn as status badges here, for judging the wording.',
+        labelled('Issued, released as v2', badge(INVOICE, () => 'issued'), version({ number: 2, released: true })),
+        labelled('Reopened and edited', badge(INVOICE, () => 'draft'), version({ number: 2, released: false })),
+        labelled('Never released', badge(INVOICE, () => 'draft'), version({ number: null, released: false }))),
+      code('{"_version": {"number": 2, "released": true, "state": "issued"}}', 'Detail'))}
+    ${section('Waiting for approval', p('A rule with levels moves when its last level that applies is approved. While it waits, _moves carries the level, its pending text and can_approve. Records show the bar and the buttons below today; the pending text is drawn as a status badge here for judging, as records don\'t show it yet.'),
+      code(STATE_CODE.expense),
+      example('approval', 'An expense of 2,500 in review: only the manager level applies.',
+        StageBar(EXPENSE, { current: () => 'review' }),
+        labelled('The manager', header('Team offsite', pendingChip(managerMoves[0]), MovesButton(sampleEntries(EXPENSE, managerMoves)))),
+        labelled('The submitter', header('Team offsite', pendingChip(submitterMoves[0]), MovesButton(sampleEntries(EXPENSE, submitterMoves))))),
+      code(JSON.stringify({ _moves: [managerMoves[0]] }, null, 2), 'Detail'))}
+    ${section('The primary move', p('The header button is the rule marked primary=True, else the first allowed rule, with the other moves behind its chevron. A move that is not allowed stays visible, dims, and says why on hover or click.'),
+      example('primary', 'A deal in Negotiation: Revise proposal is declared first, Mark won is primary.',
+        labelled('primary=True', MovesButton(sampleEntries(DEAL, negotiation))),
+        labelled('No primary', MovesButton(sampleEntries(DEAL, noPrimary))),
+        labelled('Amount is 0', MovesButton(sampleEntries(DEAL, blockedWin)), html`<span class="muted">${blockedWin.find(move => move.key === 'win')!.reason}</span>`)))}
+    ${section('A move that asks', p('remark="required" (or State.Remark with a label) makes the move ask for a remark, which the Journal keeps. ask=("field",) adds model fields to the dialog. The move runs only when the dialog\'s values pass.'),
+      example('dialog', `Mark lost asks: ${loseInputs.map(input => `${input.label}${input.required ? ' (required)' : ''}`).join(', ')}.`,
+        html`<div class="ev-doc-example-row">${Button({ label: `Try ${lose.label}`, icon: moveIcon(DEAL, lose.to), onClick: openLose })}</div>`))}
+  </article>`;
+}
+
 interface Topic { id: string; title: string; render: (ctx: AppContext) => Child }
 
-const code = (text: string) => html`<div class="ev-code"><div><span>Python</span><button type="button" class="link" on:click=${() => void copyText(text, 'the example')}>Copy</button></div><pre><code>${text}</code></pre></div>`;
+const code = (text: string, language = 'Python') => html`<div class="ev-code"><div><span>${language}</span><button type="button" class="link" on:click=${() => void copyText(text, 'the example')}>Copy</button></div><pre><code>${text}</code></pre></div>`;
 const terminal = (text: string) => html`<pre class="ev-terminal"><code>${text}</code></pre>`;
 const section = (title: string, ...body: Child[]) => html`<section class="ev-doc-section"><h2>${title}</h2>${body}</section>`;
 const p = (text: string) => html`<p>${text}</p>`;
@@ -95,6 +317,7 @@ const TOPICS: Topic[] = [
       ${section('A useful place to try things', html`<div class="ev-doc-links">
         ${link('layers', 'How screens are built', 'Lists, boards and records from your model, with no frontend code.', () => go('screens'))}
         ${link('zap', 'Rules and actions', 'Calculated values, rules that explain themselves, moves and actions.', () => go('state'))}
+        ${link('list-checks', 'State display', 'Badges, the stage bar, locks, approvals and moves, live.', () => go('states'))}
         ${ctx.dev ? link('layout-grid', 'Meet the components', 'Every component of the design, live, with its details.', () => { location.href = ctx.libraryHref; }) : null}</div>`)}
     </article>
     <aside class="ev-doc-aside"><h3>In this workspace</h3><p>The models in the sidebar use your database. Changes there are saved on the server.</p>
@@ -127,6 +350,7 @@ const TOPICS: Topic[] = [
     ${section('Saving', p('Values save one at a time when you leave them, with Undo. Lines are saved together with Save. If the record changed since you opened it, your draft stays and you can reload. Leaving a record before Save never saves it: your unsaved changes are kept for you to restore or discard when you come back, and a new record waits in this browser.'))}
     ${section('Slips', p('A slip is a form with the fields of a model that saves nothing by itself. It opens from a record, an action, another slip or browser code. The server checks every change. When it is handed in, its values go to the slip\'s hand_in() method, or become a record through the normal create path. See docs/slips.md.'), code(slipCode))}
   </article>` },
+  { id: 'states', title: 'State display', render: StateDisplay },
   { id: 'extensions', title: 'Customization', render: ctx => html`<article class="ev-doc-article">
     ${section('Change a screen through the model', table([['Meta.list_fields', 'List columns, up to eight.'], ['Meta.layout', 'Sections of the Details tab.'],
       ['Meta.title_field', 'The record title and the pinned list column.'], ['Meta.search_fields', 'What search looks at.'],
