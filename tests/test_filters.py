@@ -1,7 +1,7 @@
 """List filters: operators by field type, child table EXISTS groups, permissions and hostile input.
 
 The Playground's Item has about 200 fields and two child tables (prices, barcodes). Every test runs
-through the authenticated HTTP list route; tests/test_postgres.py runs them on PostgreSQL too."""
+through the authenticated HTTP list route."""
 import copy
 import json
 from urllib.parse import quote

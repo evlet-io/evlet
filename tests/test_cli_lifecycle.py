@@ -99,7 +99,7 @@ def test_new_config_omits_reserved_fields_and_old_config_still_loads(project):
     (path / 'config.py').write_text('from evlet import Instance\n\ninstance = Instance(name="acme", database="sqlite", storage="local", domain=None)\n')
     assert read_instance(path).name == 'acme'
     (path / 'config.py').write_text('from evlet import Instance\n\ninstance = Instance(name="acme", database="postgresql")\n')
-    with pytest.raises(ValueError, match='SQLite'):
+    with pytest.raises(ValueError, match='supports isolated SQLite databases'):
         read_instance(path)
 
 
@@ -382,7 +382,6 @@ def test_playground_ignores_customer_database_environment(tmp_path, monkeypatch)
     customer = tmp_path / 'customer.sqlite3'
     customer.write_bytes(b'preserve existing database')
     monkeypatch.setenv('EVLET_DATABASE', str(customer))
-    monkeypatch.setenv('EVLET_POSTGRES_DSN', 'never connect to this server')
     app = playground_app(tmp_path / 'demo')
     assert app.database.path != customer
     assert customer.read_bytes() == b'preserve existing database'

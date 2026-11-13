@@ -354,11 +354,10 @@ def check_revise(app):
     post(c, plain, 'void', {'reason': 'Stopped'})
     assert post(c, plain, 'revise', {'reason': 'Restarted'})[0] == 201
     # revised_by is found through the index on revises.
-    if type(app.database) is Database:  # PostgreSQL checks its plan in test_postgres.py
-        with app.database.transaction() as tx:
-            plan = ' '.join(str(tuple(row)) for row in tx.connection.execute(
-                'EXPLAIN QUERY PLAN SELECT id FROM "quote" WHERE "revises"=? ORDER BY id LIMIT 1', (1,)).fetchall())
-        assert 'USING INDEX' in plan or 'USING COVERING INDEX' in plan, plan
+    with app.database.transaction() as tx:
+        plan = ' '.join(str(tuple(row)) for row in tx.connection.execute(
+            'EXPLAIN QUERY PLAN SELECT id FROM "quote" WHERE "revises"=? ORDER BY id LIMIT 1', (1,)).fetchall())
+    assert 'USING INDEX' in plan or 'USING COVERING INDEX' in plan, plan
 
 
 def test_revise_copies_values_and_rows_and_links_both_records(quotes):

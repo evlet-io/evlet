@@ -1,5 +1,5 @@
 """Workspaces (evlet.workspaces): declarations checked at registration, and each role's view in /api/schema,
-on real SQLite and PostgreSQL."""
+on real SQLite."""
 
 import json
 
@@ -9,9 +9,7 @@ import pytest
 
 from evlet import (Application, Child, Column, Database, Date, Decimal, Link, LocalAuth, Model, Move, NavGroup, Registry, Report,
                    Rule, Select, Shortcut, Slip, State, Table, Text, Workspace)
-from evlet.postgres import PostgreSQLDatabase
 from test_business import PASSWORD, client, http
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
 
@@ -138,13 +136,10 @@ def build(database, workspaces=(SALES, PEOPLE)):
     return app
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def app(request, tmp_path):
+@pytest.fixture
+def app(tmp_path):
     registry = Registry(*MODELS)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'workspaces.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'workspaces.sqlite3', registry)
     return build(database)
 
 

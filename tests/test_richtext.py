@@ -256,7 +256,7 @@ def test_routes_store_sanitised_html_and_search_the_text(secured):
     # Search over a rich text field reads the text column too.
     from evlet.query import SqlQuery
     from examples.playground.models import Project
-    where, values = SqlQuery(secured.registry, Project).where({}, 'dubai', search_fields=['brief'])
+    where, values = SqlQuery(secured.registry, Project).where_sql({}, 'dubai', search_fields=['brief'])
     assert 'brief_text' in where and 'dubai' in values
     assert status == 422
 

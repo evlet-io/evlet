@@ -18,14 +18,13 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 
-from evlet import Application, Database, Email, Integer, JobQueue, Journal, LocalAuth, Mail, Model, PostgreSQLDatabase, Registry, Rule, Text
+from evlet import Application, Database, Email, Integer, JobQueue, Journal, LocalAuth, Mail, Model, Registry, Rule, Text
 from evlet import connectors as connectors_module
 from evlet import secrets as vault
 from evlet.auth import AccessError, User
 from evlet import mailboxes as module
 from test_assistants import send
 from test_business import PASSWORD, client, http
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 
 ALL = Rule(('read', 'create', 'update', 'delete'))
 APP_PASSWORD = 'imap-app-password-55e1'
@@ -969,27 +968,6 @@ def test_mail_declarations_are_checked(tmp_path):
     database = Database(tmp_path / 'wrong.sqlite3', Registry(Wrong))
     with pytest.raises(ValueError, match='stored Email fields'):
         Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
-
-
-# ---------- PostgreSQL ----------
-
-def test_postgres_mailboxes(pg_dsn, mail, monkeypatch):  # noqa: F811
-    imap, smtp, _ = mail
-    monkeypatch.setenv('EVLET_SECRET_KEY', base64.urlsafe_b64encode(b'p' * 32).decode())
-    app = build(PostgreSQLDatabase(pg_dsn, Registry(*MODELS)))
-    switch(app, True)
-    editor = client(app, 'editor')
-    imap.mail += [message(1, 'buyer@acme.test', 'Over PostgreSQL'), message(2, 'omar@acme.test', 'Not mine')]
-    assert editor('POST', '/api/_settings/me/mailbox', mailbox(imap, smtp))[0] == 200
-    drain(app)
-    with app.database.transaction() as tx:
-        tx.connection.execute('UPDATE evlet_mailboxes SET cursor=NULL')
-    editor('POST', '/api/_settings/me/mailbox/sync')
-    drain(app)
-    assert [data['subject'] for _, _, data in links(app)] == ['Over PostgreSQL']
-    assert messages(editor, 'customer', app.records['customer'])[1]['total'] == 1
-    assert editor('PATCH', '/api/_settings/me/mailbox', {'send_from': 'shared'})[1]['mailbox']['send_from'] == 'shared'
-    assert editor('DELETE', '/api/_settings/me/mailbox')[1]['mailbox'] is None
 
 
 def test_mail_needs_the_record_journal(tmp_path):

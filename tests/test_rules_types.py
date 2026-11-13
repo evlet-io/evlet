@@ -70,7 +70,7 @@ def application(tmp_path, *models, migrations=None):
 
 
 def start(db):
-    """An initialized application with an admin account (SQLite or PostgreSQL)."""
+    """An initialized application with an admin account."""
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
@@ -529,7 +529,7 @@ def check_recompute(app, reopen):
     with pytest.raises(SchemaError, match='COMPUTE_DIVISION_BY_ZERO'):
         reopen(Registry(bill_models('1.5', divisor='zero', with_memo=True)), broken).migrate(broken)
     with database._connection() as connection:
-        assert 'memo' not in database.columns(connection, 'bill')
+        assert 'memo' not in connection.columns('bill')
         assert [row[0] for row in connection.execute('SELECT name FROM evlet_migrations ORDER BY position')] == ['0000_base', '0001_recompute']
     assert c('GET', url)[1]['total'] == '4.25'
 

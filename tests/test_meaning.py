@@ -66,7 +66,7 @@ def start(tmp_path, *models, attachments=()):
 
 
 def serve(db, attachments=()):
-    """An initialized application with an admin account (SQLite or PostgreSQL)."""
+    """An initialized application with an admin account."""
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
                       attachments=attachments)
     app.initialize()

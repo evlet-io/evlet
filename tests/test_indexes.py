@@ -1,6 +1,7 @@
 """Meta.indexes on normal models, `id` in ledger indexes, tx.reserve_ids and the append-only refusal error,
-on real SQLite and PostgreSQL."""
+on real SQLite."""
 
+from contextlib import closing
 from datetime import date
 import sqlite3
 
@@ -9,9 +10,7 @@ import pytest
 from evlet import (AddIndex, Application, Child, ConflictError, CreateModel, Database, Date, Integer, Link, Migration, Model,
                    Registry, Rule, SchemaError, Select, Table, Text, ValidationError)
 from evlet.auth import LocalAuth
-from evlet.postgres import PostgreSQLDatabase
 from test_business import PASSWORD, client, http
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 
 FULL = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 
@@ -69,16 +68,10 @@ def build(database):
     return app, client(app)
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def app(request, tmp_path):
+@pytest.fixture
+def app(tmp_path):
     registry = Registry(*MODELS)
-    if request.param == 'sqlite':
-        return build(Database(tmp_path / 'indexes.sqlite3', registry))
-    return build(PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry))
-
-
-def postgres(database):
-    return isinstance(database, PostgreSQLDatabase)
+    return build(Database(tmp_path / 'indexes.sqlite3', registry))
 
 
 def station(database, code='north'):
@@ -192,34 +185,14 @@ def test_the_schema_check_needs_the_composite_unique_index(tmp_path):
         Database(path, Registry(*MODELS)).initialize()
 
 
-def test_the_postgres_schema_check_needs_the_composite_unique_index(pg_dsn):
-    PostgreSQLDatabase(pg_dsn, Registry(*MODELS)).initialize()
-    database = PostgreSQLDatabase(pg_dsn, Registry(*MODELS))
-    with database.transaction() as tx:
-        [name] = [row[0] for row in tx.connection.execute(
-            "SELECT indexname FROM pg_indexes WHERE tablename='sample' AND indexdef LIKE 'CREATE UNIQUE%' AND indexdef LIKE '%kind%'")]
-        tx.connection.execute(f'DROP INDEX "{name}"')
-    with pytest.raises(SchemaError, match='sample: unique constraints differ from models'):
-        PostgreSQLDatabase(pg_dsn, Registry(*MODELS)).initialize()
-
-
-def test_postgres_refuses_long_indexed_text_in_meta_indexes(pg_dsn):
-    wide = type('Wide', (Model,), {'note': Text(max_length=600), 'Meta': type('Meta', (), {'indexes': [('note',)]})})
-    with pytest.raises(SchemaError, match='wide.note: PostgreSQL indexed text requires max_length <= 500'):
-        PostgreSQLDatabase(pg_dsn, Registry(wide))
-
-
 def plain(name, indexes=()):
     return type(name, (Model,), {'storage_name': name.lower(), 'unit': Text(max_length=10, required=True),
                                  'on_date': Date(required=True), 'Meta': type('Meta', (), {'indexes': list(indexes)})})
 
 
-@pytest.mark.parametrize('engine', ['sqlite', 'postgresql'])
-def test_add_index_adds_a_composite_unique_index_to_a_normal_model(engine, tmp_path, request):
+def test_add_index_adds_a_composite_unique_index_to_a_normal_model(tmp_path):
     def open_(registry, **options):
-        if engine == 'sqlite':
-            return Database(tmp_path / 'migrated.sqlite3', registry, **options)
-        return PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry, **options)
+        return Database(tmp_path / 'migrated.sqlite3', registry, **options)
     first = plain('Entry')
     history = [Migration('0001_entry', CreateModel(first))]
     open_(Registry(first)).migrate(history)
@@ -265,16 +238,12 @@ def test_a_ledger_index_may_name_id(app):
     database = app.database
     with database.transaction() as tx:
         tx.insert_many(Step, [{'serial': 'A'}, {'serial': 'B'}, {'serial': 'A'}])
-        if postgres(database):
-            definitions = [row[0] for row in tx.connection.execute("SELECT indexdef FROM pg_indexes WHERE tablename='step'")]
-            assert any('(serial, id)' in item for item in definitions), definitions
-        else:
-            definitions = [row[0] for row in tx.connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='step'")]
-            assert any('("serial", "id")' in (item or '') for item in definitions), definitions
+        definitions = [row[0] for row in tx.connection.execute("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='step'")]
+        assert any('("serial", "id")' in (item or '') for item in definitions), definitions
         latest = tx.list(Step, filters={'serial': 'A'}, order_by=('-id',), limit=1)[0]
     assert latest.id == 3
     # The schema check accepts it.
-    type(database)(*((database.path,) if not postgres(database) else (database._dsn,)), Registry(*MODELS)).initialize()
+    Database(database.path, Registry(*MODELS)).initialize()
 
 
 def test_add_index_on_a_ledger_may_name_id(tmp_path):
@@ -364,33 +333,11 @@ def test_sqlite_reserve_ids_on_rollback_and_outside_a_transaction(tmp_path):
     with database.transaction() as tx:
         assert tx.reserve_ids(Step, 5) == reserved == [1, 2, 3, 4, 5]
     from evlet.database import Session
-    with sqlite3.connect(database.path) as connection:
-        connection.row_factory = sqlite3.Row
+    from evlet.writes import connect
+    with closing(connect(database.path, named_rows=True)) as connection:
         with pytest.raises(ValueError, match='works inside database.transaction'):
             Session(connection, database.registry).reserve_ids(Step, 1)
 
-
-def test_postgres_reserve_ids_leave_a_gap_on_rollback_and_need_a_write_transaction(pg_dsn):
-    database = PostgreSQLDatabase(pg_dsn, Registry(*MODELS))
-    database.initialize()
-    with pytest.raises(RuntimeError):
-        with database.transaction() as tx:
-            reserved = tx.reserve_ids(Step, 5)
-            raise RuntimeError('stop')
-    with database.transaction() as tx:
-        assert tx.reserve_ids(Step, 1)[0] > max(reserved)
-        assert tx.insert_many(Step, [{'serial': 'A'}])[0] > max(reserved) + 1
-    from evlet.database import Session
-    with database._connection() as connection:
-        with pytest.raises(ValueError, match='works inside database.transaction'):
-            Session(connection, database.registry).reserve_ids(Step, 1)
-        connection.execute('BEGIN')
-        with pytest.raises(ValueError, match='works inside database.transaction'):
-            Session(connection, database.registry).reserve_ids(Step, 1)
-        connection.rollback()
-
-
-# The append-only refusal
 
 def test_raw_updates_and_deletes_of_an_append_only_table_raise_conflict_error(app):
     app, _ = app
@@ -403,25 +350,6 @@ def test_raw_updates_and_deletes_of_an_append_only_table_raise_conflict_error(ap
                 tx.connection.execute(sql, ('A',) if 'DELETE' in sql else ('B',))
     assert [row.serial for row in database.list(Step)] == ['A']
 
-
-def test_postgres_triggers_from_before_this_version_raise_conflict_error_too(pg_dsn):
-    database = PostgreSQLDatabase(pg_dsn, Registry(*MODELS))
-    database.initialize()
-    with database.transaction() as tx:
-        tx.insert_many(Step, [{'serial': 'A'}])
-        # The function as earlier versions created it: a plain RAISE EXCEPTION.
-        tx.connection.execute("CREATE OR REPLACE FUNCTION evlet_ledger_append_only() RETURNS trigger LANGUAGE plpgsql AS "
-                              "$$ BEGIN RAISE EXCEPTION '% is append only', TG_TABLE_NAME; END $$")
-    with pytest.raises(ConflictError, match='^step is append only'):
-        with database.transaction() as tx:
-            tx.connection.execute('UPDATE step SET serial = ?', ('B',))
-    # Any other raised database error stays a generic failure.
-    with pytest.raises(sqlite3.OperationalError, match='PostgreSQL operation failed'):
-        with database.transaction() as tx:
-            tx.connection.execute("DO $$ BEGIN RAISE EXCEPTION 'something else'; END $$")
-
-
-# Aggregates in a transaction
 
 def test_tx_aggregate_matches_database_aggregate_and_sees_its_own_writes(app):
     from evlet import Count, Month, Sum

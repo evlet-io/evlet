@@ -1,4 +1,4 @@
-"""Meta.api: read-only models that only trusted Python writes, and models callers never reach, on real SQLite and PostgreSQL."""
+"""Meta.api: read-only models that only trusted Python writes, and models callers never reach, on real SQLite."""
 
 import pytest
 
@@ -6,10 +6,8 @@ from evlet import (Action, Application, Column, Count, Currency, Database, Link,
                    action)
 from evlet.auth import LocalAuth, User
 from evlet.permissions import calling
-from evlet.postgres import PostgreSQLDatabase
 from finite_fixtures import FiniteMeta
 from test_business import PASSWORD, client, http
-from test_postgres import pg_dsn  # noqa: F401 - fixture
 from test_rules_types import ALL
 
 FULL = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'))}
@@ -95,13 +93,10 @@ def build(database):
     return app, admin
 
 
-@pytest.fixture(params=['sqlite', 'postgresql'])
-def shop(request, tmp_path):
+@pytest.fixture
+def shop(tmp_path):
     registry = Registry(*MODELS)
-    if request.param == 'sqlite':
-        database = Database(tmp_path / 'shop.sqlite3', registry)
-    else:
-        database = PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'shop.sqlite3', registry)
     return build(database)
 
 

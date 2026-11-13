@@ -12,7 +12,6 @@ from evlet import (Application, Database, Date, Decimal, LocalAuth, Link, LongTe
 from evlet.expressions import ConditionError, UnknownField, parse
 from test_business import client, hashed, http  # noqa: F401
 from test_controls import add_user, password, save  # noqa: F401
-from test_postgres import pg_dsn  # noqa: F401
 
 
 def models(lead_meta=None):
@@ -364,8 +363,8 @@ def test_instance_field_rules(app):
 
 
 def test_old_sqlite_disables_removal_with_a_message(tmp_path, hashed, monkeypatch):
-    from evlet import customization
-    monkeypatch.setattr(customization, 'sqlite_version', lambda connection: '3.31.1')
+    from evlet import sqlite
+    monkeypatch.setattr(sqlite, 'sqlite_version', lambda connection: '3.31.1')
     app = build(tmp_path, *models())
     add_user(app, 'admin', 'admin')
     admin = client(app)
@@ -577,7 +576,8 @@ def test_the_counter_table_gains_its_new_columns(tmp_path):
         db.execute('CREATE TABLE evlet_sequence (model TEXT NOT NULL, field TEXT NOT NULL, scope_key TEXT NOT NULL, period TEXT NOT NULL, '
                    '"last" INTEGER NOT NULL, PRIMARY KEY (model, field, scope_key, period))')
     from evlet.sequences import upgrade_counters
-    with sqlite3.connect(path) as db:
+    from evlet.sqlite import SQLiteConnection
+    with sqlite3.connect(path, factory=SQLiteConnection) as db:
         upgrade_counters(db)
         assert {row[1] for row in db.execute('PRAGMA table_info(evlet_sequence)')} >= {'last_name', 'how', 'note', 'changed_by', 'changed_at'}
 
@@ -608,67 +608,6 @@ def test_an_instance_field_on_a_finite_document(tmp_path, hashed):
     status, record, _ = admin('PATCH', f'/api/quote/{first[1]["id"]}', {'x_note': 'later'}, headers={b'if-match': etag})
     assert status == 200, record
     assert (record['amount'], record['x_note']) == ('6.00', 'later')
-
-
-# ---------- PostgreSQL ----------
-
-@pytest.fixture
-def pg(pg_dsn, hashed):
-    from evlet import PostgreSQLDatabase
-    classes = models()
-    database = PostgreSQLDatabase(pg_dsn, Registry(*classes))
-    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
-    app.initialize()
-    for role in ('admin', 'editor'):
-        add_user(app, role, role)
-    return app
-
-
-def test_postgresql_field_overrides_and_naming(pg):
-    admin = client(pg)
-    assert save(admin, ('field', 'Lead.value', {'required': True}), ('field', 'Lead.source', {'options_hidden': ['walk_in']}))[0] == 200
-    assert admin('POST', '/api/lead', {'title': 'A'})[1]['fields'] == {'value': 'This field is required'}
-    assert admin('POST', '/api/lead', {'title': 'A', 'value': '1', 'source': 'walk_in'})[0] == 422
-    names = [admin('POST', '/api/invoice', {'customer': 'A', 'posting_date': day, **extra})[1]['reference']
-             for day, extra in (('2025-12-31', {}), ('2026-01-01', {}), ('2026-01-01', {'tax_rate': '0'}))]
-    assert names == ['INV-2025-0001', 'INV-2026-0001', 'ZR-2026-0001']
-    url = '/api/_controls/naming/Invoice/counters'
-    assert admin('POST', url, {'prefix': 'INV-2026-', 'value': 0, 'note': 'x'})[0] == 422
-    assert admin('POST', url, {'prefix': 'INV-2026-', 'value': 41, 'note': 'Old system'})[0] == 200
-    before = admin('GET', url)[1]
-    assert admin('POST', '/api/_controls/naming/Invoice/try', {'values': {'posting_date': '2026-01-05'}})[1]['name'] == 'INV-2026-0042'
-    assert admin('GET', url)[1] == before
-    with ThreadPoolExecutor(max_workers=10) as pool:
-        results = list(pool.map(lambda index: admin('POST', '/api/invoice', {'customer': f'C{index}', 'posting_date': '2026-01-05'}), range(50)))
-    assert {record['reference'] for _, record, _ in results} == {f'INV-2026-{number:04d}' for number in range(42, 92)}
-
-
-def test_postgresql_two_processes_add_the_same_field(pg, pg_dsn):
-    from evlet import PostgreSQLDatabase
-    database = PostgreSQLDatabase(pg_dsn, Registry(*models()))
-    other = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
-    other.initialize()
-    callers = [client(pg), client(other)]
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        statuses = sorted(pool.map(lambda c: c('POST', '/api/_controls/fields/Lead', {'name': 'zone', 'type': 'Text', 'label': 'Zone'})[0], callers))
-    assert statuses == [201, 422]
-
-
-def test_postgresql_instance_fields(pg):
-    admin = client(pg)
-    admin('POST', '/api/lead', {'title': 'Before'})
-    status, added, _ = admin('POST', '/api/_controls/fields/Lead', {'name': 'account', 'type': 'Link', 'label': 'Account', 'target': 'customer'})
-    assert status == 201 and added['backup'] is None
-    customer = admin('POST', '/api/customer', {'customer_name': 'Gulf Steel'})[1]
-    assert admin('POST', '/api/lead', {'title': 'After', 'x_account': customer['id']})[1]['x_account'] == customer['id']
-    assert admin('POST', '/api/lead', {'title': 'Bad', 'x_account': 999})[0] in (404, 422)
-    assert save(admin, ('list', 'Lead', {'columns': ['title', 'x_account'], 'page_size': 25, 'sort': 'title'}))[0] == 200
-    assert admin('DELETE', '/api/_controls/fields/Lead/x_account')[0] == 200
-    with pg.database._connection() as db:
-        names = {row[0] for row in db.execute("SELECT column_name FROM information_schema.columns WHERE table_name='lead'")}
-    assert 'x_account' not in names
-    overrides = {(item['kind'], item['key']): item['value'] for item in admin('GET', '/api/_controls/overrides')[1]['items']}
-    assert overrides[('list', 'Lead')]['columns'] == ['title']
 
 
 def test_a_revision_gets_a_new_name(tmp_path, hashed):
@@ -1008,18 +947,17 @@ def test_recompute_keeps_instance_fields_and_skips_posted_records(tmp_path, hash
     assert status in (409, 422) and admin('GET', issued)[1]['x_region'] == 'north', body
 
 
-@pytest.mark.parametrize('backend', ['sqlite', 'postgresql'])
-def test_instance_fields_follow_the_record_for_roles_whose_rules_list_fields(tmp_path, hashed, request, backend):
+def test_instance_fields_follow_the_record_for_roles_whose_rules_list_fields(tmp_path, hashed):
     """An instance field is readable by every role that reads the record and writable by every role that creates or
     updates it, also when the app lists the fields a role may read or write. Overrides narrow it per role."""
-    from evlet import Policy, PostgreSQLDatabase, Rule
+    from evlet import Policy, Rule
 
     class Deal(Model):
         title = Text(required=True)
         amount = Decimal(scale=2)
         notes = Text()
     registry = Registry(Deal)
-    database = Database(tmp_path / 'deal.sqlite3', registry) if backend == 'sqlite' else PostgreSQLDatabase(request.getfixturevalue('pg_dsn'), registry)
+    database = Database(tmp_path / 'deal.sqlite3', registry)
     rules = {('editor', Deal): Rule(('read', 'create', 'update'), read_fields=('title', 'amount'), write_fields=('title',)),
              ('viewer', Deal): Rule(('read',), read_fields=('title',)),
              ('portal', Deal): Rule(('read',), read_fields=('title',))}

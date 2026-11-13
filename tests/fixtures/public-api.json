@@ -83,7 +83,6 @@
     "Percent": "class(*, minimum='0', maximum='100', **kwargs)",
     "Phone": "class(*, max_length=32, **kwargs)",
     "Policy": "class(registry, *, rules=None, roles=None, overrides=None, read_only=None)",
-    "PostgreSQLDatabase": "class(dsn, registry, *, migrations=None, timeout=5, max_connections=10, migration_timeout=300)",
     "PrintDesign": "class()",
     "Query": "class(target, *, filters=None, fields)",
     "Recompute": "class(table: str, fields: tuple) -> None",

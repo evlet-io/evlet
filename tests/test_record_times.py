@@ -226,38 +226,3 @@ def test_id_time_reads_the_time_in_an_id():
     assert audit.id_time(42) is None
     assert audit.id_time(1 << 21) == '2026-01-01T00:00:00.001Z'
     assert audit.id_time(RecordId('01hc1sd9vc1ye')).endswith('Z')
-
-
-# PostgreSQL
-
-from test_postgres import pg_dsn  # noqa: E402,F401  (skips without EVLET_TEST_POSTGRES_DSN)
-
-
-def test_postgresql_records_times_and_backfills_them(pg_dsn, clock):
-    from evlet import PostgreSQLDatabase
-    app = start(PostgreSQLDatabase(pg_dsn, Registry(*MODELS)))
-    add_user(app, 'editor')
-    admin, editor = client(app), client(app, 'editor')
-    note = admin('POST', '/api/note', {'title': 'First'})[1]
-    url = f"/api/note/{note['id']}"
-    assert editor('PATCH', url, {'title': 'Second'}, headers=etag(editor, url))[0] == 200
-    created_at, created_by, modified_at, modified_by = stamps(app, 'note', note['id'])
-    assert (created_by, modified_by) == (1, 2) and modified_at > created_at
-    assert editor('GET', url)[1]['_audit']['modified_by'] == {'id': 2, 'name': 'editor'}
-    account = admin('POST', '/api/account', {'title': 'Sales'})[1]['id']
-    invoice = books_module.invoice(editor, account)
-    assert books_module.move(admin, invoice, 'issued')[0] == 200
-    assert stamps(app, 'invoice', invoice.rsplit('/', 1)[1])[1::2] == (2, 1)
-    assert {entry['evlet_created_by'] for entry in books_module.entries(app)} == {1}
-    # An older database: the columns go, the framework step adds them back and fills them from the journal.
-    with app.database.transaction() as tx:
-        for column in audit.COLUMNS:
-            tx.connection.execute(f'ALTER TABLE note DROP COLUMN {column}')
-        tx.connection.execute("DELETE FROM evlet_framework_migrations WHERE position >= "
-                              "(SELECT position FROM evlet_framework_migrations WHERE name='0004_record_times')")
-        tx.connection.execute("INSERT INTO evlet_journal (model, record_id, kind, actor, at, data) VALUES ('note', ?, 'created', '2', "
-                              "'2026-10-01T10:00:00.000Z', '{}')", (RecordId(note['id']),))
-    app.database.initialize()
-    assert upgrade(app.database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files']
-    assert stamps(app, 'note', note['id']) == ('2026-10-01T10:00:00.000Z', 2, '2026-10-01T10:00:00.000Z', 2)
-    assert upgrade(app.database) == []

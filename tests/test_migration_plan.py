@@ -619,11 +619,11 @@ def test_sqlite_maintenance_data_steps_are_opt_in_and_audited(tmp_path):
 
 
 def test_relax_explains_a_defensive_sqlite_build(monkeypatch):
-    from evlet.migrations import _relax
-    connection = sqlite3.connect(':memory:')
+    from evlet.sqlite import SQLiteConnection
+    connection = sqlite3.connect(':memory:', factory=SQLiteConnection)
     connection.execute('CREATE TABLE "t" ("id" INTEGER PRIMARY KEY AUTOINCREMENT, "a" TEXT NOT NULL)')
     if not hasattr(sqlite3, 'SQLITE_DBCONFIG_DEFENSIVE'):
         pytest.skip('This Python cannot switch SQLite to defensive mode')
     connection.setconfig(sqlite3.SQLITE_DBCONFIG_DEFENSIVE, True)
     with pytest.raises(SchemaError, match='does not allow changing column constraints'):
-        _relax(connection, 't', ('a',))
+        connection.set_required('t', 'a', False)
