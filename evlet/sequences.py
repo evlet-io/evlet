@@ -13,7 +13,7 @@ from types import MappingProxyType
 
 from .fields import Boolean, Date, Integer, LongText, MISSING, Tags, Text
 from .declarations import State
-from .models import ValidationError, identifier
+from .models import ValidationError, build_step, identifier
 from . import qb
 from .adapter import Column, TableDefinition
 
@@ -136,6 +136,7 @@ def fields_of(model):
     return {name: field for name, field in model.__declared_fields__.items() if isinstance(field, Sequence)}
 
 
+@build_step('sequences')
 def compile_sequences(registry, models, plans, child_models):
     """{model: {field name: Sequence}} after checking each declaration against its model."""
     result = {}
@@ -573,6 +574,7 @@ def compile_naming(model, naming, series=None):
         raise ValueError(f'{where}: {exc}') from None
 
 
+@build_step('namings')
 def compile_namings(models, child_models):
     result = {}
     for model in models:

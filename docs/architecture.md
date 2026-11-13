@@ -112,6 +112,11 @@ lists each one as `(importing module, imported module)`, and the list only shrin
 when an entry no longer occurs. Remove an upward import by moving the code to the layer that owns
 its data, passing a value in, or letting the higher module register itself with the lower one.
 
+Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
+state manager hooks, rule guards, sequences, measures, effects, journals, API access). `evlet/models.py`
+lists them in `BUILD_ORDER`, the order they run in; each owning module registers its function with
+`@build_step(name)`, and `evlet/__init__.py` imports those modules before any model class exists.
+
 ## API and data flow
 
 `Model` definitions → `Registry` → `Database` → `Application` → JSON API → Evlet UI

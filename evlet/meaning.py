@@ -22,7 +22,7 @@ from types import MappingProxyType
 
 from .database import ROW_LIMIT
 from .fields import Link, Reference, Select
-from .models import storage_name
+from .models import build_step, storage_name
 
 KEY_FIELDS = 8
 CARDS = 5
@@ -107,6 +107,7 @@ class Meaning:
     status: str = None
 
 
+@build_step('meaning')
 def meaning_for(registry):
     """Validate every model's meaning metadata once Link targets are resolved."""
     children = {child.model for child in registry.children}
@@ -144,6 +145,7 @@ def key_fields(model, names):
     return tuple(names)
 
 
+@build_step('cards')
 def cards_for(registry, models, children):
     """{model: names} for every model with Meta.cards, checked once its measures are compiled.
 

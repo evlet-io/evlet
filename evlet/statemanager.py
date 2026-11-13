@@ -21,6 +21,7 @@ from types import MappingProxyType
 
 from .auth import AccessError, has_role
 from .fields import MISSING
+from .models import build_step
 # The declarations live in core, where models and sequences import them; evlet.statemanager.State still works.
 from .declarations import KEY, REMARK_LENGTH, Level, Remark, Rule, State, Step, _key, check_rules  # noqa: F401
 
@@ -60,6 +61,7 @@ state.exit = lambda *states: _hook('exit', states)
 state.exit.__doc__ = '@state.exit("issued", ...): runs when the document leaves one of the states.'
 
 
+@build_step('statemanager')
 def configure(model):
     """Collect a model's hooks in class order, a subclass's method replacing its base's by name."""
     hooks = []

@@ -20,7 +20,7 @@ from .naming import drop_echoes
 from .database import ROW_LIMIT, Session, using
 from .fields import Link
 from .ui.metadata import view_for
-from .models import ValidationError, identifier
+from .models import ChildTable, ValidationError, identifier
 from .permissions import CORRECTIONS, Policy, calling, read_only, trusted
 from .query import SqlQuery, operators_for
 from .storage import SQLiteStorage
@@ -48,15 +48,6 @@ class Action:
     label: str
     handler: object
     roles: tuple = ('admin', 'editor')
-
-
-@dataclass(frozen=True)
-class ChildTable:
-    parent: type
-    name: str
-    model: type
-    link: str
-    label: str
 
 
 RULES = ('applies_when', 'required_when', 'locked_when')

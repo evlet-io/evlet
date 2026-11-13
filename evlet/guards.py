@@ -10,7 +10,7 @@ from types import MappingProxyType
 
 from .auth import AccessError, has_role, is_administrator
 from .fields import MISSING, Link, Reference
-from .models import ValidationError
+from .models import ValidationError, build_step
 
 
 @dataclass(frozen=True)
@@ -24,6 +24,7 @@ class Guard:
     whole: bool
 
 
+@build_step('guards')
 def compile_guards(registry, models, plans, child_models):
     """Guards of root documents: ({model: {rule key or action name: Guard}}, {model: plan}, {model: root plan}).
 
@@ -84,6 +85,7 @@ def root_plan(plan):
     return result
 
 
+@build_step('kept_plan')
 def kept_plan(plan):
     """The plan of ordinary writes on a locked record: stored results, at every depth, are saved values.
 
@@ -164,6 +166,7 @@ def stored_reads(registry, model, plan):
     return result
 
 
+@build_step('posted_reads')
 def posted_reads(registry, model, plan):
     """({(model, field)}, {(owner model, table name)}) a posted record may not change: the source fields
     its stored results read, and the tables whose rows hold or feed a stored result."""
