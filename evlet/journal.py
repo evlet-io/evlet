@@ -215,7 +215,8 @@ def recomputed(connection, registry, changes):
     ensure_table(connection,
                  hashed=[registry.name_for(model) for model, journal in registry.journals.items() if journal.tamper_evident])
     for (model, record_id), data in sorted(changes.items(), key=lambda item: (registry.name_for(item[0][0]), item[0][1])):
-        insert(connection, registry, model, record_id, 'recomputed', ENGINE, data)
+        from .statemanager import changes_base
+        insert(connection, registry, model, record_id, 'recomputed', ENGINE, data, base=changes_base(connection, registry, model, record_id, data))
 
 
 def skipped(business, model):
@@ -286,13 +287,16 @@ def written(context, model, record_id, before, after, *, action=None, entering=N
     data = tree_changes(context._business, model, before, after)
     if action is not None:
         data['action'] = action
+    from .statemanager import changes_base
+    base = None if before is None else changes_base(context._tx.connection, context._business.registry, model, record_id, data)
     if restored is not None:
         # A restore: {"number": the version restored} with the remark, building on the latest release.
         number, remark = restored
-        append(context._business, context._tx, context.user, model, record_id, 'restored', {**data, 'number': number}, remark=remark)
+        append(context._business, context._tx, context.user, model, record_id, 'restored', {**data, 'number': number}, remark=remark,
+               base=base)
     elif before is None or data:
         data.update(entering or {})
-        append(context._business, context._tx, context.user, model, record_id, 'created' if before is None else 'changed', data)
+        append(context._business, context._tx, context.user, model, record_id, 'created' if before is None else 'changed', data, base=base)
 
 
 def number(context, model, record_id, name, value):
@@ -604,7 +608,7 @@ def present(business, user, model, row, visibility, done):
             shown['posted'] = True
         if kind in ('moved', 'approved', 'rejected'):
             if state_shown:
-                shown.update({key: data[key] for key in ('from', 'to', 'move', 'level', 'pending') if key in data})
+                shown.update({key: data[key] for key in ('from', 'to', 'move', 'level', 'pending', 'release') if key in data})
             else:
                 kind, partial = 'changed', True
     elif kind in STATE_KINDS:

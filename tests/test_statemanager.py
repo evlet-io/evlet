@@ -525,7 +525,8 @@ def test_entering_a_release_step_releases_and_snapshots_only_on_leaving(bills):
     assert RELEASED == [(0, None)] and body['note'] == 'released v0'
     assert body['_version'] == {'number': 0, 'released': True, 'state': 'issued'}
     assert [row[:2] for row in rows(app, url)] == [(0, 0)]
-    assert c('GET', url + '/journal')[1]['items'][0]['base'] == 0
+    issued = c('GET', url + '/journal')[1]['items'][0]
+    assert issued['data']['release'] == 0 and 'base' not in issued
     # Leaving the release snapshots it, once; the content is unchanged, so it still reads as v0.
     body = move(c, url, 'reopen', {'remark': 'Price'})[1]
     assert [row[:2] for row in rows(app, url)] == [(0, 0), (0, 1)] and body['_version']['released'] is True
@@ -681,7 +682,8 @@ def test_restore_moves_forward_with_the_release_content(contracts):
     assert (body['title'], body['days'], body['note']) == ('First', 30, 'n1')
     # The clause deleted since comes back under its own id; the one added since is gone.
     assert [(row['id'], row['text']) for row in body['children']['clauses']] == [(first[0]['id'], 'a'), (first[1]['id'], 'b')]
-    assert body['_restore'] == {'version': 0, 'dropped': [], 'kept': []} and body['_version'] == {'number': 0, 'released': True, 'state': 'signed'}
+    # A restore is a change after the latest release (v0 here), so the record reads as modified, with v0's content.
+    assert body['_restore'] == {'version': 0, 'dropped': [], 'kept': []} and body['_version'] == {'number': 0, 'released': False, 'state': 'signed'}
     entry = c('GET', url + '/journal')[1]['items'][0]
     assert (entry['kind'], entry['remark'], entry['data']['number']) == ('restored', 'Back to the signed terms', 0)
     # Numbers only increase: v0's content signed again is no new release; changed and signed it is v1.

@@ -1088,10 +1088,11 @@
           "data": {
             "from": "draft",
             "to": "confirmed",
-            "move": "Confirm"
+            "move": "Confirm",
+            "release": 1
           },
           "rule": "draft_to_confirmed",
-          "base": 1
+          "base": 0
         },
         {
           "id": 5,
@@ -1139,7 +1140,8 @@
                 ]
               }
             }
-          }
+          },
+          "base": 0
         },
         {
           "id": 4,
@@ -1179,10 +1181,10 @@
             },
             "from": "draft",
             "to": "confirmed",
-            "move": "Confirm"
+            "move": "Confirm",
+            "release": 0
           },
-          "rule": "draft_to_confirmed",
-          "base": 0
+          "rule": "draft_to_confirmed"
         },
         {
           "id": 1,
