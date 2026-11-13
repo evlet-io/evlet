@@ -395,6 +395,7 @@ def test_every_setting_kind_exports_under_its_own_prefix_and_round_trips(secured
     admin = client(secured)
     secured.business.jobs.schedule('nightly', 'project_progress', {'project_id': 404}, every=3600)
     values = {'security.password_min': 20, 'security.session_hours': 4, 'security.lockout': 4, 'security.two_step': True, 'security.two_step_roles': ['editor'],
+              'security.controls_two_step': False,
               'security.controls_ips': ['127.0.0.0/8'], 'mcp.enabled': False, 'mcp.allow_writes': True, 'mcp.rate': 30,
               'mcp.disabled_tools': ['delete_record'], 'mcp.hidden_models': ['Customer'], 'mail.personal': True, 'schedule.nightly.active': False}
     status, payload, _ = save(admin, *(('setting', key, value) for key, value in values.items()))
@@ -408,6 +409,7 @@ def test_every_setting_kind_exports_under_its_own_prefix_and_round_trips(secured
     exec(config, names, found)
     exec(routes, names, found)
     back = {f'security.{key}': value for key, value in found['security'].items()} | {'security.two_step_roles': list(found['two_step_roles'])}
+    back |= {'security.controls_two_step': found['controls_two_step']}
     back |= found['assistants'] | found['mail'] | {'security.controls_ips': list(found['controls']['allow_ips'])}
     paused = [item['code'] for item in admin('GET', '/api/_controls/overrides/export')[1] if item['file'] == 'hooks.py']
     assert paused == ['# nightly is paused on this instance. Remove its Schedule here to stop it everywhere.\n']

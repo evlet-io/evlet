@@ -93,6 +93,9 @@ def test_controls_needs_a_session_that_finished_two_step(settled):
     app.routes = app.business.routes = app.business.controls.routes = type(app.routes)(**{**app.routes.__dict__, 'controls': ControlsAccess(require_two_step=True)})
     admin = client(app)
     assert admin('GET', '/api/_controls/state')[0] == 200
+    # This checks routes.py's rule alone, so roles that open Controls are not required to use two-step here.
+    from test_controls import save
+    assert save(admin, ('setting', 'security.controls_two_step', False))[0] == 200
     editor, raw, _ = enrol(app, 'editor')
     # Framework roles can't open Controls from the page; set it directly for this check.
     with app.database.transaction() as tx:
@@ -115,6 +118,61 @@ def test_required_roles_need_a_verified_session_for_controls(settled):
         tx.connection.execute('UPDATE evlet_sessions SET two_step=NULL')
     # A required role's session without two-step uses nothing at all, not only Controls.
     assert admin('GET', '/api/_controls/state')[:2] == (401, {'error': TWO_STEP_FIRST})
+
+
+def open_controls(app, role):
+    """Framework roles can't open Controls from the page; set it directly for these checks."""
+    with app.database.transaction() as tx:
+        tx.connection.execute('UPDATE evlet_roles SET opens_controls=1 WHERE id=?', (role,))
+        tx.connection.execute('UPDATE evlet_config SET version=version+1')
+
+
+def test_roles_that_open_controls_must_use_two_step_by_default(settled):
+    app = settled
+    editor = client(app, 'editor')
+    assert editor('GET', '/api/customer')[0] == 200
+    open_controls(app, 'editor')
+    controls = app.business.controls
+    controls.refresh()
+    assert controls.settings['security.controls_two_step'] is True and controls.two_step_required('editor')
+    assert 'editor' in app.business.settings.required_roles() and not controls.two_step_required('viewer')
+    # After an upgrade, a session from before the rule uses nothing until two-step is set up, like an admin's.
+    assert editor('GET', '/api/customer')[:2] == (401, {'error': TWO_STEP_FIRST})
+    data = http(app, 'POST', '/api/auth/login', {'username': 'editor', 'password': PASSWORD})[1]
+    assert data['two_step'] == 'setup'
+    status, payload, headers = http(app, 'POST', '/api/auth/login', {'ticket': data['ticket'], 'code': totp(b32(data['secret']), int(time.time() // 30))})
+    assert status == 200 and len(payload['backup_codes']) == 8
+    cookie = headers[b'set-cookie'].decode().split(';')[0]
+    assert http(app, 'GET', '/api/_controls/state', cookie=cookie)[0] == 200
+    # It cannot be turned off by the person, since the role requires it.
+    assert http(app, 'GET', '/api/_settings/me', cookie=cookie)[1]['security']['two_step']['required'] is True
+
+
+def test_only_an_admin_can_switch_off_two_step_for_roles_that_open_controls(settled):
+    from test_controls import save
+    app = settled
+    _, raw, _ = enrol(app, 'editor')
+    open_controls(app, 'editor')
+    status, data, headers = sign_in(app, 'editor', totp(raw, int(time.time() // 30) + 1))
+    assert status == 200
+    cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
+    editor = lambda method, path, body=None: http(app, method, path, body, cookie=cookie, csrf=csrf)
+    # The editor opens Controls but cannot loosen its own rule.
+    status, body, _ = save(editor, ('setting', 'security.controls_two_step', False))
+    assert (status, body) == (403, {'error': 'Only an admin can change two-step sign-in for roles that open Controls.'})
+    assert save(editor, ('setting', 'security.controls_two_step', 'off'))[0] == 422
+    admin = client(app)
+    assert save(admin, ('setting', 'security.controls_two_step', False))[0] == 200
+    controls = app.business.controls
+    controls.refresh()
+    assert not controls.two_step_required('editor') and 'editor' not in app.business.settings.required_roles()
+    with app.database._connection() as db:
+        row = db.execute("SELECT actor, area FROM evlet_audit WHERE target='security.controls_two_step'").fetchone()
+    assert dict(row) == {'actor': 'admin', 'area': 'Security'}
+    # Switched off, a role listed in two_step_roles still needs it.
+    assert save(admin, ('setting', 'security.two_step_roles', ['editor']))[0] == 200
+    controls.refresh()
+    assert controls.two_step_required('editor')
 
 
 def test_enrolment_is_audited_shown_and_can_be_reset_by_admins_and_the_shell(settled, tmp_path):
