@@ -235,7 +235,7 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
     const before = sums(host);
     const scroller = host.querySelector<HTMLElement>('.doc-main .g-scroll') ?? host.querySelector<HTMLElement>('.doc-main table')!.parentElement!;
     await until(() => {
-      scroller.scrollTop = 38 * 145;
+      scroller.scrollTop = 35 * 145;
       scroller.dispatchEvent(new Event('scroll'));
       expect(rows(host).some(row => text(cellOf(row, 'description')) === 'Site 0150')).toBe(true);
     });

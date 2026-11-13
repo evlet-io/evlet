@@ -166,7 +166,10 @@ describe('ChildTable over a record store', () => {
       expect(host.querySelector('.g-selinfo')!.textContent).toBe('4 selected');
       [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Delete'))!.click();
       expect(lines.rows.peek()).toHaveLength(0);
-      expect(host.querySelector('.g-empty')!.textContent).toContain('No rows yet');
+      // Empty again: the header and the Add row placeholder, no total line.
+      expect(host.querySelector('.g-empty')).toBeNull();
+      expect(host.querySelector('tbody tr.g-addrow-end')).not.toBeNull();
+      expect(host.querySelector('tfoot')).toBeNull();
       expect(store.field('total').value.peek()).toBe('0.00');
       const toast = [...document.querySelectorAll('.toast')].pop()!;
       expect(toast.textContent).toContain('Deleted 4 rows');
@@ -174,6 +177,35 @@ describe('ChildTable over a record store', () => {
       expect(lines.rows.peek()).toHaveLength(4);
       expect(rowsIn(host)).toHaveLength(4);
     } finally { vi.useRealTimers(); }
+  });
+
+  it('starts empty with the header and the Add row placeholder only, and shows the total from the first row', async () => {
+    const { store } = await bigOrder(0);
+    const lines = store.table('lines');
+    const host = render(() => ChildTable({ table: lines, columns: ['product', 'qty', 'rate', 'amount'] }));
+    expect([...host.querySelectorAll('thead th[data-key]')].map(th => th.textContent!.trim())).toEqual(['Product', 'Qty', 'Rate', 'Amount']);
+    const placeholder = host.querySelector<HTMLElement>('tbody tr.g-addrow-end')!;
+    expect(placeholder.querySelector('.g-add')!.textContent).toBe('Add row');
+    expect(rowsIn(host)).toHaveLength(0);
+    // No empty-state card, no total line and no totals under the table.
+    expect(host.querySelector('.g-empty')).toBeNull();
+    expect(host.querySelector('tfoot')).toBeNull();
+    expect(host.querySelector('.g-sum')).toBeNull();
+    // A click anywhere on the placeholder (here its last cell) adds the first row and edits it.
+    [...placeholder.querySelectorAll<HTMLElement>('td')].pop()!.click();
+    expect(lines.rows.peek()).toHaveLength(1);
+    expect(rowsIn(host)).toHaveLength(1);
+    expect(host.querySelector('td.editing')).not.toBeNull();
+    expect(footer(host)[1]).toBe('Total · 1 line');
+  });
+
+  it('says a read-only empty table has no rows, with no placeholder or totals', async () => {
+    const { store } = await bigOrder(0);
+    const host = render(() => ChildTable({ table: store.table('lines'), columns: ['qty', 'amount'], locked: true }));
+    expect(host.querySelector('.g-empty')!.textContent).toContain('No rows yet');
+    expect(host.querySelector('tr.g-addrow')).toBeNull();
+    expect(host.querySelector('tfoot')).toBeNull();
+    expect(host.querySelector('.g-sum')).toBeNull();
   });
 
   it('locks with the record: no editing, no add, and a plain explanation', async () => {
@@ -196,7 +228,7 @@ describe('ChildTable over a record store', () => {
     expect(shown).toBeLessThan(40);
     expect(host.querySelector('table')!.getAttribute('aria-rowcount')).toBe('1001');
     const scroller = host.querySelector<HTMLElement>('.g-scroll')!;
-    scroller.scrollTop = 38 * 500;
+    scroller.scrollTop = 35 * 500;
     scroller.dispatchEvent(new Event('scroll'));
     const numbers = rowsIn(host).map(row => Number(row.querySelector('.g-exp .num')!.textContent));
     expect(numbers).toContain(501);

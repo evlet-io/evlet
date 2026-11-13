@@ -641,7 +641,11 @@ mount(document.querySelector('#app')!, () => DocFrame({
   editing (on a Link cell it opens the search with what was typed), Alt and an
   arrow moves a row. The table's last row is a quiet **Add row placeholder** (a muted plus, "Add row", and "or add a
   section" when the schema has sections), above the total line: a click or Enter on it adds a row there and puts the
-  cursor in its first editable cell. It is hidden while the lines are locked or read only and at `max_rows`. With rows
+  cursor in its first editable cell. It is hidden while the lines are locked or read only and at `max_rows`. An empty
+  table that can take rows shows only its header and this placeholder, with no total line and no totals under it; the
+  total line comes back with the first row. An empty table that can't take rows says "No rows yet" (on a record page,
+  "No … yet"). The header row has a light `--bg-muted` tint; header rows are 34px and body, placeholder and total rows
+  35px. With rows
   selected (a section row's checkbox selects the section alone), the title bar shows "N selected", **Duplicate** (copies
   without ids, directly after the last selected row; a selected section with its lines) and **Delete** (a deleted
   section keeps its lines), none of it on a locked table. Rows can be added, duplicated

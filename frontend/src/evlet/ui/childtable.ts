@@ -22,7 +22,7 @@ import { dragList } from './draglist';
 import { arrange, byKey, ColumnsMenu, emptyPrefs, gridPrefs, pinnedKeys, pinTracker, resizeHandle, virtualWindow, type TablePrefs } from './table';
 import { tooltip } from './tooltip';
 
-const ROW = 38, HEADER = 36;
+const ROW = 35, HEADER = 34;
 // Under 480 px the control column drops the row number and the first column starts narrower,
 // so a phone keeps room for the other columns.
 const NARROW = '(max-width: 480px)';
@@ -235,8 +235,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     label: value && typeof value === 'object' && 'meta' in value ? value.meta.label : allColumns.find(column => column.key === key)?.label ?? key,
     value: () => valueText(value), grand: index === all.length - 1 && all.length > 1, column: index < Object.keys(sums).length ? key : undefined,
   }));
-  // A column's sum shows once: in the total line while that column shows, under the table only when it doesn't.
-  const summaryShown = derive(() => summary.filter(item => !item.column || rows.get().length === 0 || !columns.get().some(column => column.key === item.column)));
+  // A column's sum shows once: in the total line while that column shows, under the table only when it doesn't. An empty
+  // table shows no totals at all: its header and Add row placeholder only.
+  const summaryShown = derive(() => rows.get().length === 0 ? [] : summary.filter(item => !item.column || !columns.get().some(column => column.key === item.column)));
 
   const rows = table.rows;
   const selection = cell(new Set<string>(), { name: `${table.name} (selection)` });
@@ -423,7 +424,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // A cell that could not be committed keeps editing, and keeps the focus.
   const refocus = () => { if (control && !control.element.contains(document.activeElement)) control.focus(); };
   // The first control after the table, for Tab past its last cell.
-  const after = () => grid.querySelector<HTMLButtonElement>('tr.g-addrow-end .g-add') ?? grid.querySelector<HTMLButtonElement>('.g-empty .btn');
+  const after = () => grid.querySelector<HTMLButtonElement>('tr.g-addrow-end .g-add');
   const cancel = () => {
     const spot = editing.peek();
     if (!spot) return;
@@ -826,10 +827,11 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
           <tr class="spacer" aria-hidden="true"><td colspan=${() => String(columns.get().length + 1)} style="padding:0;border:0" style:height=${() => `${hasSections.get() ? 0 : view.range.get().before}px`}></td></tr>
           ${each(entries, entry => entry.kind === 'row' ? entry.row.key : entry.kind === 'add' ? `a:${entry.section}` : `s:${entry.section.key}`, (entry, index) => entry().kind === 'row'
             ? rowView(() => (entry() as { row: Row }).row, index) : entry().kind === 'add' ? addRowView((entry() as { section: string }).section, false)
-              : sectionView(() => (entry() as { section: TableSection }).section), { fallback: () => html`<tr><td colspan=${() => String(columns.get().length + 1)} class="g-empty"><div class="g-empty-in">${Icon(props.icon ?? 'table-2', { size: 'lg', className: 'muted' })}<span>No rows yet</span>${when(() => !readOnly.get(),
-            () => Button({ icon: 'plus', label: 'Add the first row', variant: 'primary', size: 'small', onClick: add }))}</div></td></tr>` })}
+              : sectionView(() => (entry() as { section: TableSection }).section), { fallback: () => when(() => !canAdd.get(),
+                // A table that can take rows starts from its Add row placeholder; one that can't says it is empty.
+                () => html`<tr><td colspan=${() => String(columns.get().length + 1)} class="g-empty"><div class="g-empty-in">${Icon(props.icon ?? 'table-2', { size: 'lg', className: 'muted' })}<span>No rows yet</span></div></td></tr>`) })}
           <tr class="spacer" aria-hidden="true"><td colspan=${() => String(columns.get().length + 1)} style="padding:0;border:0" style:height=${() => `${hasSections.get() ? 0 : view.range.get().after}px`}></td></tr>
-          ${when(() => canAdd.get() && (rows.get().length > 0 || hasSections.get()), () => addRowView(null, true))}
+          ${when(canAdd, () => addRowView(null, true))}
         </tbody>
         ${when(() => rows.get().length > 0 && Object.keys(sums).length > 0, () => html`<tfoot><tr role="row"><td class="g-ctl stk" style="left:0"></td>${each(columns, column => column.key, (column, index) => html`<td
           class=${column().align === 'right' ? 'r num' : 'num'} class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)}>${() => sums[column().key]

@@ -31,7 +31,7 @@ import type { JournalEntry, JournalPage, MeasureValues } from './client';
 import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, listFields, measureLabel, measureView, numberField, screenModel, sections, sequenceField, summaryFields, titleOf, LIST_KEYS, panelView, stateLook, stepLabel, stepOf, type ActionMeta, type DetailExtras, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { blockFilters, declaresRelated, HtmlContent, MeasureChart, RelatedRecords, type BlockRecord } from './record-blocks';
-import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowNoun, rowsText, valueText } from './record-compact';
+import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowsText, valueText } from './record-compact';
 import type { LayoutBlock } from '../model/schema';
 import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
 import { filterFields } from './filters';
@@ -762,18 +762,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const compactTable = (child: { name: string; label: string; model?: string; read_only?: boolean }, withTitle: boolean, toolsOut?: Cell<Child>) => {
     const table = store.table(child.name);
     const count = () => table.rows.get().length;
-    // A table with section rows but no lines yet still shows them.
-    const empty = () => count() === 0 && table.sections.get().length === 0;
     const canAdd = () => canWrite && !locked.get() && !child.read_only;
-    const noun = rowNoun(child.label);
-    const add = () => {
-      const controls = tableControls.get(child.name);
-      if (controls) { controls.add(); return; }
-      try { table.add(); } catch (error) { toast((error as Error).message, { icon: 'info' }); }
-    };
-    // Only the empty box offers Add: once there are rows, the table's own last row adds one.
-    const addLink = () => when(canAdd, () => html`<button type="button" class="link-q ev-cmp-add" on:click=${add}>${Icon('plus', { size: 'xs' })}Add ${noun}</button>${
-      tableControls.get(child.name)?.sectioned ? html`<span class="ev-cmp-or muted">or <button type="button" class="link-q ev-cmp-add" on:click=${() => tableControls.get(child.name)?.addSection()}>add a section</button></span>` : null}`);
+    // An empty table that can take rows shows its header and Add row placeholder, the click that starts it. One that
+    // can't (and has no section rows) is a quiet "No … yet" box instead.
+    const empty = () => count() === 0 && table.sections.get().length === 0 && !canAdd();
     const grid = tablePanel(child, withTitle), controls = tableControls.get(child.name);
     // The selection bar, on the title line while rows are selected (not on a locked record).
     const selectionBar = () => controls ? when(() => controls.selected.get() > 0 && controls.editable.get(), () => html`<span class="ev-cmp-sel" role="status">${() => `${controls.selected.get()} selected`}</span>
@@ -793,7 +785,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return html`<div class="ev-cmp-table" class:is-empty=${empty} data-table-block=${child.name}>
       ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span>${selectionBar()}<span class="grow"></span>${tools}</div>`
         : toolsOut ? (toolsOut.set([selectionBar(), tools]), null) : html`<div class="ev-cmp-th ev-cmp-th-tools">${selectionBar()}<span class="grow"></span>${tools}</div>`}
-      ${when(empty, () => html`<div class="ev-cmp-empty"><span>${canAdd() ? `No ${child.label.toLowerCase()} yet. Add the first one.` : `No ${child.label.toLowerCase()} yet.`}</span>${addLink()}</div>`)}
+      ${when(empty, () => html`<div class="ev-cmp-empty"><span>${`No ${child.label.toLowerCase()} yet.`}</span></div>`)}
       ${grid}</div>` as HTMLElement;
   };
   /** Where a "more information" row that is not a section starts: open, except on a phone after the first. */

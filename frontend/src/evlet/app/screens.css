@@ -465,9 +465,6 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-th h3{margin:0;font-size:13.5px;font-weight:600}
 .ev-cmp-count{font-size:13.5px;color:var(--fg-3)}
 .ev-cmp-th .grow{flex:1}
-.ev-cmp-add{display:inline-flex;align-items:center;gap:4px;font-size:13.5px;font-weight:500;color:var(--accent)}
-.ev-cmp-add:hover{color:var(--accent-hover)}
-.ev-cmp-add svg{display:none}
 .ev-cmp-table .g-bar,.ev-cmp-table .g-under .g-keys{display:none}
 /* In focus view the table shows its own bar again (title, selection, Columns, Exit focus) and its key hints. */
 .ev-cmp-table .grid.max .g-bar{display:flex}
@@ -477,7 +474,6 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-th .btn.sm{margin-left:4px}
 .btn.ev-cmp-del{border-color:color-mix(in srgb,var(--t-rose) 35%,transparent)}
 .btn.ev-cmp-del:hover{border-color:var(--t-rose)}
-.ev-cmp-or{display:inline-flex;align-items:center;gap:4px;font-size:13.5px;margin-left:6px}
 /* The table title's tools: Focus and Columns, subtle square icon buttons. */
 .ev-cmp-tools{display:inline-flex;gap:2px;margin-left:4px}
 .ev-cmp-th{align-items:center}
@@ -485,7 +481,7 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-table.is-empty>.grid{display:none}
 .ev-cmp-table .grid{box-shadow:none}
 .ev-cmp-table table.g{font-size:13.5px}
-.ev-cmp-table .g th,.ev-cmp-table .g tfoot td,.ev-cmp-table .g tr.g-xrow td{background:var(--surface)}
+.ev-cmp-table .g tfoot td,.ev-cmp-table .g tr.g-xrow td{background:var(--surface)}
 .ev-cmp-empty{display:flex;align-items:center;justify-content:center;gap:12px;border:1px dashed var(--border-strong);border-radius:6px;padding:13px 10px;
   font-size:13.5px;color:var(--fg-3);background:var(--surface);text-align:center}
 /* More information */

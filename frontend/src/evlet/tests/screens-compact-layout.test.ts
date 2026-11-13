@@ -123,6 +123,28 @@ describe('a compact record page', () => {
     expect(title.querySelector('.ev-cmp-sel')).toBeNull();
   });
 
+  it('shows an empty Main table as its header and Add row placeholder, without totals, and a click on it starts the table', async () => {
+    const { host } = await start(routes, `/app/shipment/${shipment}`);
+    await until(() => expect(host.querySelector('.ev-cmp-table tbody tr[data-key]')).not.toBeNull());
+    const block = host.querySelector('.ev-cmp-table')!, title = block.querySelector('.ev-cmp-th')!;
+    (block.querySelector('tbody tr[data-key] [role="checkbox"]') as HTMLElement).click();
+    await until(() => expect(byText(title, 'button', 'Delete')).not.toBeNull());
+    byText(title, 'button', 'Delete')!.click();
+    await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('0'));
+    // No "No stops yet" box: the table stays, with its header and the placeholder row, and no total line or totals.
+    expect(block.querySelector('.ev-cmp-empty')).toBeNull();
+    expect(block.classList.contains('is-empty')).toBe(false);
+    expect(block.querySelectorAll('thead th[data-key]').length).toBeGreaterThan(0);
+    expect(block.querySelector('tbody tr[data-key]')).toBeNull();
+    expect(block.querySelector('tfoot')).toBeNull();
+    expect(block.querySelector('.g-sum')).toBeNull();
+    const placeholder = block.querySelector<HTMLElement>('tbody tr.g-addrow-end')!;
+    expect(text(placeholder.querySelector('.g-add'))).toBe('Add row');
+    [...placeholder.querySelectorAll<HTMLElement>('td')].pop()!.click();
+    await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('1'));
+    expect(block.querySelector('tbody tr[data-key]')).not.toBeNull();
+  });
+
   it('shows a Main table compactly with its row count and an Add row as its last row, and lists the rest as more information', async () => {
     const { host } = await start(routes, `/app/shipment/${shipment}`);
     await until(() => expect(host.querySelector('.ev-cmp-th')).not.toBeNull());
