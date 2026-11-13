@@ -141,11 +141,11 @@ so the application decides what this person may call and logs every call.
 | `job_status` | Read a permitted queued action's status when jobs are configured |
 | `create_record` | Create with backend validation |
 | `update_record` | Apply partial values and any supplied child replacements |
-| `change_state` | Confirm, cancel or reopen a document |
+| `change_state` | Move a document to another state, or confirm, cancel or reopen a confirmable one |
 | `run_action` | Invoke a registered action, including queued actions |
 | `delete_record` | Delete a permitted record and owned children |
 
-`change_state` to confirm, `run_action`, `call_service`, and every cancel, reopen and delete
+`change_state`, `run_action`, `call_service`, and every cancel, reopen and delete
 wait for the person's approval in Evlet. The tool answers with an error naming the request;
 the person approves it in Settings, under AI, and the client calls the same tool again with
 the same arguments. The approval covers that one call on that revision of the record.
