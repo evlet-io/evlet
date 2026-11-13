@@ -108,20 +108,40 @@ version of a document. Declare no `release=True` steps there. `Finish` is an app
 (`by=()`): only the job makes it (`ctx.move(SimulatedCompany, id, "finish")`), it is never offered
 and every HTTP caller is refused. The jobs already run as trusted code, so nothing else changes.
 
-## 7. Frozen migrations
+## 7. Frozen migrations (owner's choice: a or b)
 
-Released migration checksums stay pinned. New migrations use frozen model copies, never the live
-classes (see `finance-frozen-migrations`). `frozen.py` imports `Move` for `DataGenerator0001` and
-`SimulatedCompany0006`, so it no longer imports on 0.4.6:
+Released migration checksums stay pinned (`tests/test_upgrades.py::RELEASED`, checked by
+`test_released_migrations_keep_their_checksums`), and new migrations use frozen model copies, never
+the live classes. `frozen.py` imports `Move` for `DataGenerator0001` (migration `0001_data_generator`)
+and `SimulatedCompany0006` (`0006_simulated_company`), so on 0.4.6 `evlet_finance.migrations` no
+longer imports. Evlet adds no `Move` shim. One of these has to happen:
 
-- Rewrite those two `status = State(...)` declarations with `State.Step` keys equal to the old
-  choices, in the same order, the same `default`, and **no `color=`**. Leave the rules out or keep
-  them with `by=` only; leave the `start_entry`/`stop_entry` methods as plain methods (no hooks).
-- A State's stored schema is its choices, default and the `state` flag; rules, step labels, `lock`,
-  `release` and `final` are not in a migration's schema. So the rewritten copies produce the same
-  checksums. Check with `evlet migrate --plan` (or the migration plan tests) before and after: the
-  pinned checksums must match.
-- `versioned=False` on `posting`/`clearing` is not in the schema either; no migration is needed.
+**(a) Rebaseline.** Delete `frozen.py` and the nine migrations, and start a new `0001` baseline whose
+`CreateModel`s use frozen copies written on the state manager. Pin its new checksums in `RELEASED`.
+- Cost: the least code. One baseline file, a new frozen module, and new pinned checksums. The
+  upgrade tests from earlier Finance releases (`test_upgrades.py`) are deleted or rewritten from the
+  new baseline.
+- Breaks: every existing Finance database. Its `evlet_migrations` ledger names the old migrations
+  and checksums, so `evlet migrate` refuses it as "migrated by a different release". Each instance
+  must be recreated and its data regenerated. The demo instance is a simulated company, so it can be
+  reset; any data entered by hand is lost unless it is exported first.
+
+**(b) Keep the chain; rewrite the two frozen copies so the old files import again.** In `frozen.py`,
+replace the two `status = State((...), moves=(Move(...), ...))` declarations with `State.Step` keys
+equal to the old choices, in the same order, with the same `default` and **no `color=`**. Leave the
+rules out (a frozen copy is never moved) or keep them with `by=`. Keep `start_entry`/`stop_entry` as
+plain methods. Later schema changes go in new migrations with their own new frozen copies, as
+today.
+- Why the checksums hold: a migration's checksum covers each field's signature. A State's signature
+  is its choices, `required`, `max_length` and the `state` flag. Rules, step labels, `lock`,
+  `release` and `final` are not in it. Checked 13-11-2026: the old and new declarations of
+  `SimulatedCompany0006.status` give the same signature. `versioned=False` on `posting`/`clearing`
+  is not in it either, so no migration is needed for that.
+- Cost: about 20 changed lines in `frozen.py`, plus running `test_released_migrations_keep_their_checksums`.
+- Breaks: nothing at upgrade, as long as the pinned checksums still match. The risks are adding
+  `color=` or a step, or reordering or renaming a choice, in a released copy; any of these changes
+  the checksum. The pinning test fails on it, and an instance on that checksum would refuse to
+  migrate. The copies' `run=` methods never ran in a migration, so nothing behaves differently.
 
 ## 8. What the framework step does on upgrade
 
@@ -150,7 +170,7 @@ document's first Cancel snapshots v0 and reverses through the exit hook, as a ne
 
 - [ ] `.venv/bin/python -m pytest -q` passes on SQLite.
 - [ ] Each document type: create a draft, Post (`post`), the posting exists and `posting` is set;
-      the journal's `moved` entry has `rule == "post"` and `base == 0`, and `_version` is v0.
+      the journal's `moved` entry has `rule == "post"` and `data.release == 0`, and `_version` is v0.
 - [ ] Cancel needs a remark (422 without one); with one, the posting is reversed on the right date
       and the document is cancelled and locked; the reversal's `reverses` points at the original.
 - [ ] Payment: Bounce cheque is offered only when `cheque_date > date`; it reverses the clearing

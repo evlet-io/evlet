@@ -540,16 +540,19 @@ def checked_move(context, model, draft, before, key, remark):
     return rule, remark, level
 
 
-def moved(context, model, record, previous, rule, remark, level, before, after, base=None):
+def moved(context, model, record, previous, rule, remark, level, before, after, released=None):
     """The Journal's `moved` entry, with the rule key, the remark, the level it approved, the levels that apply
     in the new state (see entering) and anything else the move changed."""
     from . import journal
     context.__dict__.get('_stays', {}).pop(record.id, None)
     if journal.journals(context, model):
         data = journal.tree_changes(context._business, model, before, after, skip=(model.__state__,))
+        # A move that releases vN builds on v(N-1); it names the release it made in data["release"].
+        base = (released - 1 if released else None) if released is not None else \
+            changes_base(context._tx.connection, context._business.registry, model, record.id, data)
         journal.append(context._business, context._tx, context.user, model, record.id, 'moved',
-                       {**data, 'from': previous, 'to': rule.to, 'move': rule.label, **entering(context, model, record)},
-                       rule=rule.key, remark=remark, level=level, base=base)
+                       {**data, 'from': previous, 'to': rule.to, 'move': rule.label, **entering(context, model, record),
+                        **({'release': released} if released is not None else {})}, rule=rule.key, remark=remark, level=level, base=base)
 
 
 # Approvals: a rule with levels moves once its last level that applies is approved
@@ -983,16 +986,33 @@ def saved(context, model, record_id):
     return load_draft(context, model, record_id, {}, preview=True)[0]
 
 
-def version_of(context, model, record, loaded=None):
-    """`_version` for a detail: {number, released, state}; number is None before the first release. The rows the
-    detail read (`loaded`) are reused when it read them all."""
-    from .guards import loaded_document
-    last = latest(context._tx.connection, context._business.registry.name_for(model), record.id)
+def version_of(context, model, record):
+    """`_version` for a detail: {number, released, state}; number is None before the first release. Two indexed
+    reads: the latest release and whether the journal changed versioned content since."""
+    from . import qb
+    name = context._business.registry.name_for(model)
+    last = latest(context._tx.connection, name, record.id)
     if last is None:
         return {'number': None, 'released': False, 'state': None}
-    document = loaded_document(context._business, model, record, loaded) or saved(context, model, record.id)
-    clean = digest(model, tree(document), context._business.registry) == last['hash']
-    return {'number': last['number'], 'released': clean, 'state': last['state']}
+    if model not in context._business.journals:
+        # Without a journal (Meta.journal = None) the content is compared with the release's hash.
+        return {'number': last['number'], 'state': last['state'],
+                'released': digest(model, tree(saved(context, model, record.id)), context._business.registry) == last['hash']}
+    # Modified: the journal has an entry that changed versioned content after this release (see changes_base).
+    changed = context._tx.connection.run(qb.select('evlet_journal', 'id').where(
+        qb.in_('kind', ('changed', 'moved', 'restored', 'recomputed')), model=name, record_id=record.id, base=last['number']).limit(1)).one()
+    return {'number': last['number'], 'released': changed is None, 'state': last['state']}
+
+
+def changes_base(connection, registry, model, record_id, data):
+    """`base` of a journal entry: the latest release's number when the entry changes versioned content (a field
+    that is not versioned=False, or Table rows), else None. "Changes after v2" are the entries with base 2."""
+    fields = model.__fields__
+    if not releasing(model) or not data.get('rows') and not any(
+            name in fields and fields[name].versioned and name != model.__state__ for name in data.get('fields', {})):
+        return None
+    last = latest(connection, registry.name_for(model), record_id)
+    return None if last is None else last['number']
 
 
 def readable_version(context, model, record_id):
