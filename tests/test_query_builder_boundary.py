@@ -17,8 +17,8 @@ DIALECT = {'sqlite.py', 'writes.py'}
 
 # Raw execute() calls left per module, moved in the follow-up pull requests listed in docs/database-adapters.md.
 NOT_YET_MOVED = {
-    'assistants.py': 42, 'business.py': 17, 'connectors.py': 11, 'controls.py': 89, 'controls_system.py': 6,
-    'corrections.py': 9, 'currencies.py': 4, 'customization.py': 19, 'devlink.py': 9, 'effects.py': 7, 'eva.py': 109,
+    'assistants.py': 42, 'business.py': 17, 'connectors.py': 11, 
+    'corrections.py': 9, 'currencies.py': 4, 'devlink.py': 9, 'effects.py': 7, 'eva.py': 109,
     'events.py': 11, 'forms.py': 3, 'framework.py': 7, 'jobs.py': 67, 'mailboxes.py': 28, 'measures.py': 4, 'mentions.py': 15,
     'object_storage.py': 6, 'printing.py': 7, 'services.py': 3, 'slips.py': 3,
     'storage.py': 10, 'tools.py': 19, 

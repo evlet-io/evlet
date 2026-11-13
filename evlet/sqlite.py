@@ -128,6 +128,12 @@ class SQLiteConnection(adapter.Connection, sqlite3.Connection):
         definitions = ['"id" INTEGER PRIMARY KEY AUTOINCREMENT', *(column_sql(column) for column in columns)]
         self.execute(f'CREATE TABLE {identifier(table)} ({", ".join(definitions)})')
 
+    def drop_table(self, table):
+        self.execute(f'DROP TABLE {identifier(table)}')
+
+    def rename_table(self, old, new):
+        self.execute(f'ALTER TABLE {identifier(old)} RENAME TO {identifier(new)}')
+
     def add_column(self, table, column, default=None):
         sql = f'ALTER TABLE {identifier(table)} ADD COLUMN {column_sql(column)}'
         if default is not None:
@@ -506,6 +512,11 @@ class Compiler:
         if item.kind == 'starts_with':
             first = self.expression(item.text)
             return f'substr({column}, 1, length({first})) = {self.expression(item.text)}'
+        if item.kind == 'ends_with':
+            # Each placeholder is compiled where it stands, so the bound values stay in order.
+            longer = f'length({column}) >= length({self.expression(item.text)})'
+            tail = f'substr({column}, length({column}) - length({self.expression(item.text)}) + 1)'
+            return f'({longer} AND {tail} = {self.expression(item.text)})'
         raise ValueError(f'Unknown text match: {item.kind}')
 
 

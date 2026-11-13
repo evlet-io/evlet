@@ -165,6 +165,13 @@ class Connection:
         """A model table: an integer "id" primary key the database numbers, then the given Columns."""
         raise NotImplementedError
 
+    def drop_table(self, table):
+        """Remove a table and its rows (a framework table being rebuilt)."""
+        raise NotImplementedError
+
+    def rename_table(self, old, new):
+        raise NotImplementedError
+
     def add_column(self, table, column, default=None):
         """Add one Column; existing rows get `default`, a fixed value."""
         raise NotImplementedError

@@ -455,6 +455,9 @@ def test_distinct_having_searched_case_division_and_text_functions(people):
     assert (totals['teams'], totals['older'], totals['younger']) == (2, 2, 1)
     assert connection.run(qb.select('adapter_person', qb.col('age') / 2).where(given='Chen')).value() == 22
     assert connection.run(qb.select('adapter_person', qb.col('age') / -2).where(given='Chen')).value() == -22
+    assert names(connection, qb.select('adapter_person', 'given').where(qb.ends_with('given', 'en')).order_by('id')) == ['Chen']
+    assert names(connection, qb.select('adapter_person', 'given').where(qb.ends_with('given', 'EN'))) == []
+    assert names(connection, qb.select('adapter_person', 'given').where(qb.ends_with('given', 'xxAisha'))) == []
     shown = connection.run(qb.select('adapter_person', qb.upper('given'), qb.substr('given', 1, 2), qb.trim(qb.value('  x ')),
                                       qb.replace_text('given', 'a', 'o'), qb.abs(qb.value(-3))).where(given='dana')).one()
     assert tuple(shown) == ('DANA', 'da', 'x', 'dono', 3)
@@ -469,6 +472,15 @@ def test_distinct_having_searched_case_division_and_text_functions(people):
     assert connection.run(qb.select('evlet_adapter_child', 'state')).value() == 1
     connection.run(qb.delete('evlet_adapter_parent').where(id=parent))
     assert connection.run(qb.select('evlet_adapter_child', qb.count())).value() == 0
+    # Rebuilding a framework table: copy, drop, rename.
+    connection.run(qb.insert('evlet_adapter_parent', label='kept'))
+    connection.ensure_table(TableDefinition('evlet_adapter_parent_new', (Column('label', 'TEXT', required=True),), numbered=True))
+    connection.run(qb.insert_rows_from('evlet_adapter_parent_new', ('id', 'label'), qb.select('evlet_adapter_parent', 'id', 'label')))
+    connection.drop_table('evlet_adapter_child')
+    connection.drop_table('evlet_adapter_parent')
+    connection.rename_table('evlet_adapter_parent_new', 'evlet_adapter_parent')
+    assert not connection.table_exists('evlet_adapter_parent_new') and not connection.table_exists('evlet_adapter_child')
+    assert names(connection, qb.select('evlet_adapter_parent', 'label')) == ['kept']
 
 def test_a_hierarchy_below_its_roots(people):
     connection, north, south = people

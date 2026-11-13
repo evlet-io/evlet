@@ -160,7 +160,7 @@ class Between(Condition):
 
 @dataclass(frozen=True, eq=False)
 class Text(Condition):
-    """Text matching: 'contains', 'contains_ci' (ignoring case), 'excludes_ci' and 'starts_with'."""
+    """Text matching: 'contains', 'contains_ci' (ignoring case), 'excludes_ci', 'starts_with' and 'ends_with'."""
     kind: str
     expression: Expression
     text: Expression
@@ -522,6 +522,11 @@ def excludes_ci(column, text):
 
 def starts_with(column, text):
     return Text('starts_with', _left(column), expression(text))
+
+
+def ends_with(column, text):
+    """The column's text ends with text, matching case."""
+    return Text('ends_with', _left(column), expression(text))
 
 
 def in_tree(column, table, parent, roots, *, include_roots):

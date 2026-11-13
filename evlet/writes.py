@@ -99,6 +99,23 @@ def connect(main, *, uri=False, named_rows=False, **options):
     return connection
 
 
+@contextmanager
+def shell_transaction(main):
+    """A write transaction on the database at main, for server-shell commands: it holds the write lock from the
+    start, commits when the block ends and rolls back on an error. Rows read by name and by index."""
+    connection = connect(main, isolation_level=None, named_rows=True)
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        yield connection
+        connection.commit()
+    except BaseException:
+        if connection.in_transaction:
+            connection.rollback()
+        raise
+    finally:
+        connection.close()
+
+
 def tables(connection):
     """The names of the tables in the main file and every attached file."""
     names = set()
