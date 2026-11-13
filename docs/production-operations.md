@@ -52,6 +52,17 @@ useful step before planned maintenance. Scripts pass `--yes`. See
 
 A restart still drops requests in flight for the moment the process is down.
 
+## Upgrading Evlet
+
+`evlet upgrade <instance>` installs a newer Evlet in the project's `.venv` with pip, prints the
+migration plan, then after one question backs up the instance, stops its service, migrates it
+and runs `evlet restart --yes`. Each step after pip runs as a new `.venv/bin/python -P -m evlet`
+process, so no step mixes old and new code. On 0.x it stays within the current minor (0.4.\*),
+from 1.0 within the current major; `--to VERSION` picks another version after you read its
+release notes. The site is down from the stop until the restart answers. When a step fails it
+prints the rollback commands: stop, pip back to the old version, `evlet restore` the backup,
+start. See [cli.md](cli.md#upgrade-evlet-on-a-server).
+
 ## Database choices
 
 SQLite uses a local durable filesystem, WAL, foreign keys, and short serialized

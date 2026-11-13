@@ -303,6 +303,66 @@ def test_printing_not_installed_answers_503(app, monkeypatch):
     assert call('GET', '/api/schema')[1]['printing'] == {'available': False}
 
 
+def render_while(app, monkeypatch, during):
+    """Stub only the PDF render: while it runs, `during` saves from another thread. Returns what each save did."""
+    import threading
+    import evlet.printing
+    saves = []
+
+    def render(design, context, business):
+        outcome = {}
+        def save():
+            try:
+                during()
+                outcome['saved'] = True
+            except Exception as exc:
+                outcome['error'] = type(exc).__name__
+        thread = threading.Thread(target=save)
+        thread.start()
+        thread.join(timeout=3)
+        # A save still waiting after three seconds is held up by this render.
+        saves.append('waiting' if thread.is_alive() else outcome.get('error', 'saved'))
+        return b'%PDF-1.7 stub'
+    monkeypatch.setattr(evlet.printing, 'available', lambda: True)
+    monkeypatch.setattr(evlet.printing, 'render', render)
+    return saves
+
+
+def test_another_save_completes_while_a_record_prints(app, monkeypatch):
+    call = signed_in(app)
+    record = invoice(call)
+    customer = record['customer']
+    saves = render_while(app, monkeypatch, lambda: app.database.update(Customer, customer, note='changed during render'))
+    status, content, _ = call('GET', f"/api/salesinvoice/{record['id']}/prints/TaxInvoicePrint.pdf")
+    assert status == 200 and content == b'%PDF-1.7 stub'
+    assert saves == ['saved']
+
+
+def test_filing_a_copy_refuses_a_record_that_changed_while_printing(app, monkeypatch):
+    call = signed_in(app)
+    record = invoice(call)
+    saves = render_while(app, monkeypatch, lambda: app.database.update(SalesInvoice, record['id'], posting_date='2026-11-04'))
+    status, data, _ = call('POST', f"/api/salesinvoice/{record['id']}/prints/TaxInvoicePrint/file", {})
+    assert saves == ['saved']
+    assert status == 409 and 'changed while it was printing' in data['error']
+    assert call('GET', f"/api/salesinvoice/{record['id']}/attachments")[1]['items'] == []
+    # Unchanged while printing, the copy is kept.
+    saves = render_while(app, monkeypatch, lambda: app.database.update(Customer, record['customer'], note='not the invoice'))
+    status, data, _ = call('POST', f"/api/salesinvoice/{record['id']}/prints/TaxInvoicePrint/file", {})
+    assert saves == ['saved'] and status == 201 and data['name'] == 'INV-2026-00042.pdf'
+
+
+def test_another_save_completes_while_the_designer_previews(app, monkeypatch):
+    from evlet.printing import design_to
+    call = signed_in(app)
+    record = invoice(call)
+    saves = render_while(app, monkeypatch, lambda: app.database.update(Customer, record['customer'], note='changed during preview'))
+    business = app.business
+    definition = design_to(ShortPrint, business.registry)
+    result = business.prints.designer.preview(user(app), {'definition': definition, 'record': record['id']})
+    assert result['size'] == len(b'%PDF-1.7 stub') and saves == ['saved']
+
+
 # ---- reports -----------------------------------------------------------------------------------
 
 @renders

@@ -116,6 +116,53 @@ def test_schedules_coalesce_missed_runs_and_disable(secured):
     assert jobs.tick(now=20000) == 0
 
 
+def count_write_transactions(monkeypatch, database):
+    """Count the write transactions a database opens from now on."""
+    opened = []
+    original = database.transaction
+    def counted(*args, **kwargs):
+        opened.append(kwargs.get('store'))
+        return original(*args, **kwargs)
+    monkeypatch.setattr(database, 'transaction', counted)
+    return opened
+
+
+def test_idle_worker_only_reads(secured, monkeypatch):
+    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, customer_name='due'))
+    jobs.schedule('later', 'work', {}, every=3600, start_at=int(time.time()) + 3600)
+    submit(jobs, run_at=int(time.time()) + 3600)
+    opened = count_write_transactions(monkeypatch, jobs.database)
+    for _ in range(5):
+        assert jobs.run_one() is False
+    assert opened == []
+
+
+def test_worker_claims_a_due_job_in_one_pass_with_one_queue_transaction(secured, monkeypatch):
+    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, customer_name='due'))
+    now = int(time.time())
+    receipt = submit(jobs, run_at=now + 10)
+    assert jobs.run_one(now=now) is False
+    opened = count_write_transactions(monkeypatch, jobs.database)
+    assert jobs.run_one(now=now + 10)
+    # One transaction to tick schedules and claim the job, then the job's own transaction.
+    assert len(opened) == 2
+    assert raw(jobs, receipt.id)['state'] == 'succeeded' and secured.database.count(Customer) == 1
+
+
+def test_worker_wakes_for_a_due_schedule_and_an_expired_lease(secured):
+    jobs = queue(secured, lambda tx, context, payload: tx.create(Customer, customer_name='due'))
+    jobs.schedule('hourly', 'work', {}, every=3600, start_at=100)
+    assert jobs.run_one(now=99) is False
+    assert jobs.run_one(now=100) and secured.database.count(Customer) == 1
+    jobs.set_schedule_active('hourly', False)
+    now = int(time.time())
+    receipt = submit(jobs, run_at=now)
+    stale = jobs.claim(now=now, lease_seconds=1)
+    assert stale and jobs.run_one(now=now) is False
+    assert jobs.run_one(now=now + 2)
+    assert raw(jobs, receipt.id)['attempts'] == 2 and secured.database.count(Customer) == 2
+
+
 def test_actor_permission_rechecked_and_status_hidden(secured):
     c = client(secured, 'editor')
     project = c('POST', '/api/project', {'title': 'Job', 'children': {'tasks': [{'title': 'Done', 'done': True}]}})[1]

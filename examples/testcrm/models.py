@@ -12,7 +12,7 @@ from zoneinfo import ZoneInfo
 from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email, Integer, Journal, Link,
                    LongText, Mail, Model, Move, Negate, Percent, Phone, Reference, Related, Rule, Select, Sequence, State, Sum,
                    Table, Tags, Text, Time, URL, action)
-from evlet.calc import D, F, coalesce, days, month_start, parent, round, row, today, when
+from evlet.calc import D, F, choose, coalesce, days, has_value, is_empty, month_start, parent, round, today, when
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
 READ = Rule(('read',))
@@ -137,16 +137,13 @@ class Deal(Model):
         Move('qualified', 'proposal', 'Send proposal', when=F('total') > 0),
         Move('proposal', 'negotiation', 'Negotiate'),
         Move(('proposal', 'negotiation'), 'won', 'Mark won',
-             when=(F('total') > 0) & (F('contact') != None), run='on_won'),  # noqa: E711
+             when=(F('total') > 0) & has_value(F('contact')), run='on_won'),
         Move(('lead', 'qualified', 'proposal', 'negotiation'), 'lost', 'Mark lost'),
         Move('lost', 'lead', 'Reopen', roles=('admin',)),
     ), locked=('won', 'lost', 'void'), final=('void',), voidable=('won',), show='bar')
     # A won deal that has to change is revised: it is voided and a new copy starts at lead.
-    probability = Percent(compute=when(F('stage') == 'won', D('100'),
-                                       when(F('stage') == 'negotiation', D('75'),
-                                            when(F('stage') == 'proposal', D('50'),
-                                                 when(F('stage') == 'qualified', D('25'),
-                                                      when(F('stage') == 'lead', D('10'), D('0')))))))
+    probability = Percent(compute=choose(F('stage'), {'won': 100, 'negotiation': 75, 'proposal': 50, 'qualified': 25, 'lead': 10},
+                                         default=0))
     payment_days = Integer(initial=F('organization.payment_days'), minimum=0, maximum=180)
     vat_rate = Percent(default=5)
     # Shown once the deal is lost, required then and still editable after it is locked. Mark lost asks for it.
@@ -176,14 +173,14 @@ class Deal(Model):
     subtotal = Currency(compute=lines.sum('amount'))
     vat_total = Currency(compute=lines.sum('vat'))
     total = Currency(compute=subtotal + vat_total)
-    recurring_total = Currency(compute=lines.where(row.recurring == True).sum('amount'))  # noqa: E712
+    recurring_total = Currency(compute=lines.where(recurring=True).sum('amount'))
     line_count = Integer(compute=lines.count())
     # The forecast in whole dirhams.
     weighted = Currency(compute=round(total * probability / 100, 0), label='Weighted value')
     # When the customer should pay, once the deal is won.
-    payment_expected = Date(compute=when(F('won_on') == None, None, F('won_on') + days(coalesce(F('payment_days'), 0))))  # noqa: E711
+    payment_expected = Date(compute=when(is_empty(F('won_on')), None, F('won_on') + days(coalesce(F('payment_days'), 0))))
     # Not stored: always counted from today.
-    days_to_close = Integer(stored=False, compute=when(F('expected_close') == None, None,  # noqa: E711
+    days_to_close = Integer(stored=False, compute=when(is_empty(F('expected_close')), None,
                                                        F('expected_close') - today()))
 
     class Meta:
@@ -288,7 +285,7 @@ class Lead(Model):
         mail = Mail(match=('email',), kind='lead')
 
     @action('Convert to deal', inputs={'title': Text(required=True, max_length=160), 'expected_close': Date()},
-            available_when=(F('status') == 'qualified') & (F('deal') == None))  # noqa: E711
+            available_when=(F('status') == 'qualified') & is_empty(F('deal')))
     def convert(self, title, expected_close):
         """Creates the organization, the contact and a deal at qualified, and links the deal here."""
         organization = self.context.create(Organization, title=self.company, phone=self.phone, tags=['From lead'])

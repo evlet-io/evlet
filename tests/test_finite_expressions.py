@@ -10,7 +10,7 @@ from evlet import Model, Child, Table, Decimal, Currency, Boolean, Integer, Text
 from evlet.calc import (D, F, parent, row, round, coalesce, safe_divide, Document, CalcError, Num, parse, text,
                         add, sub, mul, div, quantize, total, compare)
 from evlet.declarations import Ref
-from finite_fixtures import sources
+from finite_fixtures import sources, Capped as CappedFixture
 
 
 class FiniteMeta:
@@ -76,6 +76,15 @@ def test_row_edit_only_recalculates_that_row_and_its_aggregates():
     assert doc.counts[second, 'net'] == before
     assert 'items.r1.net' not in doc.trace['changed'] and 'items.r0.net' in doc.trace['changed']
     assert doc.snapshot()['grand_total'] == text(Num(47250 + 31500 + 31500, 2), 2)
+
+
+def test_row_edit_work_does_not_grow_with_the_number_of_rows():
+    # The shared fixtures no longer compare evaluation counts, so each engine guards this itself.
+    def evaluated(count):
+        doc = document(Invoice, {'inclusive': False, **lines(*[{'qty': '2', 'rate': '150'} for _ in range(count)])})
+        doc.set(doc.find('items.r0'), 'qty', '3')
+        return doc.trace['evaluated']
+    assert evaluated(3) == evaluated(30)
 
 
 def test_parent_toggle_settles_in_one_revision():
@@ -494,9 +503,12 @@ def test_structure_commands_and_batches():
     def failing(cmds):
         cmds.set(doc.find('items.n'), 'qty', '100')
         raise RuntimeError('stop')
+    # A callback that fails part way keeps the commands that ran, settles them and raises again.
     with pytest.raises(RuntimeError):
         doc.batch(failing)
-    assert doc.snapshot()['grand_total'] == '44.10' and doc.revision == 2
+    assert doc.snapshot()['grand_total'] == '661.50' and doc.revision == 3
+    doc.set(doc.find('items.n'), 'qty', '2')
+    assert doc.snapshot()['grand_total'] == '44.10'
 
     async def later(cmds):
         return None
@@ -513,15 +525,15 @@ def test_structure_commands_and_batches():
         doc.add_row(root, 'items', {'_key': 'r0'})
 
 
-def test_nested_moves_and_removal_leave_no_rows_behind():
+def test_nested_additions_and_removal_leave_no_rows_behind():
     doc = document(Project, project_data())
     root = doc.root.handle
-    task = doc.find('phases.A.tasks.a2')
-    doc.move_row(task, doc.find('phases.B'), 'tasks', 0)
+    doc.remove_row(doc.find('phases.A.tasks.a2'))
+    doc.add_row(doc.find('phases.B'), 'tasks', {'_key': 'a2', 'hours': '3'})
     snap = doc.snapshot()
     assert [phase['total'] for phase in snap['children']['phases']] == ['200.00', '700.00'] and snap['total'] == '900.00'
     with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
-        doc.move_row(doc.find('phases.A'), doc.find('phases.B'), 'tasks', 0)
+        doc.add_row(doc.find('phases.A'), 'phases', {})
     for _ in range(20):
         phase = doc.add_row(root, 'phases', {'children': {'tasks': [{'hours': '1'}]}})
         doc.remove_row(phase)
@@ -539,6 +551,10 @@ def test_replace_rows_validates_ids_and_keeps_handles():
         with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
             doc.replace_rows(root, 'items', bad)
     assert doc.snapshot()['grand_total'] == '22.05'
+    capped = Document(Registry(CappedFixture).plans[CappedFixture], {'children': {'lines': [{'_key': 'a'}]}})
+    with pytest.raises(CalcError, match='CALCULATION_LIMIT_EXCEEDED'):
+        capped.replace_rows(capped.root.handle, 'lines', [{'_key': 'a'}, {'_key': 'b'}, {'_key': 'c'}])
+    assert len(capped.snapshot()['children']['lines']) == 1
 
 
 def test_duplicate_recompute():
@@ -713,7 +729,36 @@ def test_review_regressions_for_engine_edges():
         raise RuntimeError('stop')
     with pytest.raises(RuntimeError):
         doc.batch(failing)
-    assert len(doc.rows) == 1
+    assert len(doc.rows) == 2 and doc.snapshot()['grand_total'] == '7.35'
+
+
+def test_a_refused_new_row_leaves_no_half_built_rows():
+    doc = document(Project, project_data())
+    rows, deps = len(doc.rows), len(doc.deps)
+    with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
+        doc.add_row(doc.root.handle, 'phases', {'_key': 'C', 'children': {'tasks': [{'hours': '1'}, {'hours': '2', 'nope': '1'}]}})
+    with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
+        doc.add_row(doc.root.handle, 'phases', {'_key': 'A', 'children': {'tasks': [{'hours': '1'}]}})
+    assert len(doc.rows) == rows and len(doc.deps) == deps and doc.revision == 1
+    doc.add_row(doc.root.handle, 'phases', {'_key': 'C', 'children': {'tasks': [{'hours': '1'}]}})
+    assert len(doc.rows) == rows + 2
+
+
+def test_a_refused_replace_changes_nothing():
+    doc = document(Invoice, {'inclusive': False, 'children': {'items': [{'id': 7, 'qty': '1', 'rate': '10'}]}})
+    before, rows = doc.snapshot(), len(doc.rows)
+    for bad in ([{'id': 7, 'qty': '5'}, {'_key': 'n', 'nope': 1}], [{'id': 7, 'qty': '5'}, {'id': 7}], [{'id': 7, 'net': '1'}]):
+        with pytest.raises(CalcError):
+            doc.replace_rows(doc.root.handle, 'items', bad)
+    assert doc.snapshot() == before and len(doc.rows) == rows
+
+
+def test_a_batch_that_cannot_settle_breaks_the_document():
+    doc = Document(plan(Invoice), lines(*[{'qty': '1'} for _ in range(5)]), budget=400)
+    with pytest.raises(CalcError, match='CALCULATION_LIMIT_EXCEEDED'):
+        doc.batch(lambda commands: [commands.add_row(doc.root.handle, 'items', {'qty': '1'}) for _ in range(20)])
+    with pytest.raises(CalcError, match='DOCUMENT_STRUCTURE_ERROR'):
+        doc.set(doc.root.handle, 'inclusive', True)
 
 
 def test_allocation_residuals_are_explicit_not_silently_lost():
@@ -750,14 +795,14 @@ def test_second_review_engine_regressions():
     a = doc.find('items.a')
 
     def run(commands):
-        for attempt in (lambda: commands.move_row(a, doc.root.handle, 'items', 99),
-                        lambda: commands.move_row(a, doc.root.handle, 'items', 2),
+        for attempt in (lambda: commands.reorder(doc.root.handle, 'items', [a]),
+                        lambda: commands.reorder(doc.root.handle, 'items', [a, a]),
                         lambda: commands.add_row(doc.root.handle, 'items', {'_key': 'b', 'qty': '5'})):
             with pytest.raises(CalcError):
                 attempt()
     doc.batch(run)
     assert doc.snapshot() == before and len(doc.rows) == rows
-    doc.move_row(a, doc.root.handle, 'items', 1)
+    doc.reorder(doc.root.handle, 'items', [doc.find('items.b'), a])
     assert [item['_key'] for item in doc.snapshot()['children']['items']] == ['b', 'a']
 
     # Malformed plans fail as calculation errors, never as Python exceptions.
@@ -789,7 +834,7 @@ def test_second_review_engine_regressions():
     assert field in [{'k': 1}, field] and [object(), field].index(field) == 1 and (field == 1.5) is False
 
 
-def test_rolled_back_commands_keep_earlier_batch_rows_and_bounds_accept_exponents():
+def test_refused_commands_change_nothing_and_bounds_accept_exponents():
     doc = document(Invoice, {'inclusive': False})
     root = doc.root.handle
 
@@ -800,8 +845,9 @@ def test_rolled_back_commands_keep_earlier_batch_rows_and_bounds_accept_exponent
         with pytest.raises(RuntimeError):
             commands.batch(lambda inner: (inner.set(root, 'inclusive', True), (_ for _ in ()).throw(RuntimeError('stop'))))
     doc.batch(run)
-    assert doc.snapshot()['grand_total'] == Document(plan(Invoice), sources(doc)).snapshot()['grand_total'] == '21.00'
-    assert doc.snapshot()['inclusive'] is False
+    # The refused set changed nothing; the nested batch's set ran before its error, so it is kept.
+    assert doc.snapshot()['inclusive'] is True
+    assert doc.snapshot()['grand_total'] == Document(plan(Invoice), sources(doc)).snapshot()['grand_total'] == '20.00'
 
     class Capped(Model):
         Meta = FiniteMeta
@@ -941,11 +987,13 @@ def test_link_paths_are_validated_at_registry_build():
     doc.set_lookups('country', 1, {'offset': '5'})
     assert doc.snapshot()['result'] == '15.0000' and doc.lookup_requests() == []
     assert ('@country', 'offset') in doc.deps[doc.root.handle, 'result']
-    # A failed command inside a batch leaves the lookups as they were.
+    # A refused lookup leaves the lookups as they were; one that ran before a failing callback is kept.
     doc.batch(lambda session: pytest.raises(CalcError, session.set_lookups, 'country', 1, {'nope': 1}))
+    assert doc.lookups['country'][1] == {'offset': '5'} and doc.snapshot()['result'] == '15.0000'
     with pytest.raises(RuntimeError):
         doc.batch(lambda session: (session.set_lookups('country', 1, {'offset': '6'}), (_ for _ in ()).throw(RuntimeError())))
-    assert doc.lookups['country'][1] == {'offset': '5'} and doc.snapshot()['result'] == '15.0000'
+    assert doc.lookups['country'][1] == {'offset': '6'} and doc.snapshot()['result'] == '16.0000'
+    doc.set_lookups('country', 1, {'offset': '5'})
     doc.set_lookups('area', 2, {'country': None})
     assert doc.snapshot()['_states']['result']['code'] == 'COMPUTE_INPUT_MISSING' and doc.lookup_requests() == []
     doc.set(doc.root.handle, 'party', True)

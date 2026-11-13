@@ -216,6 +216,11 @@ class Field:
     def __ror__(self, other): return _expr('or', other, self)
     def __invert__(self): return _expr('not', self)
 
+    def isin(self, *choices):
+        """A finite expression: true when this field equals one of the choices."""
+        from .calc import isin
+        return isin(self, *choices)
+
     def clean(self, value):
         if value is MISSING:
             value = self.default() if callable(self.default) else self.default

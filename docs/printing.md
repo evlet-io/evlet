@@ -188,6 +188,11 @@ exactly what prints. With more than one design the drawer offers a choice, the d
 Download saves the same PDF; File a copy appears when the model keeps attachments and the role may
 update the record, and the Files block then lists the new PDF.
 
+The server reads the record first and renders the PDF with no write transaction open, so a long
+render never holds up anyone's save. File a copy then keeps the PDF in a short write of its own,
+after checking `update` and `print` again. If the record changed while it was printing, it answers
+409 and keeps nothing; print it again. The designer's preview renders the same way.
+
 ## The designer
 
 Controls has a **Print designs** page (Build, Print designs) for roles that open Controls. It lists the

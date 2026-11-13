@@ -1,8 +1,12 @@
 """Conditions for naming series, stored as text: `total >= 250000 and status == "sent"`.
 
 A small language with no functions, attributes, arithmetic or names other than the model's fields.
-It is parsed when an override is saved and again on start; `evaluate` runs on cleaned values inside
-the create transaction. Separate from evlet/ui/expressions.py, which serves the browser.
+It is parsed when an override is saved and again on start, into the same expression nodes as
+finite-v1 formulas, and `Condition.matches` evaluates them with the finite-v1 evaluator on the
+record's cleaned values inside the create transaction.
+
+A condition is always true or false, never pending: a comparison with an empty field is false
+(`total > 5` when total is empty), and `empty` matches a missing value or empty text.
 
     expr    := or
     or      := and ("or" and)*
@@ -18,6 +22,7 @@ import difflib
 from decimal import Decimal
 import re
 
+from . import calc
 from .fields import Boolean, Date, Decimal as DecimalField, Integer, Select, active_layer
 
 MAX_LENGTH, MAX_DEPTH = 500, 10
@@ -201,14 +206,20 @@ class Parser:
 
 
 class Condition:
-    """A parsed condition: `fields` it reads, and `matches(values)`."""
+    """A parsed condition: `fields` it reads, its finite-v1 `expression`, and `matches(values)`."""
 
     def __init__(self, source, fields):
         parser = Parser(source, fields)
-        self.source, self.tree, self.fields = source, parser.parse(), frozenset(parser.used)
+        tree = parser.parse()
+        self.source, self.fields = source, frozenset(parser.used)
+        self.kinds = {name: kind(fields[name]) for name in self.fields}
+        self.expression = compile_tree(tree, self.kinds)
 
     def matches(self, values):
-        return evaluate(self.tree, values)
+        """True only when the condition is decided true for these cleaned values."""
+        scope = calc.ValueScope({name: value_of(self.kinds[name], values.get(name)) for name in self.fields})
+        result = calc.evaluate(self.expression, scope, calc.Budget())
+        return result.state == 'ready' and result.value is True
 
 
 def parse(source, fields):
@@ -216,40 +227,83 @@ def parse(source, fields):
     return Condition(source, fields)
 
 
-def plain(value):
-    """A stored value as the language compares it: numbers as Decimal, dates as ISO text."""
-    if isinstance(value, bool) or value is None:
-        return value
-    if isinstance(value, (int, Decimal)):
-        return Decimal(value)
-    if isinstance(value, date):
-        return value.isoformat()
-    return value
+# Compiling the parsed tree to finite-v1 nodes
+
+def kind(field):
+    """How a field's values compare: number, yes/no, date (as year-month-day text) or text."""
+    if isinstance(field, Boolean):
+        return 'boolean'
+    if isinstance(field, (Integer, DecimalField)):
+        return 'number'
+    if isinstance(field, Date):
+        return 'date'
+    return 'text'
 
 
-def evaluate(node, values):
-    kind = node[0]
-    if kind == 'and':
-        return evaluate(node[1], values) and evaluate(node[2], values)
-    if kind == 'or':
-        return evaluate(node[1], values) or evaluate(node[2], values)
-    if kind == 'not':
-        return not evaluate(node[1], values)
-    actual = plain(values.get(node[1]))
-    if kind == 'in':
-        return any(same(actual, item) for item in node[2])
-    _, _, op, expected = node
-    if op == '==':
-        return same(actual, expected)
-    if op == '!=':
-        return not same(actual, expected)
-    if expected is EMPTY or actual in (None, '') or type(actual) is not type(expected):
-        return False
-    return {'>': actual > expected, '>=': actual >= expected, '<': actual < expected, '<=': actual <= expected}[op]
+def literal(value):
+    if value is None:
+        return {'$expr': 'literal', 'type': 'null', 'value': None}
+    if isinstance(value, bool):
+        return {'$expr': 'literal', 'type': 'boolean', 'value': value}
+    if isinstance(value, Decimal):
+        return {'$expr': 'literal', 'type': 'decimal', 'value': calc.text(calc.parse(value))}
+    return {'$expr': 'literal', 'type': 'text', 'value': value}
 
 
-def same(actual, expected):
-    if expected is EMPTY:
-        return actual in (None, '')
-    return type(actual) is type(expected) and actual == expected
+def node(op, *args):
+    return {'$expr': op, 'args': list(args)}
 
+
+def is_empty(field, kinds):
+    """A missing value, or empty text for text fields (other kinds read empty text as missing)."""
+    ref = {'$expr': 'ref', 'scope': 'self', 'field': field}
+    missing = node('eq', ref, literal(None))
+    return node('or', missing, node('eq', ref, literal(''))) if kinds[field] == 'text' else missing
+
+
+def equals(field, value, kinds):
+    if value is EMPTY:
+        return is_empty(field, kinds)
+    return node('eq', {'$expr': 'ref', 'scope': 'self', 'field': field}, literal(value))
+
+
+ORDER = {'>': 'gt', '>=': 'gte', '<': 'lt', '<=': 'lte'}
+
+
+def compile_tree(tree, kinds):
+    """The parser's tree as finite-v1 nodes. Every comparison is decided, so the result is never pending."""
+    op = tree[0]
+    if op in ('and', 'or'):
+        return node(op, compile_tree(tree[1], kinds), compile_tree(tree[2], kinds))
+    if op == 'not':
+        return node('not', compile_tree(tree[1], kinds))
+    field = tree[1]
+    if op == 'in':
+        result = equals(field, tree[2][0], kinds)
+        for value in tree[2][1:]:
+            result = node('or', result, equals(field, value, kinds))
+        return result
+    _, _, comparison, value = tree
+    if comparison == '==':
+        return equals(field, value, kinds)
+    if comparison == '!=':
+        return node('not', equals(field, value, kinds))
+    # An ordering with an empty field is false, as people expect, not pending.
+    ref = {'$expr': 'ref', 'scope': 'self', 'field': field}
+    return node('when', is_empty(field, kinds), literal(False), node(ORDER[comparison], ref, literal(value)))
+
+
+def value_of(field_kind, value):
+    """A cleaned record value as the evaluator reads it; a value of the wrong type for its field is an error."""
+    if value is None or value == '' and field_kind != 'text':
+        return calc.ready(None)
+    if field_kind == 'number' and isinstance(value, (int, Decimal)) and not isinstance(value, bool):
+        # int() turns a Link's RecordId into the plain number it compares as.
+        return calc.ready(calc.parse(int(value) if isinstance(value, int) else value))
+    if field_kind == 'boolean' and isinstance(value, bool):
+        return calc.ready(value)
+    if field_kind in ('date', 'text') and isinstance(value, date):
+        return calc.ready(value.isoformat())
+    if field_kind in ('date', 'text') and isinstance(value, str):
+        return calc.ready(value)
+    return calc.error('COMPUTE_TYPE_ERROR', [])
