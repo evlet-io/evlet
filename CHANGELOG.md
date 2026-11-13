@@ -19,6 +19,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Naming-series conditions run on the formula evaluator.** A condition such as
+  `total >= 250000 and status == "sent"` is still parsed by the same rules with the same error
+  messages, but it now compiles to finite-v1 expression nodes and runs on the finite-v1
+  evaluator, instead of a third evaluator of its own. Every condition decides exactly as
+  before; a test compares both over many conditions and records. Nothing to change.
 - **Personal mailboxes reach only public mail servers.** A mailbox a person connects with a
   password must use a public address, SSL/TLS or STARTTLS, and the standard mail ports. Private
   ranges such as 10.x, 192.168.x, 100.64.x and fc00::, and servers on this machine, are refused

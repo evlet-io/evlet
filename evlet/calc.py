@@ -1285,6 +1285,25 @@ class Scope:
         return [self.at]
 
 
+class ValueScope:
+    """One record's values outside a document, for conditions such as naming-series rules.
+
+    `values` maps a field name to its Result. Only `self` references are available.
+    """
+    __slots__ = ('values',)
+
+    def __init__(self, values):
+        self.values = values
+
+    def read(self, scope, field):
+        if scope != 'self' or field not in self.values:
+            raise CalcError('UNSUPPORTED_EXPRESSION', f'{field} is not available here')
+        return self.values[field]
+
+    def causes(self):
+        return []
+
+
 class Document:
     """A browser-equivalent session over one plan. The server uses it for full settlement."""
     def __init__(self, plan, data=None, *, budget=None, checked=False, currencies=None):
