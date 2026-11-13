@@ -583,6 +583,23 @@ def test_only_admins_manage_admins_roles_and_who_opens_controls(secured):
     assert save(ops, ('setting', 'security.lockout', 4))[0] == 200
 
 
+def test_a_controls_role_setting_a_password_is_written_plainly_to_the_audit_log(secured):
+    admin, ops = ops_user(secured)
+    root, editor, me = user_id(admin, 'admin'), user_id(admin, 'editor'), user_id(admin, 'opsuser')
+    # Admin targets stay refused, and nothing is written for them.
+    assert ops('PATCH', f'/api/_controls/users/{root}', {'password': 'z' * 30})[:2] == (403, {'error': ADMIN_ONLY})
+    # Another person's password is still allowed, but the audit log says who set it, with which role.
+    assert ops('PATCH', f'/api/_controls/users/{editor}', {'password': 'y' * 30})[0] == 204
+    # An admin, or someone setting their own, gets the ordinary entry.
+    assert admin('PATCH', f'/api/_controls/users/{editor}', {'password': 'x' * 30})[0] == 204
+    assert ops('PATCH', f'/api/_controls/users/{me}', {'password': 'w' * 30})[0] == 204
+    with secured.database._connection() as db:
+        rows = [tuple(row) for row in db.execute("SELECT actor, target, detail FROM evlet_audit WHERE detail LIKE 'Password set%' ORDER BY id")]
+        assert not db.execute("SELECT 1 FROM evlet_audit WHERE target='admin' AND detail LIKE 'Password%'").fetchone()
+    assert rows == [('opsuser', 'editor', 'Password set by opsuser (role ops), who is not an admin'),
+                    ('admin', 'editor', 'Password set'), ('opsuser', 'opsuser', 'Password set')]
+
+
 def test_the_older_account_routes_use_controls_access_and_the_audit_log(secured):
     admin = client(secured)
     assert admin('POST', '/api/auth/users', {'username': 'fatima', 'password': PASSWORD, 'role': 'editor'})[0] == 201

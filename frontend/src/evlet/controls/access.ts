@@ -190,6 +190,9 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
   };
   const admin = () => state.get().admin_rules ?? { password_min: file<number>('security.password_min'), two_step: true, sign_in: false };
   const everyone = () => get<boolean>('security.two_step');
+  const isAdmin = () => state.get().me.role === 'admin';
+  // A role that opens Controls needs two-step while this is on. Only an admin can switch it off.
+  const controlsRoles = () => get<boolean | undefined>('security.controls_two_step') ?? true;
   const lengthText = (value: number) => value <= 1 ? 'any password' : `at least ${value} characters`;
   return html`<div>
     ${Head('Security', 'Sign-in rules for this instance. Rules for admins come from config.py. Here you set them for everyone else.')}
@@ -212,12 +215,19 @@ export function SecurityPage(ctx: ControlsContext): HTMLElement {
         <p>People who must set up an authenticator app before they can sign in. Admins follow config.py.</p></div></div>
         ${row('security.two_step', 'Everyone', () => `Everyone but admins must use two-step sign-in. config.py starts with it ${file<boolean>('security.two_step') ? 'on' : 'off'}.`,
           Switch({ on: everyone, ariaLabel: 'Two-step sign-in for everyone', onChange: next => drafts.set(id('security.two_step'), next) }))}
+        ${row('security.controls_two_step', 'Roles that open Controls', () => isAdmin()
+          ? 'Every role that opens Controls must use two-step sign-in. On by default.'
+          : 'Every role that opens Controls must use two-step sign-in. Only an admin can change this.',
+          Switch({ on: controlsRoles, ariaLabel: 'Two-step sign-in for roles that open Controls', disabled: () => !isAdmin(),
+            onChange: next => drafts.set(id('security.controls_two_step'), next) }))}
         <div class="ctl-pad"><p class="muted ctl-small">${() => everyone() ? 'Every role below needs it.' : 'Or only these roles:'}</p>
           <div class="ctl-chips">${() => desk().map(role => {
           const locked = role.id === 'admin';
-          const on = () => locked ? admin().two_step : everyone() || get<string[]>('security.two_step_roles').includes(role.id);
+          const byControls = () => !locked && role.opens_controls && controlsRoles();
+          const on = () => locked ? admin().two_step : everyone() || byControls() || get<string[]>('security.two_step_roles').includes(role.id);
           return html`<button type="button" class="ctl-chip" class:on=${on}
-          aria-pressed=${() => String(on())} disabled=${() => locked || everyone()} title=${locked ? 'Set in config.py (admin_two_step)' : null}
+          aria-pressed=${() => String(on())} disabled=${() => locked || everyone() || byControls()}
+          title=${() => locked ? 'Set in config.py (admin_two_step)' : byControls() ? 'Opens Controls, so two-step is required' : null}
           on:click=${() => toggleTwoStep(role.id)}>${() => on() ? Icon('check', { size: 'xs' }) : null}${role.id}${locked ? Icon('lock', { size: 'xs' }) : null}</button>`; })}</div>
           ${when(() => !state.get().two_step, () => Callout('warn', 'info', 'Two-step sign-in arrives with personal settings. Until then this list is saved, but nobody is asked for a code yet.'))}
           ${when(() => drafts.errors.get().has(id('security.two_step_roles')), () => html`<span class="ctl-err">${() => drafts.errors.get().get(id('security.two_step_roles'))}</span>`)}</div>

@@ -31,6 +31,9 @@ SETTINGS = MappingProxyType({
     # Password minimum and two-step sign-in apply to everyone but admins, whose rules come only from config.py.
     'security.password_min': 15, 'security.session_hours': 12, 'security.lockout': 5,
     'security.two_step': False, 'security.two_step_roles': [], 'security.controls_ips': [],
+    # Roles that open Controls (other than admin, whose rule comes from config.py) must use two-step sign-in.
+    # On by default; only an admin can switch it off.
+    'security.controls_two_step': True,
     'mcp.enabled': True, 'mcp.allow_writes': False, 'mcp.rate': 60, 'mcp.disabled_tools': [], 'mcp.hidden_models': [],
     'mail.personal': False,
     # Images in rich text (evlet/richtext.py): separate from the general attachment limits.
@@ -51,7 +54,9 @@ IMAGE_LIMITS = {'files.image_max_kb': (64, 8192), 'files.images_per_record': (1,
 # Audit areas of setting overrides by key prefix; other settings are Security.
 SETTING_AREAS = {'mcp': 'MCP', 'mail': 'Email', 'eva': 'Eva', 'files': 'Files', 'unsaved': 'Records', 'display': 'Display'}
 # Settings only an admin may change: what every page shows, not only what Controls openers manage.
-ADMIN_SETTINGS = ('display.currencies',)
+ADMIN_SETTINGS = ('display.currencies', 'security.controls_two_step')
+ADMIN_SETTING_REFUSALS = {'display.currencies': 'Only an admin can change how currencies are shown.',
+                          'security.controls_two_step': 'Only an admin can change two-step sign-in for roles that open Controls.'}
 NOT_FOUND = 'Route not found'
 AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
 # A paused schedule is a setting override: schedule.<name>.active = false.
@@ -305,7 +310,7 @@ def strictest(key, value, roles, file=None):
     number = type(value) is int
     if key in ('mcp.enabled', 'mcp.allow_writes', 'mail.personal'):
         return False
-    if key == 'security.two_step':
+    if key in ('security.two_step', 'security.controls_two_step'):
         return True
     if key == 'display.currencies':
         return {}
@@ -490,11 +495,15 @@ class Controls:
 
     def two_step_required(self, role):
         """Whether accounts with role must use two-step sign-in: config.py's admin_two_step for admin, else the
-        Controls settings (everyone, or the roles listed). The secret key and cryptography decide if it can run."""
+        Controls settings (everyone, roles that open Controls, or the roles listed). The secret key and
+        cryptography decide if it can run."""
         if role == 'admin':
             security = getattr(self.business.auth, 'security', None)
             return security.admin_two_step if security is not None else True
-        return bool(self.settings['security.two_step']) or role in self.settings['security.two_step_roles']
+        if self.settings['security.two_step'] or role in self.settings['security.two_step_roles']:
+            return True
+        row = self.roles.get(role)
+        return bool(self.settings['security.controls_two_step'] and row is not None and row['opens_controls'])
 
     @staticmethod
     def role_bases(roles):
@@ -687,7 +696,7 @@ class Controls:
         number = type(value) is int
         if key == 'security.password_min' and not (number and 1 <= value <= 64):
             raise ValueError('Use a minimum password length from 1 to 64 characters. 1 means any password.')
-        if key == 'security.two_step' and type(value) is not bool:
+        if key in ('security.two_step', 'security.controls_two_step') and type(value) is not bool:
             raise ValueError('Use on or off.')
         if key == 'security.session_hours' and not (number and 1 <= value <= file):
             raise ValueError(f'Session length can only go down, from {file} hours to 1.')
@@ -807,8 +816,10 @@ class Controls:
                 errors[f'changes.{index}'] = str(exc) if isinstance(exc, ValueError) else 'Send kind, key and value.'
         if errors:
             raise ValidationError(errors)
-        if user.role != 'admin' and any(kind == 'setting' and key in ADMIN_SETTINGS for kind, key, _ in checked):
-            raise AccessError(403, 'Only an admin can change how currencies are shown.')
+        if user.role != 'admin':
+            for kind, key, _ in checked:
+                if kind == 'setting' and key in ADMIN_SETTINGS:
+                    raise AccessError(403, ADMIN_SETTING_REFUSALS[key])
         now = int(time.time())
         with self.database.transaction() as tx:
             connection = tx.connection
@@ -990,7 +1001,12 @@ class Controls:
             if 'active' in values and values['active'] != bool(row['active']):
                 details.append('Activated' if values['active'] else 'Deactivated')
             if 'password' in values:
-                details.append('Password set')
+                # Admins may set anyone's password. A non-admin Controls role may set a non-admin's, which lets
+                # it sign in as them, so the entry says plainly who did it and with which role.
+                if actor.role != 'admin' and actor.id != row['id']:
+                    details.append(f"Password set by {actor.username} (role {actor.role}), who is not an admin")
+                else:
+                    details.append('Password set')
             if 'sessions' in body:
                 details.append('Signed out everywhere')
             if revoke:
