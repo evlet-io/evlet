@@ -153,7 +153,7 @@ def test_a_ledger_model_takes_stored_fields_and_ledger_options():
 @pytest.mark.parametrize('field, message', [
     (LongText(), 'stores Text, Integer, Decimal, Currency, Percent, Boolean, Date, DateTime, Select, Link fields only, not LongText'),
     (RichText(), 'not RichText'),
-    (State(('a', 'b')), 'not State'),
+    (State(State.Step('a'), State.Step('b')), 'not State'),
     (Sequence('{n:05}'), 'not Sequence'),
     (Tags(), 'not Tags'),
     (MultiSelect(('a',)), 'not MultiSelect'),
@@ -175,8 +175,7 @@ def test_fields_and_options_a_ledger_model_refuses(field, message):
 
 @pytest.mark.parametrize('namespace, meta, message', [
     ({'lines': Table(type('Line', (Child,), {'qty': Integer()}))}, {}, 'no child tables'),
-    ({'run': action(lambda self: None)}, {}, 'no actions, moves, lifecycle handlers or reactions'),
-    ({'confirmable': True}, {}, 'no lifecycle; confirmable'),
+    ({'run': action(lambda self: None)}, {}, 'no actions, hooks or reactions'),
     ({}, {'api': 'read'}, 'no public surface; Meta.api is None'),
     ({}, {'api': 'full'}, 'no public surface'),
     ({}, {'layout': (('Details', ('amount',)),)}, 'Meta.layout is not available'),

@@ -104,6 +104,81 @@ def _administrator(connection):
         ensure_administrator(connection)
 
 
+def _state_manager(connection, registry):
+    """0.4.6: give the journal the state manager's columns (empty on old entries), create evlet_releases, let
+    evlet_overrides take the kinds "state" and "rule", turn
+    confirmable revisions into releases with their snapshots and lifecycle states into State values, then give
+    every record that is in a release step and has no release a v0 release (no snapshot)."""
+    import json
+    from .database import Session
+    from .journal import SCALAR_COLUMNS
+    from .statemanager import digest, ensure_releases, releasing, store, tree, versioned
+    if connection.table_exists('evlet_journal'):
+        present = connection.columns('evlet_journal')
+        for column in SCALAR_COLUMNS:
+            if column.name not in present:
+                connection.add_column('evlet_journal', column)
+    ensure_releases(connection)
+    # The overrides table takes the new kinds "state" and "rule" (Controls widens an older table's check).
+    if connection.table_exists('evlet_overrides'):
+        from .controls import ensure_schema
+        ensure_schema(connection)
+    lost = set()
+    if connection.table_exists('evlet_document_lifecycle'):
+        for row in connection.run(qb.select('evlet_document_lifecycle', 'model', 'record_id', 'state')).all():
+            model = registry.models.get(row['model'])
+            if model is None or model.__state__ is None or row['state'] not in model.__declared_fields__[model.__state__].choices:
+                lost.add(row['model'])
+            else:
+                connection.run(qb.update(registry.name_for(model), **{model.__state__: row['state']}).where(id=row['record_id']))
+    if lost:
+        raise SchemaError('These models have confirmable lifecycle rows but no State with those steps (draft, confirmed, '
+                          'cancelled): ' + ', '.join(sorted(lost)) + '. Declare the State first, then migrate.')
+    if connection.table_exists('evlet_document_revisions'):
+        rows = connection.run(qb.select('evlet_document_revisions').order_by('model', 'record_id', 'revision')).all()
+        missing = sorted({row['model'] for row in rows if getattr(registry.models.get(row['model']), '__state__', None) is None})
+        if missing:
+            raise SchemaError('These models have confirmable revisions but are gone or have no State: ' + ', '.join(missing)
+                              + '. Declare each with a State whose confirmed step is a release step, then migrate.')
+        for row in rows:
+            model = registry.models[row['model']]
+            document = versioned(model, json.loads(row['data'])['document'], registry)
+            # Every revision was a confirmation, so its release is in the confirmed step when the State has one.
+            choices = model.__declared_fields__[model.__state__].choices
+            current = 'confirmed' if 'confirmed' in choices else \
+                connection.run(qb.select(registry.name_for(model), model.__state__).where(id=row['record_id'])).value() or choices[0]
+            for snapshot in (False, True):
+                store(connection, registry, model, row['record_id'], row['revision'] - 1, snapshot=snapshot, state=current, data=document
+                      if snapshot else {'approvals': [], 'remark': None}, hash=digest(model, document, registry), actor=row['actor'])
+        connection.drop_table('evlet_document_revisions')
+    if connection.table_exists('evlet_document_lifecycle'):
+        connection.drop_table('evlet_document_lifecycle')
+    session = Session(connection, registry)
+    for model in [model for model in registry.models.values() if releasing(model) and connection.table_exists(registry.name_for(model))]:
+        name, steps = registry.name_for(model), model.__declared_fields__[model.__state__].releases
+        released = {row[0] for row in connection.run(qb.select('evlet_releases', 'record_id').where(model=name)).all()}
+        for (record_id,) in connection.run(qb.select(name, 'id').where(qb.in_(model.__state__, steps)).order_by('id')).all():
+            if record_id not in released:
+                document = tree(_saved(session, registry, model, record_id))
+                store(connection, registry, model, record_id, 0, snapshot=False, state=session.get(model, record_id)._values[model.__state__],
+                      data={'approvals': [], 'remark': None}, hash=digest(model, document, registry), actor='engine')
+
+
+def _saved(session, registry, model, record_id):
+    """A saved record with its owned rows at every depth in `_rows`, for its content hash."""
+    record = session.get(model, record_id)
+    from .database import ROW_LIMIT
+    order = lambda child: ('evlet_position', 'id') if 'evlet_position' in child.model.__fields__ else ('id',)
+    record._rows = {}
+    for child in (child for child in registry.children if child.parent is model):
+        rows, page = [], True
+        while page:
+            page = session.list(child.model, filters={child.link: record_id}, order_by=order(child), limit=ROW_LIMIT, offset=len(rows))
+            rows += page
+        record._rows[child.name] = [_saved(session, registry, child.model, row.id) for row in rows]
+    return record
+
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -120,6 +195,8 @@ STEPS = (
     # Recorded only: upgrade() moves the tables before the steps' transaction (Database.upgrade_storage, which
     # runs evlet.writes.split_files), since a file cannot be attached inside a transaction.
     FrameworkStep('0010_split_files', 'Move sign-in sessions, the tool-call log and Eva into their own SQLite files next to the database.'),
+    FrameworkStep('0011_state_manager', "Add the state manager's journal columns and releases; convert confirmable lifecycle "
+                  'and revision rows; give records already in a release step a v0 release.', _state_manager, registry=True),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

@@ -1,8 +1,8 @@
-"""States and moves, state locks, and action availability on the document pipeline.
+"""Guards and actions on the document pipeline.
 
-A State field changes only through its declared moves. Guards (`Move.when`, `available_when`)
-are finite-v1 Boolean expressions decided on the record as saved, before the operation runs,
-in the same transaction. An undecided guard (pending or error) blocks, like an undecided lock.
+Guards (a rule's `when`, `available_when` of an action) are finite-v1 Boolean expressions decided on
+the record as saved, before the operation runs, in the same transaction. An undecided guard (pending
+or error) blocks, like an undecided lock. The state manager (evlet/statemanager.py) owns the rules.
 """
 
 from dataclasses import dataclass
@@ -10,8 +10,7 @@ from types import MappingProxyType
 
 from .auth import AccessError, has_role, is_administrator
 from .fields import MISSING, Link, Reference
-from .models import build_step, build_step, build_step, ValidationError
-from .permissions import CALLER
+from .models import ValidationError, build_step
 
 
 @dataclass(frozen=True)
@@ -27,13 +26,13 @@ class Guard:
 
 @build_step('guards')
 def compile_guards(registry, models, plans, child_models):
-    """Guards of root documents: ({model: {Move or action name: Guard}}, {model: plan}, {model: root plan}).
+    """Guards of root documents: ({model: {rule key or action name: Guard}}, {model: plan}, {model: root plan}).
 
     The plan evaluates guards over the whole saved document; the root plan reads the saved root values
     (stored results as values) for guards that read no owned rows and no virtual results.
     """
     from .calc import CalcError, _Context, compile_expression, compile_plan, lift
-    from .declarations import Move
+    from .statemanager import conditions
     guards, guard_plans, root_plans = {}, {}, {}
     for model in models:
         state = model.__state__
@@ -43,24 +42,19 @@ def compile_guards(registry, models, plans, child_models):
             continue
         if state is not None:
             check_kept_results(registry, model, plans.get(model))
-        wanted = {}
-        if state is not None:
-            for move in model.__declared_fields__[state].moves:
-                if move.run is not None and (not callable(getattr(model, move.run, None)) or move.run in model.__declared_fields__):
-                    raise ValueError(f'{model.__name__}: move {move.label!r} runs {move.run!r}, which is not a method of the model')
-                if move.when is not None:
-                    wanted[move] = move.when
+        wanted = {} if state is None else conditions(model)
         for name in dir(model):
             declaration = getattr(getattr(model, name, None), '__action__', None)
             if isinstance(declaration, dict) and declaration.get('available_when') is not None:
                 wanted[name] = declaration['available_when']
-        if not wanted:
+        if not wanted and state is None:
             continue
+        # Every State gets its plans, so rules an instance adds later (statemanager.load_overrides) can be decided.
         plan = plans.get(model) or compile_plan(registry, model, force=True)
         tables = {child.name: child.model for child in registry.children if child.parent is model}
         compiled = {}
         for key, expression in wanted.items():
-            label = (f'{key.label} (when)' if isinstance(key, Move) else f'{key} (available_when)').replace(' ', '_').replace('(', '').replace(')', '')
+            label = key.replace(':', '_') if key.startswith('rule:') else f'{key}_available_when'
             ir, kind, reads = compile_expression(lift(expression), _Context(model, (), None, tables, registry=registry), label)
             if kind != 'boolean':
                 raise CalcError('COMPUTE_TYPE_ERROR', f'{model.__name__}: {label} must be a Boolean expression, not {kind}')
@@ -108,12 +102,12 @@ def kept_plan(plan):
 
 
 def check_kept_results(registry, model, plan):
-    """A locked record keeps its saved results, so no stored result may read an editable_when_locked field."""
+    """A locked record keeps its saved results, so no stored result may read a versioned=False field."""
     for (member, name), (fields, _) in stored_reads(registry, model, plan).items():
-        if not member.__declared_fields__[name].editable_when_locked and \
-                any(target.__declared_fields__[read].editable_when_locked for target, read in fields):
-            raise ValueError(f'{member.__name__}.{name} is a stored result that reads a field editable while locked; '
-                             'a locked record keeps its saved results, so make the field it reads not editable_when_locked '
+        if member.__declared_fields__[name].versioned and \
+                any(not target.__declared_fields__[read].versioned for target, read in fields):
+            raise ValueError(f'{member.__name__}.{name} is a stored result that reads a versioned=False field; '
+                             'a locked record keeps its saved results, so make the field it reads versioned '
                              'or the result virtual (stored=False)')
 
 
@@ -208,10 +202,10 @@ def check_posted(context, draft, before):
         for name, field in definition.__declared_fields__.items():
             if (definition, name) in fields and item._values.get(name) != old._values.get(name):
                 label = field.label or name.replace('_', ' ').capitalize()
-                raise AccessError(409, f'{label} feeds posted totals. To change it, void or revise the record.')
+                raise AccessError(409, f'{label} feeds posted totals. To change it, move the record out of its posted state.')
         for name in definition.__tables__:
             if (definition, name) in tables and [row.id for row in item._rows.get(name, [])] != [row.id for row in old._rows.get(name, [])]:
-                raise AccessError(409, f'{labels[definition, name]} feed posted totals. To change them, void or revise the record.')
+                raise AccessError(409, f'{labels[definition, name]} feed posted totals. To change them, move the record out of its posted state.')
 
 
 # Guard evaluation
@@ -322,169 +316,6 @@ def check_guard(context, guards, guard, label, noun):
         raise AccessError(409, f'{label} is not available: {reason[0].lower()}{reason[1:]}')
 
 
-# Ordinary writes, moves and actions
-
-def state_write(model, scalars, current):
-    """Ordinary writes may create a record in the default state and never set it afterwards."""
-    name = model.__state__
-    if name is None or name not in scalars:
-        return
-    field = model.__declared_fields__[name]
-    value = scalars[name]
-    if current is None and value == field.default:
-        del scalars[name]
-        return
-    if current is not None and value == current._values.get(name):
-        del scalars[name]
-        return
-    if current is None:
-        raise ValidationError({name: f'A new record starts as {field.default}; use its moves to change it'})
-    raise ValidationError({name: 'This changes only through its moves'})
-
-
-def locked_state(model, record_values):
-    """The saved state's name when it is locked, or None."""
-    name = model.__state__
-    if name is None:
-        return None
-    value = record_values.get(name)
-    return value if value in model.__declared_fields__[name].locked else None
-
-
-def state_shown(context, model):
-    """Whether the caller may read the State field; messages name the state only then."""
-    return model.__state__ in context._business.policy.fields(context.user, model)
-
-
-def check_state_lock(context, draft, before):
-    """Refuse an ordinary write that changes a record in a locked state or any of its Table rows.
-
-    Fields declared with editable_when_locked=True may still change. Adding, removing or reordering
-    rows at any depth is a change. Values are compared as the caller submitted them, before calculations.
-    """
-    state = locked_state(draft._definition, before._values)
-    if state is None:
-        return
-    message = f'This record is {state}, so it is locked' if state_shown(context, draft._definition) else 'This record is locked'
-    errors = {}
-
-    def compare(item, old, prefix):
-        fields = item._definition.__declared_fields__
-        for name in item._submitted:
-            field = fields.get(name)
-            if field is None or field.editable_when_locked:
-                continue
-            value = item._values.get(name)
-            try:
-                value = None if value is None else field.validate(value)
-            except ValueError:
-                pass
-            if value != old._values.get(name):
-                errors[prefix + name] = message
-        for table, rows in item._rows.items():
-            saved = old._rows.get(table, [])
-            if [row.id for row in rows] != [row.id for row in saved]:
-                errors[prefix + table] = message
-            # Adding, renaming, removing or moving a section row is a change too.
-            if [(s.id, s.label, s.at) for s in item._sections.get(table, [])] != [(s.id, s.label, s.at) for s in old._sections.get(table, [])]:
-                errors[prefix + table] = message
-            by_id = {row.id: row for row in saved}
-            for row in rows:
-                if row.id in by_id:
-                    compare(row, by_id[row.id], prefix + table + '.' + row.key + '.')
-    compare(draft, before, '')
-    if errors:
-        raise ValidationError(errors)
-
-
-def check_delete(context, model, record):
-    state = locked_state(model, record._values)
-    if state is not None:
-        named = f'is {state}, so it ' if state_shown(context, model) else ''
-        raise AccessError(409, f'This record {named}is locked and cannot be deleted')
-    from .effects import ever_posted
-    if ever_posted(context._tx.connection, context._business.registry, model, record.id):
-        # Its effect rows, reversed or not, name it as their source, and its number stays used.
-        voidable = record._values.get(model.__state__) in model.__declared_fields__[model.__state__].voidable
-        raise AccessError(409, 'This record has posted before, so it cannot be deleted. '
-                               + ('Void it instead.' if voidable else 'Repost it and void it instead.'))
-
-
-def check_attachments(context, model, record):
-    """Adding or removing attachments is an ordinary write, refused while the record is locked."""
-    state = locked_state(model, record._values)
-    if state is not None:
-        named = f'is {state}, so it ' if state_shown(context, model) else ''
-        raise AccessError(409, f'This record {named}is locked, so its attachments cannot change')
-
-
-def check_recalculate(context, model, before):
-    if before is not None and locked_state(model, before._values) is not None:
-        raise AccessError(409, 'This record is locked, so it keeps its saved results and cannot be recalculated; '
-                               'use its moves or actions to change it')
-
-
-def keep_saved(draft, before):
-    """After an ordinary write on a locked record: every field except editable_when_locked ones keeps its saved value."""
-    from .documents import prior_versions, walk
-    prior = prior_versions(before, draft)
-    for _, item in walk(draft):
-        old = prior(item)
-        if old is None:
-            continue
-        for name, field in item._definition.__declared_fields__.items():
-            if not field.editable_when_locked:
-                item._values[name] = old._values.get(name)
-
-
-def begin_move(context, model, draft, before, to):
-    """Check a move on the saved record, set the new state and return the declared Move.
-
-    A role that cannot read the State gets one answer for every refused move (an unknown state, no such
-    move now, a move for other roles or a guard that is not met), so it cannot learn which states and
-    moves exist.
-    """
-    name = model.__state__
-    if name is None:
-        raise AccessError(404, 'This record has no moves')
-    field = model.__declared_fields__[name]
-    current, shown = before._values.get(name), state_shown(context, model)
-    if not shown:
-        try:
-            return checked_move(context, model, field, draft, before, current, to)
-        except AccessError:
-            raise AccessError(409, 'This record has no such move now') from None
-    return checked_move(context, model, field, draft, before, current, to)
-
-
-def checked_move(context, model, field, draft, before, current, to):
-    if to not in field.choices:
-        raise AccessError(404, 'Move not found')
-    if current in field.final:
-        raise AccessError(409, f'This record is {current}, which is final; it has no moves')
-    move = field.move(current, to)
-    if move is None:
-        raise AccessError(409, f'This record cannot move from {current} to {to}')
-    if move.system:
-        # Only trusted app code (a job, an action or a move's run method) makes a system move; a caller never does.
-        if CALLER.get():
-            raise AccessError(403, f'{move.label} is made by the application only')
-    elif not has_role(context.user, move.roles):
-        raise AccessError(403, f'Your role cannot use {move.label}')
-    guard = context._business.registry.guards.get(model, {}).get(move)
-    check_guard(context, Guards(context, model, before._values, lambda: before), guard, move.label, 'move')
-    # The engine writes the state; Draft attribute writes of a State are refused.
-    draft._values[model.__state__] = to
-    return move
-
-
-def moved(context, model, record_id, previous, move, before=None, after=None):
-    """Called once a move is saved, in its transaction, with the record's drafts before and after it.
-    Writes the Journal's `moved` entry, which also lists what else the move changed."""
-    from . import journal
-    journal.moved(context, model, record_id, previous, move, before, after)
-
-
 def action_arguments(context, model, method, declaration, arguments, saved):
     """Check availability on the saved record, then validate and clean the inputs of a model action."""
     from .documents import typed_arguments
@@ -576,46 +407,17 @@ def availability(business, context, model, record, loaded=None):
     guards_now = Guards(context, model, record._values, lambda: loaded_document(business, model, record, loaded)
                         or load_draft(context, model, record.id, {}, preview=True)[0])
 
-    def evaluator():
-        return guards_now
     result, locks = {}, []
     if shown_state:
-        from . import periods
-        field = model.__declared_fields__[name]
-        current = record._values.get(name)
-        # What blocks every move of this record: a model callers only read, or a date in a closed period.
-        read_only = business.registry.api.get(model) == 'read'
-        closed = None if read_only or getattr(context._tx, '_periods_unlocked', False) else periods.closed(context._tx, model, record._values)
-        moves = []
-        for move in field.moves:
-            if current not in move.sources or current in field.final or move.system:
-                continue
-            reason = None
-            if not has_role(user, move.roles):
-                reason = 'Your role cannot use this move'
-            elif not updatable or read_only:
-                reason = 'You cannot change this record'
-            elif closed is not None:
-                reason = 'This record is in a closed period'
-            elif move in guards:
-                reason = blocked_reason(evaluator().result(guards[move]), readable(policy, user, guards[move]), 'move')
-            asks = writable_asks(business, user, model, move)
-            # A field locked on this record cannot take a value, so the move does not ask for it.
-            if any(model.__declared_fields__[ask].locked_when is not None for ask in asks):
-                if not locks:
-                    locks.append(saved_locks(context, model, guards_now.load))
-                asks = [ask for ask in asks if ask not in locks[0]]
-            moves.append({'to': move.to, 'label': move.label, 'allowed': reason is None, **({'reason': reason} if reason else {}),
-                          **({'asks': asks} if asks else {})})
-        result['_moves'] = moves
-        result['_locked'] = current in field.locked
+        from .statemanager import moves_available
+        result.update(moves_available(business, context, model, record, guards_now, updatable, locks))
     actions = []
     for action_name, action in declared:
         if not has_role(user, action.roles) or not policy.allows(user, model, 'update'):
             continue
         reason = None if updatable else 'You cannot change this record'
         if reason is None and action_name in guards:
-            reason = blocked_reason(evaluator().result(guards[action_name]), readable(policy, user, guards[action_name]), 'action')
+            reason = blocked_reason(guards_now.result(guards[action_name]), readable(policy, user, guards[action_name]), 'action')
         actions.append({'name': action_name, 'label': action.label, 'allowed': reason is None, **({'reason': reason} if reason else {})})
     result['_actions'] = actions
     return result
@@ -635,25 +437,6 @@ def saved_locks(context, model, load):
     except (CalcError, ValidationError):
         return names
     return {name for name in names if document.locked(document.root, name)}
-
-
-def state_schema(business, user, model):
-    """Schema metadata of a model's State for this role, or None when the role cannot read the field."""
-    name = model.__state__
-    if name is None or name not in business.policy.fields(user, model):
-        return None
-    field, guards = model.__declared_fields__[name], business.registry.guards.get(model, {})
-    moves = []
-    for move in field.moves:
-        if move.system:
-            continue  # Only the application makes it, so no caller is told about it.
-        asks = writable_asks(business, user, model, move)
-        moves.append({'from': list(move.sources), 'to': move.to, 'label': move.label, 'roles': list(move.roles), 'guarded': move in guards,
-                      'when': guards[move].ir if move in guards and readable(business.policy, user, guards[move]) else None,
-                      **({'asks': asks} if asks else {})})
-    return {'field': name, 'states': list(field.choices), 'default': field.default, 'moves': moves,
-            'locked': list(field.locked), 'final': list(field.final), 'voidable': list(field.voidable),
-            'cancelled': list(field.cancelled_states), 'show': field.show}
 
 
 def action_schema(business, user, model, name):
@@ -681,72 +464,3 @@ def action_schema(business, user, model, name):
             item['default'] = field.serialize(field.validate(field.default))
         result['arguments'].append(item)
     return result
-
-
-# Values a move asks for
-
-class _StateOnly:
-    """An evaluation scope that knows only the State, for deciding rules per state without a record."""
-    def __init__(self, name, value):
-        self.name, self.value, self.document, self.lookups, self.misses, self.row, self.at = name, value, self, {}, set(), None, 'move'
-
-    def read(self, scope, field):
-        from .calc import pending, ready
-        return ready(self.value) if scope == 'self' and field == self.name else pending('COMPUTE_INPUT_MISSING', ['move'])
-
-    def today_result(self):
-        from .calc import pending
-        return pending('COMPUTE_INPUT_MISSING', ['move'])
-
-    def causes(self):
-        return ['move']
-
-
-def move_asks(business, model, move):
-    """The fields a move may carry values for: root fields whose applies_when or required_when reads the
-    State and becomes true (or depends on other values) in the target state while it is false in a source
-    state. Decided once per move from the declaration, in field order."""
-    cache = business.__dict__.setdefault('_move_asks', {})
-    key = (model, move)
-    if key not in cache:
-        from .calc import Budget, CalcError, _Context, compile_expression, evaluate, lift
-        state = model.__state__
-        tables = {child.name: child.model for child in business.registry.children if child.parent is model}
-
-        def decided(ir, value):
-            try:
-                outcome = evaluate(ir, _StateOnly(state, value), Budget())
-            except (CalcError, AttributeError, TypeError):
-                return None
-            return outcome.value if outcome.state == 'ready' else None
-        asks = []
-        for name, field in model.__declared_fields__.items():
-            for kind in ('applies_when', 'required_when'):
-                expression = getattr(field, kind, None)
-                if expression is None or name == state:
-                    continue
-                ir, _, reads = compile_expression(lift(expression), _Context(model, (), None, tables, registry=business.registry), f'{name}_{kind}')
-                if any(scope == 'self' and read == state for scope, _, read in reads) and decided(ir, move.to) is not False \
-                        and any(decided(ir, source) is False for source in move.sources):
-                    asks.append(name)
-                    break
-        cache[key] = tuple(asks)
-    return cache[key]
-
-
-def writable_asks(business, user, model, move):
-    allowed = business.policy.fields(user, model, write=True)
-    return [name for name in move_asks(business, model, move) if name in allowed]
-
-
-def check_move_values(context, model, move, values):
-    """Refuse values the checked move does not ask this role for, before any of them is applied.
-
-    A key that names no field this role can read (unknown or hidden) gets one form error, so the
-    answer never confirms a hidden field."""
-    business = context._business
-    allowed, readable = set(writable_asks(business, context.user, model, move)), business.policy.fields(context.user, model)
-    message = 'This move does not take this value'
-    errors = {key if key in readable else '_form': message for key in values if key not in allowed}
-    if errors:
-        raise ValidationError(errors)

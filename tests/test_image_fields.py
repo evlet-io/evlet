@@ -9,7 +9,6 @@ import pytest
 
 from evlet import (AddField, Application, Database, Image, LocalAuth, Migration, Model, Policy, Registry, RichText, Rule,
                    State, Text, ValidationError)
-from evlet.declarations import Move
 from evlet.journal import Journal
 from tests.test_business import PASSWORD, http
 
@@ -28,15 +27,20 @@ class Item(Model):
 
 
 class Card(Model):
-    """A revisable document: a revision gets its own copy of the image."""
+    """A State document with an image."""
     class Meta:
-        revisable = True
         image = 'photo'
-    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise'))}
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
     label = Text(default='')
     photo = Image()
-    status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),),
-                   locked=('issued', 'void'), final=('void',), voidable=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+            State.Rule('issued', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ))
 
 
 class Memo(Model):
@@ -303,21 +307,6 @@ def test_adding_an_image_field_migrates(tmp_path):
     new.initialize()
     assert new.get(After, kept.id).photo is None
 
-
-
-def test_a_revision_gets_its_own_copy_of_the_image(app):
-    admin = signed_in(app, 'admin')
-    status, card, _ = admin('POST', '/api/card', {'label': 'C', 'photo': held(admin, model='card')})
-    assert status == 201, card
-    url = f'/api/card/{card["id"]}'
-    assert admin('POST', f'{url}/moves/issued', {}, etag=url)[0] == 200
-    status, copy, _ = admin('POST', f'{url}/revise', {'reason': 'Wrong label'}, etag=url)
-    assert status in (200, 201), copy
-    assert copy['photo'] and copy['photo'] != card['photo']
-    # Both records keep their own image, each served from its own record.
-    for record in (card, copy):
-        status, reply, _ = admin('GET', f'/api/card/{record["id"]}/attachments/{record["photo"]}')
-        assert status == 200 and body_of(reply) == PNG
 
 
 def test_a_document_links_its_rich_text_images(app):

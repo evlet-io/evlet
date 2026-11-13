@@ -361,7 +361,7 @@ def as_release_0_4_2(database):
                 if counter is not None:
                     connection.execute('UPDATE main.sqlite_sequence SET seq=? WHERE name=?', (counter[0], table))
                 connection.execute(f'DROP TABLE {store}.{table}')
-        connection.execute("DELETE FROM evlet_framework_migrations WHERE name='0010_split_files'")
+        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0010_split_files', '0011_state_manager')")
         connection.execute('COMMIT')
     for side in database.files()[1:]:
         for path in (side, side.with_name(side.name + '-wal'), side.with_name(side.name + '-shm')):
@@ -427,7 +427,7 @@ def test_migrating_a_0_4_2_database_moves_every_table_and_survives_a_crash_halfw
     assert counts(database) == before
 
     # The re-run copies the fourth table again from the main file and finishes; the step is recorded.
-    assert framework.upgrade(database) == ['0010_split_files']
+    assert framework.upgrade(database) == ['0010_split_files', '0011_state_manager']
     assert not {table for tables in STORES.values() for table in tables} & set(schema(database.path))
     assert counts(database) == before
     with database._connection() as connection:

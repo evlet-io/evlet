@@ -108,21 +108,6 @@ def test_related_can_hide_a_discovered_relation():
     assert [item.name for item in Registry(Hidden, Ticket).meaning[Hidden].relations] == ['ticket.other']
 
 
-def test_revisions_relation_is_labelled():
-    from evlet import Move, State
-    from evlet.calc import F  # noqa: F401
-
-    class Offer(Model):
-        class Meta:
-            calculation_language = 'finite-v1'
-            revisable = True
-        title = Text(default='')
-        status = State(('draft', 'sent', 'void'), moves=(Move('draft', 'sent', 'Send'),), locked=('sent', 'void'),
-                       final=('void',), voidable=('sent',))
-
-    assert [(item.name, item.label) for item in Registry(Offer).meaning[Offer].relations] == [('offer.revises', 'Revisions')]
-
-
 @pytest.mark.parametrize('meta, message', [
     ({'key_fields': ('missing',)}, 'key_fields'),
     ({'key_fields': ('lines',)}, 'key_fields'),

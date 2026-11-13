@@ -7,8 +7,8 @@ import sys
 
 import pytest
 
-from evlet import (Application, Child, Column, Database, Date, Decimal, Link, LocalAuth, Model, Move, NavGroup, Registry, Report,
-                   Rule, Select, Shortcut, Slip, State, Table, Text, Workspace)
+from evlet import (Application, Child, Column, Database, Date, Decimal, Link, LocalAuth, Model, NavGroup, Registry,
+                   Report, Rule, Select, Shortcut, Slip, State, Table, Text, Workspace)
 from test_business import PASSWORD, client, http
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
@@ -27,7 +27,14 @@ class Deal(Model):
     title = Text(required=True)
     client = Link(Client)
     amount = Decimal(scale=2, default='0')
-    stage = State(('open', 'won', 'lost'), moves=(Move('open', 'won', 'Win'), Move('open', 'lost', 'Lose')))
+    stage = State(
+        State.Step('open'),
+        State.Step('won'),
+        State.Step('lost'),
+        rules=(
+            State.Rule('open', 'won', 'Win', key='won'),
+            State.Rule('open', 'lost', 'Lose', key='lost'),
+        ))
 
     class Line(Child):
         item = Text(required=True)

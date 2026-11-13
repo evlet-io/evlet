@@ -3,7 +3,8 @@
 from datetime import date
 
 from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Main, Model, Naming,
-                   Ref, Registry, Related, RichText, Rule, Section, Select, Series, Sum, Table, Text, ValidationError, action)
+                   Journal, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, Text, ValidationError,
+                   action, state)
 from evlet.calc import F
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
@@ -147,7 +148,13 @@ class Project(Model):
     # A declared title is the record title itself.
     title = Text(required=True, max_length=120, label='Project')
     customer = Link(Customer)
-    status = Select(['planned', 'active', 'done'], required=True, default='planned', read_only=True)
+    # Start and Complete are its rules (POST /api/project/{id}/moves/start and /complete).
+    status = State(
+        State.Step('planned', 'Planned'),
+        State.Step('active', 'Active', color='blue'),
+        State.Step('done', 'Done', color='green', lock=True),
+        rules=(State.Rule('planned', 'active', 'Start project', key='start', primary=True),
+               State.Rule('active', 'done', 'Complete project', key='complete')))
     # The currency is the Projects app setting "Project currency" (Settings, Projects).
     budget = Currency(minimum='0', default='0.00', currency='settings.projects.currency')
     progress = Integer(minimum=0, maximum=100, default=0, label='Progress', suffix='%')
@@ -155,6 +162,14 @@ class Project(Model):
     # Formatted text: headings, lists, links (evlet/richtext.py sanitises every write).
     brief = RichText(label='Brief', help_text='Goals, scope and links, with formatting.')
     notes = LongText()
+
+    @state('done')
+    def complete(self):
+        """Completing needs every task done. It reads them in the move's own transaction."""
+        tasks = self.context.session.list(ProjectTask, filters={'project': self.id}, limit=100)
+        if not tasks or any(not task.done for task in tasks):
+            raise ValidationError({'_form': 'Complete every task before completing the project'})
+        self.progress = 100
 
 
 class ProjectTask(Model):
@@ -216,9 +231,11 @@ class Employee(Model):
         derives = ('skill_count', 'skill_levels')
         # A key card may show a value derive() sets, like a formula's result.
         cards = ('skill_count',)
+        # Each save keeps who changed what, in a hash-chained journal.
+        journal = Journal(tamper_evident=True)
 
     # Moving someone changes every team above them, so each save keeps who changed reports_to and when.
-    track_changes = True
+    # Deleting someone who still has reports is refused by the reports_to Link.
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
                    'viewer': Rule(('read',), scope=TEAM.team())}
     full_name = Text(required=True, max_length=120, label='Full name')
@@ -239,16 +256,6 @@ class Employee(Model):
             counts[skill.level] = counts.get(skill.level, 0) + 1
         self.skill_count = len(self.skills)
         self.skill_levels = [{'level': level, 'skills': counts[level]} for level in ('learning', 'practised', 'expert') if level in counts]
-
-    def before_close(self, to):
-        """Refuse to delete someone while people still report to them, naming who (to is None for a delete).
-
-        It reads through self.context.session, read only, inside the delete's own transaction."""
-        # self.model is the model class (Employee) on the draft a hook gets.
-        reports = self.context.session.list(self.model, filters={'reports_to': self.id}, order_by=('full_name',), limit=6)
-        if reports:
-            names = ', '.join(report.full_name for report in reports[:5]) + (' and others' if len(reports) > 5 else '')
-            raise ValidationError({'_form': f'Move their reports to another manager first: {names}'})
 
     @action('Recognise', inputs={'points': Integer(required=True, minimum=1, maximum=50),
                                  'reason': Text(required=True, max_length=120)})

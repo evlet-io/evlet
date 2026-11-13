@@ -22,13 +22,12 @@ A Quote is a finite-v1 document. Its `payment_days` are suggested from the
 selected Company through a Link path and stay editable; `valid_until` adds them
 to the issue date. The discount is rounded half up to cents without an explicit
 `round()`. The stage is a State: Send (only with a positive total), Mark won,
-Mark lost and Reopen (administrators only) are its moves. A sent, won or lost
+Mark lost and Reopen (administrators only) are its rules. A sent, won or lost
 quote is locked against ordinary edits, except its lost reason, which applies
 only to lost quotes. Extend validity is an action with one input that works on
 sent quotes. A won quote's discount rate is locked even for actions. An
-administrator may void a sent quote with a reason, or revise it: the sent quote
-becomes void and keeps its quote number, and a new draft copy with the same lines links
-back to it. The copy has no number until it is sent. Companies
+administrator may void a sent quote with a remark, or reopen it to draft: it keeps
+its id and quote number, and the next Send keeps the number. Companies
 have a phone number and quotes have free tags. The quote list declares measures:
 the total of open (sent) quotes, the total of won quotes and the number of quotes.
 Marking a quote won posts one row to the Sales Ledger through an effect;

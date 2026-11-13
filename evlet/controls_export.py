@@ -265,6 +265,9 @@ class Exporter:
         if 'security.two_step_roles' in values:
             blocks.append((f'{instance}/config.py', '# Two-step roles are not read from config.py yet. Keep this override until they are.\n'
                            f"two_step_roles = {literal(tuple(values['security.two_step_roles']))}"))
+        if 'security.controls_two_step' in values:
+            blocks.append((f'{instance}/config.py', '# Two-step sign-in for roles that open Controls is not read from config.py yet. Keep this override until it is.\n'
+                           f"controls_two_step = {values['security.controls_two_step']!r}"))
         # Other settings keep their full keys, one block per prefix, since no config class takes them yet.
         for prefix, (name, what) in GROUPS.items():
             group = {key: value for key, value in values.items() if key in SETTINGS and key.startswith(prefix + '.')}

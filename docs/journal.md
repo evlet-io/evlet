@@ -1,7 +1,7 @@
 # The Journal
 
 The Journal is the history of one record. It lists every change the engine made (created,
-changed, moved, voided, revised, unposted, reposted, numbered, files and deletion) and the notes, logged
+changed, moved, numbered, files, postings and deletion) and the notes, logged
 messages, calls and follow ups people added. Entries are only ever added. Nothing edits or
 deletes them.
 
@@ -10,13 +10,13 @@ This guide covers Phase 8 of the model handoff.
 ## Turning it on
 
 ```python
-from evlet import Journal, Model, Move, State, Text
+from evlet import Journal, Model, State, Text
 
 
 class Invoice(Model):
     title = Text(default="")
-    status = State(("draft", "issued", "void"), moves=(Move("draft", "issued", "Issue"),),
-                   locked=("issued", "void"), final=("void",), voidable=("issued",))
+    status = State(State.Step("draft"), State.Step("issued", lock=True), State.Step("void", lock=True, final=True),
+                   rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")))
 
     class Meta:
         journal = Journal(tamper_evident=True)
@@ -40,7 +40,7 @@ State, so this changes nothing for valid models today, but the rule names both).
 Entries live in one table, created at startup when any model journals:
 
 ```
-evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash)
+evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash, rule, remark, level, base, rules_version)
 ```
 
 * `model` is the storage name, `record_id` the record's id. An index on
@@ -53,6 +53,10 @@ evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash)
 * `at` is the UTC time, for example `2026-11-02T08:15:30.125Z`.
 * `data` is canonical JSON (sorted keys, no spaces).
 * `prev_hash` and `hash` are set only with `tamper_evident=True`.
+* `rule`, `remark`, `level`, `base` and `rules_version` are the state manager's columns, null
+  when they do not apply. A `moved` entry has the rule key, the remark when one was given, and
+  the rule set version. `level` and `base` are for approval levels and releases (later 0.4.6
+  pull requests). They are columns, so lists can filter on them.
 
 Database triggers refuse `UPDATE` and `DELETE` on the table,
 so even raw SQL in trusted code cannot change an entry by mistake. On SQLite a third trigger
@@ -72,17 +76,13 @@ commits, no entry is left behind.
 
 | Kind | Written when | `data` |
 |---|---|---|
-| `created` | a record is created, including a revision's copy | `fields` and `rows` |
+| `created` | a record is created | `fields` and `rows` |
 | `changed` | an update or an action changed something | `fields`, `rows`, and `action` for an action |
-| `moved` | a move is saved | `from`, `to`, `move` (the label), and `fields` and `rows` for anything else the move changed |
-| `voided` | a record is voided | `from`, `to` (`void`) and `reason` |
-| `revised` | a record is revised (after its `voided` entry) | `copy` (the new record's id) and `reason` |
-| `unposted` | an admin unposts a posted record (before the `effects` entry of its reversal rows) | `from`, `to` (the state it posted from) and `reason` |
-| `reposted` | an unposted record is posted again (after the move's `moved` and `effects` entries) | `to`, `move` (the label), and `reason` when given |
+| `moved` | a move is saved | `from`, `to`, `move` (the label), and `fields` and `rows` for anything else the move changed; the `rule` and `remark` columns |
 | `number` | a Sequence number is assigned | `field` and `number` |
 | `file` | an attachment is added or removed | `action` (`added` or `removed`), `id`, `name`, and `size` when added |
 | `deleted` | the record is deleted | `{}` |
-| `effects` | a move posted [effect](effects.md) rows, or a void or unpost wrote their mirror rows | `targets` |
+| `effects` | a move posted [effect](effects.md) rows, or left the posting state and wrote their mirror rows | `targets` |
 | `recomputed` | a `Recompute` migration changed stored results (actor: the engine) | `fields` and `rows` (`updated` only), and `posted: true` for a posted record an admin included |
 
 `fields` maps each changed stored field to its old and new values in their HTTP form:
@@ -120,10 +120,12 @@ and keep the page small for documents with many rows.
 has `"posted": true`, shown to readers of the State. Otherwise `recomputed` entries appear only
 on records without live postings, locked or not.
 
-Unpost and repost also write a row in the Controls audit log (area `Records`), in the same
-transaction as the entries.
+The engine also knows the kinds `approved`, `rejected`, `released`, `restored` and `snapshot`,
+written by later 0.4.6 pull requests. Entries of kinds earlier releases wrote (`voided`,
+`revised`, `unposted`, `reposted`, `confirmed`, `reconfirmed`, `cancelled`, `reopened`,
+`post_confirmation_edit`) stay readable.
 
-An `effects` entry follows the `moved`, `voided` or `unposted` entry of the same operation and lists
+An `effects` entry follows the `moved` entry of the same operation and lists
 each target model that received rows:
 
 ```json
@@ -131,7 +133,7 @@ each target model that received rows:
              {"target": "stockmove", "rows": 2, "reversal": false}]}
 ```
 
-`rows` counts the rows written, `reversal` is true for the mirror rows of a void or an unpost, and
+`rows` counts the rows written, `reversal` is true for mirror rows, and
 `balanced` is present for an effect that declares a balanced pair. Targets that received no
 rows are left out, and no entry is written when no rows were written.
 
@@ -210,7 +212,7 @@ with app.business.context(user) as context:
 
 Both apply the same checks as HTTP. `post()` runs in its own savepoint like other document
 operations: a failure caught by trusted code leaves no entry, and posting to a record whose
-own operation is running (from its `changed()` reaction, say) is refused as a recursive
+own operation is running (from one of its hooks, say) is refused as a recursive
 change.
 
 ## Permissions
@@ -229,7 +231,7 @@ permissions = {
 * Admin may always post when its Rule reads the model. The editor may post when its Rule
   reads and updates the model (row scopes apply to both). Viewers, and editors that only
   read, may not.
-* A Rule naming `journal` adds that role, like `void` and `revise`; naming a role never
+* A Rule naming `journal` adds that role; naming a role never
   removes admin or the editor. So the Rule above lets the viewer post as well.
 * A custom role (Controls, `docs/controls.md`) based on the editor posts like the editor.
   A Controls override can take `journal` away from a role whose file Rule names it.
@@ -258,6 +260,8 @@ permissions = {
   `"source": "mailbox"`, and its `party` is `null` (the entry `partial`) for a reader who can't
   read the record's `Email` field that matched.
 * A follow up has `done`: the id of the entry that completed it, or `null`.
+* A `moved` entry has `rule` and, when given, `remark`, for readers of the State only.
+* `GET /api/{model}/{id}/history?limit=&offset=` returns the same page as `context.history()`.
 
 Every entry is listed, so `total` matches what the caller can page through. What the caller
 cannot read is removed, and the entry is marked `"partial": true`:
@@ -270,8 +274,8 @@ cannot read is removed, and the entry is marked `"partial": true`:
 * Rows of a collection the caller cannot read are left out. Under a row scope on the rows,
   rows the caller cannot see are left out, and so are all removed rows, because they can no
   longer be checked against the scope. Updated rows with nothing readable left are dropped.
-* For a caller who cannot read the State, `moved`, `voided`, `revised`, `unposted`,
-  `reposted` and `effects` entries are shown as `changed` with only the readable field and row changes. A `number`
+* For a caller who cannot read the State, `moved` and `effects` entries (and entries of the
+  older state kinds) are shown as `changed` with only the readable field and row changes. A `number`
   entry for a field the caller cannot read is shown as `changed` with no data. This keeps
   states and numbers private, as the rest of the API does.
 * In an `effects` entry, targets the caller does not read fully (read permission and no row
@@ -289,7 +293,7 @@ already tell readers the same. An action's name is shown only to roles that can 
 
 ## Details, schema and events
 
-* Record details (GET, writes, moves, void, revise, unpost and repost answers) of a journaled model carry
+* Record details (GET, writes and move answers) of a journaled model carry
   `_journal`: `{"count": 12, "open_follow_ups": 1}`. It is outside the ETag, so adding a note
   does not change the record's revision. It costs one statement.
 * `/api/schema` entries of journaled models carry
@@ -307,9 +311,10 @@ With `Journal(tamper_evident=True)` each entry stores:
 * `prev_hash`: the `hash` of the record's previous entry, or `null` for its first entry.
 * `hash`: the SHA-256 of the canonical JSON array
   `[model, record_id, kind, actor, at, data, prev_hash]`, where `data` is the stored JSON
-  text.
+  text. An entry with any of the state manager's columns set appends them as an object of the
+  ones that are set, so entries written before 0.4.6 verify as they were.
 
-Writers are serialized on both databases, so the chain has no forks.
+Writers are serialized, so the chain has no forks.
 
 Check an instance:
 

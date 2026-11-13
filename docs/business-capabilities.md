@@ -170,12 +170,12 @@ for. The Playground's Employees show a manager, a team member and an outsider
 A link decides what a team scope shows, so `LocalAuth.link_user` and `unlink_user` write each
 change to the Controls audit log (area Users, with an `actor` argument; `evlet link-user` records
 `cli`). A move in the tree is an ordinary edit of the parent Link: declare the hierarchy model with
-`track_changes = True` to keep who moved whom and when, as the Playground's Employee does.
+`Meta.journal = Journal(tamper_evident=True)` to keep who moved whom and when, as the
+Playground's Employee does.
 
 Operations may also name `print` (printing with a print design; admin has it by default, see
-[printing.md](printing.md#permission)) and `void`, `revise`, `unpost` and `repost` on models that support them.
-Admin always has them; naming one in a Rule adds that role. See the "Void and revise" and
-"Unpost and repost" sections of [states-actions.md](states-actions.md).
+[printing.md](printing.md#permission)). Moves need no operation of their own: a State rule's
+`by` and update permission decide them ([states-actions.md](states-actions.md)).
 
 Restricted fields are removed from responses, search, and schema metadata. Querying
 or sorting on unavailable fields is rejected. Link IDs are returned as null when
@@ -311,8 +311,8 @@ records they touch. They must not call external services inside the transaction.
 Do not expose an arbitrary method dispatcher.
 
 Model actions declared with `@action` on a document may also take validated `inputs`
-and declare `available_when`. A `State` field with `Move` declarations changes a
-document's state through `POST /api/{model}/{id}/moves/{to}` and can lock it against
+and declare `available_when`. A `State` field with steps and rules changes a
+document's state through `POST /api/{model}/{id}/moves/{key}` and can lock it against
 ordinary writes. See [states-actions.md](states-actions.md). The record page shows the
 State as a header badge by default; declare `show="bar"` on a pipeline (draft, submitted,
 approved) for the stage bar, or `show="none"`. `Meta.status = "<field>"` shows a Select the
@@ -320,7 +320,7 @@ system sets, such as a calculated payment status, as a badge that is never edite
 header ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)). The list offers a
 board, one column per state, only when `Meta.board` names the State field, such as
 `board = "stage"`; any other field fails registration. A move only the application makes,
-such as one a background job takes, is declared `Move(..., system=True)`: it has no roles, no
+such as one a background job takes, is declared `State.Rule(..., by=())`: it has no roles, no
 caller can make it, and trusted Python makes it with `context.move()`
 ([states-actions.md](states-actions.md#system-moves)). A job gets that context with
 `job.business(tx, ...)`, and an action queues a job with `self.context.enqueue(...)`

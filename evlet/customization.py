@@ -18,8 +18,9 @@ from .auth import AccessError
 from .naming import form_hidden
 from .declarations import Ref
 from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Decimal, Integer, Layer, Link, LongText, Select,
-                     State, Text, active_layer)
+                     Text, active_layer)
 from .adapter import Column, DatabaseError, TableDefinition
+from .statemanager import State
 from .database import ConflictError
 from .models import ValidationError
 from .ui.metadata import FLOWS, OPEN_IN, PANEL_BLOCKS, PANEL_KINDS, label_for, list_tabs_for, starts_valid, view_for
@@ -174,8 +175,7 @@ class Customization:
     def editable(self, model, name, field):
         rules = self.file_naming.get(model)
         return field.stored and field.compute is None and field.query is None and field.fetch is None \
-            and not isinstance(field, State) and field.kind != 'sequence' and not (rules and rules.field == name) \
-            and not getattr(field, 'engine_revises', False)
+            and not isinstance(field, State) and field.kind != 'sequence' and not (rules and rules.field == name)
 
     def file_value(self, kind, model, name=None):
         if kind == 'field':
@@ -317,9 +317,9 @@ class Customization:
 
     def tab_names(self, model):
         """The record's parts the side panel can hide, as the schema's panel "tabs" names them: Activity, Details,
-        Revisions, its child tables, Related and Postings. Record pages have no tabs."""
+        its child tables, Related and Postings. Record pages have no tabs."""
         tables = [child.name for child in self.registry.children if child.parent is model]
-        return ['activity', 'details', 'revisions', *tables, 'related', 'postings']
+        return ['activity', 'details', *tables, 'related', 'postings']
 
     def check_layout(self, model, _, value, saved=False):
         panel = None

@@ -8,9 +8,9 @@ from urllib.parse import quote
 
 import pytest
 
-from evlet import (Boolean, Child, Count, CountDistinct, Currency, Database, Date, Day, Decimal, Integer, Link, LongText, Max, Min,
-                   Model, Month, Move, NotFoundError, Registry, Rule, Select, Sequence, State, Sum, Tags, Text,
-                   Table, ValidationError, Year)
+from evlet import (Boolean, Child, Count, CountDistinct, Currency, Database, Date, Day, Decimal, Integer, Link,
+                   LongText, Max, Min, Model, Month, NotFoundError, Registry, Rule, Select, Sequence, State, Sum,
+                   Tags, Text, Table, ValidationError, Year)
 from evlet.auth import AccessError, User
 from evlet.calc import D, F, days, month_start, today, when
 from test_business import client, http
@@ -556,20 +556,17 @@ def test_schema_lists_readable_declared_measures(app):
     assert 'measures' not in next(model for model in admin('GET', '/api/schema')[1]['models'] if model['name'] == 'payment')
 
 
-# Measures beside void, revise, moves, Sequence numbers, line pages and related records on one model
+# Measures beside void, moves, Sequence numbers and line pages on one model
 
 class NumberedMeta:
     calculation_language = 'finite-v1'
     numeric_profile = 'finite40-hu18-v1'
-    revisable = True
     measures = {
         # Declared conditions decide whether void records count.
         'live_total': Sum('total', where=(F('status') == 'draft') | (F('status') == 'issued')),
         'void_total': Sum('total', where=F('status') == 'void'),
         'quotes': Count(),
         'numbered': CountDistinct('number'),
-        # Per record: the same count as the total of the Revisions relation.
-        'revisions': Count('numberedquote', link='revises'),
     }
 
 
@@ -584,8 +581,14 @@ class NumberedQuote(Model):
     lines = Table(NumberedLine, max_rows=10)
     total = Currency(default='0')
     number = Sequence('NQ-{n:03}', assign_on='issued')
-    status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),),
-                   locked=('issued', 'void'), final=('void',), voidable=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+            State.Rule('issued', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ))
 
 
 @pytest.fixture
@@ -595,7 +598,7 @@ def numbered(tmp_path):
     return start(database)
 
 
-def test_measures_with_void_revise_moves_and_sequences(numbered):
+def test_measures_with_void_moves_and_sequences(numbered):
     c = client(numbered)
     base = '/api/numberedquote'
     tag = lambda url: {b'if-match': c('GET', url)[2][b'etag']}
@@ -604,40 +607,29 @@ def test_measures_with_void_revise_moves_and_sequences(numbered):
         status, record, _ = c('POST', base, {'title': name, 'total': total, 'children': {'lines': [{'note': name}]}})
         assert status == 201, record
         urls.append(f"{base}/{record['id']}")
-    # Each route on one model: moves, void, revise, measures, per-record measures, aggregate, lines and related.
+    # Each route on one model: moves, the void rule, measures, aggregate and lines.
     for url in urls[:2]:
         status, moved, _ = c('POST', url + '/moves/issued', {}, headers=tag(url))
         assert status == 200 and moved['number'] is not None, moved
-    status, voided, _ = c('POST', urls[0] + '/void', {'reason': 'Duplicate'}, headers=tag(urls[0]))
+    status, voided, _ = c('POST', urls[0] + '/moves/void', {'remark': 'Duplicate'}, headers=tag(urls[0]))
     assert status == 200 and voided['status'] == 'void' and voided['number'] == 'NQ-001', voided
-    status, copy, _ = c('POST', urls[1] + '/revise', {'reason': 'New price'}, headers=tag(urls[1]))
-    assert status == 201 and copy['number'] is None and copy['status'] == 'draft', copy
     assert c('GET', base + '/measures')[1] == {
-        'measures': {'live_total': '25.00', 'void_total': '30.00', 'quotes': 4, 'numbered': 2}}
+        'measures': {'live_total': '25.00', 'void_total': '10.00', 'quotes': 3, 'numbered': 2}}
     by_status = c('GET', f'{base}/aggregate?measures=n:count,t:sum:total&group_by=status')[1]
-    assert by_status['items'] == [{'status': 'draft', 'n': 2, 't': '25.00'}, {'status': 'void', 'n': 2, 't': '30.00'}]
-    # The revision link is an ordinary field to filter and group on.
-    revised = c('GET', f"{base}/aggregate?measures=n:count&filters={quote(json.dumps({'revises': copy['revises']}))}")[1]
-    assert revised['items'] == [{'n': 1}]
-    assert c('GET', f"{urls[0]}/measures")[1] == {'measures': {'revisions': 0}}
-    # Measure routes are GET only; void and revise stay POST only.
+    assert by_status['items'] == [{'status': 'draft', 'n': 1, 't': '5.00'}, {'status': 'issued', 'n': 1, 't': '20.00'},
+                                  {'status': 'void', 'n': 1, 't': '10.00'}]
+    # Measure routes are GET only; moves stay POST only.
     assert c('POST', base + '/measures', {})[0] in (404, 405) and c('POST', base + '/aggregate', {})[0] in (404, 405)
-    assert c('GET', urls[0] + '/void')[0] in (404, 405) and c('GET', urls[0] + '/revise')[0] in (404, 405)
-    # Line pages and related records are GET only and do not shadow the other routes.
+    assert c('GET', urls[0] + '/moves/void')[0] in (404, 405)
+    # Line pages are GET only and do not shadow the other routes.
     status, lines, _ = c('GET', urls[1] + '/lines/lines')
     assert status == 200 and [row['note'] for row in lines['items']] == ['B'], lines
-    status, revisions, _ = c('GET', urls[1] + '/related/numberedquote.revises')
-    assert status == 200 and revisions['total'] == 1 and revisions['items'][0]['id'] == copy['id'], revisions
-    assert c('GET', urls[2] + '/related/numberedquote.revises')[1]['total'] == 0
-    assert c('GET', urls[1] + '/measures')[1] == {'measures': {'revisions': 1}}
-    assert c('POST', urls[1] + '/related/numberedquote.revises', {}, headers=tag(urls[1]))[0] == 405
     assert c('POST', urls[1] + '/lines/lines', {}, headers=tag(urls[1]))[0] == 405
     assert c('GET', urls[1] + '/related/measures')[0] == 404 and c('GET', urls[1] + '/related/void')[0] == 404
     schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'numberedquote')
-    assert [item['name'] for item in schema['relations']] == ['numberedquote.revises'] and len(schema['measures']) == 5
-    # Numbering the revision is reflected in the next read.
-    copy_url = f"{base}/{copy['id']}"
-    assert c('POST', copy_url + '/moves/issued', {}, headers=tag(copy_url))[1]['number'] == 'NQ-003'
+    assert 'relations' not in schema and len(schema['measures']) == 4
+    # Numbering the third quote is reflected in the next read.
+    assert c('POST', urls[2] + '/moves/issued', {}, headers=tag(urls[2]))[1]['number'] == 'NQ-003'
     assert c('GET', base + '/measures')[1]['measures']['numbered'] == 3
 
 

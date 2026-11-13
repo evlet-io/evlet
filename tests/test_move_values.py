@@ -2,7 +2,7 @@
 
 import pytest
 
-from evlet import Database, Decimal, Model, Move, Registry, Rule, State, Text, ValidationError
+from evlet import Database, Decimal, Model, Registry, Rule, State, Text, ValidationError
 from evlet.auth import User
 from evlet.calc import F
 from test_business import client
@@ -12,10 +12,15 @@ from test_rules_types import ALL, add_user, start
 class Ticket(Model):
     permissions = {**ALL, 'editor': Rule(('read', 'create', 'update'), write_fields=('title', 'note'))}
     title = Text(default='')
-    reason = Text(applies_when=F('status') == 'closed', required_when=F('status') == 'closed', editable_when_locked=True)
+    reason = Text(applies_when=F('status') == 'closed', required_when=F('status') == 'closed', versioned=False)
     note = Text(applies_when=F('status') == 'closed')
-    status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'), Move('closed', 'open', 'Reopen')),
-                   locked=('closed',))
+    status = State(
+        State.Step('open'),
+        State.Step('closed', lock=True),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+            State.Rule('closed', 'open', 'Reopen', key='open'),
+        ))
 
 
 @pytest.fixture
@@ -33,8 +38,8 @@ def test_a_move_asks_for_the_fields_its_target_state_needs(tickets):
     url = f"/api/ticket/{c('POST', '/api/ticket', {'title': 'Printer'})[1]['id']}"
     schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'ticket')
     # Only moves that ask for something list `asks`.
-    assert {move['to']: move.get('asks') for move in schema['state']['moves']} == {'closed': ['reason', 'note'], 'open': None}
-    assert c('GET', url)[1]['_moves'] == [{'to': 'closed', 'label': 'Close', 'allowed': True, 'asks': ['reason', 'note']}]
+    assert {rule['to']: rule.get('asks') for rule in schema['state']['rules']} == {'closed': ['reason', 'note'], 'open': None}
+    assert c('GET', url)[1]['_moves'] == [{'key': 'closed', 'to': 'closed', 'label': 'Close', 'allowed': True, 'asks': ['reason', 'note']}]
     # The required value is checked with the move, and a failed move changes nothing.
     status, body, _ = move(c, url, 'closed', {})
     assert status == 422 and body['fields'] == {'reason': 'This field is required'}
@@ -75,7 +80,13 @@ class Case(Model):
     title = Text(default='')
     note = Text(applies_when=F('status') == 'closed')
     secret = Text(applies_when=F('status') == 'closed')
-    status = State(('open', 'closed', 'gone'), moves=(Move('open', 'closed', 'Close', roles=('admin', 'editor', 'viewer')),))
+    status = State(
+        State.Step('open'),
+        State.Step('closed'),
+        State.Step('gone'),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed', by=('admin', 'editor', 'viewer')),
+        ))
 
 
 def test_move_checks_come_before_the_values_so_values_reveal_no_moves(tmp_path):
@@ -84,7 +95,7 @@ def test_move_checks_come_before_the_values_so_values_reveal_no_moves(tmp_path):
     url = f"/api/case/{c('POST', '/api/case', {'title': 'A'})[1]['id']}"
     # Unknown targets and missing moves answer as they do without values.
     assert move(c, url, 'nowhere', {'note': 'x'})[:2] == (404, {'error': 'Move not found'})
-    assert move(c, url, 'gone', {'note': 'x'})[:2] == (409, {'error': 'This record cannot move from open to gone'})
+    assert move(c, url, 'gone', {'note': 'x'})[:2] == (404, {'error': 'Move not found'})
     # A role that cannot read the State gets one answer for every refused move, values or not.
     viewer = add_user(app, 'viewer')
     for target in ('nowhere', 'gone'):
@@ -103,7 +114,12 @@ class Fee(Model):
     permissions = ALL
     amount = Decimal(default=1)
     double = Decimal(applies_when=F('status') == 'done', locked_when=F('amount') == 1)
-    status = State(('new', 'done'), moves=(Move('new', 'done', 'Done'),))
+    status = State(
+        State.Step('new'),
+        State.Step('done'),
+        rules=(
+            State.Rule('new', 'done', 'Done', key='done'),
+        ))
 
 
 def test_a_move_does_not_ask_for_a_field_locked_on_the_record(tmp_path):
@@ -111,7 +127,7 @@ def test_a_move_does_not_ask_for_a_field_locked_on_the_record(tmp_path):
     c = client(app)
     locked = f"/api/fee/{c('POST', '/api/fee', {})[1]['id']}"
     open_ = f"/api/fee/{c('POST', '/api/fee', {'amount': 2})[1]['id']}"
-    assert c('GET', locked)[1]['_moves'] == [{'to': 'done', 'label': 'Done', 'allowed': True}]
+    assert c('GET', locked)[1]['_moves'] == [{'key': 'done', 'to': 'done', 'label': 'Done', 'allowed': True}]
     assert c('GET', open_)[1]['_moves'][0]['asks'] == ['double']
     assert move(c, locked, 'done', {})[0] == 200
     status, body, _ = move(c, open_, 'done', {'double': 4})

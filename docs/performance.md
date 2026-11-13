@@ -1,7 +1,7 @@
 # Performance and hardening measurements
 
 Milestone 8 includes real SQLite benchmarks and regression tests. Evlet 0.4 also
-measured PostgreSQL; PostgreSQL was removed in 0.5.
+measured PostgreSQL; PostgreSQL was removed in 0.4.5.
 Results are local measurements of this workload, not estimated scale or production
 capacity guarantees. The framework's larger tenant and employee-count targets
 remain unvalidated.
@@ -322,21 +322,6 @@ Before list pages serialized their rows in one batch, each row's Link check reco
 team: the wide tree's leave page took 315 ms on SQLite (50 team computations). These are
 local measurements of one synthetic workload, not capacity guarantees.
 
-## Unpost dependents
-
-Before an unpost, the engine looks for live records that depend on the record
-([states-actions.md](states-actions.md#unpost-and-repost)). It reads the ids of the record's
-Table rows (one statement per table level and chunk of 500) and of its effect rows (one per
-effect), then runs one statement per chunk of ids for every Link field whose target is the
-model, one of its Table row models or one of its effect targets, and for every `Reference`
-field of every model (a Reference may name any model). Link and Reference columns are indexed
-only when declared with `index=True`, so most of these statements scan their table. Documents
-of matched Table rows are found one statement per level and chunk, and each candidate costs
-one read and one posting check. Unpost is a rare admin action, so the scans are accepted;
-details do not run them (`_unpost` does not check dependents). Index the Link and Reference
-fields that point at posting documents, their rows or their effect targets when those tables
-grow large.
-
 ## Frontend bundle after removing SolidJS
 
 Measured on 2 November 2026 with the same method (`frontend/dist/assets`, each file
@@ -443,6 +428,11 @@ In branch `ui-final/06-testcrm-findings`:
 * the settle walk keeps each calculation's row, plan field and inputs from the last bind instead
   of splitting node keys and copying input sets on every batch;
 * observers of removed rows are looked for only when rows were added or removed.
+
+Later, `addRow`, `removeRow` and `reorder` also check before they change anything, so no batch
+copies the document at all any more. On the opt-in engine bench a task edit in a
+1,000-task project went from 2.0 ms to 0.35 ms (median) and an invoice row edit from 0.63 ms
+to 0.36 ms.
 
 Measured with `npm run bench:ui` on the same machine, before and after:
 

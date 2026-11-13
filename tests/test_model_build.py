@@ -9,7 +9,7 @@ import pytest
 from evlet import Integer, Journal, Model, Registry, Text, models
 from test_effects import Account, Invoice, LedgerEntry, StockMove
 
-ORDER = ('ledger_declared', 'ledger_class', 'lifecycle', 'journaled',
+ORDER = ('ledger_declared', 'ledger_class', 'statemanager', 'journaled',
          'meaning', 'guards', 'kept_plan', 'sequences', 'namings', 'measures', 'cards', 'effects', 'posted_reads',
          'journals', 'api', 'ledger_schema')
 
@@ -41,7 +41,7 @@ def test_class_steps_run_in_order(calls):
             timestamps = 'created'
         amount = Integer()
 
-    assert calls == ['ledger_declared', 'ledger_class', 'lifecycle']
+    assert calls == ['ledger_declared', 'ledger_class', 'statemanager']
     assert set(Entry.__fields__) == {'amount', 'created_at'}
     calls.clear()
 
@@ -50,7 +50,7 @@ def test_class_steps_run_in_order(calls):
             journal = Journal()
         title = Text()
 
-    assert calls == ['ledger_declared', 'lifecycle', 'journaled']
+    assert calls == ['ledger_declared', 'statemanager', 'journaled']
     assert Noted.__declaration_mode__ is True
 
 
@@ -88,7 +88,8 @@ def test_a_model_defined_straight_after_import_evlet_gets_every_step():
             class Meta:
                 journal = evlet.Journal()
             title = evlet.Text()
-            status = evlet.State(('draft', 'done'), moves=(evlet.Move('draft', 'done', 'Done'),))
+            status = evlet.State(evlet.State.Step('draft'), evlet.State.Step('done'),
+                                 rules=(evlet.State.Rule('draft', 'done', 'Done'),))
 
         evlet.Registry(Entry, Note).schema()
         missing = set(models.BUILD_ORDER) - set(seen) - {'kept_plan', 'posted_reads'}  # need a plan or effects

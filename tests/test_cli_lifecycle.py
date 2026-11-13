@@ -99,6 +99,9 @@ def test_new_config_omits_reserved_fields_and_old_config_still_loads(project):
     (path / 'config.py').write_text('from evlet import Instance\n\ninstance = Instance(name="acme", database="sqlite", storage="local", domain=None)\n')
     assert read_instance(path).name == 'acme'
     (path / 'config.py').write_text('from evlet import Instance\n\ninstance = Instance(name="acme", database="postgresql")\n')
+    with pytest.raises(ValueError, match='0.4.4 is the last version that supports it'):
+        read_instance(path)
+    (path / 'config.py').write_text('from evlet import Instance\n\ninstance = Instance(name="acme", database="mysql")\n')
     with pytest.raises(ValueError, match='supports isolated SQLite databases'):
         read_instance(path)
 

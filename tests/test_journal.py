@@ -5,8 +5,8 @@ import sqlite3
 
 import pytest
 
-from evlet import (Application, Attachments, Boolean, Child, ConflictError, Currency, Database, Decimal, EventStore, Integer, Journal, LocalAuth,
-                   Link, Model, Move, Registry, Rule, Sequence, State, Table, Text, action)
+from evlet import (Application, Attachments, Boolean, Child, ConflictError, Currency, Database, Decimal, EventStore,
+                   Integer, Journal, LocalAuth, Link, Model, Registry, Rule, Sequence, State, Table, Text, action)
 from evlet import journal as journal_module
 from evlet.auth import User
 from evlet.calc import F
@@ -39,13 +39,12 @@ class Item(Child):
 
 
 class InvoiceMeta(FiniteMeta):
-    revisable = True
     journal = Journal(tamper_evident=True)
 
 
 class Invoice(Model):
     Meta = InvoiceMeta
-    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'revise')),
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update'), scope=lambda user: {'owner': user.id}),
                    'viewer': Rule(('read',), read_fields=('title', 'owner', 'account'))}
     title = Text(default='')
@@ -55,8 +54,14 @@ class Invoice(Model):
     number = Sequence('INV-{n:03}', assign_on='issued')
     lines = Table(Item)
     total = Currency(compute=lines.sum('amount'))
-    status = State(('draft', 'issued', 'void'), moves=(Move('draft', 'issued', 'Issue'),),
-                   locked=('issued', 'void'), final=('void',), voidable=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        State.Step('void', lock=True, final=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+            State.Rule('issued', 'void', 'Void', key='void', by=('admin',), remark='required'),
+        ))
 
     @action('Rename', inputs={'title': Text(required=True)})
     def rename(self, title):
@@ -77,7 +82,12 @@ class Ticket(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')),
                    'viewer': Rule(('read', 'journal'))}
     title = Text(default='')
-    status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'),))
+    status = State(
+        State.Step('open'),
+        State.Step('closed'),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+        ))
 
 
 class Notice(Model):
@@ -85,7 +95,12 @@ class Notice(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',)),
                    'viewer': Rule(('read', 'journal'))}
     title = Text(default='')
-    status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'),))
+    status = State(
+        State.Step('open'),
+        State.Step('closed'),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+        ))
 
 
 class Plain(Model):
@@ -99,7 +114,12 @@ class Silent(Model):
         journal = None
     permissions = ALL
     title = Text(default='')
-    status = State(('open', 'closed'), moves=(Move('open', 'closed', 'Close'),))
+    status = State(
+        State.Step('open'),
+        State.Step('closed'),
+        rules=(
+            State.Rule('open', 'closed', 'Close', key='closed'),
+        ))
 
 
 MODELS = (Account, Invoice, Memo, Ticket, Notice, Plain, Silent)
@@ -207,7 +227,7 @@ def check_engine(app):
     assert fields['title'] == {'old': None, 'new': 'First'} and fields['total'] == {'old': None, 'new': '13.00'}
     assert fields['status'] == {'old': None, 'new': 'draft'} and fields['account'] == {'old': None, 'new': ACCOUNTS['Private']}
     # Numbers have their own entries; row links and positions are not values.
-    assert 'number' not in fields and 'revises' not in fields
+    assert 'number' not in fields
     added = created['data']['rows']['lines']['added']
     assert [item['fields']['qty']['new'] for item in added] == ['2.0000', '1.0000']
     assert set(added[0]['fields']) == {'qty', 'rate', 'amount', 'secret', 'shared'}
@@ -239,23 +259,12 @@ def check_engine(app):
     # A move, then the number it assigned.
     assert post(c, url, 'moves/issued')[0] == 200
     number, moved = history(c, url)['items'][:2]
-    assert moved['kind'] == 'moved' and moved['data'] == {'from': 'draft', 'to': 'issued', 'move': 'Issue'}
+    assert moved['kind'] == 'moved' and moved['data'] == {'from': 'draft', 'to': 'issued', 'move': 'Issue'} and moved['rule'] == 'issued'
     assert number['kind'] == 'number' and number['data'] == {'field': 'number', 'number': 'INV-001'}
-    # A void keeps its reason.
-    assert post(c, url, 'void', {'reason': 'Wrong customer'})[0] == 200
-    assert history(c, url)['items'][0]['data'] == {'from': 'issued', 'to': 'void', 'reason': 'Wrong customer'}
-    # A revise voids the original, links it to the copy, and the copy starts with `created`.
-    other, other_url = new_invoice(c, title='Other')
-    post(c, other_url, 'moves/issued')
-    status, copy, _ = post(c, other_url, 'revise', {'reason': 'New prices'})
-    assert status == 201, copy
-    revised, voided = history(c, other_url)['items'][:2]
-    assert voided['data'] == {'from': 'issued', 'to': 'void', 'reason': 'New prices'}
-    assert revised['kind'] == 'revised' and revised['data'] == {'copy': copy['id'], 'reason': 'New prices'}
-    copied = history(c, f"/api/invoice/{copy['id']}")
-    assert copied['total'] == 1 and copied['items'][0]['kind'] == 'created'
-    assert copied['items'][0]['data']['fields']['revises'] == {'old': None, 'new': other['id']}
-    assert len(copied['items'][0]['data']['rows']['lines']['added']) == 2
+    # A void is a move with its remark, kept in the entry's own column.
+    assert post(c, url, 'moves/void', {'remark': 'Wrong customer'})[0] == 200
+    voided = history(c, url)['items'][0]
+    assert (voided['data'], voided['rule'], voided['remark']) == ({'from': 'issued', 'to': 'void', 'move': 'Void'}, 'void', 'Wrong customer')
     # Attachments, and a deleted record whose history stays.
     memo = c('POST', '/api/memo', {'title': 'Memo'})[1]
     memo_url = f"/api/memo/{memo['id']}"
@@ -382,7 +391,7 @@ def check_user_entries(app):
     # Viewers cannot post; entries can be added on a locked or void record; nothing edits or deletes them.
     assert write({'kind': 'note', 'text': 'Hi'}, viewer)[0] == 403
     post(c, url, 'moves/issued')
-    post(c, url, 'void', {'reason': 'Duplicate'})
+    post(c, url, 'moves/void', {'remark': 'Duplicate'})
     assert write({'kind': 'note', 'text': 'Kept for the audit'})[0] == 201
     for method in ('PATCH', 'DELETE', 'PUT'):
         assert c(method, url + '/journal', {'kind': 'note', 'text': 'x'})[0] == 405, method
@@ -597,7 +606,12 @@ class BigQuiet(Model):
     title = Text(default='')
     lines = Table(BigLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
-    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+        ))
 
 
 class BigHashed(Model):
@@ -606,7 +620,12 @@ class BigHashed(Model):
     title = Text(default='')
     lines = Table(BigLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
-    status = State(('draft', 'issued'), moves=(Move('draft', 'issued', 'Issue'),), locked=('issued',))
+    status = State(
+        State.Step('draft'),
+        State.Step('issued', lock=True),
+        rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issued'),
+        ))
 
 
 def test_a_journaled_patch_of_a_1000_row_document_costs_a_bounded_number_of_statements(tmp_path):

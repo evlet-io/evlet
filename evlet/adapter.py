@@ -24,8 +24,9 @@ class Column:
     `references` the table a foreign key points at (its "id"), or None.
 
     Framework tables (TableDefinition) may also give a `default` (an int or str the database fills in when an
-    insert leaves the column out) and `on_delete` for a reference: 'cascade' removes the row with the row it
-    points at, 'set null' empties the column. Model columns use neither."""
+    insert leaves the column out), `on_delete` for a reference ('cascade' removes the row with the row it
+    points at, 'set null' empties the column) and `referenced_column` for a reference to a key other than "id".
+    Model columns use none of them."""
     name: str
     type: str
     required: bool = False
@@ -33,6 +34,7 @@ class Column:
     references: str = None
     default: object = None
     on_delete: str = None
+    referenced_column: str = 'id'
 
 
 @dataclass(frozen=True)

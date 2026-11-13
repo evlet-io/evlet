@@ -16,8 +16,8 @@ from .query import Condition, SqlQuery, child_tables, conditions
 
 # IDs per batched permission or row statement; well under SQLite's bound-parameter limit.
 CHUNK = 500
-# Engine corrections: admin has them by default and a Rule may grant them to other roles too.
-CORRECTIONS = ('void', 'revise', 'unpost', 'repost', 'confirm', 'cancel', 'reopen')
+# State manager operations beyond moves: admin has them by default and a Rule may grant them to other roles.
+CORRECTIONS = ('release', 'restore')
 # Operations that change a record or what is kept with it; Meta.api = "read" refuses them to callers.
 WRITES = frozenset(('create', 'update', 'delete', 'journal', *CORRECTIONS))
 # Meta.api values: what callers (HTTP routes, MCP, Eva, connectors) reach of a model.
@@ -89,16 +89,9 @@ def compile_api(registry):
 
 
 def corrects(model, operation):
-    """Whether a model supports a correction: void needs voidable states, revise also Meta.revisable, and
-    unpost and repost need effects (Meta.effects), each with a `reverse`, so cancelling them is possible."""
-    if operation in ('confirm', 'cancel', 'reopen'):
-        return getattr(model, 'confirmable', False)
+    """Whether a model supports a state manager operation: each needs a State with a release step."""
     state = getattr(model, '__state__', None)
-    if operation in ('unpost', 'repost'):
-        declared = getattr(getattr(model, 'Meta', None), 'effects', ()) or ()
-        return state is not None and bool(declared) and all(getattr(effect, 'reverse', None) is not None for effect in declared)
-    voidable = state is not None and bool(model.__declared_fields__[state].voidable)
-    return voidable and (operation == 'void' or getattr(model, '__revisable__', False))
+    return state is not None and bool(model.__declared_fields__[state].releases)
 
 
 @dataclass(frozen=True)
@@ -324,15 +317,9 @@ class Policy:
             if 'journal' in rule.operations and model not in registry.journals:
                 raise ValueError(f'{model.__name__}: Rule names \'journal\', but the model has no journal '
                                  '(declare Meta.journal = Journal() or a State)')
-            if 'revise' in rule.operations and 'create' not in rule.operations:
-                raise ValueError(f'{model.__name__}: Rule names \'revise\' without \'create\'; a revise creates a draft copy')
-            if 'repost' in rule.operations and 'update' not in rule.operations:
-                raise ValueError(f'{model.__name__}: Rule names \'repost\' without \'update\'; a repost runs the posting move')
             for operation in CORRECTIONS:
                 if operation in rule.operations and not corrects(model, operation):
-                    raise ValueError(f'{model.__name__}: Rule names {operation!r}, but the model cannot be '
-                                     + {'void': 'voided (declare voidable states on its State)', 'revise': 'revised (set Meta.revisable = True)'}.get(
-                                         operation, f'{operation}ed (declare Meta.effects, each with reverse=)'))
+                    raise ValueError(f'{model.__name__}: Rule names {operation!r}, but the model has no State with a release step')
             if rule.operations and 'read' not in rule.operations:
                 raise ValueError('Write permissions require read access')
             for fields in (rule.read_fields, rule.write_fields):
@@ -342,8 +329,8 @@ class Policy:
                 raise ValueError('Row scope must be a callable returning query filters')
             for team in getattr(rule.scope, 'teams', ()):
                 team_target(registry, model, team)
-        # Void, revise, unpost and repost: admin, when its Rule allows reading and updating the model (and
-        # creating, for revise), plus every role whose Rule names the operation. The rules table is not changed.
+        # Release and restore: admin, when its Rule allows reading and updating the model, plus every role
+        # whose Rule names the operation. The rules table is not changed.
         corrections = {}
         for model in registry.models.values():
             for operation in CORRECTIONS:
@@ -351,13 +338,13 @@ class Policy:
                     continue
                 named = {role for role in self.roles if operation in self.rules.get((role, model), Rule(())).operations}
                 admin = set(self.rules.get(('admin', model), Rule(('read', 'create', 'update', 'delete'))).operations)
-                if {'read', 'update', *(('create',) if operation == 'revise' else ())} <= admin:
+                if {'read', 'update'} <= admin:
                     named.add('admin')
                 corrections[model, operation] = frozenset(named)
         self.corrections = MappingProxyType(corrections)
         # Journal entries (notes, messages, calls, follow ups): admin when its Rule reads the model, the
         # editor and roles based on it when their Rule reads and updates it, and every role whose Rule
-        # names 'journal'. Naming a role only adds it, like void and revise.
+        # names 'journal'. Naming a role only adds it, like release and restore.
         journalers = {}
         for model in registry.journals:
             operations = {role: self.rules.get((role, model), default_rule(base)).operations for role, base in self.roles.items()}

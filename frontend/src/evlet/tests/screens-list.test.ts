@@ -130,7 +130,7 @@ describe('board and saved views (recorded State fixtures)', () => {
     ['GET', /\/api\/invoice\/list_tabs/, invoice.invoice_list_tabs],
     ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ] as any[];
-  const draftId = invoice.invoice_draft.body.id, issuedNumber = invoice.invoice_revise_before.body.number;
+  const draftId = invoice.invoice_draft.body.id, issuedNumber = invoice.invoice_locked.body.number;
 
   it('shows saved views per state with counts, and the declared measures', async () => {
     const { host, sent } = start(routes(), '/app/invoice');
@@ -171,7 +171,7 @@ describe('board and saved views (recorded State fixtures)', () => {
   it('moves a card with the keyboard through the move route, and explains a blocked move', async () => {
     const { host, sent } = start([...routes(),
       ['GET', new RegExp(`/api/invoice/${draftId}$`), invoice.invoice_draft],
-      ['POST', new RegExp(`/api/invoice/${draftId}/moves/issued$`), invoice.invoice_issued],
+      ['POST', new RegExp(`/api/invoice/${draftId}/moves/issue$`), invoice.invoice_issued],
     ], '/app/invoice?view=board');
     await until(() => expect(host.querySelectorAll('.board .card').length).toBe(3));
     const column = (label: string) => byText(host, '.col-k', new RegExp(`^${label}`))!;
@@ -180,20 +180,20 @@ describe('board and saved views (recorded State fixtures)', () => {
     expect(text(draftCard.querySelector('.t'))).toBe('Draft invoice');
     press(draftCard, 'ArrowRight', { altKey: true });
     await until(() => expect(column('Issued').querySelectorAll('.card').length).toBe(2));
-    await until(() => expect(requests(sent, 'POST', /moves\/issued$/)).toHaveLength(1));
-    const move = requests(sent, 'POST', /moves\/issued$/)[0];
+    await until(() => expect(requests(sent, 'POST', /moves\/issue$/)).toHaveLength(1));
+    const move = requests(sent, 'POST', /moves\/issue$/)[0];
     expect(move.headers['if-match']).toBe(invoice.invoice_draft.etag);
     // The issued card moves on to Paid only for admins: this editor is told why, and nothing is sent.
     const issued = byText(column('Issued'), '.card', new RegExp(issuedNumber))!;
     press(issued, 'ArrowRight', { altKey: true });
     expect(lastToast()).toContain('Your role cannot use Mark paid');
-    expect(requests(sent, 'POST', /moves\/paid/)).toHaveLength(0);
+    expect(requests(sent, 'POST', /moves\/mark_paid/)).toHaveLength(0);
   });
 
   it('puts a card back when the server refuses the move', async () => {
     const { host } = start([...routes(),
       ['GET', new RegExp(`/api/invoice/${draftId}$`), invoice.invoice_draft_blocked],
-      ['POST', new RegExp(`/api/invoice/${draftId}/moves/issued$`), invoice.invoice_move_refused],
+      ['POST', new RegExp(`/api/invoice/${draftId}/moves/issue$`), invoice.invoice_move_refused],
     ], '/app/invoice?view=board');
     await until(() => expect(host.querySelectorAll('.board .card').length).toBe(3));
     const draft = byText(host, '.col-k', /^Draft/)!;

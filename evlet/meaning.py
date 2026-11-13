@@ -22,7 +22,7 @@ from types import MappingProxyType
 
 from .database import ROW_LIMIT
 from .fields import Link, Reference, Select
-from .models import build_step, build_step, storage_name
+from .models import build_step, storage_name
 
 KEY_FIELDS = 8
 CARDS = 5
@@ -237,8 +237,6 @@ def relations(registry, model, declared, discovered, *, inherited=False):
             continue
         if item is not None and item.label is not None:
             label = item.label
-        elif getattr(field, 'engine_revises', False):
-            label = 'Revisions'
         else:
             label = view_for(source)['plural']
             if counts[source] > 1:

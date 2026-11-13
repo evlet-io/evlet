@@ -9,7 +9,7 @@ from decimal import Decimal as D
 
 import pytest
 
-from evlet import Application, Child, Database, Decimal, Integer, Model, Registry, Rule, Table, Text, ValidationError, action
+from evlet import Application, Child, Database, Decimal, Integer, Model, Registry, Rule, Table, Text, ValidationError, action, validate
 from evlet.auth import LocalAuth, User
 from evlet.calc import F
 from test_business import PASSWORD, http
@@ -56,6 +56,8 @@ class Order(Model):
         self.units = [{'unit': unit, 'qty': qty} for unit, qty in sorted(totals.items())]
         self.line_count = len(self.lines)
         self.total = sum((D(line.net) for line in self.lines), D(0))
+
+    @validate
 
     def validate(self):
         if self.line_count is not None and self.line_count > 3:

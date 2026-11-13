@@ -4,7 +4,7 @@ import pytest
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Text, Currency,
                    Decimal, Child, Table, Query, Ref, depends, Rule, User, ValidationError,
-                   Task, JobQueue)
+                   Task, JobQueue, validate)
 from evlet.auth import AccessError
 from evlet.identity import RecordId
 from test_business import http, client, PASSWORD
@@ -73,33 +73,30 @@ def test_model_query_zero_missing_and_ambiguous(tmp_path):
     assert result['values']['available'] is None
 
 
-def test_readonly_conditions_reactions_rollback_noop_and_delete(tmp_path):
-    reactions = []
+def test_readonly_conditions_validation_rollback_noop_and_delete(tmp_path):
+    checks = []
     class Entry(Model):
         permissions = ALL
         state = Text(default='Draft')
         note = Text(read_only_if='state == "Closed"')
-        def changed(self, change):
-            reactions.append(change)
-            with pytest.raises(AttributeError): change.operation = 'forged'
-            with pytest.raises(ValidationError): self.context.update(Entry, self.id, state='Recursive')
-            if self.note == 'fail': raise ValidationError({'note': 'Rejected reaction'})
+        @validate
+        def check(self):
+            checks.append(self.note)
+            with pytest.raises(AttributeError): self.note = 'forged'
+            if self.note == 'fail': raise ValidationError({'note': 'Rejected'})
     app = application(tmp_path, Entry)
     c = client(app)
     assert c('POST', '/api/entry', {'note': 'fail'})[0] == 422
     assert app.database.count(Entry) == 0
     record = c('POST', '/api/entry', {'note': 'ok'})[1]
-    reactions.clear()
     url = f"/api/entry/{record['id']}"
     current = c('GET', url)
     headers = {b'if-match': current[2][b'etag']}
     assert c('PATCH', url, {'note': 'ok'}, headers=headers)[0] == 200
-    assert not reactions
     assert c('PATCH', url, {'state': 'Closed', 'note': 'forged'}, headers=headers)[0] == 422
     assert c('DELETE', url)[0] == 428
     assert c('DELETE', url, headers=headers)[0] == 204
-    assert reactions[-1].operation == 'delete' and reactions[-1].after is None
-    assert reactions[-1].before.note == 'ok'
+    assert checks and 'forged' not in checks[:-1]
 
 
 def test_external_task_releases_database_write_lock(tmp_path):
@@ -359,6 +356,7 @@ def test_validation_errors_do_not_name_hidden_fields(tmp_path):
         permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), read_fields=('title',), write_fields=('title',))}
         title = Text()
         bonus = Currency(default='0')
+        @validate
         def validate(self):
             if self.title == 'bad':
                 raise ValidationError({'bonus': 'Bonus exceeds the approved band', 'title': 'Check the name'})
@@ -376,6 +374,7 @@ def test_child_validation_errors_hide_restricted_fields_but_keep_row_messages(tm
             permissions = {'admin': Rule(('read', 'create', 'update', 'delete'), read_fields=('qty',), write_fields=('qty',))}
             qty = Decimal(default='1')
             cost = Currency(default='4.25')
+            @validate
             def validate(self):
                 if self.qty > 5:
                     raise ValidationError({'cost': 'Cost 4.25 is above margin', '_form': 'Reduce the quantity'})
@@ -445,6 +444,7 @@ def test_legacy_child_errors_do_not_name_hidden_child_fields(tmp_path):
         owner = Link(Parent, required=True)
         qty = Decimal(default='1')
         cost = Currency(default='4.25')
+        @validate
         def validate(self):
             raise ValidationError({'cost': 'Cost 4.25 is above margin'})
     db = Database(tmp_path / 'db.sqlite3', Registry(Parent, Line))

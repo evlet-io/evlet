@@ -7,16 +7,27 @@ production ready, but the rules below hold from 0.3 on.
 ## The app-facing surface
 
 - **Root exports.** Every name in `evlet.__all__`: fields, `Model`, `Child`, `Registry`,
-  migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), lifecycle
-  (`State`, `Move`, `action`, `validate`), form sections and record layouts (`Section`,
+  migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), the state manager
+  (`State` with `State.Step`, `State.Rule` and `State.Remark`, the hooks `validate`, `state`,
+  `state.exit` and `release`, and `action`), form sections and record layouts (`Section`,
   `Main`, `Html`, and `Related` and `Chart` as layout blocks), slips, measures, settings, connectors,
   storage, jobs, routing and the application classes. Import them from `evlet`, not from the
   module that defines them. `AppDefinition(views=())` stays accepted for apps scaffolded
   before 0.4; a non-empty `views` or a `ui` registry is refused.
 - **Field keywords.** The keywords every field takes (`required`, `default`, `label`,
   `help_text`, `visible_if` and the rest), which are defined once on the field base class.
-- **Lifecycle decorators.** `validate.confirm`, `validate.cancel`, `action.confirm` and
-  `action.cancel`, plus `Model.to_dict` and `Model.validate`.
+- **States and moves.** `State(*steps, rules=(), default=, show=)`, `State.Step(key, label,
+  color=, lock=, release=, final=)` and `State.Rule(from_, to, label, key=, by=, when=, remark=,
+  ask=, primary=, reject=)` with rule keys, `POST /api/{model}/{id}/moves/{key}` with its body,
+  checks and answers, `context.move(model, id, key, *, remark=None, **values)`, `_moves`,
+  `_locked`, the schema's `state` entry, the Journal's `rule` and `remark`, `versioned=False`,
+  and `by=()` for rules only the application makes, with its 403 `<label> is made by the
+  application only` ([states-actions.md](states-actions.md)). `State.Level` and `self_approve=`
+  are declared but not public until approval levels land (0.4.6, PR 2). 0.4.6 removed `Move`,
+  `confirmable`, `track_changes`, `Meta.revisable`, void, revise, unpost and repost,
+  `before_close`, `changed`, `Model.validate()` and the lifecycle decorators without a
+  deprecation release, by owner decision ([CHANGELOG.md](../CHANGELOG.md)).
+- **Records.** `Model.to_dict`.
 - **No `evlet.ui` page names.** The Python page API was removed in 0.4 without a
   deprecation release, by owner decision, since the browser never rendered it
   ([CHANGELOG.md](../CHANGELOG.md)). `evlet.ui.metadata` stays internal.
@@ -80,22 +91,20 @@ production ready, but the rules below hold from 0.3 on.
   ([model-engine.md](model-engine.md#long-in-lists-in-trusted-code)). HTTP, `Context`, Eva,
   tools, MCP and Connector keep 100 values per `in` and 500 groups per aggregate.
 
-- **The transaction session in handlers.** `self.context.session` in a Move's `run` method or an
-  `@action` handler: the move or action's own `evlet.Session`, open only while the method runs and
-  refused (`AccessError`, 403) on every other context
-  ([states-actions.md](states-actions.md#the-transaction-session-in-run-methods-and-actions)).
+- **The transaction session in handlers.** `self.context.session` in a `@state` or `@state.exit`
+  hook or an `@action` handler: the move or action's own `evlet.Session`, open only while the
+  method runs and refused (`AccessError`, 403) on every other context
+  ([states-actions.md](states-actions.md#the-transaction-session-in-hooks-and-actions)).
 
-- **Derived values and closing checks.** `Meta.derives` with `derive(self)` (field, Table and
-  `"table.field"` row field names), and
-  `before_close(self, to)` on a model: when they run, what `to` is, the read-only
-  `self.context.session` they get (`get`, `list`, `count`, `related`, `aggregate`), the
+- **Derived values.** `Meta.derives` with `derive(self)` (field, Table and
+  `"table.field"` row field names): when it runs, the read-only
+  `self.context.session` it gets (`get`, `list`, `count`, `related`, `aggregate`), the
   `DERIVED_FIELD_WRITE` refusal (keyed `table.field` for a row field), the `read_only` flag on
   a derived field, a derived row field and a derived `children` entry in `/api/schema`, `self.model`
-  (the model class) on the drafts the hooks get, and trusted `session.create`, `update` and
+  (the model class) on the drafts it gets, and trusted `session.create`, `update` and
   `delete` of a model with `derive()` or of its rows settling the saved document, with
   `children=` on its create and update (a bare
-  `Database` refuses them; `maintenance()` skips it) ([model-engine.md](model-engine.md#derived-values),
-  [states-actions.md](states-actions.md#before-a-record-closes)).
+  `Database` refuses them; `maintenance()` skips it) ([model-engine.md](model-engine.md#derived-values)).
 
 - **Measure trends and colours.** `trend=` and `color=` on `Count`, `CountDistinct`, `Sum`, `Min` and
   `Max` in `Meta.measures`: a trend is a Date field name or `(field, grain, points)` with grain `day`,
@@ -140,11 +149,7 @@ production ready, but the rules below hold from 0.3 on.
   done), `progress` in `GET /api/_jobs/<id>`, and `evlet jobs list`
   ([jobs-realtime.md](jobs-realtime.md#progress-and-long-jobs)).
 
-- **System moves and jobs that act.** `Move(..., system=True)` (a boolean; refused together with
-  `roles=`), its 403 `<label> is made by the application only` to every HTTP caller and its absence
-  from `_moves` and the schema's `state.moves`
-  ([states-actions.md](states-actions.md#system-moves)).
-  `JobContext.business(tx, *, user=None, system=None, role=None)` with the identities and checks
+- **Jobs that act.** `JobContext.business(tx, *, user=None, system=None, role=None)` with the identities and checks
   in [jobs-realtime.md](jobs-realtime.md#a-jobs-business-context), `User.system`, the Journal's
   `via` for a system name, `Context.enqueue(task, payload, *, key=None, target=None)` queuing after
   commit, `_job` on an action's detail, and `JobQueue.wake()` and `JobQueue.wait(timeout)`
@@ -160,12 +165,9 @@ production ready, but the rules below hold from 0.3 on.
   someone who opens Controls without the flag ([controls.md](controls.md#workspaces)).
 
 - **How a state shows.** `State(..., show=...)` takes `"badge"` (the default), `"bar"` or `"none"`,
-  and `Select(..., colors=...)` maps choices to badge colours. The values and the default are
-  public ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
-
-- **Cancelled states.** `State(..., cancelled=...)`, a list of final state names (empty by
-  default), the rule that `"void"` on a voidable State counts as cancelled, and `cancelled` in the
-  schema's `state` entry ([states-actions.md](states-actions.md#cancelled-states)).
+  and `State.Step(color=...)` and `Select(..., colors=...)` take the badge colours `blue`, `green`,
+  `amber`, `rose`, `violet`, `teal` and `slate`. The values and the default are public
+  ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)).
 
 - **Currency display.** `set_currency_display(application, value, *, actor='cli')`, the setting
   `display.currencies` with its entry form (`symbol`, `image`, `position`, `space`, `tint`,
@@ -216,7 +218,7 @@ with `-W error::DeprecationWarning` before they move to the next series.
 Apps must not depend on these. They can change in any release without a deprecation:
 
 - Modules and names that are not listed above, even when they can be imported, such as
-  `evlet.lifecycle`, `evlet.database` helpers, `evlet.cli`, `evlet.controls_*`, `evlet.sqlite`
+  `evlet.statemanager` and `evlet.guards` (import from `evlet`), `evlet.database` helpers, `evlet.cli`, `evlet.controls_*`, `evlet.sqlite`
   and `evlet.ui.metadata`.
 - The query builder (`evlet.qb`) and the database adapter interface (`evlet.adapter`, the
   connection methods and the `Database` methods listed in [database-adapters.md](database-adapters.md)).

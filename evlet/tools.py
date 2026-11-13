@@ -33,6 +33,8 @@ MODEL = {'type': 'string', 'pattern': '^[a-z][a-z0-9_]{0,127}$'}
 ID = {'type': 'integer', 'minimum': 1, 'maximum': SAFE_INTEGER}
 # A record id is its 13-character text form; ID is for jobs and files.
 RECORD = dict(ID_SCHEMA)
+# A rule key: it becomes one path segment of the move route.
+RULE_KEY = {'type': 'string', 'pattern': '^[a-z][a-z0-9_]{0,62}$'}
 PAGE = {'limit': {'type': 'integer', 'minimum': 1, 'maximum': 100}, 'offset': {'type': 'integer', 'minimum': 0, 'maximum': SAFE_INTEGER}}
 ORIGINS = ('eva', 'schedule', 'mcp', 'api')
 # Confirmation groups: which kinds of allowed change can still need an approval click.
@@ -75,9 +77,12 @@ class Tool:
     properties: dict
     required: tuple = ()
     kind: str = 'read'  # read, write or destructive
-    group: str | None = None  # a GROUPS entry; change_state decides per operation
+    group: str | None = None  # a GROUPS entry; change_state decides per move
     origins: tuple = ORIGINS
     label: str = ''  # what the activity row says while it runs, such as "Reading records"
+    # The result carries stored data (records, journals, reports, files, results of app code). Once an Eva
+    # conversation has seen such a result, every change it makes asks first (Tools.read_content).
+    content: bool = False
 
     def schema(self):
         return {'type': 'object', 'properties': self.properties, 'required': list(self.required), 'additionalProperties': False}
@@ -101,39 +106,44 @@ TOOLS = (
          {'model': MODEL}, ('model',), label='Reading {model} fields'),
     Tool('list_records', 'Query permitted records. Filters use the described fields and operators; all results obey row and field permissions.',
          {'model': MODEL, **PAGE, 'search': {'type': 'string', 'maxLength': 200}, 'filters': {'type': 'object'}, 'order_by': {'type': 'string', 'maxLength': 500}},
-         ('model',), label='Reading {model}'),
-    Tool('get_record', 'Read a permitted record and its accessible child collections.', {'model': MODEL, 'id': RECORD}, ('model', 'id'), label='Reading {model} {id}'),
+         ('model',), label='Reading {model}', content=True),
+    Tool('get_record', 'Read a permitted record and its accessible child collections.', {'model': MODEL, 'id': RECORD}, ('model', 'id'),
+         label='Reading {model} {id}', content=True),
     Tool('aggregate_records', 'Totals, counts, minimums and maximums over permitted records, optionally grouped. '
          'measures: comma separated field:function[:name] such as amount:sum:total,count:count. group_by: comma separated fields, date fields may add :month or :year.',
          {'model': MODEL, 'measures': {'type': 'string', 'maxLength': 500}, 'group_by': {'type': 'string', 'maxLength': 200},
-          'filters': {'type': 'object'}, 'search': {'type': 'string', 'maxLength': 200}}, ('model', 'measures'), label='Totalling {model}'),
+          'filters': {'type': 'object'}, 'search': {'type': 'string', 'maxLength': 200}}, ('model', 'measures'), label='Totalling {model}', content=True),
     Tool('record_history', "Read a permitted record's journal: who changed what and when, notes and calls.",
-         {'model': MODEL, 'id': RECORD, **PAGE}, ('model', 'id'), label='Reading the history of {model} {id}'),
+         {'model': MODEL, 'id': RECORD, **PAGE}, ('model', 'id'), label='Reading the history of {model} {id}', content=True),
     Tool('list_reports', 'List the reports this person can run, with their filters and columns.', {}, label='Looking at reports'),
     Tool('run_report', 'Run a permitted report with its filters. Returns one page of rows.',
-         {'report': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_.]{0,127}$'}, 'filters': {'type': 'object'}, **PAGE}, ('report',), label='Running the {report} report'),
-    Tool('list_files', 'List the files attached to a permitted record.', {'model': MODEL, 'id': RECORD}, ('model', 'id'), label='Listing files on {model} {id}'),
+         {'report': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_.]{0,127}$'}, 'filters': {'type': 'object'}, **PAGE}, ('report',), label='Running the {report} report', content=True),
+    Tool('list_files', 'List the files attached to a permitted record.', {'model': MODEL, 'id': RECORD}, ('model', 'id'), label='Listing files on {model} {id}', content=True),
     Tool('read_file', "Read the text of a file attached to a permitted record. Files that aren't text return their size only.",
-         {'model': MODEL, 'id': RECORD, 'file_id': ID}, ('model', 'id', 'file_id'), label='Reading a file'),
+         {'model': MODEL, 'id': RECORD, 'file_id': ID}, ('model', 'id', 'file_id'), label='Reading a file', content=True),
     Tool('list_services', 'List the business services this app offers to assistants, with their arguments.', {}, label='Looking at services'),
-    Tool('job_status', 'Read the status of a queued action owned by this account, or accessible to its administrator.', {'id': ID}, ('id',), label='Checking a background task'),
+    Tool('job_status', 'Read the status of a queued action owned by this account, or accessible to its administrator.', {'id': ID}, ('id',), label='Checking a background task', content=True),
     Tool('create_record', 'Create a record using its described create schema. Backend validation and permissions apply. Do not retry an uncertain write automatically.',
          {'model': MODEL, 'values': {'type': 'object'}}, ('model', 'values'), kind='write', group='create', label='Creating {model}'),
     Tool('update_record', 'Update supplied values only. Supplied child collections replace their rows; omit children to preserve them.',
          {'model': MODEL, 'id': RECORD, 'values': {'type': 'object'}}, ('model', 'id', 'values'), kind='write', group='update', label='Updating {model} {id}'),
-    Tool('change_state', 'Confirm, cancel or reopen a document. Confirming finalises it; cancelling and reopening need a reason for cancel.',
-         {'model': MODEL, 'id': RECORD, 'operation': {'type': 'string', 'enum': ['confirm', 'cancel', 'reopen']}, 'reason': {'type': 'string', 'maxLength': 500}},
-         ('model', 'id', 'operation'), kind='write', label='Changing the state of {model} {id}'),
+    Tool('change_state', "Move a document with one of its rules, such as draft to posted, or approve its waiting approval level. "
+         "Use a rule's key from the record's _moves (or describe_model state.rules). remark is the note the rule asks for; "
+         'values fills the fields a move asks for.',
+         {'model': MODEL, 'id': RECORD, 'rule': RULE_KEY, 'remark': {'type': 'string', 'maxLength': 1000}, 'values': {'type': 'object'}},
+         ('model', 'id', 'rule'), kind='write', label='Moving {model} {id} with {rule}'),
     Tool('run_action', 'Execute one registered permitted action on a record. It may modify records or enqueue work.',
-         {'model': MODEL, 'id': RECORD, 'action': MODEL}, ('model', 'id', 'action'), kind='write', group='action', label='Running {action} on {model} {id}'),
+         {'model': MODEL, 'id': RECORD, 'action': MODEL}, ('model', 'id', 'action'), kind='write', group='action', label='Running {action} on {model} {id}',
+         content=True),
     Tool('call_service', 'Call a business service from list_services with its arguments.',
          {'service': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_.]{0,200}$'}, 'arguments': {'type': 'object'}}, ('service',),
-         kind='write', group='action', label='Running {service}'),
+         kind='write', group='action', label='Running {service}', content=True),
     Tool('delete_record', 'Delete a permitted record and owned children. This can permanently remove data.',
          {'model': MODEL, 'id': RECORD}, ('model', 'id'), kind='destructive', group='destructive', label='Deleting {model} {id}'),
 )
 BY_NAME = {tool.name: tool for tool in TOOLS}
 NAMES = tuple(BY_NAME)
+CONTENT = tuple(tool.name for tool in TOOLS if tool.content)
 
 
 class ApprovalNeeded(Exception):
@@ -158,12 +168,6 @@ def arguments(tool, values):
         if 'pattern' in spec and not re.fullmatch(spec['pattern'], value) or 'enum' in spec and value not in spec['enum']:
             raise ConnectorError(422, f'Invalid argument: {key}')
     return values
-
-
-def group_of(tool, values):
-    if tool.name == 'change_state':
-        return 'confirm' if values.get('operation') == 'confirm' else 'destructive'
-    return tool.group
 
 
 def redacted(values):
@@ -296,7 +300,8 @@ class Tools:
         operations = {name for entry in schema['models'] for name, allowed in entry['permissions'].items() if allowed}
         # Dialogs are listed with actions in the schema, but they are forms, not tool calls.
         actions = any(not action.get('dialog') for entry in schema['models'] for action in entry.get('actions') or ())
-        lifecycle = any(entry.get('lifecycle') for entry in schema['models'])
+        # A State with rules, on a model this role may change.
+        states = any((entry.get('state') or {}).get('rules') and entry['permissions'].get('update') for entry in schema['models'])
         files = any(entry.get('attachments') for entry in schema['models'])
         journals = any(entry.get('journal') for entry in schema['models'])
         services = bool(self.services(user))
@@ -312,7 +317,7 @@ class Tools:
                 continue
             if tool.name in ('create_record', 'update_record', 'delete_record') and tool.name.split('_')[0] not in operations:
                 continue
-            if tool.name == 'run_action' and not actions or tool.name == 'change_state' and not lifecycle:
+            if tool.name == 'run_action' and not actions or tool.name == 'change_state' and not states:
                 continue
             if tool.name in ('list_files', 'read_file') and not files or tool.name == 'record_history' and not journals:
                 continue
@@ -521,11 +526,32 @@ class Tools:
                 return {'deleted': True}
             return self.approved(user, origin, tool, values, run_id, client, summary, delete, revision)
         if name == 'change_state':
-            body = {'reason': values['reason']} if values['operation'] == 'cancel' and 'reason' in values else {}
-            return self.approved(user, origin, tool, values, run_id, client, {**summary, 'operation': values['operation']},
-                                 lambda: request('POST', f"{path}/{values['operation']}", body, headers)[0], revision)
+            return self.change_state(user, origin, tool, values, run_id, client, request, path, record, revision, summary)
         return self.approved(user, origin, tool, values, run_id, client, {**summary, 'action': values['action']},
                              lambda: request('POST', f"{path}/actions/{values['action']}", {}, headers)[0], revision)
+
+    def change_state(self, user, origin, tool, values, run_id, client, request, path, record, revision, summary):
+        """A move through POST .../moves/{rule}. A move into a final state is in the destructive group, so it
+        always asks; other moves are in the confirm group."""
+        headers = [(b'if-match', revision)] if revision else []
+        entry = self.model_entry(user, values['model'])
+        state = entry.get('state') or {}
+        # The route decides what this role may do and what a move needs; the schema only sorts the approval group.
+        target = next((rule['to'] for rule in state.get('rules', ()) if rule['key'] == values['rule']), None)
+        final = any(step['key'] == target and step['final'] for step in state.get('steps', ()))
+        body = {**values.get('values', {}), **({'remark': values['remark']} if values.get('remark') else {})}
+        # The confirmation card shows operation as the action and values as the new values.
+        shown = {**summary, 'operation': values['rule'], **({'values': body} if body else {})}
+        return self.approved(user, origin, tool, values, run_id, client, shown,
+                             lambda: request('POST', f"{path}/moves/{values['rule']}", body, headers)[0], revision,
+                             group='destructive' if final else 'confirm', record=record)
+
+    def model_entry(self, user, model):
+        """The model's schema entry for this user, as the screens get it. 404 when the user can't see the model."""
+        entry = next((item for item in self.business.schema(user)['models'] if item['name'] == model), None)
+        if entry is None:
+            raise ConnectorError(404, 'Model not found')
+        return entry
 
     @staticmethod
     def describe_service(endpoint):
@@ -548,25 +574,33 @@ class Tools:
 
     # ---------- approvals ----------
 
-    def needs_approval(self, origin, group):
-        """Whether a change in this group waits for a click: Eva's settings, Evlet approvals for MCP, never for the API."""
+    def needs_approval(self, origin, group, read_content=False):
+        """Whether a change in this group waits for a click: Eva's settings, Evlet approvals for MCP, never for the API.
+
+        read_content: this Eva conversation has seen stored data, which could carry text written to steer Eva,
+        so every change asks whatever the confirm settings say."""
         if group is None or origin == 'api':
             return False
         if group == 'destructive':
+            return True
+        if origin in ('eva', 'schedule') and read_content:
             return True
         if origin == 'mcp':
             # Creating and changing records is asked by the client itself; finalising and actions are approved in Evlet.
             return group in ('confirm', 'action')
         return self.business.controls.settings.get('eva.confirm', {}).get(group, 'ask') == 'ask'
 
-    def approved(self, user, origin, tool, values, run_id, client, summary, perform, revision=b''):
+    def approved(self, user, origin, tool, values, run_id, client, summary, perform, revision=b'', *, group=None, record=None):
         """Run perform() now, or after a person approved exactly this call (same arguments and record revision)."""
-        group = group_of(tool, values)
+        group = group or tool.group
         go = perform
-        if not self.needs_approval(origin, group):
+        read_content = origin in ('eva', 'schedule') and self.read_content(run_id)
+        if not self.needs_approval(origin, group, read_content):
             return go()
         # Nobody is asked to approve what the person's role can't do: that is refused now, as the route would.
-        self.permitted(user, tool, values)
+        self.permitted(user, tool, values, record)
+        if read_content:
+            summary = {**summary, 'after_reading': True}
         if origin == 'schedule':
             raise ConnectorError(403, 'This change needs approval, and nobody is there to approve it during a scheduled run. It was skipped.')
         canonical = json.dumps(values, sort_keys=True, separators=(',', ':'))
@@ -595,19 +629,41 @@ class Tools:
             raise ApprovalNeeded(self.public_approval(waiting))
         return go()
 
-    def permitted(self, user, tool, values):
+    def read_content(self, run_id):
+        """Whether an Eva conversation has seen stored data: a content tool call that worked in this run or an
+        earlier run of the same conversation. Earlier results stay in what the model reads, so they count too.
+        A finished call has its duration, so the call asking now never counts itself."""
+        if run_id is None:
+            return False
+        conversation = qb.select(qb.table('evlet_eva_runs', 'current'), 'current.conversation_id').where(qb.eq('current.id', run_id))
+        runs = qb.select('evlet_eva_runs', 'id').where(qb.eq('conversation_id', conversation))
+        with self.database._connection() as connection:
+            row = connection.run(qb.select('evlet_tool_calls', qb.value(1)).where(
+                qb.eq('outcome', 'ok'), qb.not_null('duration_ms'), qb.in_('tool', tuple(CONTENT)), qb.in_('run_id', runs)).limit(1)).one()
+        return row is not None
+
+    def permitted(self, user, tool, values, record=None):
         """Refuse (403) a model change this user's role can't make, from the same schema the screens use."""
         if 'model' not in values:
             return
-        entry = next((item for item in self.business.schema(user)['models'] if item['name'] == values['model']), None)
-        if entry is None:
-            raise ConnectorError(404, 'Model not found')
+        entry = self.model_entry(user, values['model'])
         if tool.name == 'run_action':
             allowed = any(action['name'] == values['action'] and not action.get('dialog') for action in entry.get('actions') or ())
         elif tool.name == 'change_state':
-            allowed = bool((entry.get('lifecycle') or {}).get('permissions', {}).get(values['operation']))
+            # The record's _moves say which moves this role has now, and why one is blocked.
+            move = next((item for item in (record or {}).get('_moves') or () if item['key'] == values['rule']), None)
+            if move is None:
+                raise ConnectorError(409, 'This record has no such move now')
+            if not move['allowed'] and move.get('reason') != 'Your role cannot use this move':
+                raise ConnectorError(409, move.get('reason') or 'This move is not possible now')
+            allowed = move['allowed']
         else:
             allowed = bool(entry['permissions'].get({'create_record': 'create', 'update_record': 'update', 'delete_record': 'delete'}.get(tool.name, ''), False))
+        if allowed and tool.name in ('create_record', 'update_record'):
+            # A field the role can't write is refused as the route refuses it (Policy.check_values).
+            model = self.business.registry.resolve(values['model'])
+            if set(values['values']) & set(model.__declared_fields__) - self.business.policy.fields(user, model, write=True):
+                raise ConnectorError(403, 'One or more fields cannot be written')
         if not allowed:
             raise ConnectorError(403, "Your role can't make this change.")
 

@@ -14,8 +14,8 @@ It uses a separate demonstration database. It shows three public APIs (docs/jobs
 """
 from pathlib import Path
 
-from evlet import (Application, Boolean, Database, Integer, JobQueue, LocalAuth, Model, Move, Registry, Rule,
-                   State, Task, Text, action)
+from evlet import (Application, Boolean, Database, Integer, JobQueue, LocalAuth, Model, Registry, Rule, State, Task,
+                   Text, action, state)
 from evlet.calc import F
 
 # Steps of a build: each is one committed step of the resumable job, so the record shows its progress.
@@ -28,12 +28,17 @@ class PriceList(Model):
     items = Integer(default=100, minimum=1, maximum=10000, label='Items to price')
     requested = Boolean(default=False, label='Build requested')
     progress = Text(default='', max_length=200)
-    status = State(('draft', 'building', 'ready', 'failed'), default='draft', show='bar', moves=(
-        Move('draft', 'building', 'Start', system=True),
-        Move('building', 'ready', 'Finish', system=True, run='finished'),
-        Move('building', 'failed', 'Fail', system=True),
-        Move(('ready', 'failed'), 'draft', 'Reopen'),
-    ))
+    status = State(
+        State.Step('draft'),
+        State.Step('building'),
+        State.Step('ready'),
+        State.Step('failed'),
+        rules=(
+            State.Rule('draft', 'building', 'Start', key='building', by=()),
+            State.Rule('building', 'ready', 'Finish', key='ready', by=()),
+            State.Rule('building', 'failed', 'Fail', key='failed', by=()),
+            State.Rule(('ready', 'failed'), 'draft', 'Reopen', key='draft'),
+        ), default='draft', show='bar')
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')),
                    'viewer': Rule(('read',))}
 
@@ -44,6 +49,7 @@ class PriceList(Model):
         self.progress = 'Waiting for the worker'
         return self.context.enqueue('build_price_list', {'price_list': str(self.id)})
 
+    @state('ready')
     def finished(self):
         self.requested = False
         self.progress = f'Priced {self.items} items'

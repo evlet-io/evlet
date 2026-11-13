@@ -268,6 +268,7 @@ class Expr:
     def __or__(self, other): return Expr('or', (self, lift(other)))
     def __ror__(self, other): return Expr('or', (lift(other), self))
     def __invert__(self): return Expr('not', (self,))
+    def isin(self, *choices): return isin(self, *choices)
 
 
 def lift(value):
@@ -369,6 +370,75 @@ def month_start():
 
 def safe_divide(numerator, denominator, *, default):
     return Expr('safe_divide', (lift(numerator), lift(denominator), lift(default)))
+
+
+# Helpers below build the same nodes as the operators above, so plans, hashes and both engines are unchanged.
+
+def is_empty(value):
+    """True when the value is empty (null). The same formula as `value == None`, without a lint warning."""
+    return Expr('eq', (lift(value), lift(None)))
+
+
+def has_value(value):
+    """True when the value is filled in. The same formula as `value != None`."""
+    return Expr('ne', (lift(value), lift(None)))
+
+
+def isin(value, *choices):
+    """True when the value equals one of the choices: `isin(F('status'), 'new', 'failed')`.
+
+    It is the same formula as `(F('status') == 'new') | (F('status') == 'failed')`.
+    """
+    if not choices:
+        raise CalcError('UNSUPPORTED_EXPRESSION', 'isin() needs at least one choice')
+    subject = lift(value)
+    result = Expr('eq', (subject, lift(choices[0])))
+    for choice in choices[1:]:
+        result = Expr('or', (result, Expr('eq', (subject, lift(choice)))))
+    return result
+
+
+def choose(value, cases, default=None):
+    """The result for the case the value equals, else `default`: `choose(F('stage'), {'won': 100, 'lost': 0}, default=10)`.
+
+    Cases are checked in the order written. It is the same formula as nested when(value == case, result, ...).
+    """
+    if not isinstance(cases, dict) or not cases:
+        raise CalcError('UNSUPPORTED_EXPRESSION', 'choose() takes a dict of {case: result} with at least one case')
+    subject = lift(value)
+    result = lift(default)
+    for case, outcome in reversed(list(cases.items())):
+        if isinstance(case, (Expr, _Scope)) or not operand_like(case) or case is None:
+            raise CalcError('UNSUPPORTED_EXPRESSION', 'choose() cases must be fixed values such as text, numbers or True')
+        result = Expr('when', (Expr('eq', (subject, lift(case))), lift(outcome), result))
+    return result
+
+
+def least(first, second, *more):
+    """The smallest of the values: `least(F('claimed'), F('limit'))`. The same formula as when(a <= b, a, b)."""
+    result = lift(first)
+    for value in (second, *more):
+        other = lift(value)
+        result = Expr('when', (Expr('lte', (result, other)), result, other))
+    return result
+
+
+def greatest(first, second, *more):
+    """The largest of the values: `greatest(F('balance'), 0)`. The same formula as when(a >= b, a, b)."""
+    result = lift(first)
+    for value in (second, *more):
+        other = lift(value)
+        result = Expr('when', (Expr('gte', (result, other)), result, other))
+    return result
+
+
+def absolute(value):
+    """The value without its sign. The same formula as when(value < 0, -value, value).
+
+    Named absolute, not abs, so importing it never hides Python's built-in abs().
+    """
+    subject = lift(value)
+    return Expr('when', (Expr('lt', (subject, lift(0))), Expr('neg', (subject,)), subject))
 
 
 class Selection:
@@ -1215,6 +1285,25 @@ class Scope:
         return [self.at]
 
 
+class ValueScope:
+    """One record's values outside a document, for conditions such as naming-series rules.
+
+    `values` maps a field name to its Result. Only `self` references are available.
+    """
+    __slots__ = ('values',)
+
+    def __init__(self, values):
+        self.values = values
+
+    def read(self, scope, field):
+        if scope != 'self' or field not in self.values:
+            raise CalcError('UNSUPPORTED_EXPRESSION', f'{field} is not available here')
+        return self.values[field]
+
+    def causes(self):
+        return []
+
+
 class Document:
     """A browser-equivalent session over one plan. The server uses it for full settlement."""
     def __init__(self, plan, data=None, *, budget=None, checked=False, currencies=None):
@@ -1240,19 +1329,19 @@ class Document:
                 if scope == 'lookup':
                     self.lookup_fields.setdefault(model, set()).add(name)
         self.revision, self._next = 0, 0
-        self._batch = None
+        self._batch, self._broken = None, None
         self.trace, self.deps = {}, {}
         # Initial suggestions waiting to be written, and fields the host set in the current write (touched).
         self.armed, self.touched = set(), set()
         # Lock results of the document as loaded (handle -> field -> True, False or None when undecided).
-        # Saved rows keep them until rebase(); host inputs such as lookups refine them until the first edit.
+        # Saved rows keep them for the life of the document; host inputs such as lookups refine them until the first edit.
         self.locks, self._pristine = {}, True
         self.root = self._build(data or {}, (), None)
         self._bind()
         created = {node for node in self.deps if self.rows[node[0]].created and node[1].endswith(':initial')}
         self._settle(set(), set(self.deps), self.touched, created)
         self.touched = set()
-        self._take_locks(saved=True)
+        self._take_locks()
         self.revision = 1
 
     # Structure
@@ -1496,39 +1585,44 @@ class Document:
     # Commands
 
     def batch(self, run):
-        outer = self._batch is None
-        if outer:
-            self._batch = {'snapshot': self._capture(), 'bound': set(self.deps), 'sources': set(), 'membership': set(), 'moved': set(), 'structure': False, 'touched': set()}
-        if not outer:
-            # A nested batch is one command: if its error is caught, its changes are undone.
-            return self._command(lambda: check_async(run(self)))
+        """Run commands as one batch; the document settles once at the end.
+
+        Every command checks its input before it changes anything, so a refused command
+        leaves the document as it was. If `run` raises after some commands ran, those
+        commands are kept and settled, and the error is raised again. If settling itself
+        fails (an engine limit), the document is broken and refuses further commands.
+        """
+        self._usable()
+        if self._batch is not None:
+            # A nested batch is part of the batch around it.
+            check_async(run(self))
+            return
+        self._batch = {'sources': set(), 'membership': set(), 'structure': False, 'touched': set()}
         try:
             check_async(run(self))
-        except BaseException:
-            if outer:
-                self._restore(self._batch['snapshot'])
-                self._batch = None
-            raise
-        if outer:
+        finally:
             batch, self._batch = self._batch, None
             try:
                 self._commit(batch)
-            except BaseException:
-                self._restore(batch['snapshot'])
+            except BaseException as exc:
+                self._broken = exc
                 raise
 
     def _command(self, run):
+        """Run one command, inside the current batch or as its own batch."""
         if self._batch is None:
             return self.batch(lambda _: run())
-        # A command whose error the batch catches must not leave the document half changed.
-        snapshot = self._capture(), {key: set(value) if isinstance(value, set) else value for key, value in self._batch.items()}
-        try:
-            return run()
-        except BaseException:
-            self._restore(snapshot[0])
-            self._batch.clear()
-            self._batch.update(snapshot[1])
-            raise
+        self._usable()
+        return run()
+
+    def _usable(self):
+        if self._broken is not None:
+            raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'This document failed to settle; build a new one')
+
+    def _forget_rows_after(self, last):
+        """Forget rows built after handle number `last` by a command that was then refused."""
+        for number in range(last + 1, self._next + 1):
+            self.rows.pop('h' + str(number), None)
 
     def set(self, handle, field, value):
         def run():
@@ -1557,8 +1651,8 @@ class Document:
             fields, key = self.lookup_fields.get(model), link_id(record_id)
             if fields is None or key is None or not isinstance(values, dict) or set(values) - fields:
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'This plan does not look up {model}')
-            # Copy on write so a rolled-back command restores the previous record.
-            self.lookups = {**self.lookups, model: {**self.lookups.get(model, {}), key: {**self.lookups.get(model, {}).get(key, {}), **values}}}
+            records = self.lookups.setdefault(model, {})
+            records[key] = {**records.get(key, {}), **values}
             self._batch['sources'].update(('@' + model, name) for name in values)
         self._command(run)
 
@@ -1582,8 +1676,14 @@ class Document:
             data = dict(values or {})
             if data.get('id') is not None:
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'New rows cannot carry persisted IDs')
-            row = self._build(data, parent_row.path + (table,), parent_row, created=True)
-            self._place(parent_row, table, row, len(parent_row.children[table]))
+            # Build the row first; if it or its place is refused, the half-built rows are forgotten.
+            last = self._next
+            try:
+                row = self._build(data, parent_row.path + (table,), parent_row, created=True)
+                self._place(parent_row, table, row, len(parent_row.children[table]))
+            except BaseException:
+                self._forget_rows_after(last)
+                raise
             self._structure(owner, table)
             created.append(row.handle)
         self._command(run)
@@ -1601,36 +1701,45 @@ class Document:
         self._command(run)
 
     def replace_rows(self, owner, table, items):
+        """Make a collection hold exactly `items`: rows with an id are kept and updated, others are new."""
         def run():
             parent_row = self._row(owner)
             if table not in self.schema[parent_row.path]['tables'] or not isinstance(items, list):
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', f'Unknown collection {table}')
             existing = {row.id: row for row in parent_row.children[table] if row.id is not None}
-            old = list(parent_row.children[table])
+            old, last = parent_row.children[table], self._next
+            # Check every item and place the new list before any value changes; a refusal restores the old list.
+            writes, seen, placed = [], set(), (set(), set())
             parent_row.children[table] = []
-            seen, placed = set(), (set(), set())
-            for data in items:
-                record_id = data.get('id') if isinstance(data, dict) else None
-                if record_id is not None and link_id(record_id) is None:
-                    raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be record ids')
-                if record_id is not None:
-                    if record_id not in existing or record_id in seen:
-                        raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must belong to this collection and appear once')
-                    seen.add(record_id)
-                    row = existing[record_id]
-                    for name, value in data.items():
-                        if name in ('id', '_key', 'children'):
-                            continue
-                        meta = self.schema[row.path]['fields'].get(name)
-                        if meta is None or meta['computed']:
-                            raise CalcError('COMPUTED_FIELD_WRITE' if meta else 'DOCUMENT_STRUCTURE_ERROR', f'{name} cannot be written')
-                        self._batch['touched'].add((row.handle, name))
-                        if not same_value(row.values, name, value):
-                            row.values[name] = value
-                            self._batch['sources'].add((row.handle, name))
-                else:
-                    row = self._build(data, parent_row.path + (table,), parent_row, created=True)
-                self._place(parent_row, table, row, len(parent_row.children[table]), placed)
+            try:
+                for data in items:
+                    record_id = data.get('id') if isinstance(data, dict) else None
+                    if record_id is not None and link_id(record_id) is None:
+                        raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must be record ids')
+                    if record_id is None:
+                        row = self._build(data, parent_row.path + (table,), parent_row, created=True)
+                    else:
+                        if record_id not in existing or record_id in seen:
+                            raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Row IDs must belong to this collection and appear once')
+                        seen.add(record_id)
+                        row = existing[record_id]
+                        for name, value in data.items():
+                            if name in ('id', '_key', 'children'):
+                                continue
+                            meta = self.schema[row.path]['fields'].get(name)
+                            if meta is None or meta['computed']:
+                                raise CalcError('COMPUTED_FIELD_WRITE' if meta else 'DOCUMENT_STRUCTURE_ERROR', f'{name} cannot be written')
+                            writes.append((row, name, value))
+                    self._place(parent_row, table, row, len(parent_row.children[table]), placed)
+            except BaseException:
+                parent_row.children[table] = old
+                self._forget_rows_after(last)
+                raise
+            for row, name, value in writes:
+                self._batch['touched'].add((row.handle, name))
+                if not same_value(row.values, name, value):
+                    row.values[name] = value
+                    self._batch['sources'].add((row.handle, name))
             kept = {id(row) for row in parent_row.children[table]}
             for row in old:
                 if id(row) not in kept:
@@ -1646,31 +1755,6 @@ class Document:
                 raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Reorder needs every row of the collection exactly once')
             parent_row.children[table] = [self.rows[handle] for handle in handles]
             self._batch['structure'] = True
-        self._command(run)
-
-    def move_row(self, handle, owner, table, at):
-        def run():
-            row, destination = self._row(handle), self._row(owner)
-            if destination.path + (table,) != row.path:
-                raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Rows move only between collections of the same embedding')
-            ancestor = destination
-            while ancestor is not None:
-                if ancestor is row:
-                    raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'A row cannot move into its own subtree')
-                ancestor = ancestor.parent
-            source = row.parent
-            position = integer(at)
-            if position is None or not 0 <= position <= len(destination.children[table]) - (destination is source):
-                raise CalcError('DOCUMENT_STRUCTURE_ERROR', 'Use a valid destination position')
-            source.children[table].remove(row)
-            self._structure(source.handle, table)
-            self._place(destination, table, row, position)
-            self._structure(owner, table)
-            stack = [row]
-            while stack:
-                item = stack.pop()
-                self._batch['moved'].add(item.handle)
-                stack.extend(child for items in item.children.values() for child in items)
         self._command(run)
 
     def _row(self, handle):
@@ -1690,30 +1774,18 @@ class Document:
             self.rows.pop(item.handle, None)
             stack.extend(child for items in item.children.values() for child in items)
 
-    def _capture(self):
-        return ({handle: (row, dict(row.values), {table: list(items) for table, items in row.children.items()}, row.parent)
-                 for handle, row in self.rows.items()}, dict(self.results), self._next, dict(self.counts),
-                dict(self.trace), (self.today, self.lookups, dict(self.misses)), set(self.armed))
-
-    def _restore(self, snapshot):
-        rows, results, counter, counts, trace, (self.today, self.lookups, self.misses), self.armed = snapshot
-        for handle, (row, values, children, owner) in rows.items():
-            row.values, row.children, row.parent = values, children, owner
-        self.rows = {handle: state[0] for handle, state in rows.items()}
-        self.results, self._next, self.counts, self.trace = results, counter, counts, trace
-        self._bind()
-
     def _commit(self, batch):
-        # Bindings as the batch began: a rolled-back command rebinds, so self.deps may already be newer.
-        old = batch['bound']
+        # Only a change of structure rebinds; the bindings as the batch began are then the old ones.
+        old = self.deps
         if batch['structure']:
             self._bind()
-        live = set(self.deps)
-        for node in old - live:
-            self.results.pop(node, None)
-            self.counts.pop(node, None)
-            self.misses.pop(node, None)
-        fresh = (live - old) | {node for node in live if node[0] in batch['moved']}
+        live, fresh = self.deps, set()
+        if live is not old:
+            for node in old.keys() - live.keys():
+                self.results.pop(node, None)
+                self.counts.pop(node, None)
+                self.misses.pop(node, None)
+            fresh = live.keys() - old.keys()
         updated = self._settle(batch['sources'] | batch['membership'], fresh, batch['touched'],
                                {node for node in fresh if node[1].endswith(':initial')})
         if not (updated or batch['sources'] or batch['structure']):
@@ -1721,7 +1793,7 @@ class Document:
         if batch['structure'] or any(not key[0].startswith('@') for key in batch['sources']):
             self._pristine = False
         elif self._pristine:
-            self._take_locks(saved=True)
+            self._take_locks()
         self.revision += 1
 
     def decided(self, row, field, kind, undecided):
@@ -1731,18 +1803,11 @@ class Document:
             return None
         return result.value if result is not None and result.state == 'ready' and result.value is not None else undecided
 
-    def _take_locks(self, saved):
-        """Record lock results as the saved state: rows loaded with an ID, or every row on rebase()."""
+    def _take_locks(self):
+        """Record lock results as the saved state of rows loaded with an ID."""
         self.locks = {handle: {entry['field']: self.decided(row, entry['field'], 'locked_when', None)
                                for _, entry in self.templates.get(row.path, ()) if entry.get('kind') == 'locked_when'}
-                      for handle, row in self.rows.items() if not (saved and row.created)}
-
-    def rebase(self):
-        """After the host saves this document: its current locks become the saved state."""
-        self._take_locks(saved=False)
-        for row in self.rows.values():
-            row.created = False
-        self._pristine = True
+                      for handle, row in self.rows.items() if not row.created}
 
     def locked(self, row, field):
         """A field's lock as the server enforces it: decided on the row as saved.

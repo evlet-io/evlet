@@ -1,6 +1,6 @@
 // The API client the screens use: the framework client plus the routes the screens need and a
 // cell per record holding its last detail, so the availability keys of a detail (_moves,
-// _actions, _locked, _void, _revise, _unpost, _repost, _effects, revised_by) are at hand next to the record store.
+// _actions, _locked, _effects) are at hand next to the record store.
 
 import { ApiClient, type ApiResponse, type ClientOptions, type Page, type RecordData, type RequestOptions, type Session } from '../api';
 import { cell, type Cell } from '../reactive';
@@ -9,7 +9,7 @@ import type { NodeChanges } from '../model/unsaved';
 
 // A record id in a path: the 13-character text id (any case, as ids.ts reads it), or a decimal id from an older link.
 const ID = '(?:[0-7IiLlOo][0-9A-HJKMNP-TV-Za-hjkmnp-tv-zIiLlOo]{12}|[1-9][0-9]{0,11})';
-const DETAIL = new RegExp(`^/api/([A-Za-z][A-Za-z0-9_]*)/(${ID})(?:/(?:moves/[^/]+|actions/[^/]+|void|revise|unpost|repost|confirm|cancel|reopen))?$`);
+const DETAIL = new RegExp(`^/api/([A-Za-z][A-Za-z0-9_]*)/(${ID})(?:/(?:moves/[^/]+|actions/[^/]+))?$`);
 const READ = new RegExp(`^/api/[A-Za-z][A-Za-z0-9_]*/${ID}$`);
 const NAME = /^[A-Za-z][A-Za-z0-9_.]*$/;
 
@@ -26,7 +26,7 @@ export class AppClient extends ApiClient {
 
   constructor(options: ClientOptions = {}) { super(options); }
 
-  /** The last detail the server sent for a record (from a read, save, move, action, void or revise). */
+  /** The last detail the server sent for a record (from a read, save, move or action). */
   detail(model: string, id: string): Cell<RecordData | null> {
     const key = `${model}:${id}`;
     let found = this.details.get(key);
@@ -151,27 +151,6 @@ export class AppClient extends ApiClient {
     return (await this.request<{ unread: number }>('POST', '/api/_inbox/read', { body: ids === 'all' ? { all: true } : { ids } })).data.unread;
   }
 
-  async lifecycle(model: string, id: string, operation: 'confirm' | 'cancel' | 'reopen', etag: string | null, reason?: string) {
-    return this.request<RecordData>('POST', `/api/${model}/${id}/${operation}`, {
-      body: operation === 'cancel' ? { reason } : {}, ifMatch: etag,
-    });
-  }
-
-  async revisions(model: string, id: string, page: { limit?: number; offset?: number } = {}) {
-    return (await this.request<{ items: Array<{ revision: number; execution_id: string; at: string; actor: string; hash: string }>; total: number }>(
-      'GET', `/api/${model}/${id}/revisions`, { query: page })).data;
-  }
-
-  async snapshot(model: string, id: string, revision: number) {
-    return (await this.request<{ revision: number; at: string; document: Record<string, unknown> }>(
-      'GET', `/api/${model}/${id}/snapshot`, { query: { revision } })).data;
-  }
-
-  async revisionDiff(model: string, id: string, from: number, to: number) {
-    return (await this.request<{ from: number; to: number; changes: Record<string, any> }>(
-      'GET', `/api/${model}/${id}/diff`, { query: { from, to } })).data;
-  }
-
   async attachments(model: string, id: string) {
     return (await this.request<{ items: Attachment[] }>('GET', `/api/${model}/${id}/attachments`)).data.items;
   }
@@ -209,26 +188,6 @@ export class AppClient extends ApiClient {
 
   async removeAttachment(model: string, id: string, file: number) {
     await this.request('DELETE', `/api/${model}/${id}/attachments/${file}`);
-  }
-
-  /** Void a record (Phase 5) with a reason. */
-  async voidRecord(model: string, id: string, reason: string, etag: string | null) {
-    return this.request<RecordData>('POST', `/api/${model}/${id}/void`, { body: { reason }, ifMatch: etag });
-  }
-
-  /** Void and copy a record into a new draft (Phase 5). Answers the copy, with _original. */
-  async revise(model: string, id: string, reason: string, etag: string | null) {
-    return this.request<RecordData>('POST', `/api/${model}/${id}/revise`, { body: { reason }, ifMatch: etag });
-  }
-
-  /** Take a posted record back to the state it posted from, cancelling what it posted. Admin by default. */
-  async unpost(model: string, id: string, reason: string, etag: string | null) {
-    return this.request<RecordData>('POST', `/api/${model}/${id}/unpost`, { body: { reason }, ifMatch: etag });
-  }
-
-  /** Post an unposted record again through its posting move; the reason is optional. */
-  async repost(model: string, id: string, reason: string, etag: string | null) {
-    return this.request<RecordData>('POST', `/api/${model}/${id}/repost`, { body: reason ? { reason } : {}, ifMatch: etag });
   }
 
   // ---------- unsaved changes (docs/ui.md, Unsaved changes) ----------

@@ -173,4 +173,29 @@ describe('Controls > Users', () => {
     expect(host.querySelector('[role="switch"][aria-label="Two-step sign-in for everyone"]')).toBeTruthy();
     expect(byText(host, '.ctl-chip', /admin/)!.hasAttribute('disabled')).toBe(true);
   });
+
+  it('requires two-step for roles that open Controls, and only an admin can switch that off', async () => {
+    const ops = { id: 'ops', kind: 'custom', base: 'editor', realm: 'desk', opens_controls: true, description: '', users: 1, app: null, declared: false } as unknown as (typeof roles)[number];
+    state.roles = [...roles, ops];
+    state.settings = { ...state.settings, 'security.controls_two_step': { file: true, value: true } } as typeof state.settings;
+    try {
+      const { host } = open('/controls/security');
+      await until(() => expect(host.querySelector('[aria-label="Two-step sign-in for roles that open Controls"]')).toBeTruthy());
+      const toggle = host.querySelector<HTMLButtonElement>('[aria-label="Two-step sign-in for roles that open Controls"]')!;
+      expect(toggle.getAttribute('aria-checked')).toBe('true');
+      expect(toggle.disabled).toBe(false);
+      // The ops chip is on and locked, the editor chip is free.
+      expect(byText(host, '.ctl-chip', /ops/)!.getAttribute('aria-pressed')).toBe('true');
+      expect(byText(host, '.ctl-chip', /ops/)!.hasAttribute('disabled')).toBe(true);
+      expect(byText(host, '.ctl-chip', /editor/)!.hasAttribute('disabled')).toBe(false);
+      state.me = { ...state.me, role: 'ops' };
+      const other = open('/controls/security').host;
+      await until(() => expect(other.querySelector('[aria-label="Two-step sign-in for roles that open Controls"]')).toBeTruthy());
+      expect(other.querySelector<HTMLButtonElement>('[aria-label="Two-step sign-in for roles that open Controls"]')!.disabled).toBe(true);
+      expect(text(other)).toContain('Only an admin can change this.');
+    } finally {
+      state.roles = roles;
+      state.me = { ...state.me, role: 'admin' };
+    }
+  });
 });

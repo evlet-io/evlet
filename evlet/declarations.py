@@ -6,6 +6,8 @@ import copy
 import inspect
 import re
 
+from .fields import COLORS, MISSING, Select
+
 
 @dataclass(frozen=True)
 class Ref:
@@ -143,47 +145,6 @@ def check_roles(roles):
     return tuple(roles)
 
 
-class Move:
-    """A declared change of a State: Move("draft", "issued", "Issue", when=F("total") > 0, run="on_issue").
-
-    The first argument is one state or a tuple of states the move may start from. `when` is a finite
-    Boolean guard decided on the record as saved; `run` names a model method (taking only self) that runs
-    in the same transaction before the record settles.
-
-    `system=True` declares a move only the application makes: it has no roles, is never offered to people
-    (no button, not in `_moves` or the schema) and every HTTP caller is refused it, while trusted Python
-    (jobs, actions, other moves' run methods) makes it with context.move() under all its other checks.
-    """
-    def __init__(self, from_, to, /, label=None, *, roles=None, when=None, run=None, system=False):
-        sources = (from_,) if isinstance(from_, str) else from_
-        if not isinstance(sources, (list, tuple)) or not sources or any(not isinstance(item, str) or not item for item in sources) \
-                or len(set(sources)) != len(sources):
-            raise ValueError('A move starts from a state name or a tuple of distinct state names')
-        if not isinstance(to, str) or not to:
-            raise ValueError('A move goes to one state name')
-        if to in sources:
-            raise ValueError('A move must change the state')
-        if label is not None and (not isinstance(label, str) or not label.strip()):
-            raise ValueError('A move label must be nonempty text')
-        if run is not None and (not isinstance(run, str) or not re.fullmatch(NAME, run) or run.startswith('_')):
-            raise ValueError('run names a model method')
-        if type(system) is not bool:
-            raise ValueError('Move system must be True or False')
-        if system and roles is not None:
-            raise ValueError('A system move has no roles: only the application makes it. Drop roles, or drop system=True')
-        if not system and isinstance(roles, (list, tuple)) and not roles:
-            raise ValueError('A move needs at least one role. For a move only the application makes, '
-                             'declare Move(..., system=True)')
-        self.sources, self.to = tuple(sources), to
-        self.label = label or to.replace('_', ' ').capitalize()
-        self.system = system
-        self.roles = () if system else check_roles(('admin', 'editor') if roles is None else roles)
-        self.when, self.run = guard_expression(when, 'when'), run
-
-    def __repr__(self):
-        return f'Move({self.sources!r}, {self.to!r}, {self.label!r})'
-
-
 def action(function=None, *, label=None, roles=('admin', 'editor'), inputs=None, available_when=None):
     """Declare a model method as an action: @action, @action("Label", inputs={...}, available_when=...).
 
@@ -228,3 +189,205 @@ def action(function=None, *, label=None, roles=('admin', 'editor'), inputs=None,
                              'inputs': inputs, 'available_when': available_when}
         return method
     return decorate(function) if function is not None else decorate
+
+
+# State manager declarations (evlet/statemanager.py runs them).
+
+KEY = re.compile(r'[a-z][a-z0-9_]{0,62}')
+REMARK_LENGTH = 1000
+
+
+def _key(value, what):
+    if not isinstance(value, str) or not KEY.fullmatch(value):
+        raise ValueError(f'{what} is a lowercase name such as "draft", not {value!r}')
+    return value
+
+
+def _text(value, what):
+    if value is not None and (not isinstance(value, str) or not value.strip()):
+        raise ValueError(f'{what} must be nonempty text')
+    return value
+
+
+def _flag(value, what):
+    if type(value) is not bool:
+        raise ValueError(f'{what} must be True or False')
+    return value
+
+
+def _condition(value, what):
+    return guard_expression(value, what)
+
+
+class Step:
+    """One state: State.Step("issued", "Issued", color="green", lock=True, release=True, final=False).
+
+    `lock` makes the document read only in this state, except fields declared `versioned=False`. `release`
+    makes entering it a release. `final` means no rule leaves it. Only `label` and `color` may change on
+    an instance; the behaviour is the model's."""
+    def __init__(self, key, label=None, *, color=None, lock=False, release=False, final=False):
+        self.key = _key(key, 'A step key')
+        self.label = _text(label, 'A step label') or key.replace('_', ' ').capitalize()
+        if color is not None and color not in COLORS:
+            raise ValueError(f'Step {key!r}: color is one of ' + ', '.join(COLORS))
+        self.color = color
+        self.lock, self.release, self.final = _flag(lock, 'lock'), _flag(release, 'release'), _flag(final, 'final')
+
+    def public(self):
+        return {'key': self.key, 'label': self.label, 'color': self.color, 'lock': self.lock, 'release': self.release, 'final': self.final}
+
+
+class Remark:
+    """What a move asks people to write: Remark("required", label="Why?"), or "optional" with
+    `required_when`, a finite Boolean on the saved record that makes it required."""
+    MODES = ('optional', 'required')
+
+    def __init__(self, mode='optional', *, label=None, required_when=None):
+        if mode not in self.MODES:
+            raise ValueError('A remark is "optional" or "required"')
+        if mode == 'required' and required_when is not None:
+            raise ValueError('A required remark has no required_when')
+        self.mode, self.label = mode, _text(label, 'A remark label')
+        self.required_when = _condition(required_when, 'required_when')
+
+    def public(self):
+        return {'mode': self.mode, 'label': self.label}
+
+
+def _remark(value):
+    if value is None or isinstance(value, Remark):
+        return value
+    if value in Remark.MODES:
+        return Remark(value)
+    raise ValueError('remark is "optional", "required" or Remark(...)')
+
+
+def _by(value, what):
+    """(roles, user fields): role names, built-in or custom, and F("field") user fields. () is the application."""
+    from .calc import Expr
+    if isinstance(value, (str, Expr)) or not isinstance(value, (list, tuple)):
+        raise ValueError(f'{what} is a tuple of role names and F("field") user fields')
+    roles, users = [], []
+    for item in value:
+        if isinstance(item, Expr) and item.op == 'ref' and '.' not in item.meta.get('name', '.'):
+            users.append(item.meta['name'])
+        elif isinstance(item, str) and KEY.fullmatch(item):
+            roles.append(item)
+        else:
+            raise ValueError(f'{what} names roles ("editor") and user fields (F("approver")), not {item!r}')
+    return tuple(roles), tuple(users)
+
+
+class Level:
+    """One approval level of a rule: Level(by=("cfo",), when=F("total") >= 10000, pending="Pending CFO approval")."""
+    def __init__(self, by, *, when=None, pending=None):
+        self.roles, self.users = _by(by, 'A level by')
+        if not self.roles and not self.users:
+            raise ValueError('A level needs at least one approver')
+        self.when = _condition(when, 'when')
+        self.pending = _text(pending, 'A level pending text')
+        if pending is None:
+            raise ValueError('A level needs its pending text, for example "Pending manager approval"')
+
+
+class Rule:
+    """One move: Rule("draft", "issued", "Issue", by=("editor",), when=F("total") > 0, remark="optional").
+
+    `from_` is a state or a tuple of states. `key` defaults to "<from>_to_<to>"; it is the rule's stable id
+    in routes, the log and instance overrides. `by` names roles and user fields (default admin and editor);
+    `by=()` is a rule only application code uses. `levels` makes it an approval; `reject=True` marks a rule
+    back that only the current level's approvers are offered. `ask` adds fields the move dialog asks for to
+    those the fields' applies_when and required_when imply. `primary=True` marks the main button."""
+    def __init__(self, from_, to, /, label=None, *, key=None, by=None, when=None, levels=(), self_approve=False,
+                 remark=None, ask=(), primary=False, reject=False):
+        sources = (from_,) if isinstance(from_, str) else from_
+        if not isinstance(sources, (list, tuple)) or not sources or len(set(sources)) != len(sources):
+            raise ValueError('A rule starts from a state or a tuple of distinct states')
+        self.sources = tuple(_key(source, 'A rule source') for source in sources)
+        self.to = _key(to, 'A rule target')
+        if to in self.sources:
+            raise ValueError('A rule must change the state')
+        self.label = _text(label, 'A rule label') or to.replace('_', ' ').capitalize()
+        self.key = _key(key or '_'.join(self.sources) + '_to_' + to, 'A rule key')
+        self.roles, self.users = _by(('admin', 'editor') if by is None else by, 'by')
+        self.when = _condition(when, 'when')
+        if isinstance(levels, Level) or not isinstance(levels, (list, tuple)) or any(not isinstance(level, Level) for level in levels):
+            raise ValueError('levels is a tuple of Level(...)')
+        self.levels = tuple(levels)
+        self.self_approve, self.primary, self.reject = _flag(self_approve, 'self_approve'), _flag(primary, 'primary'), _flag(reject, 'reject')
+        if self.self_approve and not self.levels:
+            raise ValueError('self_approve applies to a rule with levels')
+        if self.levels and self.reject:
+            raise ValueError('A rule with levels approves; a reject is its own rule back')
+        if self.levels and (self.roles or self.users) and by is not None:
+            raise ValueError('An approval rule is used by its levels\' approvers; leave out by')
+        if self.levels:
+            self.roles, self.users = (), ()
+        self.remark = _remark(remark)
+        if isinstance(ask, str) or not isinstance(ask, (list, tuple)):
+            raise ValueError('ask is a tuple of field names')
+        self.ask = tuple(ask)
+
+    @property
+    def system(self):
+        """Whether only application code makes this move."""
+        return not self.roles and not self.users and not self.levels
+
+    def __repr__(self):
+        return f'Rule({self.sources!r}, {self.to!r}, key={self.key!r})'
+
+
+class State(Select):
+    """A document's state field: its steps in order and the rules between them. See the module docstring.
+
+    `show` is how the record page draws it: "badge" (the default), "bar" (the stage bar) or "none"."""
+    Step = Step
+    OPTIONS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'index', 'max_length', 'panel', 'copy', 'column')
+    SHOW = ('badge', 'bar', 'none')
+
+    def __init__(self, *steps, rules=(), default=MISSING, show='badge', **kwargs):
+        if set(kwargs) - set(self.OPTIONS):
+            raise ValueError('State takes its steps, rules, default, show and ' + ', '.join(self.OPTIONS))
+        if not steps or any(not isinstance(step, Step) for step in steps):
+            raise ValueError('A State takes its steps: State(State.Step("draft"), State.Step("done"), rules=(...))')
+        if show not in self.SHOW:
+            raise ValueError('State show is "badge", "bar" or "none"')
+        self.show = show
+        keys = [step.key for step in steps]
+        if len(set(keys)) != len(keys):
+            raise ValueError('State steps must have distinct keys')
+        default = keys[0] if default is MISSING else default
+        colors = {step.key: step.color for step in steps if step.color}
+        super().__init__(keys, default=default, required=True, read_only=True, colors=colors or None, **kwargs)
+        if default not in keys:
+            raise ValueError('A State default must be one of its steps')
+        self.steps = MappingProxyType({step.key: step for step in steps})
+        self.locked = tuple(step.key for step in steps if step.lock)
+        self.final = tuple(step.key for step in steps if step.final)
+        self.releases = tuple(step.key for step in steps if step.release)
+        if default in self.final:
+            raise ValueError('A State default cannot be final')
+        if isinstance(rules, Rule) or not isinstance(rules, (list, tuple)) or any(not isinstance(rule, Rule) for rule in rules):
+            raise ValueError('State rules is a tuple of Rule(...)')
+        self.rules = tuple(rules)
+        check_rules(self, self.rules)
+
+    def metadata(self):
+        return {**super().metadata(), 'state': True}
+
+
+State.Rule, State.Level, State.Remark = Rule, Level, Remark
+
+
+def check_rules(field, rules):
+    """Refuse rules that name unknown states, leave a final state or repeat a key."""
+    keys = set()
+    for rule in rules:
+        unknown = {*rule.sources, rule.to} - set(field.choices)
+        if unknown:
+            raise ValueError(f'Rule {rule.key!r} names an unknown state: ' + ', '.join(sorted(unknown)))
+        if set(rule.sources) & set(field.final):
+            raise ValueError(f'Rule {rule.key!r} leaves a final state; final states have no rules out')
+        if rule.key in keys:
+            raise ValueError(f'Two rules have the key {rule.key!r}; give one its own key=')
+        keys.add(rule.key)

@@ -1,14 +1,11 @@
 """evlet backup and evlet restore: an instance's four SQLite files as one set (docs/cli.md)."""
 
-from contextlib import closing
 from datetime import datetime, timezone
 import os
 from pathlib import Path
-import sqlite3
 import tempfile
 
-from ..writes import STORES, connect, data_files, files, release_idle, require_space, side_path
-from .install import settle
+from ..writes import STORES, check_file, copy_file, copy_set, data_files, files, release_idle, require_space, settle, side_path
 from ..instances import database_state
 from .project import atomic_json, child, instance_guard, sync_directory
 
@@ -23,24 +20,6 @@ def _instance(root, name):
     return path, data
 
 
-def _copy_set(source_main, target_main):
-    """Copy the main file and every side file of source_main into the set named by target_main, from one
-    read snapshot of all of them, with SQLite's online backup API. A running server may keep writing."""
-    with closing(connect(source_main, uri=True, isolation_level=None)) as connection:
-        connection.execute('BEGIN')
-        for schema in ('main', *STORES):
-            connection.execute(f'SELECT count(*) FROM {schema}.sqlite_master').fetchone()
-        written = []
-        for schema, target in zip(('main', *STORES), files(target_main)):
-            with closing(sqlite3.connect(target)) as copy:
-                connection.backup(copy, name=schema)
-                copy.execute('PRAGMA journal_mode=DELETE').fetchone()
-            os.chmod(target, 0o600)
-            written.append(target)
-        connection.execute('COMMIT')
-    return written
-
-
 def backup(root, name, directory=None):
     """Write the instance's four SQLite files as one set into data/backups (or directory). Returns their paths."""
     path, data = _instance(root, name)
@@ -52,7 +31,7 @@ def backup(root, name, directory=None):
     size = sum(item.stat().st_size for item in files(main) if item.exists())
     require_space(target_dir, size + 16 * 2**20, 'write the backup')
     target = target_dir / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
-    return _copy_set(main, target)
+    return copy_set(main, target)
 
 
 def restore(root, name, source):
@@ -65,14 +44,9 @@ def restore(root, name, source):
     source = Path(source)
     if not source.is_file() or source.is_symlink():
         raise ValueError(f'No backup file at {source}')
-    with closing(sqlite3.connect(source.absolute().as_uri() + '?mode=ro', uri=True)) as check:
-        try:
-            ok = check.execute('PRAGMA quick_check').fetchone()[0]
-            moved = {row[0] for row in check.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-        except sqlite3.DatabaseError:
-            ok = 'not a SQLite database'
-    if ok != 'ok':
-        raise ValueError(f'The backup {source.name} is damaged: {ok}')
+    problem, moved = check_file(source)
+    if problem:
+        raise ValueError(f'The backup {source.name} is damaged: {problem}')
     single = bool(moved & {table for tables in STORES.values() for table in tables})
     main = data / 'database.sqlite3'
     with instance_guard(path):
@@ -83,16 +57,13 @@ def restore(root, name, source):
         if main.exists():
             backups = data / 'backups'
             backups.mkdir(mode=0o700, exist_ok=True)
-            safety = _copy_set(main, backups / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '-before-restore.sqlite3'))[0]
+            safety = copy_set(main, backups / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '-before-restore.sqlite3'))[0]
         with tempfile.TemporaryDirectory(prefix='.restore-', dir=data) as directory:
             stage = Path(directory) / 'database.sqlite3'
             pairs = list(zip(files(source), files(stage)))
             for old, new in pairs:
                 if old.exists() and not (single and old != source):
-                    with closing(sqlite3.connect(old.absolute().as_uri() + '?mode=ro', uri=True)) as reader, closing(sqlite3.connect(new)) as copy:
-                        reader.backup(copy)
-                        copy.execute('PRAGMA journal_mode=DELETE').fetchone()
-                    os.chmod(new, 0o600)
+                    copy_file(old, new)
             release_idle()
             for item in files(main):
                 if item.exists():

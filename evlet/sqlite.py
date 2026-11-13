@@ -28,7 +28,7 @@ def column_sql(column):
     if column.required:
         sql += ' NOT NULL'
     if column.references:
-        sql += f' REFERENCES {identifier(column.references)}("id")'
+        sql += f' REFERENCES {identifier(column.references)}({identifier(column.referenced_column)})'
         if column.on_delete is not None:
             if column.on_delete not in ('cascade', 'set null'):
                 raise ValueError("on_delete is 'cascade' or 'set null'")

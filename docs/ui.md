@@ -20,7 +20,7 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   Each page's breadcrumb is a small line above its title ([Breadcrumb](#breadcrumb)). New records start from the New button
   on a model's list page or from the search palette.
 - Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
-  page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves, void and revise, unpost and repost, child tables, measures, related records and
+  page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves (with their remarks), child tables, measures, related records and
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
   `/reports/<name>`, listed in the sidebar and in the Explorer.
@@ -84,8 +84,7 @@ Eva), the main move as a solid split button, and More. The split button runs the
 person may take now; its chevron lists the other moves, and with one move there is no chevron. A
 model without a State or lifecycle has no split button. Everything that does not fit, Print and the
 record's own items (Copy link, Duplicate, Delete) are in More. A muted subtitle under the title has the
-first two key fields with a value; a line under the row says when a name or number is still to be assigned
-and, for a confirmable record, its revision ("Confirmed · Revision 2"). A new record's row has Cancel and Create instead. In a side panel the row keeps one outline
+first two key fields with a value; a line under the row says when a name or number is still to be assigned. A new record's row has Cancel and Create instead. In a side panel the row keeps one outline
 button, and when the header is narrow (a side panel, a phone) the buttons wrap onto their own line
 under the title. Records are edited in place, so there is no Edit button.
 
@@ -163,16 +162,14 @@ or False, fails when the registry is built.
 
 The State in the schema decides how a record's state is drawn, never the state's name:
 
-- **Cancelled**: a state the State lists in `cancelled` (`State(..., cancelled=('cancelled', 'lost'))`, sent as
-  `"cancelled"` on the state field, the void state included). A schema without that key falls back to a `final`
-  state declared in red (`colors={'cancelled': 'rose'}`), or the framework's `void` state of a State with `voidable`
-  states. In every list (the table, the narrow list beside a panel and the board) its
+- **Cancelled**: a `final` step coloured `rose` (`State.Step("void", color="rose", lock=True, final=True)`).
+  In every list (the table, the narrow list beside a panel and the board) its
   first cell is struck through in grey after a ban icon and the row is muted a little; its status badge keeps its
   colour. On the record the title is struck through in grey, the State reads as red "Cancelled" text with a ban
   icon (no pill), and a soft red strip says "Cancelled on 09-11-2026 by sara. Reason: ...", from the newest move
-  into that state in the journal (its reason, or a text value the move asked for). Without a journal the strip
+  into that state in the journal (its remark, or a text value the move asked for). Without a journal the strip
   says only the state.
-- **Locked**: any other `locked` or `final` state, such as Confirmed or Done: a lock and the state's name in grey.
+- **Locked**: any other `lock=True` or `final` step, such as Confirmed or Done: a lock and the state's name in grey.
   A separate `Meta.status` badge after it stays a soft pill ("Paid").
 - In lists (the table, the narrow list beside a panel and board cards), a small muted icon before the first value
   says the same: a ban for cancelled, a lock for locked or final, a pencil for a draft; only cancelled rows are
@@ -219,7 +216,7 @@ matter in the panel, `Meta.panel` names what to keep, in order, and hides everyt
 ```
 
 Names are section titles, field names, `Table` field names, the record's parts (`activity`,
-`details`, `revisions`, `related`, `postings`), `summary` (the summary strip) and the side blocks
+`details`, `related`, `postings`), `summary` (the summary strip) and the side blocks
 (`key_fields`, `files`, `info`). Naming a section keeps all its fields; naming a field keeps its
 section with only that field; `details` keeps every section. The schema sends the hidden parts and
 Table fields as the panel's `tabs`. A section or field of the same name wins over a part or block. When both
@@ -321,7 +318,7 @@ class Employee(Model):
 
 - **No tabs.** `Tab`, `Meta.tabs` and `Meta.default_tab` were removed in 0.4. Using them fails when the
   model is defined, with a message pointing to `Main` and `Section`. Activity is in the side column;
-  Revisions, Related and Postings are rows of more information.
+  Related and Postings are rows of more information.
 - **Fields no section lists** show as Other, last, as before.
 - **`link`** is the other model's Link field to this one. Leave it out when there is exactly one.
 - **Filters** use the list filter syntax on the other model's own fields, as a dict
@@ -434,8 +431,8 @@ The record page draws it on a record's full page and in a list's side panel (the
 - **More information** lists every later block as a row: the title, the section description and a chevron on the
   left, the content on the right. Closed, a Section shows its values on one line ("Label: value · Label: Not set · ...",
   cut with an ellipsis), a Table its row count and a Related block its record count. Sections start as
-  `collapsed` says and the person's choice is kept, as for any Section. Related records the layout does not list,
-  Revisions and Postings are rows here too.
+  `collapsed` says and the person's choice is kept, as for any Section. Related records the layout does not list
+  and Postings are rows here too.
 - **The side column** has Attachments and Activity. Its note box has a slim toolbar: bold, italic, bulleted
   list, link and Mention. In a narrow window or a side panel it is a drawer behind a button, so the record's
   content always comes first. The record footer sits under the card.
@@ -488,8 +485,7 @@ header's split button; `State(..., show="bar")` draws the stage bar instead, for
 draws neither. `Meta.status` adds a status badge for a Select the system sets, such as a
 payment status, coloured by `Select(..., colors={...})`. Badges and bar steps offer only the
 moves this person may take now; everything else is plain text. Lists draw the same badges.
-`State(..., cancelled=(...))` marks final states that mean the record was called off; the
-schema's `state.cancelled` lists them, with `"void"` on a voidable State. The
+Step colours come from `State.Step(color=...)`; a final step coloured `rose` reads as cancelled. The
 badge wraps with the title in the side panel and on a phone; the bar scrolls sideways there.
 See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
 

@@ -3,16 +3,16 @@
 An effect is a set of rows a document posts to another model when a move takes it into a
 state. An issued invoice posts ledger entries and stock moves, for example. The rows are a
 pure function of the record. The engine writes them in the move's transaction, and they are
-read only for every caller. When the record is voided or unposted, the engine writes mirror
-rows that cancel them. Original rows are never changed or deleted.
+read only for every caller. When a rule takes the record out of that state again (void,
+reopen), the engine writes mirror rows that cancel them. Original rows are never changed or
+deleted.
 
-This guide covers Phase 6 of the model handoff. Read [states-actions.md](states-actions.md)
-first for states, moves, void and revise.
+Read [states-actions.md](states-actions.md) first for states, rules and moves.
 
 ## Declaring effects
 
 ```python
-from evlet import Boolean, Currency, Decimal, Effect, Link, Model, Move, Negate, Reference, Rule, State, Swap, Text
+from evlet import Boolean, Currency, Decimal, Effect, Link, Model, Negate, Reference, Rule, State, Swap, Text
 
 
 class LedgerEntry(Model):
@@ -45,9 +45,13 @@ class Invoice(Model):
     account = Link(Account)
     lines = Table(InvoiceLine)
     total = Currency(compute=lines.sum("amount"))
-    status = State(("draft", "issued", "paid", "void"),
-                   moves=(Move("draft", "issued", "Issue"), Move("issued", "paid", "Mark paid")),
-                   locked=("issued", "paid", "void"), final=("paid", "void"), voidable=("issued",))
+    status = State(
+        State.Step("draft"),
+        State.Step("issued", lock=True, release=True),
+        State.Step("void", color="rose", lock=True, final=True),
+        rules=(State.Rule("draft", "issued", "Issue", key="issue"),
+               State.Rule("issued", "draft", "Reopen", key="reopen", by=("admin",), remark="required"),
+               State.Rule("issued", "void", "Void", key="void", by=("admin",), remark="required")))
 
     def ledger_rows(self):
         rows = [{"account": self.account, "debit": line.amount, "memo": line.item} for line in self.lines]
@@ -67,8 +71,9 @@ class Invoice(Model):
   move with `Invoice.x is a virtual result (stored=False), which effect rows cannot read`;
   store the result, or calculate the value in the method. The handoff sketched `ledger_rows(self, tx)`; the method takes no transaction, so its rows
   depend only on the record and the check command can recompute them.
-* `on` is the state that posts the rows.
-* `reverse` says how the engine cancels a row on void: `Swap("debit", "credit")` exchanges
+* `on` is the state that posts the rows: a `lock=True, release=True` step that is not the
+  default. A record has live rows exactly while it is in `on`.
+* `reverse` says how the engine cancels a row when a rule leaves `on`: `Swap("debit", "credit")` exchanges
   two fields, `Negate("qty")` (or `Negate("qty", "value")`) flips the sign of each field.
 * `balanced=("debit", "credit")` requires the sum of the first field over all rows of the
   batch to equal the sum of the second, as exact decimals. Empty values count as zero.
@@ -80,11 +85,8 @@ A model declares at most one effect per target model.
 Startup fails with a message naming the model when:
 
 * The model has no State, or is a `Table` row. Effects belong on root documents.
-* `on` is not a state, is the default state, no declared move enters it, or no sequence of
-  declared moves from the default state reaches it.
-* A record could enter `on` twice, because a move leads back to it. It would post twice.
-* A state a record may be in after `on` is not locked. Posted rows must keep matching a record
-  that ordinary writes and deletes cannot change.
+* `on` is not a step, is the default, or is not declared `lock=True, release=True`. Posted rows
+  must keep matching a record that ordinary writes and deletes cannot change.
 * `rows` is not a method of the model, or takes more than `self`.
 * The target is the model itself, a `Table` row, has a State or a Table, or posts effects
   itself.
@@ -96,9 +98,8 @@ Startup fails with a message naming the model when:
   row must always be valid when its original was.
 * `reverse` changes one field of the `balanced` pair but not the other, so reversal rows would
   not balance. Swapping the balanced pair, negating both or negating neither is fine.
-* `reverse` is missing while a record can be voided after posting (a voidable state is
-  reachable from `on`). When the record can never be voided after posting, `reverse` is
-  optional.
+* `reverse` is missing while a rule leaves `on` (the message names the rule). When `on` is
+  final, `reverse` is optional.
 
 ## Posting on a move
 
@@ -108,7 +109,7 @@ rows are saved and before the move completes:
 1. The engine calls the rows method on the saved document.
 2. Each row is validated as a new record of the target. A declarative target settles like any
    new record: defaults, calculations, `required`, `required_when`, `applies_when`, validators
-   and `validate()`. A plain model checks its fields and `validate()`. No role applies, because
+   and `@validate`. A plain model checks its fields and `@validate`. No role applies, because
    the engine writes the rows: every Link must name a stored record (`The linked record does
    not exist`), and Link filters are decided on that record as stored. Linked records are read
    in batches, one statement per linked model.
@@ -118,7 +119,7 @@ rows are saved and before the move completes:
    with false, checks `balanced`, and writes the rows.
 
 Effects run in declaration order. Any failure rolls back the whole move: the state, the
-`run` method's changes and every row of every effect. A failure is a 422 field error under
+hooks' changes and every row of every effect. A failure is a 422 field error under
 `_effects`, for example:
 
 ```json
@@ -160,69 +161,55 @@ which an app uses for rows its own posting code writes instead of the engine.
 ## Posted records keep their totals
 
 Once a record has posted (it has live effect rows: the latest row of some effect is an
-original, not a reversal, and the record is not void), its stored calculated values are
+original, not a reversal), its stored calculated values are
 frozen for every writer, so the rows it posted keep matching it:
 
 * Moves and actions on it keep the saved calculated values at every depth, like ordinary
   writes on a locked record, even when a linked record or a formula changed since. They need
   no recalculation request after a deploy that changes formulas.
-* Its actions, move `run` methods and move values may not change a source field or the
-  Table rows its stored results read; the change is refused with 409, for example
-  `Quantity feeds posted totals. To change it, void or revise the record.` Fields no stored
-  result reads still change. See [states-actions.md](states-actions.md#ordinary-writes-and-locks).
+* Its actions, hooks and move values may not change a source field or the Table rows its
+  stored results read; the change is refused with 409, for example `Quantity feeds posted
+  totals. To change it, move the record out of its posted state.` Fields no stored result
+  reads still change. See [states-actions.md](states-actions.md#ordinary-writes-and-locks).
 * `"_calculation": {"recalculate": true}` on it is refused with 409: `This record has
-  postings. To change its totals, void or revise it.`
+  postings. To change its totals, move it out of its posted state.`
 * A draft preview (`/api/_draft`) of it shows the saved values, as the save would keep them.
-* The `Recompute` migration operation skips it, voided or not, and reports how many records
-  it kept. Locked records that never posted, and unposted records, are recalculated. An admin
-  may include posted records with `evlet migrate <instance> --recompute-posted`; each one that
-  changes gets a `recomputed` Journal entry with `"posted": true`, and its saved rows no longer
-  match it until it is unposted and reposted (the check below reports them as `changed`).
+* The `Recompute` migration operation skips it, and a record that posted and is now in a final
+  state (void), and reports how many records it kept. Locked records that never posted, and
+  records that left `on` for a step that is not final, are recalculated. An admin may include
+  posted records with `evlet migrate <instance> --recompute-posted`; each one that changes gets
+  a `recomputed` Journal entry with `"posted": true`, and its saved rows no longer match it until
+  it leaves `on` and enters it again (the check below reports them as `changed`).
 
-To correct the totals of a posted record, void it or revise it, or (an admin) unpost it,
-correct it and repost it.
+To correct the totals of a posted record, move it out of `on` with a rule (Reopen), correct it
+and move it back in, or void it.
 
-## Void and revise
+## Leaving the posting state
 
-When a record is voided (or revised, which voids it), the engine writes one mirror row for
-each original row of every effect with a `reverse`:
+When a rule leaves `on`, before any `@state.exit` hook runs, the engine writes one mirror row
+for each live original row of every effect with a `reverse`:
 
 * The mirror has the original's source values with `reverse` applied, the same `source`, and
   `reversal` set to true. Calculated fields of the target are calculated again.
 * Mirror rows are validated like the originals. If one is refused (a target validator that
-  rejects it), the void fails with `The reversal of StockMove row 1 is not valid: ...` and
+  rejects it), the move fails with `The reversal of StockMove row 1 is not valid: ...` and
   rolls back. A balanced effect also checks the balance of the mirror rows.
-* Original rows are never changed or deleted. A record whose rows were reversed already is
-  not reversed again.
-* The record's [Journal](journal.md) gets an `effects` entry with `"reversal": true` after the
-  `voided` entry; a move that posts rows gets one with `"reversal": false` after `moved`.
-* Revising a void record that has no revision yet does not void it again, so nothing is
-  reversed a second time. The revision is a new draft with no rows; it posts its own rows when
-  it enters `on`.
+* Original rows are never changed or deleted.
+* The record's [Journal](journal.md) gets an `effects` entry with `"reversal": true`, and a
+  move that posts rows gets one with `"reversal": false`, after the `moved` entry.
 
-## Unpost and repost
-
-An admin can unpost a posted record (see
-[states-actions.md](states-actions.md#unpost-and-repost)): the record goes back to the state
-it posted from, keeps its number, and every live row gets a mirror row exactly as on void. A
-repost runs the posting move again, which writes fresh original rows from the record as it is
-then. A record's rows are therefore a series of postings, each a batch of originals followed,
-once it is cancelled, by its batch of mirror rows:
+A record that is reopened and moved into `on` again posts fresh rows from the record as it is
+then. Its rows are therefore a series of postings, each a batch of originals followed, once it
+is cancelled, by its batch of mirror rows:
 
 ```
-originals (issue) | mirrors (unpost) | originals (repost) | mirrors (void)
+originals (issue) | mirrors (reopen) | originals (issue) | mirrors (void)
 ```
 
-* The live rows are the originals after the last mirror batch. A void or a further unpost
-  reverses only those, so nothing is reversed twice.
+* The live rows are the originals after the last mirror batch, so nothing is reversed twice.
 * `_effects` counts every original and every mirror row of the record.
-* Unpost needs a `reverse` on every effect of the model (`Rule` operations `unpost` and
-  `repost` fail at startup otherwise).
-* Unpost is refused while a live record depends on this one, for example a confirmed payment
-  that links to the invoice, an allocation that links to one of the ledger entries it posted,
-  or a record whose effect rows link to it.
-* A record that ever posted is never deleted, even after an unpost: its rows still name it as
-  their source. Delete answers 409.
+* A record that ever posted is never deleted: its rows still name it as their source. Delete
+  answers 409.
 
 ## Closed periods
 
@@ -233,15 +220,13 @@ its rows obey the period lock like any record:
   is on the posting document's own period field when it declares `Meta.period`, otherwise on
   `_effects`, for example `"Posting rows: This date is in a closed period (locked up to
   31-03-2026)"`.
-* **Mirror rows.** On void or unpost, a mirror row keeps the original row's date while that
+* **Mirror rows.** When a rule leaves `on`, a mirror row keeps the original row's date while that
   date is open. When it is closed, the mirror takes the first open date instead: the day after
   the lock that applies to the row, or today in the instance timezone when that is later. The
   cancellation is then booked in the first period still open, and the closed one is not
   touched.
-* **Repost.** A repost writes fresh originals with the record's own dates, so it is refused
-  when one of them is in a closed period.
 * **The document itself.** When the posting document declares `Meta.period` and is in a
-  closed period, its moves, void, unpost and repost are all refused, whatever its rows' dates.
+  closed period, its moves are refused, whatever its rows' dates.
 
 ## Details and schema
 
@@ -269,8 +254,7 @@ the role cannot read those fields).
 * **Document numbers.** When a `Sequence` has `assign_on` set to the state an effect posts
   on, both happen in the same move: the number is assigned first, when the move settles and
   before the record is written, and the effects post after the write. The rows method
-  therefore reads the new number. A revision's copy has no number and no rows; it gets both
-  when it enters that state. Reversal rows keep the values of the originals, including a
+  therefore reads the new number. Reversal rows keep the values of the originals, including a
   number they copied.
 * **Caught failures.** Each `Context` operation runs in a savepoint. When trusted code
   catches a failed move, the rows already written by earlier effects of that move are rolled
@@ -310,17 +294,10 @@ with `model`, `record`, `target`, `kind`, `reversal` and, where they apply, `exp
 * `invalid`: the record's rows cannot be produced now: the rows method raises (the message
   names the exception) or a row is not valid. The check goes on with the next record.
 
-Which records must have posted is decided from the State's moves: a record in a state that
-can only be reached through `on` must have rows. When a state could also be reached another
-way, the record is compared only when it has rows. A void record that posted must also have
-one mirror row for each row it should have posted.
-
-With unposts, the rows are split into postings (above). Each cancelled posting is checked on
-its own: its mirror rows must mirror its originals. The last posting is compared with the
-rows the record produces now, as before. A record in a state before `on` (an unposted one)
-must have no live rows. One case is not told apart: a record unposted, changed and then voided
-from a voidable state before `on` (no declared model does this today) is compared as if its
-last posting came from its current values.
+A record in `on` must have live rows that match the rows it produces now. A record in any
+other state must have no live rows: each posting it made must be cancelled by its mirror rows.
+The rows are split into postings (above), and each cancelled posting is checked on its own: its
+mirror rows must mirror its originals.
 
 A posted record keeps its saved totals (see above), so moves, actions and `Recompute`
 leave the check clean. A record changed after posting by other means, for example a
@@ -329,7 +306,7 @@ maintenance write, is reported as `changed`: the saved rows no longer match the 
 ## Notes and limits
 
 * The engine indexes the target's `source`: an effect sets `index=True` on it, which creates
-  one index over `(source_model, source_id)`. Details, void and the check find a record's rows
+  one index over `(source_model, source_id)`. Details, reversals and the check find a record's rows
   with an index search. `Reference(index=True)` works on any model.
   A target table created before it was an effect target needs a migration to gain the index:
 
@@ -338,7 +315,7 @@ maintenance write, is reported as `changed`: the saved rows no longer match the 
   ```
 
   Without it, startup reports that an explicit index migration is required.
-* Effects post only on a move (a repost runs one). Creating a record in a state, or changing it
+* Effects post only on a move. Creating a record in a state, or changing it
   inside `tx.maintenance()`, posts nothing.
 * The record view shows `_effects` in its Postings tab; the connector and the MCP server
   do not show them yet.

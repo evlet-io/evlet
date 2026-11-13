@@ -351,9 +351,6 @@ def initialize(database):
     plan = None if database.migrations is None else _migration_plan(database.migrations)
     with database.schema_transaction() as connection:
         tables = _tables(connection)
-        if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
-            from .lifecycle import ensure_tables
-            ensure_tables(connection)
         _metadata(connection)
         saved = connection.run(qb.select('evlet_schema', 'definition').where(id=1)).one()
         saved = _moved(money_scale(connection, database.registry, saved and saved[0], allow=getattr(database, 'upgrade_money', True)))
@@ -688,7 +685,8 @@ class DropField:
 TEXTS = ('text', 'longtext')
 DECIMALS = ('decimal', 'currency', 'percent')
 # Properties AlterField may change; values are then checked row by row in the migration transaction.
-ALTERABLE = {'type', 'scale', 'max_length', 'choices', 'minimum', 'maximum', 'required'}
+# A State is stored as its Select; turning one into the other, or changing badge colours, moves no data.
+ALTERABLE = {'type', 'scale', 'max_length', 'choices', 'minimum', 'maximum', 'required', 'state', 'colors'}
 
 
 def conversion(table, name, old, new):
@@ -898,20 +896,12 @@ def _skip(session, model, record, skipped, posted):
     """Whether Recompute leaves this root record alone. With `posted` (a set, when the run includes posted
     records), posted records are recalculated and collected there instead."""
     key = (model, record.id)
-    if getattr(model, 'confirmable', False):
-        # Revision snapshots are permanent; migrate draft calculations explicitly after reopening.
-        row = session.connection.run(qb.select('evlet_document_lifecycle', 'revision')
-                                     .where(model=session.registry.name_for(model), record_id=record.id)).one()
-        if row is not None and row[0]:
-            skipped.add(key)
-            return True
     if key in skipped:
         return True
     if posted is not None and key in posted:
         return False
     if _kept(session, model, record):
-        # A void record keeps its results even on request: its rows and their reversal must keep matching it.
-        if posted is None or model.__state__ is not None and record._values.get(model.__state__) == 'void':
+        if posted is None:
             skipped.add(key)
             return True
         posted.add(key)
@@ -919,9 +909,12 @@ def _skip(session, model, record, skipped, posted):
 
 
 def _kept(session, model, record):
-    """Whether Recompute leaves a root record alone: it has posted effects, voided or not."""
-    from .effects import has_postings
-    return has_postings(session.connection, session.registry, model, record, voided=True)
+    """Whether Recompute leaves a root record alone: it has live posted effects, or it posted and is in a final
+    state (such as void), so its rows and their reversal keep matching it."""
+    from .effects import ever_posted, has_postings
+    final = model.__state__ is not None and record._values.get(model.__state__) in model.__declared_fields__[model.__state__].final
+    return has_postings(session.connection, session.registry, model, record) or \
+        final and ever_posted(session.connection, session.registry, model, record.id)
 
 
 def _changed(changes, item, record, values):
@@ -995,6 +988,7 @@ def _recompute_finite(session, registry, plan, model, operation, skipped, change
             old = saved[model, row.id]
             values = {name: value for name, value in values.items() if old._values.get(name) != value}
             if values:
+                _keep_release(session, root, record_id)
                 _write(session, model, row.id, values)
                 steps, parent = [], row
                 while parent.parent is not None:
@@ -1026,8 +1020,17 @@ def _recompute_legacy(session, model, operation, skipped, changes, posted=None):
                     raise SchemaError(f'{operation.table} #{record_id}.{key}: {exc}') from exc
         values = {name: draft._values[name] for name in operation.fields if draft._values[name] != record._values.get(name)}
         if values:
+            _keep_release(session, model, record_id)
             _write(session, model, record_id, values)
             _changed(changes, ((model, record_id), []), record, values)
+
+
+def _keep_release(session, model, record_id):
+    """Before Recompute changes a released document, keep its release's content (evlet/statemanager.py)."""
+    from .framework import _saved
+    from .statemanager import keep, releasing, tree
+    if releasing(model):
+        keep(session.connection, session.registry, model, record_id, tree(_saved(session, session.registry, model, record_id)), 'engine')
 
 
 def _write(session, model, record_id, values):
@@ -1332,9 +1335,6 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                         operation.apply(connection, *step_arguments(operation, steps))
                     run_data(connection, database.registry, migration)
                 connection.run(qb.insert('evlet_migrations', position=position, name=migration.name, checksum=checksums[position - 1]))
-            if any(getattr(model, 'confirmable', False) for model in database.registry.models.values()):
-                from .lifecycle import ensure_tables
-                ensure_tables(connection)
             applied = Applied(item.name for item in pending)
             if not fresh and not baseline:
                 applied.skipped, applied.posted = _recompute(connection, database.registry, recomputes(pending), lambda db: db.table_exists('evlet_calculation_versions'),

@@ -1,5 +1,10 @@
 """Shared finite-v1 scenarios: Python compiles the plans and records the authoritative results.
 
+The contract is what users see: values, result states and causes, rule states, Link lookup
+requests, refused commands and which results changed. Internal counters (formulas evaluated,
+skipped, budget steps, revision numbers) are not part of it, so each engine may schedule its
+work its own way.
+
 scripts/generate_finite_fixtures.py writes them for the browser evaluator; the pytest suite
 checks that the checked-in JSON still matches. Both runtimes consume the same serialized plan.
 """
@@ -9,7 +14,7 @@ import random
 from evlet import Model, Child, Table, Decimal, Currency, Boolean, Integer, Text, Date, DateTime, Link, Registry, Select
 from evlet.fields import Duration, Percent
 from evlet.calc import (D, F, parent, row, round, coalesce, safe_divide, when, days, today, Document, CalcError,
-                        parse, text, add, sub, mul, div, quantize)
+                        parse, text, add, sub, mul, div, quantize, choose, isin, is_empty, has_value, least, greatest, absolute)
 
 
 class FiniteMeta:
@@ -243,12 +248,28 @@ class Money(Model):
     suggested = Currency(currency='currency', initial=F('rate') * 2)
 
 
+class Helpers(Model):
+    """Helpers that compile to existing nodes; the browser runs them without knowing they exist."""
+    Meta = FiniteMeta
+    stage = Select(('lead', 'won', 'lost'))
+    a = Decimal()
+    b = Decimal()
+    weight = Decimal(scale=0, compute=choose(F('stage'), {'won': 100, 'lost': 0}, default=10))
+    open = Boolean(compute=isin(F('stage'), 'lead', 'won'))
+    closed = Boolean(compute=F('stage').isin('won', 'lost'))
+    missing = Boolean(compute=is_empty(F('a')))
+    present = Boolean(compute=has_value(F('a')))
+    smaller = Decimal(scale=None, stored=False, compute=least(F('a'), F('b'), 5))
+    larger = Decimal(scale=None, stored=False, compute=greatest(F('a'), F('b')))
+    gap = Decimal(scale=None, stored=False, compute=absolute(F('a') - F('b')))
+
+
 # Host inputs of a scenario's document, when it has any: the currency table and setting currencies.
 HOSTS = {'money-places': {'decimals': {'JPY': 0, 'KWD': 3, 'XCL': 5}, 'settings': {'billing.currency': 'JPY'}}}
 
 MODELS = {'invoice': Invoice, 'project': Project, 'cost': CostSheet, 'states': States,
           'rounding': Rounding, 'schedule': Schedule, 'sale': Sale, 'choice': Choice, 'moments': Moments,
-          'offer': Offer, 'capped': Capped, 'money': Money}
+          'offer': Offer, 'capped': Capped, 'money': Money, 'helpers': Helpers}
 LOOKUP_MODELS = (Region, Customer)
 
 
@@ -263,14 +284,14 @@ SCENARIOS = [
       ['add', '', 'items', {'_key': 'n', 'qty': '1', 'rate': '0.05', 'vat_rate': '100'}], ['remove', 'items.r1'],
       ['set', '', 'grand_total', '1'], ['set', 'items.n', 'rate', 'abc']]),
     ('invoice-structure', 'invoice', {'inclusive': False, 'children': {'items': [{'id': 7, 'qty': '1', 'rate': '10', 'vat_rate': '5', 'taxable': True}]}},
-     [['replace', '', 'items', [{'id': 7, 'qty': '2'}, {'_key': 'b', 'qty': '1', 'rate': '1'}]], ['reorder', '', 'items', ['items.b', 'items.7']],
-      ['replace', '', 'items', [{'id': 8}]], ['add', '', 'items', {'_key': 'b'}]]),
+     [['set', 'items.7', 'qty', '2'], ['add', '', 'items', {'_key': 'b', 'qty': '1', 'rate': '1'}], ['reorder', '', 'items', ['items.b', 'items.7']],
+      ['add', '', 'items', {'id': 8}], ['add', '', 'items', {'_key': 'b'}]]),
     ('project-nested', 'project', {'children': {'phases': [
         {'_key': 'A', 'children': {'tasks': [{'_key': 'a1', 'hours': '2'}, {'_key': 'a2', 'hours': '3'}]}},
         {'_key': 'B', 'children': {'tasks': [{'_key': 'b1', 'hours': '4'}]}}]}},
      [['set', '', 'hourly_rate', '120'], ['set', '', 'hourly_rate', '100'], ['set', 'phases.A.tasks.a1', 'hours', '5'],
-      ['move', 'phases.A.tasks.a2', 'phases.B', 'tasks', 0], ['add', 'phases.B', 'tasks', {'_key': 'b2', 'hours': '1.5'}],
-      ['remove', 'phases.A'], ['move', 'phases.B', 'phases.B', 'tasks', 0],
+      ['remove', 'phases.A.tasks.a2'], ['add', 'phases.B', 'tasks', {'_key': 'a2', 'hours': '3'}], ['add', 'phases.B', 'tasks', {'_key': 'b2', 'hours': '1.5'}],
+      ['remove', 'phases.A'], ['reorder', 'phases.B', 'tasks', ['phases.B.tasks.b2', 'phases.B.tasks.a2', 'phases.B.tasks.b1']],
       ['add', '', 'phases', {'_key': 'C', 'children': {'tasks': [{'_key': 'c1', 'hours': '1'}]}}]]),
     ('cost-round-trip', 'cost', {'children': {'lines': items({'qty': '2', 'rate': '50'}, {'qty': '3', 'rate': '100'})}},
      [['set', '', 'exchange_rate', '2'], ['set', 'lines.r0', 'qty', '0'], ['set', 'lines.r1', 'qty', '0'],
@@ -313,12 +334,12 @@ SCENARIOS = [
     ('saved-locks-and-resends', 'offer', {'id': 5, 'customer': 7, 'stage': 'won', 'price': '150', 'terms': 45, 'remark': 'kept',
                                           'children': {'lines': [{'id': 2, 'qty': '1', 'rate': '3'}]}},
      [['lookup', 'customer', 7, {'credit_days': 30, 'rate': '2.50'}], ['set', '', 'stage', 'lost'], ['set', '', 'customer', 7], ['set', '', 'stage', 'open'],
-      ['set', '', 'customer', 8], ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25'}], ['rebase'],
+      ['set', '', 'customer', 8], ['lookup', 'customer', 8, {'credit_days': 10, 'rate': '1.25'}],
       ['set', '', 'terms', 60], ['set', '', 'customer', 8], ['set', '', 'stage', 'won'], ['set', '', 'customer', 7],
       ['add', '', 'lines', {'_key': 'n', 'qty': '1'}], ['set', 'lines.2', 'qty', '1'], ['set', '', 'stage', 'lost']]),
     ('table-limits', 'capped', {'children': {'lines': items({'qty': '1'})}},
      [['add', '', 'lines', {'_key': 'n1', 'qty': '2'}], ['add', '', 'lines', {'_key': 'n2', 'qty': '4'}],
-      ['replace', '', 'lines', [{'_key': 'a'}, {'_key': 'b'}, {'_key': 'c'}]], ['remove', 'lines.r0'],
+      ['batch', [['add', '', 'lines', {'_key': 'a'}], ['add', '', 'lines', {'_key': 'b'}]]], ['remove', 'lines.r0'],
       ['add', '', 'lines', {'_key': 'n3', 'qty': '5'}], ['batch', [['remove', 'lines.n1'], ['add', '', 'lines', {'_key': 'n4'}]]],
       ['add', '', 'lines', {'_key': 'n5'}]]),
     ('money-places', 'money', {'customer': 7, 'qty': '1.5', 'rate': '1.3335'},
@@ -326,6 +347,9 @@ SCENARIOS = [
       ['set', '', 'currency', 'XCL'], ['set', '', 'rate', '0.0000033'], ['set', '', 'currency', ''], ['set', '', 'currency', 'AED'],
       ['set', '', 'rate', '-1.3335'], ['lookup', 'customer', 7, {'currency': 'JPY'}], ['set', '', 'customer', None],
       ['set', '', 'currency', 'KWD'], ['set', '', 'rate', '2.0005'], ['set', '', 'qty', '-1']]),
+    ('helpers', 'helpers', {},
+     [['set', '', 'stage', 'won'], ['set', '', 'a', '3'], ['set', '', 'b', '-7.5'], ['set', '', 'stage', 'lost'], ['set', '', 'a', '9'],
+      ['set', '', 'stage', 'lead'], ['set', '', 'b', '12'], ['set', '', 'stage', None], ['set', '', 'a', None]]),
     ('when', 'choice', {'a': '6'},
      [['set', '', 'flag', True], ['set', '', 'a', None], ['set', '', 'flag', False], ['set', '', 'a', '6'],
       ['set', '', 'zero', '4'], ['today', '2026-11-01'], ['set', '', 'flag', True], ['set', '', 'a', '0.5'], ['set', '', 'flag', None]]),
@@ -375,13 +399,10 @@ def apply(document, command):
     if kind == 'set': document.set(handle(document, args[0]), args[1], args[2])
     elif kind == 'add': document.add_row(handle(document, args[0]), args[1], args[2])
     elif kind == 'remove': document.remove_row(handle(document, args[0]))
-    elif kind == 'move': document.move_row(handle(document, args[0]), handle(document, args[1]), args[2], args[3])
     elif kind == 'reorder': document.reorder(handle(document, args[0]), args[1], [handle(document, label) for label in args[2]])
-    elif kind == 'replace': document.replace_rows(handle(document, args[0]), args[1], args[2])
     elif kind == 'today': document.set_today(args[0])
     elif kind == 'lookup': document.set_lookups(args[0], args[1], args[2])
     elif kind == 'batch': document.batch(lambda _: [apply(document, item) for item in args[0]])
-    elif kind == 'rebase': document.rebase()
 
 
 def rule_map(document):
@@ -432,15 +453,15 @@ def collect():
         document = Document(plans[model], data, currencies=HOSTS.get(name))
         ruled = any(field.get('kind') for field in plans[model]['fields'])
         extra = (lambda: {'rules': rule_map(document)}) if ruled else dict
-        steps = [{'snapshot': strip(document.snapshot()), 'revision': document.revision, 'trace': document.trace,
+        steps = [{'snapshot': strip(document.snapshot()), 'changed': document.trace['changed'],
                   'requests': document.lookup_requests(), **extra()}]
         for command in commands:
             try:
                 apply(document, command)
-                steps.append({'command': command, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
-                              'trace': document.trace, 'requests': document.lookup_requests(), **extra()})
+                steps.append({'command': command, 'snapshot': strip(document.snapshot()), 'changed': document.trace['changed'],
+                              'requests': document.lookup_requests(), **extra()})
             except CalcError as exc:
-                steps.append({'command': command, 'error': exc.code, 'snapshot': strip(document.snapshot()), 'revision': document.revision,
+                steps.append({'command': command, 'error': exc.code, 'snapshot': strip(document.snapshot()),
                               'requests': document.lookup_requests(), **extra()})
         scenarios.append({'name': name, 'model': model, 'data': data, 'steps': steps, **({'currencies': HOSTS[name]} if name in HOSTS else {})})
     return {'plans': plans, 'scenarios': scenarios, 'numeric': numeric_cases(),

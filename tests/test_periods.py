@@ -4,8 +4,8 @@ from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
-from evlet import (Application, Boolean, Currency, Database, Date, DateTime, Effect, Link, Model, Move, Negate, Reference, Registry, Rule, State,
-                   Text, ValidationError)
+from evlet import (Application, Boolean, Currency, Database, Date, DateTime, Effect, Link, Model, Negate, Reference,
+                   Registry, Rule, State, Text, ValidationError)
 from evlet.auth import AccessError, LocalAuth, User
 from evlet.periods import set_lock
 from finite_fixtures import FiniteMeta
@@ -54,8 +54,13 @@ def voucher_meta(**extra):
     return type('Meta', (FiniteMeta,), {'effects': (Effect(Posting, rows='rows', on='posted', reverse=Negate('amount')),), **extra})
 
 
-STATUS = dict(moves=(Move('draft', 'posted', 'Post'),), locked=('posted', 'void'), final=('void',), voidable=('posted',))
-CORRECTING = {'admin': Rule(('read', 'create', 'update', 'delete', 'void', 'unpost', 'repost'))}
+def status():
+    return State(State.Step('draft'), State.Step('posted', lock=True, release=True), State.Step('void', lock=True, final=True),
+                 rules=(State.Rule('draft', 'posted', 'Post', key='posted'), State.Rule('posted', 'draft', 'Reopen', key='reopen', remark='required'),
+                        State.Rule('posted', 'void', 'Void', key='void', remark='required')))
+
+
+CORRECTING = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 
 
 class Voucher(Model):
@@ -64,7 +69,7 @@ class Voucher(Model):
     permissions = CORRECTING
     dated = Date()
     amount = Currency(default=0)
-    status = State(('draft', 'posted', 'void'), **STATUS)
+    status = status()
 
     def rows(self):
         return [{'posted_on': self.dated, 'amount': self.amount}]
@@ -76,7 +81,7 @@ class Receipt(Model):
     permissions = CORRECTING
     dated = Date()
     amount = Currency(default=0)
-    status = State(('draft', 'posted', 'void'), **STATUS)
+    status = status()
 
     def rows(self):
         return [{'posted_on': self.dated, 'amount': self.amount}]
@@ -221,22 +226,22 @@ def test_mirror_rows_keep_an_open_date_and_move_out_of_a_closed_one(books):
     today = datetime.now(timezone.utc).date()
     # Open period: the mirror keeps the original date.
     url = voucher(c, 'voucher', '2026-02-10')
-    assert c('POST', f'{url}/void', {'reason': 'Wrong amount'}, headers=etag(c, url))[0] == 200
+    assert c('POST', f'{url}/moves/void', {'remark': 'Wrong amount'}, headers=etag(c, url))[0] == 200
     assert postings(app) == [('2026-02-10', 1000, False), ('2026-02-10', -1000, True)]
     # Closed, with the lock after today: the mirror takes the day after the lock.
     url = voucher(c, 'voucher', '2026-02-11')
     ahead = today + timedelta(days=10)
     lock(app, ahead)
-    assert c('POST', f'{url}/unpost', {'reason': 'Recheck'}, headers=etag(c, url))[0] == 200
+    assert c('POST', f'{url}/moves/reopen', {'remark': 'Recheck'}, headers=etag(c, url))[0] == 200
     assert postings(app)[-1] == ((ahead + timedelta(days=1)).isoformat(), -1000, True)
-    # Reposting writes fresh originals with the record's own date, which is closed.
-    status, payload, _ = c('POST', f'{url}/repost', {}, headers=etag(c, url))
+    # Posting again writes fresh originals with the record's own date, which is closed.
+    status, payload, _ = c('POST', f'{url}/moves/posted', {}, headers=etag(c, url))
     assert status == 422 and payload['fields'] == {'_effects': 'Posting rows: ' + CLOSED.format(f'{ahead:%d-%m-%Y}')}
     # Closed, with the lock before today: the mirror is dated today.
     lock(app, None)
     url = voucher(c, 'voucher', '2026-02-12')
     lock(app, date(2026, 2, 28))
-    assert c('POST', f'{url}/void', {'reason': 'Duplicate'}, headers=etag(c, url))[0] == 200
+    assert c('POST', f'{url}/moves/void', {'remark': 'Duplicate'}, headers=etag(c, url))[0] == 200
     assert postings(app)[-1] == (today.isoformat(), -1000, True)
 
 
@@ -250,9 +255,9 @@ def test_effect_rows_into_a_closed_period_and_closed_documents_are_refused(books
     url = f"/api/voucher/{record['id']}"
     status, payload, _ = c('POST', f'{url}/moves/posted', {}, headers=etag(c, url))
     assert status == 422 and payload['fields'] == {'_effects': 'Posting rows: ' + CLOSED.format('31-03-2026')}
-    # A document with its own period in a closed one is neither moved, voided nor unposted.
-    for operation in ('void', 'unpost'):
-        status, payload, _ = c('POST', f'{open_receipt}/{operation}', {'reason': 'Late fix'}, headers=etag(c, open_receipt))
+    # A document with its own period in a closed one is neither voided nor reopened.
+    for operation in ('void', 'reopen'):
+        status, payload, _ = c('POST', f'{open_receipt}/moves/{operation}', {'remark': 'Late fix'}, headers=etag(c, open_receipt))
         assert status == 422 and payload['fields'] == {'dated': CLOSED.format('31-03-2026')}, operation
     assert c('GET', open_receipt)[1]['status'] == 'posted'
     assert [row for row in postings(app) if row[2]] == []

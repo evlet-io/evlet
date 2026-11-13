@@ -391,7 +391,7 @@ def test_routes_proxy_and_link_user_commands(project, capsys, tmp_path, hashed):
     main(['proxy', 'acme', '--caddy', '--write', str(target), '--project', str(project)])
     out = capsys.readouterr().out
     assert target.read_text() == CADDY and 'Reload the proxy yourself' in out
-    assert 'Add this line to Instance(...) in instances/acme/config.py, then restart Evlet:\n    trusted_proxies=("127.0.0.1", "::1"),' in out
+    assert 'Add this line to Instance(...) in instances/acme/config.py, then run evlet restart acme:\n    trusted_proxies=("127.0.0.1", "::1"),' in out
     assert target.stat().st_mode & 0o777 == 0o644
     with pytest.raises(SystemExit):
         main(['proxy', 'acme', '--caddy', '--port', '70000', '--project', str(project)])
@@ -538,19 +538,19 @@ def test_api_scope_lists_each_route_family(portal):
             return True
         except HTTPError:
             return False
-    paths = ('/api/invoice', '/api/invoice/01hbbfy2vasb2', '/api/invoice/01hbbfy2vasb2/void', '/api/invoice/01hbbfy2vasb2/revise', '/api/invoice/01hbbfy2vasb2/unpost', '/api/invoice/01hbbfy2vasb2/repost',
+    paths = ('/api/invoice', '/api/invoice/01hbbfy2vasb2', '/api/invoice/01hbbfy2vasb2/moves/void', '/api/invoice/01hbbfy2vasb2/moves/reopen',
              '/api/invoice/01hbbfy2vasb2/actions/send',
              '/api/invoice/01hbbfy2vasb2/moves/send', '/api/invoice/measures', '/api/invoice/aggregate', '/api/invoice/01hbbfy2vasb2/measures',
              '/api/invoice/01hbbfy2vasb2/related/payment', '/api/invoice/01hbbfy2vasb2/lines/rows', '/api/invoice/01hbbfy2vasb2/attachments', '/api/_draft/invoice', '/api/invoice/01hbbfy2vasb2/other')
     assert [path for path in paths if allowed(portal, path)] == ['/api/invoice', '/api/invoice/01hbbfy2vasb2']
     shop = Frontend('shop', kind='static', dist='dist', path='/shop', auth='portal', api=('ops.full',))
-    scope = ApiScope('full', models=(Invoice,), actions=((Invoice, 'void'), (Invoice, 'unpost'), (Invoice, 'send')),
+    scope = ApiScope('full', models=(Invoice,), actions=((Invoice, 'void'), (Invoice, 'send')),
                      extras=('measures', 'related', 'lines', 'attachments', 'drafts'))
     routes = resolve_routes([('ops', AppDefinition(frontends=(shop,), api_scopes=(scope,)))], None, {'hosts': (Host('portal.localhost', root=shop),)})
     auth = LocalAuth(portal.database, origins=routes.origins(), realms=routes.realms(), secure_cookies=False)
     app = Application(portal.database, auth=auth, routes=routes)
-    # Each correction is listed on its own: unpost does not open repost.
-    assert [path for path in paths if not allowed(app, path)] == ['/api/invoice/01hbbfy2vasb2/revise', '/api/invoice/01hbbfy2vasb2/repost', '/api/invoice/01hbbfy2vasb2/other']
+    # Each rule is listed on its own: void does not open reopen.
+    assert [path for path in paths if not allowed(app, path)] == ['/api/invoice/01hbbfy2vasb2/moves/reopen', '/api/invoice/01hbbfy2vasb2/other']
     with pytest.raises(ValueError, match='extras'):
         ApiScope('bad', models=(Invoice,), extras=('everything',))
 

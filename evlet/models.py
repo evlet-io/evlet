@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from .fields import ACTIVE, Field, Image, Link, MISSING, RULES, Reference, State, active_layer
+from .fields import ACTIVE, Field, Image, Link, MISSING, RULES, Reference, active_layer
 from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 from .identity import RecordId
 from .naming import standard
@@ -13,7 +13,7 @@ from .audit import COLUMNS as AUDIT
 # Steps of building a model class (the first four) and a Registry (the rest) that higher layers own,
 # in the order they run. Each module registers its own with @build_step when it is imported, and
 # evlet/__init__.py imports them all, so they are in place before any app model is defined.
-BUILD_ORDER = ('ledger_declared', 'ledger_class', 'lifecycle', 'journaled',
+BUILD_ORDER = ('ledger_declared', 'ledger_class', 'statemanager', 'journaled',
                'meaning', 'guards', 'kept_plan', 'sequences', 'namings', 'measures', 'cards', 'effects', 'posted_reads',
                'journals', 'api', 'ledger_schema')
 BUILD_STEPS = {}
@@ -51,30 +51,6 @@ def storage_name(model):
     return model.__name__.lower()
 
 
-def revises_field():
-    """The field the engine adds to a revisable model: an indexed Link to the same model, read only, set
-    only when a revise creates the copy. The model class sets its target once it exists.
-
-    An existing table needs a migration to gain it, like any field:
-    AddField('<model>', 'revises', Link('<model>', index=True)).
-    """
-    field = Link(None, label='Revises', read_only=True, index=True)
-    field.engine_revises = True
-    return field
-
-
-def unique_and_required(name, fields, tables):
-    """A revision clears unique values, so a revisable document (rows included) cannot require one."""
-    for key, field in fields.items():
-        if field.unique and field.required:
-            raise ValueError(f'{name}.{key} is unique and required, but a revision clears unique values; '
-                             'make it optional or not unique')
-    for table in tables.values():
-        child = table.child
-        if isinstance(child, type):
-            unique_and_required(child.__name__, child.__declared_fields__, child.__tables__)
-
-
 class ValidationError(ValueError):
     def __init__(self, errors):
         self.errors = errors
@@ -99,14 +75,8 @@ def checked_body(body, allowed, message, *, exact=False, nonempty=False, field='
     return body
 
 
-def closes(model):
-    """Whether a model declares before_close(self, to)."""
-    import inspect
-    return inspect.isfunction(getattr(model, 'before_close', None))
-
-
 def declared_hooks(cls, name, meta, fields, tables, row):
-    """Check derive() with Meta.derives and before_close(self, to); returns the names derive() writes.
+    """Check derive() with Meta.derives; returns the names derive() writes.
 
     derive(self) builds stored values that formulas cannot express. It runs on every write and preview
     of the document, before calculations, and may assign only the fields, Tables and "table.field" row
@@ -131,10 +101,11 @@ def declared_hooks(cls, name, meta, fields, tables, row):
     if len(set(derives)) != len(derives):
         raise ValueError(f'{name}: Meta.derives names each field or Table once')
     from .calc import is_finite
+    from .declarations import State
 
     def source(owner, key, field):
         if not field.stored or field.compute is not None or field.query is not None or is_finite(field) or \
-                isinstance(field, State) or field.kind == 'sequence' or standard(field) or getattr(field, 'engine_revises', False):
+                isinstance(field, State) or field.kind == 'sequence' or standard(field):
             raise ValueError(f'{owner}.{key}: derive() sets stored source fields; calculated, State, Sequence and '
                              'standard fields have their own writers')
     for key in derives:
@@ -163,12 +134,27 @@ def declared_hooks(cls, name, meta, fields, tables, row):
         if field is None:
             raise ValueError(f'{name}: Meta.derives names {key!r}, which is not a field or Table of the model')
         source(name, key, field)
-    close = getattr(cls, 'before_close', None)
-    if inspect.isfunction(close) and len(inspect.signature(close).parameters) != 2:
-        raise ValueError(f'{name}.before_close takes self and to')
-    if inspect.isfunction(close) and row:
-        raise ValueError(f'{name}: before_close() belongs to the document; a Table row cannot declare it')
+    for removed in ('before_close', 'changed', 'check_lifecycle'):
+        if inspect.isfunction(getattr(cls, removed, None)):
+            raise ValueError(f'{name}.{removed}() was removed in 0.4.6; use @validate, @state(...), @state.exit(...) or '
+                             '@release (docs/states-actions.md#hooks)')
+    if inspect.isfunction(vars(cls).get('validate')) and not hasattr(vars(cls)['validate'], '__evlet_hook__'):
+        raise ValueError(f'{name}.validate() was removed in 0.4.6; decorate a check with @validate instead')
     return derives
+
+
+def refuse_finite_expressions(name, fields, tables, prefix=''):
+    """Slips, Report filter forms and Dialogs run the string rules and have no finite plan yet, so a finite
+    expression on them (F(...) in compute, initial or a *_when rule) would be ignored or fail when the form is
+    checked. Refuse it when the form is declared, naming the field, including fields of its table rows."""
+    from .calc import uses_finite
+    for key, field in fields.items():
+        if uses_finite(field):
+            raise ValueError(f"{name}.{prefix}{key}: dialogs, reports and slips do not run finite expressions yet; "
+                             "use the string rules visible_if, required_if, read_only_if and compute='...' for now")
+    for key, table in tables.items():
+        child = table.child
+        refuse_finite_expressions(name, child.__app_fields__, child.__tables__, f'{prefix}{key}.')
 
 
 class ModelType(type):
@@ -180,23 +166,11 @@ class ModelType(type):
             fields.update(getattr(base, "__app_fields__", {}))
             tables.update(getattr(base, '__tables__', {}))
             sources.update(getattr(base, '__sources__', {}))
-        # Meta.revisable = True: the engine adds `revises`, a Reference to the record a revision replaced.
         meta = namespace['Meta'] if 'Meta' in namespace else next((base.Meta for base in bases if hasattr(base, 'Meta')), None)
         # Record pages have no tabs since 0.4: the old options fail here, with where to go instead.
         if 'Meta' in namespace:
             from .ui.metadata import refuse_removed
             refuse_removed(name, namespace['Meta'])
-        revisable = getattr(meta, 'revisable', False)
-        if revisable not in (True, False):
-            raise ValueError(f'{name}: Meta.revisable is True or False')
-        for reserved in (('revises', 'revised_by') if revisable else ()):
-            inherited = fields.get(reserved)
-            if reserved in namespace or inherited is not None and not getattr(inherited, 'engine_revises', False):
-                raise ValueError(f'{name}.{reserved} is reserved: a revisable model gets revises from the engine '
-                                 'and shows revised_by in its details')
-        if revisable:
-            # Each revisable class gets its own field, so a subclass's revisions link to its own table.
-            namespace = {**namespace, 'revises': revises_field()}
         # Meta.ledger = True: a lean table trusted code writes (evlet/ledger.py).
         # Model and Child are built before the steps register; they declare none of what the steps check.
         steps = step if namespace.get('__module__') != __name__ else lambda name: lambda *args: False
@@ -250,15 +224,19 @@ class ModelType(type):
         if getattr(cls, '__transient__', False) and any(getattr(table, 'sections', False) for table in tables.values()):
             raise ValueError(f'{name}: section rows (Table(..., sections=True)) are for Tables of saved records, '
                              'not dialogs, reports or slips')
+        if getattr(cls, '__transient__', False):
+            refuse_finite_expressions(name, fields, tables)
         cls.__sources__ = MappingProxyType(sources)
+        from .declarations import State
         states = [key for key, value in fields.items() if isinstance(value, State)]
         if len(states) > 1:
             raise ValueError(f"{name} declares more than one State: " + ", ".join(states))
         # The State field's name; its value changes only through moves, so the model is a document.
         cls.__state__ = states[0] if states else None
-        if revisable and (not states or not fields[states[0]].voidable):
-            raise ValueError(f'{name}: Meta.revisable needs a State with voidable states, because a revise voids the original')
-        cls.__revisable__ = revisable
+        for removed in ('confirmable', 'track_changes'):
+            if namespace.get(removed):
+                raise ValueError(f'{name}: {removed} was removed in 0.4.6; declare a State with rules and a release step '
+                                 '(docs/states-actions.md)')
         cls.__ledger__ = ledger
         # Meta.image names the Image field shown as the record's avatar or thumbnail.
         image = getattr(meta, 'image', None)
@@ -276,21 +254,18 @@ class ModelType(type):
         else:
             from .indexes import normalize
             cls.__indexes__ = normalize(name, getattr(meta, 'indexes', ()) if meta is not None else (), fields)
-        if revisable:
-            fields['revises'].target = cls
-            unique_and_required(name, fields, tables)
         cls.__derives__ = declared_hooks(cls, name, meta, fields, tables, is_row_table(namespace, bases, fields))
-        steps('lifecycle')(cls)
+        steps('statemanager')(cls)
         # Meta.journal = Journal(...) makes a document, so every write goes through the journaled pipeline.
         journaled = False
         if hasattr(meta, 'journal'):
             journaled = steps('journaled')(meta.journal)
         if ledger:
             pass  # Trusted code writes ledger rows through the session; nothing is declarative.
-        elif getattr(cls, "confirmable", False) or getattr(cls, "track_changes", False) or journaled or states or sources or tables or 'permissions' in namespace or cls.__derives__ or closes(cls) or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        elif journaled or states or sources or tables or 'permissions' in namespace or cls.__derives__ or cls.__hooks__ or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
-        reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values'}
+        reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values', 'before', 'is_new', 'release'}
         if isinstance(fields.get('source'), Reference) and not tables:
             # Effect targets declare source = Reference(); a flat record has no dialog source to shadow.
             reserved.discard('source')
@@ -314,8 +289,14 @@ class ModelType(type):
 
 
 class Model(metaclass=ModelType):
+    # What the statemanager build step sets on every subclass (evlet/statemanager.py configure).
+    __hooks__ = ()
+
     class Meta:
         pass
+
+    # What @validate sees on a record built outside the document pipeline: it is new, with nothing saved before.
+    is_new, before = True, None
 
     # A record keeps the Layer it was built with, so its instance fields read the same after the
     # transaction or request that made it has ended.
@@ -357,10 +338,10 @@ class Model(metaclass=ModelType):
             raise ValidationError(errors)
         self._values = MappingProxyType(cleaned)
         self._id = None
-        self.validate()
-
-    def validate(self):
-        """Override for cross-field rules; raise ValidationError with field errors."""
+        # A record built outside the document pipeline (Session writes, legacy rows) runs its @validate checks here.
+        for kind, _, name in type(self).__hooks__:
+            if kind == 'validate':
+                getattr(self, name)()
 
     @property
     def id(self):
@@ -513,11 +494,11 @@ class Registry:
         self.plans = MappingProxyType(plans)
         # What saved documents record: changes only when formulas or the fields they use change.
         self.formula_hashes = MappingProxyType({root: formula_hash(plan) for root, plan in plans.items()})
-        # Move guards and action availability, compiled once per root document.
+        # Rule conditions and action availability, compiled once per root document.
         compile_guards, kept_plan = step('guards'), step('kept_plan')
         self.guards, self.guard_plans, self.guard_root_plans = compile_guards(self, models, plans, child_models)
         # Ordinary writes on a locked record evaluate rules over the results it keeps.
-        self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None or getattr(root, 'confirmable', False)})
+        self.kept_plans = MappingProxyType({root: kept_plan(plan) for root, plan in plans.items() if root.__state__ is not None})
         # Document numbers: {model: {field name: Sequence}}.
         compile_sequences = step('sequences')
         self.sequences = compile_sequences(self, models, plans, child_models)
@@ -543,6 +524,9 @@ class Registry:
         # Record histories: {model: Journal} (evlet/journal.py).
         compile_journals = step('journals')
         self.journals = compile_journals(models, child_models, self.effects)
+        for model in models:
+            if model.__state__ and model not in self.journals and any(rule.levels for rule in model.__declared_fields__[model.__state__].rules):
+                raise ValueError(f'{model.__name__}: approval levels are kept in the journal, so Meta.journal cannot be None')
         # What callers reach of each model ({model: Meta.api}, evlet/permissions.py) and which stored date
         # places a record in a period that a lock can close ({model: Period}, evlet/periods.py).
         compile_api = step('api')

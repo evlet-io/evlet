@@ -6,7 +6,7 @@ import pytest
 
 from evlet import (Boolean, Currency, Database, Date, DateTime, Decimal, Email, Integer,
                    Link, LongText, Model, Registry, Select, Text, URL, ValidationError,
-                   ConflictError, NotFoundError)
+                   ConflictError, NotFoundError, validate)
 from examples.playground.models import Customer, Invoice, Payment
 from test_api import request
 
@@ -71,6 +71,7 @@ def test_custom_validation_runs_on_partial_update(tmp_path):
         name = Text(required=True, validator=reject_reserved)
         start = Date(required=True)
         end = Date(required=True)
+        @validate
         def validate(self):
             if self.end < self.start:
                 raise ValidationError({'end': 'End precedes start'})

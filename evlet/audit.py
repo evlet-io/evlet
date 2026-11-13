@@ -64,7 +64,7 @@ def modified(actor):
 
 
 def touch(connection, table, record_id, actor):
-    """Mark a record changed by a write that sets its columns directly (void, unpost)."""
+    """Mark a record changed by a write that sets its columns directly."""
     connection.run(qb.update(table, evlet_modified_at=now(), evlet_modified_by=actor).where(id=record_id))
 
 

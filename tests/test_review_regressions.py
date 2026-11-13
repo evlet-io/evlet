@@ -8,7 +8,7 @@ import time
 
 import pytest
 
-from evlet import Application, Database, Integer, Model, Registry, Text, ValidationError
+from evlet import Application, Database, Integer, Model, Registry, Text, ValidationError, validate
 from evlet.auth import AccessError, password_hash
 from test_business import PASSWORD, client, hashed, http, secured
 from test_jobs import queue, raw, submit
@@ -67,10 +67,11 @@ def test_stored_rows_remain_readable_and_repairable_after_validation_changes(tmp
     def nonnegative(value):
         if value < 0:
             raise ValueError('Use a nonnegative quantity')
-    def validate(self):
+    @validate
+    def check(self):
         if self.qty < 0:
             raise ValidationError({'qty':'Use a nonnegative quantity'})
-    revised = type('Stock', (Model,), {'qty': Integer(validator=nonnegative), 'validate':validate})
+    revised = type('Stock', (Model,), {'qty': Integer(validator=nonnegative), 'check': check})
     db = Database(path, Registry(revised)); db.initialize()
     assert db.get(revised, item.id).qty == -5
     assert db.list(revised)[0].qty == -5
@@ -203,7 +204,7 @@ def test_scoped_child_edit_preserves_hidden_children(secured):
     assert secured.database.count(ProjectTask) == 2
     hidden = next(row for row in secured.database.list(ProjectTask) if not row.done)
     assert hidden.title == 'Hidden'
-    assert editor('PATCH',path, {'children':{'tasks':[{'id':hidden.id,'title':'Forbidden'}]}})[0] == 404
+    assert editor('PATCH',path, {'children':{'tasks':[{'id':hidden.id,'title':'Forbidden'}]}})[0] == 422
     assert secured.database.get(ProjectTask, hidden.id).title == 'Hidden'
 
 

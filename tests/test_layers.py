@@ -14,7 +14,7 @@ LAYERS = {
             'query audit sections periods',
     'access': 'auth permissions',
     'data': 'database sqlite migrations ledger writes storage object_storage secrets sequences images',
-    'engine': 'documents states lifecycle effects corrections journal measures unsaved mentions meaning',
+    'engine': 'documents statemanager guards effects journal measures unsaved mentions meaning',
     'web': 'app routing business forms slips workspaces services events jobs framework devlink discovery',
     'admin': 'controls controls_export controls_system customization settings printing',
     'ai': 'eva tools mcp connector connectors assistants mailboxes',
@@ -46,8 +46,9 @@ ALLOWED_UPWARD = {
     ('migrations', 'controls_export'),
     ('migrations', 'documents'),
     ('migrations', 'effects'),
+    ('migrations', 'framework'),
     ('migrations', 'journal'),
-    ('migrations', 'lifecycle'),
+    ('migrations', 'statemanager'),
     ('sequences', 'documents'),
     ('sequences', 'journal'),
     # engine
@@ -68,6 +69,7 @@ ALLOWED_UPWARD = {
     ('business', 'settings'),
     ('business', 'tools'),
     ('devlink', 'controls'),
+    ('framework', 'controls'),
     ('framework', 'tools'),
     # admin
     ('controls', 'connectors'),

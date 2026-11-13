@@ -96,11 +96,15 @@ points upward; every module must be in the map.
 | 1 | `core` | Pure definitions | adapter, qb, identity, fields, models, declarations, expressions, calc, reactivity, currencies, richtext, naming, indexes, query, audit, sections, periods |
 | 2 | `access` | Who may do what | auth, permissions |
 | 3 | `data` | SQL, files, migrations | database, sqlite, migrations, ledger, writes, storage, object_storage, secrets, sequences, images |
-| 4 | `engine` | Document behaviour | documents, states, lifecycle, effects, corrections, journal, measures, unsaved, mentions, meaning |
+| 4 | `engine` | Document behaviour | documents, statemanager, guards, effects, journal, measures, unsaved, mentions, meaning |
 | 5 | `web` | HTTP application and routes | app, routing, business, forms, slips, workspaces, services, events, jobs, framework, devlink, discovery |
 | 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing |
 | 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
 | 8 | `site` | Sites, apps, deployment | instances, packages, builds, deployment, tenancy, serverless |
+
+The state manager's declarations (`State`, `State.Step`, `State.Rule`, `State.Level`, `State.Remark`) live in
+`evlet/declarations.py` in core, so models and sequences import them downward; `evlet/statemanager.py` (engine)
+runs them and re-exports them.
 
 `evlet/ui/`, `evlet/cli/` and `evlet/resources/` sit above all eight layers. A module-level
 import never points upward. Some function-level imports still do; `ALLOWED_UPWARD` in the test
@@ -109,7 +113,7 @@ when an entry no longer occurs. Remove an upward import by moving the code to th
 its data, passing a value in, or letting the higher module register itself with the lower one.
 
 Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
-lifecycle, move guards, sequences, measures, effects, journals, API access). `evlet/models.py`
+state manager hooks, rule guards, sequences, measures, effects, journals, API access). `evlet/models.py`
 lists them in `BUILD_ORDER`, the order they run in; each owning module registers its function with
 `@build_step(name)`, and `evlet/__init__.py` imports those modules before any model class exists.
 
@@ -318,12 +322,12 @@ trusted installation stages database changes and publishes a separate app lock
 with a recoverable journal. Existing framework modules retain their public names.
 See [the CLI guide](cli.md) for commands, resource packaging and boundaries.
 
-## Document lifecycle amendment
+## State manager
 
-Confirmable models now use decorator validators/actions, same-identity revisions,
-immutable snapshots and unified history. See [document lifecycle](document-lifecycle.md)
-for the APIs, permission and transaction contract, approval boundaries and adoption
-from existing State/Move applications.
+`evlet/statemanager.py` holds a document's State: its steps, the rules that move it between
+them, and the hooks `@validate`, `@state`, `@state.exit` and `@release`. Confirm, cancel,
+reopen and void are steps and rules, not separate operations. See
+[states-actions.md](states-actions.md) and [document lifecycle](document-lifecycle.md).
 
 ## Ledger models
 

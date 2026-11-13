@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminRoutes, byText, click, lastToast, press, recorded, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
-import { fingerprint } from '../model/finite';
 import { copy, id } from './server';
 
 afterEach(() => { vi.useRealTimers(); stopAll(); });
@@ -575,7 +574,6 @@ describe('a saved record with Tags, MultiSelect and Reference values', () => {
       order.layout[0].fields.push(name);
       order.calculation.plan.tables.$root.fields[name] = { computed: false, default: null, kind: type, maximum: null, minimum: null, required: false, scale: null, stored: true, type };
     }
-    order.calculation.plan.model_schema_hash = fingerprint(order.calculation.plan);
     const detail = copy(recorded.detail);
     Object.assign(detail.body, values);
     return [
