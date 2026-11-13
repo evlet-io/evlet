@@ -1483,7 +1483,8 @@ class Business:
             if len(raw) > 8192:
                 raise ValueError()
             query = parse_qs(raw.decode('ascii'), keep_blank_values=True, max_num_fields=10)
-            if set(query) - {'limit', 'offset', 'filters', 'order_by', 'q'} or any(len(values) != 1 for values in query.values()):
+            if set(query) - {'limit', 'offset', 'filters', 'order_by', 'q', 'awaiting'} or any(len(values) != 1 for values in query.values()) \
+                    or query.get('awaiting', ['me']) != ['me']:
                 raise ValueError()
             import json
             filters = json.loads(query.get('filters', ['{}'])[0])
@@ -1505,6 +1506,11 @@ class Business:
         with self.database._connection() as connection:
             connection.snapshot()
             tx = Session(connection, self.registry)
+            if 'awaiting' in query:
+                # Awaiting my approval: records whose waiting approval level this user may approve.
+                from .documents import Context
+                from .statemanager import awaiting
+                where.append(qb.in_('id', awaiting(Context(self, tx, user, readonly=True), model) or [0]))
             rows = connection.run(qb.select(table).where(*where).order_by(*ordering).limit(limit).offset(offset)).all()
             total = connection.run(qb.select(table, qb.count()).where(*where)).value()
             # One visibility check per Link target for the page, not per row.

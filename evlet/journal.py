@@ -279,7 +279,7 @@ def journals(context, model):
     return model in context._business.journals
 
 
-def written(context, model, record_id, before, after, *, action=None):
+def written(context, model, record_id, before, after, *, action=None, entering=None):
     """`created` or `changed` after a document write (create, update, action, revision copy)."""
     if not journals(context, model):
         return
@@ -287,6 +287,7 @@ def written(context, model, record_id, before, after, *, action=None):
     if action is not None:
         data['action'] = action
     if before is None or data:
+        data.update(entering or {})
         append(context._business, context._tx, context.user, model, record_id, 'created' if before is None else 'changed', data)
 
 

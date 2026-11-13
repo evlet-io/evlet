@@ -103,11 +103,51 @@ class Invoice(Model):
 * `ask` adds fields the move dialog asks for to those it asks for anyway
   ([Values a move asks for](#values-a-move-asks-for)).
 * `primary=True` marks the main button. Without one, screens use the first allowed rule.
-* `reject=True` marks a rule back from an approval. Approval levels (`levels=`,
-  `State.Level`, `self_approve=`) come in 0.4.6, PR 2.
+* `levels` makes the rule an approval, and `reject=True` marks a rule back from one
+  ([Approvals](#approvals)).
 
-`State.Rule`, `State.Step` and `State.Remark` live on `State` because `evlet.Rule` is the
-permission rule.
+`State.Rule`, `State.Step`, `State.Level` and `State.Remark` live on `State` because `evlet.Rule`
+is the permission rule.
+
+### Approvals
+
+A rule with `levels` moves when its last level that applies is approved. Each level names who
+approves, an optional condition and the text the record shows while it waits:
+
+```python
+Level = State.Level
+
+State.Rule("review", "approved", "Approve", key="approve", remark="optional",
+           levels=(Level(by=("manager",), pending="Pending manager approval"),
+                   Level(by=("cfo",), when=F("total") >= 10000, pending="Pending CFO approval"),
+                   Level(by=("director",), when=F("total") >= 50000, pending="Pending director approval"))),
+State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="required"),
+```
+
+* Levels run top to bottom; only the waiting level's approvers can approve. For a total of
+  20,000 this runs manager, then CFO, then the move; the director level is skipped.
+* Conditions are decided when the record enters the state and logged with that entry, so a later
+  change outside the engine does not add or drop a level.
+* Approving a level that is not the last writes an `approved` journal entry (with `rule`, `level`
+  and the remark) and changes nothing else; the last one is the `moved` entry, with its `level`.
+  Values the move asks for are taken with the last approval only.
+* Someone who approved a level cannot approve a later level of the same rule. The record's creator
+  cannot approve unless the rule says `self_approve=True`.
+* Approvals belong to one stay in the state: leaving it (a reject, a withdraw) clears them, and a
+  resubmit starts at level 1.
+* A `reject=True` rule is offered only to the waiting level's approvers. Any other rule out of
+  the state (such as a Withdraw by the submitter) follows its own `by`.
+* A rule whose levels all do not apply is an ordinary move for whoever may change the record.
+* There is no admin override; declare one as its own rule (for example `Force approve`, by admin,
+  with a required remark).
+* `_moves` shows, for an approval, `level` (1 for the first), `pending` and `can_approve`; the
+  schema's rule lists `levels` (`by`, `pending`, `guarded`) and `self_approve`.
+* `GET /api/{model}?awaiting=me` lists the records whose waiting level this user may approve now
+  ("Awaiting my approval"). It is computed from the rules and the journal, so approvals need the
+  journal: `Meta.journal = None` with `levels` is refused.
+
+Eva's write confirmations (Eva asking before it changes a record) are a different feature: an
+approval level is part of the record's rules and applies to every caller.
 
 Declaration fails when a rule names an unknown state, leaves a final state, or does not change
 the state, and when a hook or `ask` names an unknown state or field.
@@ -516,7 +556,7 @@ include keys that are not part of the ETag:
 
 ## Not yet
 
-* Approval levels (0.4.6, PR 2); releases, versions and the `@release` hook (PR 3); restore
+* Releases, versions and the `@release` hook (0.4.6, PR 3); restore
   (PR 4); rules changed on an instance (PR 5).
 * Draft previews (`/api/_draft`) do not report the State lock; the save does. A preview of a
   locked or posted record shows the calculated values it keeps, like the save.

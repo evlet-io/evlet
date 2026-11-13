@@ -489,6 +489,9 @@ class Registry:
         # Record histories: {model: Journal} (evlet/journal.py).
         from .journal import compile_journals
         self.journals = compile_journals(models, child_models, self.effects)
+        for model in models:
+            if model.__state__ and model not in self.journals and any(rule.levels for rule in model.__declared_fields__[model.__state__].rules):
+                raise ValueError(f'{model.__name__}: approval levels are kept in the journal, so Meta.journal cannot be None')
         # What callers reach of each model ({model: Meta.api}, evlet/permissions.py) and which stored date
         # places a record in a period that a lock can close ({model: Period}, evlet/periods.py).
         from .permissions import compile_api
