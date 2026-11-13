@@ -104,7 +104,8 @@ def _administrator(connection):
 
 
 def _state_manager(connection, registry):
-    """0.4.6: give the journal the state manager's columns (empty on old entries), create evlet_releases, turn
+    """0.4.6: give the journal the state manager's columns (empty on old entries), create evlet_releases, let
+    evlet_overrides take the kinds "state" and "rule", turn
     confirmable revisions into releases with their snapshots and lifecycle states into State values, then give
     every record that is in a release step and has no release a v0 release (no snapshot)."""
     import json
@@ -117,6 +118,10 @@ def _state_manager(connection, registry):
             if column.name not in present:
                 connection.add_column('evlet_journal', column)
     ensure_releases(connection)
+    # The overrides table takes the new kinds "state" and "rule" (Controls widens an older table's check).
+    if connection.table_exists('evlet_overrides'):
+        from .controls import ensure_schema
+        ensure_schema(connection)
     lost = set()
     if connection.table_exists('evlet_document_lifecycle'):
         for row in connection.run(qb.select('evlet_document_lifecycle', 'model', 'record_id', 'state')).all():

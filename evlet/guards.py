@@ -46,8 +46,9 @@ def compile_guards(registry, models, plans, child_models):
             declaration = getattr(getattr(model, name, None), '__action__', None)
             if isinstance(declaration, dict) and declaration.get('available_when') is not None:
                 wanted[name] = declaration['available_when']
-        if not wanted:
+        if not wanted and state is None:
             continue
+        # Every State gets its plans, so rules an instance adds later (statemanager.load_overrides) can be decided.
         plan = plans.get(model) or compile_plan(registry, model, force=True)
         tables = {child.name: child.model for child in registry.children if child.parent is model}
         compiled = {}

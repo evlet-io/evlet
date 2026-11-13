@@ -717,3 +717,91 @@ def test_restore_keeps_a_unique_value_taken_since_and_reports_fields(contracts):
         current._rows = {}
         values, dropped = restorable(Contract, {'id': 'x', 'gone': 1, 'title': 'T', 'children': {}}, current, app.database.registry)
     assert dropped == ['gone'] and values['title'] == 'T' and values['days'] == 30 and 'note' not in values
+
+
+# Rules changed on an instance (evlet_overrides kinds "state" and "rule")
+
+def overrides(c, *changes):
+    return c('POST', '/api/_controls/overrides', {'changes': [{'kind': kind, 'key': key, 'value': value} for kind, key, value in changes]})
+
+
+def schema_state(c):
+    return next(m for m in c('GET', '/api/schema')[1]['models'] if m['name'] == 'ticket')['state']
+
+
+def test_labels_colours_and_code_rules_change_by_key(app):
+    c = client(app)
+    status, body, _ = overrides(c, ('state', 'Ticket.review', {'label': 'Checking', 'color': 'blue'}),
+                                ('rule', 'Ticket.submit', {'label': 'Send for checking', 'remark': 'required'}),
+                                ('rule', 'Ticket.void', {'off': True}))
+    assert status == 200, body
+    state_schema = schema_state(c)
+    assert next(step for step in state_schema['steps'] if step['key'] == 'review') == {
+        'key': 'review', 'label': 'Checking', 'color': 'blue', 'lock': True, 'release': False, 'final': False}
+    assert [rule['key'] for rule in state_schema['rules']] == ['submit', 'approve', 'back']
+    url = ticket(c)
+    assert [(item['key'], item['label']) for item in c('GET', url)[1]['_moves']] == [('submit', 'Send for checking')]
+    assert move(c, url, 'void', {'remark': 'x'})[0] == 404
+    assert move(c, url, 'submit')[1]['fields'] == {'remark': 'Send for checking needs a remark'}
+    assert move(c, url, 'submit', {'remark': 'Ready'})[0] == 200
+    # The move logs the rule key and the rule set version it used.
+    with app.database.transaction() as tx:
+        version = tx.connection.execute('SELECT version FROM evlet_config').fetchone()[0]
+        assert tuple(tx.connection.execute("SELECT rule, rules_version FROM evlet_journal WHERE kind='moved' ORDER BY id DESC").fetchone()) == ('submit', version)
+    # Reset to code: delete the overrides.
+    overrides(c, ('rule', 'Ticket.void', None), ('rule', 'Ticket.submit', None), ('state', 'Ticket.review', None))
+    assert [rule['key'] for rule in schema_state(c)['rules']] == ['submit', 'approve', 'back', 'void']
+
+
+def test_an_added_rule_with_a_text_condition_and_approval_levels(app):
+    c, manager = client(app), add_user(app, 'manager')
+    status, body, _ = overrides(c, ('rule', 'Ticket.hold', {'from': ['review'], 'to': 'draft', 'label': 'Hold', 'by': ['manager'],
+                                                            'when': 'discount > 10'}),
+                                ('rule', 'Ticket.approve', {'levels': [{'by': ['manager'], 'pending': 'Pending manager approval'},
+                                                                       {'by': ['admin'], 'when': 'discount >= 50', 'pending': 'Pending admin'}]}))
+    assert status == 200, body
+    url = ticket(c, discount=5)
+    move(c, url, 'submit')
+    hold = next(item for item in manager('GET', url)[1]['_moves'] if item['key'] == 'hold')
+    assert hold['allowed'] is False and hold['reason'] == 'The condition for this move is not met'
+    assert approval(manager, url)['pending'] == 'Pending manager approval'
+    # The admin level does not apply under 50, so the manager's approval moves it.
+    assert move(manager, url, 'approve')[1]['status'] == 'done'
+
+
+@pytest.mark.parametrize('change, message', [
+    (('rule', 'Ticket.ghost', {'from': ['draft'], 'to': 'nowhere'}), 'unknown state'),
+    (('rule', 'Ticket.undo', {'from': ['void'], 'to': 'draft'}), 'leaves a final state'),
+    (('rule', 'Ticket.submit', {'by': ['nobody']}), 'not a role of this instance'),
+    (('rule', 'Ticket.submit', {'when': 'colour == "red"'}), "colour isn't a field"),
+    (('rule', 'Ticket.approve', {'levels': [{'by': ['manager']}]}), 'pending text'),
+    (('rule', 'Ticket.missing', {'label': 'x'}), 'names no code rule'),
+    (('rule', 'Ticket.submit', {'from': ['review']}), 'change '),
+    (('state', 'Ticket.nowhere', {'label': 'x'}), 'not a step'),
+    (('state', 'Ticket.review', {'lock': False}), 'label'),
+    (('rule', 'Nobody.submit', {'label': 'x'}), 'name a model with a State'),
+])
+def test_a_rule_set_that_does_not_hold_is_refused_on_save(app, change, message):
+    status, body, _ = overrides(client(app), change)
+    assert status == 422 and message in body['fields']['changes.0'], body
+
+
+def test_turning_off_every_rule_out_of_a_state_is_refused(app):
+    status, body, _ = overrides(client(app), ('rule', 'Ticket.submit', {'off': True}), ('rule', 'Ticket.void', {'off': True}))
+    assert status == 422 and 'no rule leaves draft' in body['fields']['changes.0'], body
+
+
+def test_orphans_are_ignored_and_other_processes_follow_the_version(app, tmp_path):
+    from evlet import Application, LocalAuth
+    c = client(app)
+    with app.database.transaction() as tx:
+        tx.connection.execute("INSERT INTO evlet_overrides (kind, key, value) VALUES ('rule', 'Ticket.retired', '{\"label\": \"Old\"}')")
+        tx.connection.execute('UPDATE evlet_config SET version = version + 1')
+    listed = c('GET', '/api/_controls/overrides')[1]
+    assert any(problem['key'] == 'Ticket.retired' and 'orphaned' in problem['error'] for problem in listed['problems'])
+    assert [rule['key'] for rule in schema_state(c)['rules']] == ['submit', 'approve', 'back', 'void']
+    # A second process on the same database picks up a change on its next request.
+    other = Application(app.database, auth=LocalAuth(app.database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    other.initialize()
+    assert overrides(c, ('rule', 'Ticket.submit', {'label': 'Propose'}))[0] == 200
+    assert next(rule['label'] for rule in schema_state(client(other))['rules'] if rule['key'] == 'submit') == 'Propose'

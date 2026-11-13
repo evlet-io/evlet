@@ -23,9 +23,9 @@ from . import qb, writes
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
 OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
-KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting')
+KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting', 'state', 'rule')
 # Workspace overrides share the table but have their own routes (/api/_controls/workspaces), not POST /overrides.
-OVERRIDE_KINDS = (*KINDS, 'workspace')
+OVERRIDE_KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting', 'workspace', 'state', 'rule')
 WORKSPACE_ACCESS = 'Customizing workspaces needs an admin, or a role with "Customize workspaces" on.'
 PAGES = ('overview', 'users', 'roles', 'permissions', 'security', 'connectors', 'email', 'mcp', 'eva', 'usage', 'log', 'keys', 'models', 'naming', 'periods', 'prints', 'currencies', 'apps', 'routing', 'jobs', 'overrides', 'audit')
 SETTINGS = MappingProxyType({
@@ -59,7 +59,8 @@ ADMIN_SETTINGS = ('display.currencies', 'security.controls_two_step')
 ADMIN_SETTING_REFUSALS = {'display.currencies': 'Only an admin can change how currencies are shown.',
                           'security.controls_two_step': 'Only an admin can change two-step sign-in for roles that open Controls.'}
 NOT_FOUND = 'Route not found'
-AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming'}
+AREAS = {'perm': 'Permissions', 'setting': 'Security', 'field': 'Models', 'layout': 'Models', 'list': 'Models', 'naming': 'Naming',
+         'state': 'Approval Rules', 'rule': 'Approval Rules'}
 # A paused schedule is a setting override: schedule.<name>.active = false.
 SCHEDULE = re.compile(r'schedule\.([a-z][a-z0-9_]{0,63})\.active')
 ADMIN_ONLY = 'Only an admin can do this: change admin accounts, give the admin role, manage roles or decide who opens Controls.'
@@ -99,11 +100,11 @@ def ensure_schema(connection):
     for definition in (OVERRIDES, AUDIT, CONFIG, PERIOD_LOCKS):
         connection.ensure_table(definition)
     connection.run(qb.insert('evlet_config', id=1, version=1).on_conflict().do_nothing())
-    # Workspace overrides (kind "workspace") came later: widen the kind check of a table made before them.
+    # Later kinds (workspace, then state and rule): widen the kind check of a table made before them.
     # A probe row inside a savepoint tells whether the table takes the kind; it never stays.
     try:
         with connection.savepoint('evlet_overrides_kind'):
-            connection.run(qb.insert('evlet_overrides', kind='workspace', key='evlet_kind_probe', value=''))
+            connection.run(qb.insert('evlet_overrides', kind=OVERRIDE_KINDS[-1], key='evlet_kind_probe', value=''))
             raise _KindProbe
     except _KindProbe:
         widen = False
@@ -394,6 +395,9 @@ class Controls:
             policy, settings = self.build(roles, stored, problems)
         self.database.layer = layer
         self.business.policy = policy
+        # The instance's state and rule overrides (evlet/statemanager.py), compiled once per version.
+        from .statemanager import load_overrides
+        load_overrides(self.business, [row for row in stored if row['kind'] in ('state', 'rule')], problems)
         if self.business.jobs is not None:
             self.business.jobs.policy = policy
         # Site workspace overrides (evlet.workspaces); /api/schema filters them by permission after applying them.
@@ -420,7 +424,7 @@ class Controls:
                     perms[role, model] = self.rule(role, model, self.check_perm(row['key'], value))
                 elif row['kind'] == 'setting':
                     settings[row['key']] = self.check_setting(row['key'], value)
-                elif row['kind'] not in ('field', 'layout', 'list', 'naming', 'workspace'):
+                elif row['kind'] not in ('field', 'layout', 'list', 'naming', 'workspace', 'state', 'rule'):
                     raise ValueError('This kind of change is not available yet.')
             except (ValueError, KeyError, TypeError) as exc:
                 problems.append({'kind': row['kind'], 'key': row['key'], 'error': str(exc)})
@@ -721,6 +725,10 @@ class Controls:
             return None if value == self.files().get(key, True) else value
         if kind == 'custom':
             raise ValueError('Add and remove instance fields with Add field and Remove field.')
+        if kind in ('state', 'rule'):
+            from .statemanager import override_target
+            override_target(self.registry, key)
+            return value  # The whole batch is checked together in save().
         return self.custom.check(kind, key, value)
 
     def overrides(self):
@@ -774,6 +782,14 @@ class Controls:
                 checked.append((change['kind'], change['key'], self.check_change(change['kind'], change['key'], change['value'])))
             except (ValueError, TypeError) as exc:
                 errors[f'changes.{index}'] = str(exc) if isinstance(exc, ValueError) else 'Send kind, key and value.'
+        rules = [change for change in checked if change[0] in ('state', 'rule')]
+        if rules and not errors:
+            from .statemanager import check_overrides
+            try:
+                with self.database._connection() as connection:
+                    check_overrides(self.business, connection, rules)
+            except ValueError as exc:
+                errors[f'changes.{next(index for index, change in enumerate(changes) if change["kind"] in ("state", "rule"))}'] = str(exc)
         if errors:
             raise ValidationError(errors)
         if user.role != 'admin':

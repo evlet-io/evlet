@@ -339,9 +339,18 @@ def bind(draft, before):
 
 # Rules on a registry
 
-def rules_of(context, model):
-    """The rules in force for a model."""
-    return model.__declared_fields__[model.__state__].rules
+def rules_of(owner, model):
+    """The rules in force for a model (`owner` is a context or the business): its code rules, or the instance's set
+    when it has overrides (load_overrides)."""
+    found = getattr(getattr(owner, '_business', owner), 'state_overrides', {}).get(model)
+    return found['rules'] if found else model.__declared_fields__[model.__state__].rules
+
+
+def guards_of(owner, model):
+    """The compiled conditions in force for a model's rules and actions."""
+    business = getattr(owner, '_business', owner)
+    found = getattr(business, 'state_overrides', {}).get(model)
+    return found['guards'] if found else business.registry.guards.get(model, {})
 
 
 def conditions(model):
@@ -495,7 +504,7 @@ def clean_remark(remark):
 def remark_required(context, guards, model, rule):
     if rule.remark is None or rule.remark.mode == 'required':
         return rule.remark is not None
-    guard = context._business.registry.guards.get(model, {}).get(f'rule:{rule.key}:remark')
+    guard = guards_of(context, model).get(f'rule:{rule.key}:remark')
     outcome = None if guard is None else guards.result(guard)
     return outcome is not None and outcome.state == 'ready' and outcome.value is True
 
@@ -531,7 +540,7 @@ def checked_move(context, model, draft, before, key, remark):
     level = who_may(context, model, before, rule, guards)
     if level is False:
         raise AccessError(403, f'{rule.label} is made by the application only' if rule.system else f'Your role cannot use {rule.label}')
-    check_guard(context, guards, context._business.registry.guards.get(model, {}).get('rule:' + rule.key), rule.label, 'move')
+    check_guard(context, guards, guards_of(context, model).get('rule:' + rule.key), rule.label, 'move')
     remark = clean_remark(remark)
     if remark is not None and rule.remark is None:
         raise ValidationError({'remark': f'{rule.label} takes no remark'})
@@ -569,7 +578,7 @@ def entering(context, model, record):
         return {}
     from .documents import load_draft
     guards = Guards(context, model, record._values, lambda: load_draft(context, model, record.id, {}, preview=True)[0])
-    compiled = context._business.registry.guards.get(model, {})
+    compiled = guards_of(context, model)
 
     def applies(guard):
         if guard is None:
@@ -777,9 +786,9 @@ def state_schema(business, user, model):
     name = model.__state__
     if name is None or name not in business.policy.fields(user, model):
         return None
-    field, guards = model.__declared_fields__[name], business.registry.guards.get(model, {})
+    field, guards = model.__declared_fields__[name], guards_of(business, model)
     rules = []
-    for rule in rules_of(None, model):
+    for rule in rules_of(business, model):
         if rule.system:
             continue  # Only the application makes it, so no caller is told about it.
         guard = guards.get('rule:' + rule.key)
@@ -789,8 +798,8 @@ def state_schema(business, user, model):
                       'primary': rule.primary, 'reject': rule.reject, 'remark': remark_schema(rule), **({'asks': asks} if asks else {}),
                       **({'levels': [{'by': list(level.roles), 'pending': level.pending, 'guarded': f'rule:{rule.key}:level:{index}' in guards}
                                      for index, level in enumerate(rule.levels)], 'self_approve': rule.self_approve} if rule.levels else {})})
-    return {'field': name, 'default': field.default, 'show': field.show, 'steps': [step.public() for step in field.steps.values()],
-            'rules': rules}
+    steps = (getattr(business, 'state_overrides', {}).get(model) or {}).get('steps') or {key: step.public() for key, step in field.steps.items()}
+    return {'field': name, 'default': field.default, 'show': field.show, 'steps': list(steps.values()), 'rules': rules}
 
 
 def moves_available(business, context, model, record, guards_now, updatable, locks):
@@ -801,7 +810,7 @@ def moves_available(business, context, model, record, guards_now, updatable, loc
     policy, user = business.policy, context.user
     field = model.__declared_fields__[model.__state__]
     current = record._values.get(model.__state__)
-    guards = business.registry.guards.get(model, {})
+    guards = guards_of(business, model)
     # What blocks every move of this record: a model callers only read, or a date in a closed period.
     read_only = business.registry.api.get(model) == 'read'
     closed = None if read_only or getattr(context._tx, '_periods_unlocked', False) else periods.closed(context._tx, model, record._values)
@@ -1225,3 +1234,162 @@ def restore(context, model, record_id, number, remark):
     recreate(context, model, data, current)
     result = context._write(model, record_id, values, restored=(number, remark))
     return {**result, '_restore': {'version': number, 'dropped': dropped, 'kept': kept}}
+
+
+
+# Runtime rules: an instance changes labels and colours, changes or turns off code rules by key, and adds rules,
+# as evlet_overrides kinds "state" (key "Model.step") and "rule" (key "Model.rule_key"). States stay the model's.
+
+def override_target(registry, key):
+    """(model, name) of an override key "Model.name", for a model with a State."""
+    owner, _, name = key.partition('.')
+    model = next((item for item in registry.models.values() if item.__name__ == owner and item.__state__), None)
+    if model is None or not name:
+        raise ValueError(f'{key}: name a model with a State and a step or rule, as "Model.name"')
+    return model, name
+
+
+def condition(business, model, text, guard_key, guards):
+    """Compile a runtime condition (expressions.py text) into guards[guard_key]; empty text removes it."""
+    from .expressions import parse
+    from .guards import Guard
+    guards.pop(guard_key, None)
+    if text in (None, ''):
+        return
+    if not isinstance(text, str):
+        raise ValueError(f'{guard_key[5:]}: a condition is text such as total >= 10000')
+    found = parse(text, model.__declared_fields__)
+    guards[guard_key] = Guard(found.expression, tuple(('self', model, name) for name in sorted(found.fields)), MappingProxyType({}),
+                              any(not model.__declared_fields__[name].stored for name in found.fields))
+
+
+def runtime_by(business, model, value):
+    """`by` from JSON: role names and {"field": name}; roles must exist on the instance."""
+    from .auth import PORTAL, ROLES
+    from .calc import F
+    known = {*ROLES, PORTAL, *(getattr(business.controls, 'roles', None) or {})} if getattr(business, 'controls', None) else {*ROLES, PORTAL}
+    if not isinstance(value, list):
+        raise ValueError('by is a list of roles and {"field": name} user fields')
+    result = []
+    for item in value:
+        if isinstance(item, dict) and set(item) == {'field'} and item['field'] in model.__declared_fields__:
+            result.append(F(item['field']))
+        elif isinstance(item, str) and item in known:
+            result.append(item)
+        else:
+            raise ValueError(f'{item!r} is not a role of this instance or a field of {model.__name__}')
+    return tuple(result)
+
+
+def runtime_rule(business, model, key, value, base, guards):
+    """A Rule from an override: a change to code rule `base` (None for an added rule) by key."""
+    from .calc import F
+    allowed = {'label', 'by', 'when', 'remark', 'levels', 'ask', 'primary', 'reject', 'self_approve', 'from', 'to'}
+    if not isinstance(value, dict) or set(value) - allowed or base is not None and {'from', 'to'} & set(value):
+        raise ValueError(f'{key}: change ' + ', '.join(sorted(allowed - ({'from', 'to'} if base else set()))))
+    get = lambda name, default: value.get(name, default)
+    by = runtime_by(business, model, value['by']) if 'by' in value else (
+        ('admin', 'editor') if base is None else (*base.roles, *(F(name) for name in base.users)))
+    remark = get('remark', None if base is None else base.remark)
+    if isinstance(remark, dict):
+        remark = Remark(remark.get('mode', 'optional'), label=remark.get('label'))
+        condition(business, model, value['remark'].get('required_when'), f'rule:{key}:remark', guards)
+    levels = base.levels if base is not None and 'levels' not in value else []
+    if 'levels' in value:
+        if not isinstance(value['levels'], list):
+            raise ValueError(f'{key}: levels is a list')
+        for index, level in enumerate(value['levels']):
+            levels.append(Level(runtime_by(business, model, level.get('by', [])), pending=level.get('pending')))
+            condition(business, model, level.get('when'), f'rule:{key}:level:{index}', guards)
+    if 'when' in value:
+        condition(business, model, value['when'], 'rule:' + key, guards)
+    sources = value['from'] if 'from' in value else base.sources if base else None
+    rule = Rule(tuple(sources) if isinstance(sources, list) else sources, value['to'] if 'to' in value else base.to if base else None,
+                get('label', None if base is None else base.label), key=key, by=() if levels else by, levels=tuple(levels),
+                self_approve=get('self_approve', bool(base and base.self_approve)), remark=remark,
+                ask=tuple(get('ask', () if base is None else base.ask)), primary=get('primary', bool(base and base.primary)),
+                reject=get('reject', bool(base and base.reject)))
+    for name in rule.ask:
+        if name not in model.__declared_fields__ or name == model.__state__:
+            raise ValueError(f'{key}: ask names {name!r}, which is not a field of {model.__name__}')
+    return rule
+
+
+def compile_overrides(business, model, items, problems=None):
+    """{steps, rules, guards} of one model's overrides [(kind, name, value)]. With `problems` an override that does
+    not fit is ignored and reported (an orphan, after an upgrade); without, it raises (a save is refused)."""
+    from .fields import COLORS
+    field = model.__declared_fields__[model.__state__]
+    steps = {key: step.public() for key, step in field.steps.items()}
+    code = {rule.key: rule for rule in field.rules}
+    rules, guards = dict(code), dict(business.registry.guards.get(model, {}))
+    for kind, name, value in items:
+        try:
+            if kind == 'state':
+                if name not in steps:
+                    raise ValueError(f'{model.__name__}.{name} is not a step; instances change only labels and colours of the steps a model declares')
+                if not isinstance(value, dict) or set(value) - {'label', 'color'} or value.get('color') not in (None, *COLORS) \
+                        or 'label' in value and (not isinstance(value['label'], str) or not value['label'].strip()):
+                    raise ValueError(f'{model.__name__}.{name}: change its label (text) and its color (one of {", ".join(COLORS)})')
+                steps[name] = {**steps[name], **value}
+            elif isinstance(value, dict) and value.get('off') is True and set(value) == {'off'}:
+                if name not in code:
+                    raise ValueError(f'{model.__name__}.{name}: only a code rule is turned off; delete an added rule instead')
+                rules.pop(name)
+            elif name not in code and not (isinstance(value, dict) and 'from' in value):
+                raise ValueError(f'{model.__name__}.{name} names no code rule (orphaned); it is ignored')
+            else:
+                rules[name] = runtime_rule(business, model, name, value, code.get(name), guards)
+        except ValueError as exc:
+            if problems is None:
+                raise
+            problems.append({'kind': kind, 'key': f'{model.__name__}.{name}', 'error': str(exc)})
+    check_rules(field, rules.values())
+    stuck = {key for key in field.choices if key not in field.final and not any(key in rule.sources for rule in rules.values())}
+    was = {key for key in field.choices if key not in field.final and not any(key in rule.sources for rule in field.rules)}
+    if stuck - was:
+        raise ValueError(f'{model.__name__}: no rule leaves ' + ', '.join(sorted(stuck - was)) + ', which is not final')
+    reached = {field.default} | {rule.to for rule in rules.values()}
+    if problems is not None and set(field.choices) - reached:
+        problems.append({'kind': 'rule', 'key': model.__name__, 'error': 'No rule reaches ' + ', '.join(sorted(set(field.choices) - reached))})
+    return {'steps': steps, 'rules': tuple(rules.values()), 'guards': MappingProxyType(guards)}
+
+
+def load_overrides(business, rows, problems):
+    """On each config version: compile every model's state and rule overrides into business.state_overrides."""
+    import json
+    grouped = {}
+    for row in rows:
+        try:
+            model, name = override_target(business.registry, row['key'])
+            grouped.setdefault(model, []).append((row['kind'], name, json.loads(row['value'])))
+        except ValueError as exc:
+            problems.append({'kind': row['kind'], 'key': row['key'], 'error': str(exc)})
+    result = {}
+    for model, items in grouped.items():
+        try:
+            result[model] = compile_overrides(business, model, items, problems)
+        except ValueError as exc:
+            problems.append({'kind': 'rule', 'key': model.__name__, 'error': str(exc)})
+    business.state_overrides = result
+
+
+def check_overrides(business, connection, changes):
+    """The save-time check of a batch of state and rule changes [(kind, key, value)]: each model's whole rule set,
+    with what is stored and every change of the batch (None deletes), must hold. Raises ValueError."""
+    import json
+    from . import qb
+    pending = {}
+    for kind, key, value in changes:
+        pending.setdefault(override_target(business.registry, key)[0], {})[kind, key] = value
+    for model, batch in pending.items():
+        rows = connection.run(qb.select('evlet_overrides', 'kind', 'key', 'value').where(qb.in_('kind', ('state', 'rule')),
+                                                                                      qb.starts_with('key', model.__name__ + '.'))).all()
+        merged = {(row['kind'], row['key']): json.loads(row['value']) for row in rows} | batch
+        # A stored orphan stays reported and ignored; only the batch's own changes refuse the save.
+        problems = []
+        compile_overrides(business, model, [(kind, key.partition('.')[2], value) for (kind, key), value in merged.items() if value is not None],
+                          problems)
+        refused = [problem['error'] for problem in problems if (problem['kind'], problem['key']) in batch]
+        if refused:
+            raise ValueError(refused[0])
