@@ -281,7 +281,7 @@ The order of a move:
 8. Entering a `release=True` step whose content changed since the last release: `@release`
    runs, then calculations and `@validate` again, and the release is stored.
 9. The record is written, effects on the new state post, and the Journal gets its `moved`
-   entry with the rule key, the remark and, for a release, `base` (the version number).
+   entry with the rule key and the remark; a move that released names it in `data.release`.
 
 Everything commits in one transaction. A failure anywhere rolls all of it back, and no
 Sequence number is used up.
@@ -320,8 +320,10 @@ or deleted.
   content, or `None` for v0). It usually sets `versioned=False` fields, such as a posting
   reference.
 * A document with a release cannot be deleted; move it to a final state such as void.
-* The detail carries `_version: {"number": 2, "released": false, "state": "issued"}`:
-  `released` is whether the record still has v2's content. `number` is `null` before v0.
+* The detail carries `_version: {"number": 2, "released": false, "state": "issued"}`. `number`
+  is `null` before v0. `released` is false once the journal has an entry that changed versioned
+  content since v2: every such entry carries `base` 2 ("changes after v2"), so this is one indexed
+  read, and the content is hashed only to release, snapshot and check for drift.
 * `GET /api/{model}/{id}/versions` lists the releases, newest first; `.../versions/{n}` returns
   one version's document, and `.../versions/{a}/diff/{b}` (or `/diff/current`) compares two.
   Today's field, Link and row permissions apply to old versions too. An API key needs the

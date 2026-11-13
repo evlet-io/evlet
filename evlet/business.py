@@ -1056,7 +1056,7 @@ class Business:
         from .effects import summary
         from .statemanager import releasing, state_shown, version_of
         if releasing(model) and state_shown(reader, model):
-            result['_version'] = version_of(reader, model, record, loaded)
+            result['_version'] = version_of(reader, model, record)
         return {**availability(self, reader, model, record, loaded), **summary(self, reader, model, record), **result}
 
     def field_expressions(self, user, model):

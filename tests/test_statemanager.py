@@ -525,7 +525,8 @@ def test_entering_a_release_step_releases_and_snapshots_only_on_leaving(bills):
     assert RELEASED == [(0, None)] and body['note'] == 'released v0'
     assert body['_version'] == {'number': 0, 'released': True, 'state': 'issued'}
     assert [row[:2] for row in rows(app, url)] == [(0, 0)]
-    assert c('GET', url + '/journal')[1]['items'][0]['base'] == 0
+    issued = c('GET', url + '/journal')[1]['items'][0]
+    assert issued['data']['release'] == 0 and 'base' not in issued
     # Leaving the release snapshots it, once; the content is unchanged, so it still reads as v0.
     body = move(c, url, 'reopen', {'remark': 'Price'})[1]
     assert [row[:2] for row in rows(app, url)] == [(0, 0), (0, 1)] and body['_version']['released'] is True

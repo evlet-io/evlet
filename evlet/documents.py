@@ -1775,7 +1775,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if rule is not None:
         from .effects import post
         posted_rows = post(context, model, record.id, rule.to)
-        statemanager.moved(context, model, record, before._values.get(model.__state__), rule, remark, level, before, draft, base=released)
+        statemanager.moved(context, model, record, before._values.get(model.__state__), rule, remark, level, before, draft, released=released)
         journal.effects_posted(context, model, record.id, reversed_rows + posted_rows)
     elif release:
         pass
