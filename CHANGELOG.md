@@ -33,6 +33,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Hints say `evlet restart`.** `evlet host add` and `host remove` with `--routes-only`, and
   `evlet proxy --write`, now suggest `evlet restart <instance>` instead of
   `sudo systemctl restart`.
+- **`evlet controls grant` keeps the allowed networks set in Controls.** It used to clear them
+  every time and only its output said so. Now it clears them only with `--clear-allowlist`. When
+  networks remain, it lists them, and on an SSH session it says whether the address you
+  connected from is outside them and you are still locked out. **What to change:** if you rely
+  on the command to reopen Controls from anywhere, add `--clear-allowlist`
+  ([docs/controls.md](docs/controls.md#access)).
+
 - **Personal mailboxes reach only public mail servers.** A mailbox a person connects with a
   password must use a public address, SSL/TLS or STARTTLS, and the standard mail ports. Private
   ranges such as 10.x, 192.168.x, 100.64.x and fc00::, and servers on this machine, are refused
@@ -41,8 +48,28 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   an admin now sets it up as an Email sending or Email receiving connector in Controls. Admin
   connectors still accept private addresses. `evlet.connectors.safe_address` takes a new
   `public=True` argument for addresses typed in by people who are not admins.
+- **Eva asks before every change once a chat has read stored data.** Records, journals,
+  reports and files can hold text written to steer Eva. After a chat has read any of them,
+  every create, update, move or action asks first, even when Controls → AI → Eva says "Never
+  asks" for that kind of change. Scheduled tasks skip such changes. A chat that only creates
+  records follows the settings. See [When Eva asks first](docs/eva.md#when-eva-asks-first).
+- **`change_state` moves State documents.** It now takes `{model, id, to, values?, reason?}` and
+  calls `POST /api/{model}/{id}/moves/{to}` with every role, guard and state check, so Eva and MCP
+  clients can post a document or move a record. For confirmable documents `to` is `confirm`,
+  `cancel` or `reopen`. Clients that sent `operation` send `to` instead. See
+  [tools.md](docs/tools.md#tools).
+- A tool approval is no longer requested for a field the role can't write: the call is refused
+  at once, as the route would refuse it.
 
 ### Fixed
+
+- **Connector commands after logout say you're signed out.** `evlet describe` and `evlet mcp`
+  with a removed session file printed a raw `[Errno 2] No such file` error. They now say you're
+  signed out and show the `evlet login` command to run; `evlet logout` again says you're already
+  signed out.
+- **The upgrade docs mention `evlet backup` and `evlet restore`.** `docs/app-upgrades.md` still
+  said there was no restore command. It now shows both commands and how to go back after a
+  migration.
 
 - **The draft preview no longer shows records you can't read.** `POST /api/_draft/{Model}`
   returned the id behind a Link or Reference even when a row rule hid that record, while a
@@ -64,6 +91,17 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Eva's provider client no longer follows redirects.** A redirect from the AI provider (or
   from the Controls connector test) is now an error, so the API key is never sent to another
   address.
+- **One rule for kept results.** The save, the draft preview (`/api/_draft`), a record's detail
+  and a trusted Session settle now use one internal rule to decide whether a saved document
+  keeps its stored results. Before, the preview and the detail left out confirmed and
+  cancelled confirmable documents, so they could show recalculated values (for example a price
+  read through a Link that changed after confirmation) that the save would not keep. A trusted
+  Session write still keeps only posted results, as before; the reason is written next to it.
+- **Slips, report filters and dialogs refuse finite expressions.** They run the string rules and
+  have no finite plan yet, so `applies_when=` and the other finite rules were silently ignored and
+  `compute=F(...)` failed with a server error when the form was checked. Declaring one now raises
+  `ValueError` when the class is defined, naming the field and pointing to `visible_if`,
+  `required_if`, `read_only_if` and `compute='...'`. Move any such field to the string rules.
 
 ## 0.4.3 (12-11-2026)
 
