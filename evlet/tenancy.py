@@ -347,6 +347,7 @@ class TenantApplication:
             await asyncio.to_thread(app.database.close)
 
     async def __call__(self, scope, receive, send):
+        Application._redact_oidc_query(scope)
         if scope['type'] == 'lifespan':
             while True:
                 event = await receive()

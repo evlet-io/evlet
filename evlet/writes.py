@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 # The side files and the framework tables each holds. Every other table stays in the main file.
 STORES = {
-    'sessions': ('evlet_sessions', 'evlet_two_step_tickets', 'evlet_login_limits'),
+    'sessions': ('evlet_sessions', 'evlet_two_step_tickets', 'evlet_login_limits', 'evlet_oidc_tickets'),
     'logs': ('evlet_tool_calls', 'evlet_public_limits', 'evlet_forwarded_peers'),
     'eva': ('evlet_eva_lock', 'evlet_eva_conversations', 'evlet_eva_runs', 'evlet_eva_messages', 'evlet_eva_events',
             'evlet_eva_files', 'evlet_eva_usage', 'evlet_eva_reservations', 'evlet_eva_tasks', 'evlet_eva_task_runs'),

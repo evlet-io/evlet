@@ -8,6 +8,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Optional company sign-in.** `OIDC` and `LocalAuth(oidc=...)` support an explicitly
+  configured provider and immutable subject mappings to existing users. Install the `oidc`
+  extra to enable it; local login, roles, realms and MFA remain enforced. Callback queries
+  are excluded from generated proxy access logs. See [docs/oidc.md](docs/oidc.md).
 - **Bounded AI execution.** `AI(max_concurrent_runs=4, max_runs_per_user=2)` adds configurable
   process-safe limits. Existing declarations keep working with these defaults. Live work
   retains its slot and budget reservation until it actually stops.

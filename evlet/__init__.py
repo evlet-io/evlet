@@ -21,11 +21,11 @@ __all__ = [
     "Duration", "Naming", "Percent", "Phone", "Recompute", "Reference", "RetireField", "RichText", "RunData", "Sequence", "Series", "State", "Tags", "Time",
 ]
 
-from .auth import LocalAuth, User
+from .auth import LocalAuth, OIDC, User
 from .permissions import Hierarchy, Policy, Rule, any_of, own_customer
 from .business import Action, ChildTable
 
-__all__ += ["Action", "ChildTable", "Hierarchy", "LocalAuth", "Policy", "Rule", "User", "any_of", "own_customer"]
+__all__ += ["Action", "ChildTable", "Hierarchy", "LocalAuth", "OIDC", "Policy", "Rule", "User", "any_of", "own_customer"]
 
 from .storage import LocalFileStorage, SQLiteStorage, StorageError
 

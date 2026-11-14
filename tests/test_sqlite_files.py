@@ -404,9 +404,11 @@ def test_migrating_a_0_4_2_database_moves_every_table_and_survives_a_crash_halfw
     database = full.database
     fill_every_moved_table(database)
     before = counts(database)
+    # Optional integrations (for example OIDC) need not have created their registered side tables.
+    moved_tables = [table for table in writes.STORE_OF if table in before]
     assert all(before[table] for table in ('evlet_sessions', 'evlet_tool_calls', 'evlet_eva_files', 'evlet_eva_task_runs'))
     as_release_0_4_2(database)
-    assert {table for tables in STORES.values() for table in tables} <= set(schema(database.path)) | {'evlet_public_limits'}
+    assert set(moved_tables) <= set(schema(database.path))
     assert counts(database) == before
     # The app's SQL still finds every table in the old single file, before the move.
     with database._connection() as connection:
@@ -420,7 +422,7 @@ def test_migrating_a_0_4_2_database_moves_every_table_and_survives_a_crash_halfw
         if len(copied) == 4:
             raise RuntimeError('power cut')
 
-    with pytest.raises(SplitError, match=f'Could not move {list(writes.STORE_OF)[3]}'):
+    with pytest.raises(SplitError, match=f'Could not move {moved_tables[3]}'):
         split_files(database, after_copy=crash)
     halfway = schema(database.path)
     assert not set(copied[:3]) & set(halfway) and copied[3] in halfway  # three moved, the fourth still in the main file
