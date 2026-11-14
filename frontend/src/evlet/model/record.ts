@@ -542,6 +542,8 @@ export class RecordStore {
   private keys = 0;
   private claimed = new Set<string>();
   private opening = 0;
+  private disposed = false;
+  private readonly reads = new AbortController();
   // Link filter checks in flight: the latest ticket per field, and their promises for idle().
   private checks = new WeakMap<Field, number>();
   private checking = new Set<Promise<void>>();
@@ -582,16 +584,21 @@ export class RecordStore {
 
   /** Load a saved record. By default every row is paged in so the record can be edited. */
   async open(id: string, options: { loadAll?: boolean } = {}) {
+    if (this.disposed) return;
     const ticket = ++this.opening;
-    const { data, etag } = await this.api.get(this.meta.name, id);
+    let response;
+    try { response = await this.api.get(this.meta.name, id, this.reads.signal); }
+    catch (error) { if (this.disposed || ticket !== this.opening) return; throw error; }
     // A later open (or reload) started meanwhile: its answer wins.
-    if (ticket !== this.opening) return;
-    this.applyServer(data, etag);
+    if (this.disposed || ticket !== this.opening) return;
+    this.applyServer(response.data, response.etag);
     if (options.loadAll !== false) await this.loadAll();
   }
 
   /** Start a new, unsaved record. Defaults, initial values and calculations apply. */
   async create(values: Record<string, unknown> = {}) {
+    if (this.disposed) return;
+    this.opening++;
     // Field values, and optionally children: {table: [rows]} for new rows.
     this.detach();
     batch(() => {
@@ -604,22 +611,28 @@ export class RecordStore {
 
   /** Page in rows the detail left out (Tables over 100 rows), then attach calculations. */
   async loadAll() {
+    if (this.disposed) return;
+    const ticket = this.opening;
     this.loadError.set(null);
     try {
-      await this.pageIn();
+      await this.pageIn(ticket);
     } catch (error) {
+      if (this.disposed || ticket !== this.opening) return;
       if (error instanceof ApiError) this.loadError.set(error);
       throw error;
     }
+    if (this.disposed || ticket !== this.opening) return;
     this.attach();
   }
 
-  private async pageIn() {
+  private async pageIn(ticket: number) {
     for (let tables = this.partialTables(); tables.length; tables = this.partialTables()) {
       for (const table of tables) {
         let offset = table.rows.peek().length;
         while (offset < table.total.peek()) {
-          const page = await this.api.lines(this.meta.name, this.root.id!, table.apiPath(), { limit: PAGE, offset });
+          if (this.disposed || ticket !== this.opening) return;
+          const page = await this.api.lines(this.meta.name, this.root.id!, table.apiPath(), { limit: PAGE, offset }, this.reads.signal);
+          if (this.disposed || ticket !== this.opening) return;
           // A page of a Table with sections also carries its section rows; offsets count real rows only.
           // A page of a Table with sections also carries the section rows before its first row.
           if (!page.items.length) break;
@@ -647,6 +660,7 @@ export class RecordStore {
 
   /** The server's answer replaces the draft. Rows keep their objects (and DOM) by id. */
   applyServer(data: RecordData, etag: string | null) {
+    if (this.disposed) return;
     this.detach();
     batch(() => {
       const root = this.current.peek();
@@ -766,6 +780,10 @@ export class RecordStore {
   }
 
   dispose() {
+    if (this.disposed) return;
+    this.disposed = true;
+    this.opening++;
+    this.reads.abort();
     this.detach();
     this.current.peek()?.dispose();
     this.stop();
@@ -918,6 +936,7 @@ export class RecordStore {
 
   // Bind the rows to a fresh calculation session; the record can then be edited.
   private attach() {
+    if (this.disposed) return;
     this.detach();
     batch(() => {
       this.session?.start(this.root);

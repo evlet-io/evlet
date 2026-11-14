@@ -73,7 +73,8 @@ export function isTyping(element: Element | null = document.activeElement): bool
 }
 
 /** Commit what is typed in the focused input before a shortcut saves (fields commit on change). */
-export function commitTyped() {
+export function commitTyped(): boolean {
   const active = document.activeElement;
   if ((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) && isTyping(active)) active.dispatchEvent(new Event('change', { bubbles: true }));
+  return active?.getAttribute('aria-invalid') !== 'true';
 }

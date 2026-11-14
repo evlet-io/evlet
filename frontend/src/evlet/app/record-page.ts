@@ -138,7 +138,8 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
   // A panel's store lives outside the panel's scope so Expand can hand it to the record page.
   const make = () => new RecordStore({ api, schema: ctx.schema, model: name, user: ctx.user });
   const store = handed ?? (panel ? runWithOwner(null, make) : make());
-  onCleanup(() => { if (!handedOff.has(store) || !panel) store.dispose(); });
+  let alive = true;
+  onCleanup(() => { alive = false; if (!handedOff.has(store) || !panel) store.dispose(); });
   const status = cell<'loading' | 'ready' | 'missing' | 'error'>('loading', { name: `${name} page` });
   const failure = cell<string>('');
   const detail = isNew ? cell<RecordData | null>(null) : api.detail(name, id!);
@@ -160,10 +161,12 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
         // Copied values count as the person's own: the form is dirty from the start, and leaving keeps or asks.
         if (duplicate) for (const field of Object.keys(duplicate.values)) if (store.root.fields.has(field)) store.root.field(field).touched = true;
       } else await store.open(id!);
+      if (!alive) return;
       status.set('ready');
       // A link such as /app/customer/4?slip=start_project presents that slip from the record.
       if (!isNew && query.slip && (model.slips ?? []).some(slip => slip.name === query.slip)) void presentSlip(query.slip, { source: { model: name, id: id! } });
     } catch (error) {
+      if (!alive) return;
       if (error instanceof ApiError && (error.kind === 'not_found' || error.kind === 'forbidden')) status.set('missing');
       else if (error instanceof ApiError && error.kind === 'aborted') return;
       else if (store.loadError.peek() && untrack(() => { try { return Boolean(store.root); } catch { return false; } })) status.set('ready');
@@ -268,7 +271,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   };
 
   const save = async () => {
+    if (store.saving.peek() || !commitTyped()) return false;
     if (store.saving.peek()) return false;
+    if (!isNew && !store.dirty.peek()) return true;
     const created = isNew;
     let ok = false;
     try { ok = await store.save(); } catch (error) { toast((error as Error).message, { icon: 'info' }); return false; }
@@ -854,7 +859,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // ---------- save bar ----------
 
   const saveBarView = () => isNew
-    ? html`<div class="ev-savebar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => void discardNew() })}
+    ? html`<div class="ev-savebar ev-createbar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => void discardNew() })}
         <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
         ${withSaveKeys(Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save(),
           tip: withShortcut(`Create ${model.label.toLowerCase()}`, SCREEN_KEYS.save) }))}</div>`
@@ -920,7 +925,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   enterMovesToNextField(frame, () => Boolean(ctx.me.get()?.prefs.enter_next));
   if (isNew) focusFirst(options.focusedAtOpen);
   frame.addEventListener('keydown', event => {
-    if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && (isNew || store.dirty.peek())) { event.preventDefault(); void save(); }
+    if (canWrite && event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      if (!event.repeat) void save();
+    }
   });
   // Keyboard shortcuts (docs/ui.md#keyboard-shortcuts). In a side panel they act while the focus is inside it;
   // New then comes from the list, which opens the new record in the panel.
@@ -935,7 +943,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   };
   useShortcuts({ root: frame, inner: Boolean(panel), area: panel ? () => frame.parentElement?.closest<HTMLElement>('[role="region"]') ?? frame : undefined, actions: () => ({
     // Save does what the Save (or Create) button does, with the same checks; with nothing changed it does nothing.
-    save: canWrite ? { label: isNew ? `Create the ${noun}` : 'Save changes', run: () => { commitTyped(); if (isNew || store.dirty.peek()) void save(); } } : null,
+    save: canWrite ? { label: isNew ? `Create the ${noun}` : 'Save changes', run: () => void save() } : null,
     remove: isNew ? { label: `Discard the new ${noun}`, run: () => void discardNew() } : canDelete() ? { label: `Delete this ${noun}`, run: remove } : null,
     create: !panel && canCreate && !isNew ? { label: `New ${noun}`, run: () => void router.go('create', { model: name }) } : null,
     duplicate: canDuplicate() ? { label: `Duplicate this ${noun}`, run: duplicateNow } : null,

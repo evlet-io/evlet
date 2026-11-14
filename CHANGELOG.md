@@ -8,6 +8,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Model screens preserve work across asynchronous completion.** Lists discard stale measure
+  responses, disposed records and report previews stop loading, and Ctrl/Command+Enter commits
+  active text before saving. Narrow create footers keep the form visible.
 - **Controls network exports preserve both restrictions.** Exported code keeps the intersection
   of application and Controls IPv4/IPv6 networks. Disjoint restrictions refuse export instead
   of becoming unrestricted; reconcile them before resetting the override.
