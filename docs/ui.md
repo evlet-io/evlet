@@ -1038,8 +1038,8 @@ edits back in the form as unsaved edits; Save is still needed. If someone saved 
 the meantime, the bar lists each field both of them changed, with both values, and the person
 keeps theirs or the saved one per field, or discards all of it.
 
-While a record stays open, committed edits are kept after a 1.5-second pause, with at most one
-keep request running per record. The small draft status distinguishes pending, keeping, kept
+While a record stays open, committed edits are kept after a 1.5-second pause, with one
+active browser keep at a time per record. The small draft status distinguishes pending, keeping, kept
 and failed attempts; failures offer Retry. Text still being edited is not described as kept.
 Hiding the tab attempts the same bounded operation. Existing-record drafts need a working
 connection: there is no offline queue or implicit browser copy of their data. A mobile browser
@@ -1047,6 +1047,13 @@ that kills a tab before an acknowledged keep can lose those latest edits. Save b
 when the status is not kept. The current draft format does not represent row reordering or
 section edits; these explicitly ask the person to Save or keep the tab open rather than
 claiming a partial draft is complete.
+
+Kept drafts have their own version, separate from the record revision. A timed-out request may
+still finish at the server, but cannot overwrite a newer acknowledged copy. The browser keeps
+its expected version across retries; if another tab or earlier request changed that copy,
+keeping pauses and the open edits stay intact. Restore or discard an existing kept draft before
+replacing it. Save and discard clear only the copy this view acknowledged, preserving a newer
+copy from another tab. These checks do not replace the record's normal Save version check.
 
 A conflicting Save offers **Compare changes**. It reads the latest record separately and shows
 both values for overlapping edits. Cancel or a failed read preserves the open draft. Applying

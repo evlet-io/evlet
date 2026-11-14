@@ -128,6 +128,23 @@ const timeout = <T>(promise: Promise<T>, ms: number) => new Promise<T>((resolve,
 });
 
 const pendingKeeps = new WeakMap<RecordStore, { key: string; promise: Promise<string | null> }>();
+const draftVersions = new WeakMap<RecordStore, { base: string; etag: string }>();
+const DRAFT_CHANGED = 'Another tab or an earlier request changed the kept draft. Save your open edits or keep this tab open; this copy will not overwrite it.';
+const NO_DRAFT_VERSION = 'The server did not provide a draft version. Save the record or keep this tab open.';
+
+/** Accept a draft the person explicitly restored/discarded, or an observed empty slot. */
+export function acceptDraftVersion(store: RecordStore, etag: string | null | undefined) {
+  const base = store.etag.peek();
+  if (base && etag) { draftVersions.set(store, { base, etag }); store.draftRevision = etag; }
+}
+
+/** Discard only the copy this view acknowledged; another tab's later copy must survive. */
+export async function discardKeptChanges(ctx: AppContext, model: ScreenModel, store: RecordStore) {
+  const known = draftVersions.get(store);
+  if (!known || !store.id) return;
+  const etag = await ctx.api.discardUnsaved(model.name, store.id, known.etag);
+  acceptDraftVersion(store, etag);
+}
 
 /** Keep the draft's changes. Resolves null when they are kept (or there were none), or why not. */
 export async function keepChanges(ctx: AppContext, model: ScreenModel, store: RecordStore, isNew: boolean): Promise<string | null> {
@@ -141,22 +158,41 @@ export async function keepChanges(ctx: AppContext, model: ScreenModel, store: Re
   if (sizeOf(changes) > limits.entry_kb * 1024) return tooLarge(limits.entry_kb);
   const revision = store.etag.peek(), id = store.id;
   if (!revision || !id) return 'This record has no saved version to compare with.';
-  const key = `${store.editVersion.peek()}:${revision}`;
+  const key = `${id}:${store.editVersion.peek()}:${revision}`;
   const previous = pendingKeeps.get(store);
   if (previous) return previous.key === key ? previous.promise : previous.promise.then(() => keepChanges(ctx, model, store, isNew));
   const request = new AbortController();
   const promise = (async () => { try {
-    const result = await timeout(ctx.api.keepUnsaved(model.name, id, changes, revision, request.signal), WAIT_MS);
-    // A normal Save may have completed while this draft request was running. Do not re-offer that
-    // older copy after Save already removed it; newer local edits will schedule their own copy.
-    if (store.etag.peek() !== revision && !store.dirty.peek()) { await timeout(ctx.api.discardUnsaved(model.name, id), WAIT_MS); return null; }
+    const result = await timeout((async () => {
+      let known = draftVersions.get(store);
+      if (!known || known.base !== revision) {
+        const read = await ctx.api.unsaved(model.name, id, request.signal);
+        if (request.signal.aborted) throw new ApiError('The request was cancelled.', 0, 'aborted');
+        if (read.entry) throw new Error('A kept draft already exists. Restore or discard that copy before keeping these edits.');
+        if (read.dropped === 'record') throw new Error('You can no longer keep changes to this record.');
+        if (!read.etag) throw new Error(NO_DRAFT_VERSION);
+        known = { base: revision, etag: read.etag };
+        draftVersions.set(store, known);
+        store.draftRevision = known.etag;
+      }
+      return ctx.api.keepUnsaved(model.name, id, changes, revision, request.signal, known.etag);
+    })(), WAIT_MS);
+    if (!result.etag) return NO_DRAFT_VERSION;
+    // Only an acknowledged write advances this token. A timed-out request can still commit at
+    // the server; a retry keeps the old token, so it cannot overwrite a later acknowledged copy.
+    draftVersions.set(store, { base: revision, etag: result.etag });
+    store.draftRevision = result.etag;
+    if (store.etag.peek() !== revision && !store.dirty.peek()) {
+      try { await timeout(ctx.api.discardUnsaved(model.name, id, result.etag), WAIT_MS); }
+      catch (error) { if (!(error instanceof ApiError && error.status === 412)) throw error; }
+      return null;
+    }
     if (result.dropped.length) return 'Some fields can no longer be kept with your current permissions. Keep this tab open and review the record.';
-    // Records opened from now on look for kept changes (only people with entries ask the server).
     const me = ctx.me.peek();
     if (me) me.unsaved = { ...info, count: Math.max(1, info.count) };
     return null;
   } catch (error) {
-    return error instanceof ApiError ? error.message : 'The server did not keep them.';
+    return error instanceof ApiError && error.status === 412 ? DRAFT_CHANGED : error instanceof Error ? error.message : 'The server did not keep them.';
   } finally { request.abort(); } })();
   pendingKeeps.set(store, { key, promise });
   try { return await promise; } finally { if (pendingKeeps.get(store)?.promise === promise) pendingKeeps.delete(store); }
@@ -183,12 +219,17 @@ export const KEEP_PAUSE_MS = 1500;
 export function keepWhenHidden(ctx: AppContext, model: ScreenModel, store: RecordStore, isNew: boolean, dirty: () => boolean) {
   const state = cell<DraftState>({ kind: 'idle', text: '' });
   let timer: ReturnType<typeof setTimeout> | null = null, alive = true, running = false, again = false;
-  let typing = false, keptVersion = -1, observedVersion = store.editVersion.peek();
+  let keptVersion = -1, watched: HTMLElement | null = null;
+  const pendingText = new Set<HTMLInputElement | HTMLTextAreaElement>();
+  const typing = () => {
+    for (const input of pendingText) if (!watched?.contains(input)) pendingText.delete(input);
+    return pendingText.size > 0;
+  };
   const cancelTimer = () => { if (timer !== null) clearTimeout(timer); timer = null; };
   const run = async () => {
     cancelTimer();
     if (!alive || !keepsUnsaved(ctx, model) || !dirty() || store.saving.peek()) return;
-    if (typing) { state.set({ kind: 'pending', text: 'Latest text is not kept yet. Finish the field to keep it.' }); return; }
+    if (typing()) { state.set({ kind: 'pending', text: 'Latest text is not kept yet. Finish the field to keep it.' }); return; }
     if (running) { again = true; return; }
     const version = store.editVersion.peek();
     if (version === keptVersion) return;
@@ -198,7 +239,7 @@ export function keepWhenHidden(ctx: AppContext, model: ScreenModel, store: Recor
     running = false;
     if (!alive) return;
     if (!keepsUnsaved(ctx, model)) { state.set({ kind: 'idle', text: '' }); return; }
-    if (version === store.editVersion.peek() && !typing && dirty()) {
+    if (version === store.editVersion.peek() && !typing() && dirty()) {
       if (failure) state.set({ kind: 'failed', text: `Draft not kept. ${failure}` });
       else { keptVersion = version; state.set({ kind: 'kept', text: isNew ? 'Draft kept on this browser. Not created.' : 'Draft kept on the server. Not saved to the record.' }); }
     }
@@ -207,13 +248,12 @@ export function keepWhenHidden(ctx: AppContext, model: ScreenModel, store: Recor
   const schedule = () => {
     cancelTimer();
     if (!alive || !keepsUnsaved(ctx, model) || !dirty() || store.saving.peek()) { state.set({ kind: 'idle', text: '' }); return; }
-    if (store.editVersion.peek() === keptVersion && !typing) return;
-    state.set({ kind: 'pending', text: typing ? 'Latest text is not kept yet. Finish the field to keep it.' : 'Draft not kept yet.' });
+    if (store.editVersion.peek() === keptVersion && !typing()) return;
+    state.set({ kind: 'pending', text: typing() ? 'Latest text is not kept yet. Finish the field to keep it.' : 'Draft not kept yet.' });
     timer = setTimeout(() => { timer = null; void run(); }, KEEP_PAUSE_MS);
   };
   effect(() => {
-    const version = store.editVersion.get();
-    if (version !== observedVersion) { typing = false; observedVersion = version; }
+    store.editVersion.get();
     store.dirty.get(); store.saving.get(); ctx.me.get(); schedule();
   });
   const hidden = () => { if (document.visibilityState === 'hidden') void run(); };
@@ -223,10 +263,20 @@ export function keepWhenHidden(ctx: AppContext, model: ScreenModel, store: Recor
     // Activity composers and search boxes do not describe this record's fields.
     const fieldInput = (event: Event) => event.target instanceof HTMLElement && Boolean(event.target.closest('.fld,.ff,.grid,.doc-title')) &&
       (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement);
-    const input = (event: Event) => { if (fieldInput(event)) { typing = true; schedule(); } };
-    const committed = (event: Event) => { if (fieldInput(event)) { typing = (event.target as HTMLElement).getAttribute('aria-invalid') === 'true'; schedule(); } };
-    frame.addEventListener('input', input); frame.addEventListener('change', committed);
-    onCleanup(() => { frame.removeEventListener('input', input); frame.removeEventListener('change', committed); });
+    watched = frame;
+    const input = (event: Event) => { if (fieldInput(event)) { pendingText.add(event.target as HTMLInputElement); schedule(); } };
+    const committed = (event: Event) => {
+      if (!fieldInput(event)) return;
+      const target = event.target as HTMLInputElement | HTMLTextAreaElement;
+      if (target.getAttribute('aria-invalid') === 'true') pendingText.add(target);
+      else pendingText.delete(target);
+      schedule();
+    };
+    const entered = (event: KeyboardEvent) => {
+      if (event.key === 'Enter' && !event.ctrlKey && !event.metaKey && !event.altKey && event.target instanceof HTMLInputElement) committed(event);
+    };
+    frame.addEventListener('input', input); frame.addEventListener('change', committed); frame.addEventListener('keydown', entered);
+    onCleanup(() => { pendingText.clear(); frame.removeEventListener('input', input); frame.removeEventListener('change', committed); frame.removeEventListener('keydown', entered); });
   } };
 }
 

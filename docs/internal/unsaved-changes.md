@@ -29,12 +29,14 @@ leaving must not do. The store is a separate, small route family.
 evlet_unsaved(user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE,
               model TEXT NOT NULL, record_id INTEGER NOT NULL,
               changes TEXT NOT NULL, base_revision TEXT NOT NULL,
-              saved_at INTEGER NOT NULL, size INTEGER NOT NULL,
+              saved_at INTEGER NOT NULL, size INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0,
               PRIMARY KEY (user_id, model, record_id))
+evlet_unsaved_versions(user_id INTEGER PRIMARY KEY REFERENCES evlet_users(id) ON DELETE CASCADE,
+                       version INTEGER NOT NULL)
 ```
 
-* Framework step `0005_unsaved_changes` creates it (the framework migration ledger), and startup
-  creates it too on a database the step already ran on. `model` is the model's storage name, as
+* Framework step `0005_unsaved_changes` creates the tables (the framework migration ledger), and startup
+  adds missing version metadata on a database the step already ran on. `model` is the model's storage name, as
   in the record URL and `evlet_attachments`.
 * `changes` holds only the edited writable fields:
 
@@ -57,6 +59,28 @@ evlet_unsaved(user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASC
 | `PUT /api/_unsaved/<model>/<id>` | Upsert `{"changes", "base_revision"}`. Idempotent. Answers `{saved_at, size, dropped}` |
 | `GET /api/_unsaved/<model>/<id>` | The caller's own entry: `{entry: {changes, base_revision, saved_at, size, stale}, dropped}`, or `{entry: null}` |
 | `DELETE /api/_unsaved/<model>/<id>` | Discard the caller's own entry. Answers 204 even when there was none |
+
+GET, successful PUT and DELETE also return an opaque draft `ETag`, including when no entry
+exists. New clients send that token as `If-Match` on PUT and DELETE. The check and mutation
+share one transaction; a changed token returns 412 and preserves the current draft. This
+draft token is separate from `base_revision`, which describes the business record.
+Requests without `If-Match` retain the previous unconditional behavior and JSON shapes.
+
+Keep the expected draft token after a timeout or lost response: aborting a browser request
+does not prove its server worker stopped. Do not silently reread and overwrite after 412.
+A late Save cleanup must DELETE with the token returned by its own draft PUT, so it cannot
+remove another tab's newer copy. Successful record Save, explicit Discard and preference
+clearing invalidate pending empty-state tokens too. A bounded clock row per account and an
+internal version on each entry prevent old requests from becoming valid again after deletion;
+there is no per-record tombstone history. Existing entries keep their tokens when another
+record's draft changes; an empty-state token can conservatively change with other draft work.
+
+Record PATCH clients can send `X-Evlet-Draft-Revision` with the draft token this editor
+acknowledged, or `preserve` when it has not acknowledged a copy. Successful Save clears only
+that matching draft; a newer copy stays available and may now be stale against the record.
+This cleanup check never substitutes for the record's own `If-Match` or permissions, and a
+draft mismatch does not refuse a valid record save. Omitting this header preserves legacy
+cleanup. Save still invalidates old empty-state draft requests when it preserves another copy.
 
 * Session sign-in only. API keys, Eva, MCP, the Tool Engine and connectors are refused (they use
   `user.access`), and sub-hosts answer 404. CSRF is checked like every other write.

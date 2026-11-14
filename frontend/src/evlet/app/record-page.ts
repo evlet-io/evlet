@@ -37,7 +37,7 @@ import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } 
 import { filterFields } from './filters';
 import { presentSlip, takePrefill } from './slips';
 import { openEvaPanel } from '../eva/chat';
-import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden } from './unsaved';
+import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden, discardKeptChanges } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
 import { reviewConflict } from './conflict-review';
 import { SCREEN_KEYS, useShortcuts } from './shortcuts';
@@ -262,7 +262,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // Discard and Cancel mean the kept copy goes too.
   const forget = () => {
     if (isNew) ctx.unsaved.remove(name);
-    else if (keepsUnsaved(ctx, model) && store.id) void ctx.api.discardUnsaved(name, store.id).catch(() => undefined);
+    else if (keepsUnsaved(ctx, model) && store.id) void discardKeptChanges(ctx, model, store).catch(() => toast('The kept copy changed elsewhere and was not discarded.', { icon: 'info' }));
   };
   // Expand: the record page takes this store, unsaved edits included, so it does not ask.
   const expand = () => {
@@ -285,7 +285,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       toast(`${model.label} created`);
       if (panel) panel.show(store.id!);
       else void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
-    } else toast('Saved');
+    } else {
+      // A keep may have completed while Save was pending. Clear only our acknowledged
+      // copy; a changed/deleted copy is left alone by its draft precondition.
+      void discardKeptChanges(ctx, model, store).catch(() => undefined);
+      toast('Saved');
+    }
   };
   saveViews.set(store, saved);
   onCleanup(() => { if (saveViews.get(store) === saved) saveViews.delete(store); });
