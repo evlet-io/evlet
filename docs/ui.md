@@ -1038,6 +1038,22 @@ edits back in the form as unsaved edits; Save is still needed. If someone saved 
 the meantime, the bar lists each field both of them changed, with both values, and the person
 keeps theirs or the saved one per field, or discards all of it.
 
+While a record stays open, committed edits are kept after a 1.5-second pause, with at most one
+keep request running per record. The small draft status distinguishes pending, keeping, kept
+and failed attempts; failures offer Retry. Text still being edited is not described as kept.
+Hiding the tab attempts the same bounded operation. Existing-record drafts need a working
+connection: there is no offline queue or implicit browser copy of their data. A mobile browser
+that kills a tab before an acknowledged keep can lose those latest edits. Save before closing
+when the status is not kept. The current draft format does not represent row reordering or
+section edits; these explicitly ask the person to Save or keep the tab open rather than
+claiming a partial draft is complete.
+
+A conflicting Save offers **Compare changes**. It reads the latest record separately and shows
+both values for overlapping edits. Cancel or a failed read preserves the open draft. Applying
+chosen values keeps them unsaved against the latest revision; Save still checks that revision.
+Locked records, missing/unwritable fields and structural changes that cannot be restored block
+automatic comparison. **Copy my changes** preserves the full update body for manual recovery.
+
 An unsaved new record stays in the browser only, so no record is created and no number is used
 until Save. Opening New for that model again asks "Restore your unfinished new ...?" with
 Restore and Start fresh. Signing out, or another person signing in on that browser, clears it.

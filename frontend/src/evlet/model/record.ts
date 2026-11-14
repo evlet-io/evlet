@@ -527,6 +527,8 @@ export class RecordStore {
   /** A message for the whole form: an error the server did not tie to a field. */
   readonly formError = cell<string | null>(null, { name: 'record.formError' });
   readonly saving = cell(false, { name: 'record.saving' });
+  /** Revision of local edits, including changes after dirty first becomes true. */
+  readonly editVersion = cell(0, { name: 'record.edits' });
   /** What the last action returned (`_outcome`), such as a slip to present next. */
   outcome: unknown = null;
   /** Every row is loaded and calculations are attached: the record can be edited. */
@@ -834,6 +836,7 @@ export class RecordStore {
    * the save. Formulas the browser runs need no server call; a model without Meta.derives never asks.
    */
   noteChange() {
+    this.editVersion.update(version => version + 1);
     if (!this.meta.derives?.length) return;
     // An answer still on its way was worked out from the draft before this change: drop it, the next one follows.
     this.previewTicket++;
