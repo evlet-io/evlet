@@ -1067,6 +1067,26 @@ A save removes the saver's entry, and deleting a record removes everyone's, in t
 transaction. The format of `changes` is in
 [internal/unsaved-changes.md](internal/unsaved-changes.md).
 
+### Installation and optional offline notice
+
+The bundled desk at `/app`, on HTTPS (or a secure localhost development origin), advertises
+an install manifest using the existing Evlet icon. Appearance includes the browser install
+prompt when supported and instructions for Add to Home Screen. Custom mounts, custom/public
+frontends and portal Settings are not claimed as installable by this manifest.
+
+**Offline notice and static assets** is an explicit device preference, off by default. It
+registers `/assets/evlet-sw.js` only after opt-in. The worker keeps a fixed public offline
+notice, the public icon and up to 64 fingerprinted JavaScript, CSS or font assets. Requests
+for these assets omit credentials. Successful navigation HTML, sessions, API responses,
+records and mutations are never cached, queued or replayed. An offline navigation shows only
+`/assets/evlet-offline.html`, without injected configuration or user data.
+
+Updates wait for existing tabs to close; there is no automatic activation, reload or takeover
+of editors. Finish or keep work before closing tabs. Turning the feature off unregisters its
+worker and deletes its asset cache; a non-sensitive disabled marker prevents a restarted
+worker from recreating it. Browser storage failures do not block ordinary online assets.
+Installation itself does not enable offline business workflows.
+
 ### Keyboard shortcuts
 
 Lists, record forms and dialogs follow the keys people know from other apps. Mod is ⌘ on a Mac and

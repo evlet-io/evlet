@@ -12,6 +12,9 @@ import { AppClient } from './client';
 import { readConfig } from './config';
 import { appRouter } from './context';
 import { PortalSettings } from './settings';
+import { startPwa } from './pwa';
+
+startPwa();
 
 const root = document.getElementById('evlet-app')!;
 if (/^\/controls(\/|$)/.test(window.location.pathname)) {
