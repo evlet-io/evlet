@@ -9,6 +9,7 @@ import binascii
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 import re
+import time
 from urllib.parse import parse_qs, quote
 
 from . import qb
@@ -37,6 +38,12 @@ PUBLIC_LIMITS = TableDefinition('evlet_public_limits', (
 CALCULATION_VERSIONS = TableDefinition('evlet_calculation_versions', (
     Column('resource', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True),
     Column('plan_hash', 'TEXT', required=True)), primary_key=('resource', 'record_id'))
+# A successful create and its retry receipt commit in the same main-file transaction. Responses are
+# read again under the retrying caller's current permissions, never cached with formerly readable fields.
+CREATE_REQUESTS = TableDefinition('evlet_create_requests', (
+    Column('principal', 'TEXT', required=True), Column('model', 'TEXT', required=True), Column('key', 'TEXT', required=True),
+    Column('request_hash', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True),
+    Column('expires', 'INTEGER', required=True)), primary_key=('principal', 'model', 'key'))
 # A record's files beside its rich text images (purpose "image").
 FILES = qb.or_(qb.is_null('purpose'), qb.ne('purpose', 'image'))
 
@@ -213,6 +220,9 @@ class Business:
 
     def initialize(self):
         self.auth.initialize()
+        with self.database.transaction() as tx:
+            tx.connection.ensure_table(CREATE_REQUESTS)
+            tx.connection.ensure_index('evlet_create_request_expiry', 'evlet_create_requests', ('expires',))
         self.controls.initialize()
         self.connectors.initialize()
         self.assistants.initialize()
@@ -791,6 +801,7 @@ class Business:
 
     def model_dispatch(self, scope, body, user, model, parts):
         method = scope['method']
+        retry = self.create_request(scope, body, user, model) if len(parts) == 3 and method == 'POST' else None
         if len(parts) >= 5 and parts[4] in ('release', 'restore', 'versions'):
             from .statemanager import route
             return route(self, scope, body, user, model, parts)
@@ -837,12 +848,19 @@ class Business:
                 raise AccessError(405, 'Method not allowed')
             plan = self.registry.plan_for(model)
             recalculate = False
-            if plan is not None and '_calculation' in body:
+            calculation = None
+            has_calculation = plan is not None and '_calculation' in body
+            if has_calculation:
                 body = dict(body)
                 calculation = body.pop('_calculation')
-                self.check_calculation(model, calculation)
-                recalculate = calculation.get('recalculate', False)
             with self.context(user) as context:
+                if retry is not None:
+                    repeated = self.repeated_create(context._tx, user, model, retry)
+                    if repeated is not None:
+                        return repeated
+                if has_calculation:
+                    self.check_calculation(model, calculation)
+                    recalculate = calculation.get('recalculate', False)
                 context._recalculate = (model, record_id) if recalculate and record_id else None
                 context._person = None if action or move else (model, record_id)
                 if record_id:
@@ -869,6 +887,7 @@ class Business:
                     from .documents import Context
                     reader = Context(self, context._tx, user, readonly=True)
                     result = self.add_virtual_values(reader, model, RecordId(result['id']), result)
+                self.remember_create(context._tx, retry, result['id'])
             if plan is not None:
                 result['_calculation'] = {'language': plan['language'], 'model_schema_hash': plan['model_schema_hash']}
             return (201 if record_id is None else 200), result, [(b'etag', etag)]
@@ -876,7 +895,12 @@ class Business:
             return self.page(scope, user, model)
         if len(parts) == 3 and method == 'POST':
             with self.database.transaction() as tx:
+                if retry is not None:
+                    repeated = self.repeated_create(tx, user, model, retry)
+                    if repeated is not None:
+                        return repeated
                 record, result = self.create_plain(tx, user, model, body)
+                self.remember_create(tx, retry, record.id)
             return 201, result, [(b'location', f'/api/{parts[2]}/{record.id}'.encode())]
         if len(parts) == 4 and parts[3] in ('aggregate', 'measures', 'list_tabs') or len(parts) == 5 and parts[4] == 'measures':
             from .measures import route
@@ -957,6 +981,53 @@ class Business:
             else:
                 result = self.embedded(result)
         return 200, {**result, **extra}, [(b'etag', etag)]
+
+    def create_request(self, scope, body, user, model):
+        """An optional retry key for model creation, scoped to this database, account and credential."""
+        keys = [value for name, value in scope.get('headers', ()) if name.lower() == b'idempotency-key']
+        if not keys:
+            return None
+        if len(keys) != 1 or not re.fullmatch(rb'[A-Za-z0-9._:-]{1,128}', keys[0]):
+            raise ValidationError({'idempotency_key': 'Use one Idempotency-Key of 1 to 128 letters, digits, dots, underscores, colons or hyphens'})
+        access = user.access
+        principal = json.dumps([user.id, access.key_id if access else None, access.assistant if access else None,
+                                access.origin if access else None], separators=(',', ':'))
+        return {'principal': principal, 'model': self.registry.name_for(model),
+                'key': hashlib.sha256(keys[0]).hexdigest(),
+                'request_hash': hashlib.sha256(json.dumps(body, sort_keys=True, separators=(',', ':'), ensure_ascii=True).encode()).hexdigest()}
+
+    def repeated_create(self, tx, user, model, request):
+        self.policy.require(user, model, 'create')
+        identity = {key: request[key] for key in ('principal', 'model', 'key')}
+        previous = tx.connection.run(qb.select('evlet_create_requests').where(**identity)).one()
+        if previous is None:
+            return None
+        if previous['expires'] <= int(time.time()):
+            tx.connection.run(qb.delete('evlet_create_requests').where(**identity))
+            return None
+        if previous['request_hash'] != request['request_hash']:
+            raise AccessError(409, 'This Idempotency-Key was already used with different values')
+        record = self.policy.record(tx, user, model, RecordId(previous['record_id']))
+        from .documents import Context
+        context, loaded = Context(self, tx, user, readonly=True), {}
+        result = self.detail(tx, user, record, row_limit=None, loaded=loaded)
+        etag = self.revision(result)
+        extra = self.availability(context, model, record, loaded)
+        result = self.add_virtual_values(context, model, record.id, self.embedded(result), loaded, record)
+        plan = self.registry.plan_for(model)
+        if plan is not None:
+            result['_calculation'] = {'language': plan['language'], 'model_schema_hash': plan['model_schema_hash']}
+        return 201, {**result, **extra}, [(b'etag', etag), (b'location', f'/api/{request["model"]}/{record.id}'.encode()),
+                                         (b'idempotency-replayed', b'true')]
+
+    @staticmethod
+    def remember_create(tx, request, record_id):
+        if request is None:
+            return
+        now = int(time.time())
+        # Indexed expiry keeps retention to a day without a scheduler or an external cache.
+        tx.connection.run(qb.delete('evlet_create_requests').where(qb.le('expires', now)))
+        tx.connection.run(qb.insert('evlet_create_requests', **request, record_id=int(RecordId(record_id)), expires=now + 86400))
 
     def virtual_models(self, model):
         """Whether a document or any of its owned row models declares a virtual (stored=False) result."""
