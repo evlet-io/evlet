@@ -1,6 +1,6 @@
 {
   "evlet": {
-    "AI": "class(enabled: bool = False, provider: object = 'openai', models: dict = <factory>, base_url: str = 'https://api.openai.com/v1', max_output_tokens: int = 4000) -> None",
+    "AI": "class(enabled: bool = False, provider: object = 'openai', models: dict = <factory>, base_url: str = 'https://api.openai.com/v1', max_output_tokens: int = 4000, max_concurrent_runs: int = 4, max_runs_per_user: int = 2) -> None",
     "Action": "class(model: type, name: str, label: str, handler: object, roles: tuple = ('admin', 'editor')) -> None",
     "AddField": "class(table: str, name: str, field: evlet.fields.Field, backfill: object = <object object>) -> None",
     "AddIndex": "class(table: str, field: str | tuple, unique: bool = False) -> None",

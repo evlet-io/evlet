@@ -38,6 +38,18 @@ a scripted one), `base_url` (an https address, http only on this machine) and
 library (`urllib`) and Chat Completions with streaming. It adds no dependency. It never follows
 a redirect: a 3xx answer is a provider error, so the API key is only ever sent to `base_url`.
 
+`max_concurrent_runs` (default 4) and `max_runs_per_user` (default 2) each accept 1 to 64.
+These limits cover chats, approval resumes and scheduled tasks across serving processes
+sharing the instance database. Busy interactive requests return 429; scheduled tasks are
+recorded as skipped. There is no waiting queue. A cancelled worker holds its slot until its
+provider call actually exits, so repeated Stop/Send cannot multiply background work.
+Slots use at most 64 stable OS lock files per instance, held through actual worker exit.
+A slow SQLite writer cannot make a live worker look dead; no heartbeat thread is needed.
+An active provider's allowance reservation also stays held until it exits, even past its
+original 15-minute expiry. Expiry remains the fallback for older, unbound reservations.
+If cancellation interrupts a request already sent and the provider gives no final usage,
+Eva records an estimated request/input cost when it ends; cancellation does not make it free.
+
 ## What people see
 
 - **Eva** in the sidebar, at `/eva`. Conversations sit in their own column: search, rename,
@@ -128,6 +140,11 @@ requests with a message saying so rather than counting them as free, and Control
 models still missing a rate. Token and request allowances work without rates.
 
 `eva.max_steps`, `eva.max_tools` and `eva.max_seconds` limit one answer.
+Every finished, failed or declined tool call spends one tool slot, including after approval;
+waiting for an approval does not spend another slot. Excess calls are recorded as not executed.
+Cancellation and time limits are checked between streamed chunks and before each tool call.
+The stream is closed when stopped. A provider blocked inside its next read must return or hit
+its transport timeout first; custom providers must supply bounded I/O. Finished effects stay done.
 
 Outside assistants use their own models, so their tokens are not counted.
 
@@ -170,19 +187,25 @@ person.
 | `POST /api/_eva/conversations/<id>/messages` | `{"text", "files", "model"}`: starts a run (202) |
 | `GET /api/_eva/runs/<id>/stream` | Server-sent events, about 25 seconds per connection; resume with `Last-Event-ID` |
 | `GET /api/_eva/runs/<id>/events?after=` | The same events for polling |
-| `POST /api/_eva/runs/<id>/cancel` | Stop at the next step. Finished steps stay done |
+| `POST /api/_eva/runs/<id>/cancel` | Durably mark cancelled; stop streaming at its next chunk. Finished steps stay done |
 | `POST /api/_eva/files`, `GET /api/_eva/files/<id>` | Upload (`name`, base64 `content`), download |
 | `GET /api/_eva/library?q=`, `POST /api/_eva/files/import` | Files on readable records and earlier chats; copy one in |
 | `GET/POST /api/_eva/tasks`, `GET/PATCH/DELETE /api/_eva/tasks/<id>` | Scheduled tasks |
 | `POST /api/_eva/tasks/parse`, `POST /api/_eva/tasks/<id>/run` | Read a schedule from words; run now |
 | `GET /api/_controls/eva`, `GET /api/_controls/eva/usage?period=` | Controls: configuration and usage |
 
+Conversation lists return at most 50 rows. Pass the opaque `next` string back as `before`;
+it includes both time and ID so chats updated in the same second are not skipped. Older
+timestamp-only cursors remain accepted. The browser offers **Load more chats**.
+
 Events: `run.started`, `message.delta`, `tool.started`, `tool.completed`, `tool.failed`,
 `approval.requested`, `approval.answered`, `usage.updated`, `run.completed`, `run.failed`,
 `run.cancelled`. Runs are kept with their status (`running`, `awaiting_approval`,
-`completed`, `failed`, `cancelled`). A run that no process is working on (not running here and
-silent for five minutes) is marked failed at start and whenever its chat is used again, so a
-restart never leaves a chat blocked. Stopping a run whose process is gone closes it at once.
+`completed`, `failed`, `cancelled`). After five minutes without progress, a run is reclaimed
+only when its execution slot is free; the operating system releases the lock on process exit.
+Recovery runs at start, admission and allowance checks. Stop commits to the Eva store without
+waiting for a business writer. Its cancellation fence also makes pending approvals unusable;
+they show as declined, and cannot authorize an identical call in a later run.
 
 ## Limits of this release
 

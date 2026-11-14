@@ -108,4 +108,9 @@ drops it when `evlet migrate` runs after the upgrade, after the backup
 ([app-upgrades.md](app-upgrades.md#upgrade-evlet)). Record changes still go to each
 record's journal, and settings changes and approval answers to the audit log.
 
+Oversized redacted inputs are replaced with a small valid JSON summary. Historical truncated
+rows show an unavailable-details marker instead of preventing the log from opening. Eva's
+conversation-level record-reading marker stays with the chat, so pruning this diagnostic log
+cannot remove the approval requirement for later changes influenced by those records.
+
 Controls → AI → Tool log lists it with filters. People see their own requests in Settings.
