@@ -185,6 +185,31 @@ def redacted(values):
     return kept
 
 
+def log_inputs(values):
+    """Keep a bounded valid JSON object, never a cut JSON token or arbitrary rejected arguments."""
+    if not isinstance(values, dict):
+        return None
+    kept = redacted(values)
+    try:
+        encoded = json.dumps(kept, separators=(',', ':'), allow_nan=False)
+        if len(encoded.encode()) <= 4000:
+            return encoded
+    except (ValueError, TypeError):
+        pass
+    # Preserve useful field names, not an unbounded preview of potentially sensitive input.
+    return json.dumps({'truncated': True, 'fields': [str(key)[:80] for key in list(values)[:30]]}, separators=(',', ':'))
+
+
+def saved_inputs(value):
+    """Old releases cut serialized JSON; one damaged historical row must not hide the log."""
+    if not value:
+        return None
+    try:
+        return json.loads(value)
+    except (ValueError, TypeError):
+        return {'truncated': True, 'unavailable': 'Historical input details could not be decoded.'}
+
+
 def label(tool, values):
     """The activity line for a call: "Reading invoice", with the arguments it names."""
     text = tool.label or tool.name.replace('_', ' ').capitalize()
@@ -345,7 +370,7 @@ class Tools:
         self.prune()
         origin = origin_of(user)
         tool = self.definition(name)
-        if tool is None or origin not in tool.origins:
+        if (tool is None or origin not in tool.origins) and origin != 'mcp':
             raise ConnectorError(404, 'Unknown tool')
         access = user.access
         client = client or self.client_label(user)
@@ -355,6 +380,11 @@ class Tools:
         record_id = values.get('id') if isinstance(values, dict) and type(values.get('id')) is int else None
         model = values.get('model') if isinstance(values, dict) and isinstance(values.get('model'), str) else None
         try:
+            # Even malformed/disabled/unknown MCP requests spend a slot before rejection logging.
+            logged = tool or Tool(str(name)[:200], '', {}, ())
+            call_id = self.admit(user, origin, client, client_id, run_id, logged, values)
+            if tool is None or origin not in tool.origins:
+                raise ConnectorError(404, 'Unknown tool')
             disabled, writes = self.policy(origin)
             if name in disabled:
                 raise ConnectorError(403, 'This tool is turned off for this workspace.')
@@ -363,7 +393,6 @@ class Tools:
             if tool.writes and access is not None and not access.write:
                 raise ConnectorError(403, "This assistant can't make changes. You can allow it in Settings, under AI." if origin == 'mcp' else 'This key can only read.')
             values = arguments(tool, values)
-            call_id = self.admit(user, origin, client, client_id, run_id, tool, values)
             result = self.run(user, origin, tool, values, scope, run_id, client)
             if name == 'create_record' and isinstance(result, dict) and type(result.get('id')) is int:
                 record_id = result['id']
@@ -376,11 +405,8 @@ class Tools:
             status = getattr(exc, 'status', None)
             outcome = 'denied' if status in (401, 403) else 'failed'
             message = getattr(exc, 'message', None) or ('Tool call failed' if not isinstance(exc, ConnectorError) else str(exc))
-            if call_id is None:
-                # Refused before it was admitted (settings, arguments, rate): logged so refusals show up too.
-                if not (isinstance(exc, ConnectorError) and status == 429):
-                    self.log(user, origin, client, client_id, run_id, tool, values, outcome, started, message, model=model, record_id=record_id)
-            else:
+            # Admission failure never creates an uncounted log row.
+            if call_id is not None:
                 self.finish(call_id, outcome, started, error=message)
             raise
 
@@ -424,7 +450,10 @@ class Tools:
         if isinstance(values, dict):
             model = values.get('model') if isinstance(values.get('model'), str) else model
             record_id = values.get('id') if type(values.get('id')) is int else record_id
-        inputs = json.dumps(redacted(values), separators=(',', ':'))[:4000] if isinstance(values, dict) else None
+        # Admission must survive hostile metadata before normal argument validation.
+        model = model[:128] if isinstance(model, str) else None
+        record_id = record_id if type(record_id) is int and 0 < record_id <= 2**63 - 1 else None
+        inputs = log_inputs(values)
         return connection.run(qb.insert(
             'evlet_tool_calls', at=now, user_id=user.id, origin=origin, client=client, client_id=client_id,
             key_id=None if access is None else access.key_id, run_id=run_id, tool=tool.name, model=model, record_id=record_id,
@@ -610,8 +639,11 @@ class Tools:
         now = int(time.time())
         waiting = None
         with self.database.transaction() as tx:
+            # Eva approvals belong to this run; cancelling it must not leave a reusable write grant
+            # for a later run with identical arguments. Remote-client approvals retain their contract.
+            run_filter = qb.eq('run_id', run_id) if origin == 'eva' else qb.TRUE
             row = tx.connection.run(qb.select('evlet_tool_approvals').where(qb.in_('status', ('pending', 'approved')), qb.gt('expires_at', now),
-                                                                            digest=digest, user_id=user.id).order_by('-id').limit(1)).one()
+                                                                            run_filter, digest=digest, user_id=user.id).order_by('-id').limit(1)).one()
             # An approval is used once: a second identical call needs a new one.
             if row is not None and row['status'] == 'approved' and \
                     tx.connection.run(qb.update('evlet_tool_approvals', status='used').where(id=row['id'], status='approved')).rowcount == 1:
@@ -638,6 +670,18 @@ class Tools:
         conversation = qb.select(qb.table('evlet_eva_runs', 'current'), 'current.conversation_id').where(qb.eq('current.id', run_id))
         runs = qb.select('evlet_eva_runs', 'id').where(qb.eq('conversation_id', conversation))
         with self.database._connection() as connection:
+            if connection.columns('evlet_eva_events'):
+                events = qb.select('evlet_eva_events', 'data').where(qb.in_('run_id', runs))
+                if connection.run(events.where(type='content.read').limit(1)).one() is not None:
+                    return True
+                # Upgrade compatibility: completed content events live with the conversation, unlike logs.
+                # Only text deltas are discarded on completion; historical tool activity remains stored.
+                for event in connection.run(events.where(type='tool.completed')):
+                    try:
+                        if json.loads(event['data']).get('tool') in CONTENT:
+                            return True
+                    except (ValueError, TypeError, AttributeError):
+                        continue
             row = connection.run(qb.select('evlet_tool_calls', qb.value(1)).where(
                 qb.eq('outcome', 'ok'), qb.not_null('duration_ms'), qb.in_('tool', tuple(CONTENT)), qb.in_('run_id', runs)).limit(1)).one()
         return row is not None
@@ -677,8 +721,17 @@ class Tools:
         self.prune()
         with self.database._connection() as connection:
             pending = qb.eq('status', 'pending') if pending_only else qb.TRUE
+            cancelled = set()
+            eva = getattr(self.business, 'eva', None) is not None
+            if eva and pending_only:
+                stopped = qb.select('evlet_eva_runs', 'id').where(user_id=user.id, status='cancelled')
+                pending = qb.and_(pending, qb.or_(qb.is_null('run_id'), qb.not_in('run_id', stopped)))
             rows = connection.run(qb.select('evlet_tool_approvals').where(pending, user_id=user.id).order_by('-id').limit(50)).all()
-        return [self.public_approval(row) for row in rows]
+            runs = tuple({row['run_id'] for row in rows if row['run_id'] is not None})
+            if eva and runs:
+                cancelled = {row[0] for row in connection.run(qb.select('evlet_eva_runs', 'id').where(qb.in_('id', runs), status='cancelled'))}
+        return [self.public_approval({**dict(row), 'status': 'declined'} if row['run_id'] in cancelled and row['status'] in ('pending', 'approved') else row)
+                for row in rows]
 
     def decide(self, user, approval_id, approve):
         """A person answers one of their own pending approvals. Only signed-in sessions get here (Business checks)."""
@@ -691,6 +744,9 @@ class Tools:
                 raise AccessError(404, 'Approval not found')
             if row['status'] != 'pending' or row['expires_at'] <= now:
                 raise AccessError(409, 'This approval was already answered or has expired.')
+            eva = getattr(self.business, 'eva', None)
+            if eva is not None and row['run_id'] and row['origin'] == 'eva':
+                eva.reserve_answer(tx.connection, user, row)
             tx.connection.run(qb.update('evlet_tool_approvals', status='approved' if approve else 'declined', decided_at=now).where(id=approval_id))
             from .controls import audit
             summary = json.loads(row['summary'])
@@ -718,7 +774,7 @@ class Tools:
                                   .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('c.user_id')), left=True)
                                   .where(*conditions).order_by('-c.id').limit(limit + 1)).all()
         items = [{key: row[key] for key in ('id', 'at', 'username', 'origin', 'client', 'run_id', 'tool', 'model', 'record_id', 'kind', 'outcome', 'duration_ms', 'error')}
-                 | {'inputs': json.loads(row['inputs']) if row['inputs'] else None} for row in rows[:limit]]
+                 | {'inputs': saved_inputs(row['inputs'])} for row in rows[:limit]]
         return {'items': items, 'next': items[-1]['id'] if len(rows) > limit else None}
 
     # ---------- /api/_tools ----------
@@ -729,7 +785,7 @@ class Tools:
         if path == '/api/_tools' and method == 'GET':
             return 200, {'origin': origin_of(user), 'tools': [tool.public() for tool in self.listing(user)]}, []
         if path == '/api/_tools/execute' and method == 'POST':
-            if not isinstance(body, dict) or set(body) - {'tool', 'arguments'} or not isinstance(body.get('tool'), str) or not isinstance(body.get('arguments', {}), dict):
+            if not isinstance(body, dict) or set(body) - {'tool', 'arguments'} or not isinstance(body.get('tool'), str):
                 raise ValidationError({'_form': 'Send tool and arguments'})
             try:
                 return 200, {'result': self.execute(user, body['tool'], body.get('arguments', {}), scope)}, []
