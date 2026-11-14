@@ -64,6 +64,7 @@ TABLES = (
         Column('expires', 'INTEGER', required=True),
         Column('attempts', 'INTEGER', required=True, default=0),
         Column('secret', 'BLOB'),
+        Column('session_generation', 'INTEGER', required=True, default=0),
     )),
 )
 
@@ -293,8 +294,6 @@ class Settings:
         with self.database.transaction() as tx:
             for table in TABLES:
                 tx.connection.ensure_table(table)
-            if 'session_generation' not in tx.connection.columns('evlet_two_step_tickets'):
-                tx.connection.add_column('evlet_two_step_tickets', Column('session_generation', 'INTEGER', required=True), default=0)
             if 'two_step_agent' not in tx.connection.columns('evlet_user_profile'):
                 tx.connection.add_column('evlet_user_profile', Column('two_step_agent', 'TEXT', required=True), default='')
             # The Administrator's name never changes.

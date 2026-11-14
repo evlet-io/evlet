@@ -8,6 +8,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Ending sessions revokes them in the main database.** Sessions and two-step tickets carry the
+  account's session generation, which ending a person's sessions moves on, so a session or ticket
+  kept in the sessions file cannot be used again. Framework step `0012_session_generations` adds
+  the columns: run `evlet migrate` after upgrading.
 - **Browser record and link caches are bounded.** Recent cells use approximate JSON budgets;
   active views retain their cell identity and receive updates after cache eviction. Renamed
   links refresh held labels, and disposed link controls release listeners and timers.
