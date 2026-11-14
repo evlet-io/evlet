@@ -57,12 +57,15 @@ def post(app, path, body, cookie, csrf):
 
 
 def test_dev_prints_a_link_for_the_administrator_who_then_sets_a_password_and_two_step(empty, capsys):
-    _, app = empty
+    project, app = empty
     out, err = start(app, capsys)
     # Nothing new is created: the instance already has its Administrator, without a password.
     assert accounts(app) == [('admin', 'admin', 1)]
     assert 'The admin account has no password yet. Open this link to sign in and choose one (works once, for 10 minutes):' in out
     token = out.split('token=')[1].split()[0]
+    # start() completed shutdown after capturing the announcement. Serve subsequent
+    # requests with a fresh runtime, retaining the same instance and stored one-time link.
+    app = runtime(project)
     status, headers, _ = call(DevSignIn(app), 'GET', f'/_dev/signin?token={token}')
     assert status == 302
     cookie = session_cookie(headers)
