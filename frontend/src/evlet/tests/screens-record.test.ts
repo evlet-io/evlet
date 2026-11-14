@@ -88,7 +88,7 @@ describe('generated record view', () => {
     expect(text(host.querySelector('.crumbs .cur'))).toBe(recorded.update.body.title);
   });
 
-  it('keeps the draft and offers Reload when the record changed elsewhere', async () => {
+  it('keeps the draft and offers comparison when the record changed elsewhere', async () => {
     const { host } = start(orderRoutes(recorded.stale_if_match), '/app/order/0000000000001');
     await until(() => expect(heading(host)?.querySelector('button.fval')).toBeTruthy());
     click(heading(host)!.querySelector('button.fval'));
@@ -96,7 +96,7 @@ describe('generated record view', () => {
     input.value = 'Mine';
     press(input, 'Enter');
     await until(() => expect(text(host.querySelector('.inv-banner.b-rose'))).toContain('This record changed since you opened it'));
-    expect(byText(host, '.inv-banner button', 'Reload')).not.toBeNull();
+    expect(byText(host, '.inv-banner button', 'Compare changes')).not.toBeNull();
     expect((heading(host)!.querySelector('input') as HTMLInputElement).value).toBe('Mine');
   });
 
