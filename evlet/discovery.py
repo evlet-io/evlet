@@ -24,6 +24,40 @@ def object_schema(properties, required=()):
     return {'type': 'object', 'properties': properties, 'required': list(required), 'additionalProperties': False}
 
 
+_TEXT = {'type': 'string'}
+_BOOL = {'type': 'boolean'}
+_COUNT = {'type': 'integer', 'minimum': 0}
+_TEXTS = {'type': 'array', 'items': _TEXT}
+_MOVE = object_schema({
+    'key': _TEXT, 'to': _TEXT, 'label': _TEXT, 'allowed': _BOOL, 'primary': _BOOL, 'reason': _TEXT,
+    'asks': _TEXTS,
+    'remark': object_schema({'mode': {'enum': ['optional', 'required']}, 'label': {'type': ['string', 'null']},
+                             'required': _BOOL}, ('mode', 'label', 'required')),
+    'level': {'type': 'integer', 'minimum': 1}, 'pending': _TEXT, 'can_approve': _BOOL,
+}, ('key', 'to', 'label', 'allowed'))
+_PAGE = object_schema({'total': _COUNT, 'limit': {'type': 'integer', 'minimum': 1}, 'partial': _BOOL},
+                      ('total', 'limit', 'partial'))
+# Optional annotations emitted by the record read/write paths, never writable fields.
+READ_ANNOTATIONS = {
+    '_audit': AUDIT,
+    '_actions': {'type': 'array', 'items': object_schema({'name': _TEXT, 'label': _TEXT, 'allowed': _BOOL, 'reason': _TEXT},
+                                                        ('name', 'label', 'allowed'))},
+    '_moves': {'type': 'array', 'items': _MOVE},
+    '_locked': _BOOL,
+    '_journal': object_schema({'count': _COUNT, 'open_follow_ups': _COUNT}, ('count', 'open_follow_ups')),
+    '_row_ids': {'type': 'object', 'additionalProperties': dict(ID)},
+    '_calculation': object_schema({'language': _TEXT, 'model_schema_hash': _TEXT}, ('language', 'model_schema_hash')),
+    '_job': object_schema({'id': {'type': 'integer', 'minimum': 1}, 'state': _TEXT}, ('id', 'state')),
+    '_outcome': {'description': 'Application-defined JSON value returned by an action.'},
+    '_effects': {'type': 'array', 'items': object_schema({'target': _TEXT, 'rows': _COUNT, 'reversals': _COUNT, 'balanced': _BOOL},
+                                                        ('target', 'rows', 'reversals'))},
+    '_deletable': _BOOL,
+    '_version': object_schema({'number': {'type': ['integer', 'null'], 'minimum': 0}, 'released': _BOOL,
+                               'state': {'type': ['string', 'null']}}, ('number', 'released', 'state')),
+    '_restore': object_schema({'version': _COUNT, 'dropped': _TEXTS, 'kept': _TEXTS}, ('version', 'dropped', 'kept')),
+}
+
+
 def value_schema(field, *, read=False):
     kind = field['type']
     if kind == 'link':
@@ -131,7 +165,7 @@ class Discovery:
             fields[-1]['read_only'] = field['read_only'] or not any(entry['permissions'][operation] for operation in ('create', 'update'))
         schemas = {'read': object_schema({'id': dict(ID), **{field['name']: value_schema(field, read=True) for field in entry['fields']}}, ('id',))}
         if not entry['child_only']:
-            schemas['read']['properties']['_audit'] = AUDIT
+            schemas['read']['properties'].update(READ_ANNOTATIONS)
         if not entry['child_only']:
             for operation in ('create', 'update'):
                 if entry['permissions'][operation]:
@@ -143,6 +177,7 @@ class Discovery:
             read_properties = {'id': dict(ID), **{field['name']: value_schema(field, read=True) for field in child_entry['fields'] if field['name'] != child['link']}}
             child_read = {'type': 'array', 'maxItems': 100, 'items': object_schema(read_properties, ('id',))}
             schemas['read']['properties'].setdefault('children', object_schema({}))['properties'][child['name']] = child_read
+            schemas['read']['properties'].setdefault('children_pages', object_schema({}))['properties'][child['name']] = _PAGE
             for operation in ('create', 'update'):
                 if operation not in schemas:
                     continue

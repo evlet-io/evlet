@@ -8,6 +8,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **MCP record schemas accept framework response metadata.** Discovery's read schema
+  describes the annotations returned with documents, including state moves and journal
+  summaries. Create and update schemas retain their strict input validation. The official
+  client smoke test exercises state changes through `change_state`.
 - **Combined Controls changes honor API-key revocation.** A role, password or active-status
   change sent with `"sessions": "end", "revoke_keys": true` revokes keys in the same
   transaction. Keys remain kept by default.
