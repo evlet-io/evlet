@@ -436,7 +436,7 @@ class Context:
         return receipt
 
 
-def load_draft(context, model, record_id, values, *, preview=False):
+def load_draft(context, model, record_id, values, *, preview=False, complete=False):
     business, tx, user = context._business, context._tx, context.user
     operation = 'update' if record_id else 'create'
     business.policy.require(user, model, 'read' if preview and record_id else operation)
@@ -463,7 +463,7 @@ def load_draft(context, model, record_id, values, *, preview=False):
     saved = SavedRows(context, model, record_id) if record_id else None
     targets = LinkTargets(context)
     targets.prefetch(submitted_links(business, model, collections))
-    load_rows(context, model, draft, old, record_id, collections, preview, '', set(), bounded, saved, targets)
+    load_rows(context, model, draft, old, record_id, collections, preview, '', set(), bounded, saved, targets, complete=complete)
     if business.registry.plan_for(model) is not None and sum(1 for _ in walk(draft)) - 1 > LIMITS['document_rows']:
         raise ValidationError({'children': 'This document exceeds the owned row limit'})
     return draft, old
@@ -730,7 +730,7 @@ def positions(rows, hidden):
     return attempt(True) or attempt(False) or list(range(len(rows)))
 
 
-def load_rows(context, model, draft, old, record_id, collections, preview, prefix, keys_seen, loaded=None, saved=None, targets=None):
+def load_rows(context, model, draft, old, record_id, collections, preview, prefix, keys_seen, loaded=None, saved=None, targets=None, *, complete=False):
     """Merge submitted child collections at every depth, keeping hidden rows.
 
     A collection is either a full list of rows (rows left out are removed) or a change set
@@ -779,7 +779,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
         if isinstance(submitted, dict):
             entries = row_changes(submitted, everything, hidden, positioned, prefix + child.name)
         elif isinstance(submitted, list) and sum(1 for value in submitted if not (sectioned and sections.is_entry(value))) <= max_rows:
-            if len(existing) - len(hidden) > ROW_LIMIT:
+            if len(existing) - len(hidden) > ROW_LIMIT and not complete:
                 # A detail embeds only the first ROW_LIMIT rows, so a full list from it would drop the rest.
                 raise ValidationError({prefix + child.name: f'This collection has more than {ROW_LIMIT} rows; send a change set '
                                                              '{"create", "update", "delete", "order"} instead of the full list'})
@@ -833,7 +833,8 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             object.__setattr__(row, '_submitted', frozenset(value))
             object.__setattr__(row, '_placed', placed)
             if temporary is not None: object.__setattr__(row, 'key', temporary)
-            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.', keys_seen, loaded, saved, targets)
+            load_rows(context, child.model, row, None, row_id, nested, preview, prefix + child.name + '.' + row.key + '.', keys_seen, loaded, saved, targets,
+                      complete=complete)
             merged.append(row)
         for row_id in originals.keys() - kept - hidden:
             if not preview:
@@ -1681,7 +1682,9 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             statemanager.check_move_values(context, model, rule, values)
             draft, before = load_draft(context, model, record_id, values)
     else:
-        draft, before = load_draft(context, model, record_id, values)
+        # Only a server-owned release snapshot is known to include every row. Ordinary clients keep the
+        # partial-page full-list guard, and restore still runs all scope, field, size and lifecycle checks.
+        draft, before = load_draft(context, model, record_id, values, complete=restored is not None)
     statemanager.bind(draft, before)
     ordinary = action is None and move is None
     kept_by = keeps_saved_results(context, model, before, ordinary=ordinary)
