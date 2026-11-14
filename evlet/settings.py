@@ -726,6 +726,9 @@ class Settings:
             if field is None:
                 errors[key] = 'Choose a known setting.'
                 continue
+            if field.read_only:
+                errors[key] = 'This setting is read only.'
+                continue
             try:
                 clean[key] = None if value is None else field.clean(value)
             except (ValueError, TypeError) as exc:

@@ -125,7 +125,7 @@ revokes their API keys.
 |---|---|---|---|
 | Password changed in Settings | Others end, this one stays | End | Kept, unless "Also revoke API keys" is ticked (`"revoke_keys": true`) |
 | Controls: Sign out everywhere | End | End | Kept, unless "Also revoke API keys" is ticked (`"revoke_keys": true`) |
-| Controls: password set, role change | End | End | Kept |
+| Controls: password set, role change | End | End | Kept, unless combined with `"sessions": "end", "revoke_keys": true` |
 | Controls: Reset two-step, `evlet users reset-two-step` | End | End | Revoked |
 | Controls: Deactivate | End | End | Revoked, and stay revoked if the person is activated again |
 | `evlet controls grant` (break glass) | End | End | Revoked |

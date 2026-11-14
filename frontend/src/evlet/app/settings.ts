@@ -715,6 +715,7 @@ function Everyone(ctx: SettingsContext, app: string, state: Cell<AppState | null
   const current = state.peek()!, readOnly = !current.can_edit;
   const value = (field: AppField) => field.name in draft.get() ? draft.get()[field.name] : field.value;
   const set = (field: AppField, next: unknown) => {
+    if (readOnly || field.read_only) return;
     const changes = { ...untrack(() => draft.get()) };
     if (same(next, field.value)) delete changes[field.name]; else changes[field.name] = next;
     draft.set(changes);
@@ -726,7 +727,7 @@ function Everyone(ctx: SettingsContext, app: string, state: Cell<AppState | null
       const differs = () => !same(value(field), field.default);
       return row(field.label, () => [field.help_text ? html`<span>${field.help_text}</span>` : null, differs() ? html`<span class="set-default">Default: ${shown(field, field.default)}</span>` : null],
         [Control(field, () => value(field), next => set(field, next), readOnly),
-          () => differs() && !readOnly ? Button({ icon: 'rotate-ccw', size: 'small', variant: 'ghost', tip: 'Back to default', onClick: () => set(field, field.default) }) : null],
+          () => differs() && !readOnly && !field.read_only ? Button({ icon: 'rotate-ccw', size: 'small', variant: 'ghost', tip: 'Back to default', onClick: () => set(field, field.default) }) : null],
         () => field.name in draft.get() ? html`<span class="set-chg">Unsaved</span>` : differs() ? html`<span class="set-chg">Changed</span>` : null);
     }))}</div>`)}`;
 }
@@ -734,6 +735,7 @@ function Everyone(ctx: SettingsContext, app: string, state: Cell<AppState | null
 function Mine(ctx: SettingsContext, app: string, current: AppState): Node {
   const values = cell<Record<string, unknown>>(Object.fromEntries(current.preferences.map(field => [field.name, field.value])));
   const save = async (field: AppField, next: unknown) => {
+    if (field.read_only) return;
     const before = values.peek()[field.name];
     values.set({ ...values.peek(), [field.name]: next });
     try { await ctx.api.request('PATCH', `/api/_settings/me/app/${app}`, { body: { [field.name]: next } }); toast('Saved'); }
@@ -745,16 +747,18 @@ function Mine(ctx: SettingsContext, app: string, current: AppState): Node {
 
 /** A settings field's control: a switch, a list, chips for several choices, or text with a unit. */
 function Control(field: AppField, value: () => unknown, change: (value: unknown) => void, readOnly: boolean): Node {
-  if (field.type === 'boolean') return Switch({ on: () => value() === true, ariaLabel: field.label, disabled: readOnly, onChange: change });
+  readOnly ||= Boolean(field.read_only);
+  if (field.type === 'boolean') return Switch({ on: () => value() === true, ariaLabel: field.label, disabled: readOnly, onChange: next => { if (!readOnly) change(next); } });
   if (field.type === 'select') {
     return Dropdown({ label: field.label, ariaLabel: field.label, className: 'set-select', disabled: readOnly,
       value: () => value() === null || value() === undefined ? null : String(value()),
-      choices: () => (field.choices ?? []).map(item => ({ value: item, label: humanize(item) })), onChange: next => { if (next !== null) change(next); } });
+      choices: () => (field.choices ?? []).map(item => ({ value: item, label: humanize(item) })), onChange: next => { if (!readOnly && next !== null) change(next); } });
   }
   if (field.type === 'multiselect') {
     const chosen = () => (value() as string[] | null) ?? [];
     return html`<div class="chips set-multi" role="group" aria-label=${field.label}>${(field.choices ?? []).map(item => html`<button type="button" class="chip" class:on=${() => chosen().includes(item)}
       aria-pressed=${() => String(chosen().includes(item))} disabled=${readOnly} on:click=${() => {
+        if (readOnly) return;
         const next = (field.choices ?? []).filter(each => each === item ? !chosen().includes(each) : chosen().includes(each));
         if (!next.length) { toast('Choose at least one', { icon: 'info' }); return; }
         change(next);
@@ -763,6 +767,7 @@ function Control(field: AppField, value: () => unknown, change: (value: unknown)
   const kind = kindOf(field.type);
   const input = html`<input class="input" aria-label=${field.label} disabled=${readOnly} inputmode=${kind.inputMode ?? null}
     prop:value=${() => (kind.edit ?? kind.format)(value(), field)} on:change=${(event: Event) => {
+      if (readOnly) return;
       const target = event.target as HTMLInputElement;
       try { change(kind.parse ? kind.parse(target.value, field) : target.value); }
       catch (error) {
@@ -775,14 +780,21 @@ function Control(field: AppField, value: () => unknown, change: (value: unknown)
 }
 
 function ChangeBar(ctx: SettingsContext, app: string, state: Cell<AppState | null>, draft: Cell<Record<string, unknown>>): Child {
-  const count = Object.keys(draft.get()).length;
-  if (!count || !state.get()) return null;
+  const changes = () => {
+    const current = state.get(), values = draft.get();
+    return Object.fromEntries((current?.can_edit ? current.sections.flatMap(group => group.fields) : [])
+      .filter(field => !field.read_only && Object.hasOwn(values, field.name)).map(field => [field.name, values[field.name]]));
+  };
+  const count = Object.keys(changes()).length;
+  if (!count) return null;
   const save = async () => {
+    const values = changes(), saved = Object.keys(values).length;
+    if (!saved) return;
     try {
-      const { data } = await ctx.api.request<AppState & { saved: number }>('PATCH', `/api/_settings/app/${app}`, { body: { values: draft.peek() } });
+      const { data } = await ctx.api.request<AppState & { saved: number }>('PATCH', `/api/_settings/app/${app}`, { body: { values } });
       draft.set({});
       state.set(data);
-      toast(`${count} setting${count === 1 ? '' : 's'} saved for everyone`);
+      toast(`${saved} setting${saved === 1 ? '' : 's'} saved for everyone`);
     } catch (failure) { fail(failure); }
   };
   return html`<div class="set-bar" role="region" aria-label="Unsaved changes"><span class="dot"></span><strong>${count} unsaved change${count === 1 ? '' : 's'}</strong>

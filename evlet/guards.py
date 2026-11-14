@@ -11,6 +11,7 @@ from types import MappingProxyType
 from .auth import AccessError, has_role, is_administrator
 from .fields import MISSING, Link, Reference
 from .models import ValidationError, build_step
+from .permissions import CALLER
 
 
 @dataclass(frozen=True)
@@ -332,6 +333,9 @@ def action_arguments(context, model, method, declaration, arguments, saved):
     cleaned = {}
     policy, tx, user = context._business.policy, context._tx, context.user
     for name, field in inputs.items():
+        if CALLER.get() and field.read_only and name in values:
+            errors[name] = 'This input is read only'
+            continue
         try:
             cleaned[name] = field.clean(values.get(name, MISSING))
             if cleaned[name] is not None and isinstance(field, (Link, Reference)):

@@ -229,6 +229,11 @@ as the Playground does for Projects.
   value equal to the default is removed, and a changed value shows its default with a reset.
 - **Just for you** values are stored in `evlet_user_prefs` under the app's name and save at
   once.
+- **Readonly fields.** `read_only=True` keeps a setting or preference server-owned, even
+  for an app settings editor or admin. The browser displays it without editing or reset
+  controls and omits it from saves. Submitting that key directly, including its current
+  value or `null`, returns 422 before any values are saved. Omitted fields retain their
+  stored values or declared defaults.
 - **Visibility.** A person sees an app's settings when they can read at least one of its
   models. Portal users never see app settings.
 - **Server code.** `services.settings.get("billing", "vat")` and

@@ -995,7 +995,7 @@ class Controls:
             return lambda: audit(connection, actor.username, 'Users', row['username'], ' · '.join(details), before, after) if details else None
 
         if changes:
-            self.business.auth.update_user(user_id, changes, check)
+            self.business.auth.update_user(user_id, changes, check, revoke_keys=revoke)
             return
         with self.database.transaction() as tx:
             row = tx.connection.run(qb.select('evlet_users').where(id=user_id)).one()

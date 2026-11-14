@@ -987,3 +987,38 @@ def test_guards_over_rows_reuse_the_rows_the_detail_loaded(tmp_path):
 
 
 # Cancelled states
+
+
+@pytest.mark.parametrize('role', ['admin', 'editor'])
+def test_readonly_action_inputs_are_server_owned_for_callers(tmp_path, role):
+    class Request(Model):
+        permissions = ALL
+        protected = Text(default='unchanged', read_only=True)
+        note = Text(default='')
+
+        @action(inputs={'value': Text(default='server-only', read_only=True),
+                        'enabled': Boolean(default=False, read_only=True), 'note': Text(required=True)})
+        def apply(self, value, enabled, note):
+            self.protected = value
+            self.note = note
+            return {'enabled': enabled}
+
+    app = start(Database(tmp_path / 'readonly-action.sqlite3', Registry(Request)))
+    try:
+        c = client(app) if role == 'admin' else add_user(app, 'editor')
+        record = c('POST', '/api/request', {})[1]
+        url = '/api/request/' + record['id']
+        for name, value in [('value', 'tampered'), ('value', 'server-only'), ('value', None), ('enabled', False)]:
+            status, error, _ = c('POST', url + '/actions/apply', {name: value, 'note': 'must not commit'}, headers=etag(c, url))
+            assert status == 422 and name in error['fields']
+            detail = c('GET', url)[1]
+            assert detail['protected'] == 'unchanged' and detail['note'] == ''
+        status, detail, _ = c('POST', url + '/actions/apply', {'note': 'saved'}, headers=etag(c, url))
+        assert status == 200 and detail['protected'] == 'server-only' and detail['note'] == 'saved'
+        assert detail['_outcome'] == {'enabled': False}
+        # Trusted application code can supply server-owned inputs and change protected model fields.
+        with app.business.context(User(1, 'admin', 'admin')) as context:
+            saved = context.action(Request, record['id'], 'apply', value='backend', enabled=True, note='trusted')
+            assert saved['protected'] == 'backend' and saved['_outcome'] == {'enabled': True}
+    finally:
+        app.database.close()

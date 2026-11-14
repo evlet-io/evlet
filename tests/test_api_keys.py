@@ -7,7 +7,7 @@ from urllib.parse import urlencode
 
 import pytest
 
-from evlet import Policy, Rule
+from evlet import Policy, Rule, qb
 from evlet import auth as auth_module
 from examples.playground.models import Customer, Invoice, Project, registry
 from test_business import PASSWORD, client, hashed, http, secured
@@ -235,3 +235,36 @@ def test_a_key_follows_controls_overrides_and_custom_roles(secured):
     # A new key can't name what the role can no longer read.
     status, payload, _ = create(admin, 'Too much', {'access': 'read', 'models': ['Customer']}, user='casey')
     assert status == 422 and "can't read Customer" in payload['fields']['scope']
+
+
+@pytest.mark.parametrize('changes', [{'role': 'viewer'}, {'password': PASSWORD + ' changed'}, {'active': True}])
+@pytest.mark.parametrize('revoke', [False, True])
+def test_combined_account_changes_honor_explicit_key_revocation(secured, changes, revoke):
+    admin, editor = client(secured), client(secured, 'editor')
+    keys = [create(admin, name, user='editor')[1]['token'] for name in ('First', 'Second')]
+    other = create(admin, 'Other account', user='viewer')[1]['token']
+    person = next(row for row in admin('GET', '/api/_controls/users')[1]['items'] if row['username'] == 'editor')
+    assert admin('PATCH', f"/api/_controls/users/{person['id']}",
+                 {**changes, 'sessions': 'end', 'revoke_keys': revoke})[0] == 204
+    assert editor('GET', '/api/schema')[0] == 401
+    assert [with_key(secured, key, 'GET', '/api/customer')[0] for key in keys] == [401 if revoke else 200] * 2
+    assert with_key(secured, other, 'GET', '/api/customer')[0] == 200
+    with secured.database._connection() as connection:
+        rows = connection.run(qb.select('evlet_api_keys', 'revoked_at').where(user_id=person['id'])).all()
+        assert all((row[0] is not None) == revoke for row in rows)
+        detail = connection.run(qb.select('evlet_audit', 'detail').where(area='Users').order_by('-id').limit(1)).value()
+    assert ('Revoked 2 API keys' in detail) == revoke
+
+
+def test_invalid_combined_account_change_does_not_revoke_access(secured):
+    admin, editor = client(secured), client(secured, 'editor')
+    token = create(admin, user='editor')[1]['token']
+    person = next(row for row in admin('GET', '/api/_controls/users')[1]['items'] if row['username'] == 'editor')
+    with secured.database._connection() as connection:
+        before = connection.run(qb.select('evlet_audit', qb.count()).where(area='Users')).value()
+    assert admin('PATCH', f"/api/_controls/users/{person['id']}",
+                 {'role': 'nonexistent', 'sessions': 'end', 'revoke_keys': True})[0] == 422
+    assert editor('GET', '/api/schema')[0] == 200
+    assert with_key(secured, token, 'GET', '/api/customer')[0] == 200
+    with secured.database._connection() as connection:
+        assert connection.run(qb.select('evlet_audit', qb.count()).where(area='Users')).value() == before
