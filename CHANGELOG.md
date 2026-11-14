@@ -8,6 +8,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Controls network exports preserve both restrictions.** Exported code keeps the intersection
+  of application and Controls IPv4/IPv6 networks. Disjoint restrictions refuse export instead
+  of becoming unrestricted; reconcile them before resetting the override.
 - **MCP record schemas accept framework response metadata.** Discovery's read schema
   describes the annotations returned with documents, including state moves and journal
   summaries. Create and update schemas retain their strict input validation. The official
