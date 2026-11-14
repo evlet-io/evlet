@@ -1,11 +1,10 @@
 // Users and Roles: instance data, so every change saves at once and writes an audit row.
 
 import { html, when, type Child } from '../dom';
-import { ApiError, ValidationError } from '../api';
+import { ValidationError } from '../api';
 import { cell, derive } from '../reactive';
 import { Avatar, Button, Checkbox, Icon, StatusPill, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
-import { Dropdown } from '../ui/pickers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
 import type { RoleRow, UserRow } from './client';
 
@@ -15,17 +14,8 @@ export const RoleChip = (role: string) => StatusPill({ label: role, tint: (TINTS
 /** Only admins change admin accounts, give the admin role, manage roles and decide who opens Controls. */
 export const isAdmin = (ctx: ControlsContext) => ctx.state.peek().me.role === 'admin';
 const assignable = (ctx: ControlsContext) => ctx.state.peek().roles.filter(item => isAdmin(ctx) || item.id !== 'admin');
-export const message = (failure: unknown) => failure instanceof ApiError ? failure.message : 'Something went wrong. Try again.';
-
-/** A Controls select: Evlet's Dropdown over [value, label] pairs. */
-export function Select(props: { id: string; value: () => string; options: () => Array<[string, string]>; onChange: (value: string) => void; label?: string; disabled?: boolean }) {
-  return Dropdown({ id: props.id, label: props.label, ariaLabel: props.label, value: props.value, disabled: props.disabled, className: 'ctl-select',
-    choices: () => props.options().map(([value, label]) => ({ value, label })), onChange: value => { if (value !== null) props.onChange(value); } });
-}
-
-export const field = (label: string, id: string, control: Node, hint: () => string | null = () => null, error: () => string | null = () => null) =>
-  html`<div class="ctl-field"><label for=${id}>${label}</label>${control}
-    ${() => error() ? html`<span class="ctl-err">${error()}</span>` : hint() ? html`<span class="ctl-hint">${hint()}</span>` : null}</div>`;
+export { message, Select, field, ask } from '../ui/settings-helpers';
+import { message, Select, field, ask } from '../ui/settings-helpers';
 
 // ---------- users ----------
 
@@ -250,13 +240,6 @@ export function RolesPage(ctx: ControlsContext): HTMLElement {
           ${row.kind === 'custom' && !row.declared && isAdmin(ctx) ? Button({ icon: 'trash-2', tip: `Delete ${row.id}`, size: 'small', variant: 'ghost', onClick: () => remove(row) }) : null}</td></tr>`)}</tbody></table></div>
     ${Callout('info', 'info', html`Opening Controls is a separate right from any model permission. It never applies to portal roles, and admin always has it so the instance can't be locked out. Only admins change who opens Controls, manage roles and change admin accounts. From the server shell, <code>evlet controls grant &lt;instance&gt; &lt;user&gt;</code> restores access.`)}
   </div>` as HTMLElement;
-}
-
-export function ask(title: string, body: Child, yes: string, run: (() => unknown) | null, danger = false) {
-  openModal({ title, narrow: true, icon: danger ? 'trash-2' : 'info', tint: danger ? 'rose' : 'blue',
-    body: () => html`<p class="ctl-confirm">${body}</p>`,
-    footer: close => run ? DialogFooter({ cancel: close, submit: { label: yes, variant: danger ? 'danger' : 'primary', onClick: () => { close(); void run(); } } })
-      : DialogFooter({ submit: { label: yes, onClick: close } }) });
 }
 
 function newRole(ctx: ControlsContext) {

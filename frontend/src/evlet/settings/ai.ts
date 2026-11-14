@@ -10,8 +10,8 @@ import { evaStatus, type Approval, type EvaStatus } from '../eva/client';
 import { cell } from '../reactive';
 import { Button, StatusPill, Switch } from '../ui/base';
 import { copyText, mountToasts, toast } from '../ui/layers';
-import { Callout, Head, plural, stamp } from '../controls/app';
-import { ask, message } from '../controls/people';
+import { Callout, Head, plural, stamp } from '../ui/settings-helpers';
+import { ask, message } from '../ui/settings-helpers';
 import '../controls/controls.css';
 
 export interface MyAssistant { id: number; client_name: string; created_at: number; last_used: number | null; calls: number; allow_changes: boolean; apps: string[] | null }
