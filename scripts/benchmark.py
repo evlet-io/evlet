@@ -1,4 +1,4 @@
-"""Reproducible adapter benchmark. Writes only a new SQLite file or empty PG database."""
+"""Reproducible SQLite benchmark. Writes only a new disposable SQLite database set."""
 import argparse
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +16,8 @@ import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from evlet import Application, Currency, Database, Integer, LocalAuth, Model, Registry, Text
+from evlet import qb
+from evlet.runtime import runtime
 
 
 class GLEntry(Model):
@@ -41,9 +43,12 @@ def timing(function):
 
 
 def stats(values):
+    if not values:
+        return {'samples': 0, 'median_ms': None, 'p95_ms': None, 'p99_ms': None, 'max_ms': None}
     ordered = sorted(values)
     return {'samples': len(values), 'median_ms': round(statistics.median(values), 3),
             'p95_ms': round(ordered[min(len(ordered)-1, int(len(ordered)*.95))], 3),
+            'p99_ms': round(ordered[min(len(ordered)-1, int(len(ordered)*.99))], 3),
             'max_ms': round(max(values), 3)}
 
 
@@ -55,9 +60,12 @@ def request(app, cookie):
         await app({'type': 'http', 'method': 'GET', 'path': '/api/glentry',
                    'query_string': b'limit=20&filters=%7B%22account%22%3A42%7D',
                    'headers': [(b'host', b'127.0.0.1:8000'), (b'cookie', cookie.encode())]}, receive, send)
-        if sent[0]['status'] != 200: raise RuntimeError('Authenticated ASGI request failed')
-        assert len(json.loads(sent[1]['body'])['items']) == 20
-    asyncio.run(run())
+        status = sent[0]['status']
+        if status not in (200, 503): raise RuntimeError(f'Authenticated ASGI request failed: {status}')
+        if status == 200:
+            assert len(json.loads(sent[1]['body'])['items']) == 20
+        return status
+    return asyncio.run(run())
 
 
 def main():
@@ -83,8 +91,9 @@ def main():
     import secrets
     token = secrets.token_hex(32)
     with db.transaction() as tx:
-        uid = tx.connection.execute("INSERT INTO evlet_users(username,password,role) VALUES (?,?,?)", ('benchmark', 'disabled-password', 'viewer')).lastrowid
-        tx.connection.execute('INSERT INTO evlet_sessions VALUES (?,?,?,?)', (hashlib.sha256(token.encode()).hexdigest(), uid, 'benchmark', int(time.time())+3600))
+        uid = tx.connection.run(qb.insert('evlet_users', username='benchmark', password='disabled-password', role='viewer').returning_id()).id
+    with db.transaction(store='sessions') as tx:
+        tx.connection.run(qb.insert('evlet_sessions', token=hashlib.sha256(token.encode()).hexdigest(), user_id=uid, csrf='benchmark', expires=int(time.time()) + 3600, realm='desk', started=int(time.time())))
     def load():
         datasets = [('glentry', ('account','posting_day','amount'), ((i%1000, i%365, 100 if i%2 == 0 else -100) for i in range(args.gl))),
                     ('stockentry', ('item','quantity'), ((i%1000, 1 if i%2 == 0 else -1) for i in range(args.stock)))]
@@ -132,12 +141,17 @@ def main():
         def read(_):
             samples = []
             while time.perf_counter() < deadline or len(samples) < (args.requests+args.users-1)//args.users:
-                try: samples.append(timing(lambda: request(app, 'evlet_session='+token))[0])
+                try:
+                    elapsed_ms, status = timing(lambda: request(app, 'evlet_session='+token))
+                    samples.append((elapsed_ms, status))
+                    if status == 503:
+                        time.sleep(1)  # Honor Retry-After; do not turn overload into a retry storm.
                 except Exception as exc:
                     errors.append(type(exc).__name__)
                     break
             return samples
-        latencies = [v for samples in pool.map(read, range(args.users)) for v in samples]
+        attempts = [v for samples in pool.map(read, range(args.users)) for v in samples]
+        latencies = [elapsed_ms for elapsed_ms, status in attempts if status == 200]
         read_elapsed = time.perf_counter()-start
         writer.result()
     elapsed = time.perf_counter()-start
@@ -150,7 +164,11 @@ def main():
     result = {'adapter': 'sqlite', 'database_version': version,
               'platform': platform.platform(), 'machine': platform.machine(), 'cpu_count': os.cpu_count(),
               'python': platform.python_version(), 'hardware': hardware, 'database_settings': settings, 'dataset': {'gl': args.gl, 'stock': args.stock},
-              'users': args.users, 'requests': stats(latencies), 'request_phase_seconds': round(read_elapsed,3),
+              'users': args.users, 'requests': stats(latencies),
+              'attempts': stats([elapsed_ms for elapsed_ms, _ in attempts]),
+              'http_statuses': {str(status): sum(code == status for _, code in attempts) for status in (200, 503)},
+              'http_limits': {name: lane.limit for name, lane in runtime().lanes.items()},
+              'http_workers': {name: lane.workers for name, lane in runtime().lanes.items()}, 'request_phase_seconds': round(read_elapsed,3),
               'requests_per_second': round(len(latencies)/read_elapsed,3), 'elapsed_seconds': round(elapsed,3),
               'invoice_transactions': stats(writes), 'invoice_interval_seconds': 3, 'errors': errors,
               'trial_balance': stats(trial), 'stock_balance': stats(stock),

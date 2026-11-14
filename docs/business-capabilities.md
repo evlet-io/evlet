@@ -10,7 +10,7 @@ Start the Playground and create its first administrator in the browser. There is
 no default password. Initial setup is enabled only for this local example, accepts
 loopback clients, and closes as soon as an account exists. Do not enable setup
 behind a proxy. Administrators can add accounts, change roles, and disable accounts
-from **Accounts**. The last active administrator cannot be disabled or demoted.
+from **Controls → People**. The last active administrator cannot be disabled or demoted.
 
 - **Admin:** record access and account administration.
 - **Editor:** record access, including child rows, actions, and attachments.
@@ -21,19 +21,22 @@ a random 16-byte salt, N=131072, r=8, and p=1. These parameters follow the
 [OWASP password-storage guidance](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html).
 There are no new runtime dependencies.
 
-Sessions last eight hours. Cookies are HttpOnly, SameSite=Strict, and Secure by
+Sessions default to 12 hours; `Security` and Controls configure the applicable limit. Cookies are HttpOnly, SameSite=Strict, and Secure by
 default. The Playground explicitly permits insecure cookies only for its loopback
 HTTP origins. The database stores a SHA-256 session-token digest. Logout, password
 changes, role changes, and disabling an account invalidate the affected sessions.
-Sign-in attempts are limited to ten per client-network and username pair in 15
-minutes, with a broader 100-attempt network cap. Routable IPv6 clients share their /64 prefix; IPv4 clients reached through a
+Sign-in attempts default to five per client-network and username pair in 15
+minutes (configurable through `Security` and Controls), with a broader 100-attempt network cap. Routable IPv6 clients share their /64 prefix; IPv4 clients reached through a
 dual-stack socket keep their own address, and loopback or link-local addresses are
 never merged.
 Success clears only that account's pair counter, not the network cap or other users'
 counters. Password hashing admits at most two concurrent operations per process;
 excess work gets HTTP 503 without waiting for a hashing slot, and a busy response
 is not counted as a sign-in attempt. Proxy forwarding headers are not
-trusted. There is no SSO, email recovery, MFA, or tenant account directory yet.
+trusted unless explicitly listed in `trusted_proxies`. Two-step sign-in, backup codes and
+recent verification for sensitive Controls changes are implemented; see [Controls](controls.md)
+and [personal security settings](settings.md). SSO, email recovery and a shared cross-tenant account
+directory are outside this local-account contract.
 
 Use exact origins when configuring authentication:
 
@@ -181,9 +184,11 @@ Restricted fields are removed from responses, search, and schema metadata. Query
 or sorting on unavailable fields is rejected. Link IDs are returned as null when
 the target record is outside the user's scope. Cross-model filter/order paths are
 rejected by the authenticated API because they could expose another model's rows
-or fields. Python queries retain relationship traversal. Direct Link filters are
-also rejected when the target has a row scope. These restrictions are deliberate;
-a permission-aware join planner is future work.
+or fields. Python queries retain relationship traversal. For a row-scoped Link target,
+direct `eq` and `in` filters are permitted only when every referenced target is readable
+by the caller. Other operators are refused, and inaccessible references use the same
+generic query-field denial. Arbitrary permission-aware relationship traversal remains
+outside the authenticated HTTP query contract.
 
 Child table filters (`{"child": "prices", ...}`, see [model-engine.md](model-engine.md#filter-lists-and-child-tables))
 follow the same rules on the child rows: the role must be able to read the child model, every

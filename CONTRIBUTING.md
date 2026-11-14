@@ -54,6 +54,7 @@ Run from the repository root:
 
 ```bash
 python3 -m venv .venv
+.venv/bin/python -m pip install --upgrade --require-hashes -r requirements-bootstrap.lock
 .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
 .venv/bin/python -m pip install --no-build-isolation --no-deps -e .
 npm --prefix frontend ci
@@ -160,6 +161,7 @@ npm --prefix frontend test
 npm --prefix frontend run build
 .venv/bin/python -m build --no-isolation
 python3 -m venv /tmp/evlet-wheel-check
+/tmp/evlet-wheel-check/bin/python -m pip install --upgrade --require-hashes -r requirements-bootstrap.lock
 /tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-*.whl
 /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
 /tmp/evlet-wheel-check/bin/python -I scripts/smoke_cli.py
@@ -183,26 +185,27 @@ This is a development preview, not a deployment recipe.
 ## Current boundaries
 
 - Create, read, update, delete, typed queries, and explicit additive/rename/index
-  migrations are supported. Destructive migrations and arbitrary field-type
-  conversions are not supported. Startup rejects schema drift.
+  migrations are supported. Explicit `DropField` requires `--allow-destructive` and the
+  migration backup safeguards; arbitrary field-type conversions remain unsupported.
+  Startup rejects schema drift. See [CLI migrations](docs/cli.md).
 - Local accounts and backend model/record/field permissions are implemented.
   The Playground uses them; a bare `Application(database)` stays unauthenticated
   for compatibility. Keep development servers on loopback. SSO and email recovery
   remain outside the implemented scope.
-- Currency has two decimal places and no currency-code conversion; `currency=` only says
-  which code to show ([model-engine.md](docs/model-engine.md#where-a-currency-fields-code-comes-from)). The Playground
+- Currency uses exact six-place stored amounts and configured currency display/rounding
+  precision; it does not convert exchange rates. `currency=` selects the code to show ([model-engine.md](docs/model-engine.md#where-a-currency-fields-code-comes-from)). The Playground
   is a persistence example, not a ledger or payment processor.
 - Email is a bounded text field; browser email validation is convenience only.
 - Lists, counts, search, filters, and relationship choices use bounded server queries.
   Text search uses SQLite ASCII case folding. Browser integer actions require safe integers.
 - Forms, lists, and details are generated from renderer-neutral Python metadata.
   The production bundle contains only Evlet's own UI framework and screens; it has
-  no runtime dependencies. Python pages, native panels, reports and account
-  management keep their APIs but are not rendered. No performance or scalability
-  guarantees are claimed.
+  no runtime dependencies. Reports and account management have browser screens.
+  Python pages, `/api/ui` and native panels were removed in 0.4; extend the browser
+  through the documented UI framework and app frontends. No performance or
+  scalability guarantees are claimed.
 
-See [Evlet UI](docs/ui.md) for the browser routes, generated screens and the Python
-page API, and [UI framework](docs/ui-framework.md) for the browser code.
+See [Evlet UI](docs/ui.md) for the browser routes, generated screens and reports, and [UI framework](docs/ui-framework.md) for the browser code.
 
 Read [architecture decisions](docs/architecture.md), the [full specification](docs/internal/specification.md),
 and [agent instructions](AGENTS.md). The [model engine guide](docs/model-engine.md)
@@ -224,3 +227,16 @@ After publishing and verifying the public file hashes and installation, immediat
 advance main to the following `.dev0` version. Do not rebuild different source
 under an already published version. The starter template's lower bound must name
 the first published Evlet version that supports its APIs.
+
+## Release documentation and installer check
+
+When a feature or limit changes, compare this guide and `docs/business-capabilities.md`
+with the canonical UI, security, currency, migrations and API stability guides. Put removed
+APIs only in clearly labeled upgrade/history sections; verify the documented command in
+a fresh disposable environment.
+
+`requirements-bootstrap.lock` pins the development/CI installer separately from runtime
+dependencies. Before each release, audit this lock and the runtime/optional locks against
+current advisories, deduplicate aliases, and record the affected environment. Refresh the
+installer pin and hashes when necessary; do not weaken the dependency hash checks or
+application-install trust prompts.
