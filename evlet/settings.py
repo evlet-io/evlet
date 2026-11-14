@@ -293,6 +293,8 @@ class Settings:
         with self.database.transaction() as tx:
             for table in TABLES:
                 tx.connection.ensure_table(table)
+            if 'session_generation' not in tx.connection.columns('evlet_two_step_tickets'):
+                tx.connection.add_column('evlet_two_step_tickets', Column('session_generation', 'INTEGER', required=True), default=0)
             if 'two_step_agent' not in tx.connection.columns('evlet_user_profile'):
                 tx.connection.add_column('evlet_user_profile', Column('two_step_agent', 'TEXT', required=True), default='')
             # The Administrator's name never changes.
@@ -992,6 +994,7 @@ class Settings:
                 raise AccessError(409, PASSWORD_SET)
             tx.connection.run(qb.update('evlet_users', password=hashed).where(id=user.id))
             audit(tx.connection, user.username, 'Users', user.username, 'First password set')
+            auth.end_sessions(tx.connection, user.id, keep=auth.token(scope))
             account = tx.connection.run(qb.select('evlet_users').where(id=user.id)).one()
             challenge = self.challenge(tx, account, realm) if not self.two_step_on_row(tx.connection, user.id) else None
             if challenge is None:
@@ -1079,7 +1082,7 @@ class Settings:
     def challenge(self, tx, account, realm):
         """After a correct password: None to sign in, or a ticket asking for a code (or for set-up when the role requires it).
         Set-up at sign-in is trust on first use: whoever signs in first with the password binds the authenticator app."""
-        row = self.profile(tx.connection, account['id'])
+        row = self.profile_read(tx.connection, account['id'])
         enabled = row['two_step_secret'] is not None
         if not enabled and not self.required(account['role'], realm):
             return None
@@ -1094,7 +1097,7 @@ class Settings:
             answer = {'two_step': 'setup', 'ticket': ticket, 'secret': _b32(raw), 'uri': self._uri(user, raw)}
         tx.connection.run(qb.delete('evlet_two_step_tickets').where(qb.or_(qb.le('expires', now), qb.eq('user_id', account['id']))))
         tx.connection.run(qb.insert('evlet_two_step_tickets', token_hash=hashlib.sha256(ticket.encode()).hexdigest(), user_id=account['id'], realm=realm,
-                                    expires=now + TICKET_SECONDS, attempts=0, secret=secret))
+                                    expires=now + TICKET_SECONDS, attempts=0, secret=secret, session_generation=account['session_generation']))
         return answer
 
     def finish(self, scope, body):
@@ -1112,7 +1115,8 @@ class Settings:
                     qb.select(qb.table('evlet_users', 'u'), qb.all_columns('u'), qb.named('r.realm', 'role_realm'))
                     .join(qb.table('evlet_roles', 'r'), qb.eq('r.id', qb.col('u.role')), left=True)
                     .where(qb.eq('u.id', row['user_id']))).one()
-                if row is None or row['realm'] != realm or not account or not account['active'] or account['role_realm'] != realm:
+                if row is None or row['realm'] != realm or not account or not account['active'] or account['role_realm'] != realm \
+                        or row['session_generation'] != account['session_generation']:
                     raise AccessError(401, SIGN_IN_AGAIN)
                 limit = self._code_key(account['id'])
                 if self._tries(tx.connection, limit) >= CODE_TRIES:
