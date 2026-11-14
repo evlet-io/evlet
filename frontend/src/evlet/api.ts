@@ -44,6 +44,8 @@ export interface RequestOptions {
   query?: Record<string, string | number | undefined>;
   /** The ETag of the version being changed. */
   ifMatch?: string | null;
+  /** Clear only this acknowledged kept draft after a record save; preserve leaves it untouched. */
+  draftRevision?: string;
   signal?: AbortSignal;
   /** Read the body as a file (a Blob) instead of JSON, for downloads and PDFs. */
   file?: boolean;
@@ -163,6 +165,7 @@ export class ApiClient {
     const body = options.body === undefined && ['POST', 'PATCH', 'PUT'].includes(method) ? {} : options.body;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (options.ifMatch) headers['If-Match'] = options.ifMatch;
+    if (options.draftRevision) headers['X-Evlet-Draft-Revision'] = options.draftRevision;
     const query = Object.entries(options.query ?? {}).filter(([, value]) => value !== undefined && value !== '');
     const url = this.url(path) + (query.length ? '?' + new URLSearchParams(query.map(([key, value]) => [key, String(value)])) : '');
     const { signal, release } = anySignal([options.signal, this.options.signal?.()]);
@@ -246,8 +249,8 @@ export class ApiClient {
    * Change a record. A Table may be sent as a change set
    * `children: {lines: {create: [...], update: [{id, ...}], delete: [ids], order: [ids and _keys]}}`.
    */
-  async update(model: string, id: string, changes: Record<string, unknown>, etag: string | null) {
-    return this.request<RecordData>('PATCH', recordPath(model, id), { body: changes, ifMatch: etag });
+  async update(model: string, id: string, changes: Record<string, unknown>, etag: string | null, draftRevision?: string) {
+    return this.request<RecordData>('PATCH', recordPath(model, id), { body: changes, ifMatch: etag, draftRevision });
   }
 
   async remove(model: string, id: string, etag: string | null) { return this.request<null>('DELETE', recordPath(model, id), { ifMatch: etag }); }
@@ -279,9 +282,9 @@ export class ApiClient {
   }
 
   /** Run a model action. A long action answers 202 with {job, record}. */
-  async action(model: string, id: string, name: string, args: Record<string, unknown> = {}, etag: string | null = null) {
+  async action(model: string, id: string, name: string, args: Record<string, unknown> = {}, etag: string | null = null, draftRevision?: string) {
     if (!NAME.test(name)) throw new ApiError(`Unknown action ${name}`, 0, 'response');
-    return this.request<RecordData | { job: unknown; record: RecordData }>('POST', `${recordPath(model, id)}/actions/${name}`, { body: args, ifMatch: etag });
+    return this.request<RecordData | { job: unknown; record: RecordData }>('POST', `${recordPath(model, id)}/actions/${name}`, { body: args, ifMatch: etag, draftRevision });
   }
 
   /**
@@ -289,9 +292,9 @@ export class ApiClient {
    * the move asks for (`remark` and `asks` in `_moves`); the server answers with the record and its new `_moves`,
    * 422 with field errors, or 409 when the move is not available.
    */
-  async move(model: string, id: string, key: string, etag: string | null, values: Record<string, unknown> = {}) {
+  async move(model: string, id: string, key: string, etag: string | null, values: Record<string, unknown> = {}, draftRevision?: string) {
     if (!SEGMENT.test(key)) throw new ApiError(`Unknown move ${key}`, 0, 'response');
-    return this.request<RecordData>('POST', `${recordPath(model, id)}/moves/${key}`, { body: values, ifMatch: etag });
+    return this.request<RecordData>('POST', `${recordPath(model, id)}/moves/${key}`, { body: values, ifMatch: etag, draftRevision });
   }
 }
 

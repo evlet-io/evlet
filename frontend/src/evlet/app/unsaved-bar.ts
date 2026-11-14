@@ -14,10 +14,10 @@ import { relativeTime } from '../ui/time';
 import type { UnsavedEntry } from './client';
 import type { AppContext } from './context';
 import type { ScreenModel } from './meta';
-import { keepsUnsaved, unsavedInfo } from './unsaved';
+import { acceptDraftVersion, keepsUnsaved, unsavedInfo } from './unsaved';
 
 type Bar =
-  | { kind: 'server'; entry: UnsavedEntry; note: string }
+  | { kind: 'server'; entry: UnsavedEntry; note: string; etag?: string | null }
   | { kind: 'local'; changes: NodeChanges; saved_at: number }
   | { kind: 'note'; text: string };
 
@@ -42,15 +42,17 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
     try {
       const read = await ctx.api.unsaved(model.name, id);
       if (read.dropped === 'record') bar.set({ kind: 'note', text: 'Your unsaved changes were discarded because you can no longer change this record.' });
-      else if (read.entry) bar.set({ kind: 'server', entry: read.entry,
+      else if (read.entry) bar.set({ kind: 'server', entry: read.entry, etag: read.etag,
         note: read.dropped.length ? ` Some fields you can no longer change were left out.` : '' });
+      else acceptDraftVersion(store, read.etag);
     } catch { /* Nothing to offer: the record opens as saved. */ }
   })();
 
-  const restoreServer = (entry: UnsavedEntry) => {
+  const restoreServer = (entry: UnsavedEntry, etag?: string | null) => {
     const found = entry.stale ? conflicts(store.root, entry.changes) : [];
     const finish = (skip: Set<string>) => {
       const missed = apply(store.root, entry.changes, skip);
+      acceptDraftVersion(store, etag);
       bar.set(null);
       toast(`Changes restored. Save to keep them.${missedNote(missed)}`);
     };
@@ -71,7 +73,11 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
     bar.set(null);
     if (current?.kind === 'local') { ctx.unsaved.remove(model.name); options.onSettled?.(); return; }
     if (current?.kind === 'server' && id) {
-      try { await ctx.api.discardUnsaved(model.name, id); toast('Unsaved changes discarded'); }
+      try {
+        if (!current.etag) throw new Error('No draft version');
+        acceptDraftVersion(store, await ctx.api.discardUnsaved(model.name, id, current.etag));
+        toast('Unsaved changes discarded');
+      }
       catch { toast('Unsaved changes could not be discarded. Try again.', { icon: 'info' }); bar.set(current); }
     }
   };
@@ -86,7 +92,7 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
     return StateBanner({ tone: 'info', icon: 'history',
       text: `You have unsaved changes from ${relativeTime(new Date(current.entry.saved_at * 1000))}.${current.entry.stale ? ' This record was saved since.' : ''}${current.note}`,
       actions: [Button({ label: 'Discard', size: 'small', variant: 'ghost', onClick: () => void discard() }),
-        Button({ label: 'Restore', size: 'small', variant: 'primary', onClick: () => restoreServer(current.entry) })] });
+        Button({ label: 'Restore', size: 'small', variant: 'primary', onClick: () => restoreServer(current.entry, current.etag) })] });
   })}</div>`;
 }
 

@@ -882,7 +882,8 @@ class Business:
                                         move=move, remark=remark)
                 if record_id and not (action or move):
                     # A save replaces the saver's unsaved changes (docs/internal/unsaved-changes.md).
-                    self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id)
+                    self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id,
+                                              if_match=dict(scope.get('headers', [])).get(b'x-evlet-draft-revision'))
                 extra = self.availability(context, model, context._tx.get(model, result['id']))
                 # The write returns every readable row; the ETag covers them all and the body embeds the first page.
                 etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome', '_job')})
@@ -973,7 +974,8 @@ class Business:
                 self.policy.record(tx, user, model, record_id, 'update')
                 self.save_children(tx, user, record, children)
                 self.changed(tx, model, record_id)
-                self.unsaved.record_saved(tx.connection, user, parts[2], record_id)
+                self.unsaved.record_saved(tx.connection, user, parts[2], record_id,
+                                          if_match=dict(scope.get('headers', [])).get(b'x-evlet-draft-revision'))
             loaded = {} if method == 'GET' else None
             result = self.detail(tx, user, record, row_limit=None, loaded=loaded)
             etag = self.revision(result)

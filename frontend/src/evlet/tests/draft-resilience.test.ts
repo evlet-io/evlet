@@ -7,6 +7,7 @@ import { reviewConflict } from '../app/conflict-review';
 import { byText, click, stopAll, text, until } from './screens-helpers';
 import { id, responses, server } from './server';
 
+const draftApi = (methods: Record<string, unknown>) => ({ unsaved: vi.fn().mockResolvedValue({ entry: null, dropped: [], etag: '"draft0"' }), ...methods });
 const stops: Array<() => void> = [];
 afterEach(() => { stops.splice(0).forEach(stop => stop()); stopAll(); vi.useRealTimers(); });
 async function saved(api: any = {}) {
@@ -20,8 +21,9 @@ describe('visible bounded draft keeping', () => {
     vi.useFakeTimers();
     const keepUnsaved = vi.fn(() => new Promise(() => {}));
     const store = await saved(); store.field('title').set('Waiting');
-    const ctx: any = { api: { keepUnsaved }, me: cell(null) };
+    const ctx: any = { api: draftApi({ keepUnsaved }), me: cell(null) };
     const first = keepChanges(ctx, store.meta as any, store, false), second = keepChanges(ctx, store.meta as any, store, false);
+    await vi.advanceTimersByTimeAsync(0);
     expect(keepUnsaved).toHaveBeenCalledOnce();
     await vi.advanceTimersByTimeAsync(5000);
     expect(await first).toContain('did not answer in time'); expect(await second).toBe(await first);
@@ -32,10 +34,11 @@ describe('visible bounded draft keeping', () => {
     let finish!: (value: any) => void;
     const keepUnsaved = vi.fn(() => new Promise(resolve => { finish = resolve; })), discardUnsaved = vi.fn().mockResolvedValue(undefined);
     const store = await saved(); store.field('title').set('Saved now');
-    const keeping = keepChanges({ api: { keepUnsaved, discardUnsaved }, me: cell(null) } as any, store.meta as any, store, false);
+    const keeping = keepChanges({ api: draftApi({ keepUnsaved, discardUnsaved }), me: cell(null) } as any, store.meta as any, store, false);
+    await until(() => expect(keepUnsaved).toHaveBeenCalledOnce());
     store.applyServer({ id: id(1), title: 'Saved now', rate: '1.00', credit_days: 30 }, '"new"'); await store.loadAll();
-    finish({ dropped: [], saved_at: 1, size: 1 }); await keeping;
-    expect(discardUnsaved).toHaveBeenCalledExactlyOnceWith('customer', id(1));
+    finish({ dropped: [], saved_at: 1, size: 1, etag: '"draft1"' }); await keeping;
+    expect(discardUnsaved).toHaveBeenCalledExactlyOnceWith('customer', id(1), '"draft1"');
     expect(store.dirty.peek()).toBe(false);
   });
 
@@ -44,7 +47,7 @@ describe('visible bounded draft keeping', () => {
     const pending: Array<(value: any) => void> = [];
     const keepUnsaved = vi.fn(() => new Promise(resolve => pending.push(resolve)));
     const store = await saved();
-    const ctx: any = { api: { keepUnsaved }, me: cell(null) };
+    const ctx: any = { api: draftApi({ keepUnsaved }), me: cell(null) };
     let keeper!: ReturnType<typeof keepWhenHidden>;
     stops.push(scope(() => { keeper = keepWhenHidden(ctx, store.meta as any, store, false, () => store.dirty.peek()); }));
     store.field('title').set('First');
@@ -55,21 +58,21 @@ describe('visible bounded draft keeping', () => {
     store.field('title').set('Second');
     await vi.advanceTimersByTimeAsync(KEEP_PAUSE_MS);
     expect(keepUnsaved).toHaveBeenCalledTimes(1);
-    pending[0]({ dropped: [], saved_at: 1, size: 1 });
+    pending[0]({ dropped: [], saved_at: 1, size: 1, etag: '"draft1"' });
     await vi.advanceTimersByTimeAsync(KEEP_PAUSE_MS);
     expect(keepUnsaved).toHaveBeenCalledTimes(2);
     expect(keepUnsaved.mock.calls[1].slice(0, 4)).toMatchObject(['customer', id(1), { values: { title: 'Second' } }, '"old"']);
-    pending[1]({ dropped: [], saved_at: 2, size: 1 }); await vi.advanceTimersByTimeAsync(0);
+    pending[1]({ dropped: [], saved_at: 2, size: 1, etag: '"draft2"' }); await vi.advanceTimersByTimeAsync(0);
     expect(keeper.state.peek().kind).toBe('kept');
     expect(store.dirty.peek()).toBe(true); expect(store.etag.peek()).toBe('"old"');
   });
 
   it('shows a failed background attempt and lets the person retry while the record stays unsaved', async () => {
     vi.useFakeTimers();
-    const keepUnsaved = vi.fn().mockRejectedValueOnce(new ApiError('Connection lost', 0, 'network')).mockResolvedValue({ dropped: [] });
+    const keepUnsaved = vi.fn().mockRejectedValueOnce(new ApiError('Connection lost', 0, 'network')).mockResolvedValue({ dropped: [], etag: '"draft1"' });
     const store = await saved();
     let keeper!: ReturnType<typeof keepWhenHidden>;
-    stops.push(scope(() => { keeper = keepWhenHidden({ api: { keepUnsaved }, me: cell(null) } as any, store.meta as any, store, false, () => store.dirty.peek()); }));
+    stops.push(scope(() => { keeper = keepWhenHidden({ api: draftApi({ keepUnsaved }), me: cell(null) } as any, store.meta as any, store, false, () => store.dirty.peek()); }));
     store.field('title').set('Keep me'); await vi.advanceTimersByTimeAsync(KEEP_PAUSE_MS);
     expect(keeper.state.peek()).toMatchObject({ kind: 'failed' });
     expect(keeper.state.peek().text).toContain('Connection lost');
@@ -79,11 +82,11 @@ describe('visible bounded draft keeping', () => {
 
   it('does not claim the last copy includes text still being edited and respects disabled keeping', async () => {
     vi.useFakeTimers();
-    const keepUnsaved = vi.fn().mockResolvedValue({ dropped: [] }), me = cell<any>(null);
+    const keepUnsaved = vi.fn().mockResolvedValue({ dropped: [], etag: '"draft1"' }), me = cell<any>(null);
     const store = await saved();
     const frame = document.createElement('div'); frame.innerHTML = '<div class="fld"><textarea></textarea></div>';
     let keeper!: ReturnType<typeof keepWhenHidden>;
-    stops.push(scope(() => { keeper = keepWhenHidden({ api: { keepUnsaved }, me } as any, store.meta as any, store, false, () => store.dirty.peek()); keeper.watch(frame); }));
+    stops.push(scope(() => { keeper = keepWhenHidden({ api: draftApi({ keepUnsaved }), me } as any, store.meta as any, store, false, () => store.dirty.peek()); keeper.watch(frame); }));
     store.field('title').set('Committed'); await vi.advanceTimersByTimeAsync(KEEP_PAUSE_MS);
     frame.querySelector('textarea')!.dispatchEvent(new Event('input', { bubbles: true }));
     await vi.advanceTimersByTimeAsync(KEEP_PAUSE_MS);
@@ -94,6 +97,23 @@ describe('visible bounded draft keeping', () => {
     expect(keepUnsaved).toHaveBeenCalledTimes(1);
     expect(keeper.state.peek().kind).toBe('idle');
   });
+  it('does not mark one invalid field kept when another field commits', async () => {
+    vi.useFakeTimers();
+    const keepUnsaved = vi.fn().mockResolvedValue({ dropped: [], etag: '"draft1"' });
+    const store = await saved();
+    const frame = document.createElement('div'); frame.innerHTML = '<div class="fld"><input aria-invalid="true"><textarea></textarea></div>';
+    const first = frame.querySelector('input')!, second = frame.querySelector('textarea')!;
+    let keeper!: ReturnType<typeof keepWhenHidden>;
+    stops.push(scope(() => { keeper = keepWhenHidden({ api: draftApi({ keepUnsaved }), me: cell(null) } as any, store.meta as any, store, false, () => store.dirty.peek()); keeper.watch(frame); }));
+    first.value = 'invalid still visible'; first.dispatchEvent(new Event('input', { bubbles: true })); first.dispatchEvent(new Event('change', { bubbles: true }));
+    second.dispatchEvent(new Event('input', { bubbles: true })); store.field('title').set('Other field committed'); second.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(KEEP_PAUSE_MS);
+    expect(keeper.state.peek().text).toContain('Latest text is not kept'); expect(keepUnsaved).not.toHaveBeenCalled();
+    first.removeAttribute('aria-invalid'); store.field('rate').set('2.00'); first.dispatchEvent(new Event('change', { bubbles: true }));
+    await vi.advanceTimersByTimeAsync(KEEP_PAUSE_MS);
+    expect(keeper.state.peek().kind).toBe('kept'); expect(keepUnsaved).toHaveBeenCalledOnce();
+  });
+
 });
 
 describe('reviewing a concurrent change', () => {

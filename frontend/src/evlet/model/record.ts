@@ -522,6 +522,8 @@ export class RecordStore {
   readonly user: User | null;
   /** The ETag of the saved version the draft is based on. */
   readonly etag = cell<string | null>(null, { name: 'record.etag' });
+  /** The kept draft this view acknowledged; never clear an unobserved copy after Save. */
+  draftRevision = 'preserve';
   /** Set when a save found the record changed on the server (409, 412, 428). Reload to continue. */
   readonly conflict = cell<ApiError | null>(null, { name: 'record.conflict' });
   /** A message for the whole form: an error the server did not tie to a field. */
@@ -688,7 +690,7 @@ export class RecordStore {
     if (calculation?.plan) body._calculation = { language: calculation.language, model_schema_hash: calculation.model_schema_hash };
     this.saving.set(true);
     try {
-      const response = root.isNew ? await this.api.create(this.meta.name, body) : await this.api.update(this.meta.name, root.id!, body, this.etag.peek());
+      const response = root.isNew ? await this.api.create(this.meta.name, body) : await this.api.update(this.meta.name, root.id!, body, this.etag.peek(), this.draftRevision);
       this.lastSavedId = response.data.id;
       this.applyServer(response.data, response.etag);
     } catch (error) {
@@ -702,12 +704,12 @@ export class RecordStore {
 
   /** Run a model action on the saved record. The record must have no unsaved changes. */
   async runAction(name: string, args: Record<string, unknown> = {}): Promise<boolean> {
-    return this.command(() => this.api.action(this.meta.name, this.root.id!, name, args, this.etag.peek()));
+    return this.command(() => this.api.action(this.meta.name, this.root.id!, name, args, this.etag.peek(), this.draftRevision));
   }
 
   /** Move by a State rule's key; `values` hold its remark and the fields the move asks for. */
   async move(key: string, values: Record<string, unknown> = {}): Promise<boolean> {
-    return this.command(() => this.api.move(this.meta.name, this.root.id!, key, this.etag.peek(), values));
+    return this.command(() => this.api.move(this.meta.name, this.root.id!, key, this.etag.peek(), values, this.draftRevision));
   }
 
   private async command(send: () => Promise<{ data: any; etag: string | null }>) {

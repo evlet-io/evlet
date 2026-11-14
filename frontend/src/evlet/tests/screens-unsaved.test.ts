@@ -39,13 +39,14 @@ const orderRoutes = (extra: Route[] = [], settings = me()): Route[] => [
   ...extra,
   ...adminRoutes(),
   ['GET', /\/api\/_settings\/me$/, settings],
+  ['GET', /\/api\/_unsaved\/order\/0000000000001$/, { status: 200, etag: '"draft0"', body: { entry: null, dropped: [] } }],
   ['GET', /\/api\/order\/0000000000001$/, recorded.detail],
   ['GET', /\/api\/order\/0000000000001\/lines\/lines\?/, recorded.lines_page],
   ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
   ['GET', /\/api\/product\/0000000000001$/, { ...recorded.product, status: 200 }],
   ['PATCH', /\/api\/order\/0000000000001$/, recorded.update],
 ];
-const kept = { status: 200, etag: null, body: { saved_at: 1, size: 40, dropped: [] } };
+const kept = { status: 200, etag: '"draft1"', body: { saved_at: 1, size: 40, dropped: [] } };
 
 async function editLine(host: HTMLElement) {
   await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
@@ -116,7 +117,7 @@ describe('leaving a saved record with unsaved edits', () => {
 });
 
 describe('returning to a record with kept changes', () => {
-  const entry = (stale: boolean, base: unknown = recorded.detail.body.title) => ({ status: 200, etag: null, body: { dropped: [], entry: {
+  const entry = (stale: boolean, base: unknown = recorded.detail.body.title) => ({ status: 200, etag: '"draft1"', body: { dropped: [], entry: {
     changes: { values: { title: 'Kept title' }, base: { title: base } }, base_revision: '"old"', saved_at: Math.floor(Date.now() / 1000) - 300, size: 60, stale } } });
 
   it('offers Restore: the edits come back unsaved and nothing is saved', async () => {
@@ -131,7 +132,7 @@ describe('returning to a record with kept changes', () => {
   });
 
   it('offers Discard, which deletes the kept changes', async () => {
-    const { host, sent } = start(orderRoutes([['GET', /\/api\/_unsaved\/order\//, entry(false)], ['DELETE', /\/api\/_unsaved\/order\/0000000000001$/, { status: 204, etag: null, body: null }]], me(1)),
+    const { host, sent } = start(orderRoutes([['GET', /\/api\/_unsaved\/order\//, entry(false)], ['DELETE', /\/api\/_unsaved\/order\/0000000000001$/, { status: 204, etag: '"draft2"', body: null }]], me(1)),
       `/app/order/${ORDER}`);
     await until(() => expect(bar(host)).not.toBeNull());
     click(byText(bar(host)!, 'button', 'Discard'));
