@@ -1,7 +1,7 @@
 import { afterEach, expect, it } from 'vitest';
 import { mount } from '../dom';
 import { Controls, controlsRouter } from '../controls/app';
-import { ControlsClient } from '../controls/client';
+import { ControlsClient, type ControlsState } from '../controls/client';
 import { server, type Sent } from './server';
 import { byText, click, stopAll, text, typeInto, until } from './screens-helpers';
 import { choiceValues, choose } from './ui-helpers';
@@ -17,10 +17,12 @@ function open(page: 'users' | 'keys', delaySearch = false) {
     name: `Credential ${String(205 - at).padStart(3, '0')}`, prefix: `evk_${String(205 - at).padStart(8, '0')}`,
     scope: { access: 'read', models: null }, created_at: 1, last_used: null }));
   let finishOld: (() => void) | undefined;
-  const state = { instance: { name: 'Acme', host: 'localhost', evlet: '', version: 1 }, me: { id: 1000, username: 'owner', role: 'admin' }, apps: [],
-    roles: ['admin', 'editor', 'viewer'].map(id => ({ id, kind: 'framework', base: null, realm: 'desk', opens_controls: id === 'admin', users: 0, description: '', app: null })),
+  const state: ControlsState = { instance: { name: 'Acme', host: 'localhost', evlet: '', version: 1, slug: null, managed: false },
+    me: { id: 1000, username: 'owner', role: 'admin' }, apps: [], jobs: { failed: 0 },
+    roles: ['admin', 'editor', 'viewer'].map(id => ({ id, kind: 'framework', base: null, realm: 'desk', opens_controls: id === 'admin', users: 0, description: '', app: null, declared: false })),
     models: [], scopes: {}, settings: { 'security.two_step_roles': { file: [], value: [] }, 'security.password_min': { file: 15, value: 15 } },
-    controls: { allow_ips: [], require_two_step: false }, attention: [], overrides: 0, users: { active: 150, total: 151 }, audit: [], two_step: false, client: '127.0.0.1' };
+    controls: { allow_ips: [], require_two_step: false }, attention: [], overrides: 0, users: { active: 150, total: 151 },
+    audit: [], two_step: false, client: '127.0.0.1', remove_fields: null, instance_fields: true };
   const stub = server([
     ['GET', /\/api\/auth\/session$/, () => reply({ user: state.me, csrf: 'token' })],
     ['GET', /\/api\/_controls\/state$/, () => reply(state)],
