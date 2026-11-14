@@ -211,8 +211,8 @@ export class AppClient extends ApiClient {
   /** The person's own kept changes on a record, or null. */
   async unsaved(model: string, id: string) { return (await this.request<UnsavedRead>('GET', unsavedPath(model, id))).data; }
   /** Keep the draft's changes apart from the record. The record itself is not written. */
-  async keepUnsaved(model: string, id: string, changes: NodeChanges, baseRevision: string) {
-    return (await this.request<{ saved_at: number | null; size: number; dropped: string[] }>('PUT', unsavedPath(model, id), { body: { changes, base_revision: baseRevision } })).data;
+  async keepUnsaved(model: string, id: string, changes: NodeChanges, baseRevision: string, signal?: AbortSignal) {
+    return (await this.request<{ saved_at: number | null; size: number; dropped: string[] }>('PUT', unsavedPath(model, id), { body: { changes, base_revision: baseRevision }, signal })).data;
   }
   async discardUnsaved(model: string, id: string) { await this.request<null>('DELETE', unsavedPath(model, id)); }
 }

@@ -39,6 +39,7 @@ import { presentSlip, takePrefill } from './slips';
 import { openEvaPanel } from '../eva/chat';
 import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
+import { reviewConflict } from './conflict-review';
 import { SCREEN_KEYS, useShortcuts } from './shortcuts';
 import { dropDuplicate, duplicateAllowed, duplicateOf, holdDuplicate, takeDuplicate, type DuplicateCopy } from './duplicate';
 import { ariaKeys, commitTyped, formatKeys, withShortcut } from '../ui/shortcuts';
@@ -255,7 +256,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return true;
   };
   router.confirmLeave(unsaved, () => leave(), panel ? { stays: to => panel.stays(to) } : {});
-  keepWhenHidden(ctx, model, store, isNew, unsaved);
+  const draft = keepWhenHidden(ctx, model, store, isNew, unsaved);
   // Discard and Cancel mean the kept copy goes too.
   const forget = () => {
     if (isNew) ctx.unsaved.remove(name);
@@ -558,11 +559,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const value = stateValue(), now = extras.get();
     return LockBanner(model, value, Boolean(now._locked), () => cancelledLine(value));
   } : null;
+  let closeComparison = () => {};
+  onCleanup(() => closeComparison());
   const problems = () => {
     const conflict = store.conflict.get(), form = store.formError.get(), load = store.loadError.get();
     return [
-      conflict ? StateBanner({ tone: 'danger', title: 'Changed elsewhere.', text: 'This record changed since you opened it. Your draft is still here: copy what you need, then reload.',
-        actions: [Button({ label: 'Reload', icon: 'rotate-ccw', size: 'small', onClick: () => void store.reload().catch(() => {}) })] }) : null,
+      conflict ? StateBanner({ tone: 'danger', title: 'Changed elsewhere.', text: 'This record changed since you opened it. Compare the saved values with your draft before continuing.',
+        actions: [Button({ label: 'Compare changes', icon: 'history', size: 'small', onClick: () => { closeComparison(); closeComparison = reviewConflict(store); } })] }) : null,
       form && !conflict ? StateBanner({ tone: 'danger', title: 'Not saved.', text: form }) : null,
       load ? StateBanner({ tone: 'danger', title: 'Some rows did not load.', text: `${load.message} Editing waits until every row is here.`,
         actions: [Button({ label: 'Try again', size: 'small', onClick: () => void store.loadAll().catch(() => {}) })] }) : null,
@@ -858,6 +861,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- save bar ----------
 
+  const draftStatus = () => when(() => draft.state.get().kind !== 'idle', () => html`<p class="muted ev-draft-status" role="status">
+    ${() => draft.state.get().text} ${when(() => draft.state.get().kind === 'failed', () => Button({ label: 'Retry keeping draft', size: 'small', variant: 'ghost', onClick: () => void draft.retry() }))}</p>`);
   const saveBarView = () => isNew
     ? html`<div class="ev-savebar ev-createbar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => void discardNew() })}
         <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
@@ -904,8 +909,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
       options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems),
-    compactContent(), fullPageNote, footer, saveBar], side: side ?? undefined });
+    compactContent(), fullPageNote, footer, draftStatus(), saveBar], side: side ?? undefined });
   frame.classList.add('doc-compact');
+  draft.watch(frame);
   if (side) {
     const aside = frame.querySelector<HTMLElement>(':scope > .doc-side');
     if (aside) { aside.id = sideId; aside.tabIndex = -1; }
