@@ -10,6 +10,8 @@ import os
 import re
 import sqlite3
 import threading
+import time
+import weakref
 
 from .fields import ACTIVE, EMPTY_LAYER, Image, Link, MISSING, Reference, RichText
 from . import audit
@@ -99,6 +101,8 @@ class Database:
         self._claim_table = None
         # Busy log and last-seen writes, saved by one background thread (evlet/writes.py).
         self.logs = writes.LogBuffer(self)
+        self._idle = {}
+        self._generation = 0
         writes.DATABASES.add(self)
 
     def files(self):
@@ -111,9 +115,12 @@ class Database:
         if self.must_exist and any(path.is_symlink() or path.absolute().resolve() != path.absolute()
                                    for path in (self.path, *sides.values()) if path.exists() or path.is_symlink()):
             raise sqlite3.OperationalError('Database paths must not use symbolic links')
+        with writes.IDLE_LOCK:
+            generation = self._generation
         connection = self._reuse()
         if connection is None:
             connection = self._open(sides)
+        connection.evlet_generation = generation
         try:
             with using(self):
                 yield connection
@@ -138,9 +145,8 @@ class Database:
             raise
         return connection
 
-    # Opening a connection and attaching three files costs about a millisecond, so each thread keeps its last
-    # connection for the next operation. It is used again only while the four files are the same files.
-    _IDLE = 64
+    # Reuse a small pool independent of thread identities; writes.IDLE also bounds all tenants together.
+    _IDLE = 2
 
     def _identity(self):
         try:
@@ -149,9 +155,12 @@ class Database:
             return None
 
     def _reuse(self):
-        idle = self.__dict__.setdefault('_idle', {})
         with writes.IDLE_LOCK:
-            connection = idle.pop(threading.get_ident(), None)
+            writes.prune_idle(time.monotonic())
+            connection = next(reversed(self._idle), None)
+            if connection is not None:
+                self._idle.pop(connection)
+                writes.IDLE.pop(connection, None)
         if connection is not None and (connection.evlet_files is None or connection.evlet_files != self._identity()):
             connection.close()
             connection = None
@@ -167,18 +176,21 @@ class Database:
         except sqlite3.Error:
             connection.close()
             return
-        idle = self.__dict__.setdefault('_idle', {})
         with writes.IDLE_LOCK:
-            if len(idle) < self._IDLE and threading.get_ident() not in idle:
-                idle[threading.get_ident()] = connection
+            if len(self._idle) < self._IDLE and connection.evlet_generation == self._generation:
+                self._idle[connection] = None
+                writes.IDLE[connection] = (weakref.ref(self), time.monotonic())
+                writes.prune_idle(time.monotonic())
                 return
         connection.close()
 
     def _close_idle(self):
-        idle = self.__dict__.setdefault('_idle', {})
         with writes.IDLE_LOCK:
-            connections = list(idle.values())
-            idle.clear()
+            self._generation += 1
+            connections = list(self._idle)
+            self._idle.clear()
+            for connection in connections:
+                writes.IDLE.pop(connection, None)
         for connection in connections:
             connection.close()
 
@@ -258,7 +270,7 @@ class Database:
         folder = self.path.parent / 'backups'
         folder.mkdir(mode=0o700, exist_ok=True)
         target = folder / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
-        writes.snapshot(self.path, target)
+        writes.copy_set(self.path, target)
         return target.name
 
     def initialize(self):
@@ -367,8 +379,10 @@ class Database:
 
     def close(self):
         """Save buffered log writes and close the connections kept for the next operation."""
-        self.logs.flush()
-        self._close_idle()
+        try:
+            self.logs.close()
+        finally:
+            self._close_idle()
 
     def check(self):
         with self._connection() as connection:

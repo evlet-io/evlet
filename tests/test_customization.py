@@ -303,7 +303,8 @@ def test_a_list_override_chooses_whether_records_open_in_a_side_panel(app):
 
 def backups(app):
     folder = app.database.path.parent / 'backups'
-    return sorted(folder.iterdir()) if folder.exists() else []
+    # Each backup is now a four-file set plus its manifest; count generations, not physical members.
+    return sorted(folder.glob('*.sqlite3.manifest.json')) if folder.exists() else []
 
 
 def columns(app, table):

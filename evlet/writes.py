@@ -17,14 +17,18 @@ SQLite cannot enforce a foreign key from one file to another; Evlet checks those
 the main file is atomic as before, while the other files are best effort for the last moment of writes.
 """
 
-from collections import deque
+from collections import OrderedDict, deque
 from contextvars import ContextVar
 from contextlib import closing, contextmanager
 from pathlib import Path
 import atexit
+import hashlib
+import json
 import logging
+import os
 import re
 import sqlite3
+import tempfile
 import threading
 import time
 import weakref
@@ -52,6 +56,8 @@ ACTIVE = 1.0
 SLOW_WRITE = 1.0
 # How often buffered log writes are saved, in seconds.
 FLUSH_EVERY = 0.25
+# Best-effort metadata must not consume unbounded RAM during a prolonged storage failure.
+LOG_LIMIT = 4096
 
 # 'job' while a background job runs, so its writes queue behind requests; 'interactive' otherwise.
 WRITE_KIND = ContextVar('evlet_write_kind', default='interactive')
@@ -124,11 +130,14 @@ def read_file(path):
     file cannot be created read only (no -shm file next to it yet) is opened normally with writes refused."""
     from .sqlite import SQLiteConnection
     path = Path(path).resolve()
+    connection = None
     try:
         connection = sqlite3.connect(path.as_uri() + '?mode=ro', uri=True, factory=SQLiteConnection)
         connection.execute('SELECT count(*) FROM sqlite_master').fetchone()
     except sqlite3.OperationalError:
-        connection = sqlite3.connect(path, timeout=5, factory=SQLiteConnection)
+        if connection is not None:
+            connection.close()
+        connection = sqlite3.connect(path.as_uri() + '?mode=rw', uri=True, timeout=5, factory=SQLiteConnection)
         connection.execute('PRAGMA query_only = ON')
     connection.row_factory = sqlite3.Row
     return connection
@@ -151,22 +160,167 @@ def file_transaction(path, *, write=False):
 
 
 def copy_set(source_main, target_main):
-    """Copy the main file and every side file of source_main into the set named by target_main, from one
-    read snapshot of all of them, with SQLite's online backup API. A running server may keep writing.
-    Returns the written paths."""
-    with closing(connect(source_main, uri=True, isolation_level=None)) as connection:
-        connection.execute('BEGIN')
-        for schema in ('main', *STORES):
-            connection.execute(f'SELECT count(*) FROM {schema}.sqlite_master').fetchone()
-        written = []
-        for schema, target in zip(('main', *STORES), files(target_main)):
-            with closing(sqlite3.connect(target)) as copy:
-                connection.backup(copy, name=schema)
-                copy.execute('PRAGMA journal_mode=DELETE').fetchone()
-            Path(target).chmod(0o600)
-            written.append(target)
-        connection.execute('COMMIT')
-    return written
+    """Back up a complete set. Briefly exclude writers while pinning all read snapshots, then let
+    writers continue during the online copies. Publish a checksummed manifest only after every file is durable.
+    Pre-split databases remain single-file backups; never create missing source files."""
+    source_main, target_main = Path(source_main), Path(target_main)
+    members, single = backup_members(source_main)
+    targets = files(target_main)[:len(members)]
+    if any(item.exists() for item in (*targets, manifest_path(target_main))):
+        raise ValueError('Backup destination already exists')
+    schemas = ('main',) if single else ('main', *STORES)
+    with tempfile.TemporaryDirectory(prefix='.snapshot-', dir=target_main.parent) as directory:
+        with closing(_set_connection(members)) as barrier, closing(_set_connection(members)) as reader:
+            # BEGIN IMMEDIATE locks every attached file, including writers in other processes. The backup
+            # source must be a separate read transaction: backing up a connection holding a write hangs.
+            barrier.execute('BEGIN IMMEDIATE')
+            try:
+                reader.execute('BEGIN')
+                for schema in schemas:
+                    reader.execute(f'SELECT count(*) FROM {schema}.sqlite_master').fetchone()
+            finally:
+                barrier.rollback()
+            entries = []
+            for schema, target in zip(schemas, targets):
+                staged = Path(directory) / target.name
+                with closing(sqlite3.connect(staged)) as copy:
+                    reader.backup(copy, name=schema)
+                    copy.execute('PRAGMA journal_mode=DELETE').fetchone()
+                staged.chmod(0o600)
+                with staged.open('rb') as stream:
+                    os.fsync(stream.fileno())
+                entries.append({'name': target.name, 'sha256': file_digest(staged)})
+            reader.rollback()
+        for target in targets:
+            os.replace(Path(directory) / target.name, target)
+        manifest = manifest_path(target_main)
+        staged = Path(directory) / manifest.name
+        with staged.open('x') as stream:
+            staged.chmod(0o600)
+            json.dump({'version': 1, 'single': single, 'files': entries}, stream)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(staged, manifest)
+        sync_directory(target_main.parent)
+    return list(targets)
+
+
+def _set_connection(members):
+    connection = sqlite3.connect(members[0].absolute().as_uri() + '?mode=rw', uri=True, isolation_level=None)
+    try:
+        for store, path in zip(STORES, members[1:]):
+            connection.execute(f'ATTACH DATABASE ? AS {store}', (path.absolute().as_uri() + '?mode=rw',))
+    except BaseException:
+        connection.close()
+        raise
+    return connection
+
+
+def sync_directory(path):
+    """Persist a file rename on platforms supporting directory fsync."""
+    if os.name != 'nt':
+        fd = os.open(path, os.O_RDONLY)
+        try:
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+
+
+@contextmanager
+def file_lock(path, *, shared=False):
+    """A nonblocking interprocess lock on a stable lock file. Never unlink a lock file after use."""
+    path = Path(path)
+    if path.is_symlink():
+        raise ValueError('Lock file cannot be a symbolic link')
+    fd = os.open(path, os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    with os.fdopen(fd, 'r+b') as stream:
+        try:
+            if os.name == 'nt':
+                unlock = _windows_lock(stream, exclusive=not shared)
+            else:
+                import fcntl
+                fcntl.flock(stream, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
+                unlock = lambda: fcntl.flock(stream, fcntl.LOCK_UN)
+        except OSError:
+            raise ValueError('Resource is in use by another process; retry when its operation finishes') from None
+        try:
+            yield
+        finally:
+            unlock()
+
+
+def _windows_lock(stream, *, exclusive):
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+
+    class Overlapped(ctypes.Structure):
+        _fields_ = [('Internal', ctypes.c_size_t), ('InternalHigh', ctypes.c_size_t),
+                    ('Offset', wintypes.DWORD), ('OffsetHigh', wintypes.DWORD),
+                    ('hEvent', wintypes.HANDLE)]
+
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    kernel.LockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+                                 wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(Overlapped)]
+    kernel.LockFileEx.restype = wintypes.BOOL
+    kernel.UnlockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
+                                   wintypes.DWORD, ctypes.POINTER(Overlapped)]
+    kernel.UnlockFileEx.restype = wintypes.BOOL
+    handle = msvcrt.get_osfhandle(stream.fileno())
+    overlapped = Overlapped()
+    if not kernel.LockFileEx(handle, 1 | (2 if exclusive else 0), 0, 1, 0, ctypes.byref(overlapped)):
+        raise ctypes.WinError(ctypes.get_last_error())
+    def unlock():
+        if not kernel.UnlockFileEx(handle, 0, 1, 0, ctypes.byref(overlapped)):
+            raise ctypes.WinError(ctypes.get_last_error())
+    return unlock
+
+
+def manifest_path(main):
+    return Path(str(main) + '.manifest.json')
+
+
+def file_digest(path):
+    with Path(path).open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def backup_members(main):
+    """Validate every member before a restore can touch live data. Older pre-manifest sets remain readable."""
+    main = Path(main)
+    if not main.is_file() or main.is_symlink():
+        raise ValueError(f'No backup file at {main}')
+    problem, names = check_file(main)
+    if problem:
+        raise ValueError(f'The backup {main.name} is damaged: {problem}')
+    # A pre-split file has all of its side tables in main. A partially completed split may instead have
+    # some tables in main and others only in the side files; preserve the whole set in that case.
+    single = bool(names & set(STORE_OF))
+    if single:
+        for member in files(main)[1:]:
+            if member.exists():
+                problem, side_names = check_file(member)
+                if problem or side_names & set(STORE_OF):
+                    single = False
+                    break
+    members = files(main)[:1] if single else files(main)
+    for member in members:
+        if not member.is_file() or member.is_symlink():
+            raise ValueError(f'Incomplete backup: missing regular file {member.name}')
+        problem, _ = check_file(member)
+        if problem:
+            raise ValueError(f'The backup {member.name} is damaged: {problem}')
+    manifest = manifest_path(main)
+    if manifest.exists() or manifest.is_symlink():
+        try:
+            value = json.loads(manifest.read_text()) if not manifest.is_symlink() else None
+            expected = {'version': 1, 'single': single,
+                        'files': [{'name': member.name, 'sha256': file_digest(member)} for member in members]}
+            if value != expected:
+                raise ValueError('contents differ')
+        except (OSError, ValueError) as exc:
+            raise ValueError(f'Invalid backup manifest for {main.name}: {exc}') from None
+    return members, single
 
 
 def snapshot(source, target):
@@ -177,10 +331,8 @@ def snapshot(source, target):
 
 
 def snapshot_set(source, target):
-    """Copy a main SQLite file and each of its side files that exists with the online backup API."""
-    for old, new in zip(files(source), files(target)):
-        if old.exists():
-            snapshot(old, new)
+    """Use the same complete, coordinated snapshot for installation and operator backups."""
+    return copy_set(source, target)
 
 
 def copy_file(source, target):
@@ -355,6 +507,11 @@ _lines = {}
 _lines_lock = threading.Lock()
 # Guards each Database's idle connections (Database._reuse).
 IDLE_LOCK = threading.Lock()
+# Across all tenants, retain at most eight attached connections (each can hold twelve file descriptors).
+# Limits are deliberately independent of worker/thread count. Expiry is pruned on the next pool operation.
+IDLE_LIMIT = 8
+IDLE_SECONDS = 60.0
+IDLE = OrderedDict()
 # Every SQLite Database in this process, so lifecycle commands can close their idle connections (release_idle).
 DATABASES = weakref.WeakSet()
 
@@ -363,6 +520,28 @@ def release_idle():
     """Close every connection kept for reuse in this process, before a command swaps or settles database files."""
     for database in list(DATABASES):
         database._close_idle()
+    # The process pool owns its connections even after a Database has been garbage-collected.
+    # Such orphan entries are absent from DATABASES but must not keep replaced WAL files open.
+    with IDLE_LOCK:
+        for connection, (owner, _) in list(IDLE.items()):
+            database = owner()
+            if database is not None:
+                database._idle.pop(connection, None)
+            connection.close()
+        IDLE.clear()
+
+
+def prune_idle(now):
+    """Called under IDLE_LOCK; never touches a checked-out connection."""
+    while IDLE:
+        connection, (owner, used) = next(iter(IDLE.items()))
+        if len(IDLE) <= IDLE_LIMIT and used + IDLE_SECONDS > now:
+            break
+        IDLE.pop(connection)
+        database = owner()
+        if database is not None:
+            database._idle.pop(connection, None)
+        connection.close()
 
 
 def line(path):
@@ -458,8 +637,14 @@ class LogBuffer:
     def __init__(self, database):
         self.database = database
         self._lock = threading.Lock()
-        self._pending = []
+        self._flush_lock = threading.Lock()
+        self._close_lock = threading.Lock()
+        self._pending = deque()
         self._thread = None
+        self._closing = False
+        self._wake = threading.Event()
+        self.dropped = 0
+        self._warned_at = float('-inf')
         _buffers.add(self)
 
     def add(self, store, statement):
@@ -468,38 +653,87 @@ class LogBuffer:
         sql, values = compile_statement(statement)
         with self._lock:
             self._pending.append((store, sql, tuple(values)))
-            if self._thread is None or not self._thread.is_alive():
+            self._bound()
+            if not self._closing and (self._thread is None or not self._thread.is_alive()):
+                self._wake.clear()
                 self._thread = threading.Thread(target=self._run, name='evlet-log-writer', daemon=True)
                 self._thread.start()
 
+    def _bound(self):
+        """Called with _lock held. Keep recent best-effort metadata and report overload without log flooding."""
+        dropped = max(0, len(self._pending) - LOG_LIMIT)
+        for _ in range(dropped):
+            self._pending.popleft()
+        if dropped:
+            self.dropped += dropped
+            now = time.monotonic()
+            if now - self._warned_at >= 60:
+                self._warned_at = now
+                logger.warning('Buffered metadata capacity reached; %d oldest best-effort writes dropped so far', self.dropped)
+
     def _run(self):
         while True:
-            time.sleep(FLUSH_EVERY)
+            self._wake.wait(FLUSH_EVERY)
+            with self._lock:
+                if self._closing:
+                    return
             if not self.flush():
                 with self._lock:
                     if not self._pending:
                         self._thread = None
                         return
 
-    def flush(self):
+    def flush(self, *, strict=False):
         """Save every buffered write now; returns how many were saved."""
-        with self._lock:
-            pending, self._pending = self._pending, []
-        if not pending:
-            return 0
-        groups = {}
-        for store, sql, values in pending:
-            groups.setdefault(store, []).append((sql, values))
-        saved = 0
-        for store, statements in groups.items():
+        # A batch removed from _pending is still owned by this lock until its I/O completes. In particular,
+        # close cannot return merely because the background thread has already taken that batch.
+        with self._flush_lock:
+            with self._lock:
+                pending, self._pending = self._pending, deque()
+            groups = {}
+            for store, sql, values in pending:
+                groups.setdefault(store, []).append((sql, values))
+            saved, failed, failure = 0, [], None
+            for store, statements in groups.items():
+                try:
+                    with self.database.transaction(store=store) as tx:
+                        for sql, values in statements:
+                            tx.connection.execute(sql, values)
+                    saved += len(statements)
+                except Exception as exc:
+                    failed.extend((store, sql, values) for sql, values in statements)
+                    failure = exc
+                    logger.warning('Could not save %d buffered %s writes', len(statements), store or 'database', exc_info=True)
+            if failed:
+                with self._lock:
+                    self._pending.extendleft(reversed(failed))
+                    self._bound()
+                if strict:
+                    raise RuntimeError('Buffered database writes could not be drained; pending writes were retained') from failure
+            return saved
+
+    def close(self):
+        """Join the current flusher and drain accepted writes. A later operation may reuse the Database."""
+        with self._close_lock:
+            with self._lock:
+                self._closing = True
+                self._wake.set()
+                thread = self._thread
             try:
-                with self.database.transaction(store=store) as tx:
-                    for sql, values in statements:
-                        tx.connection.execute(sql, values)
-                saved += len(statements)
-            except Exception:
-                logger.warning('Could not save %d buffered %s writes', len(statements), store or 'database', exc_info=True)
-        return saved
+                if thread is not None and thread is not threading.current_thread():
+                    thread.join()
+                while True:
+                    self.flush(strict=True)
+                    with self._lock:
+                        if not self._pending:
+                            self._closing = False
+                            self._thread = None
+                            return
+            except BaseException:
+                with self._lock:
+                    self._closing = False
+                    self._thread = None
+                raise
 
 
 _buffers = weakref.WeakSet()
