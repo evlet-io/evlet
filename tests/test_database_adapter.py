@@ -4,8 +4,8 @@ Each test speaks to the query builder (evlet/qb.py), the connection's named meth
 Database's transactions, never to SQLite SQL. It runs on SQLite today. To check a new dialect, change
 `adapter_database` to build that dialect's Database and run this module.
 
-The last part opens a database written by Evlet 0.4.3 (tests/fixtures/sqlite-0.4.3) and checks that the
-current release changes nothing in it: the schema, the stored rows and the migration checksums.
+The last part opens a database written by Evlet 0.4.3 (tests/fixtures/sqlite-0.4.3), checks its documented
+additive upgrades preserve stored rows and migration checksums, and proves reopening makes no further changes.
 """
 
 from datetime import date, datetime, timezone
@@ -595,7 +595,7 @@ def contents(path):
         with sqlite3.connect(path.with_name(name + '.sqlite3')) as connection:
             schema = sorted(connection.execute("SELECT type, name, tbl_name, sql FROM sqlite_master").fetchall(), key=repr)
             rows = {table: sorted(connection.execute(f'SELECT * FROM "{table}"').fetchall(), key=repr)
-                    for _, table, _, _ in schema if _ == 'table'}
+                    for kind, table, _, _ in schema if kind == 'table'}
             result[name] = (schema, rows)
     return result
 
@@ -603,7 +603,7 @@ def contents(path):
 def test_a_0_4_3_database_opens_unchanged(tmp_path):
     from evlet.framework import upgrade
     path = restore(tmp_path)
-    # 0.4.6 adds the state manager's journal columns (framework step 0011); after that the file stays as it is.
+    # The explicit framework step runs first; startup may then add the released internal metadata below.
     upgraded = Database(path, upgrade_fixture.registry(), migrations=upgrade_fixture.MIGRATIONS)
     assert upgrade(upgraded) == ['0011_state_manager']
     upgraded.close()
@@ -620,7 +620,36 @@ def test_a_0_4_3_database_opens_unchanged(tmp_path):
     assert customers['Blue Dhow Foods'].phone == 'none'
     assert database.get(upgrade_fixture.Invoice, next(iter(database.list(upgrade_fixture.Invoice))).id).amount == D('1250.75')
     database.close()
-    assert contents(path) == before
+    after = contents(path)
+    added_objects = {'database': {'evlet_create_requests', 'sqlite_autoindex_evlet_create_requests_1',
+                                  'evlet_create_request_expiry', 'evlet_unsaved_versions'}}
+    added_columns = {'database': {'evlet_users': 'session_generation', 'evlet_unsaved': 'version'},
+                     'sessions': {'evlet_sessions': 'session_generation', 'evlet_two_step_tickets': 'session_generation'}}
+    for name, (old_schema, old_rows) in before.items():
+        schema, rows = after[name]
+        assert {item[1] for item in schema} - {item[1] for item in old_schema} == added_objects.get(name, set())
+        normalized = []
+        for kind, table, owner, sql in schema:
+            if table in added_objects.get(name, set()):
+                continue
+            if kind == 'table' and table in added_columns.get(name, {}):
+                definition = f', "{added_columns[name][table]}" INTEGER NOT NULL DEFAULT 0'
+                assert sql.count(definition) == 1
+                sql = sql.replace(definition, '', 1)
+            normalized.append((kind, table, owner, sql))
+        assert normalized == old_schema  # Every old column, index, trigger and foreign key is unchanged.
+        preserved = dict(rows)
+        for table in set(rows) - set(old_rows):
+            assert preserved.pop(table) == []
+        for table in added_columns.get(name, {}):
+            assert all(row[-1] == 0 for row in preserved[table])
+            preserved[table] = [row[:-1] for row in preserved[table]]
+        assert preserved == old_rows  # Compare actual stored data, including the migration ledger.
+    reopened = Database(path, upgrade_fixture.registry(), migrations=upgrade_fixture.MIGRATIONS)
+    upgrade_fixture.application(reopened).initialize()
+    assert reopened.migrate(upgrade_fixture.MIGRATIONS) == []
+    reopened.close()
+    assert contents(path) == after
 
 
 def test_a_0_4_3_database_keeps_its_guards(tmp_path):
