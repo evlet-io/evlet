@@ -1,4 +1,7 @@
 import json
+from copy import deepcopy
+
+import pytest
 
 from evlet import Application, Database, Integer, Link, LocalAuth, Model, Policy, Registry, Rule, Text, identity
 from tests.test_business import client, hashed, http, secured
@@ -84,3 +87,118 @@ def test_describing_does_not_evaluate_callable_defaults_or_reveal_link_default(t
     description = Discovery(app.business, User(1, 'test', 'viewer')).describe('note')
     assert calls == [] and '42' not in json.dumps(description)
     assert description['schemas']['read']['properties']['person']['anyOf'][1] == {'type': 'null'}
+
+
+def test_read_schema_validates_annotated_records_without_loosening_inputs(secured):
+    validator = pytest.importorskip('jsonschema').Draft202012Validator
+    c = client(secured)
+    schemas = c('GET', '/api/_discovery/project')[1]['schemas']
+    for schema in schemas.values():
+        validator.check_schema(schema)
+    read = validator(schemas['read'])
+    status, created, _ = c('POST', '/api/project', {
+        'title': 'Annotated project', 'children': {'tasks': [{'title': 'Task'}]},
+    })
+    assert status == 201, created
+    assert {'_audit', '_moves', '_actions', '_locked', '_journal', '_row_ids'} <= created.keys()
+    assert next(move for move in created['_moves'] if move['key'] == 'start')['primary'] is True
+    read.validate(created)
+    url = f"/api/project/{created['id']}"
+    status, fetched, headers = c('GET', url)
+    assert status == 200
+    read.validate(fetched)
+    status, updated, _ = c('PATCH', url, {'title': 'Updated'}, headers={b'if-match': headers[b'etag']})
+    assert status == 200, updated
+    read.validate(updated)
+
+    invalid = []
+    for path, value in (
+        (('unknown_business_field',), True),
+        (('_moves', 0, 'primary'), 'yes'),
+        (('_moves', 0, 'unexpected'), True),
+        (('_journal', 'count'), 'one'),
+        (('_row_ids',), {'temporary-key': 'invalid-id'}),
+        (('children_pages',), {'hidden_collection': {'total': 1, 'limit': 100, 'partial': True}}),
+        (('children', 'tasks', 0, 'unexpected'), True),
+    ):
+        candidate = deepcopy(created)
+        target = candidate
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = value
+        invalid.append(candidate)
+    assert all(not read.is_valid(value) for value in invalid)
+    for operation in ('create', 'update'):
+        schema = validator(schemas[operation])
+        assert not schema.is_valid({'title': 'Injected', '_moves': []})
+        assert not schema.is_valid({'title': 'Invalid', 'progress': 101})
+    secured.business.policy = Policy(secured.registry, rules={('viewer', ProjectTask): Rule(operations=())})
+    restricted = client(secured, 'viewer')('GET', '/api/_discovery/project')[1]['schemas']['read']
+    assert 'children' not in restricted['properties'] and 'children_pages' not in restricted['properties']
+
+
+def test_read_schema_covers_approval_release_restore_and_action_metadata(tmp_path):
+    validator = pytest.importorskip('jsonschema').Draft202012Validator
+    from evlet import Child, State, Table, action
+    from evlet.calc import F
+    from tests.finite_fixtures import FiniteMeta
+    from tests.test_rules_types import start
+
+    class ReportLine(Child):
+        label = Text(default='')
+
+    class Report(Model):
+        Meta = FiniteMeta
+        permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
+        title = Text(default='Report')
+        amount = Integer(default=2)
+        total = Integer(compute=F('amount') * 2)
+        lines = Table(ReportLine, max_rows=101)
+        status = State(State.Step('draft'), State.Step('issued', release=True), rules=(
+            State.Rule('draft', 'issued', 'Issue', key='issue', primary=True, ask=('title',),
+                       remark='optional', self_approve=True,
+                       levels=(State.Level(by=('admin',), pending='Waiting for approval'),)),
+            State.Rule('issued', 'draft', 'Reopen', key='reopen'),
+        ))
+
+        @action
+        def summarize(self):
+            return [self.title, self.total]
+
+    app = start(Database(tmp_path / 'report.sqlite3', Registry(Report)))
+    c = client(app)
+    schema = c('GET', '/api/_discovery/report')[1]['schemas']['read']
+    validator.check_schema(schema)
+    read = validator(schema)
+    status, paged, _ = c('POST', '/api/report', {'children': {'lines': [{} for _ in range(101)]}})
+    assert status == 201, paged
+    assert paged['children_pages']['lines'] == {'total': 101, 'limit': 100, 'partial': True}
+    read.validate(paged)
+    read.validate(c('GET', f"/api/report/{paged['id']}")[1])
+    status, created, _ = c('POST', '/api/report', {})
+    assert status == 201, created
+    assert created['_calculation']['language'] == 'finite-v1'
+    assert created['_version'] == {'number': None, 'released': False, 'state': None}
+    assert created['_moves'][0]['remark'] == {'mode': 'optional', 'label': None, 'required': False}
+    assert created['_moves'][0]['asks'] == ['title']
+    assert created['_moves'][0]['level'] == 1 and created['_moves'][0]['can_approve'] is True
+    read.validate(created)
+    url = f"/api/report/{created['id']}"
+
+    def post(suffix, values):
+        headers = {b'if-match': c('GET', url)[2][b'etag']}
+        status, record, _ = c('POST', url + suffix, values, headers=headers)
+        assert status == 200, record
+        read.validate(record)
+        return record
+
+    result = post('/actions/summarize', {})
+    assert result['_outcome'] == ['Report', 4]
+    issued = post('/moves/issue', {'title': 'Issued report', 'remark': 'Approved'})
+    assert issued['_version'] == {'number': 0, 'released': True, 'state': 'issued'}
+    post('/moves/reopen', {})
+    restored = post('/restore', {'version': 0, 'remark': 'Restore release'})
+    assert restored['_restore'] == {'version': 0, 'dropped': [], 'kept': []}
+    malformed = deepcopy(restored)
+    malformed['_version']['number'] = 'zero'
+    assert not read.is_valid(malformed)

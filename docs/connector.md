@@ -92,6 +92,10 @@ parents, not as independent catalog entries. Unknown or unavailable models retur
 
 Descriptions expose only readable fields and allowed write fields. Create schemas
 identify required values without defaults; update schemas accept partial changes.
+Read schemas also describe framework response annotations, such as state moves, action
+availability, row IDs and journal summaries. These annotations do not become writable
+business fields or expand discovery's create/update schemas. Existing calculation-control
+inputs retain their separate contract.
 Read-only callers receive no write schemas. Static Link default IDs are omitted,
 and callable defaults are described without evaluating them. Fields hidden only
 for presentation remain discoverable when the account has read permission.
