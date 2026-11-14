@@ -35,7 +35,6 @@ from .identity import RecordId
 
 __all__ += ["RecordId"]
 
-from .tenancy import Tenant, TenantApplication, TenantRegistry
 
 __all__ += ["Tenant", "TenantApplication", "TenantRegistry"]
 
@@ -44,23 +43,16 @@ from .jobs import JobContext, JobQueue, JobReceipt, Task
 
 __all__ += ["EventStore", "JobContext", "JobQueue", "JobReceipt", "Task"]
 
-from .object_storage import S3Storage
-from .serverless import LambdaHTTP
 
 __all__ += ["LambdaHTTP", "S3Storage"]
 
-from .connector import ConnectorError, HTTPClient
-from .mcp import MCPServer
-from .eva import AI
 
 __all__ += ["AI", "ConnectorError", "HTTPClient", "MCPServer"]
 
-from .ui.application import App
 from .ui.metadata import Html, Main, Section
 
 __all__ += ["App", "Html", "Main", "Section"]
 
-from .instances import AppDefinition, Instance, Schedule
 from .auth import Security
 
 __all__ += ["AppDefinition", "Instance", "Schedule", "Security"]
@@ -83,22 +75,16 @@ from .meaning import Attachments, Related
 __all__ += ["Attachments", "Related"]
 from .journal import Journal
 __all__ += ["Journal"]
-from .controls import SCOPES
 
 __all__ += ["SCOPES"]
-from .settings import AppSettings, UserPreferences
 
 __all__ += ["AppSettings", "UserPreferences"]
-from .connectors import ConnectionFailed, Connector, ConnectorField
 
 __all__ += ["ConnectionFailed", "Connector", "ConnectorField"]
-from .mailboxes import Mail
 
 __all__ += ["Mail"]
-from .devlink import DevSignIn
 __all__ += ["DevSignIn"]
 
-from .printing import PrintDesign
 
 __all__ += ["PrintDesign"]
 
@@ -118,7 +104,44 @@ from .workspaces import NavGroup, Shortcut, Workspace
 __all__ += ["NavGroup", "Shortcut", "Workspace"]
 
 
+# Optional subsystems have no model-build registration side effects. Mandatory build steps above
+# remain eager; public names resolve to their original objects and are cached after first use.
+_LAZY_EXPORTS = {
+    'Tenant': 'tenancy',
+    'TenantApplication': 'tenancy',
+    'TenantRegistry': 'tenancy',
+    'S3Storage': 'object_storage',
+    'LambdaHTTP': 'serverless',
+    'ConnectorError': 'connector',
+    'HTTPClient': 'connector',
+    'MCPServer': 'mcp',
+    'AI': 'eva',
+    'App': 'ui.application',
+    'AppDefinition': 'instances',
+    'Instance': 'instances',
+    'Schedule': 'instances',
+    'SCOPES': 'controls',
+    'AppSettings': 'settings',
+    'UserPreferences': 'settings',
+    'ConnectionFailed': 'connectors',
+    'Connector': 'connectors',
+    'ConnectorField': 'connectors',
+    'Mail': 'mailboxes',
+    'DevSignIn': 'devlink',
+    'PrintDesign': 'printing',
+}
+
+
+def __dir__():
+    return sorted(set(globals()) | set(__all__))
+
+
 def __getattr__(name):
+    if name in _LAZY_EXPORTS:
+        from importlib import import_module
+        value = getattr(import_module('.' + _LAZY_EXPORTS[name], __name__), name)
+        globals()[name] = value
+        return value
     # Removed in 0.4: say where to go instead of a bare "cannot import name".
     if name == 'Tab':
         raise ImportError('evlet.Tab was removed: record pages have no tabs. Use Main(fields, *tables) first in '

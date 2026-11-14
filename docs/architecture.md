@@ -115,7 +115,9 @@ its data, passing a value in, or letting the higher module register itself with 
 Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
 state manager hooks, rule guards, sequences, measures, effects, journals, API access). `evlet/models.py`
 lists them in `BUILD_ORDER`, the order they run in; each owning module registers its function with
-`@build_step(name)`, and `evlet/__init__.py` imports those modules before any model class exists.
+`@build_step(name)`, and `evlet/__init__.py` imports those modules before any model class exists. Optional
+subsystems without build-step registration load on first public-export access; `__all__`,
+`dir(evlet)` and the original exported objects remain stable.
 
 ## API and data flow
 
