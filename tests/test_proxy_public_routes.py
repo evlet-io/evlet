@@ -6,7 +6,7 @@ from pathlib import Path
 
 import evlet
 from evlet import AppDefinition, Frontend, Host
-from evlet.app import MAIL_PATHS, MCP_PATHS, PUBLIC_PATHS, TLS_CHECK
+from evlet.app import MAIL_PATHS, MCP_PATHS, OIDC_PATHS, PUBLIC_PATHS, TLS_CHECK
 from evlet.cli import proxy, serve, site
 from evlet.routing import resolve_routes
 from tests.test_business import secured, hashed  # noqa: F401
@@ -70,7 +70,7 @@ def nginx_refuses(text, paths):
 
 def test_every_framework_route_under_underscore_is_public_or_the_tls_check():
     assert served_paths() == set(PUBLIC_PATHS) | {TLS_CHECK}
-    assert PUBLIC_PATHS == MCP_PATHS + MAIL_PATHS and TLS_CHECK not in PUBLIC_PATHS
+    assert PUBLIC_PATHS == MCP_PATHS + MAIL_PATHS + OIDC_PATHS and TLS_CHECK not in PUBLIC_PATHS
 
 
 def test_generated_caddy_and_nginx_pass_exactly_the_public_routes():
