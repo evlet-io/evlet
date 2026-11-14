@@ -31,29 +31,34 @@ export function InboxButton(ctx: AppContext): HTMLElement {
   const clock = minuteClock();
   // Items newer than this id pop up; until the first list, anything unread since the page loaded does.
   let newest: number | null = null;
+  let alive = true;
   const since = Math.floor(Date.now() / 1000) - 5;
 
   const load = () => ctx.api.inbox({ limit: 30 }).then(page => {
+    if (!alive) return [] as InboxItem[];
     const fresh = page.items.filter(item => !item.read && (newest === null ? item.at >= since : item.id > newest));
     newest = Math.max(newest ?? 0, ...page.items.map(item => item.id));
     items.set(page.items); unread.set(page.unread); problem.set('');
     return fresh;
-  }, () => { problem.set('Your notifications could not be loaded.'); return [] as InboxItem[]; });
+  }, () => { if (alive) problem.set('Your notifications could not be loaded.'); return [] as InboxItem[]; });
 
   const refresh = (news = false) => ctx.api.inboxCount().then(count => {
+    if (!alive) return;
     const grew = count > unread.peek();
     unread.set(count);
-    if (news || grew || open.peek()) void load().then(fresh => { if (!open.peek()) fresh.slice(0, POPUP_MAX).reverse().forEach(popup); });
+    if (news || grew || open.peek()) void load().then(fresh => { if (alive && !open.peek()) fresh.slice(0, POPUP_MAX).reverse().forEach(popup); });
   }, () => {});
-  void ctx.api.inboxCount().then(count => unread.set(count), () => {});
+  void ctx.api.inboxCount().then(count => { if (alive) unread.set(count); }, () => {});
 
   // Live: the event stream sends {"type": "inbox.changed"} to this person only.
   let source: EventSource | null = null, timer = 0;
-  const poll = () => { window.clearInterval(timer); timer = window.setInterval(() => { if (document.visibilityState !== 'hidden') void refresh(); }, POLL_MS); };
+  const poll = () => { if (!alive) return; window.clearInterval(timer); timer = window.setInterval(() => { if (alive && document.visibilityState !== 'hidden') void refresh(); }, POLL_MS); };
   if (typeof EventSource === 'function') {
     void ctx.api.request<{ cursor: string }>('GET', '/api/_events').then(({ data }) => {
+      if (!alive) return;
       source = new EventSource(ctx.api.url(`/api/_events/stream?cursor=${encodeURIComponent(data.cursor)}`), { withCredentials: true });
       source.addEventListener('evlet', event => {
+        if (!alive) return;
         try {
           const page = JSON.parse((event as MessageEvent).data) as { items?: Array<{ type?: string }> };
           if (page.items?.some(item => item.type === 'inbox.changed')) void refresh(true);
@@ -67,11 +72,11 @@ export function InboxButton(ctx: AppContext): HTMLElement {
   const markRead = (item: InboxItem) => {
     if (item.read) return;
     items.set((items.peek() ?? []).map(row => row.id === item.id ? { ...row, read: true } : row));
-    void ctx.api.inboxRead([item.id]).then(count => unread.set(count), () => {});
+    void ctx.api.inboxRead([item.id]).then(count => { if (alive) unread.set(count); }, () => {});
   };
   const markAll = () => {
     items.set((items.peek() ?? []).map(row => ({ ...row, read: true })));
-    void ctx.api.inboxRead('all').then(count => unread.set(count), () => {});
+    void ctx.api.inboxRead('all').then(count => { if (alive) unread.set(count); }, () => {});
   };
   const hrefOf = (item: InboxItem) => item.record ? ctx.router.href('record', { model: item.record.model, id: item.record.id }) : null;
 
@@ -162,15 +167,17 @@ export function InboxButton(ctx: AppContext): HTMLElement {
   // ---------- popups ----------
 
   let pops: HTMLElement | null = null;
+  const popupCleanups = new Map<HTMLElement, () => void>();
   const region = () => {
     if (pops?.isConnected) return pops;
     pops = html`<div class="ntf-pops" role="region" aria-label="New notifications" aria-live="polite"></div>` as HTMLElement;
     document.body.append(pops);
     return pops;
   };
-  const clearPopups = () => pops?.querySelectorAll('.ntf-pop').forEach(node => node.remove());
+  const clearPopups = () => { for (const cleanup of [...popupCleanups.values()]) cleanup(); };
   function popup(item: InboxItem) {
-    let node!: HTMLElement, timer = 0;
+    if (!alive) return;
+    let node!: HTMLElement, timer = 0, removal = 0;
     const dispose = runWithOwner(null, () => scope(() => {
       node = html`<div class="ntf-pop">
         <button type="button" class="ntf-main" on:click=${() => { dismiss(); show(); }}>
@@ -179,10 +186,16 @@ export function InboxButton(ctx: AppContext): HTMLElement {
         <span class="ntf-pop-acts">${goTo(item, () => dismiss())}
           <button type="button" class="icon-btn" aria-label="Dismiss" on:click=${() => dismiss()}>${Icon('x', { size: 'xs' })}</button></span></div>` as HTMLElement;
     }));
+    const destroy = () => {
+      window.clearTimeout(timer);
+      window.clearTimeout(removal);
+      dispose(); node.remove(); popupCleanups.delete(node);
+    };
     const dismiss = () => {
+      if (removal) return;
       window.clearTimeout(timer);
       node.classList.add('out');
-      window.setTimeout(() => { dispose(); node.remove(); }, 200);
+      removal = window.setTimeout(destroy, 200);
     };
     const start = () => { window.clearTimeout(timer); timer = window.setTimeout(dismiss, POPUP_MS); };
     node.addEventListener('pointerenter', () => window.clearTimeout(timer));
@@ -190,12 +203,13 @@ export function InboxButton(ctx: AppContext): HTMLElement {
     node.addEventListener('focusin', () => window.clearTimeout(timer));
     node.addEventListener('focusout', start);
     const host = region();
+    popupCleanups.set(node, destroy);
     host.prepend(node);
-    while (host.children.length > POPUP_MAX) host.lastElementChild!.remove();
+    while (host.children.length > POPUP_MAX) popupCleanups.get(host.lastElementChild as HTMLElement)?.();
     start();
   }
 
-  onCleanup(() => { source?.close(); window.clearInterval(timer); close(false); leaving?.(); pops?.remove(); });
+  onCleanup(() => { alive = false; source?.close(); window.clearInterval(timer); close(false); leaving?.(); clearPopups(); pops?.remove(); });
 
   const button = html`<button type="button" class="icon-btn inbox-btn" aria-haspopup="dialog" aria-controls="ev-notifications"
     aria-expanded=${() => String(open.get())}
