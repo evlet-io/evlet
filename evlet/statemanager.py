@@ -178,11 +178,11 @@ def allowed(user, roles, users, values):
 
 # Locks and ordinary writes
 
-def state_write(model, scalars, current):
-    """Ordinary writes may create a record in the default state and never set it afterwards."""
+def state_write(model, scalars, current, *, readable=None):
+    """Ordinary writes may echo a readable state; hidden inputs stay for uniform permission rejection."""
     from .models import ValidationError
     name = model.__state__
-    if name is None or name not in scalars:
+    if name is None or name not in scalars or readable is not None and name not in readable:
         return
     field, value = model.__declared_fields__[name], scalars[name]
     if value == (field.default if current is None else current._values.get(name)):

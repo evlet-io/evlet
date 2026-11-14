@@ -260,7 +260,7 @@ class Context:
         model = self._model(model)
         business, tx = self._business, self._tx
         business.policy.require(self.user, model, 'read')
-        business.policy.query_fields(self.user, model, filters, order_by, children=business.children.values())
+        business.policy.query_fields(self.user, model, filters, order_by, database=tx.connection, children=business.children.values())
         if type(limit) is not int or not 1 <= limit <= ROW_LIMIT or type(offset) is not int or not 0 <= offset <= 2**63-1:
             raise ValidationError({'page': f'Use a page of 1 to {ROW_LIMIT} rows and a nonnegative offset'})
         query = SqlQuery(business.registry, model, children=business.children.values())
@@ -446,11 +446,12 @@ def load_draft(context, model, record_id, values, *, preview=False):
         drop_empty_name(business.registry, model, scalars)
     from .statemanager import state_write
     from .sequences import sequence_write
-    state_write(model, scalars, current)
-    sequence_write(model, scalars, current, business.policy.fields(user, model))
+    readable = business.policy.fields(user, model)
+    state_write(model, scalars, current, readable=readable)
+    sequence_write(model, scalars, current, readable)
     computed_write(business, model, scalars, '')
     derived_write(model, scalars, collections, '')
-    drop_echoes(model, scalars, current._values if current else None)
+    drop_echoes(model, scalars, current._values if current else None, readable=readable)
     business.policy.check_values(tx, user, model, scalars)
     # A new record takes the defaults Controls set on this instance for fields the caller left out.
     values = business.controls.custom.prepare(model, scalars) if current is None else scalars
@@ -818,7 +819,7 @@ def load_rows(context, model, draft, old, record_id, collections, preview, prefi
             computed_write(business, child.model, value, prefix + child.name + '.')
             derived_write(child.model, value, nested, prefix + child.name + '.')
             original = originals.get(row_id) if row_id is not None else None
-            drop_echoes(child.model, value, getattr(original, '_values', None))
+            drop_echoes(child.model, value, getattr(original, '_values', None), readable=business.policy.fields(user, child.model))
             business.policy.check_values(tx, user, child.model, value, targets=targets)
             if row_id is not None:
                 if not isinstance(row_id, RecordId) or row_id not in originals or row_id in kept or row_id in hidden:
