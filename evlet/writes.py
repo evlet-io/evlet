@@ -22,6 +22,7 @@ from contextvars import ContextVar
 from contextlib import closing, contextmanager
 from pathlib import Path
 import atexit
+import errno
 import hashlib
 import json
 import logging
@@ -241,12 +242,18 @@ def file_lock(path, *, shared=False):
                 import fcntl
                 fcntl.flock(stream, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
                 unlock = lambda: fcntl.flock(stream, fcntl.LOCK_UN)
-        except OSError:
-            raise ValueError('Resource is in use by another process; retry when its operation finishes') from None
+        except OSError as exc:
+            if exc.errno not in (errno.EACCES, errno.EAGAIN) and getattr(exc, 'winerror', None) != 33:
+                raise
+            raise LockBusy('Resource is in use by another process; retry when its operation finishes') from None
         try:
             yield
         finally:
             unlock()
+
+
+class LockBusy(ValueError):
+    """A live process owns the requested file lease; other filesystem failures are not contention."""
 
 
 def _windows_lock(stream, *, exclusive):
