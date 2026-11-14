@@ -78,7 +78,8 @@ def _nginx_proxy(port, body):
 
 
 def nginx(routes, port=8000, instance='<name>', trusted=()):
-    from ..app import PUBLIC_PATHS
+    from ..app import PUBLIC_PATHS, request_body_limit
+    from ..controls import IMAGE_LIMITS
     hosts = _hosts(routes)
     blocks = [f'''server {{
     listen 80;
@@ -88,6 +89,18 @@ def nginx(routes, port=8000, instance='<name>', trusted=()):
 }}''']
     # Exact locations win over the /_/ prefix, so only the public framework routes pass. Evlet reads at most 64 KiB there.
     public = ''.join(f'    location = {path} {{\n        {_nginx_proxy(port, "128k")}\n    }}\n' for path in PUBLIC_PATHS)
+    # Match the application's encoded-body ceilings. Use the supported image maximum so a later
+    # Controls adjustment never requires a proxy reload; Evlet still applies the actual per-image limit.
+    image_bytes = IMAGE_LIMITS['files.image_max_kb'][1] * 1024
+    upload_routes = (
+        ('= /api/_settings/me/photo', '/api/_settings/me/photo'),
+        ('= /api/_eva/files', '/api/_eva/files'),
+        ('~ ^/api/.*/(attachments|_images)$', '/api/model/_images'),
+        ('~ ^/api/_controls/prints', '/api/_controls/prints'),
+        ('~ ^/api/_unsaved/', '/api/_unsaved/item'),
+    )
+    uploads = ''.join(f'    location {match} {{\n        {_nginx_proxy(port, request_body_limit(path, image_bytes))}\n    }}\n'
+                      for match, path in upload_routes)
     for host in hosts:
         block = f'''server {{
     listen 443 ssl;
@@ -100,8 +113,8 @@ def nginx(routes, port=8000, instance='<name>', trusted=()):
 '''
         if host in routes.sub_hosts() and not routes.public(host):
             block += f'    location ~* ^/({"|".join(PRIMARY_ONLY)})(/|$) {{ return 404; }}\n'
-        block += f'''    location / {{
-        {_nginx_proxy(port, "2m")}
+        block += uploads + f'''    location / {{
+        {_nginx_proxy(port, request_body_limit('/api/model', image_bytes))}
     }}
 }}'''
         blocks.append(block)

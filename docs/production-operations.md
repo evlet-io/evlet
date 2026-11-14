@@ -144,3 +144,59 @@ workers, file storage, proxy/TLS, sign-ins, and failure recovery. The local repo
 has no public-network latency, failover, or long-duration load evidence. Its numbers
 are not service-level guarantees or evidence for the specification's larger tenant
 and employee-count targets.
+
+## Bounded HTTP work and correlation
+
+Each process shares a small set of HTTP worker lanes across its applications and tenants.
+Admission happens **before reading a request body**; there is no unbounded waiting queue.
+When a lane is full the API returns 503 with `Retry-After: 1`. A body that has not arrived
+within 30 seconds returns 408. Size/type/permission checks still apply. Public sites keep
+their own not-found response rather than exposing framework errors.
+
+Set these environment variables before starting the process; restart to change them:
+
+| Variable | Default | Work admitted |
+|---|---:|---|
+| `EVLET_HTTP_READ` |32| Total admitted reads: running, queued and sending responses |
+| `EVLET_HTTP_READ_WORKERS` |8| Concurrent ordinary GET/HEAD/OPTIONS and individual stream polls |
+| `EVLET_HTTP_WRITE` |4| Mutating HTTP requests, including sign-in and uploads |
+| `EVLET_HTTP_PROBE` |2| Health checks, isolated from blocked writes |
+| `EVLET_HTTP_HEAVY` |2| Print routes, including PDF rendering |
+| `EVLET_HTTP_STREAM` |64| Open event/Eva streams; sleeping streams hold no worker |
+| `EVLET_HTTP_ROUTE` |8| Tenant-catalog lookups |
+| `EVLET_HTTP_INIT` |8| Cold tenant initialization; cached tenants bypass this lane |
+| `EVLET_HTTP_BODY_SECONDS` |30| Total body-read deadline, greater than 0 and at most 3600 |
+
+Lane limits accept integers 1–256; read workers cannot exceed read admission. The default
+read lane admits at most 32 requests with 8 workers (at most 24 queued); reducing read
+admission also lowers the implicit worker limit. Other worker lanes admit only their
+worker count. Threads start only when needed; limits are process-wide,
+not multiplied by the tenant count. There are no extra services or runtime dependencies.
+These are admission ceilings, not workload capacity promises. On a small host begin with
+fewer read/write/print workers, then measure real requests and sign-in memory. Additional
+server processes multiply these limits and memory budgets; SQLite still has one writer
+per file. The reverse proxy should separately bound connections, header time and slow
+response clients.
+
+A request retains its slot through response delivery. Cancelling its ASGI task does not
+stop an already running Python thread or undo a committed operation: the underlying work
+retains its slot until it actually finishes. Retrying a write must follow the API's revision
+and idempotency rules. Shutdown rejects new work, ends streams and drains tracked synchronous
+work before closing databases. A hung application callback can therefore delay shutdown;
+use bounded I/O and an operator-defined graceful shutdown deadline.
+
+Every application HTTP response carries a generated 32-character `X-Request-ID`. Slow-write
+warnings include this ID in their existing request label, and application error logs attach
+`request_id`. Set `EVLET_HTTP_LOG_REQUESTS=1` and configure the standard-library `evlet.http`
+logger at INFO to receive completion records with `request_id`, `http_method`, `http_route`,
+`http_status`, `duration_ms` and a fixed-size `http_active` lane snapshot. A normal logging
+handler can forward those fields to the operator's metrics/tracing system. The default install
+requires no collector or OpenTelemetry dependency. Route labels omit record IDs, arbitrary
+paths and queries; bodies, cookies and tokens are never included. Keep request IDs as log
+correlation values, not metric labels. Job age/retry state remains available through Controls;
+this change does not claim distributed tracing of external jobs.
+
+Generated nginx files use route-specific body ceilings shared with the HTTP implementation.
+Image routes allow the largest supported encoded image envelope so changing the Controls
+image limit needs no proxy edit; the application continues enforcing the configured limit.
+Deployments using an older generated file must regenerate/review it and reload nginx.

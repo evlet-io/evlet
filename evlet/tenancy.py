@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import contextmanager
+from concurrent.futures import Future
 from dataclasses import dataclass
 import json
 import logging
@@ -16,6 +17,7 @@ import time
 from . import qb
 from .adapter import Column, TableDefinition
 from .app import Application
+from .runtime import Busy, Work
 from .writes import file_transaction
 from .storage import LocalFileStorage
 from .object_storage import S3Storage
@@ -216,57 +218,155 @@ class TenantApplication:
     def __init__(self, catalog, factory):
         self.catalog, self.factory = catalog, factory
         self._apps = {}
+        self._initializing = {}
+        self._retired = []
+        self._work = Work()
         self._lock = threading.Lock()
         self._stopping = False
 
     def stop(self):
-        """End every tenant's live streams; hosts call this when their shutdown drain begins."""
+        """Stop admission and live streams; hosts call this when their shutdown drain begins."""
         with self._lock:
             self._stopping = True
-            apps = [app for _, app in self._apps.values()]
+            self._work.stop()
+            apps = [app for _, app in self._apps.values()] + self._retired
         for app in apps:
             app.stop()
         return apps
 
-    def _application(self, tenant):
+    def _cached(self, tenant):
+        if not tenant.database_path.is_file() or tenant.database_path.is_symlink():
+            raise ValueError('Tenant database has not been provisioned')
         with self._lock:
-            if not tenant.database_path.is_file() or tenant.database_path.is_symlink():
-                raise ValueError('Tenant database has not been provisioned')
-            previous = self._apps.get(tenant.slug)
-            if previous and previous[0] == tenant:
-                return previous[1]
-            app = self.factory(tenant)
-            if not isinstance(app, Application) or app.database.path.resolve() != tenant.database_path or app.business is None or not app.database.must_exist:
-                raise ValueError('Tenant factory must return an authenticated application with its own database')
-            auth, storage = app.business.auth, app.business.storage
-            if auth.origins != frozenset(tenant.origins) or auth.secure_cookies == tenant.development or auth.allow_setup:
-                raise ValueError('Tenant authentication must use its exact origins and disable browser setup')
-            if not tenant.development and auth.cookie_name != '__Host-evlet_session':
-                raise ValueError('Production tenants require a host-only secure cookie')
-            local = isinstance(storage, LocalFileStorage) and storage.root == tenant.files_path
-            remote = isinstance(storage, S3Storage) and storage.tenant == tenant.slug
-            if not (local or remote):
-                raise ValueError('Tenant attachments require their own private storage')
-            if app.business.jobs is not None and app.business.jobs.tenant != tenant.slug:
-                raise ValueError('Tenant jobs require the matching tenant namespace')
-            app.initialize()
-            app.business.tenant = tenant.public()
-            if previous:
-                previous[1].stop()
             if self._stopping:
-                app.stop()
-            self._apps[tenant.slug] = (tenant, app)
+                raise Busy()
+            found = self._apps.get(tenant.slug)
+            return found[1] if found and found[0] == tenant else None
+
+    def _application(self, tenant):
+        cached = self._cached(tenant)
+        if cached is not None:
+            return cached
+        with self._lock:
+            if self._stopping:
+                raise Busy()
+            pending = self._initializing.get(tenant.slug)
+            owner = pending is None
+            if owner:
+                pending = self._initializing[tenant.slug] = Future()
+        if not owner:
+            pending.result()
+            # A domain generation may have changed while the other caller initialized it.
+            return self._application(tenant)
+        app = None
+        try:
+            app = self._build(tenant)
+            # A cold start must not publish the old domain set or a disabled tenant.
+            if not tenant.hosts or self.catalog.resolve(tenant.hosts[0]) != tenant:
+                raise ValueError('Tenant changed during initialization')
+            with self._lock:
+                if self._stopping:
+                    raise Busy()
+                previous = self._apps.get(tenant.slug)
+                self._apps[tenant.slug] = (tenant, app)
+                if previous:
+                    previous[1].stop()
+                    self._retired.append(previous[1])
+            # Old generations with outstanding work remain until the next replacement/shutdown.
+            # Completed generations are closed now, so repeated domain edits do not retain them.
+            with self._lock:
+                finished = []
+                for retired in self._retired:
+                    with retired._work.lock:
+                        if not retired._work.futures:
+                            finished.append(retired)
+                self._retired = [retired for retired in self._retired if retired not in finished]
+            for retired in finished:
+                try:
+                    retired.database.close()
+                except Exception:
+                    logger.exception('Retired tenant cleanup failed')
+                    with self._lock:
+                        self._retired.append(retired)
+            with self._lock:
+                if self._initializing.get(tenant.slug) is pending:
+                    self._initializing.pop(tenant.slug)
+            pending.set_result(app)
             return app
+        except BaseException as exc:
+            # Complete waiters before cleanup: even a disk/full flush failure must not leave
+            # another request blocked forever on this initialization future.
+            pending.set_exception(exc)
+            if app is not None:
+                app.stop()
+                try:
+                    app.database.close()
+                except Exception:
+                    logger.exception('Failed tenant initialization cleanup')
+            raise
+        finally:
+            with self._lock:
+                if self._initializing.get(tenant.slug) is pending:
+                    self._initializing.pop(tenant.slug)
+
+    def _build(self, tenant):
+        app = self.factory(tenant)
+        if not isinstance(app, Application) or app.database.path.resolve() != tenant.database_path or app.business is None or not app.database.must_exist:
+            raise ValueError('Tenant factory must return an authenticated application with its own database')
+        auth, storage = app.business.auth, app.business.storage
+        if auth.origins != frozenset(tenant.origins) or auth.secure_cookies == tenant.development or auth.allow_setup:
+            raise ValueError('Tenant authentication must use its exact origins and disable browser setup')
+        if not tenant.development and auth.cookie_name != '__Host-evlet_session':
+            raise ValueError('Production tenants require a host-only secure cookie')
+        local = isinstance(storage, LocalFileStorage) and storage.root == tenant.files_path
+        remote = isinstance(storage, S3Storage) and storage.tenant == tenant.slug
+        if not (local or remote):
+            raise ValueError('Tenant attachments require their own private storage')
+        if app.business.jobs is not None and app.business.jobs.tenant != tenant.slug:
+            raise ValueError('Tenant jobs require the matching tenant namespace')
+        try:
+            app.initialize()
+        except BaseException:
+            app.stop()
+            app.database.close()
+            raise
+        app.business.tenant = tenant.public()
+        return app
+
+    async def _drain(self):
+        self.stop()
+        await self._work.drain()
+        while True:
+            with self._lock:
+                pending = bool(self._initializing)
+            if not pending:
+                break
+            await asyncio.sleep(.01)
+        for app in self.stop():
+            await app._work.drain()
+            await asyncio.to_thread(app.database.close)
 
     async def __call__(self, scope, receive, send):
         if scope['type'] == 'lifespan':
             while True:
                 event = await receive()
                 if event['type'] == 'lifespan.startup':
+                    try:
+                        if self._stopping:
+                            await self._drain()
+                            with self._lock:
+                                self._apps.clear()
+                                self._retired.clear()
+                        self._work.start()
+                        with self._lock:
+                            self._stopping = False
+                    except Exception:
+                        logger.exception('Tenant router startup failed')
+                        await send({'type': 'lifespan.startup.failed', 'message': 'Tenant router startup failed'})
+                        return
                     await send({'type': 'lifespan.startup.complete'})
                 elif event['type'] == 'lifespan.shutdown':
-                    for app in self.stop():
-                        await asyncio.to_thread(app.database.close)
+                    await self._drain()
                     await send({'type': 'lifespan.shutdown.complete'})
                     return
         elif scope['type'] == 'websocket':
@@ -292,11 +392,16 @@ class TenantApplication:
             await self._error(send, 421, 'Unrecognized tenant host')
             return
         try:
-            tenant = await asyncio.to_thread(self.catalog.resolve, host)
+            tenant = await self._work.run('route', self.catalog.resolve, host)
             if tenant is None:
                 await self._error(send, 421, 'Unrecognized tenant host')
                 return
-            app = await asyncio.to_thread(self._application, tenant)
+            app = self._cached(tenant)
+            if app is None:
+                app = await self._work.run('init', self._application, tenant)
+        except Busy:
+            await self._error(send, 503, 'Tenant temporarily busy; try again shortly')
+            return
         except Exception:
             logger.exception('Tenant application unavailable')
             await self._error(send, 503, 'Tenant temporarily unavailable')
@@ -308,5 +413,5 @@ class TenantApplication:
     @staticmethod
     async def _error(send, status, message):
         body = json.dumps({'error': message}).encode()
-        await send({'type': 'http.response.start', 'status': status, 'headers': [(b'content-type', b'application/json'), (b'cache-control', b'no-store'), (b'content-length', str(len(body)).encode())]})
+        await send({'type': 'http.response.start', 'status': status, 'headers': [(b'content-type', b'application/json'), (b'cache-control', b'no-store'), (b'content-length', str(len(body)).encode()), *([(b'retry-after', b'1')] if status == 503 else [])]})
         await send({'type': 'http.response.body', 'body': body})

@@ -226,3 +226,24 @@ def test_setup_remembers_the_public_address_after_a_passing_check(tmp_path):
     assert site.saved_addresses(root) == ['203.0.113.7']
     (root / 'deploy/server.json').write_text('{"ip": ["not an address"]}')
     assert site.saved_addresses(root) is None
+
+
+def test_nginx_upload_envelopes_cover_application_limits():
+    from evlet.app import request_body_limit
+    from evlet.controls import IMAGE_LIMITS
+    text = proxy.nginx(routes())
+    maximum = IMAGE_LIMITS['files.image_max_kb'][1] * 1024
+    for match, path in (
+        ('= /api/_settings/me/photo', '/api/_settings/me/photo'),
+        ('= /api/_eva/files', '/api/_eva/files'),
+        ('~ ^/api/.*/(attachments|_images)$', '/api/model/_images'),
+        ('~ ^/api/_controls/prints', '/api/_controls/prints'),
+        ('~ ^/api/_unsaved/', '/api/_unsaved/item'),
+        ('/', '/api/model'),
+    ):
+        block = text.split(f'location {match} {{', 1)[1].split('    }', 1)[0]
+        limit = int(re.search(r'client_max_body_size (\d+);', block)[1])
+        assert limit == request_body_limit(path, maximum)
+    # A full 8 MiB image is base64-expanded, with room for filename and JSON syntax.
+    assert request_body_limit('/api/item/_images', maximum) >= 4 * ((maximum + 2) // 3) + 1024
+    assert request_body_limit('/api/_settings/me/photo', maximum) > 4 * ((2 * 1024 * 1024 + 2) // 3)

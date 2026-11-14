@@ -83,7 +83,8 @@ def test_permissions_and_the_schema(secured):
         assert fields['title']['read_only'] and fields['title']['hidden']
 
 
-def test_concurrent_creates_get_distinct_numbers(secured):
+def test_concurrent_creates_get_distinct_numbers(secured, http_capacity):
+    http_capacity(write=8)
     editor = client(secured, 'editor')
     owner = customer(editor)
     with ThreadPoolExecutor(max_workers=8) as pool:
