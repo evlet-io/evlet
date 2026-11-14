@@ -235,6 +235,8 @@ class Business:
         images.initialize(self.database)
         mentions.initialize(self.database)
         self.settings.initialize()
+        if getattr(self, 'oidc', None) is not None:
+            self.oidc.initialize()
         self.unsaved.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
             with self.database.transaction() as tx:
@@ -592,6 +594,8 @@ class Business:
                     info['docs'] = self.docs_path(scope, None)
                 extra = {'application': info} if info else {}
                 # First-run setup creates an admin, so it asks for config.py's admin minimum.
+                if getattr(self, 'oidc', None) is not None and (provider := self.oidc.options(scope)) is not None:
+                    extra['oidc'] = provider
                 if self.auth.allow_setup and self.auth.setup_needed():
                     extra['password_min'] = self.auth.minimum('admin')
                 # Security(admin_sign_in=True): the sign-in page starts with the Administrator's username.

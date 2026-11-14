@@ -40,6 +40,8 @@ class Instance:
     trusted_proxies: tuple = ()
     # `security = Security(...)` beside `instance` in config.py; read_instance fills it in.
     security: object = field(default=None, init=False, compare=False, repr=False)
+    # Optional standards-based sign-in provider; local accounts remain available by default.
+    oidc: object = field(default=None, init=False, compare=False, repr=False)
     # `ai = AI(...)` beside `instance` in config.py: Eva's hard gate. None keeps Eva off.
     ai: object = field(default=None, init=False, compare=False, repr=False)
 
@@ -146,6 +148,12 @@ def read_instance(path):
     if not isinstance(security, Security):
         raise ValueError('config.py security must be security = Security(password_min=..., admin_two_step=..., two_step=..., admin_sign_in=..., session_hours=..., lockout=...)')
     object.__setattr__(value, 'security', security)
+    oidc = namespace.get('oidc')
+    if oidc is not None:
+        from .auth import OIDC
+        if not isinstance(oidc, OIDC):
+            raise ValueError('config.py oidc must be an OIDC(...) configuration or None')
+    object.__setattr__(value, 'oidc', oidc)
     from .eva import AI
     ai = namespace.get('ai')
     if ai is not None and not isinstance(ai, AI):
@@ -362,7 +370,8 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     routes = resolve_routes(definitions, config, read_routes(path), port=port, roots={package.name: package.source_root for package in pinned})
     secure = routes.primary is not None
     auth = LocalAuth(database, origins=routes.origins(), realms=routes.realms(), secure_cookies=secure, allow_setup=not secure,
-                     trusted_proxies=config.trusted_proxies, security=config.security)
+                     trusted_proxies=config.trusted_proxies, security=config.security,
+                     **({'oidc': config.oidc} if config.oidc is not None else {}))
     rules, schedules, roles = {}, [], {role: role for role in ('admin', 'editor', 'viewer', 'portal')}
     for name, definition in definitions:
         for role, base in definition.roles.items():

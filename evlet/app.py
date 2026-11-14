@@ -127,7 +127,16 @@ class Application:
         elif reports or apis or connectors or slips or prints or workspaces or ai is not None:
             raise ValueError('Reports, slips, print designs, workspaces, APIs, connectors and AI require authentication')
 
+    @staticmethod
+    def _redact_oidc_query(scope):
+        # Uvicorn logs its original scope after the response. Keep callback credentials
+        # out of that query string, including when a tenant router copies the scope.
+        if scope.get('type') == 'http' and scope.get('path') == '/_/oidc/callback':
+            scope.setdefault('evlet.oidc_query', scope.get('query_string', b''))
+            scope['query_string'] = b''
+
     async def __call__(self, scope, receive, send):
+        self._redact_oidc_query(scope)
         # A request is a caller: Meta.api limits what it reaches (evlet/permissions.py); app code it runs is trusted.
         token = CALLER.set(scope.get("type") == "http")
         # Slow-write warnings name the request (evlet/writes.py); the value follows the request into its threads.

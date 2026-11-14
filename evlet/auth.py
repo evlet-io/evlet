@@ -2,7 +2,7 @@
 
 from collections import OrderedDict
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import hashlib
 import hmac
 from http.cookies import SimpleCookie, CookieError
@@ -13,6 +13,7 @@ import re
 import secrets
 import time
 from threading import BoundedSemaphore, Lock
+from types import MappingProxyType
 from urllib.parse import urlsplit
 
 from . import qb
@@ -74,6 +75,53 @@ class Security:
         for name in ('admin_two_step', 'two_step', 'admin_sign_in'):
             if type(getattr(self, name)) is not bool:
                 raise ValueError(f'Security {name} takes True or False')
+
+
+@dataclass(frozen=True)
+class OIDC:
+    """Optional company sign-in, mapping provider subjects to existing local usernames.
+
+    Install evlet[oidc]. Roles and two-step sign-in stay local; no accounts are created or linked by email.
+    Register redirect_uri exactly with the provider, ending in /_/oidc/callback. Local passwords still work.
+    """
+    issuer: str
+    client_id: str
+    redirect_uri: str
+    subjects: object = field(repr=False)
+    client_secret: str | None = field(default=None, repr=False)
+    label: str = 'Company sign-in'
+
+    def __post_init__(self):
+        for name in ('issuer', 'redirect_uri'):
+            value = getattr(self, name)
+            if not isinstance(value, str) or len(value) > 2048 or any(ord(c) < 33 or ord(c) > 126 for c in value):
+                raise ValueError(f'OIDC {name} must be an explicit HTTPS URL')
+            url = urlsplit(value)
+            url.port
+            try:
+                local = url.hostname == 'localhost' or ipaddress.ip_address(url.hostname).is_loopback
+            except ValueError:
+                local = False
+            if (url.scheme != 'https' and not (url.scheme == 'http' and local)) or not url.hostname or url.username is not None or url.password is not None or url.query or url.fragment or '\\' in value:
+                raise ValueError(f'OIDC {name} requires HTTPS (HTTP only on loopback) without credentials, query or fragment')
+            if name == 'redirect_uri' and url.path != '/_/oidc/callback':
+                raise ValueError('OIDC redirect_uri must end in /_/oidc/callback')
+        if not isinstance(self.client_id, str) or not 1 <= len(self.client_id) <= 256 or any(ord(c) < 33 or ord(c) > 126 for c in self.client_id):
+            raise ValueError('OIDC client_id must be 1 to 256 printable characters')
+        if self.client_secret is not None and (not isinstance(self.client_secret, str) or not 1 <= len(self.client_secret) <= 4096):
+            raise ValueError('OIDC client_secret must be a nonempty string or None for a public PKCE client')
+        if not isinstance(self.label, str) or not 1 <= len(self.label) <= 80 or any(ord(c) < 32 for c in self.label):
+            raise ValueError('OIDC label must be 1 to 80 characters')
+        if not hasattr(self.subjects, 'items') or not self.subjects:
+            raise ValueError('OIDC subjects maps provider subject strings to existing local usernames')
+        values = {}
+        for subject, username in self.subjects.items():
+            if not isinstance(subject, str) or not 1 <= len(subject) <= 255 or any(ord(c) < 33 or ord(c) > 126 for c in subject):
+                raise ValueError('OIDC subjects must be nonempty case-sensitive ASCII strings of at most 255 characters')
+            if not isinstance(username, str) or not re.fullmatch(r'[a-z0-9_.-]{3,64}', username):
+                raise ValueError('OIDC subjects must name existing lowercase local usernames')
+            values[subject] = username
+        object.__setattr__(self, 'subjects', MappingProxyType(values))
 
 
 def is_administrator(user):
@@ -285,7 +333,7 @@ ROLES_TABLE = TableDefinition('evlet_roles', (
 
 class LocalAuth:
     def __init__(self, database, *, origins, secure_cookies=True, allow_setup=False, cookie_name='evlet_session', realms=None, trusted_proxies=(),
-                 security=None):
+                 security=None, oidc=None):
         self.trusted_proxies = proxy_networks(trusted_proxies)
         self._proxy_networks = [ipaddress.ip_network(value) for value in self.trusted_proxies]
         # Peers whose forwarded headers were ignored, with when this process last wrote them down.
@@ -311,6 +359,16 @@ class LocalAuth:
                 raise ValueError('Realms map configured origins to portal or public')
             self.realms[authority(origin).encode()] = realm
         self.secure_cookies = secure_cookies
+        if oidc is not None:
+            if not isinstance(oidc, OIDC):
+                raise ValueError('LocalAuth oidc takes OIDC(...)')
+            callback = urlsplit(oidc.redirect_uri)
+            origin = f'{callback.scheme}://{callback.netloc}'
+            if origin not in self.origins or self.realms.get(callback.netloc.encode()) == 'public':
+                raise ValueError('OIDC redirect_uri must use a configured authenticated browser origin')
+            if urlsplit(oidc.issuer).scheme == 'http' and callback.scheme != 'http':
+                raise ValueError('An HTTP loopback OIDC issuer is for HTTP loopback development only')
+        self.oidc = oidc
         self.allow_setup = allow_setup
         # Security settings: the starting values. Controls overrides change them for everyone but admins (Controls.apply).
         if security is None:

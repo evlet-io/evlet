@@ -88,7 +88,10 @@ def nginx(routes, port=8000, instance='<name>', trusted=()):
     return 301 https://$host$request_uri;
 }}''']
     # Exact locations win over the /_/ prefix, so only the public framework routes pass. Evlet reads at most 64 KiB there.
-    public = ''.join(f'    location = {path} {{\n        {_nginx_proxy(port, "128k")}\n    }}\n' for path in PUBLIC_PATHS)
+    public = ''
+    for path in PUBLIC_PATHS:
+        private_callback = '        access_log off;\n' if path == '/_/oidc/callback' else ''
+        public += f'    location = {path} {{\n{private_callback}        {_nginx_proxy(port, "128k")}\n    }}\n'
     # Match the application's encoded-body ceilings. Use the supported image maximum so a later
     # Controls adjustment never requires a proxy reload; Evlet still applies the actual per-image limit.
     image_bytes = IMAGE_LIMITS['files.image_max_kb'][1] * 1024
