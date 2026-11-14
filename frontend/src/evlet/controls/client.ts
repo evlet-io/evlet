@@ -6,7 +6,7 @@ import { ApiClient, ApiError, type ApiResponse, type ClientOptions, type Request
 export const OPS = ['read', 'create', 'update', 'delete'] as const;
 
 export interface PermValue { ops: string[]; read: string[] | null; write: string[] | null; scope: string | null }
-export type Kind = 'perm' | 'setting' | 'field' | 'custom' | 'layout' | 'list' | 'naming';
+export type Kind = 'perm' | 'setting' | 'field' | 'custom' | 'layout' | 'list' | 'naming' | 'state' | 'rule';
 export interface OverrideItem {
   kind: Kind; key: string; file: any; value: any;
   changed_by: string | null; changed_at: number | null; source?: 'app' | 'framework';
@@ -56,6 +56,11 @@ export interface LayoutSection { title: string; fields: Array<{ name: string; wi
 /** A saved form layout: its sections, or its sections with the record tab order and default tab. */
 export interface PanelHidden { sections?: string[]; fields?: string[]; tabs?: string[]; blocks?: string[] }
 export type LayoutValue = LayoutSection[] | { sections: LayoutSection[]; panel?: PanelHidden }
+/** Both legacy section arrays and layouts with side-panel visibility share this shape. */
+export function layoutValue(value: LayoutValue | null | undefined): { sections: LayoutSection[]; panel: PanelHidden | null } {
+  if (Array.isArray(value)) return { sections: value, panel: null };
+  return { sections: value?.sections ?? [], panel: value?.panel ?? null };
+}
 export interface ListValue { columns: string[]; page_size: number; sort: string; /** How the list opens a record (absent in list views saved before it existed). */ open_in?: 'page' | 'panel';
   /** The field whose values are the list's tabs (a State, Select or Link field), or null for none; absent keeps the app's. */ list_tabs?: string | null;
   /** The tab the list opens on: "all", a value, or a linked record's title. */ list_tab?: string }
@@ -154,9 +159,13 @@ export interface ApiKeyRow {
   scope: KeyScope; created_at: number; last_used: number | null;
 }
 export interface CreatedKey { key: ApiKeyRow; token: string }
+export interface UserQuery { limit?: number; q?: string; active?: boolean; role?: string }
+export interface UserPage { items: UserRow[]; total: number; offset: number; limit: number; counts?: { all: number; active: number; inactive: number } }
+export interface KeyQuery { before?: number; limit?: number; q?: string; user?: string }
+export interface KeyPage { items: ApiKeyRow[]; total?: number; next_before?: number | null; models?: Array<{ name: string; label: string }> }
 /** The key routes a keys page needs: Controls (every user) or a person's own. */
 export interface KeysApi {
-  keys(): Promise<{ items: ApiKeyRow[]; models?: Array<{ name: string; label: string }> }>;
+  keys(query?: KeyQuery): Promise<KeyPage>;
   createKey(body: { name: string; scope: KeyScope; user?: string; password?: string; code?: string }): Promise<CreatedKey>;
   revokeKey(id: number): Promise<unknown>;
 }
@@ -221,8 +230,9 @@ export class ControlsClient extends ApiClient implements KeysApi {
   async saveOverrides(changes: Array<{ kind: string; key: string; value: unknown }>) {
     return (await this.request<{ version: number; saved: number }>('POST', '/api/_controls/overrides', { body: { changes } })).data;
   }
-  async users(offset = 0) {
-    return (await this.request<{ items: UserRow[]; total: number; offset: number; limit: number }>('GET', '/api/_controls/users', { query: { offset } })).data;
+  async users(offset = 0, filters: UserQuery = {}) {
+    return (await this.request<UserPage>('GET', '/api/_controls/users', { query: { offset, ...filters,
+      active: filters.active === undefined ? undefined : String(filters.active) } })).data;
   }
   async addUser(body: { username: string; password: string; role: string }) {
     return (await this.request<{ id: number; username: string; role: string }>('POST', '/api/_controls/users', { body })).data;
@@ -288,7 +298,7 @@ export class ControlsClient extends ApiClient implements KeysApi {
     return (await this.request<TestResult>('POST', `/api/_controls/connectors/${encodeURIComponent(id)}/test`, { body })).data;
   }
   async makeDefault(id: string) { return (await this.request<ConnectorRow>('POST', `/api/_controls/connectors/${encodeURIComponent(id)}/default`, { body: {} })).data; }
-  async keys() { return (await this.request<{ items: ApiKeyRow[] }>('GET', '/api/_controls/keys')).data; }
+  async keys(query: KeyQuery = {}) { return (await this.request<KeyPage>('GET', '/api/_controls/keys', { query: { ...query } })).data; }
   async createKey(body: { name: string; scope: KeyScope; user?: string }) { return (await this.request<CreatedKey>('POST', '/api/_controls/keys', { body })).data; }
   async revokeKey(id: number) { return (await this.request<{ items: ApiKeyRow[] }>('DELETE', `/api/_controls/keys/${id}`)).data; }
   async mcp() { return (await this.request<McpOverview>('GET', '/api/_controls/mcp')).data; }
