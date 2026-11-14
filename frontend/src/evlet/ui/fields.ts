@@ -7,6 +7,7 @@
 // says where it came from until the user edits it.
 
 import { html, when, type Child } from '../dom';
+import { CellCache } from '../cache';
 import { cell, derive, effect, onCleanup, untrack, type Cell, type Readable } from '../reactive';
 import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
@@ -106,7 +107,7 @@ export interface LinkSource {
 }
 
 /** What apiLinks may use beyond the list route: a record read already in flight, or its last detail. */
-type LinkApi = ApiClient & { reading?(model: string, id: string): Promise<{ data: RecordData }> | undefined; detail?(model: string, id: string): Readable<RecordData | null> };
+type LinkApi = ApiClient & { reading?(model: string, id: string): Promise<{ data: RecordData }> | undefined; detail?(model: string, id: string): Readable<RecordData | null>; watchDetails?(listener: (model: string, id: string, data: RecordData | null) => void): () => void };
 
 /**
  * A LinkSource over the API: list search with ?q=, and titles read in batches: the titles a page asks
@@ -118,24 +119,35 @@ type LinkApi = ApiClient & { reading?(model: string, id: string): Promise<{ data
 export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
   /** The record page's URL (the app's router); href() answers it only for models this role's schema has. */
   recordHref?: (model: string, id: string) => string } = {}): LinkSource {
-  let titles = new Map<string, Cell<string | null>>();
+  const titles = new CellCache<string | null>(null, 512, 256 * 1024);
   let wanted = new Map<string, Set<string>>();
-  let records = new Map<string, Cell<RecordData | null>>();
+  const records = new CellCache<RecordData | null>(null, 64, 2 * 1024 * 1024);
+  let generation = 0;
   let timer: ReturnType<typeof setTimeout> | null = null;
-  const clear = () => { titles = new Map(); wanted = new Map(); records = new Map(); };
-  if (typeof window !== 'undefined') window.addEventListener('evlet-session-ended', clear);
+  const clear = () => {
+    generation++;
+    if (timer !== null) clearTimeout(timer);
+    timer = null; wanted.clear(); titles.clear(); records.clear();
+  };
   const titleOf = (model: string, data: Record<string, unknown>) => {
     const field = schema.model(model).title_field;
     return String(data[field] ?? `#${data.id}`);
   };
   const remember = (model: string, id: string, title: string) => {
     const key = `${model}:${id}`;
-    if (titles.has(key)) titles.get(key)!.set(title); else titles.set(key, cell<string | null>(title));
+    titles.set(key, title);
   };
   const keep = (model: string, id: string, data: RecordData | null) => {
-    records.get(`${model}:${id}`)?.set(data);
+    if (records.peek(`${model}:${id}`)) records.set(`${model}:${id}`, data);
     remember(model, id, data ? titleOf(model, data) : `#${id}`);
   };
+  const stop = api.watchDetails?.((model, id, data) => {
+    const key = `${model}:${id}`;
+    if (titles.peek(key) || records.peek(key)) keep(model, id, data);
+  });
+  const end = () => { clear(); stop?.(); if (typeof window !== 'undefined') window.removeEventListener('evlet-session-ended', end); };
+  if (typeof window !== 'undefined') window.addEventListener('evlet-session-ended', end);
+  onCleanup(end);
   const want = (model: string, id: string) => {
     if (!wanted.has(model)) wanted.set(model, new Set());
     wanted.get(model)!.add(id);
@@ -144,14 +156,17 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
   };
   const flush = () => {
     timer = null;
-    const batch = wanted;
+    const batch = wanted, ticket = generation;
     wanted = new Map();
+    const accept = (model: string, id: string, data: RecordData | null) => {
+      if (ticket === generation) keep(model, id, api.detail?.(model, id).peek() ?? data);
+    };
     for (const [model, ids] of batch) {
       const rest: string[] = [];
       for (const id of ids) {
         const known = api.detail?.(model, id).peek(), reading = api.reading?.(model, id);
         if (known) keep(model, id, known);
-        else if (reading) reading.then(response => keep(model, id, response.data), () => keep(model, id, null));
+        else if (reading) reading.then(response => accept(model, id, response.data), () => accept(model, id, null));
         else rest.push(id);
       }
       rest.sort();
@@ -160,8 +175,8 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
         // Records this user cannot read are left out of the answer and show their number.
         api.list(model, { filters: { id__in: part }, limit: part.length }).then(page => {
           const found = new Map(page.items.map(item => [item.id as string, item]));
-          for (const id of part) keep(model, id, found.get(id) ?? null);
-        }, () => { for (const id of part) keep(model, id, null); });
+          for (const id of part) accept(model, id, found.get(id) ?? null);
+        }, () => { for (const id of part) accept(model, id, null); });
       }
     }
   };
@@ -172,10 +187,10 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
     },
     title(model, id) {
       const key = `${model}:${id}`;
-      let title = titles.get(key);
+      let title = titles.peek(key);
       if (!title) {
         const known = api.detail?.(model, id).peek();
-        titles.set(key, title = cell<string | null>(known ? titleOf(model, known) : null));
+        title = titles.get(key, known ? titleOf(model, known) : null);
         if (!known) want(model, id);
       }
       return title;
@@ -186,10 +201,10 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
     href: options.recordHref ? (model, id) => schema.has(model) && !schema.model(model).child_only ? options.recordHref!(model, id) : null : undefined,
     record(model, id) {
       const key = `${model}:${id}`;
-      let record = records.get(key);
+      let record = records.peek(key);
       if (!record) {
         const known = api.detail?.(model, id).peek() ?? null;
-        records.set(key, record = cell<RecordData | null>(known));
+        record = records.get(key, known);
         // Read through the list route, so the person's row and field permissions apply.
         if (!known) want(model, id);
       }

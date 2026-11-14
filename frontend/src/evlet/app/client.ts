@@ -3,7 +3,8 @@
 // _actions, _locked, _effects) are at hand next to the record store.
 
 import { ApiClient, type ApiResponse, type ClientOptions, type Page, type RecordData, type RequestOptions, type Session } from '../api';
-import { cell, type Cell } from '../reactive';
+import type { Cell } from '../reactive';
+import { CellCache } from '../cache';
 import { isRecordId } from '../ids';
 import type { NodeChanges } from '../model/unsaved';
 
@@ -21,17 +22,24 @@ export interface MeasureValues { values: Record<string, unknown>; currencies: Re
 export interface ListTabCounts { field: string; total: number; items: Array<{ value: string; count: number }>; more: boolean }
 
 export class AppClient extends ApiClient {
-  private readonly details = new Map<string, Cell<RecordData | null>>();
+  private readonly details = new CellCache<RecordData | null>(null);
+  private generation = 0;
+  private sequence = 0;
+  private readonly latest = new WeakMap<Cell<RecordData | null>, number>();
+  private readonly listeners = new Set<(model: string, id: string, data: RecordData | null) => void>();
   private readonly inflight = new Map<string, Promise<ApiResponse<RecordData>>>();
 
   constructor(options: ClientOptions = {}) { super(options); }
 
   /** The last detail the server sent for a record (from a read, save, move or action). */
   detail(model: string, id: string): Cell<RecordData | null> {
-    const key = `${model}:${id}`;
-    let found = this.details.get(key);
-    if (!found) this.details.set(key, found = cell<RecordData | null>(null, { name: `detail ${key}` }));
-    return found;
+    return this.details.get(`${model}:${id}`);
+  }
+
+  /** Observe accepted record replies without retaining every detail for the entire session. */
+  watchDetails(listener: (model: string, id: string, data: RecordData | null) => void): () => void {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
   }
 
   /** A read of a record that is in flight now (GET /api/{model}/{id}), to share instead of asking again. */
@@ -49,17 +57,23 @@ export class AppClient extends ApiClient {
   }
 
   private async withDetail<T>(method: string, path: string, options: RequestOptions): Promise<ApiResponse<T>> {
+    const generation = this.generation, found = DETAIL.exec(path);
+    const tracked = found ? this.detail(found[1], found[2]) : null;
+    const ticket = ++this.sequence;
+    if (tracked) this.latest.set(tracked, ticket);
     const response = await super.request<T>(method, path, options);
-    const found = DETAIL.exec(path);
     const data = response.data as any;
-    if (found && data && typeof data === 'object') {
+    if (generation === this.generation && found && tracked && this.latest.get(tracked) === ticket && data && typeof data === 'object') {
       const record = 'job' in data && 'record' in data ? data.record : data;
-      if (record && typeof record.id === 'string') this.detail(found[1], record.id).set(record);
+      if (record && typeof record.id === 'string') {
+        this.details.set(`${found[1]}:${record.id}`, record);
+        for (const listener of this.listeners) listener(found[1], record.id, record);
+      }
     }
     return response;
   }
 
-  forget() { this.details.clear(); }
+  forget() { this.generation++; this.inflight.clear(); this.details.clear(); }
 
   /** Finish a two-step sign-in with the ticket from login and a code. */
   async secondStep(ticket: string, code: string): Promise<Session & { backup_codes?: string[] }> {

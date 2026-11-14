@@ -37,4 +37,33 @@ describe('link titles', () => {
     await wait();
     expect(stub.sent).toHaveLength(3);
   });
+
+  it('updates held title and record cells after a rename without another list request', async () => {
+    const stub = server([
+      ['GET', /\/api\/customer\/0000000000001$/, { status: 200, body: { id: id(1), title: 'Before' }, etag: '"1"' }],
+      ['PATCH', /\/api\/customer\/0000000000001$/, { status: 200, body: { id: id(1), title: 'After' }, etag: '"2"' }],
+    ]);
+    const api = new AppClient({ fetch: stub.fetch }), links = apiLinks(api, schema);
+    await api.get('customer', id(1));
+    const title = links.title('customer', id(1)), record = links.record!('customer', id(1));
+    expect(title.peek()).toBe('Before');
+    await api.update('customer', id(1), { title: 'After' }, '"1"');
+    expect(title.peek()).toBe('After');
+    expect(record.peek()?.title).toBe('After');
+    expect(stub.sent).toHaveLength(2);
+    window.dispatchEvent(new Event('evlet-session-ended'));
+    expect(title.peek()).toBeNull(); expect(record.peek()).toBeNull();
+    expect((api as any).listeners.size).toBe(0);
+  });
+
+  it('does not repopulate a cleared link source with a late list response', async () => {
+    let finish!: (reply: any) => void;
+    const stub = server([['GET', /\/api\/customer\?/, () => new Promise(resolve => { finish = resolve; })]]);
+    const api = new AppClient({ fetch: stub.fetch }), links = apiLinks(api, schema);
+    const title = links.title('customer', id(1));
+    await wait(); links.clear!();
+    finish(reply([{ id: id(1), title: 'Previous session' }]));
+    await wait();
+    expect(title.peek()).toBeNull();
+  });
 });

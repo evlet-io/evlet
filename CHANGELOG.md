@@ -8,6 +8,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Browser record and link caches are bounded.** Recent cells use approximate JSON budgets;
+  active views retain their cell identity and receive updates after cache eviction. Renamed
+  links refresh held labels, and disposed link controls release listeners and timers.
 - **Model screens preserve work across asynchronous completion.** Lists discard stale measure
   responses, disposed records and report previews stop loading, and Ctrl/Command+Enter commits
   active text before saving. Narrow create footers keep the form visible.
