@@ -180,10 +180,10 @@ export class AppClient extends ApiClient {
   }
 
   /** A report as a file: its CSV export, or its PDF in a print design. */
-  async reportFile(name: string, kind: 'export.csv' | { print: string }, body: { filters: Record<string, unknown>; sort?: string | null }) {
+  async reportFile(name: string, kind: 'export.csv' | { print: string }, body: { filters: Record<string, unknown>; sort?: string | null }, signal?: AbortSignal) {
     const path = `/api/_reports/${reportName(name)}/${kind === 'export.csv' ? kind : `prints/${encodeURIComponent(kind.print)}`}`;
     // Print designs take the filters only; the export takes the sort too.
-    return (await this.request<Blob>('POST', path, { body: kind === 'export.csv' ? body : { filters: body.filters }, file: true })).data;
+    return (await this.request<Blob>('POST', path, { body: kind === 'export.csv' ? body : { filters: body.filters }, file: true, signal })).data;
   }
 
   async removeAttachment(model: string, id: string, file: number) {
