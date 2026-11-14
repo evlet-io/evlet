@@ -14,6 +14,7 @@ import { applyTheme, type Theme } from '../ui/theme';
 import { humanize, InputError, kindOf } from '../ui/kinds';
 import type { UnsavedInfo } from './client';
 import './settings.css';
+import { PwaSettings } from './pwa';
 
 export interface Me {
   user: User;
@@ -423,6 +424,7 @@ function AppearancePage(ctx: SettingsContext): Node {
       row('Keep unsaved changes when I leave a record', 'Your edits wait for you to restore or discard them. Only Save changes the record. Off asks before discarding them, and forgets what was kept.',
         Switch({ on: () => prefs.get().keep_unsaved !== false, ariaLabel: 'Keep unsaved changes', onChange: next => set('keep_unsaved', next) })),
     ])}
+    ${PwaSettings()}
     ${section('Language and region', '', [
       row('Language', 'Arabic switches the layout to right-to-left.', select(prefs.peek().lang, [['en', 'English'], ['ar', 'العربية (Arabic)']], value => set('lang', value), 'Language')),
       row('Time zone', '', select(prefs.peek().tz, ZONES.some(([zone]) => zone === prefs.peek().tz) ? ZONES : [...ZONES, [prefs.peek().tz, prefs.peek().tz]], value => set('tz', value), 'Time zone')),
