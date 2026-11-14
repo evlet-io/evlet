@@ -1043,22 +1043,23 @@ function actionInputs(action: ActionMeta): FieldSchema[] {
 /** Small dialog that collects an action's (or a move's) inputs, checks them in place and runs it. `run`
  * answers null when done, a message, or field errors by input name. */
 export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (values: Record<string, unknown>) => Promise<string | Record<string, string> | null>) {
-  const fields = inputs.map(meta => localField(meta as any, meta.default ?? (meta.type === 'boolean' ? false : null)));
+  const fields = inputs.map(meta => localField(meta, meta.default ?? (meta.type === 'boolean' ? false : null), { required: meta.required && !meta.read_only }));
   const controls = fields.map(field => fieldFor({ field, full: true }));
   const note = cell<string>('');
   let busy = false;
   const submit = async (close: () => void) => {
-    // A value typed but not yet committed (the field was not left) counts: commit every text input first.
-    for (const input of controls.flatMap(element => [...element.querySelectorAll('input, textarea')])) input.dispatchEvent(new Event('change'));
-    if (fields.some(field => field.error.peek())) return;
+    // Commit editable inputs only: server-owned values are displayed but never validated or sent here.
+    const writable = fields.filter(field => field.editable.peek());
+    for (const input of controls.filter((_, index) => fields[index].editable.peek()).flatMap(element => [...element.querySelectorAll('input, textarea')])) input.dispatchEvent(new Event('change'));
+    if (writable.some(field => field.error.peek())) return;
     let valid = true;
-    for (const field of fields) {
+    for (const field of writable) {
       const value = field.value.peek();
       if (field.meta.required && (value === null || value === undefined || value === '')) { field.error.set(`${field.meta.label} is required`); valid = false; }
     }
     if (!valid || busy) return;
     busy = true;
-    const values = Object.fromEntries(fields.filter(field => field.value.peek() !== null && field.value.peek() !== '').map(field => [field.meta.name, field.value.peek()]));
+    const values = Object.fromEntries(writable.filter(field => field.value.peek() !== null && field.value.peek() !== '').map(field => [field.meta.name, field.value.peek()]));
     const problem = await run(values);
     busy = false;
     if (typeof problem === 'string') { note.set(problem); return; }

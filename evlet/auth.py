@@ -831,7 +831,7 @@ class LocalAuth:
             total = connection.run(qb.select('evlet_users', qb.count())).value()
             return {'items': items, 'total': total, 'offset': offset, 'limit': 100}
 
-    def update_user(self, user_id, body, check=None):
+    def update_user(self, user_id, body, check=None, *, revoke_keys=False):
         """check(connection, row, changes) runs first in the transaction; what it returns runs after the writes."""
         if not body or set(body) - {'role', 'active', 'password'}:
             raise ValidationError({'_form': 'Use role, active, or password'})
@@ -858,7 +858,7 @@ class LocalAuth:
                     raise AccessError(409, LAST_ADMIN)
             for key, value in changes.items():
                 tx.connection.run(qb.update('evlet_users', **{key: value}).where(id=user_id))
-            self.end_sessions(tx.connection, user_id, keys=changes.get('active') is False)
+            self.end_sessions(tx.connection, user_id, keys=revoke_keys or changes.get('active') is False)
             if after is not None:
                 after()
 

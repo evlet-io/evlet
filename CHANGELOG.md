@@ -4,6 +4,19 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **Combined Controls changes honor API-key revocation.** A role, password or active-status
+  change sent with `"sessions": "end", "revoke_keys": true` revokes keys in the same
+  transaction. Keys remain kept by default.
+- **Readonly settings and action inputs are enforced on the server.** App settings,
+  personal preferences and typed action inputs declared `read_only=True` reject caller
+  values, including unchanged values and null resets. Browser forms omit those values;
+  omitted settings retain their stored values/defaults, and action inputs use server
+  defaults. Trusted Python action calls can still supply server-owned inputs.
+
 ## 0.4.6 (13-11-2026)
 
 ### Upgrading to 0.4.6

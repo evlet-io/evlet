@@ -8,11 +8,13 @@ import time
 import pytest
 
 from evlet import AppDefinition, AppSettings, Database, Decimal, Integer, LocalAuth, Model, MultiSelect, Registry, Text, UserPreferences
+from evlet import qb
 from evlet.auth import TWO_STEP_FIRST, User
 from evlet.routing import ControlsAccess
 from evlet.settings import totp
 from examples.playground.app import build_app, playground_routes
 from examples.playground.migrate import configured_database
+from examples.playground.models import Project
 from test_business import PASSWORD, client, hashed, http, secured  # noqa: F401
 
 PNG = b'\x89PNG\r\n\x1a\n' + b'\0' * 64
@@ -126,6 +128,67 @@ def test_app_settings_respect_editors_audit_and_the_config_version(secured):
     assert app.business.settings.preferences(User(1, 'admin', 'admin')).get('projects', 'group') == 'status'
     labels = viewer('GET', '/api/_settings/me')[1]['apps'][0]['labels']
     assert labels[:2] == ['Working days', 'Hours per day'] and 'Group my board by' in labels
+
+
+@pytest.mark.parametrize('scope,role', [('app', 'admin'), ('app', 'editor'),
+                                        ('me/app', 'admin'), ('me/app', 'editor'), ('me/app', 'viewer')])
+@pytest.mark.parametrize('stored', [False, True], ids=['declared-default', 'server-stored'])
+def test_readonly_app_settings_and_preferences_reject_changes_and_resets_atomically(secured, scope, role, stored):
+    class Shared(AppSettings):
+        editors = ('editor',)
+        managed = Text(default='declared', read_only=True)
+        editable = Text(default='original')
+
+    class Personal(UserPreferences):
+        managed = Text(default='declared', read_only=True)
+        editable = Text(default='original')
+
+    settings = secured.business.settings
+    settings.register('locked', Shared, Personal, (Project,))
+    c = client(secured, role)
+    user_id = next(user['id'] for user in secured.business.auth.users() if user['username'] == role)
+    shared = scope == 'app'
+    if stored:
+        # Values set by trusted server code must survive rejected HTTP changes, including resets.
+        with secured.database.transaction() as tx:
+            tx.connection.run(qb.insert('evlet_app_settings', app='locked', key='managed', value=json.dumps('server-owned')))
+            tx.connection.run(qb.insert('evlet_user_prefs', user_id=user_id, scope='locked', key='managed', value=json.dumps('server-owned')))
+            secured.business.controls.publish(tx)
+        secured.business.controls.refresh()
+    expected = 'server-owned' if stored else 'declared'
+
+    def fields():
+        state = c('GET', '/api/_settings/app/locked')[1]
+        items = [field for section in state['sections'] for field in section['fields']] if shared else state['preferences']
+        return {field['name']: field for field in items}
+
+    def save(values):
+        return c('PATCH', f'/api/_settings/{scope}/locked', {'values': values} if shared else values)
+
+    def snapshot():
+        with secured.database._connection() as db:
+            return ([tuple(row) for row in db.run(qb.select('evlet_app_settings').where(app='locked').order_by('key'))],
+                    [tuple(row) for row in db.run(qb.select('evlet_user_prefs').where(scope='locked').order_by('user_id', 'key'))],
+                    db.run(qb.select('evlet_audit', qb.count())).value(), secured.business.controls.version)
+
+    assert fields()['managed']['read_only'] is True
+    before = snapshot()
+    for attempted in ('tampered', None, 'declared', 'server-owned'):
+        # The writable field comes first: a later forbidden field must refuse the whole request.
+        status, payload, _ = save({'editable': 'unsaved', 'managed': attempted})
+        assert status == 422 and payload['fields'] == {'managed': 'This setting is read only.'}
+        assert snapshot() == before
+        current = fields()
+        assert current['managed']['value'] == expected and current['editable']['value'] == 'original'
+
+    # Omitting the managed field leaves it alone; normal writes and resets still work.
+    assert save({'editable': 'changed'})[0] == 200
+    assert fields()['editable']['value'] == 'changed'
+    assert save({'editable': None})[0] == 200
+    current = fields()
+    assert current['editable']['value'] == 'original' and current['managed']['value'] == expected
+    values = settings.values if shared else settings.preferences(User(user_id, role, role))
+    assert values.get('locked', 'managed') == expected
 
 
 def test_app_settings_are_visible_only_to_people_who_read_one_of_its_models(secured):
