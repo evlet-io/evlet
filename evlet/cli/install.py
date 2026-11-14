@@ -4,32 +4,115 @@ from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
+import shutil
 import tempfile
 
 from .. import qb
 from ..instances import (INSTALLED_APPS, read_instance, require_consistent, database_state,
                          build_instance, register_schedules)
 from ..packages import resolve_packages, portable_lock_entry
-from ..writes import files, release_idle, require_space, settle, snapshot_set
+from ..writes import files, file_digest, release_idle, require_space, settle, snapshot_set
 from .project import child, instance_guard, atomic_json, json_text, sync_directory
 
 
-def recover(path):
+def recover(path, *, restoring=False):
     journal = path / '.install-journal.json'
     if not journal.exists():
         return
     value = json.loads(journal.read_text())
+    if isinstance(value, dict) and value.get('version') == 2:
+        _finish_publish(path, value)
+        return
     if not isinstance(value, dict) or set(value) != {'before', 'after'}:
         raise ValueError('Invalid installation recovery record; manual recovery is required')
     actual = database_state(path / 'data/database.sqlite3')
-    if actual == value['after']:
-        atomic_json(path / 'apps.lock', value['after'])
-    elif actual == value['before']:
-        atomic_json(path / 'apps.lock', value['before'])
-    else:
+    if actual not in (value['before'], value['after']):
         raise ValueError('Interrupted installation cannot be recovered automatically; database does not match either recorded state')
-    journal.unlink()
+    # Old journals never recorded the side generation. Even a new main can survive a power failure
+    # while a preceding side rename does not, until the directory fsync has completed.
+    if not restoring:
+        raise ValueError('Interrupted legacy installation may have mixed database files. Run evlet restore with a matching backup')
+
+
+def publish_set(path, stage, after):
+    """Publish a database generation with durable, replayable intent. Keep the complete staged generation
+    until every live file and apps.lock are durable, so any interrupted rename can be safely retried."""
+    data = path / 'data'
+    directory = Path(tempfile.mkdtemp(prefix='.publish-', dir=data))
+    journal = path / '.install-journal.json'
+    intent, complete = False, False
+    try:
+        members = []
+        for source, target in zip(files(stage), files(directory / 'database.sqlite3')):
+            if source.exists():
+                settle(source)
+                os.replace(source, target)
+                target.chmod(0o600)
+                with target.open('rb') as stream:
+                    os.fsync(stream.fileno())
+                members.append({'name': target.name, 'sha256': file_digest(target)})
+        sync_directory(directory)
+        sync_directory(data)
+        value = {'version': 2, 'directory': directory.name, 'members': members, 'after': after}
+        atomic_json(journal, value)
+        intent = True
+        _finish_publish(path, value)
+        complete = True
+    finally:
+        # Once intent is durable, recovery owns the staged files, even if publishing fails.
+        try:
+            retained = not complete and (intent or journal.exists() and json.loads(journal.read_text()).get('directory') == directory.name)
+        except (OSError, ValueError):
+            retained = True  # Leave evidence available when the journal itself cannot be read.
+        if not retained:
+            shutil.rmtree(directory, ignore_errors=True)
+
+
+def _finish_publish(path, value):
+    data = path / 'data'
+    directory = data / str(value.get('directory', ''))
+    expected = {item.name for item in files(directory / 'database.sqlite3')}
+    members = value.get('members')
+    if (set(value) != {'version', 'directory', 'members', 'after'} or
+            directory.parent != data or not directory.name.startswith('.publish-') or directory.is_symlink() or
+            not isinstance(members, list) or not members or
+            any(not isinstance(item, dict) or set(item) != {'name', 'sha256'} or item['name'] not in expected for item in members) or
+            len({item['name'] for item in members}) != len(members) or
+            'database.sqlite3' not in {item['name'] for item in members}):
+        raise ValueError('Invalid database recovery record; manual recovery is required')
+    for item in members:
+        source = directory / item['name']
+        if source.is_symlink() or not source.is_file() or file_digest(source) != item['sha256']:
+            raise ValueError('Incomplete staged database generation; retain the journal and restore its recovery files')
+    if database_state(directory / 'database.sqlite3') != value['after']:
+        raise ValueError('Staged database state differs from the recovery record')
+    release_idle()
+    live = files(data / 'database.sqlite3')
+    for target in live:
+        if target.exists():
+            settle(target)
+    names = {item['name'] for item in members}
+    for target in (*live[1:], live[0]):
+        if target.name in names:
+            # Do not consume the retained copy: another crash, including during recovery itself, is replayable.
+            fd, temporary = tempfile.mkstemp(prefix='.publish-file-', dir=data)
+            try:
+                with os.fdopen(fd, 'wb') as output, (directory / target.name).open('rb') as source:
+                    shutil.copyfileobj(source, output)
+                    output.flush()
+                    os.fsync(output.fileno())
+                os.replace(temporary, target)
+            finally:
+                Path(temporary).unlink(missing_ok=True)
+        else:
+            for item in (target, Path(str(target) + '-wal'), Path(str(target) + '-shm')):
+                item.unlink(missing_ok=True)
+    sync_directory(data)
+    atomic_json(path / 'apps.lock', value['after'])
+    (path / '.install-journal.json').unlink()
     sync_directory(path)
+    shutil.rmtree(directory)
+    sync_directory(data)
 
 
 def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=None, recompute_posted=False, allow_destructive=False,
@@ -108,17 +191,7 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
             for current in files(database):
                 if current.exists():
                     settle(current)
-            atomic_json(path / '.install-journal.json', {'before': before, 'after': after})
-            # Side files first: until the main file is replaced it still holds any table that moved, and SQL
-            # finds it there, so a crash in between leaves the old instance working and the next migrate moves again.
-            for staged, current in list(zip(files(stage), files(database)))[1:]:
-                if staged.exists():
-                    os.replace(staged, current)
-            os.replace(stage, database)
-            sync_directory(data)
-            atomic_json(path / 'apps.lock', after)
-            (path / '.install-journal.json').unlink()
-            sync_directory(path)
+            publish_set(path, stage, after)
         return {'apps': [package.name for package in packages], 'migrations': applied, 'framework': framework, 'backup': str(backup) if backup else None,
                 'posted': getattr(applied, 'posted', 0)}
 

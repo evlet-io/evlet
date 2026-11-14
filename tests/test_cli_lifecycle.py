@@ -557,14 +557,16 @@ def test_local_lock_is_portable_and_moving_project_keeps_data(project, tmp_path,
 
 
 def test_legacy_absolute_local_lock_remains_readable(project, monkeypatch):
+    from contextlib import closing
     from evlet.cli.project import atomic_json, json_text
     install(project, 'acme', app_name='notes', trust=True)
     path = project/'instances/acme'
     old = read_lock(path)
     old['apps']['notes']['source'] = '/previous/machine/project/apps/notes'
     atomic_json(path/'apps.lock', old)
-    with sqlite3.connect(path/'data/database.sqlite3') as connection:
+    with closing(sqlite3.connect(path/'data/database.sqlite3')) as connection:
         connection.execute('UPDATE evlet_installed_apps SET manifest=? WHERE id=1', (json_text(old),))
+        connection.commit()
     assert runtime(project).registry.models['notesitem']
     install(project, 'acme', confirm=lambda message: pytest.fail('Relocation alone must not request trust'))
     assert read_lock(path)['apps']['notes']['source'] == 'apps/notes'
