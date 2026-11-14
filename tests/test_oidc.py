@@ -171,11 +171,13 @@ def test_company_signin_uses_pkce_and_existing_account_and_local_password(config
 
 @pytest.mark.parametrize('claims', [
     {'iss': 'https://attacker.invalid'}, {'aud': 'other-client'}, {'nonce': 'wrong'}, {'exp': 1},
-    {'iat': int(time.time()) + 600}, {'sub': ''}, {'sub': 'unknown', 'email': 'editor', 'role': 'admin'},
+    pytest.param(lambda: {'iat': int(time.time()) + 600}, id='future-issued-at'),
+    {'sub': ''}, {'sub': 'unknown', 'email': 'editor', 'role': 'admin'},
     {'aud': ['evlet-test', 'other']}, {'azp': 'other-client'},
 ])
 def test_untrusted_claims_never_issue_session(configured, provider, claims):
-    provider.claims = claims
+    # Collection can precede this test by many minutes in the complete suite.
+    provider.claims = claims() if callable(claims) else claims
     result, path, cookie = callback(configured)
     assert result[0] == 303 and result[2][b'location'] == b'/login?oidc=error'
     assert http(configured, 'GET', path, cookie=cookie)[2][b'location'] == b'/login?oidc=error'
