@@ -176,6 +176,9 @@ Controls owns them: see [Permissions](#overrides) below. The password minimum an
 for people other than admins are another: they go either way ([Security](#security-rules)). Saving sends every change at once
 (`POST /api/_controls/overrides`, `{"changes": [{kind, key, value}]}`, `null` resets); one
 invalid change saves none, and the reply names each invalid item as `changes.<index>`.
+Edits made while a save is in flight remain in the change bar for the next save, including
+an edit back to the earlier value. Older configuration responses cannot replace newer saved state.
+Review and Overrides describe both section-array layouts and layouts with side-panel visibility.
 A value equal to the file value is removed instead of stored. A stored override that no
 longer validates (after an app update, say) fails closed: a permission override becomes no
 access for that role and model, a setting takes its strictest value, and a policy that can't
@@ -527,6 +530,9 @@ expired and extra entries when the app loads.
 Every saved override with the app file value next to this instance's value, who changed it and
 when. Reset goes through the change bar like any other change. Instance fields are listed too;
 they are removed on the Models page.
+An existing override whose model, field, role, naming definition or state target was removed
+can still be reset. The reset is audited and publishes a configuration change; new values for
+missing targets remain invalid, and admin-only settings still require an admin.
 
 **Export as code** (`GET /api/_controls/overrides/export`, or `?kind=&key=` for one) returns
 `[{file, code}]` grouped by the file each change belongs in:
@@ -538,6 +544,11 @@ they are removed on the Models page.
 | `setting` | `instances/<name>/routes.py` or `config.py`, or the app's `hooks.py` | `ControlsAccess(allow_ips=...)` for `security.controls_ips`; `security = Security(...)` for session length, lockout, minimum password length and `two_step`, which config.py reads (in config.py `password_min` applies to admins too, as the block's comment says) (the block keeps what config.py sets today with the overrides on top; restart, then reset the overrides); `two_step_roles = (...)` for `security.two_step_roles`, `controls_two_step = False` for `security.controls_two_step`, `assistants = {'mcp.rate': 30, ...}` for `mcp.*` and `mail = {'mail.personal': True}`, with their full keys. config.py does not read those four yet, as each block's comment says. A paused schedule is a comment beside the app's schedules |
 
 Paste the code, deploy, then reset the overrides. Overrides that no longer apply are left out.
+For `security.controls_ips`, exported `ControlsAccess.allow_ips` is the intersection of the
+route file and the saved restriction, with `require_two_step` preserved. If two nonempty
+allowlists have no overlap, export refuses with instructions to reconcile them manually:
+an empty exported allowlist would mean unrestricted access, not deny-all. Keep both current
+restrictions until that reconciliation is complete.
 
 **MCP & AI** (kind `setting`) is described under [MCP and AI](#mcp-and-ai).
 
@@ -898,6 +909,20 @@ whole key are stored in `evlet_api_keys`.
 
 The personal page is `/settings/keys` in the Settings shell (the `MyKeysPage` component,
 `frontend/src/evlet/settings/keys.ts`), for desk users.
+
+The Controls inventory uses `GET /api/_controls/keys?limit=100&before=<id>&q=<search>&user=<username>`.
+`q` searches names, prefixes and usernames; `user` is an optional exact username. Each response
+contains `items`, the matching `total`, `limit` and `next_before` (null on the last page).
+Pages run from newest to oldest by key ID, so newer keys do not shift the continuation.
+The screen offers older/newer pages, search and an owner filter. Personal lists retain the
+20-key account limit. Creating a key uses a separately searched, paged active-user picker.
+
+Controls Users uses `GET /api/_controls/users?offset=0&limit=100&q=<username>&active=true&role=viewer`.
+All filters are optional and apply before pagination. `total` counts matching accounts;
+`counts.all`, `counts.active` and `counts.inactive` apply the search and role filters before
+the active filter, for the tabs. Both inventory endpoints accept limits from 1 to 200 and
+searches up to 200 characters. The Users screen searches on the server and shows one bounded
+page, so later accounts remain reachable without loading the entire instance.
 
 ## MCP and AI
 

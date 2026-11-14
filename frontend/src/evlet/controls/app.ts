@@ -117,7 +117,7 @@ export function Controls(options: { router: ControlsRouter; api?: ControlsClient
   const reload = async () => {
     const [next, overrides] = await Promise.all([api.state(), api.overrides()]);
     if (!alive) return;
-    drafts.load(overrides.items);
+    drafts.load(overrides.items, overrides.version);
     state.set(next);
   };
   const ctx: ControlsContext = { api, router, state, drafts, reload, saveDrafts: () => saveDrafts(ctx) };

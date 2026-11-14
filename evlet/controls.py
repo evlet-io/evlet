@@ -771,6 +771,11 @@ class Controls:
         changes = body.get('changes') if isinstance(body, dict) and set(body) == {'changes'} else None
         if not isinstance(changes, list) or not changes or len(changes) > 500:
             raise ValidationError({'changes': 'Send between 1 and 500 changes.'})
+        reset_keys = [change['key'] for change in changes if isinstance(change, dict) and change.get('value') is None
+                      and isinstance(change.get('key'), str)]
+        with self.database._connection() as connection:
+            resets = {(row['kind'], row['key']) for row in connection.run(
+                qb.select('evlet_overrides', 'kind', 'key').where(qb.in_('key', reset_keys)))} if reset_keys else set()
         errors, checked, seen = {}, [], set()
         for index, change in enumerate(changes):
             try:
@@ -779,10 +784,23 @@ class Controls:
                 if (change['kind'], change['key']) in seen:
                     raise ValueError('Change each item once.')
                 seen.add((change['kind'], change['key']))
-                checked.append((change['kind'], change['key'], self.check_change(change['kind'], change['key'], change['value'])))
+                kind, key, value = change['kind'], change['key'], change['value']
+                # An app upgrade may remove a target. Its stored override still needs the normal audited reset.
+                resetting = value is None and kind in KINDS and kind != 'custom' and (kind, key) in resets
+                checked.append((kind, key, None if resetting else self.check_change(kind, key, value)))
             except (ValueError, TypeError) as exc:
                 errors[f'changes.{index}'] = str(exc) if isinstance(exc, ValueError) else 'Send kind, key and value.'
-        rules = [change for change in checked if change[0] in ('state', 'rule')]
+        rules = []
+        for change in checked:
+            if change[0] not in ('state', 'rule'):
+                continue
+            if change[2] is None and change[:2] in resets:
+                from .statemanager import override_target
+                try:
+                    override_target(self.registry, change[1])
+                except ValueError:
+                    continue  # No surviving model has a rule set to check.
+            rules.append(change)
         if rules and not errors:
             from .statemanager import check_overrides
             try:
@@ -917,17 +935,20 @@ class Controls:
 
     # ---------- users and roles ----------
 
-    def users(self, offset):
-        page = self.business.auth.user_page(offset)
+    def users(self, offset, **filters):
+        page = self.business.auth.user_page(offset, **filters)
+        ids = [item['id'] for item in page['items']]
+        if not ids:
+            return page
         with self.database._connection() as connection:
             sessions = {row[0]: row[1] for row in connection.run(
-                qb.select('evlet_sessions', 'user_id', qb.count()).where(qb.gt('expires', int(time.time()))).group_by('user_id'))}
+                qb.select('evlet_sessions', 'user_id', qb.count()).where(qb.in_('user_id', ids), qb.gt('expires', int(time.time()))).group_by('user_id'))}
             two_step = {row['user_id']: {'since': row['two_step_since'], 'agent': row['two_step_agent']} for row in connection.run(
-                qb.select('evlet_user_profile', 'user_id', 'two_step_since', 'two_step_agent').where(qb.not_null('two_step_secret')))}
-            assistants = {row[0]: row[1] for row in connection.run(qb.select('evlet_mcp_clients', 'user_id', qb.count()).where(revoked_at=None).group_by('user_id'))}
-            keys = {row[0]: row[1] for row in connection.run(qb.select('evlet_api_keys', 'user_id', qb.count()).where(revoked_at=None).group_by('user_id'))}
-            ai = {row['id']: (bool(row['allow_eva']), bool(row['allow_mcp'])) for row in connection.run(qb.select('evlet_users', 'id', 'allow_eva', 'allow_mcp'))}
-            unset = {row[0] for row in connection.run(qb.select('evlet_users', 'id').where(password=''))}
+                qb.select('evlet_user_profile', 'user_id', 'two_step_since', 'two_step_agent').where(qb.in_('user_id', ids), qb.not_null('two_step_secret')))}
+            assistants = {row[0]: row[1] for row in connection.run(qb.select('evlet_mcp_clients', 'user_id', qb.count()).where(qb.in_('user_id', ids), revoked_at=None).group_by('user_id'))}
+            keys = {row[0]: row[1] for row in connection.run(qb.select('evlet_api_keys', 'user_id', qb.count()).where(qb.in_('user_id', ids), revoked_at=None).group_by('user_id'))}
+            ai = {row['id']: (bool(row['allow_eva']), bool(row['allow_mcp'])) for row in connection.run(qb.select('evlet_users', 'id', 'allow_eva', 'allow_mcp').where(qb.in_('id', ids)))}
+            unset = {row[0] for row in connection.run(qb.select('evlet_users', 'id').where(qb.in_('id', ids), password=''))}
         for item in page['items']:
             # The built-in Administrator: its role and status cannot change (evlet/auth.py).
             item['builtin'] = is_administrator(item)
@@ -1398,14 +1419,15 @@ class Controls:
                 return 200, self.save(user, body), []
         if path == '/users':
             if method == 'GET':
+                query = params(scope, 'offset', 'limit', 'q', 'active', 'role')
                 try:
-                    query = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True, max_num_fields=1)
-                    if set(query) - {'offset'}:
-                        raise ValueError()
-                    offset = int(query.get('offset', ['0'])[0])
-                except (ValueError, UnicodeError):
-                    raise ValidationError({'offset': 'Use a valid offset'})
-                return 200, self.users(offset), []
+                    offset, limit = int(query.get('offset', '0')), int(query.get('limit', '100'))
+                except ValueError:
+                    raise ValidationError({'_query': 'Use integer offset and limit'}) from None
+                if query.get('active') not in (None, 'true', 'false'):
+                    raise ValidationError({'active': 'Use true or false'})
+                return 200, self.users(offset, limit=limit, q=query.get('q', ''), role=query.get('role') or None,
+                                       active=None if 'active' not in query else query['active'] == 'true'), []
             if method == 'POST':
                 return 201, self.add_user(user, body).public(), []
         match = re.fullmatch(r'/users/([1-9][0-9]{0,18})', path)
@@ -1488,7 +1510,13 @@ class Controls:
             return 200, self.business.assistants.overview(scope), []
         if path == '/keys':
             if method == 'GET':
-                return 200, {'items': self.business.auth.keys()}, []
+                query = params(scope, 'before', 'limit', 'q', 'user')
+                try:
+                    before = int(query['before']) if 'before' in query else None
+                    limit = int(query.get('limit', '100'))
+                except ValueError:
+                    raise ValidationError({'_query': 'Use integer before and limit'}) from None
+                return 200, self.business.auth.key_page(before=before, limit=limit, q=query.get('q', ''), user=query.get('user') or None), []
             if method == 'POST':
                 return 201, self.create_key(user, body), []
         match = re.fullmatch(r'/keys/([1-9][0-9]{0,18})', path)

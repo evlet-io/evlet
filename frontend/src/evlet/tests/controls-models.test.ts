@@ -256,6 +256,11 @@ describe('the side panel toggles', () => {
     key(grip(host, '[data-drag-id="notes"]'), 'ArrowDown');
     key(grip(host, '[data-drag-id="notes"]'), ' ');
     await until(() => expect(host.querySelectorAll('.ctl-lsec')[1].querySelector('[data-field="notes"]')).not.toBeNull());
+    click(byText(bar()!, 'button', 'Review'));
+    await until(() => expect(text(document.querySelector('.modal'))).toContain('Hidden panel blocks: summary'));
+    for (const part of ['Hidden panel fields: value', 'Hidden panel tabs: activity', 'Hidden panel sections: Internal'])
+      expect(text(document.querySelector('.modal'))).toContain(part);
+    click(byText(document.body, '.modal button', 'Cancel'));
     click(byText(bar()!, 'button', 'Save changes'));
     await until(() => expect(bar()).toBeNull());
     const posted = sent.filter(entry => entry.method === 'POST')[0].body.changes[0].value;
