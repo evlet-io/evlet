@@ -1055,6 +1055,10 @@ def recreate(context, model, data, current):
                 stamp_names, stamp_values = created(context._tx.actor)
                 context._tx.connection.run(qb.insert(registry.name_for(child.model), id=int(RecordId(row['id'])),
                                                      **dict(zip([*names, *stamp_names], [*stored, *stamp_values]))))
+                inserted = context._tx.get(child.model, RecordId(row['id']))
+                inserted._rows = {}
+                saved[row['id']] = inserted
+            recreate(context, child.model, row, saved[row['id']])
 
 
 def restore(context, model, record_id, number, remark):
