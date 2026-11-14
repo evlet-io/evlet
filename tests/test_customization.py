@@ -639,7 +639,10 @@ def test_two_applications_sharing_classes_keep_their_own_instance_fields(tmp_pat
 
 
 @pytest.mark.parametrize('phase', ['add', 'remove'])
-def test_requests_during_instance_field_changes_never_fail(app, phase):
+def test_requests_during_instance_field_changes_never_fail(app, phase, http_capacity):
+    # Four request workers plus the administrator's migration must all be admitted;
+    # this test detects migration failures, while overload refusal has its own tests.
+    http_capacity(write=5)
     admin, editor = client(app), client(app, 'editor')
     record = admin('POST', '/api/lead', {'title': 'seed'})[1]
     if phase == 'remove':
