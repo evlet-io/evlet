@@ -4,14 +4,16 @@ include docs/*.md
 include examples/playground/*.py
 recursive-include examples/playground/portal *.html *.css *.js
 recursive-include examples/playground/site *.html *.css *.txt *.xml
-include frontend/package.json frontend/package-lock.json frontend/index.html frontend/vite.config.js
+include frontend/package.json frontend/package-lock.json frontend/index.html frontend/evlet.html frontend/vite.config.js
 include frontend/.node-version frontend/.npmrc frontend/tsconfig.json
 recursive-include frontend/src *.ts *.css *.json
 prune frontend/src/evlet/tests
+# The development Library imports this fixture; typechecking a source release needs it too.
+include frontend/src/evlet/tests/server.ts frontend/src/evlet/tests/api-fixture.json
 recursive-include frontend/scripts *.mjs
-recursive-include frontend/public *.svg
+recursive-include frontend/public *.svg *.html *.js *.webmanifest
 recursive-include frontend/fonts *.woff2 *.txt
-recursive-include evlet/ui/static *.html *.js *.css *.svg *.woff2 *-OFL.txt
+recursive-include evlet/ui/static *.html *.js *.css *.svg *.webmanifest *.woff2 *-OFL.txt
 recursive-include evlet *.pyi py.typed
 recursive-include evlet/resources *.tpl *.woff2 *-OFL.txt *.lock
 prune tests

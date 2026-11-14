@@ -1,7 +1,10 @@
 """Run with a clean wheel-installed interpreter and -I to exclude checkout imports."""
 
 from pathlib import Path
+from importlib import metadata, util
+import argparse
 import tempfile
+import tarfile
 import io
 import json
 import subprocess
@@ -11,10 +14,54 @@ import evlet
 from evlet import AddField, Application, Boolean, Currency, Database, LocalAuth, Migration, Model, Registry, Text, User
 
 
+def check_pwa_package(sdist):
+    """Check installed responses and both rebuildable sources and built assets in the release archive."""
+    from evlet.ui.serving import static_response
+    assets = Path(evlet.__file__).parent / 'ui/static/assets'
+    names = ('evlet.webmanifest', 'evlet-sw.js', 'evlet-offline.html')
+    for name in names:
+        response = static_response('/assets/' + name, {'private_value': 'must-not-cache', 'theme': 'dark'}, theme='dark')
+        assert response is not None, f'Installed wheel lacks PWA asset {name}'
+        status, content, headers = response
+        assert status == 200 and content.content == (assets / name).read_bytes()
+        if name.endswith('.webmanifest'):
+            assert dict(headers)[b'content-type'] == b'application/manifest+json'
+            manifest = json.loads(content.content)
+            assert manifest['start_url'] == '/app' and manifest['scope'] == '/'
+            assert all(static_response(icon['src']) is not None for icon in manifest['icons'])
+        elif name.endswith('.js'):
+            assert dict(headers)[b'service-worker-allowed'] == b'/'
+            assert dict(headers)[b'cache-control'] == b'no-cache'
+        else:
+            assert b'evlet-config' not in content.content and b'must-not-cache' not in content.content
+            assert b'data-theme' not in content.content
+    with tarfile.open(sdist) as archive:
+        prefix = f'evlet-{metadata.version("evlet")}/'
+        for folder in ('frontend/public/assets', 'evlet/ui/static/assets'):
+            for name in names:
+                path = f'{folder}/{name}'
+                try:
+                    source = archive.extractfile(prefix + path)
+                except KeyError:
+                    raise RuntimeError(f'Source distribution lacks PWA asset {path}') from None
+                assert source is not None and source.read() == (assets / name).read_bytes()
+        assert archive.extractfile(prefix + 'evlet/resources/bootstrap.lock').read() == \
+            (Path(evlet.__file__).parent / 'resources/bootstrap.lock').read_bytes()
+        # The source's development entry is typechecked by npm run build and imports this fixture.
+        for path in ('frontend/evlet.html', 'frontend/src/evlet/tests/server.ts', 'frontend/src/evlet/tests/api-fixture.json'):
+            assert archive.getmember(prefix + path).isfile(), f'Source distribution lacks {path}'
+
+
 def main():
     checkout = Path(__file__).resolve().parents[1]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--sdist', type=Path, default=checkout / 'dist' / f'evlet-{metadata.version("evlet")}.tar.gz')
+    args = parser.parse_args()
     if Path(evlet.__file__).resolve().is_relative_to(checkout / "evlet"):
         raise RuntimeError("Package check imported the checkout instead of the installed wheel")
+    for optional in ('authlib', 'joserfc', 'boto3', 'weasyprint', 'jinja2'):
+        assert util.find_spec(optional) is None, f'Clean wheel check unexpectedly has optional dependency {optional}'
+    check_pwa_package(args.sdist)
 
     from evlet.cli.setup import installer_bootstrap
     with installer_bootstrap(sys.executable) as command:
