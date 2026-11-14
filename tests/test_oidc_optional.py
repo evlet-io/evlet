@@ -37,3 +37,29 @@ db.close()
     answer = subprocess.run([sys.executable, '-c', source, str(tmp_path)], capture_output=True, text=True,
                             env={**os.environ, 'PYTHONDONTWRITEBYTECODE': '1'}, timeout=20)
     assert answer.returncode == 0, answer.stderr
+
+
+def test_oidc_lock_is_hash_pinned_and_matches_optional_and_shared_requirements():
+    import re
+    from packaging.requirements import Requirement
+    from packaging.utils import canonicalize_name
+    root = Path(__file__).resolve().parents[1]
+    project = tomllib.loads((root / 'pyproject.toml').read_text())['project']
+    pins = {}
+    lines = (root / 'requirements-oidc.lock').read_text().replace('\\\n', ' ').splitlines()
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith('#'):
+            continue
+        declaration, *hashes = line.split('--hash=sha256:')
+        requirement = Requirement(declaration.strip())
+        assert hashes and all(re.fullmatch('[a-f0-9]{64}', value.strip()) for value in hashes)
+        specs = list(requirement.specifier)
+        assert len(specs) == 1 and specs[0].operator == '=='
+        pins[canonicalize_name(requirement.name)] = specs[0].version
+    assert set(pins) == {'authlib', 'joserfc', 'cryptography', 'cffi', 'pycparser'}
+    for text in project['optional-dependencies']['oidc']:
+        requirement = Requirement(text)
+        assert requirement.specifier.contains(pins[canonicalize_name(requirement.name)])
+    shared = dict(re.findall(r'^([a-zA-Z0-9_-]+)==([^\s;]+)', (root / 'requirements-dev.lock').read_text(), re.M))
+    for name in pins.keys() & shared.keys():
+        assert pins[name] == shared[name], f'{name} must not replace the core CI dependency with another version'
