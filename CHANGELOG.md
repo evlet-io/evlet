@@ -6,6 +6,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **Bounded AI execution.** `AI(max_concurrent_runs=4, max_runs_per_user=2)` adds configurable
+  process-safe limits. Existing declarations keep working with these defaults. Live work
+  retains its slot and budget reservation until it actually stops.
 ### Fixed
 
 - **Browser record and link caches are bounded.** Recent cells use approximate JSON budgets;

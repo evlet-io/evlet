@@ -53,6 +53,7 @@ class MCPServer:
         self.calls.append(now)
 
     def call(self, name, values):
+        self.limit()
         known = BY_NAME.get(name) if isinstance(name, str) else None
         if known is None:
             raise RPCError(-32602, 'Unknown tool')
@@ -60,7 +61,10 @@ class MCPServer:
             raise ConnectorError(403, self.no_writes)
         if not isinstance(values, dict):
             raise ConnectorError(422, 'Use the documented tool arguments')
-        self.limit()
+        return self.invoke(name, values)
+
+    def invoke(self, name, values):
+        """Use the authenticated Tool Engine, including its rate and argument checks."""
         payload = self.client.request('POST', '/api/_tools/execute', {'tool': name, 'arguments': values})[0]
         if isinstance(payload, dict) and 'approval' in payload:
             approval = payload['approval']

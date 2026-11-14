@@ -202,7 +202,8 @@ def test_protocol_lifecycle_errors_notifications_and_input_bounds():
     assert errors == [-32700, -32700, -32600]
     output = io.BytesIO(); server.serve(io.BytesIO(b'x' * (128 * 1024 + 1)), output)
     assert json.loads(output.getvalue())['error']['code'] == -32700
-    for _ in range(60): server.call('discover_models', {})
+    # The earlier unknown call spent one slot too.
+    for _ in range(59): server.call('discover_models', {})
     with pytest.raises(ConnectorError) as failure: server.call('discover_models', {})
     assert failure.value.status == 429
 
