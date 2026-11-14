@@ -3,7 +3,7 @@
 // tells them only that they were mentioned.
 
 import { html } from '../dom';
-import { cell } from '../reactive';
+import { cell, onCleanup } from '../reactive';
 import { RichTextEditor, type Person } from '../richtext/editor';
 import { Button } from '../ui/base';
 import type { AppClient } from './client';
@@ -24,8 +24,10 @@ export interface ComposerProps {
 
 export function NoteComposer(props: ComposerProps): HTMLElement {
   const value = cell<string | null>(null), busy = cell(false);
+  let revision = 0, alive = true;
+  onCleanup(() => { alive = false; });
   const editor = RichTextEditor({
-    value: () => value.get(), onChange: next => value.set(next), label: 'Note', placeholder: 'Write a note. Type @ to mention someone.',
+    value: () => value.get(), onChange: next => { revision++; value.set(next); }, label: 'Note', placeholder: 'Write a note. Type @ to mention someone.',
     maxLength: 10000, toolbar: props.toolbar,
     mentions: {
       search: async (query): Promise<Person[]> => (await props.api.mentionable(props.model, props.id, query))
@@ -36,13 +38,15 @@ export function NoteComposer(props: ComposerProps): HTMLElement {
   const save = async () => {
     const html = value.peek();
     if (!html || busy.peek()) return;
+    const submitted = revision;
     busy.set(true);
     try {
       await props.api.addRichNote(props.model, props.id, html);
-      value.set(null);
+      if (!alive) return;
+      if (revision === submitted) value.set(null);
       props.onAdded();
     } catch (error) {
-      props.onError(error instanceof Error ? error.message : 'The note was not added.');
+      if (alive) props.onError(error instanceof Error ? error.message : 'The note was not added.');
     } finally { busy.set(false); }
   };
   return html`<div class="composer rt-composer" on:keydown=${(event: KeyboardEvent) => {
