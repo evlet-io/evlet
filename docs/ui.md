@@ -133,7 +133,8 @@ number is used, until Create, which sends a create (POST) like any new record.
   form: `Meta.focus`, or the first editable field.
 - **Unsaved.** The copy has values, so it counts as unsaved from the start: leaving it keeps it as
   an unfinished new record or asks, as described in [Unsaved changes](#unsaved-changes). It does
-  not offer to restore an earlier unfinished draft.
+  not automatically offer to restore an earlier unfinished draft; a review link opens that draft
+  separately so the copied values stay intact.
 
 Only the main area scrolls, on every page: the sidebar and the top bar stay in place. On a record
 page the side column stays in place too while the main column scrolls, and scrolls on its own when
@@ -1063,7 +1064,20 @@ automatic comparison. **Copy my changes** preserves the full update body for man
 
 An unsaved new record stays in the browser only, so no record is created and no number is used
 until Save. Opening New for that model again asks "Restore your unfinished new ...?" with
-Restore and Start fresh. Signing out, or another person signing in on that browser, clears it.
+Restore and Start fresh. Copies already kept remain reviewable when future keeping is turned off. Signing out, or another person signing in on that browser, clears it.
+
+Create carries a request receipt so an explicit retry of the same values can recover a lost
+response without creating the record twice. The receipt is kept with the new browser draft
+before sending, when browser keeping is enabled and available. Restoring that draft restores
+the receipt too. The browser allows retries for 23 hours; changed values or an expired receipt
+require checking the record list before starting fresh. There is no automatic retry. Without
+browser storage, the form warns to keep the tab open and retry there. If an older kept copy
+cannot be updated with the receipt, Create waits for an explicit restore/discard decision
+instead of deleting that copy. Starting fresh while another tab is creating does not let its
+late response remove the newer draft. Pending receipts count toward the browser draft limit;
+other drafts cannot evict them, and their data expires with the configured draft retention.
+Concurrent tabs can briefly exceed the entry count during admission; the existing copies remain
+recoverable and further growth stops until one is resolved. Browser storage quota still applies.
 
 Server entries are kept for 30 days (200 per person), browser ones for 7 days (20 per person);
 an entry over 256 KB is not kept and stays only in the open tab. These are instance settings in

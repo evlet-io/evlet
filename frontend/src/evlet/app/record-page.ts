@@ -37,7 +37,7 @@ import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } 
 import { filterFields } from './filters';
 import { presentSlip, takePrefill } from './slips';
 import { openEvaPanel } from '../eva/chat';
-import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden, discardKeptChanges } from './unsaved';
+import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden, keepCreateAttempts, discardKeptChanges } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
 import { reviewConflict } from './conflict-review';
 import { SCREEN_KEYS, useShortcuts } from './shortcuts';
@@ -245,6 +245,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- unsaved changes ----------
 
+  if (isNew) keepCreateAttempts(ctx, model, store);
   let leaving = false;
   const changedNew = () => [...store.root.fields.values()].some(field => field.touched) || [...store.root.tables.values()].some(table => table.rows.peek().length > 0);
   // In a side panel, leaving the record (another row, Close, Back) asks; the list's own changes do not.
@@ -261,7 +262,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const draft = keepWhenHidden(ctx, model, store, isNew, unsaved);
   // Discard and Cancel mean the kept copy goes too.
   const forget = () => {
-    if (isNew) ctx.unsaved.remove(name);
+    if (isNew) {
+      if (!ctx.unsaved.remove(name, store.createAttempt?.key ?? null)) toast('The kept copy changed or could not be discarded and was left intact.', { icon: 'info' });
+    }
     else if (keepsUnsaved(ctx, model) && store.id) void discardKeptChanges(ctx, model, store).catch(() => toast('The kept copy changed elsewhere and was not discarded.', { icon: 'info' }));
   };
   // Expand: the record page takes this store, unsaved edits included, so it does not ask.
@@ -281,7 +284,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     }
     if (created) {
       leaving = true;
-      ctx.unsaved.remove(name);
+      if (store.lastCreatedKey) ctx.unsaved.remove(name, store.lastCreatedKey);
       toast(`${model.label} created`);
       if (panel) panel.show(store.id!);
       else void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
@@ -584,7 +587,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return [
       conflict ? StateBanner({ tone: 'danger', title: 'Changed elsewhere.', text: 'This record changed since you opened it. Compare the saved values with your draft before continuing.',
         actions: [Button({ label: 'Compare changes', icon: 'history', size: 'small', onClick: () => { closeComparison(); closeComparison = reviewConflict(store); } })] }) : null,
-      form && !conflict ? StateBanner({ tone: 'danger', title: 'Not saved.', text: form }) : null,
+      form && !conflict ? StateBanner({ tone: 'danger', title: 'Not saved.', text: form,
+        actions: isNew && ctx.unsaved.get(name, ctx.me.peek()?.unsaved?.limits) ? [html`<a class="btn sm ghost"
+          href=${router.href('create', { model: name })} target="_blank" rel="noopener external" aria-label="Review previous unfinished draft in a new tab">Review previous unfinished draft</a>`] : [] }) : null,
       load ? StateBanner({ tone: 'danger', title: 'Some rows did not load.', text: `${load.message} Editing waits until every row is here.`,
         actions: [Button({ label: 'Try again', size: 'small', onClick: () => void store.loadAll().catch(() => {}) })] }) : null,
     ];
@@ -883,7 +888,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     ${() => draft.state.get().text} ${when(() => draft.state.get().kind === 'failed', () => Button({ label: 'Retry keeping draft', size: 'small', variant: 'ghost', onClick: () => void draft.retry() }))}</p>`);
   const saveBarView = () => isNew
     ? html`<div class="ev-savebar ev-createbar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => void discardNew() })}
-        <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
+        <span class="grow muted" role="status">${Icon('info', { size: 'sm' })} ${() => store.createNotice.get() ?? 'Values are checked again when you create it.'}</span>
         ${withSaveKeys(Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save(),
           tip: withShortcut(`Create ${model.label.toLowerCase()}`, SCREEN_KEYS.save) }))}</div>`
     : when(() => store.dirty.get(), () => html`<div class="ev-savebar" role="region" aria-label="Unsaved changes">

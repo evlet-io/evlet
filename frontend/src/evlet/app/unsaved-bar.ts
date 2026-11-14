@@ -6,7 +6,7 @@
 import { html, when } from '../dom';
 import { cell } from '../reactive';
 import type { RecordStore } from '../model/record';
-import { apply, conflicts, type Conflict, type NodeChanges } from '../model/unsaved';
+import { apply, conflicts, type Conflict } from '../model/unsaved';
 import { Button, SegmentedControl, StateBanner } from '../ui/base';
 import { displayValue, localField } from '../ui/fields';
 import { DialogFooter, openModal, toast } from '../ui/layers';
@@ -14,11 +14,11 @@ import { relativeTime } from '../ui/time';
 import type { UnsavedEntry } from './client';
 import type { AppContext } from './context';
 import type { ScreenModel } from './meta';
-import { acceptDraftVersion, keepsUnsaved, unsavedInfo } from './unsaved';
+import { acceptDraftVersion, keepsUnsaved, unsavedInfo, type LocalEntry } from './unsaved';
 
 type Bar =
   | { kind: 'server'; entry: UnsavedEntry; note: string; etag?: string | null }
-  | { kind: 'local'; changes: NodeChanges; saved_at: number }
+  | ({ kind: 'local' } & LocalEntry)
   | { kind: 'note'; text: string };
 
 const missedNote = (missed: number) => missed ? ` ${missed === 1 ? 'One change no longer fits' : `${missed} changes no longer fit`} this record and ${missed === 1 ? 'was' : 'were'} left out.` : '';
@@ -30,11 +30,10 @@ export interface UnsavedBarOptions { isNew: boolean; /** A new record's draft wa
 export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordStore, options: UnsavedBarOptions): Node {
   const bar = cell<Bar | null>(null, { name: `${model.name} unsaved` });
   const id = store.id;
-  if (keepsUnsaved(ctx, model)) void (async () => {
+  if (options.isNew || keepsUnsaved(ctx, model)) void (async () => {
     if (options.isNew) {
-      if (options.draft === false) return;
       const kept = ctx.unsaved.get(model.name, unsavedInfo(ctx).limits);
-      if (kept) bar.set({ kind: 'local', changes: kept.changes, saved_at: kept.saved_at });
+      if (kept) bar.set({ kind: 'local', changes: kept.changes, saved_at: kept.saved_at, createAttempt: kept.createAttempt });
       return;
     }
     // Nobody asks the server about a record unless they have kept changes somewhere.
@@ -60,18 +59,27 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
     openConflicts(found, finish, () => void discard());
   };
 
-  const restoreLocal = (changes: NodeChanges) => {
+  const restoreLocal = (entry: LocalEntry) => {
     bar.set(null);
+    store.createAttempt = entry.createAttempt ?? null;
     // Set as the person's own edits, so leaving keeps them again.
-    const missed = apply(store.root, changes);
-    toast(`Draft restored. Nothing is saved until you create it.${missedNote(missed)}`);
+    const missed = apply(store.root, entry.changes);
+    toast(entry.createAttempt ? `Draft restored. The previous create may already exist; retry the same values to recover it.${missedNote(missed)}`
+      : `Draft restored. Nothing is saved until you create it.${missedNote(missed)}`);
     options.onSettled?.();
   };
 
   const discard = async () => {
     const current = bar.peek();
     bar.set(null);
-    if (current?.kind === 'local') { ctx.unsaved.remove(model.name); options.onSettled?.(); return; }
+    if (current?.kind === 'local') {
+      const removed = ctx.unsaved.remove(model.name, current.createAttempt?.key ?? null);
+      const remaining = ctx.unsaved.get(model.name, unsavedInfo(ctx).limits);
+      bar.set(remaining ? { kind: 'local', ...remaining } : null);
+      if (!removed) toast('The kept draft changed or could not be discarded. Review the current copy.', { icon: 'info' });
+      if (!remaining) options.onSettled?.();
+      return;
+    }
     if (current?.kind === 'server' && id) {
       try {
         if (!current.etag) throw new Error('No draft version');
@@ -85,10 +93,14 @@ export function UnsavedBar(ctx: AppContext, model: ScreenModel, store: RecordSto
   return html`<div class="ev-unsaved">${when(() => bar.get(), () => {
     const current = bar.peek()!;
     if (current.kind === 'note') return StateBanner({ tone: 'neutral', text: current.text, actions: [Button({ label: 'Dismiss', size: 'small', variant: 'ghost', onClick: () => bar.set(null) })] });
+    // Duplicate keeps its copied values. Review an older draft in a separate New page,
+    // where restoring it cannot mix the two sets of child rows.
+    if (current.kind === 'local' && options.draft === false) return html`<a class="btn sm ghost"
+      href=${ctx.router.href('create', { model: model.name })} target="_blank" rel="noopener external" aria-label="Review previous unfinished draft in a new tab">Review previous unfinished draft</a>`;
     if (current.kind === 'local') return StateBanner({ tone: 'info', icon: 'history',
-      text: `Restore your unfinished new ${model.label.toLowerCase()} from ${relativeTime(new Date(current.saved_at * 1000))}?`,
+      text: `Restore your unfinished new ${model.label.toLowerCase()} from ${relativeTime(new Date(current.saved_at * 1000))}?${current.createAttempt ? ' Its previous create may have succeeded. Check the record list before starting fresh.' : ''}`,
       actions: [Button({ label: 'Start fresh', size: 'small', variant: 'ghost', onClick: () => void discard() }),
-        Button({ label: 'Restore', size: 'small', variant: 'primary', onClick: () => restoreLocal(current.changes) })] });
+        Button({ label: 'Restore', size: 'small', variant: 'primary', onClick: () => restoreLocal(current) })] });
     return StateBanner({ tone: 'info', icon: 'history',
       text: `You have unsaved changes from ${relativeTime(new Date(current.entry.saved_at * 1000))}.${current.entry.stale ? ' This record was saved since.' : ''}${current.note}`,
       actions: [Button({ label: 'Discard', size: 'small', variant: 'ghost', onClick: () => void discard() }),
