@@ -33,6 +33,7 @@ import { evaStatus, type EvaStatus } from '../eva/client';
 import { EvaPage } from '../eva/chat';
 import { instanceKey, LocalUnsaved } from './unsaved';
 import { TasksPage } from '../eva/tasks';
+import { safeSignInNext, takeOidcNext } from './signin-return';
 
 export interface AppOptions {
   router: AppRouter;
@@ -54,6 +55,16 @@ export function App(options: AppOptions): Node {
   const context = cell<AppContext | null>(null, { name: 'app.context' });
   const error = cell(''), busy = cell(false);
   const challenge = cell<Challenge | null>(null, { name: 'app.challenge' });
+  // The bundled provider returns only to /login. Leave model filters/prefills named oidc alone.
+  // Remove the non-secret marker before requests; a retry/reload must not replay the one-use finish.
+  const returned = new URL(window.location.href);
+  let oidcReturn = returned.pathname === '/login' && ['finish', 'error'].includes(returned.searchParams.get('oidc') ?? '') ? returned.searchParams.get('oidc') : null;
+  const oidcNext = oidcReturn ? takeOidcNext() : null;
+  if (oidcReturn) {
+    returned.searchParams.delete('oidc');
+    if (oidcNext && !returned.searchParams.has('next')) returned.searchParams.set('next', oidcNext);
+    window.history.replaceState(window.history.state, '', returned.pathname + returned.search + returned.hash);
+  }
   let alive = true;
   onCleanup(() => { alive = false; context.peek()?.prefs.dispose(); });
 
@@ -91,8 +102,8 @@ export function App(options: AppOptions): Node {
     phase.set('ready');
     const now = router.route.peek();
     // Controls and the AI consent page are their own pages: after signing in from /login?next=..., open them there.
-    const next = now?.name === 'login' ? now.query.next ?? '' : '';
-    if (/^\/controls(\/[a-z]+)?$/.test(next) || /^\/_\/oauth\/authorize\?[^#]*$/.test(next)) { window.location.assign(next); return; }
+    const next = now?.name === 'login' ? safeSignInNext(now.query.next) ?? oidcNext : null;
+    if (next) { window.location.assign(next); return; }
     // Python page routes match no route here; they, sign-in and the root open the start page.
     if (!now || now.name === 'login' || now.name === 'home' && !isExplorer(now)) await goStart(ctx, true);
   };
@@ -104,6 +115,15 @@ export function App(options: AppOptions): Node {
       const current = await api.session();
       if (!alive) return;
       session.set(current);
+      if (oidcReturn) {
+        const result = oidcReturn; oidcReturn = null;
+        if (result === 'error' || !current.oidc) { error.set('Company sign-in did not finish. Try again or use your password.'); phase.set('signin'); return; }
+        busy.set(true);
+        try { const answer = await api.finishOidc() as Session & Partial<Challenge>; if (alive) await acceptSignIn(answer); }
+        catch (failure) { if (alive) { error.set(failure instanceof ApiError && failure.kind === 'network' ? failure.message : 'Company sign-in did not finish. Try again or use your password.'); phase.set('signin'); } }
+        finally { busy.set(false); }
+        return;
+      }
       // Signed in by a development link without a password yet: choose one before anything else.
       if (current.user && current.password_needed) phase.set('password');
       else if (current.user) await enter(current);
@@ -122,14 +142,18 @@ export function App(options: AppOptions): Node {
     if (current.backup_codes?.length) showCodes(current.backup_codes);
   };
 
+  const acceptSignIn = async (current: Session & Partial<Challenge>) => {
+    if (current.two_step && current.ticket) { challenge.set(current as Challenge); phase.set('twostep'); return; }
+    await signedIn(current);
+  };
+
   const signIn = async (username: string, password: string, setup: boolean) => {
     busy.set(true);
     error.set('');
     try {
       if (setup) await api.setup(username, password);
       const current = await api.login(username, password) as Session & Partial<Challenge>;
-      if (current.two_step && current.ticket) { challenge.set(current as Challenge); phase.set('twostep'); return; }
-      await signedIn(current);
+      await acceptSignIn(current);
     } catch (failure) {
       error.set(failure instanceof ApiError ? failure.message : 'Unable to sign in.');
       // A finished setup should not be offered again.

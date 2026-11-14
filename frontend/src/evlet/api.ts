@@ -67,6 +67,8 @@ export interface User { id: number; username: string; role: string }
 export interface Session { user: User | null; csrf?: string; setup?: boolean; tenant?: unknown; application?: { name?: string; playground?: boolean; docs?: string | null };
   /** Security(admin_sign_in=True) in config.py: the username the sign-in page starts with. */
   sign_in?: { username: string };
+  /** Optional company identity provider on this origin; browser navigation starts the flow. */
+  oidc?: { label: string; start: string };
   /** Signed in, but the account has no password yet (the Administrator after a development link). */
   password_needed?: boolean;
   /** First-run setup: the shortest password the new administrator may have. */
@@ -179,7 +181,7 @@ export class ApiClient {
       if (signal?.aborted || (cause as Error)?.name === 'AbortError') throw new ApiError('The request was cancelled.', 0, 'aborted');
       throw new ApiError('Unable to reach the server. Check the connection and try again.', 0, 'network');
     }
-    if (response.status === 401 && !path.startsWith('/api/auth/login')) {
+    if (response.status === 401 && !path.startsWith('/api/auth/login') && path !== '/_/oidc/finish') {
       this.csrf = '';
       this.options.onSessionEnded?.();
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('evlet-session-ended'));
@@ -208,6 +210,12 @@ export class ApiClient {
   }
   async login(username: string, password: string): Promise<Session> {
     const { data } = await this.request<Session>('POST', '/api/auth/login', { body: { username, password } });
+    this.csrf = data.csrf ?? '';
+    return data;
+  }
+  /** Consume the one-use, HttpOnly provider-return cookie. No token or ticket is read from the URL. */
+  async finishOidc(): Promise<Session> {
+    const { data } = await this.request<Session>('POST', '/_/oidc/finish', { body: {} });
     this.csrf = data.csrf ?? '';
     return data;
   }
