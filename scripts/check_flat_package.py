@@ -22,6 +22,7 @@ def main():
         subprocess.run([sys.executable, '-m', 'build', '--outdir', str(root / 'dist'), str(app)], check=True, stdout=subprocess.DEVNULL)
         venv.EnvBuilder(with_pip=True).create(root / 'env')
         python = root / 'env' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
+        subprocess.run([str(python), '-m', 'pip', 'install', '--upgrade', '--require-hashes', '-r', str(Path(__file__).resolve().parents[1] / 'requirements-bootstrap.lock')], check=True, stdout=subprocess.DEVNULL)
         subprocess.run([str(python), '-m', 'pip', 'install', '--disable-pip-version-check', str(wheel), str(next((root / 'dist').glob('flatcheck-*.whl')))], check=True, stdout=subprocess.DEVNULL)
         probe = 'import flatcheck; from flatcheck.models.item import FlatcheckItem; assert FlatcheckItem.__module__ == "flatcheck.models.item"; print(flatcheck.__file__)'
         subprocess.run([str(python), '-I', '-c', probe], cwd=root, check=True)

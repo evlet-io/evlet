@@ -85,6 +85,7 @@ PY
 
 if [[ "${1:-}" == '--setup' ]]; then
   "$python_command" -m venv .venv
+  .venv/bin/python -m pip install --upgrade --require-hashes -r requirements-bootstrap.lock
   .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
   .venv/bin/python -m pip install --no-build-isolation --no-deps -e .
   npm --prefix frontend ci

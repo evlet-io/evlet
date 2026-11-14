@@ -25,7 +25,11 @@ Defaults: 2,000,000 general-ledger rows, 500,000 stock rows, 1,000 account/item 
 365 posting days, 50 continuous reader threads, 60 seconds, and one synthetic
 invoice transaction every three seconds (20 during the run). `--gl`, `--stock`,
 `--users`, `--seconds`, and `--requests` adjust the sizes; `--requests` is a minimum
-total request count, divided across readers. GL rows must be at least 20,000.
+total attempted request count, divided across readers. GL rows must be at least 20,000.
+Results separate successful-request latency/throughput from all attempts and HTTP503
+counts, and record admission and worker limits. Overloaded readers honor the one-second
+Retry-After instead of spinning or hiding refusals. p95/p99 values describe only the
+recorded sample; short runs do not establish tail-latency targets.
 
 Loading uses deterministic integer minor units and SQLite executemany. It bypasses
 model construction to keep fixture creation separate from runtime measurements. The load
@@ -181,14 +185,18 @@ naming the file and the request (`POST /api/...`) or the job (`job #12 import_in
 and last use, proxy header notes) are added to a list in memory and saved by one background
 thread about every 250 ms, in one short transaction per file. Adding never touches SQLite, so a
 request never waits on them. They are saved on shutdown (`Database.close()`, the ASGI lifespan
-and at process exit); a crash loses at most the last quarter second of them. Pages that show
+and at process exit). A crash can lose the pending batch; failures can extend that window.
+The best-effort metadata backlog is capped at 4,096 entries, with a dropped counter and
+rate-limited warnings when full; business records and audit transactions are unaffected. Pages that show
 these numbers save the batch first. Tool-call rows are not batched: the per-minute MCP rate and
 the order of the log read them, so each is one short write to `logs.sqlite3`.
 
-**Connections.** Opening a connection and attaching three files costs about a millisecond, so each
-thread keeps its last connection for its next operation. It is used again only while the four
-files are the same files on disk (a restore or a replaced file opens a new one); any open
-transaction is rolled back before it is kept. `Database.close()` closes them.
+**Connections.** Idle connections use a small cross-thread pool: at most two per `Database`
+and eight per process, with 60-second expiry pruned on access. Active connections are never
+evicted. Reuse requires the same four files on disk; a restore or replacement invalidates
+old handles, and an open transaction is rolled back before caching. `Database.close()`
+drains in-flight log flushing and invalidates old checkouts so they cannot repopulate the
+idle pool. See [persistence and recovery](persistence-recovery.md).
 
 ### Local results, 12-11-2026
 
@@ -475,3 +483,34 @@ the foreground, so the browser may have throttled timers; these are upper bounds
 The 1,000-line edit in the browser is near the 16 ms budget and over it in some runs, against
 8.8 ms in jsdom; the development build keeps its checks on. Scrolling at 60 fps was not
 measured: the pane gave no frame timing while it was hidden.
+
+## Current SQLite capacity roadmap
+
+SQLite is the supported backend. The older PostgreSQL measurements are historical; no
+removed adapter or unvalidated concurrent-writer mode is part of this roadmap.
+
+Before promising a customer size, run the existing benchmarks and a socket/proxy workload
+on the intended CPU, RAM and local disk, using disposable copies of representative data.
+Include invoice/stock postings, indexed lists, reports/PDFs, sign-in, uploads, Eva (if enabled)
+and scheduled jobs in the customer's expected proportions. Record these together:
+
+| Evidence | Decision it supports |
+|---|---|
+| p50/p95/p99 successful-request latency, 503 rate and offered/admitted throughput | Set the HTTP lanes and the acceptable peak workload |
+| Maximum and p95 write-hold/wait time for each SQLite file | Shorten transactions or split bounded job steps before increasing concurrency |
+| Steady/peak RSS, password-hash peak, CPU and disk latency | Leave headroom for authentication, rendering, backups and traffic bursts |
+| Job age, bounded-step duration and retry rate | Reserve background capacity without delaying interactive writes |
+| Four-file backup duration, restore check and measured recovery time/data loss | Agree on recovery objectives and verify them before rollout |
+
+Repeat at normal demand, a bounded burst and recovery after overload. Check correctness:
+no duplicate postings/numbers, lost updates or partial business transactions; cancellations,
+worker restart and retries must preserve the documented guarantees. Record hardware, version,
+settings, model/data shape and test duration alongside the raw measurements. Existing local
+results are examples, not an SME headcount or capacity tier.
+
+First improve indexes, bounded queries, response size, transaction hold time and admission.
+Scale independent tenants onto separate processes/hosts only with their complete data/storage
+and recovery procedure. More HTTP workers cannot create concurrent writes in one SQLite file.
+If a representative single-tenant workload still misses its agreed targets after those steps,
+treat a new persistence/concurrency design as a separate measured project with its own
+correctness, migration and recovery proof; do not promise it as a configuration switch.
