@@ -113,6 +113,8 @@ export interface PanelHost {
 type Handoff = { model: string; id: string; store: RecordStore; duplicate?: DuplicateCopy | null };
 let handoff: Handoff | null = null;
 const handedOff = new WeakSet<RecordStore>();
+// Expand transfers a pending save to the live view; a closed view must never navigate.
+const saveViews = new WeakMap<RecordStore, (ok: boolean, created: boolean) => void>();
 function takeHandoff(model: string, id: string): Handoff | null {
   const found = handoff && handoff.model === model && handoff.id === id ? handoff : null;
   handoff = null;
@@ -271,17 +273,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     void going.then(done => { if (!done) { leaving = false; handoff = null; handedOff.delete(store); } });
   };
 
-  const save = async () => {
-    if (store.saving.peek() || !commitTyped()) return false;
-    if (store.saving.peek()) return false;
-    if (!isNew && !store.dirty.peek()) return true;
-    const created = isNew;
-    let ok = false;
-    try { ok = await store.save(); } catch (error) { toast((error as Error).message, { icon: 'info' }); return false; }
+  const saved = (ok: boolean, created: boolean) => {
     if (!ok) {
       toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : 'Not saved. Check the highlighted values.', { icon: 'info' });
       showErrors();
-      return false;
+      return;
     }
     if (created) {
       leaving = true;
@@ -290,7 +286,24 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       if (panel) panel.show(store.id!);
       else void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
     } else toast('Saved');
-    return true;
+  };
+  saveViews.set(store, saved);
+  onCleanup(() => { if (saveViews.get(store) === saved) saveViews.delete(store); });
+  const save = async () => {
+    if (store.saving.peek() || !commitTyped()) return false;
+    if (store.saving.peek()) return false;
+    if (!isNew && !store.dirty.peek()) return true;
+    const created = isNew;
+    let ok = false;
+    try { ok = await store.save(); } catch (error) { toast((error as Error).message, { icon: 'info' }); return false; }
+    const live = saveViews.get(store);
+    if (live) live(ok, created);
+    else if (ok) {
+      // Keep any draft made while this request was pending. A notification acknowledges the
+      // actual server result without changing the page the person chose to visit meanwhile.
+      toast(created ? `${model.label} created (${store.lastSavedId}). Open ${model.plural.toLowerCase()} to view it.` : `${model.label} saved`, { duration: 8000 });
+    } else toast(`${model.label} was not saved. ${store.formError.peek() ?? 'Reopen the draft to retry.'}`, { icon: 'info', duration: 8000 });
+    return ok;
   };
 
   // ---------- moves and actions ----------

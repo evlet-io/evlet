@@ -531,6 +531,8 @@ export class RecordStore {
   readonly editVersion = cell(0, { name: 'record.edits' });
   /** What the last action returned (`_outcome`), such as a slip to present next. */
   outcome: unknown = null;
+  /** Last acknowledged save, retained even if its view closed before the answer arrived. */
+  lastSavedId: string | null = null;
   /** Every row is loaded and calculations are attached: the record can be edited. */
   readonly ready = cell(false, { name: 'record.ready' });
   /** Set when rows could not be paged in; call loadAll() again to retry. */
@@ -687,6 +689,7 @@ export class RecordStore {
     this.saving.set(true);
     try {
       const response = root.isNew ? await this.api.create(this.meta.name, body) : await this.api.update(this.meta.name, root.id!, body, this.etag.peek());
+      this.lastSavedId = response.data.id;
       this.applyServer(response.data, response.etag);
     } catch (error) {
       this.saving.set(false);
