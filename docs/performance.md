@@ -60,6 +60,20 @@ Frontend gzip size is the sum of separately compressed asset files. The existing
 748.67 kB JavaScript chunk remains a build advisory; it was not hidden by increasing
 the warning threshold.
 
+## Facade import measurement
+
+Run `.venv/bin/python scripts/benchmark_imports.py --samples 7 --output /tmp/imports.json`
+on an otherwise quiet machine. It measures model-only imports, all public exports and CLI
+parser startup in fresh processes, with warm filesystem caches. Model build-step modules
+remain eager; optional subsystems without registration side effects load when their public
+name is first used. Public objects, `__all__`, `dir(evlet)` and star imports remain supported.
+
+A five-sample shared Linux workspace comparison on 14 November 2026 reduced model-only
+loaded Evlet modules from 64 to 45, median import time from 0.2866 s to 0.1900 s and median process
+RSS high water from 29,788 KiB to 22,912 KiB. These are diagnostic local results, not guaranteed
+savings for fully featured long-running applications. Compare the full-export/CLI cases too;
+retain a lazy boundary only while it gives a measurable benefit without changing registration.
+
 ## Implemented hardening
 
 - Indexed session revocation, session expiry, and login-limit cleanup. Query-plan
