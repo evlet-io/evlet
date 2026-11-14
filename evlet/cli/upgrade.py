@@ -14,7 +14,7 @@ from packaging.version import InvalidVersion, Version
 from .project import child, atomic_json, instance_guard, sync_directory
 from ..writes import file_lock, require_space
 from .restart import Failed, check_service, service_name
-from .setup import environment_version, python_in
+from .setup import environment_version, installer_bootstrap, python_in
 from . import site
 
 
@@ -112,6 +112,10 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
         staged = staging / '.venv'
         shutil.copytree(live, staged, symlinks=True)
         staged_python = str(python_in(staging))
+        with installer_bootstrap(staged_python) as command:
+            if step(command) is None:
+                out('The staged installer preparation failed. The project environment and services were left unchanged.')
+                return False
         if step([staged_python, '-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', requirement]) is None:
             out('The staged installation failed. The project environment and services were left unchanged.')
             return False

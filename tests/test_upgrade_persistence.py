@@ -49,7 +49,7 @@ def test_shared_environment_plans_and_migrates_every_instance_before_restart(rea
     result, _, server = call(root, units, all_instances=True)
     assert result
     assert [Server.kind(args) for args in server.ran] == [
-        'pip', 'plan', 'plan', 'stop', 'stop', 'backup', 'backup', 'migrate', 'migrate', 'restart', 'restart']
+        'bootstrap', 'pip', 'plan', 'plan', 'stop', 'stop', 'backup', 'backup', 'migrate', 'migrate', 'restart', 'restart']
     assert [args[-1] for args in server.ran if Server.kind(args) == 'plan'] == ['acme', 'shop']
     assert [args[-1] for args in server.ran if Server.kind(args) == 'migrate'] == ['acme', 'shop']
     assert environment_version(root) == '0.4.4'

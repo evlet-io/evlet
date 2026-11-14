@@ -16,6 +16,13 @@ def main():
     if Path(evlet.__file__).resolve().is_relative_to(checkout / "evlet"):
         raise RuntimeError("Package check imported the checkout instead of the installed wheel")
 
+    from evlet.cli.setup import installer_bootstrap
+    with installer_bootstrap(sys.executable) as command:
+        lock = Path(command[-1])
+        assert lock.is_relative_to(Path(evlet.__file__).parent)
+        assert 'pip==' in lock.read_text() and '--hash=sha256:' in lock.read_text()
+        assert '--require-hashes' in command and '--only-binary=:all:' in command
+
     from evlet.ui.serving import static_response
     response = static_response("/docs")
     assert response and b'<div id="evlet-app">' in response[1].content

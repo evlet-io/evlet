@@ -235,8 +235,9 @@ with the canonical UI, security, currency, migrations and API stability guides. 
 APIs only in clearly labeled upgrade/history sections; verify the documented command in
 a fresh disposable environment.
 
-`requirements-bootstrap.lock` pins the development/CI installer separately from runtime
-dependencies. Before each release, audit this lock and the runtime/optional locks against
+`requirements-bootstrap.lock` includes the packaged `evlet/resources/bootstrap.lock`,
+which pins the installer for development/CI, generated projects and staged upgrades
+separately from runtime dependencies. Before each release, audit this lock and the runtime/optional locks against
 current advisories, deduplicate aliases, and record the affected environment. Refresh the
 installer pin and hashes when necessary; do not weaken the dependency hash checks or
 application-install trust prompts.

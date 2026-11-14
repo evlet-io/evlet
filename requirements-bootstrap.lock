@@ -1,5 +1,2 @@
-# Development/build installer only; not an Evlet runtime dependency.
-# pip 26.2 includes the installer fixes reviewed in EVL-055; Python >=3.10.
-# Recheck advisories when refreshing this pin; keep hash verification enabled.
-pip==26.2 \
-    --hash=sha256:931c303696af6fa3417112103b1cad26890e5a07eccb5b99783700e33f2b8aad
+# The packaged lock also bootstraps generated projects and staged upgrades.
+-r evlet/resources/bootstrap.lock

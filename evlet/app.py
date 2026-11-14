@@ -27,7 +27,8 @@ UNSAVED_BODY = 1024 * 1024 + 4096
 # that evlet proxy and evlet setup write pass exactly these and refuse every other /_/ path.
 MCP_PATHS = ('/_/mcp', '/_/oauth/authorize', '/_/oauth/token', '/_/oauth/register', '/_/oauth/revoke')
 MAIL_PATHS = ('/_/mail/callback', '/_/mail/continue.js')
-PUBLIC_PATHS = MCP_PATHS + MAIL_PATHS
+OIDC_PATHS = ('/_/oidc/start', '/_/oidc/callback', '/_/oidc/finish')
+PUBLIC_PATHS = MCP_PATHS + MAIL_PATHS + OIDC_PATHS
 # The Caddy on-demand TLS check answers loopback callers only; the proxy refuses it from outside.
 TLS_CHECK = '/_/tls-allowed'
 
@@ -112,6 +113,10 @@ class Application:
                 self.business.secret_key = secret_key
             path = getattr(database, 'path', None)
             self.business.connectors.fallback = path.parent / 'secret.key' if path is not None else None
+            self.business.oidc = None
+            if getattr(auth, 'oidc', None) is not None:
+                from .oidc import OIDCFlow
+                self.business.oidc = OIDCFlow(self.business)
             # Eva only when config.py turns AI on: AI(enabled=True, models={...}). Otherwise nothing of Eva exists.
             if ai is not None:
                 from .eva import AI, Eva
@@ -489,6 +494,11 @@ class Application:
 
     def _internal(self, scope, raw):
         self.business.controls.refresh()
+        if scope['path'] in OIDC_PATHS:
+            flow = self.business.oidc
+            if flow is None:
+                raise HTTPError(404, 'Route not found')
+            return flow.dispatch(scope, raw)
         if scope['path'] in MAIL_PATHS:
             return self.business.mailboxes.callback(scope, raw)
         return self.business.assistants.dispatch(scope, raw)

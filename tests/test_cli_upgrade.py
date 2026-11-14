@@ -46,7 +46,7 @@ class Server:
         if args[:2] == ['sudo', 'systemctl']:
             return args[2]
         if args[1:3] == ['-m', 'pip']:
-            return 'pip'
+            return 'bootstrap' if '--require-hashes' in args else 'pip'
         if args[1:3] == ['-P', '-c']:
             return 'plan'
         return args[6]
@@ -89,7 +89,9 @@ def test_stage_plan_backup_stop_publish_migrate_restart(ready):
     staged_python = server.ran[0][0]
     assert staged_python != python and '.evlet-upgrade-' in staged_python
     assert result is True
-    assert server.ran == [
+    with setting.installer_bootstrap(staged_python) as bootstrap:
+        assert server.ran[0] == bootstrap
+    assert server.ran[1:] == [
         [staged_python, '-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade', 'evlet>=0.4.3,<0.5'],
         [staged_python, '-P', '-c', upgrading.PLAN, str(root), 'acme'],
         ['sudo', 'systemctl', 'stop', 'evlet-acme'],
@@ -106,7 +108,7 @@ def test_stage_plan_backup_stop_publish_migrate_restart(ready):
 def test_declining_after_plan_keeps_the_live_environment_and_service(ready):
     root, units = ready
     result, lines, server = call(root, units, answer='n')
-    assert result is False and len(server.ran) == 2
+    assert result is False and len(server.ran) == 3
     assert setting.environment_version(root) == '0.4.3'
     assert lines[-1] == 'Upgrade cancelled. The project environment and services were left unchanged.'
 
@@ -116,7 +118,7 @@ def test_yes_asks_nothing_and_another_service_is_passed_to_restart(ready):
     (units / 'web.service').write_text((units / 'evlet-acme.service').read_text())
     result, lines, server = call(root, units, yes=True, service='web', ask=None, interactive=False)
     assert result is True
-    assert server.ran[2] == ['sudo', 'systemctl', 'stop', 'web'] and server.ran[-1][-3:] == ['--yes', '--service', 'web']
+    assert server.ran[3] == ['sudo', 'systemctl', 'stop', 'web'] and server.ran[-1][-3:] == ['--yes', '--service', 'web']
 
 
 def test_without_a_terminal_it_needs_yes_and_changes_nothing(ready):
@@ -129,15 +131,26 @@ def test_without_a_terminal_it_needs_yes_and_changes_nothing(ready):
 def test_a_failed_pip_changes_nothing(ready):
     root, units = ready
     result, lines, server = call(root, units, server=Server(root, fail='pip'))
-    assert result is False and len(server.ran) == 1
+    assert result is False and len(server.ran) == 2
     assert lines[-1] == 'The staged installation failed. The project environment and services were left unchanged.'
     assert setting.environment_version(root) == '0.4.3'
+
+
+def test_a_failed_installer_bootstrap_never_installs_or_stops_services(ready):
+    root, units = ready
+    result, lines, server = call(root, units, server=Server(root, fail='bootstrap'))
+    assert result is False and len(server.ran) == 1
+    assert '--require-hashes' in server.ran[0]
+    assert lines[-1] == 'The staged installer preparation failed. The project environment and services were left unchanged.'
+    assert setting.environment_version(root) == '0.4.3'
+    assert not (root / '.evlet-upgrade.json').exists()
+    assert not list(root.glob('.evlet-upgrade-*'))
 
 
 def test_no_newer_release_stops_after_pip(ready):
     root, units = ready
     result, lines, server = call(root, units, server=Server(root, newest='0.4.3'))
-    assert result is True and len(server.ran) == 1
+    assert result is True and len(server.ran) == 2
     assert lines[-1] == 'Evlet 0.4.3 is already the newest release allowed by evlet>=0.4.3,<0.5. Nothing else was done.'
 
 
