@@ -57,6 +57,7 @@ class Pair(Model):
 class Counting(Database):
     """Real SQLite that counts the statements each connection runs."""
     statements = 0
+    draft_clock_writes = 0
 
     @contextmanager
     def _connection(self):
@@ -66,6 +67,8 @@ class Counting(Database):
 
     def _count(self, statement):
         type(self).statements += 1
+        if statement.startswith('INSERT') and '"evlet_unsaved_versions"' in statement:
+            type(self).draft_clock_writes += 1
 
 
 def build(database, **options):
@@ -84,6 +87,7 @@ def make_app(tmp_path):
 
 def counted(c, *args, **kwargs):
     Counting.statements = 0
+    Counting.draft_clock_writes = 0
     result = c(*args, **kwargs)
     return result, Counting.statements
 
@@ -178,6 +182,7 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     assert status == 200 and len(detail['children']['lines']) == 100 and detail['children']['lines'][0]['product'] == product
     assert detail['children_pages']['lines']['total'] == 1000
     assert statements <= 13, statements  # 607 for 100 rows before batching; one reads the config version, one names who wrote it, one claims the write lock of the main file only.
+    assert Counting.draft_clock_writes == 0
 
     status, rows, _ = page(c, url, limit=100, offset=900)
     assert status == 200 and rows['total'] == 1000 and (rows['limit'], rows['offset']) == (100, 900)
@@ -188,15 +193,17 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     (status, saved, _), statements = counted(c, 'PATCH', url, {'title': 'renamed'}, headers={b'if-match': headers[b'etag']})
     assert status == 200 and saved['title'] == 'renamed' and saved['total'] == '2500.00'
     # 2,021 for 100 rows before batching; two of these open and release the operation savepoint,
-    # one names who created and changed the record, and one removes the saver's unsaved changes
-    # (evlet/unsaved.py).
-    assert statements <= 37, statements  # one claims the write lock of the main file only
+    # one names who created and changed the record, one removes the saver's unsaved changes,
+    # and one advances the account's draft clock, independent of child-row count.
+    assert Counting.draft_clock_writes == 1
+    assert statements <= 38, statements  # one claims the write lock of the main file only
 
     last = order['_row_ids']['l999']
     headers = {b'if-match': c('GET', url)[2][b'etag']}
     (status, saved, _), statements = counted(c, 'PATCH', url, {'children': {'lines': {'update': [{'id': last, 'qty': '3'}]}}}, headers=headers)
     assert status == 200 and saved['total'] == '2505.00' and saved['line_count'] == 1000
-    assert statements <= 39, statements  # one claims the write lock of the main file only
+    assert Counting.draft_clock_writes == 1
+    assert statements <= 40, statements  # one main writer claim and one draft clock advance
     assert page(c, url, limit=1, offset=999)[1]['items'][0]['qty'] == '3.0000'
 
     status, error, _ = edit(c, url, {'children': {'lines': {'create': [{'qty': '1'}]}}})
@@ -214,9 +221,11 @@ def test_nested_rows_load_with_a_bounded_statement_count(make_app):
     assert status == 200 and len(detail['children']['lines']) == 100 and 'children_pages' not in detail
     assert all(len(line['children']['parts']) == 9 and line['hours'] == '9.0000' for line in detail['children']['lines'])
     assert statements <= 11, statements  # 2,407 before batching; one claims the write lock of the main file only.
+    assert Counting.draft_clock_writes == 0
     (status, saved, _), statements = counted(c, 'PATCH', url, {'title': 'nested'}, headers={b'if-match': headers[b'etag']})
     assert status == 200, saved
-    assert statements <= 33, statements  # 9,221 before batching; one claims the write lock of the main file only.
+    assert Counting.draft_clock_writes == 1
+    assert statements <= 34, statements  # 9,221 before batching; one main writer claim and one draft clock advance.
     first = detail['children']['lines'][0]
     status, parts, _ = page(c, url, f"lines/{first['id']}/parts", limit=5)
     assert status == 200 and parts['total'] == 9 and [part['id'] for part in parts['items']] == [part['id'] for part in first['children']['parts'][:5]]
