@@ -57,3 +57,27 @@ key is published only after all database writer locks are held, and old keys rem
 until the re-encrypted values commit. A competing rotation fails clearly and can be retried.
 The CLI also holds the instance's shared lifecycle lease, so restoration cannot replace its
 files during rotation. Key-file replacement and its directory are fsynced.
+
+## Project upgrades
+
+`evlet upgrade INSTANCE` copies the project environment into a temporary staging directory,
+installs the new release there, and plans against staged database copies. Declining the plan or
+failing installation or planning leaves the live environment and services unchanged.
+
+If other installed instances share `.venv`, use `--all-instances`. Evlet validates every service,
+stops them, captures final rollback backups including the last accepted writes, checks that
+their lifecycle leases were released, and only then publishes the prepared environment.
+A backup failure keeps the original environment and restarts its services.
+Evlet migrates every instance before restarting any of
+them. `--service` overrides the selected instance's unit; siblings use `evlet-NAME` units.
+
+A failed publication restores the original environment when possible. After publication, a
+failed migration or restart retains the previous environment and every database backup, and
+prints exact rollback commands. The same commands are recorded in `.evlet-upgrade.json`;
+another upgrade refuses to proceed until that interrupted upgrade is recovered. Follow the
+recorded stop, environment restore, database restore and restart sequence for the entire group.
+After a successful health-checked restart, the temporary previous environment is removed;
+database backups remain under each instance's configured backup directory.
+
+Preparing an environment needs free space for one copy of `.venv`; database backup and migration
+space checks remain separate. A project-level interprocess lock excludes concurrent upgrades.

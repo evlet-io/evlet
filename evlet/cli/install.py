@@ -205,7 +205,7 @@ def plan(root, name, *, trust=False, confirm=None, label='changes'):
     path = child(root, 'instances', name)
     if not path.is_dir():
         raise ValueError(f'Instance does not exist: {name}')
-    with instance_guard(path):
+    with instance_guard(path, serving=True):
         config = read_instance(path)
         if (path / '.install-journal.json').exists():
             raise ValueError('An interrupted installation needs recovery first; run evlet migrate')

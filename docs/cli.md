@@ -584,34 +584,39 @@ On a server set up with `evlet setup --host --apply`, move an instance to a newe
 evlet upgrade acme
 ```
 
-It works in this order and shows each command before it runs it:
+It checks every affected service and prepares a copy of `.venv` outside the running environment.
+Pip installs the new release into that copy, and its Python prints a migration plan against a
+staged database. Answering no, or failing installation or planning, leaves the live environment
+and services unchanged.
 
-1. It checks that the project has the `.venv` that `evlet setup` made and that
-   `evlet-acme.service` serves this instance, like the Service check of `evlet restart`.
-   Without these, nothing changes.
-2. It runs pip in the project's `.venv`. On 0.x it stays within the current minor: 0.4.3
-   installs the newest 0.4.\*, never 0.5, since a 0.x minor can break things. From 1.0 it stays
-   within the current major. `--to VERSION` installs one exact version, such as the next minor
-   once you have read its release notes; an older version is refused, since going back means
-   restoring a backup. When no newer release exists, it stops here.
-3. It prints `evlet migrate acme --plan`, which says `Planned with Evlet X` for the new version.
-4. It asks once: `Back up acme, stop evlet-acme, migrate it and restart it on Evlet X?`
-5. It runs `evlet backup`, `sudo systemctl stop evlet-acme`, `evlet migrate acme`, then
-   `evlet restart acme --yes`, which runs its checks and waits for `/health`.
+After confirmation, it stops the services, captures final rollback backups including the last
+accepted writes, verifies their lifecycle leases were released, and publishes the prepared
+`.venv`. It migrates every affected instance before restarting any of them. Each restart runs
+its checks and waits for `/health`.
 
-pip replaces the code of the command that is running. So every step after pip runs as its own
-`.venv/bin/python -P -m evlet ...` process with the new code, and no step mixes old and new
-modules. The running service keeps its old code until it stops.
+On 0.x, the default upgrade stays within the current minor: 0.4.3 installs the newest 0.4.\*,
+never 0.5. From 1.0 it stays within the current major. `--to VERSION` selects an exact version;
+an older version is refused because going back requires restoring matching data.
 
-When a step fails, the upgrade stops and prints the commands that put everything back: stop the
-service, install the old version with pip, `evlet restore` the backup from step 5, start the
-service. When you answer no at step 4, the service keeps running the old version and it prints
-the pip command that puts the old version back in `.venv`.
+If multiple installed instances share the project environment, the command refuses before pip
+unless you pass `--all-instances`. This plans, stops, backs up, migrates and restarts all of them:
 
-Options: `--yes` upgrades without asking (needed without a terminal), `--service NAME` stops and
-restarts another unit, `--to VERSION` picks the version. The first upgrade to 0.4.4 runs by hand,
-since 0.4.3 has no `evlet upgrade`: install 0.4.4 with `.venv/bin/python -m pip install
-'evlet==0.4.4'`, then follow [app-upgrades.md](app-upgrades.md#upgrade-evlet).
+```sh
+evlet upgrade acme --all-instances
+```
+
+A backup failure keeps the original environment and restarts its services. A failure after
+publication retains the previous environment and every database backup, and prints a complete
+rollback sequence. That sequence is also stored in `.evlet-upgrade.json`. Recover the whole
+group before another upgrade; see [persistence-recovery.md](persistence-recovery.md). A successful
+upgrade removes the temporary previous environment and retains the database backups.
+
+Options: `--yes` upgrades without asking (needed without a terminal), `--service NAME` selects
+the named instance's service (siblings use `evlet-NAME`), `--all-instances` includes installed
+siblings, and `--to VERSION` picks the release. Preparing the environment needs space for one
+copy of `.venv`. The first upgrade to 0.4.4 runs by hand, since 0.4.3 has no `evlet upgrade`:
+install 0.4.4 with `.venv/bin/python -m pip install 'evlet==0.4.4'`, then follow
+[app-upgrades.md](app-upgrades.md#upgrade-evlet).
 
 ### Serve a website on its own host
 
