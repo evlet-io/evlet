@@ -14,7 +14,6 @@ import { cell, derive, onCleanup, type Cell } from '../reactive';
 import { createRouter, type Router } from '../router';
 import { Avatar, Button, EmptyState, Icon, StatusPill } from '../ui/base';
 import { DialogFooter, mountToasts, openModal, toast } from '../ui/layers';
-import { formatDateTime } from '../model/format';
 import { ControlsClient, type ControlsState } from './client';
 import './controls.css';
 import { describe, Drafts, ipAllowed } from './drafts';
@@ -65,17 +64,8 @@ const NAV: Array<[string, Array<[keyof typeof ROUTES, string, string]>]> = [
 const TITLES = Object.fromEntries(NAV.flatMap(([group, items]) => items.map(([id, label]) => [id, [group, label]])));
 
 /** "01-11-2026 19:52" in GST, from a Unix time. */
-export const stamp = (seconds: number | null | undefined) => seconds ? formatDateTime(new Date(seconds * 1000).toISOString()) : '';
-export const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
-
-export function Head(title: string, sub: string, actions: Child = null, extra: Child = null): HTMLElement {
-  return html`<div class="ctl-head"><div class="grow"><h1>${title}${extra}</h1>${sub ? html`<p>${sub}</p>` : null}</div>
-    <div class="ctl-head-actions">${actions}</div></div>` as HTMLElement;
-}
-
-export function Callout(tone: 'info' | 'warn' | 'err', icon: string, body: Child): HTMLElement {
-  return html`<div class=${`ctl-callout ${tone}`}>${Icon(icon, { size: 'sm' })}<span>${body}</span></div>` as HTMLElement;
-}
+export { stamp, plural, Head, Callout } from '../ui/settings-helpers';
+import { stamp, plural, Head, Callout } from '../ui/settings-helpers';
 
 type Phase = 'loading' | 'ready' | 'denied' | 'failed';
 

@@ -6,9 +6,9 @@ import { ValidationError } from '../api';
 import { cell } from '../reactive';
 import { Button, IconButton, StatusPill } from '../ui/base';
 import { copyText, DialogFooter, openModal, toast } from '../ui/layers';
-import { Callout, Head, stamp, type ControlsContext } from './app';
+import type { ControlsContext } from './app';
 import type { ApiKeyRow, KeyScope, KeysApi } from './client';
-import { ask, field, message, Select } from './people';
+import { Callout, Head, stamp, ask, field, message, Select } from '../ui/settings-helpers';
 
 type Choice = { name: string; label: string };
 export interface KeysOptions {

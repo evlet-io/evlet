@@ -5,6 +5,7 @@
 // Catalog data is docs/ui-design/reference/src/10-library.js extracted as JSON. Demos are safe:
 // nothing here writes to a server except the record-bound demos, which go to the record's API.
 
+import './library.css';
 import { html, when, type Child } from '../dom';
 import { cell, derive, type Cell } from '../reactive';
 import type { RecordStore } from '../model/record';

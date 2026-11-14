@@ -1062,36 +1062,6 @@ th:hover>.rz::after{background:var(--border-strong)}
 .muted-note{color:var(--fg-2);background:var(--bg-subtle)}
 
 /* ---------- library ---------- */
-.lib .ph{position:sticky;top:0;z-index:5;background:var(--bg);margin:-24px -28px 8px;padding:18px 28px 14px;border-bottom:1px solid var(--border)}
-.lib-legend{display:flex;gap:6px;flex-wrap:wrap}
-.lvl{display:inline-flex;align-items:center;height:20px;padding:0 7px;border-radius:5px;font-size:11px;font-weight:600;letter-spacing:.02em}
-.lvl-dot{width:7px;height:7px;border-radius:2px;flex:none;margin:0 4px 0 2px}
-.lib-sec{padding-top:22px}
-.lib-sh{display:flex;align-items:center;gap:10px;margin-bottom:12px}
-.lib-sh h2{margin:0;font-size:16px;font-weight:650;letter-spacing:-.01em}
-.lib-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px}
-.lib-card{border:1px solid var(--border);border-radius:var(--r-lg);background:var(--surface);display:flex;flex-direction:column;min-width:0;overflow:hidden;scroll-margin-top:80px;transition:border-color .12s,box-shadow .12s}
-.lib-card:hover{border-color:var(--border-strong);box-shadow:var(--shadow-md)}
-.lib-card.wide{grid-column:1/-1}
-.lib-demo{flex:1;padding:20px;display:flex;align-items:center;justify-content:center;min-height:110px;background:var(--bg);background-image:radial-gradient(var(--divider) 1px,transparent 1px);background-size:14px 14px;cursor:pointer;min-width:0;overflow-x:auto}
-.lib-card.wide .lib-demo{justify-content:flex-start;align-items:flex-start}
-.lib-demo .fld{width:100%;max-width:300px}
-.lib-foot{display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--divider);text-align:left;font-size:13px;background:var(--surface)}
-.lib-foot b{font-weight:600}
-.lib-foot .grow{flex:1}
-.lib-foot .muted{font-size:12px}
-.lib-foot:hover .muted{color:var(--accent)}
-.lib-stack{display:flex;flex-direction:column;gap:10px;align-items:flex-start;width:100%}
-.lib-card:not(.wide) .lib-stack{align-items:stretch;max-width:320px}
-.lib-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-.lib-side{background:var(--side-bg);border:1px solid var(--border);border-radius:var(--r);padding:8px;width:220px}
-.lib-bar{border:1px solid var(--border);border-radius:var(--r)}
-.lib-scroll{overflow:auto;max-width:100%}
-.lib-static.pop{position:static;opacity:1;transform:none;pointer-events:auto;display:block}
-.lib-static.bulk{position:static;transform:none;opacity:1;pointer-events:auto;display:inline-flex}
-.lib-static.toast{animation:none;display:inline-flex;max-width:none}
-.lib-static.modal{opacity:1;transform:none;pointer-events:auto;max-height:none;box-shadow:var(--shadow-md)}
-.lib-static.lp{box-shadow:var(--shadow-md)}
 .tip-demo{position:relative;display:inline-block;background:var(--inverse-bg);color:var(--inverse-fg);font-size:12px;font-weight:550;padding:5px 9px;border-radius:var(--r);margin:8px 0}
 .tip-demo::after{content:"";position:absolute;left:calc(50% - 4px);width:8px;height:8px;background:inherit;transform:rotate(45deg);border-radius:1.5px}
 .tip-demo.above::after{bottom:-3px}
@@ -1121,30 +1091,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .wf-side{background:var(--side-bg);padding:6px;border-radius:9px}
 .wf-doc{display:grid;grid-template-columns:1fr 180px;gap:8px;width:100%;max-width:640px;min-height:230px}
 .wf-col.side{background:var(--bg-subtle);padding:6px;border-radius:9px}
-.lib-modal{width:min(720px,100%);max-height:84vh}
-.lib-modal .modal-h h2{flex:none}
-.lib-modal .modal-h .muted{flex:1}
-.lib-mb{padding:18px 20px 22px;overflow-y:auto}
-.lib-prev{border:1px solid var(--border);border-radius:var(--r-lg);padding:20px;display:flex;justify-content:center;background:var(--bg);background-image:radial-gradient(var(--divider) 1px,transparent 1px);background-size:14px 14px;margin-bottom:16px;overflow-x:auto}
-.lib-desc{margin:0 0 14px;color:var(--fg-2);line-height:1.6;max-width:62ch}
-.lib-mb h4{font-size:11.5px;font-weight:600;color:var(--fg-3);text-transform:uppercase;letter-spacing:.04em;margin:18px 0 8px}
-.lib-kv{display:flex;gap:10px;align-items:center;font-size:13px;color:var(--fg-3)}
-.lib-kv code,.lib-props code{font-family:var(--mono);font-size:12px;color:var(--fg);background:var(--bg-muted);padding:1px 6px;border-radius:4px}
-.lib-props{width:100%;border-collapse:collapse;font-size:13px}
-.lib-props td{padding:7px 8px;border-bottom:1px solid var(--divider);vertical-align:top}
-.lib-props td:first-child{width:150px}
-.lib-props td:nth-child(2){width:170px}
-.lib-link{cursor:pointer}
-.lib-link:hover{background:var(--accent-soft);color:var(--accent)}
-.lib-back{width:24px;height:24px;border-radius:var(--r-sm);display:grid;place-items:center;color:var(--fg-3);align-self:center;margin-left:-4px}
-.lib-back:hover{background:var(--bg-muted);color:var(--fg)}
-.lib-filter{margin:4px 0 8px}
-.lib-filter .input{width:100%;height:30px;background:var(--surface)}
-.lib-cat{width:100%;text-align:left;cursor:pointer}
-.lib-cat span{font-weight:500}
-.lib-cat:hover{color:var(--fg)}
-.lib-idx{height:28px;font-size:13px}
-@media (max-width:760px){.lib .ph{margin:-18px -16px 8px;padding:14px 16px}.lib-grid{grid-template-columns:1fr}.lib-props td:nth-child(2){display:none}.wf-doc{grid-template-columns:1fr 110px}}
+@media (max-width:760px){.wf-doc{grid-template-columns:1fr 110px}}
 /* ---------- responsive ---------- */
 @media (max-width:1100px){
   .kpis{grid-template-columns:repeat(2,minmax(0,1fr))}
@@ -1282,17 +1229,10 @@ th:hover>.rz::after{background:var(--border-strong)}
 .doc-head h1.doc-title .fval{font:inherit;letter-spacing:inherit;min-height:0;padding:1px 4px;margin-left:-4px}
 .doc-head h1.mono{font-family:var(--mono);font-size:20px}
 /* library */
-.lib-app .sidebar{background:var(--side-bg)}
 /* The Library has no top bar: one row. */
-.lib-app{grid-template-rows:minmax(0,1fr)}
-.lib-app>.sidebar,.lib-app>.main{grid-row:1}
-.lib-later{font-size:12.5px}
-.lib-bulk{width:100%;display:flex;justify-content:center}
-.lib-bulk .bulk{position:static;transform:none}
-.lib-bulk .bulk:not(.show){opacity:.5}
 /* A phone keeps a narrow drag handle, so rows and sections can still be reordered by touch. */
 @media (max-width:480px){.g-exp{min-width:24px}.g-exp .num{display:none}.g-drag{width:12px}}
-@media (max-width:760px){.lib-app .sidebar{display:none}.g-x-f>div.wide{grid-column:1/-1}}
+@media (max-width:760px){.g-x-f>div.wide{grid-column:1/-1}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 /* select, pickers and side boxes (pickers.ts) */
 .in-select.input{display:flex;align-items:center;gap:8px;text-align:left;cursor:pointer}
