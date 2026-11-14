@@ -1,4 +1,5 @@
 include README.md CHANGELOG.md build_support.py
+include requirements-bootstrap.lock
 include docs/*.md
 include examples/playground/*.py
 recursive-include examples/playground/portal *.html *.css *.js
@@ -12,5 +13,5 @@ recursive-include frontend/public *.svg
 recursive-include frontend/fonts *.woff2 *.txt
 recursive-include evlet/ui/static *.html *.js *.css *.svg *.woff2 *-OFL.txt
 recursive-include evlet *.pyi py.typed
-recursive-include evlet/resources *.tpl *.woff2 *-OFL.txt
+recursive-include evlet/resources *.tpl *.woff2 *-OFL.txt *.lock
 prune tests

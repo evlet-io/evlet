@@ -32,6 +32,13 @@ there and verifies it. It does not create a database or start a service. Use
 are never overwritten. Commands discover the project from the current directory
 or its parents. `--project /path/to/myproject` works before or after a command.
 
+Before installing Evlet, `setup` replaces Python's bundled pip with the reviewed version
+in Evlet's packaged `resources/bootstrap.lock`, verifying the wheel hash. It uses the
+existing pip index, mirror and `PIP_FIND_LINKS` configuration. Offline installs need that
+pip wheel as well as Evlet and its dependency wheels; a local `--framework` path alone
+does not provide those dependencies. If bootstrap verification or installation fails,
+setup removes only the new project it created.
+
 ### Setup in one go
 
 `setup` can also run the commands above for you:
@@ -585,7 +592,9 @@ evlet upgrade acme
 ```
 
 It checks every affected service and prepares a copy of `.venv` outside the running environment.
-Pip installs the new release into that copy, and its Python prints a migration plan against a
+The running release's packaged hash lock refreshes pip in that copy before it installs
+the new release. This uses the same index/mirror/offline configuration as setup; failure
+discards the copy before stopping services. Its Python then prints a migration plan against a
 staged database. Answering no, or failing installation or planning, leaves the live environment
 and services unchanged.
 

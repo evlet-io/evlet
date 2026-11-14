@@ -1,7 +1,8 @@
 """Create a project and its isolated Python environment atomically."""
 
+from contextlib import contextmanager
 from pathlib import Path
-from importlib import metadata
+from importlib import metadata, resources
 import json
 import os
 import shutil
@@ -16,8 +17,20 @@ def python_in(root):
     return root / '.venv' / ('Scripts/python.exe' if os.name == 'nt' else 'bin/python')
 
 
+@contextmanager
+def installer_bootstrap(python):
+    """Use the release's hash-locked installer before installing framework code."""
+    with resources.as_file(resources.files('evlet.resources') / 'bootstrap.lock') as lock:
+        yield [str(python), '-m', 'pip', 'install', '--disable-pip-version-check', '--upgrade',
+               '--only-binary=:all:', '--require-hashes', '-r', str(lock)]
+
+
 def create_environment(root, framework=None):
     venv.EnvBuilder(with_pip=True).create(root / '.venv')
+    with installer_bootstrap(python_in(root)) as command:
+        result = subprocess.run(command, capture_output=True, text=True)
+    if result.returncode:
+        raise RuntimeError('Project installer preparation failed: ' + result.stderr.strip())
     if framework is None:
         source = Path(__file__).resolve().parents[2]
         distribution = metadata.distribution('evlet')
