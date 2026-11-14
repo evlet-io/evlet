@@ -59,14 +59,20 @@ export function relatedPages(relations: RelationSchema[], fetch: Fetch, version:
 
 /** Runs `show` once `element` first scrolls into view; at once where IntersectionObserver is missing. */
 export function whenVisible(element: Element, show: () => void): void {
-  if (typeof IntersectionObserver === 'undefined') { queueMicrotask(show); return; }
-  const observer = new IntersectionObserver(entries => {
+  // A browser can retain a disconnected observer's delegate. Release the page callback as soon
+  // as it is consumed or its scope closes, and ignore notifications already queued at disposal.
+  let pending: (() => void) | null = show;
+  let observer: IntersectionObserver | null = null;
+  const cancel = () => { pending = null; observer?.disconnect(); };
+  const visible = () => { const callback = pending; cancel(); callback?.(); };
+  onCleanup(cancel);
+  if (!pending) return;
+  if (typeof IntersectionObserver === 'undefined') { queueMicrotask(visible); return; }
+  observer = new IntersectionObserver(entries => {
     if (!entries.some(entry => entry.isIntersecting)) return;
-    observer.disconnect();
-    show();
+    visible();
   });
   observer.observe(element);
-  onCleanup(() => observer.disconnect());
 }
 
 /** "1–5 of 12". */

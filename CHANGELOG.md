@@ -23,6 +23,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Closed record views release deferred visibility callbacks.** First delivery and disposal
+  release the captured view, and queued observer/fallback callbacks cannot load data after close.
+
 - **Persistence recovery preserves the complete instance.** Backup manifests validate all
   stores before restore. Split migration rejects partial or ambiguous states; backup and
   restore coordinate writers. Shared-instance upgrades stage the environment before publish.
