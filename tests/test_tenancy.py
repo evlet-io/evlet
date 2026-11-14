@@ -230,12 +230,13 @@ def test_router_shutdown_stops_each_tenant(tenants):
     assert all(app._stopping.is_set() for app in apps)
 
 
-def test_router_stop_reaches_tenants_created_later(tenants):
+def test_router_stop_refuses_tenants_created_later(tenants):
     catalog, router = tenants
     login(router, 'alpha')
     stopped = router.stop()
     assert [app._stopping.is_set() for app in stopped] == [True]
-    login(router, 'beta')
+    assert call(router, 'beta.localhost:8000')[0] == 503
+    assert set(router._apps) == {'alpha'}
     assert all(app._stopping.is_set() for _, app in router._apps.values())
 
 
@@ -262,3 +263,162 @@ def test_each_tenant_manages_its_own_users_through_controls_on_its_own_host(tena
     viewer = login(router, 'alpha', 'viewer')
     assert call(router, 'alpha.localhost:8000', path='/api/_controls/state', **viewer)[0] == 404
     assert call(router, 'alpha.localhost:8000', path='/api/auth/users', **viewer)[0] == 403
+
+
+def test_cold_tenant_does_not_block_cached_tenant_and_initializes_once(tenants):
+    import threading
+    catalog, router = tenants
+    hot = router._application(catalog.get('alpha'))
+    entered, release = threading.Event(), threading.Event()
+    original, calls = router.factory, []
+    def factory(tenant):
+        calls.append(tenant.slug)
+        entered.set()
+        assert release.wait(3)
+        return original(tenant)
+    router.factory = factory
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        cold = pool.submit(router._application, catalog.get('beta'))
+        assert entered.wait(1)
+        same = pool.submit(router._application, catalog.get('beta'))
+        cached = pool.submit(router._application, catalog.get('alpha'))
+        try:
+            assert cached.result(timeout=.5) is hot
+            assert not cold.done() and not same.done()
+        finally:
+            release.set()
+        assert cold.result(timeout=2) is same.result(timeout=2)
+    assert calls == ['beta']
+
+
+def test_domain_change_during_cold_start_cannot_publish_stale_app(tenants):
+    import threading
+    catalog, router = tenants
+    entered, release = threading.Event(), threading.Event()
+    original, built = router.factory, []
+    def factory(tenant):
+        app = original(tenant)
+        built.append(app)
+        entered.set()
+        assert release.wait(3)
+        return app
+    router.factory = factory
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        pending = pool.submit(router._application, catalog.get('alpha'))
+        assert entered.wait(1)
+        catalog.set_domain_active('alpha.localhost', False)
+        release.set()
+        with pytest.raises(ValueError, match='changed during initialization'):
+            pending.result(timeout=2)
+    assert not router._apps and built[0]._stopping.is_set()
+
+
+def test_shutdown_racing_cold_start_drains_and_never_publishes(tenants):
+    import threading
+    catalog, router = tenants
+    entered, release = threading.Event(), threading.Event()
+    original, built = router.factory, []
+    def factory(tenant):
+        app = original(tenant)
+        built.append(app)
+        entered.set()
+        assert release.wait(3)
+        return app
+    router.factory = factory
+    async def run():
+        pending = asyncio.create_task(router._work.run('init', router._application, catalog.get('alpha')))
+        while not entered.is_set():
+            await asyncio.sleep(.005)
+        async def receive(): return {'type': 'lifespan.shutdown'}
+        sent = []
+        async def send(event): sent.append(event)
+        shutdown = asyncio.create_task(router({'type': 'lifespan'}, receive, send))
+        await asyncio.sleep(.03)
+        assert not shutdown.done()
+        release.set()
+        result = await asyncio.gather(pending, return_exceptions=True)
+        assert isinstance(result[0], Exception)
+        await asyncio.wait_for(shutdown, 2)
+        assert sent == [{'type': 'lifespan.shutdown.complete'}]
+    try:
+        asyncio.run(run())
+    finally:
+        release.set()
+    assert not router._apps and not router._initializing and built[0]._stopping.is_set()
+
+
+def test_initialization_cleanup_failure_completes_every_waiter(tenants, monkeypatch):
+    import threading
+    catalog, router = tenants
+    original = router.factory
+    entered, release, waiting = threading.Event(), threading.Event(), threading.Event()
+    close_original = []
+    def factory(tenant):
+        app = original(tenant)
+        initialize = app.initialize
+        def initialize_then_wait():
+            initialize()
+            entered.set()
+            assert release.wait(3)
+        monkeypatch.setattr(app, 'initialize', initialize_then_wait)
+        close_original.append(app.database.close)
+        def fail_close():
+            raise RuntimeError('Injected cleanup failure')
+        monkeypatch.setattr(app.database, 'close', fail_close)
+        return app
+    router.factory = factory
+    tenant = catalog.get('alpha')
+    pending = None
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            owner = pool.submit(router._application, tenant)
+            assert entered.wait(2)
+            pending = router._initializing['alpha']
+            original_result = pending.result
+            def wait_for_result(*args, **kwargs):
+                waiting.set()
+                return original_result(*args, **kwargs)
+            monkeypatch.setattr(pending, 'result', wait_for_result)
+            waiter = pool.submit(router._application, tenant)
+            try:
+                assert waiting.wait(1)
+                catalog.set_active('alpha', False)
+                release.set()
+                for future in (owner, waiter):
+                    with pytest.raises(ValueError, match='changed during initialization'):
+                        future.result(timeout=2)
+                assert pending.done() and not router._initializing
+            finally:
+                release.set()
+                if pending is not None and not pending.done():
+                    pending.set_exception(RuntimeError('Test cleanup'))
+    finally:
+        release.set()
+        for close in close_original:
+            close()
+
+
+def test_router_lifespan_restart_rebuilds_stopped_cached_apps(tenants):
+    _, router = tenants
+    assert call(router, 'alpha.localhost:8000')[0] == 200
+    previous = router._apps['alpha'][1]
+    async def lifespan(events, during=None):
+        iterator = iter(events)
+        sent = []
+        async def receive(): return {'type': next(iterator)}
+        async def send(event):
+            sent.append(event['type'])
+            if event['type'] == 'lifespan.startup.complete' and during:
+                await during()
+        await router({'type': 'lifespan'}, receive, send)
+        return sent
+    assert asyncio.run(lifespan(['lifespan.shutdown'])) == ['lifespan.shutdown.complete']
+    async def verify():
+        # A new event loop/lifespan must not advertise success while serving only503.
+        response = await router._work.run('route', router.catalog.resolve, 'alpha.localhost')
+        app = await router._work.run('init', router._application, response)
+        assert app is not previous and not app._stopping.is_set()
+        assert app.database.check() is None
+    assert asyncio.run(lifespan(['lifespan.startup', 'lifespan.shutdown'], verify)) == [
+        'lifespan.startup.complete', 'lifespan.shutdown.complete']
+    assert previous._stopping.is_set()

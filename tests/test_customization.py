@@ -511,7 +511,8 @@ def test_a_year_change_starts_a_new_counter(app):
     assert {item['changed_by'] for item in counters['items']} == {'admin'}
 
 
-def test_fifty_concurrent_creates_get_distinct_names(app):
+def test_fifty_concurrent_creates_get_distinct_names(app, http_capacity):
+    http_capacity(write=10)
     admin = client(app)
     with ThreadPoolExecutor(max_workers=10) as pool:
         results = list(pool.map(lambda index: admin('POST', '/api/invoice', {'customer': f'C{index}', 'posting_date': '2026-05-05'}), range(50)))
