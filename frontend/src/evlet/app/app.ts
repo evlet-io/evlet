@@ -78,8 +78,8 @@ export function App(options: AppOptions): Node {
     setCurrencyDecimals(schemaData.currency_decimals);
     context.peek()?.prefs.dispose();
     const prefs = options.storage === undefined ? new Prefs(current.user!.username) : new Prefs(current.user!.username, options.storage);
-    const unsaved = options.storage === undefined ? new LocalUnsaved(instanceKey(current), current.user!.username)
-      : new LocalUnsaved(instanceKey(current), current.user!.username, options.storage);
+    const unsaved = options.storage === undefined ? new LocalUnsaved(instanceKey(current), current.user!.username, undefined, current.user!.id)
+      : new LocalUnsaved(instanceKey(current), current.user!.username, options.storage, current.user!.id);
     // Another person signed in on this browser last: their unsaved new records go. Expired ones go too.
     unsaved.signedIn();
     unsaved.purge(settings?.unsaved?.limits);

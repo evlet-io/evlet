@@ -46,6 +46,8 @@ export interface RequestOptions {
   ifMatch?: string | null;
   /** Clear only this acknowledged kept draft after a record save; preserve leaves it untouched. */
   draftRevision?: string;
+  /** A caller-owned receipt key for retrying the identical model create. */
+  idempotencyKey?: string;
   signal?: AbortSignal;
   /** Read the body as a file (a Blob) instead of JSON, for downloads and PDFs. */
   file?: boolean;
@@ -166,6 +168,7 @@ export class ApiClient {
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (options.ifMatch) headers['If-Match'] = options.ifMatch;
     if (options.draftRevision) headers['X-Evlet-Draft-Revision'] = options.draftRevision;
+    if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey;
     const query = Object.entries(options.query ?? {}).filter(([, value]) => value !== undefined && value !== '');
     const url = this.url(path) + (query.length ? '?' + new URLSearchParams(query.map(([key, value]) => [key, String(value)])) : '');
     const { signal, release } = anySignal([options.signal, this.options.signal?.()]);
@@ -243,7 +246,7 @@ export class ApiClient {
   async get(model: string, id: string, signal?: AbortSignal) { return this.request<RecordData>('GET', recordPath(model, id), { signal }); }
 
   /** Create a record. Child rows go in `children: {table: [rows]}`, each new row with a `_key`. */
-  async create(model: string, values: Record<string, unknown>) { return this.request<RecordData>('POST', modelPath(model), { body: values }); }
+  async create(model: string, values: Record<string, unknown>, idempotencyKey?: string) { return this.request<RecordData>('POST', modelPath(model), { body: values, idempotencyKey }); }
 
   /**
    * Change a record. A Table may be sent as a change set

@@ -18,6 +18,7 @@ import { compare, parse, type CurrencyInput, type FiniteDocument } from './finit
 import { ApiError, ConflictError, ValidationError, type ApiClient, type DraftResult, type FieldErrors, type RecordData, type User } from '../api';
 import { batch, cell, derive, getOwner, runWithOwner, scope, untrack, type Cell, type Derive } from '../reactive';
 import { buildChanges, findField } from './changes';
+import { prepareCreate, type CreateAttempt } from './create-attempt';
 import { dependentsOf, fitsRecord, linkScope } from './links';
 import { currencyDecimalsTable, todayGst } from './format';
 import { Session } from './session';
@@ -535,6 +536,13 @@ export class RecordStore {
   outcome: unknown = null;
   /** Last acknowledged save, retained even if its view closed before the answer arrived. */
   lastSavedId: string | null = null;
+  /** Receipt of the acknowledged create, including when its view closed while awaiting it. */
+  lastCreatedKey: string | null = null;
+  /** Retained after an uncertain create; restoring a kept draft restores this too. */
+  createAttempt: CreateAttempt | null = null;
+  readonly createNotice = cell<string | null>(null, { name: 'record.createNotice' });
+  /** Synchronous durability hook, called before the request and after a first-attempt 422. */
+  onCreateAttempt?: (attempt: CreateAttempt | null, previous: CreateAttempt | null) => string | null;
   /** Every row is loaded and calculations are attached: the record can be edited. */
   readonly ready = cell(false, { name: 'record.ready' });
   /** Set when rows could not be paged in; call loadAll() again to retry. */
@@ -604,6 +612,9 @@ export class RecordStore {
   /** Start a new, unsaved record. Defaults, initial values and calculations apply. */
   async create(values: Record<string, unknown> = {}) {
     if (this.disposed) return;
+    this.createAttempt = null;
+    this.lastCreatedKey = null;
+    this.createNotice.set(null);
     this.opening++;
     // Field values, and optionally children: {table: [rows]} for new rows.
     this.detach();
@@ -688,12 +699,34 @@ export class RecordStore {
     if (!root.isNew && !Object.keys(body).length) return true;
     const calculation = this.meta.calculation;
     if (calculation?.plan) body._calculation = { language: calculation.language, model_schema_hash: calculation.model_schema_hash };
+    const previous = this.createAttempt;
+    let attempted: CreateAttempt | null = null, dispatched = false;
     this.saving.set(true);
     try {
-      const response = root.isNew ? await this.api.create(this.meta.name, body) : await this.api.update(this.meta.name, root.id!, body, this.etag.peek(), this.draftRevision);
+      if (root.isNew) {
+        const path = this.api.url?.(`/api/${this.meta.name}`) ?? `/api/${this.meta.name}`;
+        const endpoint = new URL(path, typeof location === 'undefined' ? 'http://local.invalid' : location.href).href;
+        attempted = prepareCreate(body, previous, this.user?.id ?? null, endpoint);
+        this.createAttempt = attempted;
+        this.createNotice.set(this.onCreateAttempt ? this.onCreateAttempt(attempted, previous)
+          : 'If the connection fails, keep this tab open and retry the same values. This create is not kept across reloads.');
+      }
+      dispatched = true;
+      const response = attempted ? await this.api.create(this.meta.name, JSON.parse(attempted.body), attempted.key)
+        : await this.api.update(this.meta.name, root.id!, body, this.etag.peek(), this.draftRevision);
       this.lastSavedId = response.data.id;
+      if (attempted) this.lastCreatedKey = attempted.key;
+      this.createAttempt = null;
+      this.createNotice.set(null);
       this.applyServer(response.data, response.etag);
     } catch (error) {
+      if (!dispatched) this.createAttempt = previous;
+      // A later 422 cannot prove an earlier lost response rolled back. Release only a
+      // newly sent request with a definitive validation refusal, never an uncertain retry.
+      else if (attempted && previous === null && error instanceof ValidationError && error.status === 422) {
+        this.createAttempt = null;
+        try { this.createNotice.set(this.onCreateAttempt?.(null, attempted) ?? null); } catch { /* no create committed */ }
+      }
       this.saving.set(false);
       return this.refused(error);
     }

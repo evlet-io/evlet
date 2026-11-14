@@ -12,7 +12,7 @@ const install = cell<InstallEvent | null>(null), cacheOn = cell(false), busy = c
 let started = false;
 
 export const supportsInstall = (config: RuntimeConfig = readConfig()) =>
-  config.frontend === 'evlet.desk' && config.realm === 'desk' && config.base === '/app' && window.isSecureContext;
+  ['evlet.desk', 'evlet.settings'].includes(config.frontend) && config.realm === 'desk' && config.base === '/app' && window.isSecureContext;
 
 export function startPwa(config: RuntimeConfig = readConfig()): void {
   if (started || !supportsInstall(config)) return;

@@ -31,6 +31,17 @@ describe('optional device settings', () => {
     expect(made.pwa.supportsInstall({ frontend: 'evlet.settings', realm: 'portal', base: '/app' } as any)).toBe(false);
   });
 
+  it('keeps device controls on a direct bundled desk settings load, excluding portal and custom frontends', async () => {
+    // Actual /settings/appearance config uses evlet.settings, unlike SPA entry from /app.
+    const config = document.createElement('script'); config.id = 'evlet-config'; config.type = 'application/json';
+    config.textContent = JSON.stringify({ frontend: 'evlet.settings', realm: 'desk', base: '/app', api: '/api' }); document.body.append(config);
+    const made = await page(); made.pwa.startPwa();
+    expect(made.toggle()).not.toBeNull(); expect(document.querySelector('link[rel="manifest"]')).not.toBeNull();
+    expect(made.pwa.supportsInstall({ frontend: 'evlet.settings', realm: 'portal', base: '/app' } as any)).toBe(false);
+    expect(made.pwa.supportsInstall({ frontend: 'custom.frontend', realm: 'desk', base: '/app' } as any)).toBe(false);
+    expect(made.serviceWorker.register).not.toHaveBeenCalled();
+  });
+
   it('does not install a worker when the device cannot persist explicit opt-in', async () => {
     const made = await page(); vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked'); });
     made.toggle().click();
