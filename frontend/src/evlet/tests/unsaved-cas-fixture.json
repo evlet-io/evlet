@@ -1,0 +1,64 @@
+{
+  "empty": {
+    "status": 200,
+    "body": {
+      "entry": null,
+      "dropped": []
+    },
+    "etag": "\"unsaved-empty-0\""
+  },
+  "kept": {
+    "status": 200,
+    "body": {
+      "saved_at": 1794655775,
+      "size": 33,
+      "dropped": []
+    },
+    "etag": "\"unsaved-1\""
+  },
+  "read_kept": {
+    "status": 200,
+    "body": {
+      "entry": {
+        "changes": {
+          "values": {
+            "title": "Kept draft"
+          }
+        },
+        "base_revision": "\"44d529b580ec8280026e499c2bfab5b99b70de89afc445bcf189c93d01836e2a\"",
+        "saved_at": 1794655775,
+        "size": 33,
+        "stale": false
+      },
+      "dropped": []
+    },
+    "etag": "\"unsaved-1\""
+  },
+  "stale_put": {
+    "status": 412,
+    "body": {
+      "error": "The kept draft changed in another tab or an earlier request. Your open edits were not kept. Review the draft or save the record before continuing."
+    },
+    "etag": null
+  },
+  "stale_delete": {
+    "status": 412,
+    "body": {
+      "error": "The kept draft changed in another tab or an earlier request. Your open edits were not kept. Review the draft or save the record before continuing."
+    },
+    "etag": null
+  },
+  "deleted": {
+    "status": 204,
+    "body": "",
+    "etag": "\"unsaved-empty-2\""
+  },
+  "read_deleted": {
+    "status": 200,
+    "body": {
+      "entry": null,
+      "dropped": []
+    },
+    "etag": "\"unsaved-empty-2\""
+  }
+}
