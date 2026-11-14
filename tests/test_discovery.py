@@ -64,7 +64,8 @@ def test_child_schema_allows_only_the_callers_permitted_row_operations(secured):
     item = c('GET', '/api/_discovery/project')[1]
     variants = item['schemas']['update']['properties']['children']['properties']['tasks']['items']['oneOf']
     assert 'title' in variants[0]['properties']
-    assert variants[1]['properties'] == {'id': {'type': 'string', 'pattern': identity.PATTERN}}
+    assert variants[1]['properties'] == {'id': {'type': 'string', 'pattern': identity.PATTERN},
+                                         '_key': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,64}$'}}
     secured.business.policy = Policy(secured.registry, rules={('editor', ProjectTask): Rule(operations=('read', 'update'))})
     item = c('GET', '/api/_discovery/project')[1]
     assert 'children' not in item['schemas']['create']['properties']
