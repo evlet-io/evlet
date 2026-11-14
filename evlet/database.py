@@ -5,6 +5,7 @@ connections and runs transactions, and a connection class that implements evlet.
 
 from contextlib import contextmanager
 from pathlib import Path
+import hashlib
 import logging
 import os
 import re
@@ -108,6 +109,31 @@ class Database:
     def files(self):
         """This database's SQLite files, main first, then sessions, logs and eva (evlet/writes.py)."""
         return writes.files(self.path)
+
+    @contextmanager
+    def worker_lease(self, key):
+        """Hold a nonblocking process lease for an opaque worker slot; yield False only on contention.
+
+        Callers use a bounded set of slot keys, retain ownership until actual work ends, and never
+        unlink lease files. This capability keeps SQLite paths and OS locking out of worker services.
+        """
+        if not isinstance(key, str) or not key or len(key) > 128:
+            raise ValueError('Worker lease keys must contain 1 to 128 characters')
+        folder = self.path.parent / '.worker-leases'
+        if folder.is_symlink():
+            raise ValueError('Worker lease directory cannot be a symbolic link')
+        folder.mkdir(mode=0o700, exist_ok=True)
+        name = hashlib.sha256((self.path.name + '\0' + key).encode()).hexdigest() + '.lock'
+        guard = writes.file_lock(folder / name)
+        try:
+            guard.__enter__()
+        except writes.LockBusy:
+            yield False
+        else:
+            try:
+                yield True
+            finally:
+                guard.__exit__(None, None, None)
 
     @contextmanager
     def _connection(self):

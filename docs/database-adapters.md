@@ -140,6 +140,10 @@ A new database is two classes and a compiler:
 1. **A `Database` subclass** that overrides how connections are opened and transactions run:
    `__init__`, `_connection()`, `transaction(store=None)`, `schema_transaction()`,
    `read_only()`, `owns(session)`, `upgrade_storage()`, `backup()`, `files()` and `close()`.
+   Background services use `worker_lease(key)` as a nonblocking context manager yielding an
+   acquisition boolean. A bounded set of opaque slot keys identifies live process ownership;
+   retain a lease until actual work ends. Contention yields `False`; storage failures propagate.
+   SQLite implements leases with stable OS lock files, so workers never inspect database paths.
    Their contracts are in the docstrings of `evlet/database.py`. Writers must not interleave:
    Evlet relies on one write transaction at a time per database for sequences, ledgers and
    the job queue.
