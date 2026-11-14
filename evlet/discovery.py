@@ -37,7 +37,7 @@ _MOVE = object_schema({
 }, ('key', 'to', 'label', 'allowed'))
 _PAGE = object_schema({'total': _COUNT, 'limit': {'type': 'integer', 'minimum': 1}, 'partial': _BOOL},
                       ('total', 'limit', 'partial'))
-# Optional annotations emitted by the record read/write paths, never writable fields.
+# Optional record response annotations; discovery's writable fields stay separate.
 READ_ANNOTATIONS = {
     '_audit': AUDIT,
     '_actions': {'type': 'array', 'items': object_schema({'name': _TEXT, 'label': _TEXT, 'allowed': _BOOL, 'reason': _TEXT},
