@@ -3,8 +3,8 @@
 from datetime import date
 
 from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Main, Model, Naming,
-                   Activity, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, Text, ValidationError,
-                   action, state)
+                   Activity, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, TableSection, Text,
+                   ValidationError, action, state)
 from evlet.calc import F
 
 # Currencies the Playground records may use. A Currency field only shows the code; it never converts.
@@ -114,11 +114,11 @@ class Project(Model):
     class Meta:
         description = "Track a small project and its customer."
         list_fields = ('title', 'customer', 'docstate', 'budget')
-        # A compact record page: Main is the primary area, with no heading; every Section after it is
-        # "more information", which a person can open and close. Budget starts open, Schedule starts
-        # closed and Notes starts closed when it is empty. A layout with Main has no record tabs.
+        # A compact record page: Main is the main zone, with no heading; every Section is "more information",
+        # which a person can open and close. Sections start closed: Budget says collapsed=False to start open,
+        # and Notes starts closed only when it is empty.
         layout = (Main(('title', 'customer', 'docstate')),
-                  Section('Budget', ('budget', 'progress'), description='What the project may spend and how far the work has come.'),
+                  Section('Budget', ('budget', 'progress'), collapsed=False, description='What the project may spend and how far the work has come.'),
                   Section('Schedule', ('starts_on',), collapsed=True, description='When the work starts.'),
                   Section('Notes', ('brief', 'notes'), collapsed='empty', description='Goals, scope and anything else worth keeping.'))
         # Cards at the top of the record page, up to five: derived values only. Here they are per-record
@@ -211,12 +211,16 @@ class Employee(Model):
         title_field = 'full_name'
         list_fields = ('full_name', 'email', 'department', 'reports_to')
         search_fields = ('full_name', 'email')
-        # The record page, declared block by block (docs/ui.md, Compact record page): the fields and the Skills
-        # table in the primary area, then as "more information" text from the app, charts over the measure below,
-        # and two lists of direct reports, one narrowed to this employee's department. Listing related records
-        # here turns the automatic Related rows off for employees.
+        # The record page, declared block by block (docs/ui.md, Record layouts). The main zone, always open: the
+        # person, a Team group under its own heading and the Skills table. Then "more information", closed until
+        # opened: the Skill levels table (a TableSection), text from the app, charts over the measure below, and two
+        # lists of direct reports, one narrowed to this employee's department. Listing related records here turns
+        # the automatic Related rows off for employees.
         layout = (
-            Main(('full_name', 'email', 'department', 'reports_to', 'skill_count'), 'skills', 'skill_levels'),
+            Main(('full_name', 'email', 'skill_count')),
+            Main(('department', 'reports_to'), title='Team'),
+            Main('skills'),
+            TableSection('skill_levels', collapsed='empty'),
             Html('<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is listed below.</p>'),
             Chart('stat', y='people', model='employee', link='reports_to', label='Direct reports'),
             Chart('bar', x='department', y='people', model='employee', link='reports_to', label='Direct reports by department'),

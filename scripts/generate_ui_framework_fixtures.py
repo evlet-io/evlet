@@ -16,7 +16,7 @@ from tempfile import TemporaryDirectory
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
                    MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome,
-                   Report, Column, Chart, Count, Html, Main, Ref, Section, state, validate)
+                   Report, Column, Chart, Count, Html, Main, Ref, Section, TableSection, state, validate)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
 from evlet.audit import fixed_times
@@ -130,7 +130,8 @@ class InvoiceMeta(FiniteMeta):
     title_field = 'number'
     list_fields = ('id', 'number', 'customer', 'posting_date', 'docstate', 'total', 'outstanding')
     search_fields = ('number',)
-    layout = (('Invoice', ('number', 'customer', 'posting_date', 'due_on', 'docstate')), ('Amounts', ('total', 'outstanding', 'remarks')))
+    # The fields and the lines in the main zone; a Table no block names would be a closed row of more information.
+    layout = (Main(('number', 'customer', 'posting_date', 'due_on', 'docstate')), Main('lines'), ('Amounts', ('total', 'outstanding', 'remarks')))
 
 
 class Invoice(Model):
@@ -757,11 +758,77 @@ def record_compact(folder):
     return out
 
 
+class Crew(Model):
+    """For the screens: the two zones of a record layout. Four mains (fields, a table, a titled group, fields), two
+    sections, a TableSection and a Related block; the row model lays out its row editor the same way."""
+    permissions = ALL
+    title = Text(required=True)
+    site = Text(default='')
+    lead = Text(default='')
+    starts = Text(default='')
+    ends = Text(default='')
+    cost = Integer(default=0)
+    permit = Text(required=True)
+    notes = LongText()
+
+    class Hand(Child):
+        person = Text(default='')
+        role = Text(default='')
+        note = Text(default='')
+
+        class Meta:
+            layout = (Main(('person',)), Section('More', ('role', 'note')))
+
+    class Tool(Child):
+        tool = Text(default='')
+
+    hands = Table(Hand)
+    tools = Table(Tool)
+
+    class Meta:
+        layout = (
+            Main(('title', 'site')),
+            Main('hands'),
+            Main(('lead',), title='People'),
+            Main(('starts', 'ends')),
+            Section('Costs', ('cost',)),
+            Section('Permit', ('permit',), description='Needed before work starts.'),
+            TableSection('tools', collapsed='empty'),
+            Related('crewvisit', label='Visits'),
+        )
+
+
+class CrewVisit(Model):
+    permissions = ALL
+    crew = Link(Crew, required=True)
+    note = Text(default='')
+
+
+def record_zones(folder):
+    """Responses the two-zone record layout reads: the schema and a crew with one hand and no tools."""
+    database = Database(folder / 'zones.sqlite3', Registry(Crew, CrewVisit))
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    app = Application(database, auth=auth)
+    app.initialize()
+    http(app, 'POST', '/api/auth/setup', {'username': 'owner', 'password': PASSWORD})
+    status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
+    cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
+    admin = lambda method, path, body=None: http(app, method, path, body, cookie=cookie, csrf=csrf)  # noqa: E731
+    out = {'zones_schema': dict(zip(('status', 'body'), admin('GET', '/api/schema')[:2]), etag=None)}
+    crew = admin('POST', '/api/crew', {'title': 'Night shift', 'site': 'Dock 4', 'permit': 'P-17',
+                                       'children': {'hands': [{'_key': 'hand-1', 'person': 'Lina', 'role': 'Rigger'}]}})[1]
+    status, payload, headers = admin('GET', f"/api/crew/{crew['id']}")
+    out['zones_crew_detail'] = {'status': status, 'body': payload, 'etag': headers.get(b'etag', b'').decode() or None}
+    database.close()
+    return out
+
+
 def generate():
     """Both fixtures, recorded from fresh databases. Ids count up per table so the recording is stable."""
     with TemporaryDirectory() as directory, sequential_ids(), fixed_times():
         return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory)), **record_reports(Path(directory)),
-                                                                          **record_layouts(Path(directory)), **record_compact(Path(directory))}}
+                                                                          **record_layouts(Path(directory)), **record_compact(Path(directory)),
+                                                                          **record_zones(Path(directory))}}
 
 
 def main():

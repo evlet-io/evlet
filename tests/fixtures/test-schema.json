@@ -16,7 +16,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "columns"
+          "flow": "columns",
+          "main": true
         }
       ],
       "label": "Customer",
@@ -37,6 +38,16 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "customer_name",
@@ -167,7 +178,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Invoice",
@@ -196,6 +208,16 @@
       "panel": {
         "fields": [
           "tax_rate"
+        ]
+      },
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
         ]
       },
       "fields": [
@@ -488,7 +510,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Payment",
@@ -510,6 +533,16 @@
       ],
       "open_in": "page",
       "autosave": false,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "invoice",
@@ -641,7 +674,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Ledger entry",
@@ -662,6 +696,16 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "invoice",
@@ -873,20 +917,27 @@
         "blocks": [
           {
             "kind": "section",
+            "name": "Project",
             "label": "Project",
             "main": true
           },
           {
             "kind": "section",
-            "label": "Budget"
+            "name": "Budget",
+            "label": "Budget",
+            "main": false
           },
           {
             "kind": "section",
-            "label": "Schedule"
+            "name": "Schedule",
+            "label": "Schedule",
+            "main": false
           },
           {
             "kind": "section",
-            "label": "Notes"
+            "name": "Notes",
+            "label": "Notes",
+            "main": false
           }
         ]
       },
@@ -1080,7 +1131,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Project task",
@@ -1098,6 +1150,16 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "project",
@@ -1176,7 +1238,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         },
         {
           "label": "Details",
@@ -1437,6 +1500,60 @@
       "open_in": "page",
       "autosave": true,
       "image": "photo",
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Item",
+            "label": "Item",
+            "main": true
+          },
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": false
+          },
+          {
+            "kind": "section",
+            "name": "GCC markets",
+            "label": "GCC markets",
+            "main": false
+          },
+          {
+            "kind": "section",
+            "name": "Other markets",
+            "label": "Other markets",
+            "main": false
+          },
+          {
+            "kind": "section",
+            "name": "Warehouses",
+            "label": "Warehouses",
+            "main": false
+          },
+          {
+            "kind": "section",
+            "name": "Specifications",
+            "label": "Specifications",
+            "main": false
+          },
+          {
+            "kind": "table",
+            "name": "prices",
+            "main": false,
+            "collapsible": true,
+            "collapsed": true
+          },
+          {
+            "kind": "table",
+            "name": "barcodes",
+            "main": false,
+            "collapsible": true,
+            "collapsed": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "item_code",
@@ -5115,14 +5232,24 @@
           "fields": [
             "full_name",
             "email",
-            "department",
-            "reports_to",
             "skill_count"
           ],
           "collapsible": false,
           "collapsed": false,
           "flow": "rows",
           "main": true
+        },
+        {
+          "label": "Team",
+          "fields": [
+            "department",
+            "reports_to"
+          ],
+          "collapsible": false,
+          "collapsed": false,
+          "flow": "rows",
+          "main": true,
+          "heading": true
         }
       ],
       "label": "Employee",
@@ -5148,7 +5275,14 @@
         "blocks": [
           {
             "kind": "section",
+            "name": "Employee",
             "label": "Employee",
+            "main": true
+          },
+          {
+            "kind": "section",
+            "name": "Team",
+            "label": "Team",
             "main": true
           },
           {
@@ -5159,11 +5293,15 @@
           {
             "kind": "table",
             "name": "skill_levels",
-            "main": true
+            "main": false,
+            "collapsible": true,
+            "collapsed": "empty"
           },
           {
             "kind": "html",
-            "html": "<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is listed below.</p>"
+            "html": "<p>Skills of <strong>{full_name}</strong> are kept with the record. Their team is listed below.</p>",
+            "name": "Notes",
+            "main": false
           },
           {
             "kind": "chart",
@@ -5175,7 +5313,9 @@
               "people"
             ],
             "label": "Direct reports",
-            "filters": []
+            "filters": [],
+            "name": "Direct reports",
+            "main": false
           },
           {
             "kind": "chart",
@@ -5187,7 +5327,9 @@
               "people"
             ],
             "label": "Direct reports by department",
-            "filters": []
+            "filters": [],
+            "name": "Direct reports by department",
+            "main": false
           },
           {
             "kind": "related",
@@ -5203,7 +5345,9 @@
             "limit": 5,
             "order": [
               "full_name"
-            ]
+            ],
+            "name": "Direct reports 2",
+            "main": false
           },
           {
             "kind": "related",
@@ -5229,7 +5373,9 @@
             "limit": 5,
             "order": [
               "-id"
-            ]
+            ],
+            "name": "Reports in the same department",
+            "main": false
           }
         ]
       },
@@ -5387,7 +5533,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Price",
@@ -5407,6 +5554,16 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "price_list",
@@ -5562,7 +5719,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Barcode",
@@ -5580,6 +5738,16 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "barcode",
@@ -5660,7 +5828,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Skill",
@@ -5678,6 +5847,16 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "skill",
@@ -5758,7 +5937,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Skill level",
@@ -5775,6 +5955,16 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "level",

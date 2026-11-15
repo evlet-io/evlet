@@ -521,9 +521,11 @@ class Registry:
         # Cards at the top of a compact record page: derived fields and per-record measures (evlet/meaning.py).
         cards_for = step('cards')
         self.cards = MappingProxyType(cards_for(self, models, child_models))
-        # Record layouts with Main, Related, Html, Chart or Table blocks (Meta.layout, evlet/ui/metadata.py).
+        # Record layouts (Meta.layout, evlet/ui/metadata.py); what a layout ignores is logged once here and listed by
+        # Controls as problems.
         from .ui.metadata import compile_layouts
-        self.layouts = MappingProxyType(compile_layouts(self))
+        layouts, self.layout_warnings = compile_layouts(self)
+        self.layouts = MappingProxyType(layouts)
         # Rows documents post to other models (Meta.effects); the targets' rows are read only.
         compile_effects = step('effects')
         self.effects, self.effect_targets = compile_effects(self, models, child_models)

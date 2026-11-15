@@ -124,11 +124,20 @@ def test_meta_panel_names_are_checked_when_the_model_is_defined(value, message):
         Registry(Ticket)
 
 
-@pytest.mark.parametrize('make', [lambda: Text(panel='no'), lambda: Table(Line, panel=0),
-                                  lambda: Section('A', ('x',), panel=None).check('M')])
+@pytest.mark.parametrize('make', [lambda: Text(panel='no'), lambda: Table(Line, panel=0)])
 def test_panel_flags_must_be_booleans(make):
     with pytest.raises(ValueError, match='panel must be True or False'):
         make()
+
+
+def test_a_section_panel_flag_that_is_not_a_boolean_is_ignored_with_a_warning():
+    class Ticket(Model):
+        subject = Text()
+
+        class Meta:
+            layout = (Section('A', ('subject',), panel=None),)
+    (_, text), = Registry(Ticket).layout_warnings
+    assert 'panel must be True or False' in text
 
 
 def test_a_field_named_like_a_block_is_the_field():

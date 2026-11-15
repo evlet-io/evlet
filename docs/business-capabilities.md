@@ -420,25 +420,27 @@ from evlet import Section
 class Meta:
     layout = (
         ('Project', ('title', 'customer', 'status')),
-        Section('Planning', ('budget', 'progress')),                 # starts open
-        Section('Schedule', ('starts_on',), collapsed=True),         # starts closed
+        Section('Planning', ('budget', 'progress'), collapsed=False),  # starts open
+        Section('Schedule', ('starts_on',)),                         # starts closed
         Section('Notes', ('notes',), collapsed='empty'),             # closed when empty
     )
 ```
 
-`Section(title, fields, *, collapsible=True, collapsed=False)`. `collapsed` is where the
-section starts: `False` open, `True` closed, or `'empty'`, closed when every field in it is
-empty on an existing record and always open on a new one. Any other value, or `collapsed`
-on a section with `collapsible=False`, fails registration with a message naming the model
-and the section. The group rules above apply to sections too, and Other always shows.
+`Section(title, fields, *, collapsible=True, collapsed=True)`. `collapsed` is where the
+section starts: `True` closed (the default), `False` open, or `'empty'`, closed when every field in it is
+empty on an existing record and always open on a new one; on a new record a section that holds a
+required field starts open. A section with `collapsible=False` always starts open. Any other value is
+ignored with a warning naming the model and the section, and the default applies
+([ui.md](ui.md#record-layouts)). The group rules above apply to sections too; Other is a section that
+starts closed.
 `collapsed` is only the starting point: each person's own choice is remembered per model
 ([ui.md](ui.md#collapsible-sections)). Each layout entry in the UI schema carries
 `collapsible` and `collapsed` (`false` for plain groups). Controls can change both per
 section ([controls.md](controls.md)). `Section(..., panel=False)` leaves the section out when a
 list opens the record in its side panel ([ui.md](ui.md#what-a-side-panel-shows)).
 `Section(..., description="...")` adds a line of text under the title, sent as `description` on the
-layout entry; it must be nonempty text. A layout can also start with `Main(fields, *tables)` for a
-compact record page ([ui.md](ui.md#compact-record-page)).
+layout entry; it must be nonempty text. `Main(...)` blocks make the main zone of a compact record page,
+always open, and `TableSection(...)` places a Table as a closed row ([ui.md](ui.md#record-layouts)).
 
 ### Field order
 

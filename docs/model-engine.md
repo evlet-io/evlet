@@ -896,6 +896,14 @@ The neutral schema remains version 1 with additional field types and metadata.
 The Playground now generates forms, lists, and details from the extended UI
 metadata described in [application generation](application-generation.md).
 
+**Record layout, for MCP, Eva and other clients.** Every model entry of `/api/schema` has
+`record_layout`: `{"blocks": [...]}`, every block of the record page in drawing order, each with
+its `kind` (`section`, `table`, `related`, `html`, `chart`), its stable `name` and `"main": true`
+or `false`. Several blocks may be main, and they come first; the rest are "more information" rows.
+A section's fields are in the entry's `layout` under the same name (`label`). A client that ignores
+`name` and `main` still gets a usable order. The layout is display only: permissions, writes and
+the tool schemas never read it ([ui.md](ui.md#record-layouts)).
+
 ## How much of a model callers reach
 
 `Meta.api` says which surfaces a model gets. Callers are every HTTP route, MCP clients, Eva

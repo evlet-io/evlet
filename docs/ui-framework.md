@@ -740,8 +740,8 @@ mount(document.querySelector('#app')!, () => DocFrame({
   and `overlay` says so.
 - **FormSection** with `fold` is a **FoldSection**: a heading button with `aria-expanded`, `aria-controls` and a chevron, a summary and an error
   count while closed, and `hidden` on the closed body so Tab skips it. A `Folds` holds one form's state: the
-  person's choices (a preferences cell of title to open) over each section's start (`collapsed`, the phone rule,
-  `'empty'`). A number still at a zero default (0, 0.00 that nobody typed) counts as empty for the summary and
+  person's choices (a preferences cell of title to open) over each section's start (open on a new record when it holds a
+  required field that applies, then `collapsed`, the phone rule, `'empty'`). A number still at a zero default (0, 0.00 that nobody typed) counts as empty for the summary and
   for `'empty'` (`isBlank(field)`); `reveal(title)` opens one for now and `reset()` forgets the choices. `revealField(root, name)`
   opens the section holding a field and focuses it. `flowGrid(cells, flow)` lays a section's fields out
   across then down, or down each column with full-width fields as breaks, in DOM order.
@@ -957,12 +957,12 @@ page in a new browser tab.
 | `column=False` on a field | Out of the list's default columns and the Table grid's default columns (it starts hidden in the Columns menu, and Reset columns hides it again); still on the form and the row editor, and still read for each row, for example as a currency source |
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |
 | `Meta.search_fields` | The list search box and record search in the palette |
-| `Meta.layout` | The record page's sections, the first one its primary area; readable fields it leaves out follow under Other. With `Main` or blocks (`record_layout` in the schema), the primary area and then its sections, tables, Related lists, Html and charts as "more information", in order ([ui.md](ui.md#record-layouts)) |
+| `Meta.layout` | The record page in two zones, from `record_layout` in the schema: every block marked `main` (`Main` groups of fields, a titled one under a small heading, and `Main` Tables) drawn open first, in order, never collapsing; then every other block (sections, `TableSection`s, Related lists, Html and charts) as "more information" rows that start closed. Without a main block the first section is the main zone. Readable fields the layout leaves out follow under Other, and Tables it leaves out after it; the row editor follows the same rules over the row model's layout ([ui.md](ui.md#record-layouts)) |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
 | `Meta.list_tabs`, `Meta.list_tab` | The list's tabs: All and one per value of a State, Select or Link field (the State without `list_tabs`, none with `list_tabs = None`), with counts from `GET /api/{model}/list_tabs`, and the tab the list opens on (`"all"` by default). A Link shows its 8 most used values, labelled by title ([ui.md](ui.md#list-tabs)) |
 | `Meta.board` | Names the model's State field, such as `"stage"`, to offer a List and Board switch on its list; the board has one column per state. Without it the list has no board, and `?view=board` opens the table. Any other field fails registration |
 | `Meta.autosave` | `True` (default): leaving a record with unsaved edits keeps them for later instead of asking to discard them; `False` keeps the leave prompt ([ui.md](ui.md#unsaved-changes)) |
-| `Table(...)` | One tab per table (ChildTable with totals, paging in over 100 rows) and a summary row in Details, unless `Meta.layout` places it as a block |
+| `Table(...)` | Its own block, never a field: in the main zone (`Main('lines')`, or every Table of a model without `Meta.layout`) or as a row of more information (`TableSection`), always with its title bar, total line and totals (ChildTable, paging in over 100 rows) |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
 | `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
 | `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records; `?slip=name` on a record opens it. A `menu` slip is listed at the top level of the schema; the shell shows no entry for it, so browser code presents it with `presentSlip()`. A slip that becomes a record for review opens New filled in, with a note |
@@ -973,7 +973,7 @@ page in a new browser tab.
 | `Meta.measures` (Phase 9) | Model-level measures as stat cards over the list (following its filters and search), board column counts and totals of the first declared sum measure (from the aggregate route, with the measure's `where`, as exact amounts); per-record measures in the record's summary strip |
 | `Meta.status`, `Select(colors=...)` | A status badge in the record header and the same badge in the list column; never a button unless it is the State with moves to offer |
 | `Meta.key_fields` (Phase 10) | The header's subtitle (the first two with a value); the fields themselves show in the form. Never the summary strip |
-| `Meta.cards`, `Main`, `Section(description=...)` | The compact record page: key cards, a primary area without a heading, collapsible "more information" rows ([ui.md](ui.md#compact-record-page)) |
+| `Meta.cards`, `Main`, `Section(description=...)`, `TableSection` | The compact record page: key cards, the main zone, collapsible "more information" rows ([ui.md](ui.md#compact-record-page)) |
 | Calculated fields, per-record measures | The summary strip, at most four: calculated values the header facts don't show, then per-record measures. No strip when nothing is left; `Meta.summary = False` turns it off |
 | `Meta.relations` (Phase 10) | The Related row of "more information": closed, a count per relation; open, every relation, an empty one as one line with no table or 0. Rows load when shown, five at a time with a pager, and View all opens the filtered list ([ui.md](ui.md)) |
 | `Meta.side_blocks` | `files` keeps the attachments in the side column (without it they go); `related` keeps the automatic Related row when the layout lists related records itself. `key_fields` and `info` are accepted and change nothing |

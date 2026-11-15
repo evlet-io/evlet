@@ -732,20 +732,23 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // A #field address (/app/invoice/7#due) opens that field's section and focuses it.
   const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target)) revealField(frame, target); };
   if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
+  /** A group of the main zone: open, with a small heading when it has a title (Main(title=...)). */
+  const mainGrid = (title: string | null, grid: Child) => html`${title ? html`<h3 class="ev-cmp-mh">${title}</h3>` : null}<div class="ev-cmp-grid">${grid}</div>`;
   const lockedText = () => model.fields.some(field => (field as any).versioned === false) ? `Locked. Lines can’t change while it is ${stepLabel(model, stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
-  /** A Table's row editor form: the row model's first section as a grid, the rest as "more information" rows, as
-   * on the record itself; fields are inputs, since a row is saved with the record. */
+  /** A Table's row editor form, laid out as the record itself: the row model's main groups (without one, its first
+   * section) as open grids, the rest as "more information" rows; fields are inputs, since a row is saved with the record. */
   const rowForm = (child: { name: string; model?: string }) => {
     let groups: ReturnType<typeof sections> = [];
     try { groups = child.model ? sections(screenModel(ctx.schema, child.model)) : []; } catch { groups = []; }
-    const rowFolds = new Folds(prefs.formSections(child.model ?? child.name), false);
+    const rowFolds = new Folds(prefs.formSections(child.model ?? child.name), isNew);
     return (row: Row, field: (name: string) => FieldLike): Child => {
       const shown = groups.map(group => ({ ...group, fields: group.fields.filter(meta => row.fields.has(meta.name)) })).filter(group => group.fields.length);
       const gridOf = (names: string[], flow?: 'rows' | 'columns') => flowGrid(names.map(name => field(name))
         .map(item => ({ node: fieldFor({ field: item, links: ctx.links }), wide: Boolean(item.meta.wide ?? item.meta.type === 'longtext') })), flow);
       if (shown.length < 2) return html`<div class="ev-row-form">${gridOf([...row.fields.keys()].filter(name => !row.field(name).meta.hidden))}</div>`;
-      const [first, ...rest] = shown;
-      return html`<div class="ev-row-form"><div class="ev-cmp-grid">${gridOf(first.fields.map(meta => meta.name), first.flow)}</div>
+      const mains = shown.some(group => group.main) ? shown.filter(group => group.main) : shown.slice(0, 1);
+      const rest = shown.filter(group => !mains.includes(group));
+      return html`<div class="ev-row-form">${mains.map(group => mainGrid(group.heading ? group.label : null, gridOf(group.fields.map(meta => meta.name), group.flow)))}
         <div class="ev-more">${rest.map((section, position) => {
           const fields = section.fields.map(meta => field(meta.name));
           return MoreRow({ title: section.label, description: section.description, folds: rowFolds, eager: true, fields,
@@ -804,8 +807,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       ${when(empty, () => html`<div class="ev-cmp-empty"><span>${`No ${child.label.toLowerCase()} yet.`}</span></div>`)}
       ${grid}</div>` as HTMLElement;
   };
-  /** Where a "more information" row that is not a section starts: open, except on a phone after the first. */
-  const rowStart = (open: boolean, index: number) => folds.phone && index > 0 ? false : open;
   const compactContent = () => {
     const blocks = shownBlocks();
     const groups = panelSections(), all = sections(model);
@@ -819,7 +820,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       ? flowGrid(fields.map(field => ({ node: fieldFor({ field, links: ctx.links }), wide: Boolean(field.meta.wide ?? field.meta.type === 'longtext') })), flow)
       : FieldGrid(fields, { links: ctx.links, flow });
     const mainParts = blocks.filter(block => (block.kind === 'section' || block.kind === 'table') && block.main).map(block => block.kind === 'section'
-      ? html`<div class="ev-cmp-grid">${grid(fieldsOf(block.label), all.find(group => group.label === block.label)?.flow)}</div>`
+      ? (section => mainGrid(section?.heading ? block.label : null, grid(fieldsOf(block.label), section?.flow)))(all.find(group => group.label === block.label))
       : compactTable(tables.find(child => child.name === (block as { name: string }).name)!, true));
     const rows: Node[] = [];
     let index = 0;
@@ -839,7 +840,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
           const child = tables.find(item => item.name === block.name)!;
           const table = store.table(child.name);
           const tools = cell<Child>(null);
-          rows.push(MoreRow({ title: child.label, folds, start: rowStart(untrack(() => table.rows.get().length) > 0, position), wide: true,
+          // A TableSection starts closed unless it says otherwise; 'empty' is closed while the table has no rows.
+          const collapsed = block.collapsible === false ? false : block.collapsed ?? true;
+          const start = folds.start(collapsed === 'empty' ? untrack(() => table.rows.get().length) === 0 : collapsed, position, []);
+          // Drawn while closed too, so print shows its rows.
+          rows.push(MoreRow({ title: child.label, folds, start, wide: true, eager: true,
             description: child.read_only ? derivedText() : undefined, tools: () => tools.get(),
             summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false, tools) }));
           break;
@@ -853,7 +858,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
             if (!filters || !target) { total.set(0); return; }
             void api.list(block.model, { limit: 1, offset: 0, filters }).then(page => total.set((page as { total?: number }).total ?? page.items.length), () => total.set(null));
           };
-          const row = MoreRow({ title: block.label, folds, start: rowStart(true, position), none: 'Loading…',
+          const row = MoreRow({ title: block.name ?? block.label, folds, start: false, none: 'Loading…',
             summary: () => total.get() === null ? '' : `${target ? (target as { plural?: string }).plural ?? block.label : block.label}: ${total.get()}`,
             body: () => RelatedRecords(ctx, block, blockRecord) as Child });
           whenVisible(row, count);
@@ -862,17 +867,17 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         }
         case 'html': {
           const text = block.html.replace(/<[^>]*>/g, ' ').replace(/\{[a-z_][a-z0-9_]*\}/g, '…').replace(/\s+/g, ' ').trim();
-          rows.push(MoreRow({ title: 'Notes', folds, start: rowStart(true, position), summary: () => text, body: () => HtmlContent(ctx, model, block, blockRecord) }));
+          rows.push(MoreRow({ title: block.name ?? 'Notes', folds, start: false, eager: true, summary: () => text, body: () => HtmlContent(ctx, model, block, blockRecord) }));
           break;
         }
         case 'chart':
-          rows.push(MoreRow({ title: block.label ?? 'Chart', folds, start: rowStart(true, position), summary: () => '', none: 'A chart', body: () => MeasureChart(ctx, block, blockRecord) }));
+          rows.push(MoreRow({ title: block.name ?? block.label ?? 'Chart', folds, start: false, summary: () => '', none: 'A chart', body: () => MeasureChart(ctx, block, blockRecord) }));
           break;
       }
     }
     // Related records the layout does not list, and postings.
     if (relations.length && relatedShown && tabShown('related')) {
-      const row = MoreRow({ title: 'Related', folds, start: rowStart(false, ++index), none: 'Loading…',
+      const row = MoreRow({ title: 'Related', folds, start: false, none: 'Loading…',
         summary: () => relations.map(relation => { const count = related(relation.name).total.get(); return count === null ? '' : `${relation.label}: ${count}`; }).filter(Boolean).join(' · '),
         body: () => Related(ctx, model, store.id!, relations, related) });
       whenVisible(row, () => relations.forEach(relation => related(relation.name).ensure()));

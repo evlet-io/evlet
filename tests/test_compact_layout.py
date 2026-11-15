@@ -5,7 +5,7 @@ Checked when the Registry is built and sent in /api/schema, cut per role, on rea
 import pytest
 
 from evlet import (Child, Count, Currency, Database, Integer, Link, LongText, Main, Model, Registry, Related, Rule, Section, Select,
-                   Sum, Table, Text)
+                   Sum, Table, TableSection, Text)
 from evlet.calc import F
 from evlet.ui.metadata import ui_schema, view_for
 from test_business import client
@@ -171,59 +171,162 @@ def test_main_is_the_primary_area_and_sections_carry_descriptions():
         Main(('title', 'client', 'status'), 'lines'),
         Section('Effort', ('hours', 'cost'), description='Time spent and what it costs.'),
         Related('visit', label='Visits'),
-        Section('Money', ('budget', 'client_rate'), collapsed=True)))
+        Section('Money', ('budget', 'client_rate'), collapsed=False)))
     entry = schema_entry(Registry(*models))
     assert entry['layout'][:3] == [
-        # Main has no heading; the model's label names it where a name is needed.
+        # An untitled Main has no heading; the model's label names it where a name is needed.
         {'label': 'Job', 'fields': ['title', 'client', 'status'], 'collapsible': False, 'collapsed': False, 'flow': 'rows', 'main': True},
-        {'label': 'Effort', 'fields': ['hours', 'cost'], 'collapsible': True, 'collapsed': False, 'flow': 'rows',
+        # Sections start closed unless they say otherwise.
+        {'label': 'Effort', 'fields': ['hours', 'cost'], 'collapsible': True, 'collapsed': True, 'flow': 'rows',
          'description': 'Time spent and what it costs.'},
-        {'label': 'Money', 'fields': ['budget', 'client_rate'], 'collapsible': True, 'collapsed': True, 'flow': 'rows'}]
+        {'label': 'Money', 'fields': ['budget', 'client_rate'], 'collapsible': True, 'collapsed': False, 'flow': 'rows'}]
+    # The form of 0.4.9, Main(fields, "lines"), reads as Main(fields) and Main("lines"): two main blocks.
     assert entry['record_layout'] == {'blocks': [
-        {'kind': 'section', 'label': 'Job', 'main': True}, {'kind': 'table', 'name': 'lines', 'main': True},
-        {'kind': 'section', 'label': 'Effort'},
-        {'kind': 'related', 'model': 'visit', 'link': 'job', 'label': 'Visits', 'filters': [], 'fields': [], 'limit': 5, 'order': ['-id']},
-        {'kind': 'section', 'label': 'Money'},
+        {'kind': 'section', 'name': 'Job', 'label': 'Job', 'main': True}, {'kind': 'table', 'name': 'lines', 'main': True},
+        {'kind': 'section', 'name': 'Effort', 'label': 'Effort', 'main': False},
+        {'kind': 'related', 'model': 'visit', 'link': 'job', 'label': 'Visits', 'filters': [], 'fields': [], 'limit': 5, 'order': ['-id'],
+         'name': 'Visits', 'main': False},
+        {'kind': 'section', 'name': 'Money', 'label': 'Money', 'main': False},
         # Fields no section lists follow as Other, last.
-        {'kind': 'section', 'label': 'Other'}]}
+        {'kind': 'section', 'name': 'Other', 'label': 'Other', 'main': False}]}
     assert repr(Main(('title',), 'lines')) == "Main(('title',), 'lines')"
+    assert repr(Main('lines')) == "Main('lines')" and repr(Main(('title',), title='Job')) == "Main(('title',), title='Job')"
     assert repr(Section('Effort', ('hours',), description='Time.')) == \
-        "Section('Effort', ('hours',), collapsible=True, collapsed=False, description='Time.')"
+        "Section('Effort', ('hours',), collapsible=True, collapsed=True, description='Time.')"
+    assert repr(TableSection('lines')) == "TableSection('lines')" and \
+        repr(TableSection('lines', collapsed='empty', panel=False)) == "TableSection('lines', collapsed='empty', panel=False)"
 
 
-def test_main_with_only_tables_and_a_layout_without_main_is_unchanged():
+def test_four_mains_two_sections_a_table_section_and_related_keep_their_zones():
+    class Crew(Model):
+        permissions = ALL
+        title = Text(required=True)
+        site = Text()
+        lead = Text()
+        start = Text()
+        finish = Text()
+        notes = LongText(default='')
+        cost = Integer(default=0)
+
+        class Hand(Child):
+            person = Text()
+
+        class Tool(Child):
+            tool = Text()
+
+        hands = Table(Hand)
+        tools = Table(Tool)
+
+        class Meta:
+            layout = (
+                Section('Costs', ('cost',)),
+                Main(('title', 'site')),
+                TableSection('tools', collapsed='empty'),
+                Main('hands'),
+                Related('visit', label='Visits'),
+                Main(('lead',), title='People'),
+                Section('Notes', ('notes',), collapsed=False),
+                Main(('start', 'finish')),
+            )
+
+    class Visit(Model):
+        permissions = ALL
+        crew = Link(Crew)
+        note = Text()
+    registry = Registry(Crew, Visit)
+    assert registry.layout_warnings == ()
+    entry = schema_entry(registry, 'crew')
+    # The main zone first, in the order declared, whatever their place in Meta.layout; then "more information".
+    assert [(block['kind'], block['name'], block['main']) for block in entry['record_layout']['blocks']] == [
+        ('section', 'Crew', True), ('table', 'hands', True), ('section', 'People', True), ('section', 'Crew 2', True),
+        ('section', 'Costs', False), ('table', 'tools', False), ('related', 'Visits', False), ('section', 'Notes', False)]
+    groups = {group['label']: group for group in entry['layout']}
+    # Mains never collapse; a titled one shows a heading, and an untitled one after the first is numbered.
+    assert [(name, groups[name]['collapsible'], groups[name].get('heading', False)) for name in ('Crew', 'People', 'Crew 2')] == [
+        ('Crew', False, False), ('People', False, True), ('Crew 2', False, False)]
+    assert (groups['Costs']['collapsed'], groups['Notes']['collapsed']) == (True, False)
+    tools = next(block for block in entry['record_layout']['blocks'] if block['name'] == 'tools')
+    assert (tools['collapsible'], tools['collapsed']) == (True, 'empty')
+    # Every name addresses the area for Meta.panel.
+    crew = registry.models['crew']
+    crew.Meta.panel = ('People', 'Crew 2', 'tools')
+    panel = view_for(crew)['panel']
+    del crew.Meta.panel
+    assert 'People' not in panel['sections'] and 'Crew' in panel['sections'] and 'hands' in panel['tabs'] and 'tools' not in panel['tabs']
+
+
+def test_unplaced_fields_go_to_other_and_unplaced_tables_after_it():
+    class Order(Model):
+        permissions = ALL
+        title = Text()
+        note = Text()
+        secret = Text(hidden=True)
+
+        class Line(Child):
+            item = Text()
+
+        class Charge(Child):
+            fee = Integer()
+
+        lines = Table(Line)
+        charges = Table(Charge)
+
+        class Meta:
+            layout = (Main(('title',)), TableSection('charges', panel=False))
+    registry = Registry(Order)
+    entry = schema_entry(registry, 'order')
+    assert [(block['kind'], block['name'], block['main']) for block in entry['record_layout']['blocks']] == [
+        ('section', 'Order', True), ('table', 'charges', False), ('section', 'Other', False), ('table', 'lines', False)]
+    # Other is a Section that starts closed; hidden fields stay hidden; TableSection(panel=False) leaves the side panel.
+    assert entry['layout'][-1] == {'label': 'Other', 'fields': ['note'], 'collapsible': True, 'collapsed': True, 'flow': 'rows'}
+    assert entry['panel'] == {'tabs': ['charges']}
+
+
+def test_main_with_only_tables_and_a_layout_without_main():
     entry = schema_entry(Registry(*job_model(layout=(Main((), 'lines'), Section('Job', ('title',))))))
-    assert entry['record_layout']['blocks'][:2] == [{'kind': 'table', 'name': 'lines', 'main': True}, {'kind': 'section', 'label': 'Job'}]
+    assert entry['record_layout']['blocks'][:2] == [{'kind': 'table', 'name': 'lines', 'main': True},
+                                                    {'kind': 'section', 'name': 'Job', 'label': 'Job', 'main': False}]
     assert not any(group.get('main') for group in entry['layout'])
     plain = schema_entry(Registry(*job_model(layout=(Section('Job', ('title',)), 'lines'))))
-    assert plain['record_layout'] == {'blocks': [{'kind': 'section', 'label': 'Job'}, {'kind': 'table', 'name': 'lines'},
-                                                 {'kind': 'section', 'label': 'Other'}]}
+    assert plain['record_layout'] == {'blocks': [
+        {'kind': 'section', 'name': 'Job', 'label': 'Job', 'main': True},
+        {'kind': 'table', 'name': 'lines', 'main': False, 'collapsible': True, 'collapsed': True},
+        {'kind': 'section', 'name': 'Other', 'label': 'Other', 'main': False}]}
 
 
-@pytest.mark.parametrize('layout, meta, message', [
-    ((Section('Job', ('title',)), Main(('status',), 'lines')), {}, r'Job\.Meta\.layout: put Main first'),
-    ((Main(('title',), 'lines'), Main(('status',))), {}, r'Job\.Meta\.layout: use one Main'),
-    ((Main(('title',)),), {}, r'a layout with Main places every Table field, in Main or after it; lines is not placed'),
-    ((Main(('title',), 'items'),), {}, r"Main names 'items', which is not a Table field of Job"),
-    ((Main(('title', 'secret'), 'lines'),), {}, r'Main names unknown or hidden fields: secret'),
-    ((Main(('title',), 'lines'), Section('More', ('title',))), {}, r'Layout lists title more than once'),
-    ((Main(('title',), 'lines'), 'lines'), {}, r"Table 'lines' is placed more than once"),
-    ((Main(('title',), 'lines'), Section('Job', ('status',))), {}, r'give sections different titles'),
-    ((Main(('title',), 'lines'),), {'tabs': ('details', 'activity')}, r'Job\.Meta\.tabs was removed: record pages have no tabs'),
-    ((Main(('title',), 'lines'),), {'default_tab': 'activity'}, r'Job\.Meta\.default_tab was removed: record pages have no tabs'),
-    ((Main(('title',), 'lines'), Section('More', ('status',), description='')), {}, r"description must be nonempty text, not ''"),
-    ((Main(('title',), 'lines'), Section('More', ('status',), description=3)), {}, r'description must be nonempty text, not 3'),
+@pytest.mark.parametrize('layout, message', [
+    ((Main(('title',), 'items'),), "names 'items', which is not a Table field of Job (lines)"),
+    ((Main('title'),), "names the field 'title' where a Table is expected"),
+    ((Main(('title', 'secret'), 'lines'),), "names 'secret', which is not a visible field of Job"),
+    ((Main(('title', 'lines')),), "names the Table 'lines' among its fields"),
+    ((Main(('title',), 'lines'), Section('More', ('title',))), "places 'title' again"),
+    ((Main(('title',), 'lines'), 'lines'), "places the Table 'lines' again"),
+    ((Main(('title',), 'lines'), Section('Job', ('status',))), "uses the name 'Job' again"),
+    ((Main(('title',), 'lines'), Section('More', ('status',), description='')), "description must be nonempty text, not ''"),
+    ((Main(('title',), 'lines'), Section('More', ('status',), description=3)), 'description must be nonempty text, not 3'),
+    ((Main(('title',), 'lines', grid=2),), 'has no option grid'),
+    ((Main(('title',), 'lines', title=''),), "title must be nonempty text, not ''"),
+    ((Main(()), Main(('title',), 'lines')), 'is empty'),
+    ((Main(3), Main(('title',), 'lines')), 'lists its fields as a tuple of field names'),
 ])
-def test_compact_layout_mistakes_fail_registration(layout, meta, message):
+def test_compact_layout_mistakes_are_ignored_with_a_warning(layout, message):
+    registry = Registry(*job_model(layout=layout))
+    (model, text), = registry.layout_warnings
+    assert model.__name__ == 'Job' and message in text and text.endswith('it is ignored')
+    entry = schema_entry(registry)
+    # The rest is drawn, and every visible field and Table still shows.
+    assert sorted(name for group in entry['layout'] for name in group['fields']) == sorted(
+        ['client', 'title', 'status', 'hours', 'budget', 'notes', 'cost', 'client_rate'])
+    assert [block['name'] for block in entry['record_layout']['blocks'] if block['kind'] == 'table'] == ['lines']
+
+
+@pytest.mark.parametrize('meta, message', [
+    ({'tabs': ('details', 'activity')}, r'Job\.Meta\.tabs was removed: record pages have no tabs'),
+    ({'default_tab': 'activity'}, r'Job\.Meta\.default_tab was removed: record pages have no tabs'),
+])
+def test_removed_tabs_still_fail(meta, message):
     with pytest.raises(ValueError, match=message):
-        Registry(*job_model(layout=layout, **meta))
-
-
-def test_main_checks_its_own_arguments():
-    for args, message in ((('title',), 'list its fields as a tuple'), (((),), 'needs fields, Table fields or both'),
-                          ((('title', 'title'),), 'name each field and Table once'), ((('title',), 3), 'name Table fields after the fields')):
-        with pytest.raises(ValueError, match=message):
-            Main(*args)
+        Registry(*job_model(layout=(Main(('title',), 'lines'),), **meta))
 
 
 def test_controls_keep_main_and_descriptions_and_export_them(tmp_path):
@@ -260,4 +363,4 @@ def test_the_playground_project_uses_the_compact_record_page():
     assert [(group['label'], group.get('main', False), 'description' in group) for group in view['layout']] == [
         ('Project', True, False), ('Budget', False, True), ('Schedule', False, True), ('Notes', False, True)]
     assert 'tabs' not in view and 'default_tab' not in view
-    assert registry.layouts[Project]['blocks'][0] == {'kind': 'section', 'label': 'Project', 'main': True}
+    assert registry.layouts[Project]['blocks'][0] == {'kind': 'section', 'name': 'Project', 'label': 'Project', 'main': True}

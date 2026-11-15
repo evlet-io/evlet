@@ -31,7 +31,7 @@ describe('a compact record page', () => {
     const model = screen.compact_schema.body.models.find((item: { name: string }) => item.name === 'shipment');
     expect(model.cards).toEqual(['total', 'parcels', 'weight']);
     expect(model.record_layout.blocks.filter((block: { main?: boolean }) => block.main)).toEqual([
-      { kind: 'section', label: 'Shipment', main: true }, { kind: 'table', name: 'stops', main: true }]);
+      { kind: 'section', name: 'Shipment', label: 'Shipment', main: true }, { kind: 'table', name: 'stops', main: true }]);
     expect(model.layout.find((group: { label: string }) => group.label === 'Charges').description).toBe('What the shipment is worth and what it costs.');
   });
 
@@ -171,7 +171,10 @@ describe('a compact record page', () => {
     // Notes is empty and starts closed (collapsed='empty'): its one line lists the field as Not set.
     expect(host.querySelector('[data-section="Notes"]')!.classList.contains('closed')).toBe(true);
     expect(text(host.querySelector('[data-section="Notes"] .ev-more-sum'))).toBe('Notes: Not set');
-    expect(charges.classList.contains('closed')).toBe(false);
+    // Sections start closed: Charges opens and closes from its title.
+    expect(charges.classList.contains('closed')).toBe(true);
+    (charges.querySelector('.ev-more-toggle') as HTMLButtonElement).click();
+    await until(() => expect(charges.classList.contains('closed')).toBe(false));
     (charges.querySelector('.ev-more-toggle') as HTMLButtonElement).click();
     await until(() => expect(charges.classList.contains('closed')).toBe(true));
     const summary = charges.querySelector('.ev-more-sum') as HTMLElement;

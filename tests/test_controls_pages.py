@@ -304,8 +304,9 @@ def test_export_compiles_and_loading_it_gives_the_same_effective_values(tmp_path
     assert list(invoice.Meta.naming.series) == series and invoice.Meta.naming.date_field == 'posting_date'
     # The layout and list overrides become Meta options on the same class.
     meta = lead['Meta']
+    # A section that can't collapse keeps the default collapsed, which does not apply to it.
     assert [(item.title, item.fields, item.collapsible, item.collapsed, item.flow) for item in meta.layout] == [
-        ('Main', ('title', 'source'), False, False, 'columns'), ('More', ('value', 'customer', 'notes'), True, 'empty', 'rows')]
+        ('Main', ('title', 'source'), False, True, 'columns'), ('More', ('value', 'customer', 'notes'), True, 'empty', 'rows')]
     assert (meta.list_fields, meta.open_in, meta.list_tabs, meta.list_tab) == (('title', 'value'), 'panel', 'source', 'web')
     assert not hasattr(meta, 'tabs') and not hasattr(meta, 'default_tab')
 

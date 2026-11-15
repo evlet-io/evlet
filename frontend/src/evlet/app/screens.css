@@ -458,6 +458,10 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-cmp-main{padding:12px var(--cmp-pad) 14px}
 .ev-cmp-main:empty{display:none}
 .ev-cmp-grid .fs-g{grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 14px}
+/* Main(title=...) heads its group with a small heading; groups after the first keep a gap above. */
+.ev-cmp-mh{margin:14px 0 6px;font-size:13.5px;font-weight:600}
+.ev-cmp-mh:first-child{margin-top:0}
+.ev-cmp-grid + .ev-cmp-grid,.ev-cmp-table + .ev-cmp-grid{margin-top:14px}
 /* The row editor's form: four columns of labelled inputs where the card has room, fewer where it has not, so a currency
    input keeps room for its value. */
 .g-ed-body .ev-cmp-grid .fs-g{grid-template-columns:repeat(auto-fill,minmax(max(160px,calc(25% - 11px)),1fr))}

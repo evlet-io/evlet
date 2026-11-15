@@ -384,7 +384,9 @@ class Controls:
 
         An override that no longer validates fails closed and is reported. Everything is built against
         the new instance fields, which become live for requests that start after the swap."""
-        problems = []
+        # What the app's own layouts ignore (logged when the registry was built) is listed with the overrides' problems.
+        problems = [{'kind': 'layout', 'key': model.__name__, 'error': text, 'ignored': True}
+                    for model, text in getattr(self.registry, 'layout_warnings', ())]
         self.roles = roles
         previous = self.database.layer
         fields = instance_fields(self.registry, fields, previous.fields)

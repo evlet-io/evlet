@@ -440,7 +440,7 @@
        "main": true
       },
       {
-       "collapsed": false,
+       "collapsed": true,
        "collapsible": true,
        "description": "What the shipment is worth and what it costs.",
        "fields": [
@@ -512,7 +512,8 @@
        {
         "kind": "section",
         "label": "Shipment",
-        "main": true
+        "main": true,
+        "name": "Shipment"
        },
        {
         "kind": "table",
@@ -521,11 +522,15 @@
        },
        {
         "kind": "section",
-        "label": "Charges"
+        "label": "Charges",
+        "main": false,
+        "name": "Charges"
        },
        {
         "kind": "section",
-        "label": "Notes"
+        "label": "Notes",
+        "main": false,
+        "name": "Notes"
        },
        {
         "fields": [
@@ -537,7 +542,9 @@
         "label": "Parcels",
         "limit": 5,
         "link": "shipment",
+        "main": false,
         "model": "parcel",
+        "name": "Parcels",
         "order": [
          "-id"
         ]
@@ -752,7 +759,8 @@
         "weight"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -776,6 +784,16 @@
       "update": true
      },
      "plural": "Parcels",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "parcel",
      "search_fields": [
       "label",
@@ -835,7 +853,8 @@
         "place"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -850,6 +869,16 @@
       "update": true
      },
      "plural": "Stops",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "search_fields": [
       "place"
      ],
@@ -2084,8 +2113,8 @@
        "main": true
       },
       {
-       "collapsed": false,
-       "collapsible": false,
+       "collapsed": true,
+       "collapsible": true,
        "fields": [
         "notes"
        ],
@@ -2119,7 +2148,8 @@
        {
         "kind": "section",
         "label": "Site",
-        "main": true
+        "main": true,
+        "name": "Site"
        },
        {
         "kind": "table",
@@ -2128,14 +2158,18 @@
        },
        {
         "html": "<p>Work at <strong>{title}</strong> in {region}. Write {{braces}} as they are.</p>",
-        "kind": "html"
+        "kind": "html",
+        "main": false,
+        "name": "Notes"
        },
        {
         "filters": [],
         "kind": "chart",
         "label": "Totals",
         "link": "site",
+        "main": false,
         "model": "job",
+        "name": "Totals",
         "type": "stat",
         "x": null,
         "y": [
@@ -2148,7 +2182,9 @@
         "kind": "chart",
         "label": "Hours by status",
         "link": "site",
+        "main": false,
         "model": "job",
+        "name": "Hours by status",
         "type": "bar",
         "x": "status",
         "y": [
@@ -2172,7 +2208,9 @@
         "label": "Open jobs",
         "limit": 2,
         "link": "site",
+        "main": false,
         "model": "job",
+        "name": "Open jobs",
         "order": [
          "-hours"
         ]
@@ -2195,14 +2233,18 @@
         "label": "Same region",
         "limit": 5,
         "link": "site",
+        "main": false,
         "model": "job",
+        "name": "Same region",
         "order": [
          "-id"
         ]
        },
        {
         "kind": "section",
-        "label": "Other"
+        "label": "Other",
+        "main": false,
+        "name": "Other"
        }
       ]
      },
@@ -2448,7 +2490,8 @@
         "hours"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -2494,6 +2537,16 @@
       "update": true
      },
      "plural": "Jobs",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "job",
      "search_fields": [
       "title",
@@ -2590,7 +2643,8 @@
         "hours"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -2606,6 +2660,16 @@
       "update": true
      },
      "plural": "Visits",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "search_fields": [
       "note"
      ],
@@ -3202,7 +3266,8 @@
         "credit_days"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -3225,6 +3290,16 @@
       "update": true
      },
      "plural": "Customers",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "customer",
      "search_fields": [
       "title",
@@ -3670,7 +3745,8 @@
         "credit_days"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -3693,6 +3769,16 @@
       "update": true
      },
      "plural": "Customers",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "relations": [
       {
        "label": "Orders",
@@ -3846,7 +3932,8 @@
         "price"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -3867,6 +3954,16 @@
       "update": true
      },
      "plural": "Products",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "product",
      "search_fields": [
       "title",
@@ -4881,7 +4978,8 @@
         "line_count"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -4915,6 +5013,21 @@
       "update": true
      },
      "plural": "Orders",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "lines"
+       }
+      ]
+     },
      "resource": "order",
      "search_fields": [
       "title",
@@ -5134,7 +5247,8 @@
         "notes"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -5158,6 +5272,16 @@
       "update": true
      },
      "plural": "Contacts",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "contact",
      "search_fields": [
       "title",
@@ -5347,7 +5471,8 @@
         "issued"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -5377,6 +5502,16 @@
       "update": true
      },
      "plural": "Quotes",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "quote",
      "search_fields": [
       "number",
@@ -5593,7 +5728,8 @@
         "amount"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -5612,6 +5748,21 @@
       "update": true
      },
      "plural": "Lines",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "parts"
+       }
+      ]
+     },
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
@@ -5670,7 +5821,8 @@
         "hours"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -5685,6 +5837,16 @@
       "update": true
      },
      "plural": "Parts",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "search_fields": [],
      "title_field": "id"
     }
@@ -7340,7 +7502,8 @@
         "credit_days"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -7363,6 +7526,16 @@
       "update": true
      },
      "plural": "Customers",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "customer",
      "search_fields": [
       "title",
@@ -7501,7 +7674,8 @@
         "price"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -7522,6 +7696,16 @@
       "update": true
      },
      "plural": "Products",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "product",
      "search_fields": [
       "title",
@@ -7822,7 +8006,8 @@
         "credit_days"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -7845,6 +8030,16 @@
       "update": false
      },
      "plural": "Customers",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "relations": [
       {
        "label": "Orders",
@@ -7998,7 +8193,8 @@
         "price"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -8019,6 +8215,16 @@
       "update": false
      },
      "plural": "Products",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "product",
      "search_fields": [
       "title",
@@ -9013,7 +9219,8 @@
         "line_count"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -9047,6 +9254,21 @@
       "update": false
      },
      "plural": "Orders",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "lines"
+       }
+      ]
+     },
      "resource": "order",
      "search_fields": [
       "title",
@@ -9148,7 +9370,8 @@
         "email"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -9168,6 +9391,16 @@
       "update": false
      },
      "plural": "Contacts",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "contact",
      "search_fields": [
       "title",
@@ -9355,7 +9588,8 @@
         "issued"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -9385,6 +9619,16 @@
       "update": false
      },
      "plural": "Quotes",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "quote",
      "search_fields": [
       "number",
@@ -9601,7 +9845,8 @@
         "amount"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -9620,6 +9865,21 @@
       "update": false
      },
      "plural": "Lines",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "parts"
+       }
+      ]
+     },
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
@@ -9678,7 +9938,8 @@
         "hours"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -9693,6 +9954,16 @@
       "update": false
      },
      "plural": "Parts",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "search_fields": [],
      "title_field": "id"
     }
@@ -9930,6 +10201,1074 @@
     }
    ],
    "title": "Sales"
+  },
+  "etag": null,
+  "status": 200
+ },
+ "zones_crew_detail": {
+  "body": {
+   "_audit": {
+    "created_at": "2026-11-04T10:05:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T10:05:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "owner"
+    }
+   },
+   "children": {
+    "hands": [
+     {
+      "id": "0000000000001",
+      "note": "",
+      "person": "Lina",
+      "role": "Rigger"
+     }
+    ],
+    "tools": []
+   },
+   "cost": 0,
+   "ends": "",
+   "id": "0000000000001",
+   "lead": "",
+   "name": null,
+   "notes": null,
+   "permit": "P-17",
+   "site": "Dock 4",
+   "starts": "",
+   "title": "Night shift"
+  },
+  "etag": "\"a286dc7c381318be25f60576ee506b9e84e3334064f0cb851e3600ac88f8e7e3\"",
+  "status": 200
+ },
+ "zones_schema": {
+  "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
+   "models": [
+    {
+     "actions": [],
+     "attachments": false,
+     "autosave": true,
+     "behavior": {
+      "cost": {},
+      "ends": {},
+      "lead": {},
+      "name": {},
+      "notes": {},
+      "permit": {},
+      "site": {},
+      "starts": {},
+      "title": {}
+     },
+     "child_only": false,
+     "children": [
+      {
+       "filterable": true,
+       "label": "Hands",
+       "link": "evlet_owner",
+       "max_rows": 100,
+       "min_rows": 0,
+       "model": "crew_hands",
+       "name": "hands",
+       "row_changes": true
+      },
+      {
+       "filterable": true,
+       "label": "Tools",
+       "link": "evlet_owner",
+       "max_rows": 100,
+       "min_rows": 0,
+       "model": "crew_tools",
+       "name": "tools",
+       "row_changes": true
+      }
+     ],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Site",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "site",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Lead",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "lead",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Starts",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "starts",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Ends",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "ends",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": 0,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Cost",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "cost",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "integer",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Permit",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "permit",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Notes",
+       "locked_when": null,
+       "max_length": 65535,
+       "name": "notes",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "longtext",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      }
+     ],
+     "label": "Crew",
+     "layout": [
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "title",
+        "site"
+       ],
+       "flow": "rows",
+       "label": "Crew",
+       "main": true
+      },
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "lead"
+       ],
+       "flow": "rows",
+       "heading": true,
+       "label": "People",
+       "main": true
+      },
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "starts",
+        "ends"
+       ],
+       "flow": "rows",
+       "label": "Crew 2",
+       "main": true
+      },
+      {
+       "collapsed": true,
+       "collapsible": true,
+       "fields": [
+        "cost"
+       ],
+       "flow": "rows",
+       "label": "Costs"
+      },
+      {
+       "collapsed": true,
+       "collapsible": true,
+       "description": "Needed before work starts.",
+       "fields": [
+        "permit"
+       ],
+       "flow": "rows",
+       "label": "Permit"
+      },
+      {
+       "collapsed": true,
+       "collapsible": true,
+       "fields": [
+        "notes"
+       ],
+       "flow": "rows",
+       "label": "Other"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "title",
+      "site",
+      "lead",
+      "starts"
+     ],
+     "name": "crew",
+     "open_in": "page",
+     "order": [
+      "title",
+      "site",
+      "lead",
+      "starts",
+      "ends",
+      "cost",
+      "permit",
+      "notes",
+      "name",
+      "hands.person",
+      "hands.role",
+      "hands.note",
+      "tools.tool"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Crews",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Crew",
+        "main": true,
+        "name": "Crew"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "hands"
+       },
+       {
+        "kind": "section",
+        "label": "People",
+        "main": true,
+        "name": "People"
+       },
+       {
+        "kind": "section",
+        "label": "Crew 2",
+        "main": true,
+        "name": "Crew 2"
+       },
+       {
+        "kind": "section",
+        "label": "Costs",
+        "main": false,
+        "name": "Costs"
+       },
+       {
+        "kind": "section",
+        "label": "Permit",
+        "main": false,
+        "name": "Permit"
+       },
+       {
+        "collapsed": "empty",
+        "collapsible": true,
+        "kind": "table",
+        "main": false,
+        "name": "tools"
+       },
+       {
+        "fields": [],
+        "filters": [],
+        "kind": "related",
+        "label": "Visits",
+        "limit": 5,
+        "link": "crew",
+        "main": false,
+        "model": "crewvisit",
+        "name": "Visits",
+        "order": [
+         "-id"
+        ]
+       },
+       {
+        "kind": "section",
+        "label": "Other",
+        "main": false,
+        "name": "Other"
+       }
+      ]
+     },
+     "relations": [
+      {
+       "label": "Crew visits",
+       "limit": 10,
+       "link": "crew",
+       "model": "crewvisit",
+       "name": "crewvisit.crew",
+       "order": [
+        "-id"
+       ]
+      }
+     ],
+     "resource": "crew",
+     "search_fields": [
+      "title",
+      "site",
+      "lead",
+      "starts",
+      "ends",
+      "permit",
+      "name"
+     ],
+     "sources": {},
+     "title_field": "title"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "autosave": true,
+     "behavior": {
+      "crew": {},
+      "name": {},
+      "note": {},
+      "title": {}
+     },
+     "child_only": false,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Crew",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": 1,
+       "name": "crew",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": true,
+       "required_when": null,
+       "stored": true,
+       "target": "crew",
+       "type": "link",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Note",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "note",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      }
+     ],
+     "label": "Crew visit",
+     "layout": [
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "crew",
+        "note"
+       ],
+       "flow": "rows",
+       "label": "Details",
+       "main": true
+      }
+     ],
+     "list_fields": [
+      "id",
+      "crew",
+      "note"
+     ],
+     "name": "crewvisit",
+     "open_in": "page",
+     "order": [
+      "crew",
+      "note",
+      "name",
+      "title"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Crew visits",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
+     "resource": "crewvisit",
+     "search_fields": [
+      "note",
+      "title",
+      "name"
+     ],
+     "sources": {},
+     "title_field": "title"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "autosave": true,
+     "child_only": true,
+     "children": [],
+     "description": "",
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Person",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "person",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Role",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "role",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Note",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "note",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      }
+     ],
+     "label": "Hand",
+     "layout": [
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "person"
+       ],
+       "flow": "rows",
+       "label": "Hand",
+       "main": true
+      },
+      {
+       "collapsed": true,
+       "collapsible": true,
+       "fields": [
+        "role",
+        "note"
+       ],
+       "flow": "rows",
+       "label": "More"
+      }
+     ],
+     "list_fields": [
+      "id",
+      "person",
+      "role",
+      "note"
+     ],
+     "name": "crew_hands",
+     "open_in": "page",
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Hands",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Hand",
+        "main": true,
+        "name": "Hand"
+       },
+       {
+        "kind": "section",
+        "label": "More",
+        "main": false,
+        "name": "More"
+       }
+      ]
+     },
+     "search_fields": [
+      "person",
+      "role",
+      "note"
+     ],
+     "title_field": "person"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "autosave": true,
+     "child_only": true,
+     "children": [],
+     "description": "",
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Tool",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "tool",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false
+      }
+     ],
+     "label": "Tool",
+     "layout": [
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "tool"
+       ],
+       "flow": "rows",
+       "label": "Details",
+       "main": true
+      }
+     ],
+     "list_fields": [
+      "id",
+      "tool"
+     ],
+     "name": "crew_tools",
+     "open_in": "page",
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Tools",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
+     "search_fields": [
+      "tool"
+     ],
+     "title_field": "tool"
+    }
+   ],
+   "ui_version": 1,
+   "version": 1,
+   "workspaces": [
+    {
+     "app": "app",
+     "groups": [
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:crew",
+         "kind": "model",
+         "label": "Crews",
+         "model": "crew",
+         "view": "list"
+        }
+       ],
+       "key": "documents",
+       "label": "Documents"
+      },
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:crewvisit",
+         "kind": "model",
+         "label": "Crew visits",
+         "model": "crewvisit",
+         "view": "list"
+        }
+       ],
+       "key": "records",
+       "label": "Records"
+      }
+     ],
+     "icon": "layers",
+     "key": "app",
+     "label": "Evlet",
+     "source": "automatic"
+    }
+   ]
   },
   "etag": null,
   "status": 200

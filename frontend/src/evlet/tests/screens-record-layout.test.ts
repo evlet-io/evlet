@@ -3,7 +3,7 @@
 // after the primary area, related jobs come from the list route and charts from the aggregate route with the
 // block's filters, and Html shows record values only as text.
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
+import { click, recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import { copy, type Recorded, type Sent } from './server';
 import { blockFilters, viewAllHref } from '../app/record-blocks';
 
@@ -33,9 +33,12 @@ const routes = (model?: (model: any) => void): Route[] => [
 
 const rows = (host: Element) => [...host.querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')));
 
+/** Open the record and every "more information" row, which start closed. */
 async function open(path = `/app/site/${site}`, model?: (model: any) => void) {
   const started = start(routes(model), path);
   await until(() => expect(text(started.host.querySelector('.doc-head h1'))).toContain('Dock'));
+  await until(() => expect(started.host.querySelector('.ev-more-row')).not.toBeNull());
+  started.host.querySelectorAll('.ev-more-toggle[aria-expanded="false"]').forEach(click);
   return started;
 }
 
@@ -50,6 +53,12 @@ describe('a declared record layout', () => {
     // the automatic Related row off.
     expect(rows(host)).toEqual(['Notes', 'Totals', 'Hours by status', 'Open jobs', 'Same region', 'Other']);
     expect(host.querySelector('.ev-more-row[data-section="Other"] [data-field="notes"]')).not.toBeNull();
+    // Every row of more information starts closed; the main zone has no toggle.
+    stopAll();
+    const closed = start(routes(), `/app/site/${site}`).host;
+    await until(() => expect(rows(closed)).toHaveLength(6));
+    expect([...closed.querySelectorAll('.ev-more-row')].every(row => row.classList.contains('closed'))).toBe(true);
+    expect(closed.querySelector('.ev-cmp-main .ev-more-toggle, .ev-cmp-main .fs-toggle')).toBeNull();
   });
 
   it('shows Html with record values as text, never as markup', async () => {
@@ -82,7 +91,8 @@ describe('a declared record layout', () => {
       [['site', 'eq', site], ['status', 'ne', 'done']],
       [['site', 'eq', site], ['region', 'eq', 'north']],
     ]));
-    const openJobs = asked.find(item => filtersOf(item).length === 2 && filtersOf(item)[1][0] === 'status')!;
+    // The closed row counts with one row first; the open row asks for its page.
+    const openJobs = asked.find(item => filtersOf(item).length === 2 && filtersOf(item)[1][0] === 'status' && new URL(item.url, 'http://127.0.0.1').searchParams.get('limit') !== '1')!;
     expect(new URL(openJobs.url, 'http://127.0.0.1').searchParams.get('order_by')).toBe('-hours');
     expect(new URL(openJobs.url, 'http://127.0.0.1').searchParams.get('limit')).toBe('2');
     // Three open jobs at two a page: a pager, and View all opens the same list.

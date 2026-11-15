@@ -270,6 +270,8 @@ class System:
                 add('clock', 'overrides', f'The pause of {schedule[1]} no longer applies', error)
             elif kind == 'setting':
                 add('lock', 'security', f'{key} uses its strictest value until this is fixed', error)
+            elif problem.get('ignored'):
+                add('layers', 'models', f'Part of the {key} layout is ignored', error)
             elif kind == 'naming' and error.startswith('Series '):
                 add('hash', 'naming', f'A {key} naming series is skipped', error)
             else:

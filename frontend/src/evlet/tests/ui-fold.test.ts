@@ -200,11 +200,27 @@ describe('FoldSection', () => {
   });
 });
 
+describe('Folds.start', () => {
+  it('opens a closed section that holds a required field on a new record; a saved choice still wins', () => {
+    const required = fields(), optional = fields().slice(1);
+    // An existing record keeps the app's value; a new one opens the section with the required title.
+    expect(new Folds(saved(), false, false).start(true, 1, required)).toBe(false);
+    expect(new Folds(saved(), true, false).start(true, 1, required)).toBe(true);
+    expect(new Folds(saved(), true, false).start(true, 1, optional)).toBe(false);
+    // A required field that does not apply does not open it.
+    required[0].rules.set({ ...required[0].rules.peek(), applies: false });
+    expect(new Folds(saved(), true, false).start(true, 1, required)).toBe(false);
+    const folds = new Folds(cell<Record<string, boolean>>({ Place: false }), true, false);
+    expect(folds.open('Place', folds.start(true, 1, fields())).get()).toBe(false);
+  });
+});
+
 describe('print', () => {
   it('shows closed sections when printing', () => {
     // Vitest hands CSS imports over empty, so the stylesheet is read from disk (it runs from frontend/).
     const node = (globalThis as any).process;
     const css: string = node.getBuiltinModule('node:fs').readFileSync(`${node.cwd()}/src/evlet/ui/styles.css`, 'utf8');
-    expect(css).toMatch(/@media print\{\.fs-fold \.fs-body\[hidden\]\{display:block!important\}/);
+    // Closed rows of more information print open too.
+    expect(css).toMatch(/@media print\{\.fs-fold \.fs-body\[hidden\],\.ev-more-body\[hidden\]\{display:block!important\}/);
   });
 });
