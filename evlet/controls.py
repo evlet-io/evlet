@@ -1522,7 +1522,7 @@ class Controls:
         match = re.fullmatch(r'/keys/([1-9][0-9]{0,18})', path)
         if match and method == 'DELETE' and int(match[1]) <= 2**63 - 1:
             self.revoke_key(user, int(match[1]))
-            return 200, {'items': self.business.auth.keys()}, []
+            return 200, self.business.auth.key_page(), []
         match = re.fullmatch(r'/roles/([a-z][a-z0-9_]{1,30})', path)
         if match and method == 'PATCH':
             self.change_role(user, match[1], body)

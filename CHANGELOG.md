@@ -4,6 +4,40 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Added
+
+- **Optional company sign-in.** `OIDC` and `LocalAuth(oidc=...)` support an explicitly
+  configured provider and immutable subject mappings to existing users. Install the `oidc`
+  extra to enable it; local login, roles, realms and MFA remain enforced. Callback queries
+  are excluded from generated proxy access logs. See [docs/oidc.md](docs/oidc.md).
+- **Bounded AI execution.** `AI(max_concurrent_runs=4, max_runs_per_user=2)` adds configurable
+  process-safe limits. Existing declarations keep working with these defaults. Live work
+  retains its slot and budget reservation until it actually stops.
+- **Optional PWA shell and honest recovery.** Installation caches public static assets only;
+  private data and writes stay online. Kept drafts report their storage status, compare
+  conflicting copies, and support manual copying when clipboard access is unavailable.
+- **The browser retries creates safely.** New-record forms send an `Idempotency-Key`, so a
+  create whose answer was lost is retried without making a second record.
+
+### Fixed
+
+- **Closed record views release deferred visibility callbacks.** First delivery and disposal
+  release the captured view, and queued observer/fallback callbacks cannot load data after close.
+- **Server work stays bounded.** HTTP and tenant-startup admission, body limits, deadlines,
+  request IDs and optional aggregate metrics make overload observable and reject excess work.
+  Optional exports load lazily; generated installers use a reviewed hash-pinned bootstrap.
+- **Controls preserves concurrent edits.** Save acknowledges only submitted values, and the
+  API key form can pick any active user as the owner. Layout summaries accept every supported shape,
+  and orphaned overrides can be removed without weakening permissions.
+- **AI tools enforce limits throughout a run.** Budget checks, approval authorization,
+  durable cancellation, tool result validation and taint survive resumes and cleanup.
+  Chat drafts and same-time pagination remain stable during asynchronous updates.
+- **Draft writes preserve newer copies.** Conditional revisions prevent aborted or delayed
+  writes and older record Saves from deleting newer drafts. Callers without revision headers
+  retain their existing behavior.
+
 ## 0.4.7 (15-11-2026)
 
 ### Upgrading to 0.4.7
@@ -24,44 +58,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   different values with the same key get 409. Receipts are kept for a day. Framework step
   `0013_create_requests` adds their table ([request-integrity.md](docs/request-integrity.md)).
 
-### Added
-
-- **Optional company sign-in.** `OIDC` and `LocalAuth(oidc=...)` support an explicitly
-  configured provider and immutable subject mappings to existing users. Install the `oidc`
-  extra to enable it; local login, roles, realms and MFA remain enforced. Callback queries
-  are excluded from generated proxy access logs. See [docs/oidc.md](docs/oidc.md).
-- **Bounded AI execution.** `AI(max_concurrent_runs=4, max_runs_per_user=2)` adds configurable
-  process-safe limits. Existing declarations keep working with these defaults. Live work
-  retains its slot and budget reservation until it actually stops.
-- **Optional PWA shell and honest recovery.** Installation caches public static assets only;
-  private data and writes stay online. Kept drafts report their storage status, compare
-  conflicting copies, and support manual copying when clipboard access is unavailable.
-- **Retryable creates.** An optional idempotency key binds authenticated create retries to
-  the same payload and result. Existing clients may continue without a key.
-
 ### Fixed
-
-- **Closed record views release deferred visibility callbacks.** First delivery and disposal
-  release the captured view, and queued observer/fallback callbacks cannot load data after close.
-
-- **Persistence recovery preserves the complete instance.** Backup manifests validate all
-  stores before restore. Split migration rejects partial or ambiguous states; backup and
-  restore coordinate writers. Shared-instance upgrades stage the environment before publish.
-- **Server work stays bounded.** HTTP and tenant-startup admission, body limits, deadlines,
-  request IDs and optional aggregate metrics make overload observable and reject excess work.
-  Optional exports load lazily; generated installers use a reviewed hash-pinned bootstrap.
-- **Permissions and session changes apply consistently.** Hidden fields do not leak through
-  echoed values or query errors. Password, realm and MFA changes invalidate older sessions.
-  Discovery validates nested inputs recursively, and large release restores keep all records.
-- **Controls preserves concurrent edits.** Search and pagination cover all users and keys;
-  Save acknowledges only submitted values. Layout summaries accept every supported shape,
-  and orphaned overrides can be removed without weakening permissions.
-- **AI tools enforce limits throughout a run.** Budget checks, approval authorization,
-  durable cancellation, tool result validation and taint survive resumes and cleanup.
-  Chat drafts and same-time pagination remain stable during asynchronous updates.
-- **Draft writes preserve newer copies.** Conditional revisions prevent aborted or delayed
-  writes and older record Saves from deleting newer drafts. Callers without revision headers
-  retain their existing behavior.
 
 - **Hidden fields cannot be probed by echoing guesses.** A create or update that sends a field
   value the caller cannot read is refused whatever was guessed, instead of being dropped as an
