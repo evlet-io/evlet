@@ -64,6 +64,7 @@ TABLES = (
         Column('expires', 'INTEGER', required=True),
         Column('attempts', 'INTEGER', required=True, default=0),
         Column('secret', 'BLOB'),
+        Column('session_generation', 'INTEGER', required=True, default=0),
     )),
 )
 
@@ -219,6 +220,8 @@ class Preferences:
         field = declared.__fields__.get(key)
         if field is None:
             raise KeyError(f'{app} has no preference {key}')
+        if field.read_only:
+            return _default(field)
         with self._settings.database._connection() as connection:
             row = connection.run(qb.select('evlet_user_prefs', 'value').where(user_id=self._user.id, scope=app, key=key)).one()
         return _default(field) if row is None else _stored(field, row['value'])
@@ -293,8 +296,6 @@ class Settings:
         with self.database.transaction() as tx:
             for table in TABLES:
                 tx.connection.ensure_table(table)
-            if 'session_generation' not in tx.connection.columns('evlet_two_step_tickets'):
-                tx.connection.add_column('evlet_two_step_tickets', Column('session_generation', 'INTEGER', required=True), default=0)
             if 'two_step_agent' not in tx.connection.columns('evlet_user_profile'):
                 tx.connection.add_column('evlet_user_profile', Column('two_step_agent', 'TEXT', required=True), default='')
             # The Administrator's name never changes.
@@ -325,7 +326,8 @@ class Settings:
             with self.database._connection() as connection:
                 for row in connection.run(qb.select('evlet_app_settings', 'app', 'key', 'value')):
                     declared = self.apps.get(row['app'], {}).get('settings')
-                    if declared is not None and row['key'] in declared.__fields__:
+                    # A read_only setting is the declared default; a value stored before it became read only is ignored.
+                    if declared is not None and row['key'] in declared.__fields__ and not declared.__fields__[row['key']].read_only:
                         cache.setdefault(row['app'], {})[row['key']] = _stored(declared.__fields__[row['key']], row['value'])
             if controls.version is not None:
                 self._cache = (controls.version, cache)
@@ -716,7 +718,7 @@ class Settings:
         sections = [{'title': title, 'fields': [{**_schema(name, declared.__fields__[name]),
                                                  'value': declared.__fields__[name].serialize(values.get(name, _default(declared.__fields__[name])))} for name in names]}
                     for title, names in declared.__sections__.items()] if declared else []
-        preferences = [{**_schema(name, field), 'value': field.serialize(_stored(field, stored[name]) if name in stored else _default(field))}
+        preferences = [{**_schema(name, field), 'value': field.serialize(_stored(field, stored[name]) if name in stored and not field.read_only else _default(field))}
                        for name, field in mine.__fields__.items()] if mine else []
         return {'id': app, 'title': app.replace('_', ' ').title(), 'editors': list(declared.editors) if declared else [],
                 'can_edit': self.can_edit(user, app), 'sections': sections, 'preferences': preferences}

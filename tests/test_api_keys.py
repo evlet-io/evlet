@@ -59,7 +59,7 @@ def test_revoked_keys_inactive_users_and_bad_keys_are_refused(secured):
     assert with_key(secured, token, 'GET', '/api/customer')[:2] == (401, {'error': 'This API key is not valid. It may have been revoked.'})
     token = create(admin, user='viewer')[1]['token']
     key_id = admin('GET', '/api/_controls/keys')[1]['items'][0]['id']
-    assert admin('DELETE', f'/api/_controls/keys/{key_id}')[1] == {'items': []}
+    assert admin('DELETE', f'/api/_controls/keys/{key_id}')[1]['items'] == []
     assert with_key(secured, token, 'GET', '/api/customer')[:2] == (401, {'error': 'This API key is not valid. It may have been revoked.'})
     assert admin('DELETE', f'/api/_controls/keys/{key_id}')[0] == 404
     with secured.database._connection() as connection:
@@ -268,3 +268,29 @@ def test_invalid_combined_account_change_does_not_revoke_access(secured):
     assert with_key(secured, token, 'GET', '/api/customer')[0] == 200
     with secured.database._connection() as connection:
         assert connection.run(qb.select('evlet_audit', qb.count()).where(area='Users')).value() == before
+
+
+def test_controls_key_and_user_inventories_page_and_search_past_the_first_page(secured):
+    admin = client(secured)
+    for name in ('Alpha feed', 'Beta feed', 'Gamma sync'):
+        assert create(admin, name, user='editor')[0] == 201
+    assert create(admin, 'Viewer feed', user='viewer')[0] == 201
+    first = admin('GET', '/api/_controls/keys?limit=2')[1]
+    assert first['total'] == 4 and [row['name'] for row in first['items']] == ['Viewer feed', 'Gamma sync']
+    # A key created meanwhile does not shift the cursor.
+    assert create(admin, 'Late', user='editor')[0] == 201
+    rest = admin('GET', f"/api/_controls/keys?limit=2&before={first['next_before']}")[1]
+    assert [row['name'] for row in rest['items']] == ['Beta feed', 'Alpha feed'] and rest['next_before'] is None
+    assert [row['name'] for row in admin('GET', '/api/_controls/keys?q=FEED&user=editor')[1]['items']] == ['Beta feed', 'Alpha feed']
+    for query in ('limit=0', 'limit=201', 'before=x', 'user=Bad%20Name', 'other=1', 'limit=1&limit=2'):
+        assert admin('GET', '/api/_controls/keys?' + query)[0] == 422, query
+
+    users = admin('GET', '/api/_controls/users?limit=1')[1]
+    assert len(users['items']) == 1 and users['total'] == users['counts']['all'] >= 3
+    assert [row['username'] for row in admin('GET', '/api/_controls/users?q=EDIT')[1]['items']] == ['editor']
+    assert {row['role'] for row in admin('GET', '/api/_controls/users?role=viewer')[1]['items']} == {'viewer'}
+    assert admin('GET', '/api/_controls/users?active=false')[1]['items'] == []
+    for query in ('active=yes', 'limit=500', 'offset=-1', 'role=Nope!'):
+        assert admin('GET', '/api/_controls/users?' + query)[0] == 422, query
+    # The inventories stay Controls-only.
+    assert client(secured, 'editor')('GET', '/api/_controls/keys?limit=2')[0] == 404
