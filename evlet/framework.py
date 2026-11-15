@@ -179,6 +179,12 @@ def _saved(session, registry, model, record_id):
     return record
 
 
+def _session_generations(connection):
+    """Sessions and two-step tickets carry the account's generation; ending sessions moves it on (evlet/auth.py)."""
+    for table in ('evlet_users', 'evlet_sessions', 'evlet_two_step_tickets'):
+        if connection.table_exists(table) and 'session_generation' not in connection.columns(table):
+            connection.add_column(table, Column('session_generation', 'INTEGER', required=True), default=0)
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -197,6 +203,8 @@ STEPS = (
     FrameworkStep('0010_split_files', 'Move sign-in sessions, the tool-call log and Eva into their own SQLite files next to the database.'),
     FrameworkStep('0011_state_manager', "Add the state manager's journal columns and releases; convert confirmable lifecycle "
                   'and revision rows; give records already in a release step a v0 release.', _state_manager, registry=True),
+    FrameworkStep('0012_session_generations', 'Add the account session generation that ending sessions moves on, so a '
+                  'revoked session or two-step ticket cannot be used again.', _session_generations),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

@@ -48,7 +48,11 @@ class ManagedRuntime:
                     await asyncio.to_thread(self.app.initialize)
                 except Exception:
                     generation.__exit__(None, None, None)
-                    self.app.database.close()
+                    try:
+                        self.app.database.close()
+                    except Exception:
+                        # Keep the start failure as the reported error; a failed log flush is logged beside it.
+                        logging.getLogger(__name__).exception('Closing the database after a failed start')
                     raise
                 self.stopped = asyncio.Event()
                 worker = asyncio.create_task(self.work(self.stopped)) if self.jobs and self.app.business.jobs else None
@@ -60,8 +64,10 @@ class ManagedRuntime:
                     self.stop()
                     if worker:
                         await worker
-                    self.app.database.close()
-                    generation.__exit__(None, None, None)
+                    try:
+                        self.app.database.close()
+                    finally:
+                        generation.__exit__(None, None, None)
                 await send({'type': 'lifespan.shutdown.complete'})
         except Exception as exc:
             logger = logging.getLogger(__name__)
