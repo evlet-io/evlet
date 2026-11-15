@@ -6,15 +6,29 @@ Python form here (a callable from models.py, say) are written as ... and must be
 
 from decimal import Decimal
 import inspect
+import ipaddress
 from pathlib import Path
 
 from .controls import SCHEDULE, SCOPES, SETTINGS
-from .models import storage_name
+from .models import ValidationError, storage_name
 
 PROPS = ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required', 'read_only', 'default')
 UNKNOWN = '...'
 # Setting prefixes other than security, as config.py names and what they cover.
 GROUPS = {'mcp': ('assistants', 'AI assistant settings (Controls, MCP and AI)'), 'mail': ('mail', 'Email settings (Controls, Email)')}
+
+
+def allowed_networks(file, saved):
+    """The intersection Controls enforces; an empty input list imposes no restriction."""
+    left, right = ([ipaddress.ip_network(value, strict=False) for value in values] for values in (file, saved))
+    networks = [a if a.prefixlen >= b.prefixlen else b for a in left for b in right
+                if a.version == b.version and a.overlaps(b)] if left and right else left or right
+    if left and right and not networks:
+        # ControlsAccess(allow_ips=()) is unrestricted, not deny-all. Refuse a migration that would open access.
+        raise ValidationError({'security.controls_ips': 'The app and Controls network lists do not overlap. Keep both restrictions; '
+                               'reconcile them manually before exporting and resetting this override.'})
+    return tuple(str(network) for version in (4, 6)
+                 for network in ipaddress.collapse_addresses(item for item in networks if item.version == version))
 
 
 def literal(value):
@@ -276,8 +290,8 @@ class Exporter:
                                f'{name} = {literal(group)}'))
         if 'security.controls_ips' in values:
             access = self.controls.routes.controls
-            options = {'allow_ips': tuple(values['security.controls_ips'])} | ({'require_two_step': True} if access.require_two_step else {})
-            note = f"# routes.py allows {', '.join(access.allow_ips)} today; a request must match both lists.\n" if access.allow_ips else ''
+            options = {'allow_ips': allowed_networks(access.allow_ips, values['security.controls_ips'])} | ({'require_two_step': True} if access.require_two_step else {})
+            note = '# Preserves the intersection of routes.py and Controls network restrictions.\n'
             blocks.append((f'{instance}/routes.py', note + f"controls = {call('ControlsAccess', (), options)}"))
         apps = {name: app['id'] for app in self.controls.apps for name in app['schedules']}
         for key in values:
