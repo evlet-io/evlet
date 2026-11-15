@@ -75,12 +75,19 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
     if before is None:
         raise ValueError('Evlet is not installed in the project .venv. Restore .venv before upgrading')
     requirement = allowed(before, to)
+    units = Path(unit_dir or site.SYSTEMD_DIR)
     for item in names:
         child(root, 'instances', item)
+        # A sibling with no installed unit is not served (a dev or test instance): it is backed up and migrated
+        # with the others, but there is no service to stop or restart.
+        if item != name and not (units / f'{services[item]}.service').exists():
+            services[item] = None
+            continue
         try:
-            check_service(root, item, {}, service=services[item], unit_dir=unit_dir or site.SYSTEMD_DIR, which=which or shutil.which)
+            check_service(root, item, {}, service=services[item], unit_dir=units, which=which or shutil.which)
         except Failed as exc:
             raise ValueError(f'Service {item}: {exc}') from None
+    served = [item for item in names if services[item] is not None]
     if not yes:
         interactive = sys.stdin.isatty() if interactive is None else interactive
         if not interactive:
@@ -134,7 +141,7 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
             out('Upgrade cancelled. The project environment and services were left unchanged.')
             return False
         stopped = []
-        for item in names:
+        for item in served:
             if step(['sudo', 'systemctl', 'stop', services[item]]) is None:
                 for previous in stopped:
                     step(['sudo', 'systemctl', 'start', services[previous]])
@@ -152,11 +159,11 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
                 return False
             backups[item] = backup
         previous = root / ('.venv-before-' + staging.name.removeprefix('.evlet-upgrade-'))
-        undo = [*(f'sudo systemctl stop {services[item]}' for item in names),
+        undo = [*(f'sudo systemctl stop {services[item]}' for item in served),
                 f'if [ -d {shlex.quote(str(previous))} ]; then if [ -e {shlex.quote(str(live))} ]; then mv {shlex.quote(str(live))} {shlex.quote(str(staging.with_name(staging.name + "-failed")))}; fi; mv {shlex.quote(str(previous))} {shlex.quote(str(live))}; fi',
                 *(f'{shlex.quote(python)} -P -m evlet --project {shlex.quote(str(root))} restore {shlex.quote(backups[item])} --instance {item} --yes {item}' for item in names),
                 f'rm {shlex.quote(str(journal))}',
-                *(f'sudo systemctl start {services[item]}' for item in names)]
+                *(f'sudo systemctl start {services[item]}' for item in served)]
         record = {'version': 1, 'before': before, 'after': after, 'previous_environment': str(previous),
                   'staged_environment': str(staged), 'instances': names, 'backups': backups, 'recovery': undo}
         try:
@@ -182,7 +189,7 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
                 if step([*evlet, 'migrate', item]) is None:
                     raise RuntimeError(f'The migration for {item} failed')
             # Every database matches the new release before any service is allowed back up.
-            for item in names:
+            for item in served:
                 restart = [*evlet, 'restart', item, '--yes']
                 if services[item] != f'evlet-{item}':
                     restart += ['--service', services[item]]
@@ -207,6 +214,9 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
         shutil.rmtree(previous)
         sync_directory(root)
         out(f'{", ".join(names)} run Evlet {after}. Backups: ' + ', '.join(f'{item}: {backups[item]}' for item in names) + '.')
+        unserved = [item for item in names if services[item] is None]
+        if unserved:
+            out(f'No service runs {", ".join(unserved)}, so ' + ('it was' if len(unserved) == 1 else 'they were') + ' migrated but not started.')
         return True
 
 
