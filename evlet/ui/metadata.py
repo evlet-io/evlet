@@ -52,19 +52,20 @@ def starts_valid(value):
 
 
 class Section:
-    """A form section in Model.Meta.layout that a person can open and close.
+    """A "more information" row in Model.Meta.layout that a person can open and close.
 
-    `collapsed` is where it starts: False (open), True (closed) or 'empty' (closed when every field in
-    it is empty on an existing record; a new record shows it open). A person's own choice wins after that.
-    A plain ('Title', fields) pair is a section that can't collapse. `panel=False` leaves the section out when a
-    list opens the record in its side panel; the full page still shows it. `description` is an optional line of
-    text under the title."""
+    `collapsed` is where it starts: True (closed, the default), False (open) or 'empty' (closed when every field in
+    it is empty on an existing record; a new record shows it open). A person's own choice wins after that, and on a
+    new record a row that holds a required field starts open. A plain ('Title', fields) pair is a section that can't
+    collapse, so it starts open. `panel=False` leaves the section out when a list opens the record in its side panel;
+    the full page still shows it. `description` is an optional line of text under the title. A wrong option is
+    ignored with a warning when the app loads."""
 
-    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow', 'panel', 'description')
+    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow', 'panel', 'description', 'unknown')
 
-    def __init__(self, title, fields, *, collapsible=True, collapsed=False, flow='rows', panel=True, description=None):
+    def __init__(self, title, fields, *, collapsible=True, collapsed=True, flow='rows', panel=True, description=None, **unknown):
         self.title, self.fields, self.collapsible, self.collapsed, self.flow = title, fields, collapsible, collapsed, flow
-        self.panel, self.description = panel, description
+        self.panel, self.description, self.unknown = panel, description, unknown
 
     def __repr__(self):
         return (f'Section({self.title!r}, {self.fields!r}, collapsible={self.collapsible!r}, collapsed={self.collapsed!r}'
@@ -72,50 +73,61 @@ class Section:
                 + (f', description={self.description!r}' if self.description is not None else '')
                 + (', panel=False)' if self.panel is False else ')'))
 
-    def check(self, model):
-        """Raise ValueError naming the model and the section when the options can't work."""
-        where = f'{model} layout section {self.title!r}'
-        if not isinstance(self.title, str) or not self.title.strip():
-            raise ValueError(f'{model} layout: give every Section a title')
-        if not isinstance(self.fields, (tuple, list)):
-            raise ValueError(f'{where}: list its fields as a tuple of field names')
-        if type(self.collapsible) is not bool:
-            raise ValueError(f'{where}: collapsible must be True or False')
-        if not starts_valid(self.collapsed):
-            raise ValueError(f"{where}: collapsed must be False, True or 'empty', not {self.collapsed!r}")
-        if not self.collapsible and self.collapsed is not False:
-            raise ValueError(f'{where}: collapsed needs collapsible=True, because this section always shows')
-        if type(self.flow) is not str or self.flow not in FLOWS:
-            raise ValueError(f"{where}: flow must be 'rows' or 'columns', not {self.flow!r}")
-        if type(self.panel) is not bool:
-            raise ValueError(f'{where}: panel must be True or False')
-        if self.description is not None and (type(self.description) is not str or not self.description.strip()):
-            raise ValueError(f'{where}: description must be nonempty text, not {self.description!r}')
+    def options(self, warn):
+        """Its group options; warn(text) reports a wrong one, which keeps its default."""
+        flow = self.flow if type(self.flow) is str and self.flow in FLOWS else warn(f"flow must be 'rows' or 'columns', not {self.flow!r}") or 'rows'
+        description = self.description
+        if description is not None and (type(description) is not str or not description.strip()):
+            description = warn(f'description must be nonempty text, not {description!r}')
+        return {**fold_options(self, warn), 'flow': flow, **({'description': description} if description is not None else {})}
+
+
+def fold_options(item, warn):
+    """collapsible, collapsed and (when False) panel of a Section or TableSection; warn(text) reports an unknown option
+    or a wrong value, which keeps its default. One that can't collapse starts open."""
+    for key in item.unknown:
+        warn(f'has no option {key}')
+    collapsible = item.collapsible if type(item.collapsible) is bool else warn('collapsible must be True or False') or True
+    collapsed = item.collapsed if starts_valid(item.collapsed) else warn(f"collapsed must be False, True or 'empty', not {item.collapsed!r}") or True
+    if type(item.panel) is not bool:
+        warn('panel must be True or False')
+    return {'collapsible': collapsible, 'collapsed': collapsed if collapsible else False, **({'panel': False} if item.panel is False else {})}
+
+
+class TableSection:
+    """A Table field as a "more information" row in Model.Meta.layout: its title bar (title, row count, Add, Focus and
+    Columns), the table, its total line and totals. `collapsed` is True (closed, the default), False (open) or 'empty'
+    (closed while the table has no rows). A Table name on its own is TableSection(name). `panel=False` leaves it out
+    of a list's side panel."""
+
+    __slots__ = ('name', 'collapsible', 'collapsed', 'panel', 'unknown')
+
+    def __init__(self, name, *, collapsible=True, collapsed=True, panel=True, **unknown):
+        self.name, self.collapsible, self.collapsed, self.panel, self.unknown = name, collapsible, collapsed, panel, unknown
+
+    def __repr__(self):
+        options = {key: getattr(self, key) for key, default in (('collapsible', True), ('collapsed', True), ('panel', True))
+                   if getattr(self, key) != default or type(getattr(self, key)) is not bool}
+        return f'TableSection({self.name!r}' + ''.join(f', {key}={value!r}' for key, value in options.items()) + ')'
+
 
 
 class Main:
-    """The primary area of a compact record page, first in Model.Meta.layout: a grid of fields with no heading,
-    then any Table fields, named after the fields.
+    """A block of the main zone of a record page, drawn open in the order declared; it never collapses.
 
-    Every Section, Table, Related, Html and Chart after it is the page's "more information". The area is named by
-    the model's label where a name is needed (Meta.panel, Controls). A layout without Main uses its first section as
-    the primary area."""
+    Main(fields, title=None) is a group of fields: with a title it shows a small heading; without one it is named by
+    the model's label where a name is needed (Meta.panel, Controls), and an untitled group after the first by the label
+    and its number ("Invoice 2"). Main("lines") is one Table. The form Main(fields, "lines", ...) of 0.4.9 and before
+    reads as Main(fields) followed by Main("lines") for each Table named."""
 
-    __slots__ = ('fields', 'tables')
+    __slots__ = ('fields', 'tables', 'title', 'unknown')
 
-    def __init__(self, fields, *tables):
-        if not isinstance(fields, (tuple, list)) or any(type(name) is not str or not name for name in fields):
-            raise ValueError('Main: list its fields as a tuple of field names, such as Main(("customer", "due_on"), "lines")')
-        if any(type(name) is not str or not name for name in tables):
-            raise ValueError('Main: name Table fields after the fields, such as Main(("customer",), "lines")')
-        if not fields and not tables:
-            raise ValueError('Main needs fields, Table fields or both')
-        if len(set(fields)) != len(fields) or len(set(tables)) != len(tables):
-            raise ValueError('Main: name each field and Table once')
-        self.fields, self.tables = tuple(fields), tuple(tables)
+    def __init__(self, fields, *tables, title=None, **unknown):
+        self.fields, self.tables, self.title, self.unknown = fields, tables, title, unknown
 
     def __repr__(self):
-        return f'Main({self.fields!r}' + ''.join(f', {name!r}' for name in self.tables) + ')'
+        return (f'Main({self.fields!r}' + ''.join(f', {name!r}' for name in self.tables)
+                + (f', title={self.title!r}' if self.title is not None else '') + ')')
 
 
 # At most this many blocks in a layout.
@@ -166,72 +178,150 @@ class Html:
         return markup
 
 
-def layout_blocks(model, layout, visible):
-    """The blocks of Meta.layout in order, as (None, kind, block), and an empty list (kept for callers' unpacking).
+def layout_blocks(model, layout, visible, label):
+    """Meta.layout (None for the default) read into its blocks in drawing order, and the warnings for what it ignored.
 
-    Kinds: 'main' (the Main block), 'section' (a Section or a ('Title', fields) pair), 'table' (a Table field
-    name), 'related', 'html' and 'chart'. Raises ValueError for a block in the wrong place, an unknown Table or a
-    repeated one."""
+    Each block is a dict with its kind ('section', 'table', 'related', 'html' or 'chart'), its stable name (a section
+    or Table; the others are named by record_layout), main, and the declared item as 'block'; a section carries its
+    form group as 'group'. The main zone comes first: every Main in order, or without one the first group of fields.
+    "More information" follows in order, then Other (the fields no block places, in declaration order) and a
+    TableSection for each Table no block places; without Meta.layout every Table joins the main zone. A wrong item is
+    left out with a warning and what it would have placed falls to Other or the trailing tables. Tab still raises."""
     from ..forms import Chart
     from ..meaning import Related
     where = f'{model.__name__}.Meta.layout'
-    if not isinstance(layout, (tuple, list)):
-        raise ValueError(f'{where}: list its blocks as a tuple, such as (Main(...), Section(...), Related(...))')
-    mains = [entry for entry in layout if isinstance(entry, Main)]
-    if mains:
-        if len(mains) > 1:
-            raise ValueError(f'{where}: use one Main')
-        if not isinstance(layout[0], Main):
-            raise ValueError(f'{where}: put Main first')
-    tables = getattr(model, '__tables__', {})
-    entries, placed = [], set()
-    for block in layout:
-        if getattr(type(block), '__name__', '') == 'Tab':
-            raise ValueError(f'{where}: Tab was removed, record pages have no tabs; use Main(...) first and Section(...) '
-                             'after it')
-        if isinstance(block, Main):
-            for name in block.tables:
-                if name not in tables:
-                    raise ValueError(f'{where}: Main names {name!r}, which is not a Table field of {model.__name__} '
-                                     f'({", ".join(tables) or "none"}). Put fields in its tuple of fields')
+    known = getattr(model, '__tables__', {})
+    warnings, blocks, placed, names = [], [], set(), set()
+
+    def warn(item, text):
+        warnings.append(f'{where}: {item!r} {text}; it is ignored')
+
+    def named(item, title):
+        if title in names:
+            return warn(item, f'uses the name {title!r} again')
+        names.add(title)
+        return title
+
+    def numbered(base):
+        name, number = base, 1
+        while name in names:
+            number += 1
+            name = f'{base} {number}'
+        names.add(name)
+        return name
+
+    def fields_of(item, listed):
+        """The visible fields a group lists, each once; the others are warned about."""
+        if not isinstance(listed, (tuple, list)):
+            return warn(item, 'lists its fields as a tuple of field names') or []
+        if not listed:
+            warn(item, 'is empty')
+        kept = []
+        for name in listed:
+            if type(name) is str and name in known:
+                warn(item, f'names the Table {name!r} among its fields; give it its own block')
+            elif type(name) is not str or name not in visible:
+                warn(item, f'names {name!r}, which is not a visible field of {model.__name__}')
+            elif name in placed:
+                warn(item, f'places {name!r} again')
+            else:
                 placed.add(name)
-            entries.append((None, 'main', block))
-            continue
-        if isinstance(block, Section) or isinstance(block, (tuple, list)):
-            entries.append((None, 'section', block))
-        elif isinstance(block, str):
-            if block not in tables:
-                raise ValueError(f'{where}: {block!r} is not a Table field of {model.__name__}. Put fields in a Section, '
-                                 f'and name Table fields ({", ".join(tables) or "none"}) on their own')
-            if block in placed:
-                raise ValueError(f'{where}: Table {block!r} is placed more than once')
-            placed.add(block)
-            entries.append((None, 'table', block))
+                kept.append(name)
+        return kept
+
+    def section(item, name, listed, group, main=False):
+        if name is None:
+            return
+        kept = fields_of(item, listed)
+        if not kept:
+            names.discard(name)
+            return
+        blocks.append({'kind': 'section', 'name': name, 'main': main, 'block': item, 'group': {'label': name, 'fields': kept, **group}})
+
+    def table(item, name, main, options=None):
+        if type(name) is str and name in visible:
+            warn(item, f'names the field {name!r} where a Table is expected; put fields in a tuple')
+        elif type(name) is not str or name not in known:
+            warn(item, f'names {name!r}, which is not a Table field of {model.__name__} ({", ".join(known) or "none"})')
+        elif name in placed:
+            warn(item, f'places the Table {name!r} again')
+        else:
+            placed.add(name)
+            blocks.append({'kind': 'table', 'name': name, 'main': main, 'block': item, **(options or {})})
+
+    if layout is not None and not isinstance(layout, (tuple, list)):
+        warn(layout, 'is not a tuple of blocks, such as (Main(...), Section(...), Related(...))')
+        layout = ()
+    for block in layout or ():
+        if getattr(type(block), '__name__', '') == 'Tab':
+            raise ValueError(f'{where}: Tab was removed, record pages have no tabs; use Main(...) and Section(...)')
+    for block in (layout or ())[MAX_BLOCKS:]:
+        warn(block, f'is past the limit of {MAX_BLOCKS} blocks')
+    main_group = {'collapsible': False, 'collapsed': False, 'flow': 'rows', 'main': True}
+    for block in (('Details', tuple(visible)),) if layout is None else layout[:MAX_BLOCKS]:
+        say = lambda text, block=block: warn(block, text)
+        if isinstance(block, Main):
+            for key in block.unknown:
+                say(f'has no option {key}')
+            title = block.title
+            if title is not None and (type(title) is not str or not title.strip()):
+                title = say(f'title must be nonempty text, not {title!r}')
+            if isinstance(block.fields, str):
+                table(block, block.fields, True)
+            elif block.fields or not block.tables:
+                section(block, named(block, title) if title else numbered(label), block.fields,
+                        {**main_group, **({'heading': True} if title else {})}, main=True)
+            for name in block.tables:
+                table(block, name, True)
+        elif isinstance(block, Section) or isinstance(block, (tuple, list)) and len(block) == 2:
+            item = block if isinstance(block, Section) else Section(*block, collapsible=False)
+            if type(item.title) is not str or not item.title.strip():
+                say('needs a title')
+            else:
+                section(block, named(block, item.title), item.fields, item.options(say))
+        elif isinstance(block, (TableSection, str)):
+            item = block if isinstance(block, TableSection) else TableSection(block)
+            table(block, item.name, False, fold_options(item, say))
         elif isinstance(block, Related):
             if block.hidden:
-                raise ValueError(f'{where}: a Related block shows records; hidden=True belongs in Meta.relations')
-            entries.append((None, 'related', block))
+                say('hides its records; hidden=True belongs in Meta.relations')
+            else:
+                blocks.append({'kind': 'related', 'main': False, 'block': block})
         elif isinstance(block, Html):
-            unknown = [name for name in block.fields() if name not in visible]
+            try:
+                unknown = [name for name in block.fields() if name not in visible]
+                block.markup()
+            except ValueError as error:
+                say(str(error))
+                continue
             if unknown:
-                raise ValueError(f'{where}: Html shows unknown or hidden fields: {", ".join(unknown)}')
-            block.markup()
-            entries.append((None, 'html', block))
+                say(f'shows unknown or hidden fields: {", ".join(unknown)}')
+            else:
+                blocks.append({'kind': 'html', 'main': False, 'block': block})
         elif isinstance(block, Chart):
             if block.model is None:
-                raise ValueError(f'{where}: a layout Chart names the model whose records it charts, such as Chart("bar", x="status", y="hours", model="task")')
-            entries.append((None, 'chart', block))
+                say('names no model; a layout Chart charts records of a model, such as Chart("bar", x="status", y="hours", model="task")')
+            else:
+                blocks.append({'kind': 'chart', 'main': False, 'block': block})
         else:
-            raise ValueError(f'{where}: use Main(...), Section(...), a Table field name, Related(...), Html(...) or Chart(...), not {block!r}')
-    if len(layout) > MAX_BLOCKS:
-        raise ValueError(f'{where}: use at most {MAX_BLOCKS} blocks')
-    if mains:
-        # Every Table field is placed, in Main or after it.
-        unplaced = [name for name in tables if name not in placed]
-        if unplaced:
-            raise ValueError(f'{where}: a layout with Main places every Table field, in Main or after it; '
-                             f'{", ".join(unplaced)} is not placed')
-    return entries, []
+            say('is not a layout block: use Main(...), Section(...), TableSection(...), a Table name, Related(...), Html(...) or Chart(...)')
+    rest = [name for name in visible if name not in placed]
+    other = next((block for block in blocks if block['kind'] == 'section' and block['name'] == 'Other'), None)
+    if rest and other:
+        other['group']['fields'] += rest
+    elif rest:
+        names.add('Other')
+        blocks.append({'kind': 'section', 'name': 'Other', 'main': False, 'block': None,
+                       'group': {'label': 'Other', 'fields': rest, 'collapsible': True, 'collapsed': True, 'flow': 'rows'}})
+    if not any(block['main'] for block in blocks):
+        # Without Main the first group of fields is the main zone.
+        first = next((block for block in blocks if block['kind'] == 'section'), None)
+        if first is not None:
+            first['main'] = True
+            first['group'].update(collapsible=False, collapsed=False, main=True)
+    blocks += [{'kind': 'table', 'name': name, 'main': layout is None, 'block': None,
+                **({} if layout is None else {'collapsible': True, 'collapsed': True})} for name in known if name not in placed]
+    return [block for block in blocks if block['main']] + [block for block in blocks if not block['main']], warnings
 
 
 def check_focus(where, definition, name):
@@ -265,8 +355,17 @@ def refuse_removed(name, meta):
     for removed in ('tabs', 'default_tab'):
         if isinstance(meta, type) and removed in vars(meta):
             raise ValueError(f'{name}.Meta.{removed} was removed: record pages have no tabs. Lay the page out with '
-                             'Meta.layout = (Main(fields, *tables), Section(...), ...); Activity, Revisions and '
+                             'Meta.layout = (Main(fields), Main("lines"), Section(...), ...); Activity, Revisions and '
                              'Related show beside it or under "more information"')
+
+
+def form_fields(model, meta):
+    """The fields a form shows, in order: app fields only (instance fields, x_, differ per database and are added by
+    Controls). The standard name shows first on models whose naming fills it; the standard title never shows."""
+    named = getattr(getattr(meta, 'naming', None), 'field', None) == 'name' and standard(model.__app_fields__.get('name')) == 'name'
+    visible = {name: field for name, field in model.__app_fields__.items()
+               if (standard(field) == 'name' and named) or (not standard(field) and not field.hidden)}
+    return {'name': visible.pop('name'), **visible} if named else visible
 
 
 def view_for(model):
@@ -276,13 +375,7 @@ def view_for(model):
     if meta is not None:
         if not isinstance(meta, type) or any(not key.startswith('_') and key not in allowed for key in vars(meta)):
             raise ValueError('Model.Meta supports ' + ', '.join(sorted(allowed)))
-    # App fields only: instance fields (x_) differ per database and are added by Controls. The standard
-    # name shows (first) on models whose naming fills it; the standard title follows its source and never shows.
-    named = getattr(getattr(meta, 'naming', None), 'field', None) == 'name' and standard(model.__app_fields__.get('name')) == 'name'
-    visible = {name: field for name, field in model.__app_fields__.items()
-               if (standard(field) == 'name' and named) or (not standard(field) and not field.hidden)}
-    if named:
-        visible = {'name': visible.pop('name'), **visible}
+    visible = form_fields(model, meta)
     texts = [name for name, field in visible.items() if isinstance(field, Text) and not isinstance(field, LongText)]
     label = getattr(meta, 'label', label_for(model.__name__))
     plural = getattr(meta, 'plural', plural_for(label))
@@ -337,63 +430,12 @@ def view_for(model):
     focus = getattr(meta, 'focus', None)
     if focus is not None:
         check_focus(f'{model.__name__}.Meta.focus', model, focus)
-    layout = getattr(meta, 'layout', (('Details', tuple(visible)),))
-    used = []
-    groups = []
-    entries, _ = layout_blocks(model, layout, visible)
-    # Blocks besides sections make a record layout (record_layout in the schema, added by the registry).
-    blocks = any(kind != 'section' for _, kind, _ in entries)
-    if not blocks and len(layout) > 8:
-        raise ValueError('Use at most eight layout groups')
-    for _, kind, group in entries:
-        if kind == 'main':
-            # The primary area has no heading; the model's label names it where a name is needed.
-            group = (label, group.fields) if group.fields else None
-            if group is None:
-                continue
-            unknown = [name for name in group[1] if name not in visible]
-            if unknown:
-                raise ValueError(f'{model.__name__}.Meta.layout: Main names unknown or hidden fields: {", ".join(unknown)}')
-            for name in group[1]:
-                if name in used:
-                    raise ValueError(f'Layout lists {name} more than once')
-                used.append(name)
-            groups.append({'label': label, 'fields': list(group[1]), 'collapsible': False, 'collapsed': False, 'flow': 'rows', 'main': True})
-            continue
-        if kind != 'section':
-            continue
-        section = group if isinstance(group, Section) else None
-        if section is not None:
-            section.check(model.__name__)
-            group = (section.title, section.fields)
-        if not isinstance(group, (tuple, list)) or len(group) != 2 or not isinstance(group[0], str) or not group[0] or not isinstance(group[1], (tuple, list)):
-            raise ValueError('Layout groups are (label, field names) pairs or Section(title, fields)')
-        unknown = [str(name) for name in group[1] if not isinstance(name, str) or name not in visible]
-        if unknown:
-            raise ValueError(f'Layout group {group[0]} names unknown or hidden fields: {", ".join(unknown)}')
-        for name in group[1]:
-            if name in used:
-                raise ValueError(f'Layout lists {name} more than once')
-            used.append(name)
-        # A plain (label, fields) pair is a section that can't collapse.
-        groups.append({'label': group[0], 'fields': list(group[1]), 'collapsible': bool(section and section.collapsible),
-                       'collapsed': section.collapsed if section and section.collapsible else False, 'flow': section.flow if section else 'rows',
-                       **({'description': section.description} if section and section.description is not None else {}),
-                       **({'panel': False} if section and section.panel is False else {})})
-    # Visible fields the layout leaves out follow under Other, in declaration order.
-    rest = [name for name in visible if name not in used]
-    if rest:
-        groups.append({'label': 'Other', 'fields': rest, 'collapsible': False, 'collapsed': False, 'flow': 'rows'})
-    titles = [group['label'] for group in groups]
-    if len(set(titles)) != len(titles):
-        if blocks:
-            raise ValueError(f'{model.__name__}.Meta.layout: give sections different titles, so the record layout can place them'
-                             + (' (Other holds the fields no section lists)' if rest else ''))
-        if getattr(meta, 'panel', None) is not None or any(group.get('panel') is False for group in groups):
-            raise ValueError(f'{model.__name__}.Meta.layout: give sections different titles, so the side panel can name them')
-    panel = panel_for(model, meta, groups, visible)
-    for group in groups:
-        group.pop('panel', None)
+    blocks, _ = layout_blocks(model, getattr(meta, 'layout', None), visible, label)
+    groups = [block['group'] for block in blocks if block['kind'] == 'section']
+    # TableSection(panel=False) leaves its Table out of the side panel, as Table(panel=False) does.
+    tables_off = {block['name'] for block in blocks if block['kind'] == 'table' and block.get('panel') is False}
+    panel = panel_for(model, meta, groups, visible, tables_off)
+    groups = [{key: value for key, value in group.items() if key != 'panel'} for group in groups]
     return {'layout': groups, 'label': label, 'plural': plural, 'description': description, 'title_field': title,
             'list_fields': list(dict.fromkeys(('id', *columns))), 'search_fields': list(search), 'open_in': open_in,
             'autosave': autosave, **({'list_tabs': list_tabs} if list_tabs else {}),
@@ -420,7 +462,7 @@ def panel_names(model, groups, visible):
     return names
 
 
-def panel_for(model, meta, groups, visible):
+def panel_for(model, meta, groups, visible, tables_off=()):
     """What a record opened in a list's side panel leaves out, or None when it shows everything.
 
     The result lists hidden names by kind ({'sections', 'fields', 'tabs', 'blocks'}, each sorted) and, for
@@ -439,7 +481,7 @@ def panel_for(model, meta, groups, visible):
     if keep is None:
         hidden = {'sections': [group['label'] for group in groups if group.get('panel') is False],
                   'fields': [name for name, field in visible.items() if field.panel is False],
-                  'tabs': [name for name, table in tables.items() if getattr(table, 'panel', True) is False], 'blocks': [] if summary else ['summary']}
+                  'tabs': [name for name, table in tables.items() if getattr(table, 'panel', True) is False or name in tables_off], 'blocks': [] if summary else ['summary']}
         hidden = {kind: sorted(names) for kind, names in hidden.items() if names}
         return hidden or None
     if not isinstance(keep, (tuple, list)) or any(type(name) is not str or not name for name in keep) or len(set(keep)) != len(keep):
@@ -578,10 +620,6 @@ def back_link(model, source, link, where):
 def layout_block(registry, model, kind, block, where):
     """One block of a record layout as the neutral schema sends it."""
     from ..measures import declared
-    if kind == 'section':
-        return {'kind': 'section', 'label': block.title if isinstance(block, Section) else block[0]}
-    if kind == 'table':
-        return {'kind': 'table', 'name': block}
     if kind == 'html':
         return {'kind': 'html', 'html': block.markup()}
     source = registry.resolve(block.model)
@@ -624,43 +662,50 @@ def layout_block(registry, model, kind, block, where):
 
 
 def record_layout(registry, model):
-    """The record layout of Meta.layout as the schema's record_layout, or None for a layout of sections only.
+    """The schema's record_layout and the warnings for what Meta.layout ignored.
 
-    {"blocks": [...]}: with Main first, Main's fields (a section named by the model's label) and its Tables, each
-    marked main, then the blocks of "more information"; without Main, the blocks in order. Sections are named by
-    title (their fields stay in the schema's layout); Other, the fields no section lists, goes last. Every record
-    page is compact: without a record_layout the first section is the primary area and every Table follows it."""
+    {"blocks": [...]}: every block in drawing order, each with its kind, its stable name and "main". Main blocks come
+    first and never collapse; the rest are "more information". Sections are named by title (their fields stay in the
+    schema's layout), a Table by its field name, a Related, Html or Chart by its label ("Notes" for Html, "Chart" for
+    a chart without one), numbered from 2 when a name repeats. A block the registry cannot place (an unknown model,
+    Link, filter or measure) is left out with a warning."""
     meta = getattr(model, 'Meta', None)
-    layout = getattr(meta, 'layout', None)
-    if layout is None:
-        return None
-    view = view_for(model)
-    visible = {name: field for name, field in model.__app_fields__.items() if not field.hidden}
-    entries, _ = layout_blocks(model, layout, visible)
-    if all(kind == 'section' for _, kind, _ in entries):
-        return None
+    blocks, warnings = layout_blocks(model, getattr(meta, 'layout', None), form_fields(model, meta), view_for(model)['label'])
     where = f'{model.__name__}.Meta.layout'
-    placed = {block.title if isinstance(block, Section) else block[0] for _, kind, block in entries if kind == 'section'}
-    placed |= {group['label'] for group in view['layout'] if group.get('main')}
-    other = [{'kind': 'section', 'label': group['label']} for group in view['layout'] if group['label'] not in placed]
-    if entries and entries[0][1] == 'main':
-        # Main's fields (a section named by the model's label) and its Tables, each marked main, then the blocks of
-        # "more information". A renderer that ignores main shows them in order.
-        main = entries[0][2]
-        head = ([{'kind': 'section', 'label': view['label'], 'main': True}] if main.fields else []) + \
-            [{'kind': 'table', 'name': name, 'main': True} for name in main.tables]
-        return {'blocks': head + [layout_block(registry, model, kind, block, where) for _, kind, block in entries[1:]] + other}
-    return {'blocks': [layout_block(registry, model, kind, block, where) for _, kind, block in entries] + other}
+    names = {block['name'] for block in blocks if block['kind'] == 'section'}
+    result = []
+    for block in blocks:
+        if block['kind'] == 'section':
+            result.append({'kind': 'section', 'name': block['name'], 'label': block['name'], 'main': block['main']})
+        elif block['kind'] == 'table':
+            result.append({'kind': 'table', 'name': block['name'], 'main': block['main'],
+                           **{key: block[key] for key in ('collapsible', 'collapsed') if key in block}})
+        else:
+            try:
+                entry = layout_block(registry, model, block['kind'], block['block'], where)
+            except ValueError as error:
+                warnings.append(f'{where}: {block["block"]!r}: {error}; it is ignored')
+                continue
+            base = entry.get('label') or ('Notes' if block['kind'] == 'html' else 'Chart')
+            name, number = base, 1
+            while name in names:
+                number += 1
+                name = f'{base} {number}'
+            names.add(name)
+            result.append({**entry, 'name': name, 'main': False})
+    return {'blocks': result}, warnings
 
 
 def compile_layouts(registry):
-    """{model: record_layout} for every model whose Meta.layout has blocks besides sections."""
-    result = {}
+    """({model: record_layout}, warnings) for every model; each warning, (model, text), is logged once here."""
+    import logging
+    result, warnings = {}, []
     for model in registry.models.values():
-        layout = record_layout(registry, model)
-        if layout is not None:
-            result[model] = layout
-    return result
+        result[model], problems = record_layout(registry, model)
+        for text in problems:
+            logging.getLogger('evlet.layout').warning('%s', text)
+            warnings.append((model, text))
+    return result, tuple(warnings)
 
 
 def layout_for_role(business, user, model, layout, readable):

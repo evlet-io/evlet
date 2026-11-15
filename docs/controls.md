@@ -289,9 +289,13 @@ sections and labels of fields a role can't read are left out.
 
 **Form layout** (kind `layout`, key `Model`): `[{"title": ..., "fields": [{"name": ..., "width": 6 | 12}], "collapsible": true, "collapsed": false | true | "empty"}]`,
 1 to 12 sections, each with a title and at least one field, each field placed once. Fields placed nowhere, such as a field an
-app adds later or an instance field, go to the last section. Without a Controls layout the app file's rule holds: a declared
-`Meta.layout` leaves such fields to its Other group (added when the file layout has none), and the default Details group
-takes every field. Section ids stay positional (`main_details`, `section_2`, ...).
+app adds later or an instance field, go to an Other section that starts closed, as for a declared `Meta.layout` (added
+when the layout has none). Without either, the default Details group takes every field. Section ids stay positional (`main_details`, `section_2`, ...).
+A saved layout that no longer fits (a field removed since, or an item written wrong) still applies: each orphaned or
+wrong item, such as an unknown field, a field placed twice, a bad option, an empty section or an unknown side panel
+name, is left out and listed as a problem on the Overview ("Part of the Lead layout is ignored"), and the fields it
+would have placed go to Other; saving such a layout is refused. Problems the app's own `Meta.layout`
+ignores are listed there too ([ui.md](ui.md#record-layouts)).
 The browser renders forms from this layout; `width: 12` makes a field full width.
 Each section has **Can collapse** (`collapsible`) and **Starts**: open (`collapsed: false`), closed (`true`)
 or closed when empty (`"empty"`), as `evlet.Section` has ([business-capabilities.md](business-capabilities.md#collapsible-sections)).

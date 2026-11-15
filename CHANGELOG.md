@@ -31,12 +31,33 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   another name (`CreateModel(Frozen)` with `status = State(...)`) no longer imports, and renaming the
   field inside it changes that migration's checksum. No framework example does this; an app that does
   should ask before upgrading, since there is no compatibility path yet.
+- **Sections now start closed.** `Section(...)` defaults to `collapsed=True`. Write `collapsed=False` on a
+  section that should start open; `collapsed='empty'` and a plain `('Title', fields)` pair keep their meaning.
+  Related, Html and Chart rows and Other start closed too; on a new record a row that holds a required field
+  starts open.
+- **Main no longer holds tables.** A Table is its own block: `Main('lines')` in the main zone or
+  `TableSection('lines')` (or the bare name) as a row of more information. `Main(fields, 'lines')` keeps working
+  and reads as `Main(fields)` followed by `Main('lines')`. In a declared layout, a Table no block names is now a
+  closed `TableSection` after Other instead of joining the primary area; name it in `Main(...)` to keep it open.
+- **Wrong layouts are ignored with a warning.** A wrong `Meta.layout` item no longer stops the registry: it is
+  left out, the rest is used, and a warning naming the model and the item is logged once (`evlet.layout`) and
+  listed on the Controls overview. Tests that expected a `ValueError` from a layout should read
+  `Registry.layout_warnings`. The removed `Tab` and `Meta.tabs` still fail.
 
 ### Added
 
 - **`@release.exit`.** A hook that runs when a move leaves the released set (from a
   `release=True` step to one that is not), after the snapshot and `@state.exit`, before the state
   changes ([states-actions.md](docs/states-actions.md#hooks)).
+
+- **`TableSection(name, *, collapsible=True, collapsed=True, panel=True)`**, exported from `evlet`: a Table as a
+  row of more information with its title bar, total line and totals; `'empty'` is closed while it has no rows
+  ([docs/ui.md](docs/ui.md#record-layouts)).
+- **Several mains.** `Main(fields, title=None)` may be used any number of times, anywhere in `Meta.layout`; every
+  Main is drawn open in the order declared, never collapsing. A titled one shows a small heading; an untitled one
+  after the first is named by the model's label and its number ("Invoice 2").
+- **`record_layout` on every model**, with each block's stable `name` and `"main"`, and `"heading": true` on a
+  titled main section in `layout` ([docs/model-engine.md](docs/model-engine.md#http-api)).
 
 ### Changed
 
@@ -59,6 +80,18 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Locked steps keep their colour.** A `lock=True` step that declares a colour draws as its
   coloured pill with a small lock, on the record, in lists and on board cards. A locked step
   without a colour and a cancelled step draw as before.
+
+- **A block's kind decides its zone.** Every `Main` is the main zone; every other block is more information,
+  wherever it stands in the layout. The first-Main and one-Main rules and the eight-group limit are gone (a layout
+  has at most twelve blocks; more are ignored with a warning).
+- **Fields no block names** go to one last Section labelled Other, which starts closed, and Tables no block names
+  follow it, each as a TableSection.
+- **The row editor** lays out a row model's `Meta.layout` with the same rules: its Main groups open, its sections
+  as closed rows.
+- **Controls Form layout overrides** saved before a field went, or written wrong, still apply: each orphaned or
+  wrong item (an unknown field, a field placed twice, a bad option, an empty section, an unknown side panel name)
+  is left out and listed as a problem, as rule overrides are; saving one is still refused. Fields a Controls
+  layout leaves unplaced now go to Other, which starts closed, instead of to its last section.
 
 
 ## 0.4.9 (15-11-2026)

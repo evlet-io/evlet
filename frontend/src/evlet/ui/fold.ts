@@ -55,13 +55,15 @@ export class Folds {
 
   /**
    * @param saved the person's choices by section title (true is open), kept in their preferences.
-   * @param isNew a new record: sections that start closed when empty start open.
+   * @param isNew a new record: sections that start closed when empty, and those holding a required field, start open.
    * @param phone phone width: collapsible sections after the first start closed.
    */
   constructor(readonly saved: Cell<Record<string, boolean>>, readonly isNew = false, readonly phone = media(PHONE)) {}
 
-  /** Where a section starts before the person chose: the app's value, the phone rule, then 'empty'. */
+  /** Where a section starts before the person chose: open on a new record when it holds a required field that
+   * applies, else the app's value, the phone rule, then 'empty'. */
   start(collapsed: FoldStart, index: number, fields: FieldLike[]): boolean {
+    if (this.isNew && untrack(() => fields.some(field => field.rules.get().required && field.rules.get().applies))) return true;
     if (collapsed === true) return false;
     if (this.phone && index > 0) return false;
     if (collapsed === 'empty') return this.isNew || !untrack(() => fields.every(isBlank));

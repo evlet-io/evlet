@@ -12,7 +12,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Order",
@@ -32,6 +33,21 @@
       ],
       "open_in": "page",
       "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          },
+          {
+            "kind": "table",
+            "name": "items",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "title",
@@ -247,7 +263,8 @@
           ],
           "collapsible": false,
           "collapsed": false,
-          "flow": "rows"
+          "flow": "rows",
+          "main": true
         }
       ],
       "label": "Item",
@@ -264,6 +281,16 @@
       "search_fields": [],
       "open_in": "page",
       "autosave": true,
+      "record_layout": {
+        "blocks": [
+          {
+            "kind": "section",
+            "name": "Details",
+            "label": "Details",
+            "main": true
+          }
+        ]
+      },
       "fields": [
         {
           "name": "qty",

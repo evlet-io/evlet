@@ -51,9 +51,9 @@ __all__ += ["LambdaHTTP", "S3Storage"]
 
 __all__ += ["AI", "ConnectorError", "HTTPClient", "MCPServer"]
 
-from .ui.metadata import Html, Main, Section
+from .ui.metadata import Html, Main, Section, TableSection
 
-__all__ += ["App", "Html", "Main", "Section"]
+__all__ += ["App", "Html", "Main", "Section", "TableSection"]
 
 from .auth import Security
 
@@ -164,7 +164,7 @@ def __getattr__(name):
         return value
     # Removed in 0.4: say where to go instead of a bare "cannot import name".
     if name == 'Tab':
-        raise ImportError('evlet.Tab was removed: record pages have no tabs. Use Main(fields, *tables) first in '
+        raise ImportError('evlet.Tab was removed: record pages have no tabs. Use Main(fields) in '
                           'Meta.layout and Section(...) after it')
     # Removed in 0.4.5 (docs/database-adapters.md).
     if name == 'PostgreSQLDatabase':

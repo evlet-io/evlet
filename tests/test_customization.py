@@ -164,13 +164,15 @@ def test_a_field_override_that_no_longer_validates_makes_the_field_read_only(app
 
 # ---------- layout and list ----------
 
-def test_an_unplaced_field_is_added_to_the_last_section(app):
+def test_an_unplaced_field_goes_to_other(app):
     admin = client(app)
     layout = [{'title': 'Lead', 'fields': [{'name': 'title', 'width': 12}]}, {'title': 'Money', 'fields': [{'name': 'value', 'width': 6}]}]
     assert save(admin, ('layout', 'Lead', layout))[0] == 200
     entry = schema_of(admin, 'lead')
-    assert entry['layout'] == [{'label': 'Lead', 'fields': ['title'], 'wide': ['title'], 'collapsible': False, 'collapsed': False, 'flow': 'rows'},
-                               {'label': 'Money', 'fields': ['value', 'source', 'customer', 'notes'], 'wide': ['notes'], 'collapsible': False, 'collapsed': False, 'flow': 'rows'}]
+    # Without a main group the first section is the main zone, as in Meta.layout.
+    assert entry['layout'] == [{'label': 'Lead', 'fields': ['title'], 'wide': ['title'], 'collapsible': False, 'collapsed': False, 'flow': 'rows', 'main': True},
+                               {'label': 'Money', 'fields': ['value'], 'wide': [], 'collapsible': False, 'collapsed': False, 'flow': 'rows'},
+                               {'label': 'Other', 'fields': ['source', 'customer', 'notes'], 'wide': ['notes'], 'collapsible': True, 'collapsed': True, 'flow': 'rows'}]
     for bad, message in (([], 'Keep between 1 and 12 sections.'), ([{'title': '', 'fields': []}], 'Give every section a title'),
                          ([{'title': 'A', 'fields': [{'name': 'title', 'width': 6}, {'name': 'title', 'width': 6}]}], 'Put each field in one place.'),
                          ([{'title': 'A', 'fields': [{'name': 'nothing', 'width': 6}]}], 'Place fields of Lead by name')):
@@ -184,7 +186,7 @@ def test_a_layout_section_can_collapse_and_choose_how_it_starts(app):
               {'title': 'Notes', 'fields': [{'name': 'notes', 'width': 12}], 'collapsible': True, 'collapsed': 'empty'}]
     assert save(admin, ('layout', 'Lead', layout))[0] == 200
     assert [(group['label'], group['collapsible'], group['collapsed']) for group in schema_of(admin, 'lead')['layout']] == [
-        ('Lead', False, False), ('Money', True, True), ('Notes', True, 'empty')]
+        ('Lead', False, False), ('Money', True, True), ('Notes', True, 'empty'), ('Other', True, True)]
     # Stored with the options only on sections that can collapse, so plain sections read as before.
     saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')
     assert [{key: section.get(key) for key in ('collapsible', 'collapsed') if key in section} for section in saved['value']] == [
@@ -216,9 +218,48 @@ def test_a_layout_saved_before_collapsible_sections_still_loads(tmp_path, hashed
     admin = client(app)
     assert admin('GET', '/api/_controls/state')[1]['attention'] == []
     assert [(group['label'], group['collapsible'], group['collapsed']) for group in schema_of(admin, 'lead')['layout']] == [
-        ('Main', False, False), ('Rest', False, False)]
+        ('Main', False, False), ('Rest', False, False), ('Other', True, True)]
     saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')
     assert saved['value'] == old
+
+
+def test_a_stored_layout_ignores_orphaned_and_wrong_items_and_lists_them(tmp_path, hashed):
+    """A Form layout saved before a field went (or written wrong) still applies: each orphaned or wrong item is left
+    out and listed as a problem, as rule overrides are; the fields it would have placed go to its last section."""
+    build(tmp_path, *models())
+    stored = [{'title': 'Main', 'fields': [{'name': 'title', 'width': 6}, {'name': 'gone', 'width': 6}, {'name': 'title', 'width': 6}]},
+              {'title': 'Rest', 'fields': [{'name': 'notes', 'width': 12}], 'collapsible': True, 'collapsed': 'later'},
+              {'title': 'Empty', 'fields': [{'name': 'gone_too', 'width': 6}]}]
+    with sqlite3.connect(tmp_path / 'custom.sqlite3') as connection:
+        connection.execute("INSERT INTO evlet_overrides(kind,key,value,changed_by,changed_at) VALUES ('layout','Lead',?,NULL,0)", (json.dumps(stored),))
+    app = build(tmp_path, *models())
+    add_user(app, 'admin', 'admin')
+    admin = client(app)
+    assert [(group['label'], group['fields'], group['collapsed']) for group in schema_of(admin, 'lead')['layout']] == [
+        ('Main', ['title'], False), ('Rest', ['notes'], False), ('Other', ['source', 'value', 'customer'], True)]
+    problems = [problem for problem in app.business.controls.problems if problem['key'] == 'Lead']
+    assert [problem['error'] for problem in problems] == [
+        'Place fields of Lead by name, with a width of 6 or 12 (gone is not one); it is ignored.',
+        'title is placed twice. Put each field in one place; it is ignored.',
+        'Section Rest: Starts must be open (false), closed (true) or closed when empty ("empty"); it is ignored.',
+        'Place fields of Lead by name, with a width of 6 or 12 (gone_too is not one); it is ignored.',
+        'Every section needs at least one field, so section ids stay in place; it is ignored.']
+    assert all(problem['kind'] == 'layout' and problem['ignored'] for problem in problems)
+    # Listed where Controls lists configuration problems, and the override still exports.
+    attention = admin('GET', '/api/_controls/state')[1]['attention']
+    assert [item['title'] for item in attention] == ['Part of the Lead layout is ignored'] * 5
+    # A save still refuses a wrong item.
+    assert 'Place fields of Lead by name' in save(admin, ('layout', 'Lead', stored))[1]['fields']['changes.0']
+
+
+def test_app_layout_warnings_are_listed_with_the_controls_problems(tmp_path, hashed):
+    class Meta:
+        layout = (('Lead', ('title', 'nope')),)
+    app = build(tmp_path, *models(Meta))
+    add_user(app, 'admin', 'admin')
+    attention = client(app)('GET', '/api/_controls/state')[1]['attention']
+    assert [(item['title'], item['text']) for item in attention] == [
+        ('Part of the Lead layout is ignored', "Lead.Meta.layout: ('Lead', ('title', 'nope')) names 'nope', which is not a visible field of Lead; it is ignored")]
 
 
 def test_a_layout_sets_section_flow(app):
@@ -227,7 +268,7 @@ def test_a_layout_sets_section_flow(app):
                 {'title': 'Notes', 'fields': [{'name': 'notes', 'width': 12}]}]
     assert save(admin, ('layout', 'Lead', sections))[0] == 200
     entry = schema_of(admin, 'lead')
-    assert [(group['label'], group['flow']) for group in entry['layout']] == [('Lead', 'columns'), ('Notes', 'rows')]
+    assert [(group['label'], group['flow']) for group in entry['layout']] == [('Lead', 'columns'), ('Notes', 'rows'), ('Other', 'rows')]
     assert 'tabs' not in entry and 'default_tab' not in entry
     state = admin('GET', '/api/_controls/state')[1]
     lead = next(model for model in state['models'] if model['name'] == 'Lead')
@@ -260,7 +301,7 @@ def test_a_layout_saved_with_a_record_tab_order_keeps_its_sections(app):
     custom.apply(rows, problems)
     assert problems == []
     entry = schema_of(admin, 'lead')
-    assert [group['label'] for group in entry['layout']] == ['Lead', 'More'] and entry['panel']['sections'] == ['More']
+    assert [group['label'] for group in entry['layout']] == ['Lead', 'More', 'Other'] and entry['panel']['sections'] == ['More']
     assert 'tabs' not in entry and 'default_tab' not in entry
 
 
@@ -874,7 +915,7 @@ def test_a_current_user_default_cannot_be_replaced(tmp_path, hashed):
     assert status == 201 and record['host'] == 'admin', record
 
 
-def test_unplaced_fields_follow_a_file_layout_under_other_and_an_override_in_its_last_section(tmp_path, hashed):
+def test_unplaced_fields_go_to_other_in_a_file_layout_and_an_override(tmp_path, hashed):
     class Site(Model):
         title = Text(required=True)
         city = Text()
@@ -903,10 +944,10 @@ def test_unplaced_fields_follow_a_file_layout_under_other_and_an_override_in_its
     assert [(group['label'], group['fields']) for group in schema_of(admin, 'room')['layout']] == [('Room', ['title']), ('Other', ['floor', 'notes', 'x_zone'])]
     # The default Details group takes every field.
     assert [(group['label'], group['fields']) for group in schema_of(admin, 'desk')['layout']] == [('Details', ['title', 'x_zone'])]
-    # A Controls layout puts them in its last section.
+    # A Controls layout follows the same rule: Other, after its own sections.
     layout = [{'title': 'Where', 'fields': [{'name': 'city', 'width': 6}]}, {'title': 'Site', 'fields': [{'name': 'title', 'width': 6}]}]
     assert save(admin, ('layout', 'Site', layout))[0] == 200
-    assert [(group['label'], group['fields']) for group in schema_of(admin, 'site')['layout']] == [('Where', ['city']), ('Site', ['title', 'x_zone'])]
+    assert [(group['label'], group['fields']) for group in schema_of(admin, 'site')['layout']] == [('Where', ['city']), ('Site', ['title']), ('Other', ['x_zone'])]
 
 
 def test_recompute_keeps_instance_fields_and_skips_posted_records(tmp_path, hashed):

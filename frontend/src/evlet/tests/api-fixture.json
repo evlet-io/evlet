@@ -4898,7 +4898,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-15T08:56:52.661Z",
+     "at": "2026-11-15T21:10:01.168Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -4910,7 +4910,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.659Z",
+     "at": "2026-11-15T21:10:01.166Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -4922,7 +4922,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.657Z",
+     "at": "2026-11-15T21:10:01.162Z",
      "data": {
       "follow_up": 20,
       "text": "Balance due by the end of the month"
@@ -4932,7 +4932,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.654Z",
+     "at": "2026-11-15T21:10:01.158Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -4944,7 +4944,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.651Z",
+     "at": "2026-11-15T21:10:01.154Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -4953,7 +4953,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.634Z",
+     "at": "2026-11-15T21:10:01.130Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -4968,7 +4968,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.622Z",
+     "at": "2026-11-15T21:10:01.115Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -4978,7 +4978,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.621Z",
+     "at": "2026-11-15T21:10:01.115Z",
      "data": {
       "targets": [
        {
@@ -4994,7 +4994,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.621Z",
+     "at": "2026-11-15T21:10:01.115Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -5017,7 +5017,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.607Z",
+     "at": "2026-11-15T21:10:01.095Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5029,7 +5029,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.591Z",
+     "at": "2026-11-15T21:10:01.075Z",
      "data": {
       "fields": {
        "total": {
@@ -5091,7 +5091,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.574Z",
+     "at": "2026-11-15T21:10:01.052Z",
      "data": {
       "fields": {
        "customer": {
@@ -5141,7 +5141,7 @@
  "invoice_activity_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-15T08:56:52.654Z",
+   "at": "2026-11-15T21:10:01.158Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5157,7 +5157,7 @@
  "invoice_activity_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-15T08:56:52.657Z",
+   "at": "2026-11-15T21:10:01.162Z",
    "data": {
     "follow_up": 20,
     "text": "Balance due by the end of the month"
@@ -5171,7 +5171,7 @@
  "invoice_activity_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-15T08:56:52.651Z",
+   "at": "2026-11-15T21:10:01.154Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5363,7 +5363,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.607Z",
+     "at": "2026-11-15T21:10:01.095Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5375,7 +5375,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.591Z",
+     "at": "2026-11-15T21:10:01.075Z",
      "data": {
       "fields": {
        "total": {
@@ -5437,7 +5437,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.574Z",
+     "at": "2026-11-15T21:10:01.052Z",
      "data": {
       "fields": {
        "customer": {
@@ -6487,7 +6487,8 @@
         "credit_days"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -6510,6 +6511,16 @@
       "update": true
      },
      "plural": "Customers",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "relations": [
       {
        "label": "Invoices",
@@ -6817,7 +6828,8 @@
         "reversal"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -6845,6 +6857,16 @@
       "update": false
      },
      "plural": "Ledger entries",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "ledgerentry",
      "search_fields": [
       "memo",
@@ -7642,7 +7664,8 @@
         "docstate"
        ],
        "flow": "rows",
-       "label": "Invoice"
+       "label": "Invoice",
+       "main": true
       },
       {
        "collapsed": false,
@@ -7748,6 +7771,27 @@
       "update": true
      },
      "plural": "Invoices",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Invoice",
+        "main": true,
+        "name": "Invoice"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "lines"
+       },
+       {
+        "kind": "section",
+        "label": "Amounts",
+        "main": false,
+        "name": "Amounts"
+       }
+      ]
+     },
      "relations": [
       {
        "label": "Payments",
@@ -8079,7 +8123,8 @@
         "paid_on"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -8103,6 +8148,16 @@
       "update": true
      },
      "plural": "Payments",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "payment",
      "search_fields": [
       "title",
@@ -8301,7 +8356,8 @@
         "amount"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -8320,6 +8376,16 @@
       "update": true
      },
      "plural": "Invoice lines",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "Invoice.lines",
      "search_fields": [
       "item"
@@ -8413,7 +8479,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-15T08:56:52.661Z",
+     "at": "2026-11-15T21:10:01.168Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -8425,7 +8491,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.659Z",
+     "at": "2026-11-15T21:10:01.166Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -8437,7 +8503,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.657Z",
+     "at": "2026-11-15T21:10:01.162Z",
      "data": {
       "follow_up": 20,
       "text": "Balance due by the end of the month"
@@ -8447,7 +8513,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.654Z",
+     "at": "2026-11-15T21:10:01.158Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8459,7 +8525,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.651Z",
+     "at": "2026-11-15T21:10:01.154Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8468,7 +8534,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.634Z",
+     "at": "2026-11-15T21:10:01.130Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8483,7 +8549,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.622Z",
+     "at": "2026-11-15T21:10:01.115Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8493,7 +8559,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.621Z",
+     "at": "2026-11-15T21:10:01.115Z",
      "data": {},
      "id": 16,
      "kind": "changed",
@@ -8501,7 +8567,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.621Z",
+     "at": "2026-11-15T21:10:01.115Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8524,7 +8590,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.607Z",
+     "at": "2026-11-15T21:10:01.095Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8536,7 +8602,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.591Z",
+     "at": "2026-11-15T21:10:01.075Z",
      "data": {
       "fields": {
        "total": {
@@ -8598,7 +8664,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-15T08:56:52.574Z",
+     "at": "2026-11-15T21:10:01.052Z",
      "data": {
       "fields": {
        "customer": {
@@ -8934,7 +9000,8 @@
         "credit_days"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -8957,6 +9024,16 @@
       "update": false
      },
      "plural": "Customers",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "relations": [
       {
        "label": "Invoices",
@@ -9675,7 +9752,8 @@
         "docstate"
        ],
        "flow": "rows",
-       "label": "Invoice"
+       "label": "Invoice",
+       "main": true
       },
       {
        "collapsed": false,
@@ -9781,6 +9859,27 @@
       "update": false
      },
      "plural": "Invoices",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Invoice",
+        "main": true,
+        "name": "Invoice"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "lines"
+       },
+       {
+        "kind": "section",
+        "label": "Amounts",
+        "main": false,
+        "name": "Amounts"
+       }
+      ]
+     },
      "relations": [
       {
        "label": "Payments",
@@ -10112,7 +10211,8 @@
         "paid_on"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -10136,6 +10236,16 @@
       "update": false
      },
      "plural": "Payments",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "payment",
      "search_fields": [
       "title",
@@ -10334,7 +10444,8 @@
         "amount"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -10353,6 +10464,16 @@
       "update": false
      },
      "plural": "Invoice lines",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "Invoice.lines",
      "search_fields": [
       "item"
@@ -11392,7 +11513,8 @@
         "credit_days"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -11415,6 +11537,16 @@
       "update": true
      },
      "plural": "Customers",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "relations": [
       {
        "label": "Orders",
@@ -11558,7 +11690,8 @@
         "price"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -11579,6 +11712,16 @@
       "update": true
      },
      "plural": "Products",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "resource": "product",
      "search_fields": [
       "title",
@@ -12593,7 +12736,8 @@
         "line_count"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -12627,6 +12771,21 @@
       "update": true
      },
      "plural": "Orders",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "lines"
+       }
+      ]
+     },
      "resource": "order",
      "search_fields": [
       "title",
@@ -12845,7 +13004,8 @@
         "amount"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -12864,6 +13024,21 @@
       "update": true
      },
      "plural": "Lines",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "parts"
+       }
+      ]
+     },
      "resource": "Order.lines",
      "search_fields": [],
      "sources": {},
@@ -12922,7 +13097,8 @@
         "hours"
        ],
        "flow": "rows",
-       "label": "Details"
+       "label": "Details",
+       "main": true
       }
      ],
      "list_fields": [
@@ -12937,6 +13113,16 @@
       "update": true
      },
      "plural": "Parts",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
      "search_fields": [],
      "title_field": "id"
     }

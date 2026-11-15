@@ -16,38 +16,64 @@ def test_sections_and_plain_groups_give_collapsible_and_collapsed_in_the_schema(
     model = visit(('Visit', ('title',)), Section('Where', ('room',)), Section('More', ('notes',), collapsed=True),
                   Section('Codes', ('code',), collapsed='empty'))
     assert [(group['label'], group['fields'], group['collapsible'], group['collapsed']) for group in view_for(model)['layout']] == [
-        ('Visit', ['title'], False, False), ('Where', ['room'], True, False), ('More', ['notes'], True, True), ('Codes', ['code'], True, 'empty')]
-    # A section that can't collapse is a plain group.
+        ('Visit', ['title'], False, False), ('Where', ['room'], True, True), ('More', ['notes'], True, True), ('Codes', ['code'], True, 'empty')]
+    # Sections start closed unless they say otherwise; collapsed=False starts open.
+    assert view_for(visit(('Visit', ('title',)), Section('Where', ('room',), collapsed=False)))['layout'][1]['collapsed'] is False
+    # A section that can't collapse is a plain group; without Main the first group of fields is the main zone.
     assert view_for(visit(Section('Visit', ('title',), collapsible=False)))['layout'][0] == {
-        'label': 'Visit', 'fields': ['title'], 'collapsible': False, 'collapsed': False, 'flow': 'rows'}
-    # Fields a layout leaves out still go to Other, which always shows.
+        'label': 'Visit', 'fields': ['title'], 'collapsible': False, 'collapsed': False, 'flow': 'rows', 'main': True}
+    # Fields a layout leaves out still go to Other, a last section that starts closed.
     assert view_for(visit(Section('Visit', ('title',), collapsed=True)))['layout'][-1] == {
-        'label': 'Other', 'fields': ['room', 'notes', 'code'], 'collapsible': False, 'collapsed': False, 'flow': 'rows'}
+        'label': 'Other', 'fields': ['room', 'notes', 'code'], 'collapsible': True, 'collapsed': True, 'flow': 'rows'}
     assert repr(Section('More', ('notes',), collapsed='empty')) == "Section('More', ('notes',), collapsible=True, collapsed='empty')"
 
 
 @pytest.mark.parametrize('section, message', [
-    (Section('More', ('notes',), collapsed='yes'), r"Visit layout section 'More': collapsed must be False, True or 'empty', not 'yes'"),
-    (Section('More', ('notes',), collapsed=1), r"Visit layout section 'More': collapsed must be False, True or 'empty', not 1"),
+    (Section('More', ('notes',), collapsed='yes'), r"collapsed must be False, True or 'empty', not 'yes'"),
+    (Section('More', ('notes',), collapsed=1), r"collapsed must be False, True or 'empty', not 1"),
     (Section('More', ('notes',), collapsed=None), r"collapsed must be False, True or 'empty', not None"),
-    (Section('More', ('notes',), collapsible=False, collapsed=True), r"Visit layout section 'More': collapsed needs collapsible=True"),
-    (Section('More', ('notes',), collapsible=False, collapsed='empty'), r'collapsed needs collapsible=True'),
-    (Section('More', ('notes',), collapsible='yes'), r"Visit layout section 'More': collapsible must be True or False"),
-    (Section('More', 'notes'), r"Visit layout section 'More': list its fields as a tuple of field names"),
-    (Section('', ('notes',)), r'Visit layout: give every Section a title'),
+    (Section('More', ('notes',), collapsible='yes'), r'collapsible must be True or False'),
+    (Section('More', ('notes',), flow='down'), r"flow must be 'rows' or 'columns', not 'down'"),
+    (Section('More', ('notes',), folded=True), r'has no option folded'),
 ])
-def test_section_mistakes_fail_registration_naming_the_model_and_section(section, message):
-    with pytest.raises(ValueError, match=message):
-        Registry(visit(section))
+def test_a_wrong_section_option_keeps_its_default_with_one_warning(section, message):
+    registry = Registry(visit(('Visit', ('title', 'room', 'code')), section))
+    (model, text), = registry.layout_warnings
+    assert model.__name__ == 'Visit' and text.startswith("Visit.Meta.layout: Section('More'") and message in text and text.endswith('it is ignored')
+    more = view_for(model)['layout'][1]
+    assert (more['label'], more['fields'], more['collapsible'], more['collapsed'], more['flow']) == ('More', ['notes'], True, True, 'rows')
 
 
-def test_sections_keep_the_existing_layout_rules():
-    with pytest.raises(ValueError, match='Layout lists room more than once'):
-        Registry(visit(Section('A', ('room',)), Section('B', ('room',))))
-    with pytest.raises(ValueError, match='Layout group A names unknown or hidden fields: nope'):
-        Registry(visit(Section('A', ('nope',))))
-    with pytest.raises(ValueError, match='Use at most eight layout groups'):
-        Registry(visit(*(Section(f'S{index}', ()) for index in range(9))))
+@pytest.mark.parametrize('section, message', [
+    (Section('More', 'notes'), 'lists its fields as a tuple of field names'),
+    (Section('', ('notes',)), 'needs a title'),
+    (Section('More', ()), 'is empty'),
+])
+def test_a_section_that_places_nothing_is_ignored_and_its_fields_go_to_other(section, message):
+    registry = Registry(visit(('Visit', ('title', 'room', 'code')), section))
+    (_, text), = registry.layout_warnings
+    assert message in text
+    assert [(group['label'], group['fields']) for group in view_for(registry.models['visit'])['layout']] == [
+        ('Visit', ['title', 'room', 'code']), ('Other', ['notes'])]
+
+
+def test_a_section_that_cannot_collapse_starts_open():
+    registry = Registry(visit(Section('Visit', ('title',)), Section('More', ('notes',), collapsible=False, collapsed=True)))
+    assert registry.layout_warnings == ()
+    assert view_for(registry.models['visit'])['layout'][1]['collapsed'] is False
+
+
+def test_names_used_twice_keep_the_first_and_any_number_of_sections_loads():
+    registry = Registry(visit(Section('A', ('room',)), Section('B', ('room', 'nope', 'code')), Section('A', ('notes',))))
+    texts = [text for _, text in registry.layout_warnings]
+    assert len(texts) == 3 and "places 'room' again" in texts[0] and "names 'nope'" in texts[1] and "uses the name 'A' again" in texts[2]
+    assert [(group['label'], group['fields']) for group in view_for(registry.models['visit'])['layout']] == [
+        ('A', ['room']), ('B', ['code']), ('Other', ['title', 'notes'])]
+    # Nine sections load (the limit is twelve blocks); past it each block is ignored with a warning.
+    nine = Registry(visit(*(Section(f'S{index}', ('title',) if index == 0 else ()) for index in range(9)), name='Nine'))
+    assert len(nine.layout_warnings) == 8
+    many = Registry(visit(*(('S' + str(index), ('title',)) for index in range(13)), name='Many'))
+    assert "Many.Meta.layout: ('S12', ('title',)) is past the limit of 12 blocks; it is ignored" in [text for _, text in many.layout_warnings]
 
 
 def test_section_options_do_not_change_migration_checksums():
@@ -67,10 +93,9 @@ def test_the_playground_shows_all_three_starting_states():
 def test_a_section_flows_in_rows_by_default_or_down_each_column():
     model = visit(('Visit', ('title',)), Section('Where', ('room', 'code'), flow='columns'), Section('More', ('notes',)))
     assert [(group['label'], group['flow']) for group in view_for(model)['layout']] == [('Visit', 'rows'), ('Where', 'columns'), ('More', 'rows')]
-    assert repr(Section('Where', ('room',), flow='columns')) == "Section('Where', ('room',), collapsible=True, collapsed=False, flow='columns')"
+    assert repr(Section('Where', ('room',), flow='columns')) == "Section('Where', ('room',), collapsible=True, collapsed=True, flow='columns')"
     for flow in ('down', 'Columns', None, 1):
-        with pytest.raises(ValueError, match=r"Visit layout section 'Where': flow must be 'rows' or 'columns'"):
-            Registry(visit(Section('Where', ('room',), flow=flow)))
+        assert "flow must be 'rows' or 'columns'" in Registry(visit(Section('Where', ('room',), flow=flow))).layout_warnings[0][1]
 
 
 def tabbed(name='Trip', **meta):
@@ -80,7 +105,7 @@ def tabbed(name='Trip', **meta):
 
 
 @pytest.mark.parametrize('meta, message', [
-    (dict(tabs=('stops', 'details')), r'Trip.Meta.tabs was removed: record pages have no tabs.*Main\(fields, \*tables\)'),
+    (dict(tabs=('stops', 'details')), r'Trip.Meta.tabs was removed: record pages have no tabs.*Main\(fields\)'),
     (dict(default_tab='stops'), r'Trip.Meta.default_tab was removed: record pages have no tabs'),
 ])
 def test_meta_tabs_and_default_tab_fail_when_the_model_is_defined(meta, message):

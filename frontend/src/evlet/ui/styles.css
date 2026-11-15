@@ -1408,7 +1408,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .fs-err{font-size:11px;font-weight:600;background:var(--t-rose-bg);color:var(--t-rose);border-radius:10px;padding:0 7px;line-height:18px}
 @media (prefers-reduced-motion:reduce){.fs-chev{transition:none}}
 /* Print and PDF show every section open (the server's print designs never collapse). */
-@media print{.fs-fold .fs-body[hidden]{display:block!important}.fs-fold .fs-chev,.fs-fold .fs-sum,.fs-fold .fs-err{display:none!important}}
+@media print{.fs-fold .fs-body[hidden],.ev-more-body[hidden]{display:block!important}.fs-fold .fs-chev,.fs-fold .fs-sum,.fs-fold .fs-err,.ev-more-sum{display:none!important}}
 
 /* ---------- DocFrame panel variant: a record beside a list ---------- */
 /* The same frame as a record page; only its padding and title size differ. Its width classes do the rest.

@@ -220,19 +220,20 @@ class Customization:
             raise ValueError(f'{key} has no naming series in models.py.')
         return model, None
 
-    def check(self, kind, key, value, saved=False):
+    def check(self, kind, key, value, saved=False, ignored=None):
         """A checked value, or None when it equals the file value. Raises ValueError.
 
         `saved` checks a stored override on start: a series whose condition names a missing field is then
         skipped rather than refused, and a layout saved with a record tab order (record pages had tabs before
-        0.4) keeps its sections and panel."""
+        0.4) keeps its sections and panel. With `ignored`, a layout's wrong or orphaned items (a field removed
+        since, a field placed twice, a bad option) are left out and their reasons added there; the rest applies."""
         model, name = self.target(kind, key)
         if value is None:
             return None
         if kind == 'naming':
             checked = self.check_naming(model, name, value, saved)
         elif kind == 'layout':
-            checked = self.check_layout(model, name, value, saved)
+            checked = self.check_layout(model, name, value, saved, ignored)
         else:
             checked = {'field': self.check_field, 'layout': self.check_layout, 'list': self.check_list}[kind](model, name, value)
         file = self.file_value(kind, model, name)
@@ -321,7 +322,7 @@ class Customization:
         tables = [child.name for child in self.registry.children if child.parent is model]
         return ['activity', 'details', *tables, 'related', 'postings']
 
-    def check_layout(self, model, _, value, saved=False):
+    def check_layout(self, model, _, value, saved=False, ignored=None):
         panel = None
         if isinstance(value, dict):
             # What the side panel hides rides along with the sections; a plain list is a layout without it. A layout
@@ -333,12 +334,12 @@ class Customization:
                 raise ValueError('Send the layout as a list of sections, or as sections and panel.')
             panel = value.get('panel')
             value = value['sections']
-        sections = self.check_sections(model, value)
+        sections = self.check_sections(model, value, ignored)
         if panel is not None:
-            panel = self.check_panel(model, sections, panel)
+            panel = self.check_panel(model, sections, panel, ignored)
         return sections if panel is None else {'sections': sections, 'panel': panel}
 
-    def check_panel(self, model, sections, value):
+    def check_panel(self, model, sections, value, ignored=None):
         """What a list's side panel hides: section titles, fields, record parts and blocks of this layout, by kind. An empty
         object shows everything, overriding the app's panel=False flags and Meta.panel. Display only."""
         if not isinstance(value, dict) or not set(value) <= set(PANEL_KINDS):
@@ -350,45 +351,65 @@ class Customization:
         out = {}
         for kind, names in value.items():
             if not isinstance(names, list) or len(set(map(str, names))) != len(names) or any(type(name) is not str or name not in known[kind] for name in names):
-                raise ValueError(f'Hide {kind} of {model.__name__} in the side panel once each, from {", ".join(sorted(known[kind]))}.')
+                if ignored is None or not isinstance(names, list):
+                    raise ValueError(f'Hide {kind} of {model.__name__} in the side panel once each, from {", ".join(sorted(known[kind]))}.')
+                ignored.extend(f'The side panel hides {name!r}, which is not one of the {kind} of {model.__name__}; it is ignored.'
+                               for name in names if type(name) is not str or name not in known[kind])
+                names = list(dict.fromkeys(name for name in names if type(name) is str and name in known[kind]))
             if names:
                 out[kind] = sorted(names)
         return out
 
-    def check_sections(self, model, value):
+    def check_sections(self, model, value, ignored=None):
+        """The sections of a layout. Without `ignored` a wrong item raises ValueError (a save is refused); with it the
+        item is left out, its reason added there, and the rest kept, as the app file's own layout is read."""
+        def wrong(text):
+            if ignored is None:
+                raise ValueError(text)
+            ignored.append(text.rstrip('.') + '; it is ignored.')
         fields = self.fields(model)
         placeable = {name for name, field in fields.items() if not field.hidden}
-        if not isinstance(value, list) or not 1 <= len(value) <= 12:
+        if not isinstance(value, list) or not value:
             raise ValueError('Keep between 1 and 12 sections.')
+        if len(value) > 12:
+            wrong('Keep between 1 and 12 sections.')
+            value = value[:12]
         seen, out = set(), []
         for section in value:
             # collapsible and collapsed are optional: layouts saved before them have sections that always show.
-            if not isinstance(section, dict) or not {'title', 'fields'} <= set(section) <= {'title', 'fields', 'collapsible', 'collapsed', 'flow'} \
-                    or not isinstance(section['fields'], list):
-                raise ValueError('Send each section as a title and a list of fields, and optionally collapsible, collapsed and flow.')
+            if not isinstance(section, dict) or not {'title', 'fields'} <= set(section) or not isinstance(section['fields'], list):
+                wrong('Send each section as a title and a list of fields, and optionally collapsible, collapsed and flow.')
+                continue
+            if set(section) - {'title', 'fields', 'collapsible', 'collapsed', 'flow'}:
+                wrong('Send each section as a title and a list of fields, and optionally collapsible, collapsed and flow.')
             title = section['title']
             if not isinstance(title, str) or not title.strip() or len(title) > 60:
-                raise ValueError('Give every section a title of at most 60 characters.')
-            collapsible, collapsed = section.get('collapsible', False), section.get('collapsed', False)
+                wrong('Give every section a title of at most 60 characters.')
+                continue
+            collapsible, collapsed, flow = section.get('collapsible', False), section.get('collapsed', False), section.get('flow', 'rows')
             if type(collapsible) is not bool:
-                raise ValueError(f'Section {title.strip()}: use true or false for Can collapse.')
+                collapsible = wrong(f'Section {title.strip()}: use true or false for Can collapse.') or False
             if not starts_valid(collapsed):
-                raise ValueError(f'Section {title.strip()}: Starts must be open (false), closed (true) or closed when empty ("empty").')
+                collapsed = wrong(f'Section {title.strip()}: Starts must be open (false), closed (true) or closed when empty ("empty").') or False
             if not collapsible and collapsed is not False:
-                raise ValueError(f"Section {title.strip()} can't collapse, so it starts open. Turn on Can collapse first.")
-            if section.get('flow', 'rows') not in FLOWS:
-                raise ValueError(f'Section {title.strip()}: fill fields in rows ("rows") or down each column ("columns").')
+                collapsed = wrong(f"Section {title.strip()} can't collapse, so it starts open. Turn on Can collapse first.") or False
+            if flow not in FLOWS:
+                flow = wrong(f'Section {title.strip()}: fill fields in rows ("rows") or down each column ("columns").') or 'rows'
             items = []
             for item in section['fields']:
                 if not isinstance(item, dict) or set(item) != {'name', 'width'} or item['name'] not in placeable or item['width'] not in (6, 12):
-                    raise ValueError(f'Place fields of {model.__name__} by name, with a width of 6 or 12.')
-                if item['name'] in seen:
-                    raise ValueError(f'{item["name"]} is placed twice. Put each field in one place.')
-                seen.add(item['name'])
-                items.append({'name': item['name'], 'width': item['width']})
+                    wrong(f'Place fields of {model.__name__} by name, with a width of 6 or 12' + (f' ({item["name"]} is not one)' if isinstance(item, dict) and isinstance(item.get('name'), str) else '') + '.')
+                elif item['name'] in seen:
+                    wrong(f'{item["name"]} is placed twice. Put each field in one place.')
+                else:
+                    seen.add(item['name'])
+                    items.append({'name': item['name'], 'width': item['width']})
             if not items:
-                raise ValueError('Every section needs at least one field, so section ids stay in place.')
-            out.append({'title': title.strip(), 'fields': items, **fold(section)})
+                wrong('Every section needs at least one field, so section ids stay in place.')
+                continue
+            out.append({'title': title.strip(), 'fields': items, **fold({'collapsible': collapsible, 'collapsed': collapsed, 'flow': flow})})
+        if not out:
+            raise ValueError('Keep between 1 and 12 sections.')
         return out
 
     def check_list(self, model, _, value):
@@ -467,9 +488,12 @@ class Customization:
                     effective.setdefault(model, {})[name] = {'required': True}
         for row in stored:
             kind, key = row['kind'], row['key']
+            ignored = []
             try:
                 value = json.loads(row['value'])
-                checked = self.check(kind, key, value, saved=True)
+                checked = self.check(kind, key, value, saved=True, ignored=ignored)
+                # The wrong items of a layout are left out and listed; the rest of it applies.
+                problems.extend({'kind': kind, 'key': key, 'error': text, 'ignored': True} for text in ignored)
             except (ValueError, KeyError, TypeError) as exc:
                 problems.append({'kind': kind, 'key': key, 'error': str(exc)})
                 if kind == 'field':
@@ -510,9 +534,9 @@ class Customization:
         self.layouts, self.lists, self.naming, self.panels = layouts, lists, MappingProxyType(naming), panels
 
     def layout(self, model):
-        """The effective layout. Fields placed nowhere (instance fields, fields an app adds later) go to the
-        last section of a Controls layout. Without one, they follow the app file's rule: a declared
-        Meta.layout leaves them to an Other group, and the default Details group takes every field."""
+        """The effective layout. Fields placed nowhere (instance fields, fields an app adds later, fields a wrong item
+        left out) go to an Other section that starts closed, for a Controls layout as for a declared Meta.layout; the
+        default Details group takes every field."""
         override = self.layouts.get(model)
         sections = override or sections_of(self.file_value('layout', model))
         fields = self.fields(model)
@@ -523,8 +547,8 @@ class Customization:
                    **fold(section)} for section in sections]
         rest = [{'name': name, 'width': width(fields[name])} for name in placeable if name not in placed]
         declared = getattr(getattr(model, 'Meta', None), 'layout', None) is not None
-        if rest and not override and declared and result[-1]['title'] != 'Other':
-            result.append({'title': 'Other', 'fields': []})
+        if rest and (override or declared) and result[-1]['title'] != 'Other':
+            result.append({'title': 'Other', 'fields': [], 'collapsible': True, 'collapsed': True})
         result[-1]['fields'] += rest
         return result
 
@@ -552,12 +576,15 @@ class Customization:
         if model in self.layouts or any(getattr(field, 'instance', None) for field in model.__declared_fields__.values()):
             # Sections with nothing this role can read are left out, titles included. A section keeps the app's Main
             # mark and description by its title.
-            declared = {group['label']: {key: group[key] for key in ('main', 'description') if key in group} for group in entry.get('layout', [])}
+            declared = {group['label']: {key: group[key] for key in ('main', 'heading', 'description') if key in group} for group in entry.get('layout', [])}
             entry['layout'] = [{'label': section['title'], 'fields': [item['name'] for item in section['fields'] if item['name'] in readable],
                                 'wide': [item['name'] for item in section['fields'] if item['width'] == 12 and item['name'] in readable],
                                 'collapsible': section.get('collapsible', False), 'collapsed': section.get('collapsed', False),
                                 'flow': section.get('flow', 'rows'), **declared.get(section['title'], {})}
                                for section in self.layout(model) if any(item['name'] in readable for item in section['fields'])]
+            if entry['layout'] and not any(section.get('main') for section in entry['layout']):
+                # As in Meta.layout: without a main group the first section is the main zone.
+                entry['layout'][0].update(collapsible=False, collapsed=False, main=True)
             wide = {name for section in entry['layout'] for name in section['wide']}
             for field in entry['fields']:
                 field['wide'] = field['name'] in wide

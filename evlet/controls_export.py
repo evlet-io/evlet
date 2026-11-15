@@ -57,25 +57,27 @@ def call(name, args=(), kwargs=None):
 
 def block_code(block, sections, main=None):
     """Python source for one Meta.layout block; a section as `sections` (a Controls layout, by title) has it.
-    `main` is the title that names the Main block's fields (the model's label)."""
+    `main` is the name of the Main block's fields (its title, or the model's label)."""
     from .forms import Chart
     from .meaning import Related
-    from .ui.metadata import Html, Main, Section
+    from .ui.metadata import Html, Main, Section, TableSection
     if isinstance(block, Main):
+        if isinstance(block.fields, str):
+            return repr(block)
         section = sections.get(main)
         fields = tuple(item['name'] for item in section['fields']) if section is not None else ()
         if not fields and not block.tables:
             return None
-        return call('Main', (fields, *block.tables))
+        return call('Main', (fields, *block.tables), {'title': block.title} if block.title is not None else {})
     if isinstance(block, (Section, tuple, list)):
         section = sections.get(block.title if isinstance(block, Section) else block[0])
         if section is None:
             return None
-        options = {**({'collapsed': section.get('collapsed', False)} if section.get('collapsible') and section.get('collapsed') else {}),
+        options = {**({'collapsed': section.get('collapsed', False)} if section.get('collapsible') and section.get('collapsed', False) is not True else {}),
                    **({} if section.get('collapsible') else {'collapsible': False}), **({'flow': 'columns'} if section.get('flow') == 'columns' else {}),
                    **({'description': block.description} if isinstance(block, Section) and block.description is not None else {})}
         return call('Section', (section['title'], tuple(item['name'] for item in section['fields'])), options)
-    if isinstance(block, str):
+    if isinstance(block, (str, TableSection)):
         return repr(block)
     if isinstance(block, Html):
         return call('Html', (block.content,))
@@ -95,20 +97,19 @@ def layout_code(model, sections):
 
     A section the app places keeps its place; one the app does not place (added or renamed in Controls) goes last.
     A section Controls removed is left out."""
-    from .ui.metadata import Main, Section, view_for
+    from .ui.metadata import Section, form_fields, layout_blocks, view_for
     layout = model.Meta.layout
     by_title = {section['title']: section for section in sections}
     placed = set()
-    main = view_for(model)['label']
+    # The stable name of each declared group of fields (a Main's title or the model's label, a Section's title).
+    names = {id(block['block']): block['name'] for block in layout_blocks(model, layout, form_fields(model, model.Meta), view_for(model)['label'])[0]
+             if block['kind'] == 'section'}
 
     def blocks(items, indent):
         lines = []
         for block in items:
-            if isinstance(block, (Section, tuple, list)):
-                placed.add(block.title if isinstance(block, Section) else block[0])
-            if isinstance(block, Main):
-                placed.add(main)
-            text = block_code(block, by_title, main)
+            placed.add(names.get(id(block)))
+            text = block_code(block, by_title, names.get(id(block)))
             if text is not None:
                 lines.append(f'{indent}{text},')
         return lines
@@ -234,7 +235,7 @@ class Exporter:
         lines = ['layout = (']
         for section in sections:
             options = {'collapsible': False} if not section.get('collapsible') else \
-                {'collapsed': section['collapsed']} if section.get('collapsed', False) is not False else {}
+                {'collapsed': section.get('collapsed', False)} if section.get('collapsed', False) is not True else {}
             if section.get('flow') == 'columns':
                 options['flow'] = 'columns'
             lines.append('    ' + call('Section', (section['title'], tuple(item['name'] for item in section['fields'])), options) + ',')
@@ -247,7 +248,8 @@ class Exporter:
         # What the side panel hides is panel=False on the field, Section or Table, or Meta.panel.
         if panel_of(value):
             lines.append(f'# Side panel hides (panel=False or Meta.panel): {panel_of(value)!r}')
-        if model in getattr(self.registry, 'layouts', {}):
+        from .ui.metadata import Section
+        if any(not isinstance(block, (Section, tuple, list)) for block in getattr(getattr(model, 'Meta', None), 'layout', None) or ()):
             # A record layout keeps its blocks, with this instance's sections in their places.
             lines[:len(sections) + 2] = layout_code(model, sections).splitlines()
         return lines
@@ -339,5 +341,6 @@ def export(controls, query):
     if query:
         items = [item for item in items if item['kind'] == query.get('kind') and item['key'] == query.get('key')]
     # An override that no longer validates has nothing to move; a list with a skipped naming series still applies.
-    failed = {(problem['kind'], problem['key']) for problem in controls.problems if not problem['error'].startswith('Series ')}
+    failed = {(problem['kind'], problem['key']) for problem in controls.problems
+              if not problem['error'].startswith('Series ') and not problem.get('ignored')}
     return Exporter(controls).export([item for item in items if (item['kind'], item['key']) not in failed])

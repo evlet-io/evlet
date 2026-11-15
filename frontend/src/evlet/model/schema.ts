@@ -110,7 +110,8 @@ export interface ModelSchema {
   /** Form sections. collapsible and collapsed come from evlet.Section or a Controls layout (absent from older servers). */
   layout?: Array<{ label: string; fields: string[]; wide?: string[]; collapsible?: boolean; collapsed?: boolean | 'empty';
     /** rows: across then down; columns: down the left column, then the right. */ flow?: 'rows' | 'columns';
-    /** evlet.Main: the record page's primary area, shown without a heading (label is the model's label). */ main?: boolean;
+    /** evlet.Main: a group of the record page's main zone, which never collapses. */ main?: boolean;
+    /** Main(title=...): the main group shows its label as a small heading. */ heading?: boolean;
     /** Section(description=...): a line of text under the title. */ description?: string }>;
   /** Rows per page and default order, from a Controls list view. */
   page_size?: number;
@@ -141,8 +142,8 @@ export interface ModelSchema {
   /** What a record opened in a list's side panel leaves out, by kind: panel=False flags, Meta.panel or the Controls
    * toggles. order is the order Meta.panel names tabs and blocks in. Absent means the panel shows everything. */
   panel?: PanelSchema;
-  /** Meta.layout with Tabs or blocks besides sections (evlet.Tab, Related, Html, Chart, Table field names). Absent: the
-   * record page shows its sections on Details, each Table on its own tab, and the automatic Related tab and block. */
+  /** Every block of the record page in drawing order (Meta.layout). Absent from older servers: the first section is the
+   * main zone, the other sections follow, and every Table joins the main zone. */
   record_layout?: RecordLayout;
   children?: ChildSchema[];
   actions?: ActionSchema[];
@@ -168,16 +169,17 @@ export interface ModelSchema {
  * `{"$expr": "ref", "args": ["field"]}` for that field of the record. */
 export type LayoutCondition = [string, string, unknown];
 
-/** One block of a record layout, in order. Sections are named by title; their fields are in the model's layout. */
-export type LayoutBlock =
+/** One block of a record layout, in drawing order, with its stable name (absent from older servers). Sections are
+ * named by title; their fields are in the model's layout. A table that is not main is a TableSection. */
+export type LayoutBlock = { name?: string } & (
   | { kind: 'section'; label: string; main?: boolean }
-  | { kind: 'table'; name: string; main?: boolean }
+  | { kind: 'table'; name: string; main?: boolean; collapsible?: boolean; collapsed?: boolean | 'empty' }
   | { kind: 'related'; model: string; link: string; label: string; filters: LayoutCondition[]; fields: string[]; limit: number; order: string[] }
   | { kind: 'html'; html: string }
-  | { kind: 'chart'; type: 'bar' | 'line' | 'stat'; model: string; link: string; x: string | null; y: string[]; label: string | null; filters: LayoutCondition[] };
+  | { kind: 'chart'; type: 'bar' | 'line' | 'stat'; model: string; link: string; x: string | null; y: string[]; label: string | null; filters: LayoutCondition[] });
 
-/** The record layout of a Meta.layout with Main or blocks besides sections. Blocks marked main are the primary area
- * (without one, the first section is) and the rest are "more information". */
+/** The record layout: blocks marked main are the main zone, drawn open first (without one, the first section is),
+ * and the rest are "more information". */
 export interface RecordLayout { blocks: LayoutBlock[] }
 
 /** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */

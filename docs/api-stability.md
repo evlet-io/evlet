@@ -21,7 +21,7 @@ production ready, but the rules below hold from 0.3 on.
   migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), the state manager
   (`State` with `State.Step`, `State.Rule` and `State.Remark`, the hooks `validate`, `state`,
   `state.exit` and `release`, and `action`), form sections and record layouts (`Section`,
-  `Main`, `Html`, and `Related` and `Chart` as layout blocks), slips, measures, settings, connectors,
+  `Main`, `TableSection`, `Html`, and `Related` and `Chart` as layout blocks), slips, measures, settings, connectors,
   storage, jobs, routing and the application classes. Import them from `evlet`, not from the
   module that defines them. `AppDefinition(views=())` stays accepted for apps scaffolded
   before 0.4; a non-empty `views` or a `ui` registry is refused.
@@ -78,10 +78,13 @@ production ready, but the rules below hold from 0.3 on.
   ([model-engine.md](model-engine.md#closed-periods)).
 
 - **Compact record pages.** `Meta.cards` (zero to five derived fields, including those `derive()` sets, or per-record measures),
-  `Main(fields, *tables)` as the first block of `Meta.layout`, `Section(..., description=None)`, and
-  the schema keys they add: `cards` on a model entry, `"compact": true` on `record_layout`,
-  `"main": true` on the Main blocks and layout section, and `description` on a layout section
-  ([ui.md](ui.md#compact-record-page)).
+  `Main(fields, title=None)` and `Main('table')` for the main zone (the 0.4.9 form `Main(fields, *tables)` still
+  reads as one Main per part), `Section(..., collapsed=True, description=None)`, `TableSection(name, *,
+  collapsible=True, collapsed=True, panel=True)`, and the schema keys they add: `cards` on a model entry,
+  `record_layout` on every model entry with `name` and `"main"` on each block (and `collapsible` and `collapsed` on a
+  TableSection), `"main": true` and `"heading": true` on layout sections, and `description` on a layout section
+  ([ui.md](ui.md#record-layouts)). A wrong layout item is ignored with a warning (`Registry.layout_warnings`)
+  rather than failing.
 
 - **Ledger models and transaction locks.** The `Meta` options `ledger`, `append_only`, `timestamps`
   (`None`, `"created"`, `"modified"` or `"both"`) and `indexes`, the `created_at` and `modified_at`

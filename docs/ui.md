@@ -290,40 +290,70 @@ blocks with titles and descriptions) groups the fields of its row editor.
 
 ### Record layouts
 
-`Meta.layout` can declare the whole record page instead of sections only: `Main(...)` first, then
-blocks in order. Every block after the primary area is a row of "more information"
+`Meta.layout` declares the record page as blocks in two zones. The **main zone** holds every `Main`
+block, drawn open in the order declared; a main never collapses, at any width, on the page or in the
+side panel. **More information** holds every other block, below the main zone, each a row that starts
+closed. A block's kind decides its zone, not its place in the layout
 ([Compact record page](#compact-record-page)):
 
 ```python
-from evlet import Chart, Count, Html, Main, Model, Ref, Related
+from evlet import Chart, Count, Html, Main, Model, Ref, Related, TableSection
 
 
 class Employee(Model):
     class Meta:
         layout = (
-            Main(('full_name', 'email', 'department', 'reports_to'), 'skills'),   # fields, then a Table field
+            Main(('full_name', 'email')),                       # untitled: no heading
+            Main(('department', 'reports_to'), title='Team'),   # a small heading
+            Main('skills'),                                     # a Table as a main block
+            TableSection('skill_levels', collapsed='empty'),    # a Table as a row of more information
             Html('<p>Skills of <strong>{full_name}</strong> are kept with the record.</p>'),
             Chart('stat', y='people', model='employee', link='reports_to', label='Direct reports'),
-            Chart('bar', x='department', y='people', model='employee', link='reports_to'),
-            Related('employee', 'reports_to', label='Direct reports', fields=('full_name', 'email'), order='full_name'),
             Related('employee', 'reports_to', label='Same department', filters={'department': Ref('department')}),
         )
         measures = {'people': Count()}
 ```
 
-| Block | What it shows |
-|---|---|
-| `Main(fields, *tables)` | The primary area, first: fields, then Table fields. |
-| `Section(...)` or `('Title', fields)` | Fields, as before. Without `Main`, the first section is the primary area. |
-| A `Table` field name | The child table, as a row of more information: its title, note and Focus and Columns tools on one line across the top and the table the full width of the card below (a section keeps its heading on the left). A Table no block places joins the primary area. |
-| `Related(model, link=None, *, label, filters, fields, limit, order)` | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. |
-| `Html(content)` | Text from the app. `{field}` shows that field of the record. |
-| `Chart(type, x=None, y=..., *, model, link=None, filters, label)` | Declared measures of `model` over the records that point to this one: `'stat'` numbers, or `'bar'` or `'line'` grouped by `x` (`'status'`, `'due:month'`). |
+| Block | Zone | What it shows |
+|---|---|---|
+| `Main(fields, title=None)` | main | A group of fields. With a title it shows a small heading. |
+| `Main('table_name')` | main | One Table, with its title bar (title, row count, Add, Focus, Columns), total line and totals. |
+| `Section(title, fields, *, collapsible=True, collapsed=True, flow='rows', panel=True, description=None)` | more information | Fields. `collapsed` is `True` (closed, the default), `False` (open) or `'empty'` (closed while every field is empty). `('Title', fields)` is a section that can't collapse, so it starts open. |
+| `TableSection('table_name', *, collapsible=True, collapsed=True, panel=True)` | more information | One Table, with the same title bar. `'empty'` is closed while the table has no rows. A Table name on its own is `TableSection(name)`. |
+| `Related(model, link=None, *, label, filters, fields, limit, order)` | more information | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. |
+| `Html(content)` | more information | Text from the app. `{field}` shows that field of the record. |
+| `Chart(type, x=None, y=..., *, model, link=None, filters, label)` | more information | Declared measures of `model` over the records that point to this one: `'stat'` numbers, or `'bar'` or `'line'` grouped by `x` (`'status'`, `'due:month'`). |
 
+- **A Table is never a field.** It is always its own block, `Main('lines')` or `TableSection('lines')`.
+  The form of 0.4.9, `Main(fields, 'lines', ...)`, still works: it reads as `Main(fields)` followed by
+  `Main('lines')` for each Table named.
+- **Nothing is lost.** Every visible field shows somewhere; `hidden=True` keeps it out and `applies_when`
+  still hides one that does not apply. Fields no block names go, in declaration order, to one last
+  Section labelled Other (closed, like any section). Tables no block names follow it, each as a
+  `TableSection` under its own label. On a new record a row of more information that holds a required
+  field starts open. A layout need not name the title, name or State, which the header shows; left
+  out, they still go to Other, where a new record fills them in.
+- **Names.** Every area keeps a stable name, its `name` in the schema, for `Meta.panel` and Controls: a
+  section, and a `Main` with a title, by its title; the first untitled `Main` by the model's label and
+  each later untitled one by the label and its number ("Employee 2"); a Table by its field name; a
+  Related or Chart block by its label, Html as Notes, numbered from 2 when a name is already taken.
+  The person's open and closed choices are kept by each row's title (that name, or a Table's label).
+- **Without `Main`** the first group of fields is the main zone. A model without `Meta.layout` puts
+  every field in one Details group and every Table after it, all in the main zone.
+- **Tolerant layouts.** A wrong item never stops the app, the registry or the page: it is left out and
+  the rest of the layout is used, and what it would have placed falls to Other or the trailing
+  tables. That covers an unknown field or Table name, a name used twice (the first use wins), a
+  Table named among fields, a field named where a Table is expected, an unknown option or option
+  value (it keeps its default), an empty block, blocks past the limit of twelve, and a Related,
+  Html or Chart block the registry cannot place (an unknown model, Link, filter, measure or
+  placeholder). Each is logged once as a warning when the registry is built
+  (`evlet.layout`, naming the model and the item), kept in `registry.layout_warnings`, and listed
+  with the configuration problems on the Controls overview ("Part of the Employee layout is
+  ignored"). `Html` and `Chart` arguments are still checked when the block is made, and the removed
+  `Tab` and `Meta.tabs` still fail with their message.
 - **No tabs.** `Tab`, `Meta.tabs` and `Meta.default_tab` were removed in 0.4. Using them fails when the
   model is defined, with a message pointing to `Main` and `Section`. Activity is in the side column;
   Related and Postings are rows of more information.
-- **Fields no section lists** show as Other, last, as before.
 - **`link`** is the other model's Link field to this one. Leave it out when there is exactly one.
 - **Filters** use the list filter syntax on the other model's own fields, as a dict
   (`{'status__ne': 'done'}`) or a list of conditions. `Ref('field')` compares with a field of this
@@ -349,23 +379,20 @@ class Employee(Model):
   record shows only its sections, tables and Html.
 - **Side panel and phones.** A list's side panel shows the same rows, less what `Meta.panel` hides,
   and the side column opens from the drawer button.
-- **Errors.** An unknown model, field, Link or Table name, a bad filter or operator, a `Ref` to a
-  field the model does not show, an unknown measure or group field, or two sections with one title
-  fails when the registry is built, naming the model and the block.
 
-`/api/schema` sends a layout with `Main` or blocks besides sections as `record_layout`:
-`{"blocks": [...]}`, each block with its `kind` (`section`, `table`, `related`, `html`, `chart`).
-Sections are named by title and keep their fields in `layout`, which every other client reads as
-before. A model whose layout has only sections, or no `Meta.layout`, has no `record_layout`: its first
-section (the default one holds every field) is the primary area, with every Table after its fields.
-The Playground's Employee page uses every block type.
+`/api/schema` sends every model's page as `record_layout`: `{"blocks": [...]}`, every block in
+drawing order, each with its `kind` (`section`, `table`, `related`, `html`, `chart`), its stable
+`name` and `"main": true` or `false`. Several blocks may be main; they come first. A `table` block
+that is not main carries `collapsible` and `collapsed`. Sections keep `label` (their name) and their
+fields in `layout`, where a main group has `"main": true` and a titled one `"heading": true`. A client
+that ignores the new keys still gets a usable order. The Playground's Employee page uses every block
+type.
 
 ### Compact record page
 
-Every record page is compact: cards at the top, a primary area without a heading, and every block after
-it as "more information". There are no tabs. A layout that starts with `Main` names the primary area;
-without `Main` it is the first section, and a model without `Meta.layout` puts every field in it, in
-declaration order, followed by its Tables.
+Every record page is compact: cards at the top, the main zone (every `Main` block, open), and every other
+block as "more information". There are no tabs. Without `Main` the first section is the main zone, and a
+model without `Meta.layout` puts every field in it, in declaration order, followed by its Tables.
 
 ```python
 from evlet import Count, Currency, Main, Model, Related, Section, Sum
@@ -377,7 +404,8 @@ class Shipment(Model):
         measures = {'parcels': Count('parcel', link='shipment'),
                     'weight': Sum('weight', model='parcel', link='shipment')}
         layout = (
-            Main(('title', 'carrier', 'status'), 'stops'),   # fields, then Table fields
+            Main(('title', 'carrier', 'status')),   # the main zone: fields,
+            Main('stops'),                          # then a Table
             Section('Charges', ('declared', 'fee', 'total'), description='What it is worth and costs.'),
             Section('Notes', ('notes',), collapsed='empty'),
             Related('parcel', label='Parcels'),
@@ -395,12 +423,12 @@ class Shipment(Model):
   built. Cards are for root models, not Table rows. `/api/schema` sends `cards` as a list of names,
   like `key_fields`, cut to what the role reads: a field it can read, a measure whose fields it can
   read. Without `Meta.cards` nothing changes and the summary strip works as before.
-- **`Main(fields, *tables)`** is the primary area: a grid of fields, then Table fields, with no
-  heading. Use it once, first. A layout with `Main` places every `Table` field (in `Main` or after it). Where a name is needed (`Meta.panel`, Controls, Form layout) the area is named by
-  the model's label, so a section cannot share that title.
+- **`Main(...)`** blocks are the main zone ([Record layouts](#record-layouts)): groups of fields in a grid,
+  and Tables. An untitled group has no heading; where a name is needed (`Meta.panel`, Controls, Form
+  layout) the first is named by the model's label, so a section cannot share that title.
 - **`Section(..., description=...)`** adds a line of text under a section's title. Any layout can use it.
-- **More information.** Every `Section`, `Table`, `Related`, `Html` and `Chart` after the primary area
-  shows as a row that opens and closes, with a one-line summary while it is closed.
+- **More information.** Every `Section`, `TableSection`, `Related`, `Html` and `Chart` shows as a row
+  that opens and closes, closed at first, with a one-line summary while it is closed.
 - **Header and side column.** The header has the title, the status badge (the State with `show="badge"`, and
   `Meta.status`), a lock while the record can't be changed, and the actions; under the title a muted line with the
   first two key fields that have a value. A State with `show="bar"` draws the stage bar above the key cards on the
@@ -410,11 +438,10 @@ class Shipment(Model):
   connectors); on a compact page their values show in the form itself, not in the header or the side column.
 
 `/api/schema` sends `record_layout` as `{"blocks": [...]}` (the `compact` key of 0.3 is gone: every page
-is compact). The Main fields are a
-`section` block named by the model's label and the Main tables are `table` blocks, each with
-`"main": true`; the section in `layout` has `"main": true` too, and a section with a description
-has `"description"`. A client that ignores these keys shows the blocks in order, as it would any
-record layout. The Playground's Project uses it.
+is compact). Each block has `"main"`; a Main group of fields is a `section` block and a Main Table a
+`table` block, and the section in `layout` has `"main": true` too (`"heading": true` with a title). A
+section with a description has `"description"`. A client that ignores these keys shows the blocks
+in order. The Playground's Project uses it.
 
 The record page draws it on a record's full page and in a list's side panel (the same view, narrower there):
 
@@ -428,14 +455,15 @@ The record page draws it on a record's full page and in a list's side panel (the
   change keeps its "read only" or "locked" hint. The row editor of locked lines does the same.
 - **One white card** holds the rest of the record: the state banner strip at its top, the Main area and more
   information, separated by thin lines.
-- **The Main area** has the Main fields in a grid of four columns (three, two, then one as the record's own width narrows), edited in place, then its Tables: each with its title, a muted row count, Add on the right and two small buttons, Focus (the table takes the content area; Esc leaves it) and Columns, and a light dashed box
+- **The main zone** has each Main group of fields in a grid of four columns (three, two, then one as the record's own width narrows), edited in place, under its small heading when it has a title, and each Main Table: each with its title, a muted row count, Add on the right and two small buttons, Focus (the table takes the content area; Esc leaves it) and Columns, and a light dashed box
   while it has no rows. A row's Edit opens the row editor in focus view: the rows as a list beside one form for the
-  row, which shows the row model's first section as a grid and its other sections as "more information" rows. A
+  row, laid out by the row model's `Meta.layout` with the same rules: its Main groups (without one, its first
+  section) open as grids and its other sections as "more information" rows. A
   table that takes section rows groups its lines under them, each with its own sums ([ui-framework.md](ui-framework.md)).
-- **More information** lists every later block as a row: the title, the section description and a chevron on the
+- **More information** lists every other block as a row: the title, the section description and a chevron on the
   left, the content on the right. Closed, a Section shows its values on one line ("Label: value · Label: Not set · ...",
-  cut with an ellipsis), a Table its row count and a Related block its record count. Sections start as
-  `collapsed` says and the person's choice is kept, as for any Section. Related records the layout does not list
+  cut with an ellipsis), a Table its row count and a Related block its record count. Sections and TableSections start
+  as `collapsed` says, the other rows closed, and the person's choice is kept, as for any Section. Related records the layout does not list
   and Postings are rows here too.
 - **The side column** has Attachments and Activity. Its note box has a slim toolbar: bold, italic, bulleted
   list, link and Mention. In a narrow window or a side panel it is a drawer behind a button, so the record's
@@ -977,14 +1005,15 @@ Today the inbox holds mentions; other kinds show with a bell icon.
 
 ### Collapsible sections
 
-Every section after the primary area is a "more information" row that opens and closes from its
+Every section of more information is a row that opens and closes from its
 title: a real button with `aria-expanded` and `aria-controls`, so Enter and Space toggle it, and Tab
 skips the fields of a closed row. A closed row shows its values on one line, and a badge with the number
-of fields that have errors. The primary area never closes. (`FoldSection`, with "3 of 5 filled", remains
+of fields that have errors. The main zone never closes. (`FoldSection`, with "3 of 5 filled", remains
 in the component library for forms of your own.)
 
-- **Starting state.** The app's `collapsed` value, unless the person chose: open and closed are
-  remembered per user and model in their browser preferences, by section title, and the record page
+- **Starting state.** The app's `collapsed` value (closed unless it says otherwise), unless the person chose:
+  on a new record a row that holds a required field starts open. Open and closed are
+  remembered per user and model in their browser preferences, by the row's name, and the record page
   and the side panel share them. Sections closed in a side panel before this release carry over once.
   Reset layout in the record's More menu forgets those choices.
 - **Phones.** Below 760 px, collapsible sections after the first start closed unless the person's
@@ -995,7 +1024,8 @@ in the component library for forms of your own.)
   same with `revealField(root, name)`.
 - **Same everywhere.** New, read-only and locked records fold the same way, on the page and in the side
   panel. Print and PDF show everything: the browser's print style opens closed
-  sections, and the server's print designs never use the form layout.
+  rows (sections, Tables and Html; a Related or Chart row prints once it has been opened), and the
+  server's print designs never use the form layout.
 - Height animates only when the device does not ask for reduced motion.
 
 ### Field and tab order
@@ -1010,7 +1040,7 @@ showing why, and screen readers read them. A record page has no tabs.
 A new record (the full page `/app/<model>/new` and the side panel) and a slip focus their first
 editable field when they open, so typing can start at once. The field is the first one in screen
 order that shows and can be edited: read-only, calculated, hidden and locked fields are skipped, and
-so are the fields of a closed row. The primary area comes first, then the sections in the order the
+so are the fields of a closed row. The main zone comes first, then the sections in the order the
 layout shows them. The rules:
 
 - An existing record never takes the focus on open, so keys and scrolling stay where they were.

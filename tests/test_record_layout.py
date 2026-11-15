@@ -11,7 +11,7 @@ from urllib.parse import quote
 import pytest
 
 from evlet import (Chart, Child, Count, Database, Decimal, Html, Integer, Link, LongText, Model, Ref, Registry, Related, Rule,
-                   Section, Select, Sum, Table, Text)
+                   Section, Select, Sum, Table, TableSection, Text)
 from evlet.ui.metadata import ui_schema, view_for
 from test_business import client
 from test_meaning import serve
@@ -77,30 +77,38 @@ def schema_entry(registry, name):
 
 def test_the_schema_sends_blocks_as_a_neutral_record_layout():
     layout = schema_entry(Registry(*MODELS), 'account')['record_layout']
+    # Every block in drawing order, with its kind, its stable name and main. Without Main, the first section is the main zone.
     assert layout == {'blocks': [
-        {'kind': 'section', 'label': 'Account'},
-        {'kind': 'html', 'html': '<p>Work for <strong>{account_name}</strong> in {region}. Use {{braces}} freely.</p>'},
-        {'kind': 'chart', 'type': 'stat', 'model': 'job', 'link': 'account', 'x': None, 'y': ['hours', 'jobs'], 'label': 'Totals', 'filters': []},
-        {'kind': 'chart', 'type': 'bar', 'model': 'job', 'link': 'account', 'x': 'status', 'y': ['hours'], 'label': 'Hours by status', 'filters': []},
+        {'kind': 'section', 'name': 'Account', 'label': 'Account', 'main': True},
+        {'kind': 'html', 'html': '<p>Work for <strong>{account_name}</strong> in {region}. Use {{braces}} freely.</p>', 'name': 'Notes', 'main': False},
+        {'kind': 'chart', 'type': 'stat', 'model': 'job', 'link': 'account', 'x': None, 'y': ['hours', 'jobs'], 'label': 'Totals', 'filters': [],
+         'name': 'Totals', 'main': False},
+        {'kind': 'chart', 'type': 'bar', 'model': 'job', 'link': 'account', 'x': 'status', 'y': ['hours'], 'label': 'Hours by status', 'filters': [],
+         'name': 'Hours by status', 'main': False},
         {'kind': 'related', 'model': 'job', 'link': 'account', 'label': 'Open jobs', 'filters': [['status', 'ne', 'done']],
-         'fields': ['title', 'status', 'hours'], 'limit': 2, 'order': ['-hours']},
+         'fields': ['title', 'status', 'hours'], 'limit': 2, 'order': ['-hours'], 'name': 'Open jobs', 'main': False},
         {'kind': 'related', 'model': 'job', 'link': 'account', 'label': 'Same region',
-         'filters': [['region', 'eq', {'$expr': 'ref', 'args': ['region']}]], 'fields': [], 'limit': 5, 'order': ['-id']},
-        {'kind': 'table', 'name': 'contacts'},
+         'filters': [['region', 'eq', {'$expr': 'ref', 'args': ['region']}]], 'fields': [], 'limit': 5, 'order': ['-id'], 'name': 'Same region', 'main': False},
+        # A Table name on its own is a TableSection: a "more information" row that starts closed.
+        {'kind': 'table', 'name': 'contacts', 'main': False, 'collapsible': True, 'collapsed': True},
         # Fields no section lists follow as Other, last.
-        {'kind': 'section', 'label': 'Other'}]}
+        {'kind': 'section', 'name': 'Other', 'label': 'Other', 'main': False}]}
     # The sections keep their usual schema entry, so every other client reads them as before.
     assert [group['label'] for group in view_for(Account)['layout']] == ['Account', 'Other']
 
 
-def test_a_layout_of_sections_only_sends_no_record_layout():
-    # The record page uses its first section as the primary area and the rest as more information.
+def test_a_layout_of_sections_only_makes_its_first_section_the_main_zone():
+    # The record page uses its first section as the main zone and the rest as more information.
     entry = schema_entry(Registry(Plain), 'plain')
-    assert 'record_layout' not in entry
-    assert [(group['label'], group['fields'], group['collapsible']) for group in entry['layout']] == [('Main', ['title'], True), ('More', ['body'], False)]
+    assert entry['record_layout'] == {'blocks': [{'kind': 'section', 'name': 'Main', 'label': 'Main', 'main': True},
+                                                 {'kind': 'section', 'name': 'More', 'label': 'More', 'main': False}]}
+    assert [(group['label'], group['fields'], group['collapsible']) for group in entry['layout']] == [('Main', ['title'], False), ('More', ['body'], False)]
+    # A model without Meta.layout: one Details group and every Table in the main zone.
+    entry = schema_entry(Registry(Account, Job), 'job')
+    assert entry['record_layout']['blocks'] == [{'kind': 'section', 'name': 'Details', 'label': 'Details', 'main': True}]
 
 
-def test_blocks_without_tabs_place_a_table_inside_the_form():
+def test_a_table_name_on_its_own_is_a_more_information_row():
     class Order(Model):
         number = Text()
         note = Text()
@@ -113,8 +121,9 @@ def test_blocks_without_tabs_place_a_table_inside_the_form():
         class Meta:
             layout = (Section('Order', ('number',)), 'lines', Html('<p>Thanks.</p>'), Section('Notes', ('note',)))
     entry = schema_entry(Registry(Order), 'order')
-    assert entry['record_layout'] == {'blocks': [{'kind': 'section', 'label': 'Order'}, {'kind': 'table', 'name': 'lines'},
-                                                 {'kind': 'html', 'html': '<p>Thanks.</p>'}, {'kind': 'section', 'label': 'Notes'}]}
+    assert [(block['kind'], block['name'], block['main']) for block in entry['record_layout']['blocks']] == [
+        ('section', 'Order', True), ('table', 'lines', False), ('html', 'Notes 2', False), ('section', 'Notes', False)]
+    # The Html block would be Notes, which the section holds: it is numbered.
 
 
 def test_tab_meta_tabs_and_default_tab_were_removed():
@@ -177,10 +186,14 @@ def account_with(*blocks, models=()):
 
 
 @pytest.mark.parametrize('blocks, message', [
-    ((Section('A', ('name',)), 'nope'), "'nope' is not a Table field"),
-    ((Section('A', ('name',)), 'rows', 'rows'), 'placed more than once'),
-    ((Section('A', ('name',)), 42), 'use Main(...), Section(...)'),
-    ((Section('A', ('name',)), Section('A', ('kind',)), 'rows'), 'give sections different titles'),
+    ((Section('A', ('name',)), 'nope'), "names 'nope', which is not a Table field of Owner (rows)"),
+    ((Section('A', ('name',)), 'rows', 'rows'), "places the Table 'rows' again"),
+    ((Section('A', ('name',)), 'kind'), "names the field 'kind' where a Table is expected"),
+    ((Section('A', ('name', 'rows')),), "names the Table 'rows' among its fields"),
+    ((Section('A', ('name',)), 42), 'is not a layout block: use Main(...), Section(...), TableSection(...)'),
+    ((Section('A', ('name',)), Section('A', ('kind',)), 'rows'), "uses the name 'A' again"),
+    ((Section('A', ('name',)), TableSection('rows', fold=True)), 'has no option fold'),
+    ((Section('A', ('name',)), TableSection('rows', collapsed='never')), "collapsed must be False, True or 'empty', not 'never'"),
     ((Related('missing'),), 'Unknown model: missing'),
     ((Related('work', 'title'),), 'Work.title is not a visible Link to Owner'),
     ((Related('owner2'),), 'has 2 Links to Owner (owner, twice); name one as link='),
@@ -199,15 +212,25 @@ def account_with(*blocks, models=()):
     ((Chart('stat', y='nope', model='work'),), 'Chart y names declared measures of Work'),
     ((Chart('bar', x='nope', y='hours', model='work'),), "Chart x groups by a stored, visible field of Work, not 'nope'"),
     ((Chart('bar', x='title:month', y='hours', model='work'),), 'after a Date or DateTime field'),
-    ((Chart('bar', x='kind', y='hours'),), 'a layout Chart names the model'),
-    ((Html('<p>{nope}</p>'),), 'Html shows unknown or hidden fields: nope'),
-    ((Html('<p>{secret}</p>'),), 'Html shows unknown or hidden fields: secret'),
+    ((Chart('bar', x='kind', y='hours'),), 'names no model; a layout Chart charts records of a model'),
+    ((Html('<p>{nope}</p>'),), 'shows unknown or hidden fields: nope'),
+    ((Html('<p>{secret}</p>'),), 'shows unknown or hidden fields: secret'),
     ((Html('<p>a { b</p>'),), 'write {field} to show a field'),
     ((Html('<p><a href="{name}">x</a></p>'),), 'not in attributes'),
 ])
-def test_layouts_are_checked_when_the_registry_is_built(blocks, message):
-    with pytest.raises(ValueError, match=__import__('re').escape(message)):
-        account_with(*blocks)
+def test_a_wrong_layout_item_is_ignored_with_one_warning_and_the_rest_is_drawn(blocks, message, caplog):
+    with caplog.at_level('WARNING', logger='evlet.layout'):
+        registry = account_with(*blocks)
+    owner = registry.models['owner']
+    (model, text), = [item for item in registry.layout_warnings if item[0] is owner]
+    assert text.startswith('Owner.Meta.layout: ') and message in text and text.endswith('it is ignored')
+    # Logged once, when the registry is built.
+    assert [record.getMessage() for record in caplog.records if record.getMessage().startswith('Owner.')] == [text]
+    # The rest of the layout is drawn: every field and the Table still show somewhere.
+    layout = registry.layouts[owner]['blocks']
+    assert [block['kind'] for block in layout if block['kind'] not in ('section', 'table')] == []
+    assert any(block['kind'] == 'table' and block['name'] == 'rows' for block in layout)
+    assert sorted(name for group in view_for(owner)['layout'] for name in group['fields']) == ['kind', 'name']
 
 
 @pytest.mark.parametrize('call, message', [
