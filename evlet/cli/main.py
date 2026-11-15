@@ -486,12 +486,16 @@ def main(argv=None):
                 reset_two_step_from_shell(path / 'data/database.sqlite3', args.username)
                 print(f'Two-step sign-in is reset for {args.username}. They set it up again at their next sign-in.')
         elif args.command == 'secrets':
-            from .project import child
+            from .project import child, instance_guard
             from ..instances import read_instance
             from ..secrets import SecretKey, rotate
             path = child(root, 'instances', args.instance)
             read_instance(path)
-            count, failed = rotate(path / 'data/database.sqlite3', SecretKey(path / 'secret.key'))
+            with instance_guard(path, serving=True):
+                # Recovery replays retained files sealed with the current keys, so they must not be pruned first.
+                if (path / '.install-journal.json').exists():
+                    raise ValueError(f'Interrupted installation needs recovery before rotating the secret key: run evlet migrate {args.instance}')
+                count, failed = rotate(path / 'data/database.sqlite3', SecretKey(path / 'secret.key'))
             print(f'New secret key written to instances/{args.instance}/secret.key. Re-encrypted {count} saved secret' + ('' if count == 1 else 's') + '.')
             if failed:
                 print(f"Could not read {', '.join(failed)}. They were left as they are and the old key was kept. Enter connector secrets again in Controls, "

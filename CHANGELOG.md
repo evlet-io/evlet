@@ -16,6 +16,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **SQLite backups and restores cover the whole database set.** `evlet backup`, Controls
+  backups and installation backups copy all four SQLite files from one snapshot with a
+  checksummed manifest; a restore no longer deletes the live sessions, logs and Eva files.
+  Interrupted installations and restores are journaled and replayed by `evlet migrate`.
+  Restoring over a damaged or incomplete set keeps its files and goes ahead. Idle
+  connections and the log retry backlog are bounded, and key rotation takes an
+  interprocess lock ([persistence-recovery.md](docs/persistence-recovery.md)).
 - **Ending sessions revokes them in the main database.** Sessions and two-step tickets carry the
   account's session generation, which ending a person's sessions moves on, so a session or ticket
   kept in the sessions file cannot be used again. Framework step `0012_session_generations` adds

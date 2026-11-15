@@ -24,6 +24,7 @@ import os
 from pathlib import Path
 import secrets
 import stat
+import tempfile
 import threading
 
 from . import qb
@@ -107,17 +108,24 @@ class SecretKey:
     def write(self, keys, new=False):
         """Write the key file with mode 0600: a new file exclusively, a replacement atomically."""
         text = ''.join(base64.urlsafe_b64encode(key).decode().rstrip('=') + '\n' for key in keys)
-        target = self.path if new else self.path.with_name(self.path.name + '.new')
-        if not new and target.exists():
-            target.unlink()
         flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, 'O_NOFOLLOW', 0)
-        descriptor = os.open(target, flags, 0o600)
-        with os.fdopen(descriptor, 'w') as handle:
-            handle.write(text)
-            handle.flush()
-            os.fsync(handle.fileno())
-        if not new:
-            os.replace(target, self.path)
+        if new:
+            target, descriptor = self.path, os.open(self.path, flags, 0o600)
+        else:
+            descriptor, name = tempfile.mkstemp(prefix='.' + self.path.name + '-', dir=self.path.parent)
+            target = Path(name)
+        try:
+            with os.fdopen(descriptor, 'w') as handle:
+                handle.write(text)
+                handle.flush()
+                os.fsync(handle.fileno())
+            if not new:
+                os.replace(target, self.path)
+            from .writes import sync_directory
+            sync_directory(self.path.parent)
+        finally:
+            if not new:
+                target.unlink(missing_ok=True)
 
     @staticmethod
     def key_id(key):
@@ -223,16 +231,29 @@ def rotate(database_path, key):
         raise SecretKeyError(f'{KEY_ENV} is set, so the key is kept outside Evlet. Rotation works on a secret.key file.')
     if not Path(database_path).is_file():
         raise ValueError('This instance has no database yet, so there is nothing to rotate.')
-    old = key.keys()
-    if not old:
-        return 0, []
-    key.write([secrets.token_bytes(32), *old])
+    if key.path is None:
+        raise SecretKeyError('A secret.key file is required for rotation.')
+    # The lock spans reading the keyring, publishing, committing every store, and pruning. Distinct
+    # SecretKey objects and separate CLI processes must share it, not only the object's thread lock.
+    from .writes import file_lock
+    with file_lock(key.path.with_name('.' + key.path.name + '.rotate.lock')):
+        return _rotate_locked(database_path, key)
+
+
+def _rotate_locked(database_path, key):
     from .database import Database
     from .models import Registry
     database = Database(database_path, Registry(), must_exist=True)
     done, failed = 0, []
+    fresh = secrets.token_bytes(32)
     try:
         with database.schema_transaction() as connection:
+            # Take all database writer locks BEFORE changing the sealing key. Ordinary framework writes
+            # seal inside their write transaction, so none can later commit an old-key value after pruning.
+            old = key.keys()
+            if not old:
+                return 0, []
+            key.write([fresh, *old])
             tables = connection.tables()
             for table, column, id_column, purpose_column, prefix, text, name in SEALED:
                 if table not in tables:
@@ -246,10 +267,12 @@ def rotate(database_path, key):
                         failed.append(name.format(owner))
                         continue
                     sealed = key.encrypt(plain, purpose, create=False)
+                    if sealed[1:5] != key.key_id(fresh):
+                        raise SecretKeyError('The secret key changed during rotation; retained keys were not pruned.')
                     connection.run(qb.update(table, **{column: base64.b64encode(sealed).decode() if text else sealed}).where(**{id_column: row_id}))
                     done += 1
     finally:
         database.close()
     if not failed:
-        key.write(key.keys()[:1])
+        key.write([fresh])
     return done, failed

@@ -8,6 +8,8 @@ from pathlib import Path
 import re
 import tempfile
 
+from ..writes import file_lock, sync_directory
+
 
 def valid_name(value):
     if not isinstance(value, str) or not re.fullmatch(r'[a-z][a-z0-9_]{0,47}', value) or keyword.iskeyword(value):
@@ -34,15 +36,6 @@ def json_text(value):
     return json.dumps(value, indent=2, sort_keys=True, allow_nan=False) + '\n'
 
 
-def sync_directory(path):
-    if os.name != 'nt':
-        fd = os.open(path, os.O_RDONLY)
-        try:
-            os.fsync(fd)
-        finally:
-            os.close(fd)
-
-
 def atomic_json(path, value):
     fd, name = tempfile.mkstemp(prefix='.' + path.name, dir=path.parent)
     try:
@@ -59,50 +52,10 @@ def atomic_json(path, value):
 @contextmanager
 def instance_guard(path, *, serving=False):
     """Cooperate across CLI processes; never swap a database under a running server."""
-    lock = path / '.evlet.lock'
-    if lock.is_symlink():
-        raise ValueError('Instance lock cannot be a symbolic link')
-    fd = os.open(lock, os.O_RDWR | os.O_CREAT | getattr(os, 'O_NOFOLLOW', 0), 0o600)
-    with os.fdopen(fd, 'r+b') as stream:
-        try:
-            if os.name == 'nt':
-                unlock = _windows_lock(stream, exclusive=not serving)
-            else:
-                import fcntl
-                fcntl.flock(stream, (fcntl.LOCK_SH if serving else fcntl.LOCK_EX) | fcntl.LOCK_NB)
-        except OSError:
-            raise ValueError('Instance is in use. Stop its server or other lifecycle command before changing it') from None
-        try:
+    try:
+        with file_lock(path / '.evlet.lock', shared=serving):
             yield
-        finally:
-            if os.name == 'nt':
-                unlock()
-            else:
-                fcntl.flock(stream, fcntl.LOCK_UN)
-
-
-def _windows_lock(stream, *, exclusive):
-    import ctypes
-    from ctypes import wintypes
-    import msvcrt
-
-    class Overlapped(ctypes.Structure):
-        _fields_ = [('Internal', ctypes.c_size_t), ('InternalHigh', ctypes.c_size_t),
-                    ('Offset', wintypes.DWORD), ('OffsetHigh', wintypes.DWORD),
-                    ('hEvent', wintypes.HANDLE)]
-
-    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
-    kernel.LockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
-                                 wintypes.DWORD, wintypes.DWORD, ctypes.POINTER(Overlapped)]
-    kernel.LockFileEx.restype = wintypes.BOOL
-    kernel.UnlockFileEx.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.DWORD,
-                                   wintypes.DWORD, ctypes.POINTER(Overlapped)]
-    kernel.UnlockFileEx.restype = wintypes.BOOL
-    handle = msvcrt.get_osfhandle(stream.fileno())
-    overlapped = Overlapped()
-    if not kernel.LockFileEx(handle, 1 | (2 if exclusive else 0), 0, 1, 0, ctypes.byref(overlapped)):
-        raise ctypes.WinError(ctypes.get_last_error())
-    def unlock():
-        if not kernel.UnlockFileEx(handle, 0, 1, 0, ctypes.byref(overlapped)):
-            raise ctypes.WinError(ctypes.get_last_error())
-    return unlock
+    except ValueError as exc:
+        if str(exc).startswith('Resource is in use'):
+            raise ValueError('Instance is in use. Stop its server or other lifecycle command before changing it') from None
+        raise

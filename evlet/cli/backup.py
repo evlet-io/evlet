@@ -1,13 +1,15 @@
 """evlet backup and evlet restore: an instance's four SQLite files as one set (docs/cli.md)."""
 
 from datetime import datetime, timezone
-import os
 from pathlib import Path
+import shutil
+import sqlite3
 import tempfile
 
-from ..writes import STORES, check_file, copy_file, copy_set, data_files, files, release_idle, require_space, settle, side_path
+from ..writes import STORE_OF, backup_members, check_file, copy_file, copy_set, data_files, files, require_space
 from ..instances import database_state
-from .project import atomic_json, child, instance_guard, sync_directory
+from .project import child, instance_guard
+from .install import publish_set, recover
 
 
 def _instance(root, name):
@@ -31,7 +33,27 @@ def backup(root, name, directory=None):
     size = sum(item.stat().st_size for item in files(main) if item.exists())
     require_space(target_dir, size + 16 * 2**20, 'write the backup')
     target = target_dir / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '.sqlite3')
-    return copy_set(main, target)
+    with instance_guard(path, serving=True):
+        if (path / '.install-journal.json').exists():
+            raise ValueError('Interrupted installation needs recovery before making a backup')
+        return copy_set(main, target)
+
+
+def _safety_copy(main, backups):
+    """Back up the live set before a restore replaces it. A damaged or incomplete live set, which is often why
+    someone restores, cannot pass the backup checks, so its files are kept as they are instead."""
+    backups.mkdir(mode=0o700, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    try:
+        return copy_set(main, backups / (stamp + '-before-restore.sqlite3'))[0]
+    except (ValueError, sqlite3.DatabaseError):
+        raw = backups / (stamp + '-before-restore-files')
+        raw.mkdir(mode=0o700)
+        for member in files(main):
+            for item in (member, member.with_name(member.name + '-wal')):
+                if item.is_file() and not item.is_symlink():
+                    shutil.copy2(item, raw / item.name)
+        return raw
 
 
 def restore(root, name, source):
@@ -42,46 +64,22 @@ def restore(root, name, source):
     evlet migrate moves them out. The current files are backed up first. Returns (safety backup, split pending)."""
     path, data = _instance(root, name)
     source = Path(source)
-    if not source.is_file() or source.is_symlink():
-        raise ValueError(f'No backup file at {source}')
-    problem, moved = check_file(source)
-    if problem:
-        raise ValueError(f'The backup {source.name} is damaged: {problem}')
-    single = bool(moved & {table for tables in STORES.values() for table in tables})
+    members, single = backup_members(source)
+    split_pending = bool(check_file(source)[1] & set(STORE_OF))
     main = data / 'database.sqlite3'
     with instance_guard(path):
+        recover(path, restoring=True)
         safety = None
         size = sum(item.stat().st_size for item in files(source) if item.exists())
         current = sum(item.stat().st_size for item in files(main) if item.exists())
         require_space(data, 2 * size + current + 16 * 2**20, 'restore this backup')
         if main.exists():
-            backups = data / 'backups'
-            backups.mkdir(mode=0o700, exist_ok=True)
-            safety = copy_set(main, backups / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '-before-restore.sqlite3'))[0]
+            safety = _safety_copy(main, data / 'backups')
         with tempfile.TemporaryDirectory(prefix='.restore-', dir=data) as directory:
             stage = Path(directory) / 'database.sqlite3'
-            pairs = list(zip(files(source), files(stage)))
+            pairs = list(zip(members, files(stage)))
             for old, new in pairs:
                 if old.exists() and not (single and old != source):
                     copy_file(old, new)
-            release_idle()
-            for item in files(main):
-                if item.exists():
-                    settle(item)
-            # Side files first, then the main file: the set is in place once the main file is.
-            for store in STORES:
-                staged, live = side_path(stage, store), side_path(main, store)
-                if staged.exists():
-                    os.replace(staged, live)
-                else:
-                    for leftover in (live, live.with_name(live.name + '-wal'), live.with_name(live.name + '-shm')):
-                        leftover.unlink(missing_ok=True)
-            os.replace(stage, main)
-            sync_directory(data)
-        # apps.lock follows the restored database's own installation record, so evlet migrate can bring an older
-        # backup up to the installed apps and Evlet.
-        state = database_state(main)
-        if 'evlet' in state or state.get('apps'):
-            atomic_json(path / 'apps.lock', state)
-            sync_directory(path)
-    return safety, single
+            publish_set(path, stage, database_state(stage))
+    return safety, split_pending
