@@ -192,7 +192,7 @@ def test_an_upgraded_playground_keeps_invoice_numbers_as_names_and_continues_the
     assert current.migrate(migrations) == ['0007_employees', '0008_record_names', '0009_ledger', '0010_invoice_project', '0011_project_brief', '0012_invoice_payment_status', '0013_points',
                                               '0014_project_task_index', '0015_recognition',
                                               '0016_employee_profile', '0017_employee_skill_levels',
-                                              '0018_item_photo', '0019_more_currencies', '0020_project_state']
+                                              '0018_item_photo', '0019_more_currencies', '0020_project_state', '0021_project_docstate']
     assert '0003_record_names' in framework.upgrade(current)
     assert not framework.pending(current)
     assert {'name', 'title', 'customer_name'} <= set(columns(path, 'customer')) and 'number' not in Invoice.__fields__
@@ -203,7 +203,7 @@ def test_an_upgraded_playground_keeps_invoice_numbers_as_names_and_continues_the
     assert current.get(Invoice, unnumbered.id).title == str(unnumbered.id)
     assert (current.get(Customer, owner.id).customer_name, current.get(Customer, owner.id).title) == ('Preserved', 'Preserved')
     project = current.list(Project)[0]
-    assert (project.title, project.name) == ('Fit-out', None)
+    assert (project.title, project.name, project.docstate) == ('Fit-out', None, 'planned')
 
     # The series continues in the same counter: no name is issued twice.
     created = current.create(Invoice, customer=owner.id, reference='NEW-1', total='20.00', posting_date='2026-06-01')

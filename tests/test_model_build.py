@@ -88,7 +88,7 @@ def test_a_model_defined_straight_after_import_evlet_gets_every_step():
             class Meta:
                 activity = evlet.Activity()
             title = evlet.Text()
-            status = evlet.State(evlet.State.Step('draft'), evlet.State.Step('done'),
+            docstate = evlet.State(evlet.State.Step('draft'), evlet.State.Step('done'),
                                  rules=(evlet.State.Rule('draft', 'done', 'Done'),))
 
         evlet.Registry(Entry, Note).schema()

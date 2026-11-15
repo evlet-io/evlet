@@ -8,7 +8,7 @@ from evlet.ui.metadata import ui_schema, view_for
 
 def task_model(name='Task', **meta):
     fields = {'title': Text(required=True), 'kind': Select(('bug', 'chore'), default='bug'),
-              'stage': State(State.Step('open'), State.Step('done'), rules=(State.Rule('open', 'done', 'Finish'),))}
+              'docstate': State(State.Step('open'), State.Step('done'), rules=(State.Rule('open', 'done', 'Finish'),))}
     if meta:
         fields['Meta'] = type('Meta', (), meta)
     return type(Model)(name, (Model,), {'__module__': __name__, **fields})
@@ -16,14 +16,14 @@ def task_model(name='Task', **meta):
 
 def test_a_model_with_a_state_has_no_board_unless_meta_board_names_it():
     assert 'board' not in view_for(task_model())
-    assert view_for(task_model(board='stage'))['board'] == 'stage'
+    assert view_for(task_model(board='docstate'))['board'] == 'docstate'
 
 
 def test_the_schema_carries_board_only_for_models_that_set_it():
-    registry = Registry(task_model('PlainTask'), task_model('BoardTask', board='stage'))
+    registry = Registry(task_model('PlainTask'), task_model('BoardTask', board='docstate'))
     models = {entry['label']: entry for entry in ui_schema(registry)['models']}
     assert 'board' not in models['Plain task']
-    assert models['Board task']['board'] == 'stage'
+    assert models['Board task']['board'] == 'docstate'
 
 
 def test_registration_refuses_a_board_on_another_field():
@@ -31,9 +31,9 @@ def test_registration_refuses_a_board_on_another_field():
         Registry(task_model(board='kind'))
 
 
-@pytest.mark.parametrize('value', ['kind', 'title', 'missing', '', ('stage',), True])
+@pytest.mark.parametrize('value', ['kind', 'title', 'missing', '', ('docstate',), True])
 def test_meta_board_must_name_the_state_field(value):
-    with pytest.raises(ValueError, match=r"Task.Meta.board: name the model's State field, 'stage'"):
+    with pytest.raises(ValueError, match=r"Task.Meta.board: name the model's State field, 'docstate'"):
         view_for(task_model(board=value))
 
 

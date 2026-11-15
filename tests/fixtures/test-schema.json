@@ -781,7 +781,7 @@
           "fields": [
             "title",
             "customer",
-            "status"
+            "docstate"
           ],
           "collapsible": false,
           "collapsed": false,
@@ -829,18 +829,18 @@
         "id",
         "title",
         "customer",
-        "status",
+        "docstate",
         "budget"
       ],
       "search_fields": [
         "title",
-        "status",
+        "docstate",
         "name"
       ],
       "open_in": "panel",
       "autosave": true,
       "list_tabs": {
-        "field": "status",
+        "field": "docstate",
         "kind": "state",
         "default": "active"
       },
@@ -922,7 +922,7 @@
           "default_kind": "none"
         },
         {
-          "name": "status",
+          "name": "docstate",
           "type": "select",
           "required": true,
           "unique": false,
@@ -1047,7 +1047,7 @@
       "behavior": {
         "title": {},
         "customer": {},
-        "status": {},
+        "docstate": {},
         "budget": {},
         "progress": {},
         "starts_on": {},
@@ -1058,7 +1058,7 @@
       "order": [
         "title",
         "customer",
-        "status",
+        "docstate",
         "budget",
         "progress",
         "starts_on",

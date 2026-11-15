@@ -77,7 +77,7 @@ describe('a list loading its rows', () => {
   };
   const withTabs = () => {
     const schema = copy(invoice.schema);
-    schema.body.models.find((model: { name: string }) => model.name === 'invoice').list_tabs = { field: 'status', kind: 'state', default: 'issued' };
+    schema.body.models.find((model: { name: string }) => model.name === 'invoice').list_tabs = { field: 'docstate', kind: 'state', default: 'issued' };
     return schema;
   };
   const empty = { status: 200, etag: null, body: { items: [], total: 0, limit: 50, offset: 0 } };

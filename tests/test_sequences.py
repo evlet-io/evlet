@@ -24,12 +24,12 @@ class Company(Model):
 
 
 class Invoice(Model):
-    permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('title', 'number', 'status'))}
+    permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('title', 'number', 'docstate'))}
     company = Link(Company, required=True)
     posting_date = Date(required=True)
     title = Text(default='')
     number = Sequence('INV-{year}-{n:05}', scope=('company',), assign_on='issued', date='posting_date')
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         State.Step('void', lock=True, final=True),
@@ -47,7 +47,7 @@ class Invoice(Model):
     @validate
     def not_boom(self):
         # Runs on every save once values are final, so a failing move never takes a number.
-        if self.status == 'issued' and self.title == 'boom':
+        if self.docstate == 'issued' and self.title == 'boom':
             raise ValidationError({'title': 'Rejected'})
 
     @action('Rename', inputs={'value': Text(required=True)})
@@ -92,7 +92,7 @@ class Slip(Model):
     permissions = ALL
     note = Text(default='')
     code = Sequence('S{n}')
-    status = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed', lock=True),
         State.Step('void', lock=True, final=True),
@@ -106,7 +106,7 @@ class Permit(Model):
     # Held permits can be voided before they are granted, so before they have a number.
     permissions = ALL
     code = Sequence('PM{n}', assign_on='granted')
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('held', lock=True),
         State.Step('granted', lock=True),
@@ -190,9 +190,9 @@ def test_declarations_are_checked_against_the_model():
     with pytest.raises(ValueError, match='assign_on'):
         register(code=Sequence('N{n}', assign_on='issued'))
     with pytest.raises(ValueError, match='assign_on'):
-        register(status=State(State.Step('draft'), State.Step('sent')), code=Sequence('N{n}', assign_on='issued'))
+        register(docstate=State(State.Step('draft'), State.Step('sent')), code=Sequence('N{n}', assign_on='issued'))
     with pytest.raises(ValueError, match='not its State'):
-        register(status=State(State.Step('draft'), State.Step('sent')), code=Sequence('N{n}', scope=('status',)))
+        register(docstate=State(State.Step('draft'), State.Step('sent')), code=Sequence('N{n}', scope=('docstate',)))
     with pytest.raises(ValueError, match='cannot read a Sequence'):
         register(code=Sequence('N{n}'), copy=Text(compute=F('code')))
     from evlet import Child, Table
@@ -284,7 +284,7 @@ def check_void_keeps_numbers(numbered):
         permits.append(f"/api/permit/{permit['id']}")
         move(c, permits[-1], 'held')
     assert move(c, permits[1], 'granted')[1]['code'] == 'PM1'
-    assert [(body['status'], body['code']) for body in (void(c, url)[1] for url in permits)] == [('void', None), ('void', 'PM1')]
+    assert [(body['docstate'], body['code']) for body in (void(c, url)[1] for url in permits)] == [('void', None), ('void', 'PM1')]
     third = f"/api/permit/{c('POST', '/api/permit', {})[1]['id']}"
     move(c, third, 'held')
     assert move(c, third, 'granted')[1]['code'] == 'PM2'
@@ -476,7 +476,7 @@ def check_a_caught_failure_leaves_no_trace(app):
             context.move(Invoice, draft['id'], 'issued')
         context.create(Ticket, title='after')
     saved = c('GET', f"/api/invoice/{draft['id']}")[1]
-    assert (saved['status'], saved['number']) == ('draft', None)
+    assert (saved['docstate'], saved['number']) == ('draft', None)
     assert issue(c, one) == 'INV-2026-00001'
     assert sorted((record['code'], record['holder']) for record in c('GET', '/api/pass')[1]['items']) == [('P1', 'Ann'), ('P2', 'Bob')]
 

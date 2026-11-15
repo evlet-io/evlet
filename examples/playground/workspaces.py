@@ -31,8 +31,8 @@ SALES = Workspace('Sales', icon='receipt', groups=(
 PROJECTS = Workspace('Projects', icon='kanban', groups=(
     NavGroup('Projects', icon='kanban', items=(
         'project',
-        Shortcut('project', filters={'status': 'active'}, label='Active projects'),
-        Shortcut('project', filters=[['status', 'eq', 'planned'], ['budget', 'gt', '0']], label='Planned with a budget'),
+        Shortcut('project', filters={'docstate': 'active'}, label='Active projects'),
+        Shortcut('project', filters=[['docstate', 'eq', 'planned'], ['budget', 'gt', '0']], label='Planned with a budget'),
     )),
 ))
 

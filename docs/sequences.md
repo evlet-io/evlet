@@ -16,8 +16,8 @@ class Invoice(Model):
     company = Link(Company, required=True)
     posting_date = Date(required=True)
     number = Sequence("INV-{year}-{n:05}", scope=("company",), assign_on="issued", date="posting_date")
-    status = State(State.Step("draft"), State.Step("issued", lock=True), State.Step("void", lock=True, final=True),
-                   rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")))
+    docstate = State(State.Step("draft"), State.Step("issued", lock=True), State.Step("void", lock=True, final=True),
+                     rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")))
 
     class Meta:
         title_field = "number"
@@ -187,7 +187,7 @@ rows, run `evlet.sequences.backfill` once, in one transaction:
 from evlet.sequences import backfill
 
 with database.transaction() as tx:
-    backfill(tx, Invoice, "number", filters={"status__in": ["issued", "void"]})
+    backfill(tx, Invoice, "number", filters={"docstate__in": ["issued", "void"]})
 ```
 
 It numbers the rows whose value is null in id order, from the same counters, so numbers

@@ -28,7 +28,7 @@ class Invoice(Model):
     lines = Table(Line)
     total = Currency(compute=lines.sum("amount"))
     remarks = Text(default="", versioned=False)
-    status = State(
+    docstate = State(
         State.Step("draft", "Draft"),
         State.Step("issued", "Issued", color="blue", lock=True, release=True),
         State.Step("paid", "Paid", color="green", lock=True, final=True),
@@ -43,7 +43,7 @@ class Invoice(Model):
 
     @validate
     def has_lines(self):
-        if self.status != "draft" and not self.lines:
+        if self.docstate != "draft" and not self.lines:
             raise ValidationError({"lines": "Add a line"})
 
     @state("issued")
@@ -51,15 +51,23 @@ class Invoice(Model):
         self.remarks = "Issued"
 
     @action("Record payment", inputs={"amount": Currency(required=True), "paid_on": Date(required=True)},
-            available_when=F("status") == "issued")
+            available_when=F("docstate") == "issued")
     def record_payment(self, amount, paid_on):
         self.remarks = f"Paid {amount} on {paid_on}"
 ```
 
 `State(*steps, rules=(), default=..., show="badge")`:
 
+* The State field is always named `docstate`. Any other name fails when the class is defined
+  (`Invoice.status is a State: name the State field docstate (rename it with a migration;
+  docs/states-actions.md)`), and so does a field named `docstate` that is not a State. Every
+  document reads it the same way: `F("docstate")`, `self.docstate`, `Meta.board = "docstate"`,
+  `Meta.list_tabs = "docstate"`, `{"docstate": "issued"}` in filters and `docstate` in API records.
+  An app that named it otherwise renames it with `RenameField("invoice", "status", "docstate")`
+  in an app migration ([model-engine.md](model-engine.md#explicit-migrations)); there is no alias.
+* Its label is "Status" unless it declares one: `State(..., label="Stage")`.
 * It is a `Select` over the step keys. Its schema type is `select`, it is read only in forms,
-  and finite expressions read it like any other Select (`F("status") == "issued"`).
+  and finite expressions read it like any other Select (`F("docstate") == "issued"`).
 * `default` is the first step when left out. A new record always starts in it. It cannot be
   final.
 * A model has at most one State, and only root documents have one (not `Table` rows).
@@ -163,7 +171,7 @@ and finishes a build, or an action on one record closes another. Declare them wi
 
 ```python
 class PriceList(Model):
-    status = State(
+    docstate = State(
         State.Step("draft"), State.Step("building"), State.Step("ready"), State.Step("failed"),
         rules=(
             State.Rule("draft", "building", "Start", key="building", by=()),
@@ -199,8 +207,9 @@ say how the record page and lists draw them.
 * `show="none"` draws neither, for an app that places the state itself. The moves stay as
   header buttons.
 * Lists and headers read a step's look from the step alone: a final step coloured `rose` reads
-  as cancelled (struck-through title), any other final or locked step shows a lock, and the
-  default step shows as a draft.
+  as cancelled (struck-through title), any other final or locked step shows a lock (on its
+  coloured pill when the step declares a colour, in grey when it does not), and the default step
+  shows as a draft.
 
 Display never implies that a person can change the state:
 
@@ -254,7 +263,7 @@ class Invoice(Model):
 
 ## Hooks
 
-Four decorators run code on a document. Hooks of one kind run in class order; a subclass
+Five decorators run code on a document. Hooks of one kind run in class order; a subclass
 replaces a base's hook by defining a method of the same name. Each is a method that takes only
 `self`.
 
@@ -264,6 +273,7 @@ replaces a base's hook by defining a method of the same name. Each is a method t
 | `@state("a", "b")` | when a move enters one of the states | the draft; `self.context.session` is open |
 | `@state.exit("a")` | when a move leaves one of the states | the draft; `self.context.session` is open |
 | `@release` | when a release is made ([Releases](#releases-and-versions)) | the draft, with `self.release.number` and `self.release.previous`; the session is open |
+| `@release.exit` | when a move leaves the released set: from a `release=True` step to one that is not | the draft; the session is open |
 
 * Inside a hook, `self.is_new` is true on create, and `self.before` is the document as last
   saved, read only (`None` on create). `self.context` is the operation's context.
@@ -280,19 +290,32 @@ replaces a base's hook by defining a method of the same name. Each is a method t
   `validate()`, or sets `confirmable` or `track_changes`, fails when the class is created with a
   message pointing here.
 
+The steps a State declares `release=True` are its **released set**. A move whose source and
+target are both in it is a **move within the release** (an invoice going unpaid, overdue, paid);
+a move from a step in it to a step outside it is a **release exit** (reopen, cancel).
+
 The order of a move:
 
 1. The rule is checked on the saved record (below).
-2. When the record leaves an effect's `on` state, its posted rows are reversed.
-3. `@state.exit(old)` hooks run.
-4. The state changes.
-5. `@state(new)` hooks run.
-6. The document settles: calculations, then `@validate`.
-7. Document numbers due in the new state are assigned.
-8. Entering a `release=True` step whose content changed since the last release: `@release`
-   runs, then calculations and `@validate` again, and the release is stored.
-9. The record is written, effects on the new state post, and the Activity gets its `moved`
-   entry with the rule key and the remark; a move that released names it in `data.release`.
+2. On a release exit, the latest release is kept as a snapshot if it has none yet.
+3. When the record leaves an effect's `on` state, its posted rows are reversed.
+4. `@state.exit(old)` hooks run.
+5. On a release exit, `@release.exit` hooks run.
+6. The state changes.
+7. `@state(new)` hooks run.
+8. The document settles: calculations, then `@validate`. A move within the release that
+   changed no versioned content keeps its saved results instead
+   ([Moves within the release](#moves-within-the-release)).
+9. Document numbers due in the new state are assigned.
+10. Entering a `release=True` step whose content changed since the last release: `@release`
+    runs, then calculations and `@validate` again, and the release is stored.
+11. A closed period is checked, unless the move stays within the release and changes no
+    versioned content.
+12. The record is written, effects on the new state post, and the Activity gets its `moved`
+    entry with the rule key and the remark; a move that released names it in `data.release`.
+
+`@state` and `@state.exit` run on every move, moves within the release included;
+`@release.exit` runs only on a release exit.
 
 Everything commits in one transaction. A failure anywhere rolls all of it back, and no
 Sequence number is used up.
@@ -303,7 +326,7 @@ Sequence number is used up.
 | `before_close(self, to)` | `@state.exit(...)` or `@validate` |
 | `changed(self, change)` | `@state(...)`, or a job queued from a hook |
 | `Model.validate()` | `@validate` |
-| `check_lifecycle`, `@validate.confirm/.cancel` | `@validate` reading `self.status` and `self.before` |
+| `check_lifecycle`, `@validate.confirm/.cancel` | `@validate` reading `self.docstate` and `self.before` |
 | `@action.confirm/.cancel` | `@state("confirmed")`, `@state.exit("confirmed")` |
 
 ## Releases and versions
@@ -363,6 +386,25 @@ entry (`data.number`, the remark), and the next release takes the next number.
   current value. The detail's `_restore` lists them: `{"version", "dropped", "kept"}`.
 * Sequence numbers, the name and calculated values are not restored; calculations run again.
 * Attachments are not versioned.
+
+### Moves within the release
+
+A move within the release changes the process, not the document. Unless its values or hooks
+change versioned content:
+
+* It makes no release and takes no snapshot, so `@release` and `@release.exit` do not run.
+* It keeps the saved results: nothing recalculates and the formula version is not checked,
+  exactly as an ordinary write on a locked record. `"_calculation": {"recalculate": true}` sent
+  with it is refused with 409.
+* A closed period does not refuse it: a closed period protects content, not process. Every other
+  write to a record in a closed period is refused as before.
+
+Versioned content is what a release hashes: every stored field and row except the State,
+`versioned=False` fields and `tracking="exclude"` fields.
+
+When its values or hooks do change versioned content, it is a real release as before: the latest
+release is snapshotted, the document recalculates (and needs the active formula version),
+`@release` runs, a new release is stored and the period is checked.
 
 Effects are not tied to releases: rows post when the record enters the effect's `on` step and are
 reversed when a rule leaves it, so an unchanged reissue posts again after its reversal and the
@@ -459,7 +501,7 @@ state of the rule, and is true (or depends on other values) in the target state,
 field the rule lists in `ask`. Only fields the role may write are asked for.
 
 ```python
-lost_reason = Text(applies_when=F("stage") == "lost", required_when=F("stage") == "lost", versioned=False)
+lost_reason = Text(applies_when=F("docstate") == "lost", required_when=F("docstate") == "lost", versioned=False)
 # POST /api/deal/01hc1sd9vc1ye/moves/lost  {"lost_reason": "Chose another vendor"}
 context.move(Deal, deal_id, "lost", lost_reason="Chose another vendor")
 ```
@@ -478,7 +520,7 @@ context.move(Deal, deal_id, "lost", lost_reason="Chose another vendor")
 ## Model actions
 
 ```python
-@action("Record payment", inputs={"amount": Currency(required=True)}, available_when=F("status") == "issued")
+@action("Record payment", inputs={"amount": Currency(required=True)}, available_when=F("docstate") == "issued")
 def record_payment(self, amount): ...
 ```
 
@@ -536,8 +578,8 @@ class Transfer(Model):
     destination = Text(default="site")
     quantity = Integer(default=1)
     number = Sequence("TR{n:04}", assign_on="sent")
-    status = State(State.Step("draft"), State.Step("sent", lock=True),
-                   rules=(State.Rule("draft", "sent", "Send", key="send"),))
+    docstate = State(State.Step("draft"), State.Step("sent", lock=True),
+                     rules=(State.Rule("draft", "sent", "Send", key="send"),))
 
     @state("sent")
     def post_movements(self):
@@ -618,7 +660,7 @@ include keys that are not part of the ETag:
 `/api/schema` model entries carry, for roles that can read the State:
 
 ```json
-"state": {"field": "status", "default": "draft", "show": "bar",
+"state": {"field": "docstate", "default": "draft", "show": "bar",
           "steps": [{"key": "draft", "label": "Draft", "color": null, "lock": false, "release": false, "final": false}],
           "rules": [{"key": "void", "from": ["issued"], "to": "void", "label": "Void", "by": ["admin"],
                      "guarded": false, "when": null, "primary": false, "reject": false,

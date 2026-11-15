@@ -27,7 +27,7 @@ class Book(Model):
     Meta = type('Meta', (FiniteMeta,), {'api': 'read'})
     permissions = {**FULL, 'admin': Rule(('read', 'create', 'update', 'delete'))}
     memo = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('open', lock=True),
         State.Step('void', lock=True, final=True),
@@ -146,7 +146,7 @@ def test_effect_rows_of_a_document_without_surface_hide_their_source():
         meta = type('Meta', (), {'api': None, 'effects': (Effect(target, rows='rows', on='done', reverse=Negate('amount')),)})
         state = State(State.Step('draft'), State.Step('done', lock=True, release=True), State.Step('void', lock=True, final=True),
                       rules=(State.Rule('draft', 'done', 'Done'), State.Rule('done', 'void', 'Void', remark='required')))
-        return type('Source', (Model,), {'Meta': meta, 'status': state, 'rows': lambda self: []}), target
+        return type('Source', (Model,), {'Meta': meta, 'docstate': state, 'rows': lambda self: []}), target
     with pytest.raises(ValueError, match=r'Tally.source names Source records, which has Meta.api = None'):
         Registry(*models(False))
     Registry(*models(True))
@@ -185,7 +185,7 @@ def test_every_write_route_family_is_refused_for_every_role(shop):
     # Reads still work, subject to each role's permissions.
     assert admin('GET', f'/api/entry/{entry}')[1]['memo'] == 'seed'
     assert [item['memo'] for item in editor('GET', '/api/entry')[1]['items']] == ['seed']
-    assert admin('GET', f'/api/book/{book}')[1]['status'] == 'open'
+    assert admin('GET', f'/api/book/{book}')[1]['docstate'] == 'open'
     with app.database.transaction() as tx:
         assert [record.memo for record in tx.list(Entry)] == ['seed'] and [record.memo for record in tx.list(Book)] == ['seed']
 

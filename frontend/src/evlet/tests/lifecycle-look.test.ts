@@ -12,8 +12,8 @@ afterEach(stopAll);
 
 const step = (key: string, color: string | null = null, lock = false, final = false) => ({ key, label: key, color, lock, release: false, final });
 const project = (cancelled: string | null = 'rose') => ({
-  name: 'project', fields: [{ name: 'stage', type: 'select', default: 'draft' }],
-  state: { field: 'stage', default: 'draft', rules: [], steps: [step('draft'), step('active'), step('done', 'green', true), step('cancelled', cancelled, true, true)] },
+  name: 'project', fields: [{ name: 'docstate', type: 'select', default: 'draft' }],
+  state: { field: 'docstate', default: 'draft', rules: [], steps: [step('draft'), step('active'), step('done', 'green', true), step('cancelled', cancelled, true, true)] },
 }) as unknown as ScreenModel;
 
 describe('stateLook', () => {
@@ -92,7 +92,7 @@ describe('a cancelled record', () => {
     expect(icon(draft).getAttribute('aria-label')).toBe('Draft');
     expect(icon(draft).querySelector('svg')).not.toBeNull();
     // The issued invoice is locked.
-    const issued = String(invoice.invoices.body.items.find((item: { status: string }) => item.status === 'issued').id);
+    const issued = String(invoice.invoices.body.items.find((item: { docstate: string }) => item.docstate === 'issued').id);
     expect(icon(issued).getAttribute('aria-label')).toBe('Locked');
     expect(host.querySelector(`tr[data-key="${issued}"]`)!.classList.contains('ev-row-cancelled')).toBe(false);
     // Every row of a model with a State has the slot, so the first column lines up.
@@ -131,5 +131,28 @@ describe('a cancelled record', () => {
     const { host } = start(routes(true), `/app/invoice?open=${draft}`);
     await until(() => expect(host.querySelector('.ev-panel .doc-head .doc-status .ev-status-draft')).not.toBeNull());
     expect(host.querySelector('.ev-panel .doc-head')!.classList.contains('is-cancelled')).toBe(false);
+  });
+});
+
+describe('locked steps keep their colour', () => {
+  it('draws a coloured locked step as its pill with a lock, and a plain locked or cancelled step as before', async () => {
+    const { stateBadgeLook } = await import('../app/record-page');
+    const { StateMark } = await import('../app/list-page');
+    const look = stateBadgeLook(project()).look;
+    // done is locked and green; cancelled is final and rose; a locked step without a colour stays grey.
+    expect(look('done')).toBe('locked-pill');
+    expect(look('cancelled')).toBe('cancelled');
+    const plain = { ...project(), state: { ...project().state!, steps: [step('draft'), step('closed', null, true)] } } as ScreenModel;
+    expect(stateBadgeLook(plain).look('closed')).toBe('locked');
+    const host = html`<div>${StatusBadge({ value: 'done', label: () => 'Done', tint: () => 'green', look: () => 'locked-pill' })}</div>` as HTMLElement;
+    const pill = host.firstElementChild as HTMLElement;
+    expect(pill.className).toBe('pill ev-status ev-status-lockpill b-green');
+    expect(pill.querySelector('svg')).not.toBeNull();
+    expect(pill.querySelector('.d')).toBeNull();
+    // A board card's mark: the small coloured pill for a coloured locked step, the icon otherwise.
+    expect(StateMark(project(), 'done').className).toContain('b-green');
+    expect(StateMark(project(), 'done').getAttribute('aria-label')).toBe('Locked: done');
+    expect(StateMark(plain, 'closed').className).toBe('ev-state-ic');
+    expect(StateMark(project(), 'cancelled').className).toBe('ev-state-ic');
   });
 });

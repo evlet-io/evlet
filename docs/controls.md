@@ -587,7 +587,7 @@ The override of a declared or automatic workspace:
      {"key": "model:deal:large_deals", "label": "Big deals"},
      {"key": "model:client"},
      {"key": "slip:quick_deal", "hidden": true},
-     {"shortcut": {"model": "deal", "filters": {"stage": "won"}, "label": "Won deals"}}]},
+     {"shortcut": {"model": "deal", "filters": {"docstate": "won"}, "label": "Won deals"}}]},
    {"key": "reports", "hidden": true},
    {"key": "later", "label": "Later", "items": [{"shortcut": {"url": "/docs", "label": "Docs"}}]}]}
 ```

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 
 from .fields import ACTIVE, Field, Image, Link, MISSING, RULES, Reference, active_layer
-from .declarations import Table, ReactiveQuery, DEFAULT_TABLE_ROWS
+from .declarations import STATE_FIELD, Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 from .identity import RecordId
 from .naming import standard
 from .audit import COLUMNS as AUDIT
@@ -231,6 +231,15 @@ class ModelType(type):
         states = [key for key, value in fields.items() if isinstance(value, State)]
         if len(states) > 1:
             raise ValueError(f"{name} declares more than one State: " + ", ".join(states))
+        # The State field is always docstate, so lists, boards, rules and stored settings name it the same way.
+        if states and states[0] != STATE_FIELD:
+            raise ValueError(f'{name}.{states[0]} is a State: name the State field {STATE_FIELD} '
+                             '(rename it with a migration; docs/states-actions.md)')
+        if STATE_FIELD in fields and not states:
+            raise ValueError(f'{name}.{STATE_FIELD} is reserved for the State field: declare {STATE_FIELD} = State(...) '
+                             'or rename the field (docs/states-actions.md)')
+        if states and fields[STATE_FIELD].label is None:
+            fields[STATE_FIELD].label = 'Status'
         # The State field's name; its value changes only through moves, so the model is a document.
         cls.__state__ = states[0] if states else None
         for removed in ('confirmable', 'track_changes'):

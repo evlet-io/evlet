@@ -119,7 +119,7 @@ registered task with `context.enqueue(task, payload, *, key=None, target=None, r
 
 ```python
 class PriceList(Model):
-    @action("Build", available_when=(F("status") == "draft") & (F("requested") == False))
+    @action("Build", available_when=(F("docstate") == "draft") & (F("requested") == False))
     def build(self):
         self.requested = True
         return self.context.enqueue("build_price_list", {"price_list": str(self.id)})

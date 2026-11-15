@@ -12,9 +12,9 @@ from test_rules_types import ALL, add_user, start
 class Ticket(Model):
     permissions = {**ALL, 'editor': Rule(('read', 'create', 'update'), write_fields=('title', 'note'))}
     title = Text(default='')
-    reason = Text(applies_when=F('status') == 'closed', required_when=F('status') == 'closed', versioned=False)
-    note = Text(applies_when=F('status') == 'closed')
-    status = State(
+    reason = Text(applies_when=F('docstate') == 'closed', required_when=F('docstate') == 'closed', versioned=False)
+    note = Text(applies_when=F('docstate') == 'closed')
+    docstate = State(
         State.Step('open'),
         State.Step('closed', lock=True),
         rules=(
@@ -43,16 +43,16 @@ def test_a_move_asks_for_the_fields_its_target_state_needs(tickets):
     # The required value is checked with the move, and a failed move changes nothing.
     status, body, _ = move(c, url, 'closed', {})
     assert status == 422 and body['fields'] == {'reason': 'This field is required'}
-    assert c('GET', url)[1]['status'] == 'open'
+    assert c('GET', url)[1]['docstate'] == 'open'
     # Values the move does not ask for are refused.
     status, body, _ = move(c, url, 'closed', {'reason': 'Fixed', 'title': 'Renamed'})
     assert status == 422 and body['fields'] == {'title': 'This move does not take this value'}
     status, closed, _ = move(c, url, 'closed', {'reason': 'Fixed', 'note': 'New toner'})
-    assert status == 200 and (closed['status'], closed['reason'], closed['note'], closed['title']) == ('closed', 'Fixed', 'New toner', 'Printer')
+    assert status == 200 and (closed['docstate'], closed['reason'], closed['note'], closed['title']) == ('closed', 'Fixed', 'New toner', 'Printer')
     # Reopening asks for nothing, so a value is refused; the reason stops applying and is cleared.
     assert move(c, url, 'open', {'reason': 'x'})[1]['fields'] == {'reason': 'This move does not take this value'}
     reopened = move(c, url, 'open', {})[1]
-    assert (reopened['status'], reopened['reason'], reopened['_moves'][0]['asks']) == ('open', None, ['reason', 'note'])
+    assert (reopened['docstate'], reopened['reason'], reopened['_moves'][0]['asks']) == ('open', None, ['reason', 'note'])
 
 
 def test_a_move_asks_only_for_fields_the_role_may_write(tickets):
@@ -76,11 +76,11 @@ def test_context_move_takes_values(tickets):
 
 class Case(Model):
     permissions = {**ALL, 'viewer': Rule(('read', 'update'), read_fields=('title', 'note'), write_fields=('title', 'note')),
-                   'editor': Rule(('read', 'update'), read_fields=('title', 'status', 'note'), write_fields=('title', 'note'))}
+                   'editor': Rule(('read', 'update'), read_fields=('title', 'docstate', 'note'), write_fields=('title', 'note'))}
     title = Text(default='')
-    note = Text(applies_when=F('status') == 'closed')
-    secret = Text(applies_when=F('status') == 'closed')
-    status = State(
+    note = Text(applies_when=F('docstate') == 'closed')
+    secret = Text(applies_when=F('docstate') == 'closed')
+    docstate = State(
         State.Step('open'),
         State.Step('closed'),
         State.Step('gone'),
@@ -105,7 +105,7 @@ def test_move_checks_come_before_the_values_so_values_reveal_no_moves(tmp_path):
     assert editor('GET', url)[1]['_moves'][0]['asks'] == ['note']
     for key in ('secret', 'bogus'):
         assert move(editor, url, 'closed', {key: 'x'})[:2] == (422, {'error': 'Validation failed', 'fields': {'_form': 'This move does not take this value'}})
-    assert c('GET', url)[1]['status'] == 'open'
+    assert c('GET', url)[1]['docstate'] == 'open'
     status, body, _ = move(viewer, url, 'closed', {'note': 'Done'})
     assert status == 200 and body['note'] == 'Done'
 
@@ -113,8 +113,8 @@ def test_move_checks_come_before_the_values_so_values_reveal_no_moves(tmp_path):
 class Fee(Model):
     permissions = ALL
     amount = Decimal(default=1)
-    double = Decimal(applies_when=F('status') == 'done', locked_when=F('amount') == 1)
-    status = State(
+    double = Decimal(applies_when=F('docstate') == 'done', locked_when=F('amount') == 1)
+    docstate = State(
         State.Step('new'),
         State.Step('done'),
         rules=(

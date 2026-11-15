@@ -70,7 +70,7 @@ class Invoice(Model):
     skew = Currency(default=0)
     lines = Table(InvoiceLine)
     total = Currency(compute=lines.sum('amount'))
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True, release=True),
         State.Step('paid', lock=True, final=True),
@@ -134,7 +134,7 @@ def target(**fields):
 def source(effect, state=None, **methods):
     meta = type('Meta', (), {'effects': (effect,)})
     state = state or State(State.Step('draft'), State.Step('done', lock=True, release=True), State.Step('void', lock=True, final=True), rules=(State.Rule('draft', 'done', 'Done', key='done'), State.Rule('done', 'void', 'Void', key='void', remark='required')))
-    return type('Source', (Model,), {'Meta': meta, 'status': state, 'rows': lambda self: [], **methods})
+    return type('Source', (Model,), {'Meta': meta, 'docstate': state, 'rows': lambda self: [], **methods})
 
 
 @pytest.mark.parametrize('make, message', [
@@ -169,14 +169,14 @@ def test_effect_targets_are_checked():
     mixed = target(debit=Currency(), credit=Decimal())
     with pytest.raises(ValueError, match='same type'):
         Registry(source(Effect(mixed, rows='rows', on='done', reverse=Swap('debit', 'credit'))), mixed)
-    stateful = target(status=State(State.Step('a'), State.Step('b')))
+    stateful = target(docstate=State(State.Step('a'), State.Step('b')))
     with pytest.raises(ValueError, match='no State'):
         Registry(source(Effect(stateful, rows='rows', on='done', reverse=Negate('amount'))), stateful)
     same = target()
     with pytest.raises(ValueError, match='at most one effect per target'):
         meta = type('Meta', (), {'effects': (Effect(same, rows='rows', on='done', reverse=Negate('amount')),
                                              Effect(same, rows='rows', on='done', reverse=Negate('amount')))})
-        Registry(type('Twice', (Model,), {'Meta': meta, 'status': State(State.Step('draft'), State.Step('done', lock=True, release=True),
+        Registry(type('Twice', (Model,), {'Meta': meta, 'docstate': State(State.Step('draft'), State.Step('done', lock=True, release=True),
                                                                          rules=(State.Rule('draft', 'done'),)),
                                            'rows': lambda self: []}), same)
     with pytest.raises(ValueError):
@@ -215,12 +215,12 @@ def test_context_move_posts_and_failures_roll_back_the_transaction(books):
     good, bad = invoice(c, account), invoice(c, account, skew='0.05')
     admin = User(1, 'admin', 'admin')
     with app.business.context(admin) as context:
-        assert context.move(Invoice, RecordId(good.rsplit('/', 1)[1]), 'issued')['status'] == 'issued'
+        assert context.move(Invoice, RecordId(good.rsplit('/', 1)[1]), 'issued')['docstate'] == 'issued'
     assert len(entries(app)) == 3
     with pytest.raises(ValidationError, match='not balanced'):
         with app.business.context(admin) as context:
             context.move(Invoice, RecordId(bad.rsplit('/', 1)[1]), 'issued')
-    assert len(entries(app)) == 3 and c('GET', bad)[1]['status'] == 'draft'
+    assert len(entries(app)) == 3 and c('GET', bad)[1]['docstate'] == 'draft'
 
 
 def test_unbalanced_rows_roll_the_move_back(books):
@@ -229,7 +229,7 @@ def test_unbalanced_rows_roll_the_move_back(books):
     status, body, _ = move(c, url, 'issued')
     assert status == 422
     assert body['fields'] == {'_effects': 'LedgerEntry rows are not balanced: debit totals 0.30 and credit totals 0.29'}
-    assert c('GET', url)[1]['status'] == 'draft' and entries(app) == [] and entries(app, 'stockmove') == []
+    assert c('GET', url)[1]['docstate'] == 'draft' and entries(app) == [] and entries(app, 'stockmove') == []
 
 
 def test_an_invalid_row_rolls_the_move_back(books):
@@ -237,7 +237,7 @@ def test_an_invalid_row_rolls_the_move_back(books):
     url = invoice(c, account, lines=(('a', '1', '1'), ('forbidden', '1', '1')))
     status, body, _ = move(c, url, 'issued')
     assert status == 422 and body['fields'] == {'_effects': 'StockMove row 2 is not valid: item: This item cannot move'}
-    assert c('GET', url)[1]['status'] == 'draft' and entries(app) == [] and entries(app, 'stockmove') == []
+    assert c('GET', url)[1]['docstate'] == 'draft' and entries(app) == [] and entries(app, 'stockmove') == []
     # A required value left empty fails like a normal record, and so does a value the field rejects.
     url = invoice(c, account, lines=(('', '1', '1'),))
     assert move(c, url, 'issued')[1]['fields'] == {'_effects': 'StockMove row 1 is not valid: item: This field must not be blank'}
@@ -252,7 +252,7 @@ def test_rows_may_not_set_engine_or_unknown_fields(tmp_path):
         Meta = type('Meta', (FiniteMeta,), {'effects': (Effect(LedgerEntry, rows='rows', on='issued', reverse=Swap('debit', 'credit')),)})
         permissions = ALL
         account = Link(Account)
-        status = State(
+        docstate = State(
             State.Step('draft'),
             State.Step('issued', lock=True, release=True),
             State.Step('void', lock=True, final=True),
@@ -282,7 +282,7 @@ def test_rows_see_the_saved_document_read_only(tmp_path):
         title = Text(default='')
         lines = Table(InvoiceLine)
         total = Currency(compute=lines.sum('amount'))
-        status = State(
+        docstate = State(
             State.Step('draft'),
             State.Step('issued', lock=True, release=True),
             rules=(
@@ -290,7 +290,7 @@ def test_rows_see_the_saved_document_read_only(tmp_path):
             ))
 
         def rows(self):
-            seen.append((self.status, str(self.total), [line.item for line in self.lines]))
+            seen.append((self.docstate, str(self.total), [line.item for line in self.lines]))
             self.title = 'changed'
     app = start(Database(tmp_path / 'db.sqlite3', Registry(StockMove, Probe)))
     c = client(app)
@@ -298,7 +298,7 @@ def test_rows_see_the_saved_document_read_only(tmp_path):
     # Changing the record from its rows method fails the move; the exception is not shown.
     status, body, _ = move(c, url, 'issued')
     assert status == 422 and body['fields'] == {'_effects': 'Probe.rows could not produce the StockMove rows'}
-    assert seen == [('issued', '6.00', ['x'])] and c('GET', url)[1]['status'] == 'draft'
+    assert seen == [('issued', '6.00', ['x'])] and c('GET', url)[1]['docstate'] == 'draft'
 
 
 # Read only
@@ -352,7 +352,7 @@ def test_void_writes_mirror_rows_and_keeps_originals(books):
     move(c, url, 'issued')
     before = entries(app)
     status, voided, _ = c('POST', f'{url}/moves/void', {'remark': 'Wrong customer'}, headers=etag(c, url))
-    assert status == 200 and voided['status'] == 'void', voided
+    assert status == 200 and voided['docstate'] == 'void', voided
     ledger = entries(app)
     assert ledger[:3] == before
     # Swap exchanges debit and credit; the mirrors keep the source and are marked as reversals.
@@ -373,7 +373,7 @@ def test_a_void_that_cannot_reverse_rolls_back(books, monkeypatch):
                         if self.qty is not None and self.qty > 0 else None)
     status, body, _ = c('POST', f'{url}/moves/void', {'remark': 'x'}, headers=etag(c, url))
     assert status == 422 and body['fields'] == {'_effects': 'The reversal of StockMove row 1 is not valid: qty: No returns'}
-    assert c('GET', url)[1]['status'] == 'issued' and len(entries(app)) == 3 and len(entries(app, 'stockmove')) == 2
+    assert c('GET', url)[1]['docstate'] == 'issued' and len(entries(app)) == 3 and len(entries(app, 'stockmove')) == 2
 
 
 def test_reopen_reverses_and_the_next_issue_posts_again_on_the_same_record(books):
@@ -381,7 +381,7 @@ def test_reopen_reverses_and_the_next_issue_posts_again_on_the_same_record(books
     url = invoice(c, account)
     move(c, url, 'issued')
     status, reopened, _ = c('POST', f'{url}/moves/reopen', {'remark': 'New prices'}, headers=etag(c, url))
-    assert status == 200 and reopened['status'] == 'draft', reopened
+    assert status == 200 and reopened['docstate'] == 'draft', reopened
     assert reopened['_effects'][0] == {'target': 'ledgerentry', 'rows': 3, 'reversals': 3, 'balanced': True}
     assert move(c, url, 'issued')[0] == 200
     record_id = reopened['id']
@@ -428,7 +428,7 @@ def test_failures_are_generic_for_roles_that_cannot_read_the_target(tmp_path):
         Meta = type('Meta', (FiniteMeta,), {'effects': (Effect(Hidden, rows='rows', on='done'),)})
         permissions = ALL
         item = Text(default='')
-        status = State(
+        docstate = State(
             State.Step('open'),
             State.Step('done', lock=True, release=True),
             rules=(
@@ -443,7 +443,7 @@ def test_failures_are_generic_for_roles_that_cannot_read_the_target(tmp_path):
     assert move(editor, url, 'done')[1]['fields'] == {'_effects': 'The rows this record posts to other records are not valid'}
     url = f"/api/job/{editor('POST', '/api/job', {'item': 'x'})[1]['id']}"
     moved = move(editor, url, 'done')[1]
-    assert moved['status'] == 'done' and '_effects' not in moved
+    assert moved['docstate'] == 'done' and '_effects' not in moved
     assert len(entries(app, 'hidden')) == 1
 
 
@@ -548,7 +548,7 @@ class BranchOrder(Model):
     branch = Link(Branch)
     missing = Integer(default=0)
     plain_missing = Integer(default=0)
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('done', lock=True, release=True, final=True),
         rules=(
@@ -592,7 +592,7 @@ def test_links_to_missing_records_are_field_errors(branches):
     url = f"/api/branchorder/{editor('POST', '/api/branchorder', {'branch': branch, 'plain_missing': 999})[1]['id']}"
     status, body, _ = move(editor, url, 'done')
     assert status == 422 and body['fields'] == {'_effects': 'PlainEntry row 1 is not valid: branch: The linked record does not exist'}
-    assert entries(app, 'branchentry') == entries(app, 'plainentry') == [] and editor('GET', url)[1]['status'] == 'draft'
+    assert entries(app, 'branchentry') == entries(app, 'plainentry') == [] and editor('GET', url)[1]['docstate'] == 'draft'
 
 
 def test_a_reverse_must_keep_a_balanced_pair_balanced():
@@ -619,7 +619,7 @@ def test_void_checks_the_balance_of_the_mirror_rows(books, monkeypatch):
     monkeypatch.setattr(effects, 'mirror_values', skewed)
     status, body, _ = c('POST', f'{url}/moves/void', {'remark': 'x'}, headers=etag(c, url))
     assert status == 422 and body['fields']['_effects'].startswith('The reversal of the LedgerEntry rows are not balanced: debit totals')
-    assert c('GET', url)[1]['status'] == 'issued' and len(entries(app)) == 3
+    assert c('GET', url)[1]['docstate'] == 'issued' and len(entries(app)) == 3
 
 
 def test_a_failing_rows_method_is_a_field_error_and_an_invalid_check(books, monkeypatch, caplog):
@@ -634,7 +634,7 @@ def test_a_failing_rows_method_is_a_field_error_and_an_invalid_check(books, monk
     status, body, _ = move(c, other, 'issued')
     assert status == 422 and body['fields'] == {'_effects': 'Invoice.stock_rows could not produce the StockMove rows'}
     assert 'division' not in str(body) and 'ZeroDivisionError' in caplog.text
-    assert c('GET', other)[1]['status'] == 'draft' and len(entries(app)) == 3
+    assert c('GET', other)[1]['docstate'] == 'draft' and len(entries(app)) == 3
 
 
 def test_reading_a_virtual_result_is_an_error(tmp_path):
@@ -643,7 +643,7 @@ def test_reading_a_virtual_result_is_an_error(tmp_path):
         permissions = ALL
         n = Decimal(default=2)
         double = Decimal(stored=False, compute=F('n') * 2)
-        status = State(
+        docstate = State(
             State.Step('draft'),
             State.Step('done', lock=True, release=True),
             rules=(
@@ -742,7 +742,7 @@ def test_posting_many_rows_costs_one_statement_per_row(tmp_path):
                                                                balanced=('debit', 'credit')),)})
         permissions = ALL
         account = Link(Account)
-        status = State(
+        docstate = State(
             State.Step('open'),
             State.Step('done', lock=True, release=True),
             State.Step('void', lock=True, final=True),
@@ -818,7 +818,7 @@ class Bill(Model):
     amount = Currency(default=0)
     # Numbered by the same move that posts the effects; the rows can quote the number.
     number = Sequence('B-{n:03}', assign_on='issued')
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True, release=True),
         State.Step('void', lock=True, final=True),
@@ -863,7 +863,7 @@ def check_a_caught_move_failure_leaves_no_rows_or_number(books):
         assert context.move(Bill, after, 'issued')['number'] == 'B-002'
     assert [(row['memo'], row['source_id']) for row in entries(app, 'posting')] == [('B-001', RecordId(good)), ('B-002', RecordId(after))]
     assert [row['source_id'] for row in entries(app, 'audit')] == [RecordId(good), RecordId(after)]
-    assert c('GET', f'/api/bill/{bad}')[1]['status'] == 'draft' and effects.check(app) == []
+    assert c('GET', f'/api/bill/{bad}')[1]['docstate'] == 'draft' and effects.check(app) == []
 
 
 def check_numbers_and_rows_on_one_move_and_on_reopen(books):
@@ -986,7 +986,7 @@ def test_activity_effects_entries_hide_targets_the_reader_cannot_read(books, tmp
     class Job(Model):
         Meta = type('Meta', (FiniteMeta,), {'effects': (Effect(Hidden, rows='rows', on='done'),)})
         permissions = ALL
-        status = State(
+        docstate = State(
             State.Step('open'),
             State.Step('done', lock=True, release=True),
             rules=(
@@ -1038,7 +1038,7 @@ def test_models_with_effects_keep_activity_by_default(tmp_path):
     class Quiet(Model):
         Meta = type('Meta', (FiniteMeta,), {'activity': None, 'effects': (Effect(StockMove, rows='rows', on='done'),)})
         permissions = ALL
-        status = State(
+        docstate = State(
             State.Step('open'),
             State.Step('done', lock=True, release=True),
             rules=(
@@ -1088,9 +1088,9 @@ def posting_models(factor):
         fee = Currency(compute=F('customer.fee'))
         total = Currency(compute=lines.sum('amount') + F('fee'))
         memo = Text(default='', versioned=False, index=True)
-        charge = Currency(applies_when=F('status') == 'paid')
+        charge = Currency(applies_when=F('docstate') == 'paid')
         charged = Currency(compute=F('charge'))
-        status = State(
+        docstate = State(
             State.Step('draft'),
             State.Step('approved', lock=True),
             State.Step('issued', lock=True, release=True),
@@ -1159,7 +1159,7 @@ def test_posted_records_keep_their_calculated_values_on_moves_and_actions(tmp_pa
     status, body, _ = c('POST', url + '/actions/note', {'memo': 'later'}, headers=etag(c, url))
     assert status == 200 and body['total'] == '4.00', body
     status, body, _ = move(c, url, 'paid')
-    assert status == 200 and (body['status'], body['total'], body['children']['lines'][0]['amount']) == ('paid', '4.00', '3.00'), body
+    assert status == 200 and (body['docstate'], body['total'], body['children']['lines'][0]['amount']) == ('paid', '4.00', '3.00'), body
     assert effects.check(app) == []
 
 
@@ -1223,7 +1223,7 @@ def test_posted_records_refuse_changes_to_what_their_results_read(tmp_path):
     status, body, _ = c('POST', f'{url}/moves/paid', {'charge': '5'}, headers=etag(c, url))
     assert (status, body['error']) == (409, 'Charge feeds posted totals. To change it, move the record out of its posted state.'), body
     status, body, _ = move(c, url, 'paid')
-    assert status == 200 and (body['status'], body['total']) == ('paid', '20.00'), body
+    assert status == 200 and (body['docstate'], body['total']) == ('paid', '20.00'), body
     assert effects.check(app) == []
 
 

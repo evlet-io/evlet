@@ -232,9 +232,9 @@ def test_atomic_children_ownership_replacement_and_action_workflow(secured):
     tasks = project['children']['tasks']
     assert len(tasks) == 2 and not tasks[0]['done']
     assert c('GET', '/api/projecttask')[0] == 404
-    assert c('PATCH', path, {'status': 'done'})[0] == 422
+    assert c('PATCH', path, {'docstate': 'done'})[0] == 422
     assert c('POST', path + '/moves/complete', {})[0] == 409
-    assert c('POST', path + '/moves/start', {})[1]['status'] == 'active'
+    assert c('POST', path + '/moves/start', {})[1]['docstate'] == 'active'
     assert c('POST', path + '/moves/start', {})[0] == 409
     assert c('POST', path + '/moves/complete', {})[0] == 422
     before = c('GET', path)[1]
@@ -248,7 +248,7 @@ def test_atomic_children_ownership_replacement_and_action_workflow(secured):
     tasks = c('GET', path)[1]['children']['tasks']
     assert c('PATCH', path, {'children': {'tasks': [{**task, 'done': True} for task in tasks]}})[0] == 200
     result = c('POST', path + '/moves/complete', {})[1]
-    assert result['status'] == 'done' and result['progress'] == 100
+    assert result['docstate'] == 'done' and result['progress'] == 100
     # A done project is locked, so it stays, with its tasks.
     assert c('DELETE', path)[0] == 409 and secured.database.count(ProjectTask, filters={'project': pid}) == len(tasks)
 
@@ -304,7 +304,7 @@ def test_rule_configuration_and_layout_validation(secured):
 def test_concurrent_completion_commits_once(secured):
     from concurrent.futures import ThreadPoolExecutor
     with secured.database.transaction() as tx, tx.maintenance():
-        project = tx.create(Project, title='Concurrent', status='active')
+        project = tx.create(Project, title='Concurrent', docstate='active')
     secured.database.create(ProjectTask, project=project.id, title='Done', done=True)
     c = client(secured, 'editor')
     with ThreadPoolExecutor(max_workers=2) as executor:

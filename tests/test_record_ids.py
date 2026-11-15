@@ -27,7 +27,7 @@ class Venture(Model):
 
     permissions = FULL
     title = Text(required=True, max_length=40)
-    stage = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('active'),
         rules=(

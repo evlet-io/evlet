@@ -34,7 +34,10 @@ production ready, but the rules below hold from 0.3 on.
   `_locked`, the schema's `state` entry, the Activity's `rule` and `remark`, `versioned=False`,
   and `by=()` for rules only the application makes, with its 403 `<label> is made by the
   application only` ([states-actions.md](states-actions.md)). `State.Level` and `self_approve=`
-  are declared but not public until approval levels land (0.4.6, PR 2). 0.4.6 removed `Move`,
+  are declared but not public until approval levels land (0.4.6, PR 2). The State field is always
+  named `docstate` and shows as "Status" unless it declares a `label`; any other name, and a
+  `docstate` that is not a State, fails when the class is defined. The rename came without an
+  alias or a deprecation release, by owner decision. 0.4.6 removed `Move`,
   `confirmable`, `track_changes`, `Meta.revisable`, void, revise, unpost and repost,
   `before_close`, `changed`, `Model.validate()` and the lifecycle decorators without a
   deprecation release, by owner decision ([CHANGELOG.md](../CHANGELOG.md)).

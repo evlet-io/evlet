@@ -37,7 +37,7 @@ class Ticket(Model):
     """The State drives the tabs when Meta.list_tabs is not set; list_tab picks the one it opens on."""
     permissions = {'admin': ALL}
     title = Text(default='')
-    stage = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed', lock=True),
         State.Step('void', lock=True, final=True),
@@ -84,7 +84,7 @@ def model(meta, **fields):
 
 def test_meta_options_and_schema_entry():
     assert view_for(Note)['list_tabs'] == {'field': 'status', 'kind': 'select', 'default': 'active'}
-    assert view_for(Ticket)['list_tabs'] == {'field': 'stage', 'kind': 'state', 'default': 'open'}
+    assert view_for(Ticket)['list_tabs'] == {'field': 'docstate', 'kind': 'state', 'default': 'open'}
     assert view_for(Member)['list_tabs'] == {'field': 'team', 'kind': 'link', 'default': 'all'}
     # No State and no Meta.list_tabs: no tabs, and no key.
     assert 'list_tabs' not in view_for(Team)
@@ -120,7 +120,7 @@ def test_schema_follows_field_permissions(app):
         entry = next(item for item in client(app, role)('GET', '/api/schema')[1]['models'] if item['name'] == name)
         return entry.get('list_tabs')
     assert tabs('admin', 'member') == {'field': 'team', 'kind': 'link', 'default': 'all'}
-    assert tabs('admin', 'ticket') == {'field': 'stage', 'kind': 'state', 'default': 'open'}
+    assert tabs('admin', 'ticket') == {'field': 'docstate', 'kind': 'state', 'default': 'open'}
     assert tabs('viewer', 'member') == {'field': 'team', 'kind': 'link', 'default': 'all'}
     assert tabs('editor', 'note') == {'field': 'status', 'kind': 'select', 'default': 'active'}
     # Teams are row-scoped for the editor, so it gets no tabs by team; the viewer can't read Note.status.

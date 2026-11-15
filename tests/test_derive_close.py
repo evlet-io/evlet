@@ -64,7 +64,7 @@ class Trip(Model):
     shares = Table(Share)
     # A calculation over rows derive() built: it runs after derive().
     total_minutes = Decimal(scale=2, compute=places.sum('minutes'))
-    status = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed', lock=True),
         State.Step('cancelled', lock=True, final=True),
@@ -106,8 +106,8 @@ class Trip(Model):
 
     @state('cancelled', 'void')
     def check_dependents(self):
-        SEEN.append({'close': self.status})
-        legs = self.context.session.list(Leg, filters={'trip': self.id, 'status__in': ['open']}, order_by=('id',))
+        SEEN.append({'close': self.docstate})
+        legs = self.context.session.list(Leg, filters={'trip': self.id, 'docstate__in': ['open']}, order_by=('id',))
         if legs:
             raise ValidationError({'_form': 'Cancel the later documents first: ' + ', '.join(leg.label for leg in legs)})
 
@@ -117,7 +117,7 @@ class Leg(Model):
     permissions = FULL
     label = Text(max_length=40, required=True)
     trip = Link(Trip)
-    status = State(
+    docstate = State(
         State.Step('open'),
         State.Step('cancelled', final=True),
         rules=(
@@ -400,7 +400,7 @@ def test_a_move_into_a_final_state_is_refused_while_records_depend_on_it(app):
     entries = activity_count(app)
     status, body, _ = move(admin, 'trip', trip, 'cancelled')
     assert status == 422 and body['fields'] == {'_form': 'Cancel the later documents first: L-2'}
-    assert admin('GET', f'/api/trip/{trip}')[1]['status'] == 'open' and activity_count(app) == entries
+    assert admin('GET', f'/api/trip/{trip}')[1]['docstate'] == 'open' and activity_count(app) == entries
     assert SEEN[-1] == {'close': 'cancelled'}
     # A move into a state that is not final does not ask.
     calls = [item for item in SEEN if 'close' in item]
@@ -409,7 +409,7 @@ def test_a_move_into_a_final_state_is_refused_while_records_depend_on_it(app):
     # Once the dependent record is cancelled, the trip may close for good.
     assert move(admin, 'leg', first, 'cancelled')[0] == 200
     status, body, _ = move(admin, 'trip', trip, 'cancelled')
-    assert status == 200 and body['status'] == 'cancelled'
+    assert status == 200 and body['docstate'] == 'cancelled'
 
 
 def test_the_void_rule_asks_too(app):
@@ -420,7 +420,7 @@ def test_the_void_rule_asks_too(app):
     url = f'/api/trip/{trip}'
     status, body, _ = admin('POST', f'{url}/moves/void', {'remark': 'mistake'}, headers={b'if-match': admin('GET', url)[2][b'etag']})
     assert status == 422 and body['fields'] == {'_form': 'Cancel the later documents first: L-2'}
-    assert admin('GET', url)[1]['status'] == 'closed' and SEEN[-1]['close'] == 'void'
+    assert admin('GET', url)[1]['docstate'] == 'closed' and SEEN[-1]['close'] == 'void'
 
 
 def test_python_and_tool_callers_are_refused_the_same_way(app):
@@ -431,7 +431,7 @@ def test_python_and_tool_callers_are_refused_the_same_way(app):
         with pytest.raises(ValidationError, match='later documents first'):
             context.move(Trip, trip, 'cancelled')
         # The context carries on: nothing was written by the refused change.
-        assert context.get(Trip, trip).status == 'open'
+        assert context.get(Trip, trip).docstate == 'open'
     assert admin('POST', '/api/_controls/overrides', {'changes': [{'kind': 'setting', 'key': 'mcp.allow_writes', 'value': True}]})[0] == 200
     tools = app.business.tools
     mcp = User(1, 'admin', 'admin', access=KeyAccess(True, None, None, 7))
@@ -443,7 +443,7 @@ def test_python_and_tool_callers_are_refused_the_same_way(app):
             tools.execute(mcp, 'change_state', {'model': 'trip', 'id': trip, 'rule': 'cancelled'})
     assert caught.value.status == 422 and caught.value.fields == {'_form': 'Cancel the later documents first: L-2'}
     with app.database.transaction() as tx:
-        assert tx.get(Trip, trip).status == 'open'
+        assert tx.get(Trip, trip).docstate == 'open'
 
 
 # Derived fields on the rows of a Table callers edit ("table.field" in Meta.derives)

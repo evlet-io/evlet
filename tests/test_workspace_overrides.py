@@ -48,7 +48,7 @@ def test_reorder_hide_rename_and_add(app):
             {'key': 'model:deal:large_deals', 'label': 'Big deals'},
             {'key': 'model:client'},                                   # moved here from Clients
             {'key': 'slip:quick_deal', 'hidden': True},
-            {'shortcut': {'model': 'deal', 'filters': {'stage': 'won'}, 'label': 'Won deals'}},
+            {'shortcut': {'model': 'deal', 'filters': {'docstate': 'won'}, 'label': 'Won deals'}},
         ]},
         {'key': 'reports', 'hidden': True},
         {'key': 'later', 'label': 'Later', 'items': [{'shortcut': {'url': '/docs', 'label': 'Docs'}}]},

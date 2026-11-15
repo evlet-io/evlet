@@ -161,7 +161,7 @@ describe('board totals and counts from the server', () => {
     ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ];
   const grouped = { status: 200, etag: null, body: { group_by: ['status'], measures: ['n', 'outstanding'], items: [
-    { status: 'draft', n: 5, outstanding: '0.00' }, { status: 'issued', n: 2, outstanding: '5360.10' }, { status: 'void', n: 1, outstanding: '0.00' }] } };
+    { docstate: 'draft', n: 5, outstanding: '0.00' }, { docstate: 'issued', n: 2, outstanding: '5360.10' }, { docstate: 'void', n: 1, outstanding: '0.00' }] } };
 
   it('shows each column’s count and the declared measure from the aggregate route', async () => {
     const { host, sent } = start(routes(grouped), '/app/invoice?view=board');
@@ -173,7 +173,7 @@ describe('board totals and counts from the server', () => {
     expect(text(head('Draft').querySelector('.amt'))).toBe('AED 0.00');
     expect(text(head('Paid').querySelector('.ct'))).toBe('0');
     const call = query(requests(sent, 'GET', /aggregate/).pop()!);
-    expect(call).toMatchObject({ measures: 'n:count,outstanding', group_by: 'status' });
+    expect(call).toMatchObject({ measures: 'n:count,outstanding', group_by: 'docstate' });
   });
 
   it('counts the tabs with the list tabs route when the model declares no measures', async () => {

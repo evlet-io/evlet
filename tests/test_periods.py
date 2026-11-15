@@ -69,7 +69,7 @@ class Voucher(Model):
     permissions = CORRECTING
     dated = Date()
     amount = Currency(default=0)
-    status = status()
+    docstate = status()
 
     def rows(self):
         return [{'posted_on': self.dated, 'amount': self.amount}]
@@ -81,7 +81,7 @@ class Receipt(Model):
     permissions = CORRECTING
     dated = Date()
     amount = Currency(default=0)
-    status = status()
+    docstate = status()
 
     def rows(self):
         return [{'posted_on': self.dated, 'amount': self.amount}]
@@ -259,7 +259,7 @@ def test_effect_rows_into_a_closed_period_and_closed_documents_are_refused(books
     for operation in ('void', 'reopen'):
         status, payload, _ = c('POST', f'{open_receipt}/moves/{operation}', {'remark': 'Late fix'}, headers=etag(c, open_receipt))
         assert status == 422 and payload['fields'] == {'dated': CLOSED.format('31-03-2026')}, operation
-    assert c('GET', open_receipt)[1]['status'] == 'posted'
+    assert c('GET', open_receipt)[1]['docstate'] == 'posted'
     assert [row for row in postings(app) if row[2]] == []
 
 

@@ -15,8 +15,8 @@ from evlet import Activity, Model, State, Text
 
 class Invoice(Model):
     title = Text(default="")
-    status = State(State.Step("draft"), State.Step("issued", lock=True), State.Step("void", lock=True, final=True),
-                   rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")))
+    docstate = State(State.Step("draft"), State.Step("issued", lock=True), State.Step("void", lock=True, final=True),
+                     rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")))
 
     class Meta:
         activity = Activity(tamper_evident=True)

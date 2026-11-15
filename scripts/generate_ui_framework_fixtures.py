@@ -120,17 +120,17 @@ class InvoiceLine(Child):
 
 
 class InvoiceMeta(FiniteMeta):
-    board = 'status'
+    board = 'docstate'
     effects = (Effect(LedgerEntry, rows='ledger_rows', on='issued', reverse=Swap('debit', 'credit'), balanced=('debit', 'credit')),)
-    measures = {'outstanding': Sum('outstanding', where=F('status') == 'issued'), 'count': Count(),
+    measures = {'outstanding': Sum('outstanding', where=F('docstate') == 'issued'), 'count': Count(),
                 'payments': Count('payment', link='invoice'), 'paid': Sum('amount', model='payment', link='invoice')}
     key_fields = ('customer', 'total', 'due_on')
     relations = (Related('payment', 'invoice', label='Payments', limit=5, order=('-paid_on',)),)
     attachments = Attachments(max_files=5, max_size=262144)
     title_field = 'number'
-    list_fields = ('id', 'number', 'customer', 'posting_date', 'status', 'total', 'outstanding')
+    list_fields = ('id', 'number', 'customer', 'posting_date', 'docstate', 'total', 'outstanding')
     search_fields = ('number',)
-    layout = (('Invoice', ('number', 'customer', 'posting_date', 'due_on', 'status')), ('Amounts', ('total', 'outstanding', 'remarks')))
+    layout = (('Invoice', ('number', 'customer', 'posting_date', 'due_on', 'docstate')), ('Amounts', ('total', 'outstanding', 'remarks')))
 
 
 class Invoice(Model):
@@ -142,7 +142,7 @@ class Invoice(Model):
     customer = Link(Customer, required=True)
     posting_date = Date(required=True)
     due_on = Date()
-    status = State(
+    docstate = State(
         State.Step('draft', 'Draft'),
         State.Step('issued', 'Issued', color='green', lock=True, release=True),
         State.Step('paid', 'Paid', color='teal', lock=True, final=True),
@@ -159,7 +159,7 @@ class Invoice(Model):
     remarks = Text(default='', versioned=False)
 
     @action(label='Record payment', inputs={'amount': Currency(required=True), 'paid_on': Date(required=True)},
-            available_when=F('status') == 'issued')
+            available_when=F('docstate') == 'issued')
     def record_payment(self, amount, paid_on):
         self.remarks = f'Paid {amount} on {paid_on.isoformat()}'
 
@@ -317,8 +317,8 @@ def documents(out, folder):
     keep('invoice_draft', editor('GET', url))
     keep('invoices', editor('GET', '/api/invoice?limit=50&offset=0'))
     keep('invoice_measures', editor('GET', '/api/invoice/measures'))
-    keep('invoice_measures_issued', editor('GET', '/api/invoice/measures?filters=' + quote(json.dumps({'status': 'issued'}))))
-    keep('invoice_aggregate_by_status', editor('GET', '/api/invoice/aggregate?measures=n:count&group_by=status'))
+    keep('invoice_measures_issued', editor('GET', '/api/invoice/measures?filters=' + quote(json.dumps({'docstate': 'issued'}))))
+    keep('invoice_aggregate_by_status', editor('GET', '/api/invoice/aggregate?measures=n:count&group_by=docstate'))
     keep('invoice_list_tabs', editor('GET', '/api/invoice/list_tabs'))
     keep('invoice_attachment_upload', editor('POST', f'{url}/attachments', {'name': 'signed-copy.pdf', 'content': 'JVBERi0='}))
     keep('invoice_attachments', editor('GET', f'{url}/attachments'))

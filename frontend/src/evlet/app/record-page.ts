@@ -28,7 +28,7 @@ import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
 import type { ActivityEntry, ActivityPage, MeasureValues } from './client';
-import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, listFields, measureLabel, measureView, numberField, screenModel, sections, sequenceField, summaryFields, titleOf, LIST_KEYS, panelView, stateLook, stepLabel, stepOf, type ActionMeta, type DetailExtras, type DetailMove, type ScreenModel } from './meta';
+import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, listFields, measureLabel, measureView, numberField, screenModel, sections, sequenceField, summaryFields, titleOf, LIST_KEYS, lockedColor, panelView, stateLook, stepLabel, stepOf, type ActionMeta, type DetailExtras, type DetailMove, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { blockFilters, declaresRelated, HtmlContent, MeasureChart, RelatedRecords, type BlockRecord } from './record-blocks';
 import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowsText, valueText } from './record-compact';
@@ -998,7 +998,11 @@ function withSaveKeys(button: HTMLButtonElement): HTMLButtonElement {
 export function stateBadgeLook(model: ScreenModel) {
   const field = model.state ? fieldOf(model, model.state.field) ?? {} : {};
   return { label: (value: string) => stepLabel(model, value), tint: (value: string) => statusTint(field, value), name: 'Status',
-    look: (value: string): BadgeLook => { const kind = stateLook(model, value); return kind === null || kind === 'open' ? 'pill' : kind; } };
+    look: (value: string): BadgeLook => {
+      const kind = stateLook(model, value);
+      if (kind === 'locked' && lockedColor(model, value)) return 'locked-pill';
+      return kind === null || kind === 'open' ? 'pill' : kind;
+    } };
 }
 
 /** The stage bar for a State declared show="bar": every step in order, the current one marked, final steps green or rose. */

@@ -66,7 +66,7 @@ class Bill(Model):
     """A document named when it is confirmed, so drafts never take a number."""
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
     customer = Text(required=True)
-    status = State(State.Step('draft'), State.Step('confirmed', lock=True, release=True), State.Step('cancelled', lock=True),
+    docstate = State(State.Step('draft'), State.Step('confirmed', lock=True, release=True), State.Step('cancelled', lock=True),
                    rules=(State.Rule('draft', 'confirmed', 'Confirm', key='confirm'), State.Rule('confirmed', 'cancelled', 'Cancel', key='cancel'),
                           State.Rule('cancelled', 'draft', 'Reopen', key='reopen')))
 

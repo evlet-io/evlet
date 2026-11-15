@@ -43,7 +43,7 @@ def models(lead_meta=None):
     class Order(Model):
         reference = Text(unique=True)
         amount = Decimal(scale=2)
-        status = State(
+        docstate = State(
             State.Step('draft'),
             State.Step('done'),
             rules=(
@@ -755,7 +755,7 @@ def test_people_meet_required_overrides_and_app_code_does_not(tmp_path, hashed):
         title = Text(required=True)
         kind = Select(('bug', 'task', 'idea'), default='task')
         estimate = Integer()
-        status = State(
+        docstate = State(
             State.Step('open'),
             State.Step('done'),
             rules=(

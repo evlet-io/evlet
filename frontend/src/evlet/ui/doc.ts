@@ -166,10 +166,11 @@ export function StatusFlow(props: {
 
 export interface BadgeMove { to: string; label: string }
 
-/** How a status badge is drawn: the coloured pill; red text with a ban icon (cancelled); a lock and grey text
- * (locked or final); a dashed pill with a pencil (draft). */
-export type BadgeLook = 'pill' | 'cancelled' | 'locked' | 'draft';
-const LOOK_ICON: Record<Exclude<BadgeLook, 'pill'>, string> = { cancelled: 'ban', locked: 'lock', draft: 'pencil' };
+/** How a status badge is drawn: the coloured pill; the coloured pill with a small lock (a locked step that declares
+ * a colour); red text with a ban icon (cancelled); a lock and grey text (locked or final); a dashed pill with a
+ * pencil (draft). */
+export type BadgeLook = 'pill' | 'locked-pill' | 'cancelled' | 'locked' | 'draft';
+const LOOK_ICON: Record<Exclude<BadgeLook, 'pill'>, string> = { 'locked-pill': 'lock', cancelled: 'ban', locked: 'lock', draft: 'pencil' };
 
 /**
  * A record's status as a coloured badge, named "Status: Active" for screen readers. With moves this
@@ -197,7 +198,8 @@ export function StatusBadge(props: {
     const moves = props.onMove ? props.moves?.() ?? [] : [];
     const look = props.look?.(String(value)) ?? 'pill';
     const inner = look === 'pill' ? [html`<span class="d" aria-hidden="true"></span>`, text] : [Icon(LOOK_ICON[look], { size: 'xs', className: 'ev-status-ic' }), text];
-    const kind = look === 'pill' ? `pill ev-status b-${color}` : `ev-status ev-status-${look}${look === 'draft' ? ' pill' : ''}`;
+    const kind = look === 'pill' ? `pill ev-status b-${color}` : look === 'locked-pill' ? `pill ev-status ev-status-lockpill b-${color}`
+      : `ev-status ev-status-${look}${look === 'draft' ? ' pill' : ''}`;
     if (!moves.length) return html`<span class=${kind} role="img" aria-label=${`${name}: ${text}`}>${inner}</span>`;
     const button = html`<button type="button" class=${`${kind} ev-status-go`} aria-haspopup="menu" aria-expanded="false"
       aria-label=${`${name}: ${text}. Change ${name.toLowerCase()}`}>${inner}${Icon('chevron-down', { size: 'xs', className: 'chev' })}</button>` as HTMLButtonElement;

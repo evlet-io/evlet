@@ -30,7 +30,7 @@ import type { FieldSchema } from '../model/schema';
 import type { AppContext } from './context';
 import { compact, filterBuilder, FilterChips, FilterPanel, type SavedFilter } from './filters';
 import { REPORT_ICON, reportsFor } from './report-page';
-import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, trendValues, numberField, screenModel, stateLook, stepLabel, stepOf, titleOf, type ScreenModel } from './meta';
+import { displayOf, fieldOf, formatOf, identity, isStateField, keyFields, listFields, measureIcon, measureLabel, measureView, MEASURE_TONES, LIST_KEYS, lockedColor, trendValues, numberField, screenModel, stateLook, stepLabel, stepOf, titleOf, type ScreenModel } from './meta';
 import { RecordPage, type PanelHost } from './record-page';
 import { SCREEN_KEYS, useShortcuts } from './shortcuts';
 import { ariaKeys, withShortcut } from '../ui/shortcuts';
@@ -52,11 +52,21 @@ export function StateIcon(look: ReturnType<typeof stateLook>): HTMLElement {
     : html`<span class="ev-state-ic" aria-hidden="true"></span>`) as HTMLElement;
 }
 
+/** The mark before a board card's title: a locked step that declares a colour shows as its small coloured pill
+ * with a lock; every other step shows its StateIcon. */
+export function StateMark(model: ScreenModel, value: unknown): HTMLElement {
+  const color = lockedColor(model, value);
+  if (!color) return StateIcon(stateLook(model, value));
+  const label = stepLabel(model, String(value));
+  return html`<span class=${`pill ev-status ev-status-lockpill ev-state-mark b-${color}`} role="img" aria-label=${`Locked: ${label}`}>${Icon('lock', { size: 'xs', className: 'ev-status-ic' })}${label}</span>` as HTMLElement;
+}
+
 /** A list cell: status badge for the State and Meta.status, record title for links, formatted value. */
 export function cellView(ctx: AppContext, model: ScreenModel, meta: FieldSchema, row: () => RecordData): Child {
   if (isStateField(model, meta) || meta.name === model.status) return StatusBadge({
     value: () => { const value = row()[meta.name]; return value === null || value === undefined ? null : String(value); },
-    tint: value => statusTint(meta, value), name: meta.label, ...(isStateField(model, meta) ? { label: (value: string) => stepLabel(model, value) } : {}) });
+    tint: value => statusTint(meta, value), name: meta.label, ...(isStateField(model, meta) ? { label: (value: string) => stepLabel(model, value),
+      look: (value: string) => lockedColor(model, value) ? 'locked-pill' as const : 'pill' as const } : {}) });
   if (meta.type === 'link' || meta.type === 'tags' || meta.type === 'boolean' || meta.type === 'state') {
     const field = localField(meta as any, untrack(() => row()[meta.name]), {});
     effect(() => field.value.set(row()[meta.name]));
@@ -478,7 +488,7 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
     label: `${model.plural} by ${state.field}`, columns: stateKeys.filter(value => only === 'all' || value === only).map(value => ({ value, label: stepLabel(model, value), tint: stepOf(model, value)?.color ?? stateTint(value) }) as BoardColumn),
     cards: rows, key: row => row.id, group: row => String(row[state.field]),
     totals: () => boardTotals.get(), amounts: Boolean(valueField),
-    card: row => BoardCard({ title: () => titleOf(model, row()), tint, cancelled: () => isCancelled(row()), mark: state ? () => StateIcon(lookOf(row())) : undefined,
+    card: row => BoardCard({ title: () => titleOf(model, row()), tint, cancelled: () => isCancelled(row()), mark: state ? () => StateMark(model, row()[state.field]) : undefined,
       company: linkField ? () => { const id = row()[linkField.name]; return id ? ctx.links.title(linkField.target!, String(id)).get() ?? '' : ''; } : undefined,
       value: valueField ? () => { const value = (field: string) => row()[field];
         return displayOf(valueField, row()[valueField.name], currencyIn(valueField, value, ctx.links), placesIn(valueField, value, ctx.links)); } : undefined,

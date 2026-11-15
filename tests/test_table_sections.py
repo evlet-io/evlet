@@ -41,7 +41,7 @@ class Quote(Model):
         derives = ('line_count',)
 
     title_text = Text(max_length=40, default='quote')
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('sent', lock=True),
         rules=(
@@ -92,7 +92,7 @@ class Contract(Model):
     class Row(Child):
         item = Text(max_length=40)
 
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         State.Step('void', lock=True, final=True),

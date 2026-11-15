@@ -12,8 +12,8 @@ from test_business import client
 from test_rules_types import ALL, add_user, start
 
 HIDDEN = {**ALL, 'editor': Rule(('read', 'create', 'update'), read_fields=('customer', 'title', 'remarks', 'approved', 'total',
-                                                                           'reference', 'status')),
-          'viewer': Rule(('read',), read_fields=('title', 'status', 'total'))}
+                                                                           'reference', 'docstate')),
+          'viewer': Rule(('read',), read_fields=('title', 'docstate', 'total'))}
 
 
 class Customer(Model):
@@ -44,8 +44,8 @@ class Invoice(Model):
     secret = Currency(default=0)
     lines = Table(InvoiceLine)
     total = Currency(compute=lines.sum('amount'))
-    reference = Text(default='', locked_when=F('status') != 'draft')
-    status = State(
+    reference = Text(default='', locked_when=F('docstate') != 'draft')
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         State.Step('paid', lock=True, final=True),
@@ -71,7 +71,7 @@ class Invoice(Model):
             self.reference = 'CHANGED'
 
     @action('Record payment', inputs={'amount': Currency(required=True, minimum='0.01'), 'paid_on': Date(required=True), 'memo': Text()},
-            available_when=F('status') == 'issued')
+            available_when=F('docstate') == 'issued')
     def record_payment(self, amount, paid_on, memo=None):
         self.title = f'paid {amount} on {paid_on.isoformat()}' + (f' ({memo})' if memo else '')
         return {'amount': str(amount)}
@@ -147,9 +147,9 @@ def test_state_and_rule_declarations_are_checked():
     with pytest.raises(ValueError, match='more than one State'):
         type('Twice', (Model,), {'one': State(Step('a'), Step('b')), 'two': State(Step('a'), Step('b'))})
     with pytest.raises(ValueError, match='root document'):
-        Registry(type('Holder', (Model,), {'rows': Table(type('Stated', (Child,), {'status': State(Step('a'), Step('b'))}))}))
+        Registry(type('Holder', (Model,), {'rows': Table(type('Stated', (Child,), {'docstate': State(Step('a'), Step('b'))}))}))
     with pytest.raises(ValueError, match='not a field'):
-        type('Asks', (Model,), {'status': State(Step('a'), Step('b'), rules=(R('a', 'b', ask=('missing',)),))})
+        type('Asks', (Model,), {'docstate': State(Step('a'), Step('b'), rules=(R('a', 'b', ask=('missing',)),))})
     with pytest.raises(ValueError, match='versioned'):
         Text(versioned='yes')
     with pytest.raises(ValueError):
@@ -165,7 +165,7 @@ def test_state_and_rule_declarations_are_checked():
 def test_the_state_field_is_part_of_the_finite_plan_and_readable_in_rules():
     registry = Registry(*MODELS)
     fields = registry.plans[Invoice]['tables']['$root']['fields']
-    assert fields['status']['type'] == 'text' and fields['status']['default'] == {'value': 'draft'}
+    assert fields['docstate']['type'] == 'text' and fields['docstate']['default'] == {'value': 'draft'}
     assert any(entry['field'] == 'reference' and entry.get('kind') == 'locked_when' for entry in registry.plans[Invoice]['fields'])
 
 
@@ -174,17 +174,17 @@ def test_the_state_field_is_part_of_the_finite_plan_and_readable_in_rules():
 def check_ordinary_writes_cannot_set_the_state(invoices):
     app, c, customer = invoices
     record, url = new_invoice(c, customer)
-    assert record['status'] == 'draft'
-    assert new_invoice(c, customer, status='draft')[0]['status'] == 'draft'
-    status, body, _ = c('POST', '/api/invoice', {'status': 'issued'})
-    assert status == 422 and body['fields'] == {'status': 'A new record starts as draft; use its rules to change it'}
-    status, body, _ = c('PATCH', url, {'status': 'issued'}, headers=etag(c, url))
-    assert status == 422 and body['fields'] == {'status': 'This changes only through its rules'}
+    assert record['docstate'] == 'draft'
+    assert new_invoice(c, customer, docstate='draft')[0]['docstate'] == 'draft'
+    status, body, _ = c('POST', '/api/invoice', {'docstate': 'issued'})
+    assert status == 422 and body['fields'] == {'docstate': 'A new record starts as draft; use its rules to change it'}
+    status, body, _ = c('PATCH', url, {'docstate': 'issued'}, headers=etag(c, url))
+    assert status == 422 and body['fields'] == {'docstate': 'This changes only through its rules'}
     # Sending the saved value back is not a change.
-    assert c('PATCH', url, {'status': 'draft', 'title': 'Renamed'}, headers=etag(c, url))[1]['title'] == 'Renamed'
+    assert c('PATCH', url, {'docstate': 'draft', 'title': 'Renamed'}, headers=etag(c, url))[1]['title'] == 'Renamed'
     with app.business.context(User(1, 'admin', 'admin')) as context:
         with pytest.raises(ValidationError):
-            context.update(Invoice, record['id'], status='void')
+            context.update(Invoice, record['id'], docstate='void')
 
 
 def test_ordinary_writes_cannot_set_the_state(invoices):
@@ -200,7 +200,7 @@ def check_moves_check_state_role_guard_and_revision(invoices):
     assert c('POST', url + '/moves/issued', {}, headers={b'if-match': b'"stale"'})[0] == 409
     assert move(c, url, 'unknown')[0] == 404
     assert move(c, url, 'paid')[1] == {'error': 'This record cannot move from draft to paid'}
-    assert c('POST', url + '/moves/issued', {'status': 'issued'}, headers=etag(c, url))[0] == 422
+    assert c('POST', url + '/moves/issued', {'docstate': 'issued'}, headers=etag(c, url))[0] == 422
     # Guard pending (no customer), false (no total), then a role that the move does not list.
     pending, url_pending = new_invoice(c)
     status, body, _ = move(c, url_pending, 'issued')
@@ -214,7 +214,7 @@ def check_moves_check_state_role_guard_and_revision(invoices):
     before = etag(c, url)
     status, issued, headers = move(editor, url, 'issued')
     assert status == 200, issued
-    assert (issued['status'], issued['reference'], issued['remarks']) == ('issued', f"INV-{record['id']}", 'issued')
+    assert (issued['docstate'], issued['reference'], issued['remarks']) == ('issued', f"INV-{record['id']}", 'issued')
     assert headers[b'etag'] != before[b'if-match'] and headers[b'etag'] == editor('GET', url)[2][b'etag']
     assert issued['_moves'] == [{'key': 'paid', 'to': 'paid', 'label': 'Mark paid', 'allowed': False, 'reason': 'Your role cannot use this move'},
                                 {'key': 'void', 'to': 'void', 'label': 'Void', 'allowed': False, 'reason': 'Your role cannot use this move'}]
@@ -226,11 +226,11 @@ def check_moves_check_state_role_guard_and_revision(invoices):
         tx.update(Invoice, record['id'], approved=True)
     status, body, _ = move(c, url, 'paid')
     assert status == 422 and body['fields'] == {'reference': 'This field is locked and cannot be changed now'}
-    assert c('GET', url)[1]['status'] == 'issued'
+    assert c('GET', url)[1]['docstate'] == 'issued'
     with app.business.context(User(1, 'admin', 'admin')) as context:
         context.update(Invoice, record['id'], remarks='approved')
     paid = move(c, url, 'paid')[1]
-    assert (paid['status'], paid['title'], paid['reference']) == ('paid', 'Paid', f"INV-{record['id']}")
+    assert (paid['docstate'], paid['title'], paid['reference']) == ('paid', 'Paid', f"INV-{record['id']}")
     assert move(c, url, 'void')[1] == {'error': 'This record is paid, which is final; it has no moves'}
     assert c('GET', url)[1]['_moves'] == []
 
@@ -245,7 +245,7 @@ def check_a_failing_run_rolls_the_move_back(invoices):
     status, body, _ = move(c, url, 'issued')
     assert status == 422 and body['fields'] == {'title': 'Run failed'}
     after = c('GET', url)[1]
-    assert (after['status'], after['reference'], after['remarks']) == ('draft', '', '')
+    assert (after['docstate'], after['reference'], after['remarks']) == ('draft', '', '')
 
 
 def test_a_failing_run_rolls_the_move_back(invoices):
@@ -262,11 +262,11 @@ def test_moves_from_python_use_the_same_checks(invoices, tmp_path):
         with app.business.context(User(1, 'admin', 'admin')) as context:
             context.move(Invoice, record['id'], 'paid')
     with app.business.context(User(1, 'admin', 'admin')) as context:
-        assert context.move(Invoice, record['id'], 'issued')['status'] == 'issued'
-        assert context.get(Invoice, record['id']).status == 'issued'
+        assert context.move(Invoice, record['id'], 'issued')['docstate'] == 'issued'
+        assert context.get(Invoice, record['id']).docstate == 'issued'
 
     class Watched(Model):
-        status = State(
+        docstate = State(
             State.Step('open'),
             State.Step('done'),
             rules=(
@@ -276,7 +276,7 @@ def test_moves_from_python_use_the_same_checks(invoices, tmp_path):
 
         @validate
         def seen(self):
-            Watched.changes.append((self.is_new, self.before.status if self.before else None, self.status))
+            Watched.changes.append((self.is_new, self.before.docstate if self.before else None, self.docstate))
     app = start(Database(tmp_path / 'watched.sqlite3', Registry(Watched)))
     with app.business.context(User(1, 'admin', 'admin')) as context:
         created = context.create(Watched)
@@ -405,7 +405,7 @@ def test_schema_describes_states_and_actions_per_role(invoices):
         return next(model for model in user('GET', '/api/schema')[1]['models'] if model['name'] == 'invoice')
     admin = entry(c)
     state = admin['state']
-    assert (state['field'], state['default'], state['show']) == ('status', 'draft', 'badge')
+    assert (state['field'], state['default'], state['show']) == ('docstate', 'draft', 'badge')
     assert state['steps'] == [{'key': 'draft', 'label': 'Draft', 'color': None, 'lock': False, 'release': False, 'final': False},
                               {'key': 'issued', 'label': 'Issued', 'color': None, 'lock': True, 'release': False, 'final': False},
                               {'key': 'paid', 'label': 'Paid', 'color': None, 'lock': True, 'release': False, 'final': True},
@@ -414,7 +414,7 @@ def test_schema_describes_states_and_actions_per_role(invoices):
     assert (issue['key'], issue['from'], issue['to'], issue['label'], issue['by'], issue['guarded']) == (
         'issued', ['draft'], 'issued', 'Issue', ['admin', 'editor'], True)
     assert issue['when']['$expr'] == 'and' and state['rules'][2]['when'] is None and state['rules'][2]['guarded'] is False
-    status_field = next(field for field in admin['fields'] if field['name'] == 'status')
+    status_field = next(field for field in admin['fields'] if field['name'] == 'docstate')
     assert status_field['read_only'] and status_field['state'] and status_field['choices'] == ['draft', 'issued', 'paid', 'void']
     assert next(field for field in admin['fields'] if field['name'] == 'remarks')['versioned'] is False
     actions = {item['name']: item for item in admin['actions']}
@@ -423,7 +423,7 @@ def test_schema_describes_states_and_actions_per_role(invoices):
     assert payment['inputs'][0]['type'] == 'currency' and payment['inputs'][0]['required'] is True
     assert payment['arguments'] == [{'name': 'amount', 'type': 'str', 'required': True}, {'name': 'paid_on', 'type': 'str', 'required': True},
                                     {'name': 'memo', 'type': 'str', 'required': False}]
-    assert payment['available_when'] == {'$expr': 'eq', 'args': [{'$expr': 'ref', 'scope': 'self', 'field': 'status'},
+    assert payment['available_when'] == {'$expr': 'eq', 'args': [{'$expr': 'ref', 'scope': 'self', 'field': 'docstate'},
                                                                  {'$expr': 'literal', 'type': 'text', 'value': 'issued'}]}
     assert payment['roles'] == ['admin', 'editor'] and actions['hidden_check']['available_when'] is not None
     restricted = entry(editor)
@@ -437,7 +437,7 @@ def test_schema_describes_states_and_actions_per_role(invoices):
 
 class Ticket(Model):
     title = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed', lock=True),
         rules=(
@@ -463,13 +463,13 @@ def test_states_and_legacy_actions_work_on_roots_without_calculations(tmp_path):
     c = client(app)
     ticket = c('POST', '/api/ticket', {'title': ''})[1]
     url = f"/api/ticket/{ticket['id']}"
-    assert move(c, url, 'closed')[1]['status'] == 'closed'
+    assert move(c, url, 'closed')[1]['docstate'] == 'closed'
     assert c('PATCH', url, {'title': 'x'}, headers=etag(c, url))[0] == 422
     assert move(c, url, 'open')[0] == 409
     # A legacy Action is trusted code: it writes through the transaction, also on a locked record.
     status, forced, _ = c('POST', url + '/actions/force', {}, headers=etag(c, url))
     assert status == 200 and forced['title'] == ' (forced)'
-    assert move(c, url, 'open')[1]['status'] == 'open'
+    assert move(c, url, 'open')[1]['docstate'] == 'open'
     schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'ticket')
     assert schema['actions'] == [{'name': 'force', 'label': 'Force'}] and schema['state']['rules'][1]['guarded'] is True
 
@@ -494,7 +494,7 @@ class Priced(Model):
     price = Currency(compute=F('product.price'))
     remarks = Text(default='', versioned=False)
     lines = Table(PricedLine)
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         State.Step('paid', lock=True),
@@ -522,7 +522,7 @@ def test_locked_records_keep_saved_results_on_ordinary_writes(tmp_path):
     assert status == 409 and 'cannot be recalculated' in body['error']
     # A move settles normally, so it takes the current price.
     paid = move(c, url, 'paid')[1]
-    assert (paid['status'], paid['price'], paid['children']['lines'][0]['price']) == ('paid', '99.00', '99.00')
+    assert (paid['docstate'], paid['price'], paid['children']['lines'][0]['price']) == ('paid', '99.00', '99.00')
 
 
 def test_stored_results_cannot_read_fields_editable_while_locked():
@@ -533,11 +533,11 @@ def test_stored_results_cannot_read_fields_editable_while_locked():
     for fields in ({'remarks': Text(default='', versioned=False), 'shown': Text(compute=F('remarks'))},
                    {'lines': Table(Line)},
                    {'remarks': Text(default='', versioned=False), 'legacy': Text(compute='remarks')}):
-        model = type('Bad', (Model,), {'status': State(State.Step('a'), State.Step('b', lock=True)), **fields})
+        model = type('Bad', (Model,), {'docstate': State(State.Step('a'), State.Step('b', lock=True)), **fields})
         with pytest.raises(ValueError, match='versioned=False field'):
             Registry(model)
     # A virtual result may read it, and without a State the option changes nothing.
-    Registry(type('Fine', (Model,), {'status': State(State.Step('a'), State.Step('b', lock=True)), 'remarks': Text(default='', versioned=False),
+    Registry(type('Fine', (Model,), {'docstate': State(State.Step('a'), State.Step('b', lock=True)), 'remarks': Text(default='', versioned=False),
                                      'shown': Text(compute=F('remarks'), stored=False)}))
     Registry(type('Plain', (Model,), {'remarks': Text(default='', versioned=False), 'shown': Text(compute=F('remarks'))}))
 
@@ -548,7 +548,7 @@ class Plain(Model):
 
 class Folder(Model):
     title = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed', lock=True),
         rules=(
@@ -590,7 +590,7 @@ def test_attachments_on_document_models_and_locked_records(tmp_path):
 class Blind(Model):
     permissions = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'), read_fields=('title',), write_fields=('title',))}
     title = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('a'),
         State.Step('b', lock=True),
         State.Step('c', lock=True, final=True),
@@ -612,7 +612,7 @@ def test_messages_do_not_name_the_state_to_roles_that_cannot_read_it(tmp_path):
     assert move(editor, url, 'c')[1] == {'error': 'This record has no such move now'}
     assert move(c, url, 'c')[1] == {'error': 'This record cannot move from a to c'}
     view = editor('GET', url)[1]
-    assert 'status' not in view and '_moves' not in view and '_locked' not in view
+    assert 'docstate' not in view and '_moves' not in view and '_locked' not in view
     assert view['_actions'] == [{'name': 'touch', 'label': 'Touch', 'allowed': True}]
     assert move(editor, url, 'b')[0] == 200
     assert editor('PATCH', url, {'title': 'x'}, headers=etag(editor, url))[1]['fields'] == {'title': 'This record is locked'}
@@ -628,14 +628,14 @@ class Sheet(Model):
     title = Text(default='')
     qty = Integer(default=1)
     double = Integer(compute='qty * 2')
-    status = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed', lock=True),
         rules=(
             State.Rule('open', 'closed', 'Close', key='closed', when=F('double') > 2),
         ))
 
-    @action('Bump', available_when=F('status') == 'open')
+    @action('Bump', available_when=F('docstate') == 'open')
     def bump(self):
         self.qty = (self.qty or 0) + 1
 
@@ -649,7 +649,7 @@ def test_guards_work_on_roots_with_legacy_string_calculations(tmp_path):
     assert move(c, url, 'closed')[1]['error'] == 'Close is not available: the condition for this move is not met'
     assert c('POST', url + '/actions/bump', {}, headers=etag(c, url))[1]['double'] == 4
     closed = move(c, url, 'closed')[1]
-    assert closed['status'] == 'closed' and closed['_actions'][0]['allowed'] is False
+    assert closed['docstate'] == 'closed' and closed['_actions'][0]['allowed'] is False
     # The locked record keeps its stored legacy result too.
     assert c('PATCH', url, {'qty': 5}, headers=etag(c, url))[0] == 422
 
@@ -661,17 +661,17 @@ def test_sessions_change_a_state_only_inside_maintenance(tmp_path):
     db.initialize()
     with db.transaction() as tx:
         ticket = tx.create(Ticket, title='t')
-        assert tx.create(Ticket, title='u', status='open').status == 'open'
+        assert tx.create(Ticket, title='u', docstate='open').docstate == 'open'
         with pytest.raises(ValueError, match='changes only through its moves'):
-            tx.create(Ticket, status='closed')
+            tx.create(Ticket, docstate='closed')
         with pytest.raises(ValueError, match='changes only through its moves'):
-            tx.update(Ticket, ticket.id, status='closed')
-        assert tx.update(Ticket, ticket.id, title='v', status='open').title == 'v'
+            tx.update(Ticket, ticket.id, docstate='closed')
+        assert tx.update(Ticket, ticket.id, title='v', docstate='open').title == 'v'
         with tx.maintenance():
-            assert tx.update(Ticket, ticket.id, status='closed').status == 'closed'
+            assert tx.update(Ticket, ticket.id, docstate='closed').docstate == 'closed'
 
     def close(tx, user, record):
-        tx.update(Ticket, record.id, status='closed')
+        tx.update(Ticket, record.id, docstate='closed')
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
                       actions=(Action(Ticket, 'close', 'Close', close),))
     app.initialize()
@@ -680,7 +680,7 @@ def test_sessions_change_a_state_only_inside_maintenance(tmp_path):
     url = f"/api/ticket/{c('POST', '/api/ticket', {})[1]['id']}"
     status, body, _ = c('POST', url + '/actions/close', {}, headers=etag(c, url))
     assert status == 500 and body == {'error': 'Internal server error'}
-    assert c('GET', url)[1]['status'] == 'open'
+    assert c('GET', url)[1]['docstate'] == 'open'
 
 
 def test_action_inputs_are_copied_and_cannot_shadow_context_arguments():
@@ -696,7 +696,7 @@ def test_action_inputs_are_copied_and_cannot_shadow_context_arguments():
 
 class Crashing(Model):
     title = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('a'),
         State.Step('b'),
         rules=(
@@ -714,7 +714,7 @@ def test_a_run_that_crashes_rolls_back_without_leaking_its_message(tmp_path):
     c = client(app)
     url = f"/api/crashing/{c('POST', '/api/crashing', {})[1]['id']}"
     assert move(c, url, 'b')[:2] == (500, {'error': 'Internal server error'})
-    assert c('GET', url)[1]['status'] == 'a' and c('GET', url)[1]['title'] == ''
+    assert c('GET', url)[1]['docstate'] == 'a' and c('GET', url)[1]['title'] == ''
 
 
 class BigLine(Child):
@@ -737,7 +737,7 @@ class BigStated(Model):
     title = Text(default='')
     lines = Table(BigLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         rules=(
@@ -779,7 +779,7 @@ def test_stored_results_reading_editable_fields_through_legacy_formulas_and_fetc
         qty = Integer(default=0)
 
     def build(fields, meta=False):
-        namespace = {'status': State(State.Step('a'), State.Step('b', lock=True)), **fields}
+        namespace = {'docstate': State(State.Step('a'), State.Step('b', lock=True)), **fields}
         if meta:
             namespace['Meta'] = FiniteMeta
         return Registry(Owner, type('Bad', (Model,), namespace))
@@ -823,7 +823,7 @@ class Kept(Model):
     remarks = Text(default='', versioned=False, required_when=F('limit') > 50)
     memo = Text(default='', versioned=False, applies_when=F('limit') <= 50)
     lines = Table(KeptLine)
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         rules=(
@@ -837,7 +837,7 @@ class KeptLegacy(Model):
     account_name = Text(fetch='account.title', read_only=True)
     remarks = Text(default='', versioned=False, required_if='account_name == "Big"')
     note = Text(default='', versioned=False)
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         rules=(
@@ -869,7 +869,7 @@ class Versioned(Model):
     qty = Decimal(default=1)
     double = Decimal(compute=F('qty') * 2)
     remarks = Text(default='', versioned=False)
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         rules=(
@@ -892,7 +892,7 @@ def test_locked_records_saved_under_an_older_formula_stay_editable(tmp_path):
         qty = Decimal(default=1)
         double = Decimal(compute=F('qty') * 3)
         remarks = Text(default='', versioned=False)
-        status = State(
+        docstate = State(
             State.Step('draft'),
             State.Step('issued', lock=True),
             rules=(
@@ -917,13 +917,13 @@ def test_locked_records_saved_under_an_older_formula_stay_editable(tmp_path):
     plan = newer.business.registry.plan_for(Newer)
     status, body, _ = c('POST', url + '/moves/draft', {'_calculation': {'model_schema_hash': plan['model_schema_hash'], 'recalculate': True}},
                         headers=etag(c, url))
-    assert status == 200 and (body['status'], body['double']) == ('draft', '6.0000'), body
+    assert status == 200 and (body['docstate'], body['double']) == ('draft', '6.0000'), body
 
 
 class Veiled(Model):
     permissions = {**ALL, 'editor': Rule(('read', 'create', 'update', 'delete'), read_fields=('title',), write_fields=('title',))}
     title = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('a'),
         State.Step('b', lock=True),
         State.Step('c', lock=True, final=True),
@@ -959,7 +959,7 @@ class BigRowGuard(Model):
     lines = Table(BigLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
     shown = Currency(compute=lines.sum('amount'), stored=False)
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         rules=(

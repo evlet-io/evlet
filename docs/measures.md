@@ -147,7 +147,7 @@ Supported:
 ```python
 from evlet.calc import F, days, month_start, today
 
-Sum("total", where=(F("stage") == "won") & (F("won_on") >= month_start()))
+Sum("total", where=(F("docstate") == "won") & (F("won_on") >= month_start()))
 Count(where=F("due_on") < today())
 Count(where=F("posting_date") >= today() - days(30))
 ```

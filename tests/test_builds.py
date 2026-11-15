@@ -128,7 +128,7 @@ def test_reference_app_full_public_flow(project):
     edit = lambda body: c('PATCH', url, body, headers={b'if-match': c('GET', url)[2][b'etag']})
     assert saved['payment_days'] == 45 and edit({'payment_days': 10})[1]['valid_until'] == '2026-11-11'
     # The stage is a State: ordinary writes cannot set it, and the lost reason does not apply to a draft.
-    assert edit({'stage': 'sent'})[1]['fields'] == {'stage': 'This changes only through its rules'}
+    assert edit({'docstate': 'sent'})[1]['fields'] == {'docstate': 'This changes only through its rules'}
     assert edit({'lost_reason': 'Ignored', 'labels': ['gold']})[1]['lost_reason'] is None
     # Row changes: add one line at the top without resending the others.
     kept = [row['id'] for row in c('GET', url)[1]['children']['lines']]
@@ -141,7 +141,7 @@ def test_reference_app_full_public_flow(project):
     # The quote number is null until the quote is sent, and only the engine writes it.
     assert saved['number'] is None and edit({'number': 'Q-1'})[1]['fields'] == {'number': 'This number is assigned by the system'}
     sent = move(url, 'sent')[1]
-    assert sent['stage'] == 'sent' and [item['to'] for item in sent['_moves']] == ['won', 'lost', 'draft', 'void']
+    assert sent['docstate'] == 'sent' and [item['to'] for item in sent['_moves']] == ['won', 'lost', 'draft', 'void']
     assert re.fullmatch(r'Q-[0-9]{4}-0001', sent['number'])
     # The quote's activity: the move and its number, then a note added on the locked quote.
     number_entry, moved = c('GET', url + '/activity')[1]['items'][:2]
@@ -155,7 +155,7 @@ def test_reference_app_full_public_flow(project):
     extended = act({'extra_days': 5})[1]
     assert (extended['payment_days'], extended['valid_until']) == (15, '2026-11-16')
     won = move(url, 'won')[1]
-    assert won['stage'] == 'won' and move(url, 'draft')[0] == 409
+    assert won['docstate'] == 'won' and move(url, 'draft')[0] == 409
     # Winning posted one read-only ledger row through the Quote's effect.
     assert won['_effects'] == [{'target': 'salesledger', 'rows': 1, 'reversals': 0}]
     ledger = c('GET', '/api/salesledger')[1]['items']
@@ -167,7 +167,7 @@ def test_reference_app_full_public_flow(project):
     # A lost quote takes a reason while locked; reopening it clears the reason.
     lost = c('POST', '/api/quote', {'title': 'Q-3', 'children': {'lines': [{'qty': '1', 'rate': '10'}]}})[1]
     lost_url = f"/api/quote/{lost['id']}"
-    assert move(lost_url, 'sent')[0] == 200 and move(lost_url, 'lost')[1]['stage'] == 'lost'
+    assert move(lost_url, 'sent')[0] == 200 and move(lost_url, 'lost')[1]['docstate'] == 'lost'
     assert c('GET', lost_url)[1]['number'] == sent['number'][:-1] + '2'
     reason = c('PATCH', lost_url, {'lost_reason': 'Price'}, headers={b'if-match': c('GET', lost_url)[2][b'etag']})[1]
     assert reason['lost_reason'] == 'Price'
@@ -186,8 +186,8 @@ def test_reference_app_full_public_flow(project):
     void = lambda body: c('POST', sent_url + '/moves/void', body, headers={b'if-match': c('GET', sent_url)[2][b'etag']})
     assert void({})[1]['fields'] == {'remark': 'Void needs a remark'}
     voided = void({'remark': 'Customer cancelled'})[1]
-    assert (voided['stage'], voided['number']) == ('void', sent_number)
-    assert quote_schema['key_fields'] == ['company', 'stage', 'payable', 'valid_until'] and 'relations' not in quote_schema
+    assert (voided['docstate'], voided['number']) == ('void', sent_number)
+    assert quote_schema['key_fields'] == ['company', 'docstate', 'payable', 'valid_until'] and 'relations' not in quote_schema
     number = next(field for field in quote_schema['fields'] if field['name'] == 'number')
     assert (number['type'], number['read_only'], number['sequence']) == (
         'sequence', True, {'format': 'Q-{year}-{n:04}', 'scope': [], 'assign_on': 'sent', 'date': None})
@@ -195,8 +195,8 @@ def test_reference_app_full_public_flow(project):
     # Count() declares no condition, so the void quote is counted.
     assert [item['name'] for item in quote_schema['measures']] == ['open_total', 'won_total', 'quotes']
     assert c('GET', '/api/quote/measures')[1] == {'measures': {'open_total': '10.50', 'won_total': '135.00', 'quotes': 4}}
-    by_stage = c('GET', '/api/quote/aggregate?measures=quotes,total:sum:grand_total&group_by=stage')[1]
-    assert sorted((item['stage'], item['quotes'], item['total']) for item in by_stage['items']) == [
+    by_stage = c('GET', '/api/quote/aggregate?measures=quotes,total:sum:grand_total&group_by=docstate')[1]
+    assert sorted((item['docstate'], item['quotes'], item['total']) for item in by_stage['items']) == [
         ('draft', 1, '0.00'), ('sent', 1, '10.50'), ('void', 1, '25.20'), ('won', 1, '135.00')]
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']

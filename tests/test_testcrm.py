@@ -78,7 +78,7 @@ def test_sign_in_and_navigation_schema(crm):
     deal = models['deal']
     # Sales people never see the internal notes; State, moves, key fields and relations drive the screens.
     assert 'internal_notes' not in {field['name'] for field in deal['fields']}
-    assert deal['state']['field'] == 'stage' and [rule['to'] for rule in deal['state']['rules']][:3] == ['qualified', 'proposal', 'negotiation']
+    assert deal['state']['field'] == 'docstate' and [rule['to'] for rule in deal['state']['rules']][:3] == ['qualified', 'proposal', 'negotiation']
     assert deal['key_fields'] == ['organization', 'contact', 'total', 'expected_close', 'owner']
     assert [relation['name'] for relation in deal['relations']][0] == 'task.deal'
     assert deal['children'][0]['max_rows'] == 1000
@@ -94,29 +94,29 @@ def test_list_sort_search_filter_and_paging(crm):
     totals = [Decimal(item['total']) for item in by_total]
     assert totals == sorted(totals, reverse=True) and by_total[0]['title'] == 'Group rollout, 150 sites'
     assert [item['title'] for item in admin('GET', '/api/deal?limit=50&offset=0&q=rollout')[1]['items']] == ['Group rollout, 150 sites', 'ERP rollout, 3 entities']
-    proposals = admin('GET', '/api/deal?limit=50&offset=0&filters=' + quote(json.dumps({'stage': 'proposal'})))[1]
-    assert proposals['total'] == 3 and {item['stage'] for item in proposals['items']} == {'proposal'}
+    proposals = admin('GET', '/api/deal?limit=50&offset=0&filters=' + quote(json.dumps({'docstate': 'proposal'})))[1]
+    assert proposals['total'] == 3 and {item['docstate'] for item in proposals['items']} == {'proposal'}
     first, second = (admin('GET', f'/api/deal?limit=10&offset={offset}&order_by=number')[1] for offset in (0, 10))
     assert len(first['items']) == 10 and len(second['items']) == 7
     assert not {item['id'] for item in first['items']} & {item['id'] for item in second['items']}
     # The pipeline by stage and the declared measures behind the list strip and board totals.
     measures = admin('GET', '/api/deal/measures')[1]['measures']
     assert measures['deals'] == 17 and Decimal(measures['won']) > 0
-    by_stage = admin('GET', '/api/deal/aggregate?measures=value:sum:total,deals:count&group_by=stage')[1]['items']
-    assert {row['stage'] for row in by_stage} >= {'lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'}
-    assert sum(Decimal(row['value']) for row in by_stage if row['stage'] not in ('won', 'lost', 'void')) == Decimal(measures['pipeline'])
+    by_stage = admin('GET', '/api/deal/aggregate?measures=value:sum:total,deals:count&group_by=docstate')[1]['items']
+    assert {row['docstate'] for row in by_stage} >= {'lead', 'qualified', 'proposal', 'negotiation', 'won', 'lost'}
+    assert sum(Decimal(row['value']) for row in by_stage if row['docstate'] not in ('won', 'lost', 'void')) == Decimal(measures['pipeline'])
     # The measures and the aggregate follow the list's search box, with the list's readable search fields.
     rollout = admin('GET', '/api/deal?limit=50&offset=0&q=rollout')[1]
     searched = admin('GET', '/api/deal/measures?q=rollout')[1]['measures']
     assert searched['deals'] == rollout['total'] == 2
     assert Decimal(searched['pipeline']) + Decimal(searched['won']) == sum(Decimal(item['total']) for item in rollout['items']
-                                                                          if item['stage'] not in ('lost', 'void'))
-    stages = admin('GET', '/api/deal/aggregate?measures=n:count&group_by=stage&q=rollout')[1]['items']
+                                                                          if item['docstate'] not in ('lost', 'void'))
+    stages = admin('GET', '/api/deal/aggregate?measures=n:count&group_by=docstate&q=rollout')[1]['items']
     assert sum(row['n'] for row in stages) == 2
     assert login(crm, 'vera')('GET', '/api/deal/measures?q=' + 'x' * 201)[0] == 422
     # Won this month is a declared measure: won_on from the first of this month in Dubai, decided at query time.
     month = dubai_today().strftime('%Y-%m')
-    won = admin('GET', '/api/deal/aggregate?measures=won:sum:total&group_by=won_on:month&filters=' + quote(json.dumps({'stage': 'won'})))[1]['items']
+    won = admin('GET', '/api/deal/aggregate?measures=won:sum:total&group_by=won_on:month&filters=' + quote(json.dumps({'docstate': 'won'})))[1]['items']
     assert sum(Decimal(row['won']) for row in won) == Decimal(measures['won'])
     assert Decimal(measures['won_this_month']) == sum(Decimal(row['won']) for row in won if row['won_on__month'] == month) > 0
 
@@ -125,13 +125,13 @@ def test_open_a_deal_and_edit_fields(crm):
     sara = login(crm, 'sara')
     url = deal_url(sara, 'HR and WPS payroll')
     deal = sara('GET', url)[1]
-    assert deal['number'].startswith('DL-') and deal['stage'] == 'qualified' and deal['probability'] == '25.00'
+    assert deal['number'].startswith('DL-') and deal['docstate'] == 'qualified' and deal['probability'] == '25.00'
     # The organization's payment terms were suggested on create; the user may change them.
     assert deal['payment_days'] == 45
     edited = sara.write('PATCH', url, {'title': 'HR, WPS payroll and leave', 'payment_days': 60, 'tags': ['Payroll']})
     assert edited[0] == 200, edited
     assert (edited[1]['title'], edited[1]['payment_days'], edited[1]['tags']) == ('HR, WPS payroll and leave', 60, ['Payroll'])
-    assert sara.write('PATCH', url, {'stage': 'won'})[1]['fields'] == {'stage': 'This changes only through its rules'}
+    assert sara.write('PATCH', url, {'docstate': 'won'})[1]['fields'] == {'docstate': 'This changes only through its rules'}
     assert sara.write('PATCH', url, {'number': 'X'})[1]['fields'] == {'number': 'This number is assigned by the system'}
 
 
@@ -186,7 +186,7 @@ def test_rules_lost_reason(crm):
     assert {move['to']: move.get('asks') for move in sara('GET', url)[1]['_moves']}['lost'] == ['lost_reason']
     assert sara.write('POST', url + '/moves/lost', {})[1]['fields'] == {'lost_reason': 'This field is required'}
     lost = sara.write('POST', url + '/moves/lost', {'lost_reason': 'Budget moved to next year'})
-    assert lost[0] == 200 and lost[1]['stage'] == 'lost' and lost[1]['_locked'] is True
+    assert lost[0] == 200 and lost[1]['docstate'] == 'lost' and lost[1]['_locked'] is True
     assert lost[1]['lost_reason'] == 'Budget moved to next year'
     # Locked, but the reason stays editable.
     assert sara.write('PATCH', url, {'title': 'x'})[1]['fields'] == {'title': 'This record is lost, so it is locked'}
@@ -194,7 +194,7 @@ def test_rules_lost_reason(crm):
     # Only an administrator may reopen it.
     assert [(move['to'], move['allowed'], move['reason']) for move in sara('GET', url)[1]['_moves']] == [('lead', False, 'Your role cannot use this move')]
     reopened = login(crm, 'admin').write('POST', url + '/moves/lead', {})[1]
-    assert reopened['stage'] == 'lead' and reopened['lost_reason'] is None
+    assert reopened['docstate'] == 'lead' and reopened['lost_reason'] is None
 
 
 def test_lead_mark_lost_carries_the_reason(crm):
@@ -203,9 +203,9 @@ def test_lead_mark_lost_carries_the_reason(crm):
     url = '/api/lead/' + str(find(sara, 'lead', full_name='Majid Obaid')['id'])
     refused = sara.write('POST', url + '/moves/lost', {})
     assert refused[0] == 422 and refused[1]['fields'] == {'lost_reason': 'This field is required'}
-    assert sara('GET', url)[1]['status'] == 'new'
+    assert sara('GET', url)[1]['docstate'] == 'new'
     lost = sara.write('POST', url + '/moves/lost', {'lost_reason': 'No budget this year'})
-    assert lost[0] == 200 and (lost[1]['status'], lost[1]['lost_reason']) == ('lost', 'No budget this year')
+    assert lost[0] == 200 and (lost[1]['docstate'], lost[1]['lost_reason']) == ('lost', 'No budget this year')
 
 
 def test_moves_guards_and_blocked_reasons(crm):
@@ -232,7 +232,7 @@ def test_winning_a_deal_creates_a_task_books_it_and_makes_a_customer(crm):
     won = rahul.write('POST', url + '/moves/won', {})
     assert won[0] == 200, won
     won = won[1]
-    assert won['stage'] == 'won' and won['probability'] == '100.00' and won['won_on'] is not None
+    assert won['docstate'] == 'won' and won['probability'] == '100.00' and won['won_on'] is not None
     assert won['payment_expected'] == (date.fromisoformat(won['won_on']) + timedelta(days=won['payment_days'])).isoformat()
     assert won['weighted'] == str(Decimal(won['total']).quantize(Decimal('1'))) + '.00'
     tasks = rahul('GET', url + '/related/task.deal?limit=10&offset=0')[1]
@@ -249,25 +249,25 @@ def test_winning_a_deal_creates_a_task_books_it_and_makes_a_customer(crm):
     assert admin.write('POST', url + '/moves/void', {'remark': 'Customer added a second warehouse'})[0] == 200
     bookings = admin('GET', '/api/booking?limit=100&offset=0&filters=' + quote(json.dumps({'organization': deal['organization']})))[1]['items']
     assert sorted(row['amount'] for row in bookings) == sorted([won['total'], '-' + won['total']])
-    assert admin('GET', url)[1]['stage'] == 'void'
+    assert admin('GET', url)[1]['docstate'] == 'void'
 
 
 def test_admin_reopens_a_won_deal_and_wins_it_again(crm):
     admin, rahul = login(crm, 'admin'), login(crm, 'rahul')
-    deals = admin('GET', '/api/deal?limit=100&offset=0&filters=' + quote(json.dumps({'stage': 'negotiation'})))[1]['items']
+    deals = admin('GET', '/api/deal?limit=100&offset=0&filters=' + quote(json.dumps({'docstate': 'negotiation'})))[1]['items']
     deal = next(item for item in deals if item['contact'] and Decimal(item['total']) > 0)
     url = f"/api/deal/{deal['id']}"
     won = admin.write('POST', url + '/moves/won', {})[1]
-    assert won['stage'] == 'won' and [move['key'] for move in won['_moves']] == ['reopen', 'void']
+    assert won['docstate'] == 'won' and [move['key'] for move in won['_moves']] == ['reopen', 'void']
     # Sales people cannot reopen; the admin writes a remark and the deal goes back to negotiation with its number.
     assert rahul('POST', url + '/moves/reopen', {'remark': 'x'})[0] in (403, 404, 409, 428)
     assert admin.write('POST', url + '/moves/reopen', {})[1]['fields'] == {'remark': 'Reopen needs a remark'}
     status, body, _ = admin.write('POST', url + '/moves/reopen', {'remark': 'Signed with the wrong entity'})
-    assert status == 200 and (body['stage'], body['number']) == ('negotiation', won['number']), body
+    assert status == 200 and (body['docstate'], body['number']) == ('negotiation', won['number']), body
     entry = next(item for item in admin('GET', url + '/activity?limit=5')[1]['items'] if item['kind'] == 'moved')
     assert (entry['rule'], entry['remark'], entry['data']['to']) == ('reopen', 'Signed with the wrong entity', 'negotiation')
     status, body, _ = admin.write('POST', url + '/moves/won', {})
-    assert status == 200 and (body['stage'], body['number']) == ('won', won['number']), body
+    assert status == 200 and (body['docstate'], body['number']) == ('won', won['number']), body
     filters = quote(json.dumps({'memo': f"{won['number']} {won['title']}"}))
     bookings = admin('GET', f'/api/booking?limit=100&offset=0&filters={filters}')[1]['items']
     assert [(row['amount'], row['reversal']) for row in bookings] == [(won['total'], False), ('-' + won['total'], True), (body['total'], False)]
@@ -291,7 +291,7 @@ def test_actions_schedule_follow_up_and_convert_a_lead(crm):
     converted = sara.write('POST', url + '/actions/convert', {'title': 'Pharmacy chain ERP', 'expected_close': '2026-12-15'})
     assert converted[0] == 200, converted
     deal = sara('GET', f"/api/deal/{converted[1]['deal']}")[1]
-    assert (deal['title'], deal['stage'], deal['owner'], deal['lead_source'], deal['expected_close']) == ('Pharmacy chain ERP', 'qualified', 'sara', 'LinkedIn', '2026-12-15')
+    assert (deal['title'], deal['docstate'], deal['owner'], deal['lead_source'], deal['expected_close']) == ('Pharmacy chain ERP', 'qualified', 'sara', 'LinkedIn', '2026-12-15')
     organization = sara('GET', f"/api/organization/{deal['organization']}")[1]
     contact = sara('GET', f"/api/contact/{deal['contact']}")[1]
     assert (organization['title'], organization['tags'], contact['full_name'], contact['emirate']) == ('Bluewave Pharmacy Group', ['From lead'], 'Anjali Varma', 'Dubai')
@@ -356,7 +356,7 @@ def test_activity_records_moves_the_win_and_what_people_add(crm):
     # on_won dated the deal and set the kick-off as the next step; the kick-off task itself is a Task (no activity).
     assert won['data']['fields']['next_step']['new'] == 'Kick-off meeting'
     assert won['data']['fields']['won_on']['old'] is None and won['data']['fields']['won_on']['new'] == sara('GET', url)[1]['won_on']
-    assert 'stage' not in won['data']['fields'] and {entry['actor'] for entry in entries[:3]} == {sara_id}
+    assert 'docstate' not in won['data']['fields'] and {entry['actor'] for entry in entries[:3]} == {sara_id}
     assert f'Kick-off: {title}' in [task['title'] for task in sara('GET', url + '/related/task.deal?limit=10&offset=0')[1]['items']]
     # The earlier edits, the moves made when seeding, the number and the create, oldest last.
     kinds = [entry['kind'] for entry in entries]

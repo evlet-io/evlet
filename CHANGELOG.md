@@ -4,6 +4,63 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Upgrading
+
+- **Name every State field `docstate`.** A State under any other name now fails when the class is
+  defined, for example `Invoice.status is a State: name the State field docstate (rename it with a
+  migration; docs/states-actions.md)`. Rename the field in the model (`docstate = State(...)`) and add
+  an app migration that moves its column and values:
+  `Migration("0007_docstate", RenameField("invoice", "status", "docstate"))`. Then update everything
+  that read the old name: `Meta.board`, `Meta.status` (when it named the State), `Meta.list_tabs`,
+  `Meta.list_fields`, `Meta.layout` and `key_fields`, every `F("status")` in rules, guards,
+  `available_when` and measures, `self.status` in hooks and actions, filters such as
+  `{"status": "issued"}`, `read_fields`/`write_fields`, and HTTP clients that read or filter
+  `status` on these models. There is no alias and no deprecation release, by owner decision. Activity
+  entries written before the rename keep the old name, as they were hashed.
+- **Stored settings.** The migration's `RenameField` also renames the field in the Controls settings
+  stored for that model: its field override (label, help text, hidden), list views (columns, sort
+  and tabs), layouts and side panels, roles' readable and writable fields, and the filters of
+  workspace shortcuts to the model. Redo by hand, in Controls, the settings that name it inside text:
+  naming series formats and conditions, Approval Rules overrides, custom field rules and print
+  designs (`doc.status`). Controls lists any that no longer check under Needs attention. Column
+  choices a browser kept for a list may reset once.
+
+- **Frozen migration classes.** A migration file that freezes a model class declaring a State under
+  another name (`CreateModel(Frozen)` with `status = State(...)`) no longer imports, and renaming the
+  field inside it changes that migration's checksum. No framework example does this; an app that does
+  should ask before upgrading, since there is no compatibility path yet.
+
+### Added
+
+- **`@release.exit`.** A hook that runs when a move leaves the released set (from a
+  `release=True` step to one that is not), after the snapshot and `@state.exit`, before the state
+  changes ([states-actions.md](docs/states-actions.md#hooks)).
+
+### Changed
+
+- **The State field is reserved as `docstate`.** Every document names it the same way, so lists,
+  boards, rules, filters and stored settings read it alike. It shows as "Status" unless it declares
+  a label (`State(..., label="Stage")`), and a field named `docstate` that is not a State fails at
+  declaration too. The Playground's project State moved with app migration `0021_project_docstate`,
+  with its stored Controls settings. The Background and Document Lifecycle Playgrounds have no
+  migrations: delete their `.data/*.sqlite3` demo databases and start them again. testCRM's deal
+  and lead and the amendment example's quote use `docstate` too; the deal and the quote keep the
+  label Stage ([docs/states-actions.md](docs/states-actions.md#declaring-a-state)).
+
+- **Process states inside a release.** A move between two `release=True` steps (an invoice
+  going unpaid, overdue, paid) is a move within the release: unless its values or hooks change
+  versioned content, it makes no release, takes no snapshot, keeps its saved results (no
+  recalculation, no formula version check; `"recalculate": true` with it is refused with 409)
+  and passes a closed period, since it changes no versioned content. Only a
+  release exit snapshots the release. `@state` and `@state.exit` still run on every move
+  ([states-actions.md](docs/states-actions.md#moves-within-the-release)).
+- **Locked steps keep their colour.** A `lock=True` step that declares a colour draws as its
+  coloured pill with a small lock, on the record, in lists and on board cards. A locked step
+  without a colour and a cancelled step draw as before.
+
+
 ## 0.4.9 (15-11-2026)
 
 ### Fixed

@@ -20,7 +20,7 @@ def test_hidden_title_and_state_echoes_have_uniform_refusals(tmp_path):
                        'editor': Rule(('read', 'update'), read_fields=('memo',), write_fields=('memo',))}
         memo = Text(default='visible')
         secret = Text(default='approved')
-        status = State(State.Step('approved'), State.Step('denied'))
+        docstate = State(State.Step('approved'), State.Step('denied'))
 
         class Meta:
             title_field = 'secret'
@@ -30,8 +30,8 @@ def test_hidden_title_and_state_echoes_have_uniform_refusals(tmp_path):
     record = admin('POST', '/api/confidential', {})[1]
     path = '/api/confidential/' + record['id']
     viewer, editor = add_user(app, 'viewer'), add_user(app, 'editor')
-    assert not {'title', 'secret', 'status'} & viewer('GET', path)[1].keys()
-    for field in ('title', 'status'):
+    assert not {'title', 'secret', 'docstate'} & viewer('GET', path)[1].keys()
+    for field in ('title', 'docstate'):
         for actor in (viewer, editor):
             answers = [actor('POST', '/api/_draft/confidential', {'id': record['id'], 'values': {field: guess}})[:2]
                        for guess in ('approved', 'denied', None, '')]
@@ -40,7 +40,7 @@ def test_hidden_title_and_state_echoes_have_uniform_refusals(tmp_path):
                    for guess in ('approved', 'denied')]
         assert answers[0] == answers[1] and answers[0][0] == 403
     # Readable unchanged fields still round-trip; trusted state writes retain their own authority.
-    assert admin('PATCH', path, {'title': 'approved', 'status': 'approved'},
+    assert admin('PATCH', path, {'title': 'approved', 'docstate': 'approved'},
                  headers={b'if-match': admin('GET', path)[2][b'etag']})[0] == 200
 
 

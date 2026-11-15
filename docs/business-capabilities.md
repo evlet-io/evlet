@@ -324,7 +324,7 @@ approved) for the stage bar, or `show="none"`. `Meta.status = "<field>"` shows a
 system sets, such as a calculated payment status, as a badge that is never edited from the
 header ([states-actions.md](states-actions.md#how-a-state-and-a-status-show)). The list offers a
 board, one column per state, only when `Meta.board` names the State field, such as
-`board = "stage"`; any other field fails registration. A move only the application makes,
+`board = "docstate"` (a State field is always named `docstate`); any other field fails registration. A move only the application makes,
 such as one a background job takes, is declared `State.Rule(..., by=())`: it has no roles, no
 caller can make it, and trusted Python makes it with `context.move()`
 ([states-actions.md](states-actions.md#system-moves)). A job gets that context with

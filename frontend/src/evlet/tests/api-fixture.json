@@ -4811,7 +4811,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7"
+    "model_schema_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201"
    },
    "_deletable": false,
    "_effects": [
@@ -4879,6 +4879,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "issued",
    "due_on": "2026-12-01",
    "id": "0000000000003",
    "name": null,
@@ -4886,11 +4887,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "Paid 500.00 on 2026-11-10",
-   "status": "issued",
    "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"b6be86ac64eab4dc12dcf32292150ee41a2f0242cab0db6822e8d7d0c54710e4\"",
+  "etag": "\"b546712c55b21972eba8635566ce5b18721030ccbf66e13b7a2f7d471bc9cf77\"",
   "status": 200
  },
  "invoice_activity": {
@@ -5098,6 +5098,10 @@
         "new": "0000000000001",
         "old": null
        },
+       "docstate": {
+        "new": "draft",
+        "old": null
+       },
        "due_on": {
         "new": "2026-12-01",
         "old": null
@@ -5112,10 +5116,6 @@
        },
        "remarks": {
         "new": "",
-        "old": null
-       },
-       "status": {
-        "new": "draft",
         "old": null
        },
        "total": {
@@ -5201,20 +5201,20 @@
  "invoice_aggregate_by_status": {
   "body": {
    "group_by": [
-    "status"
+    "docstate"
    ],
    "items": [
     {
-     "n": 1,
-     "status": "draft"
+     "docstate": "draft",
+     "n": 1
     },
     {
-     "n": 1,
-     "status": "issued"
+     "docstate": "issued",
+     "n": 1
     },
     {
-     "n": 1,
-     "status": "void"
+     "docstate": "void",
+     "n": 1
     }
    ],
    "measures": [
@@ -5344,6 +5344,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "draft",
    "due_on": "2026-12-01",
    "id": "0000000000003",
    "name": null,
@@ -5351,11 +5352,10 @@
    "outstanding": "0.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "draft",
    "title": "0000000000003",
    "total": "2680.00"
   },
-  "etag": "\"dd42113b6e02e86e6ddf117fe66bc61f34afc93b85438f27327251283ae14b63\"",
+  "etag": "\"a0fcc1c351e70f56e099eba9fd0afd4c95b7abc9cd914d6cdbf15193c6a2a321\"",
   "status": 200
  },
  "invoice_draft_activity": {
@@ -5444,6 +5444,10 @@
         "new": "0000000000001",
         "old": null
        },
+       "docstate": {
+        "new": "draft",
+        "old": null
+       },
        "due_on": {
         "new": "2026-12-01",
         "old": null
@@ -5458,10 +5462,6 @@
        },
        "remarks": {
         "new": "",
-        "old": null
-       },
-       "status": {
-        "new": "draft",
         "old": null
        },
        "total": {
@@ -5538,6 +5538,7 @@
     "lines": []
    },
    "customer": "0000000000001",
+   "docstate": "draft",
    "due_on": "2026-12-01",
    "id": "0000000000003",
    "name": null,
@@ -5545,11 +5546,10 @@
    "outstanding": "0.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "draft",
    "title": "0000000000003",
    "total": "0.00"
   },
-  "etag": "\"629d90bfec3ec4c94d226ad41e607b4d1d3868157043d2b8d7329e711f83f5b1\"",
+  "etag": "\"735c68f32d869976bae7802ce8eddf0d8f31f66e08a21b5b3772b8d52a4d25c6\"",
   "status": 200
  },
  "invoice_issued": {
@@ -5579,7 +5579,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7"
+    "model_schema_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201"
    },
    "_deletable": false,
    "_effects": [
@@ -5647,6 +5647,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "issued",
    "due_on": "2026-12-01",
    "id": "0000000000003",
    "name": null,
@@ -5654,11 +5655,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "issued",
    "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"4d91d096e3c8d18f7714ee4f08f19c2bde21c073cb71769d10eaf890620cbbbc\"",
+  "etag": "\"a70986fc388560a5e7b0eb8fc2487bc4f8b4fc184ba586b414d716e8565101cd\"",
   "status": 200
  },
  "invoice_issued_detail": {
@@ -5752,6 +5752,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "issued",
    "due_on": "2026-12-01",
    "id": "0000000000003",
    "name": null,
@@ -5759,11 +5760,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "issued",
    "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"4d91d096e3c8d18f7714ee4f08f19c2bde21c073cb71769d10eaf890620cbbbc\"",
+  "etag": "\"a70986fc388560a5e7b0eb8fc2487bc4f8b4fc184ba586b414d716e8565101cd\"",
   "status": 200
  },
  "invoice_lines_page": {
@@ -5786,7 +5786,7 @@
  },
  "invoice_list_tabs": {
   "body": {
-   "field": "status",
+   "field": "docstate",
    "items": [
     {
      "count": 1,
@@ -5898,6 +5898,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "issued",
    "due_on": "2026-12-01",
    "id": "0000000000002",
    "name": null,
@@ -5905,11 +5906,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "issued",
    "title": "INV-2026-00002",
    "total": "2680.00"
   },
-  "etag": "\"b71c2632c2eacaa3258ad01d6f46d49f52844df9abef0a03ceeef429e523a8aa\"",
+  "etag": "\"45411d2c8eef3c4f35e7c4db97f860149781774ae675ce1350b572e00639f6c5\"",
   "status": 200
  },
  "invoice_measures": {
@@ -6020,7 +6020,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7"
+    "model_schema_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201"
    },
    "_deletable": false,
    "_effects": [
@@ -6065,6 +6065,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "draft",
    "due_on": "2026-12-01",
    "id": "0000000000004",
    "name": null,
@@ -6072,11 +6073,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "draft",
    "title": "INV-2026-00004",
    "total": "2680.00"
   },
-  "etag": "\"1c31ba3e39fa4ae1729b176c3d5b7b558c1ab70126009c06327d3577e99eb2ac\"",
+  "etag": "\"021a5903a40a4bb4963341f3b4821e33840747e83ee224c545c6b1bfe4eb71ee\"",
   "status": 200
  },
  "invoice_reopen_before": {
@@ -6168,6 +6168,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "issued",
    "due_on": "2026-12-01",
    "id": "0000000000004",
    "name": null,
@@ -6175,11 +6176,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "issued",
    "title": "INV-2026-00004",
    "total": "2680.00"
   },
-  "etag": "\"8316a321290b8b6122d75882f7b917b07cf5a1bafd551fb9ac03e688995958cf\"",
+  "etag": "\"efaa07ce9ae28629df3cea9f9dc7747903dd3d1683ccbfb47bf71e2ab30e0993\"",
   "status": 200
  },
  "invoice_reopen_editor": {
@@ -6273,6 +6273,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "issued",
    "due_on": "2026-12-01",
    "id": "0000000000004",
    "name": null,
@@ -6280,11 +6281,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "issued",
    "title": "INV-2026-00004",
    "total": "2680.00"
   },
-  "etag": "\"8316a321290b8b6122d75882f7b917b07cf5a1bafd551fb9ac03e688995958cf\"",
+  "etag": "\"efaa07ce9ae28629df3cea9f9dc7747903dd3d1683ccbfb47bf71e2ab30e0993\"",
   "status": 200
  },
  "invoice_reopen_remark_missing": {
@@ -6874,7 +6874,7 @@
         "args": [
          {
           "$expr": "ref",
-          "field": "status",
+          "field": "docstate",
           "scope": "self"
          },
          {
@@ -6942,26 +6942,26 @@
      "autosave": true,
      "behavior": {
       "customer": {},
+      "docstate": {},
       "due_on": {},
       "name": {},
       "number": {},
       "outstanding": {},
       "posting_date": {},
       "remarks": {},
-      "status": {},
       "title": {},
       "total": {
        "finite": true
       }
      },
-     "board": "status",
+     "board": "docstate",
      "calculation": {
       "capabilities": {
        "lines[*].amount": "local_universal",
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7",
+      "model_schema_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -7058,11 +7058,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:c7b97a3a7f64830851bd84c9e65577b2ae943d4bef42d66d29f60aa2a5777c44",
+       "model_schema_hash": "sha256:995c3ff75d30cd6453b9d99eb20ab19e90ede2935b0bc8a98f5c05134fb636ea",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "invoice",
-       "source_plan_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7",
+       "source_plan_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201",
        "tables": {
         "$root": {
          "fields": {
@@ -7076,6 +7076,19 @@
            "scale": 0,
            "stored": true,
            "type": "link"
+          },
+          "docstate": {
+           "computed": false,
+           "default": {
+            "value": "draft"
+           },
+           "kind": "select",
+           "maximum": null,
+           "minimum": null,
+           "required": true,
+           "scale": null,
+           "stored": true,
+           "type": "text"
           },
           "due_on": {
            "computed": false,
@@ -7145,19 +7158,6 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": null,
-           "stored": true,
-           "type": "text"
-          },
-          "status": {
-           "computed": false,
-           "default": {
-            "value": "draft"
-           },
-           "kind": "select",
-           "maximum": null,
-           "minimum": null,
-           "required": true,
            "scale": null,
            "stored": true,
            "type": "text"
@@ -7436,7 +7436,7 @@
        "label": "Status",
        "locked_when": null,
        "max_length": 255,
-       "name": "status",
+       "name": "docstate",
        "operators": [
         "eq",
         "ne",
@@ -7639,7 +7639,7 @@
         "customer",
         "posting_date",
         "due_on",
-        "status"
+        "docstate"
        ],
        "flow": "rows",
        "label": "Invoice"
@@ -7661,13 +7661,13 @@
       "number",
       "customer",
       "posting_date",
-      "status",
+      "docstate",
       "total",
       "outstanding"
      ],
      "list_tabs": {
       "default": "all",
-      "field": "status",
+      "field": "docstate",
       "kind": "state"
      },
      "measures": [
@@ -7683,7 +7683,7 @@
         "args": [
          {
           "$expr": "ref",
-          "field": "status",
+          "field": "docstate",
           "scope": "self"
          },
          {
@@ -7729,7 +7729,7 @@
       "customer",
       "posting_date",
       "due_on",
-      "status",
+      "docstate",
       "total",
       "outstanding",
       "remarks",
@@ -7769,7 +7769,7 @@
      "sources": {},
      "state": {
       "default": "draft",
-      "field": "status",
+      "field": "docstate",
       "rules": [
        {
         "by": [
@@ -8605,6 +8605,10 @@
         "new": "0000000000001",
         "old": null
        },
+       "docstate": {
+        "new": "draft",
+        "old": null
+       },
        "due_on": {
         "new": "2026-12-01",
         "old": null
@@ -8619,10 +8623,6 @@
        },
        "remarks": {
         "new": "",
-        "old": null
-       },
-       "status": {
-        "new": "draft",
         "old": null
        },
        "total": {
@@ -8723,6 +8723,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "issued",
    "due_on": "2026-12-01",
    "id": "0000000000003",
    "name": null,
@@ -8730,11 +8731,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "Paid 500.00 on 2026-11-10",
-   "status": "issued",
    "title": "INV-2026-00003",
    "total": "2680.00"
   },
-  "etag": "\"b6be86ac64eab4dc12dcf32292150ee41a2f0242cab0db6822e8d7d0c54710e4\"",
+  "etag": "\"b546712c55b21972eba8635566ce5b18721030ccbf66e13b7a2f7d471bc9cf77\"",
   "status": 200
  },
  "invoice_viewer_note_refused": {
@@ -8991,26 +8991,26 @@
      "autosave": true,
      "behavior": {
       "customer": {},
+      "docstate": {},
       "due_on": {},
       "name": {},
       "number": {},
       "outstanding": {},
       "posting_date": {},
       "remarks": {},
-      "status": {},
       "title": {},
       "total": {
        "finite": true
       }
      },
-     "board": "status",
+     "board": "docstate",
      "calculation": {
       "capabilities": {
        "lines[*].amount": "local_universal",
        "total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7",
+      "model_schema_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -9107,11 +9107,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:c7b97a3a7f64830851bd84c9e65577b2ae943d4bef42d66d29f60aa2a5777c44",
+       "model_schema_hash": "sha256:995c3ff75d30cd6453b9d99eb20ab19e90ede2935b0bc8a98f5c05134fb636ea",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "invoice",
-       "source_plan_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7",
+       "source_plan_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201",
        "tables": {
         "$root": {
          "fields": {
@@ -9125,6 +9125,19 @@
            "scale": 0,
            "stored": true,
            "type": "link"
+          },
+          "docstate": {
+           "computed": false,
+           "default": {
+            "value": "draft"
+           },
+           "kind": "select",
+           "maximum": null,
+           "minimum": null,
+           "required": true,
+           "scale": null,
+           "stored": true,
+           "type": "text"
           },
           "due_on": {
            "computed": false,
@@ -9194,19 +9207,6 @@
            "maximum": null,
            "minimum": null,
            "required": false,
-           "scale": null,
-           "stored": true,
-           "type": "text"
-          },
-          "status": {
-           "computed": false,
-           "default": {
-            "value": "draft"
-           },
-           "kind": "select",
-           "maximum": null,
-           "minimum": null,
-           "required": true,
            "scale": null,
            "stored": true,
            "type": "text"
@@ -9469,7 +9469,7 @@
        "label": "Status",
        "locked_when": null,
        "max_length": 255,
-       "name": "status",
+       "name": "docstate",
        "operators": [
         "eq",
         "ne",
@@ -9672,7 +9672,7 @@
         "customer",
         "posting_date",
         "due_on",
-        "status"
+        "docstate"
        ],
        "flow": "rows",
        "label": "Invoice"
@@ -9694,13 +9694,13 @@
       "number",
       "customer",
       "posting_date",
-      "status",
+      "docstate",
       "total",
       "outstanding"
      ],
      "list_tabs": {
       "default": "all",
-      "field": "status",
+      "field": "docstate",
       "kind": "state"
      },
      "measures": [
@@ -9716,7 +9716,7 @@
         "args": [
          {
           "$expr": "ref",
-          "field": "status",
+          "field": "docstate",
           "scope": "self"
          },
          {
@@ -9762,7 +9762,7 @@
       "customer",
       "posting_date",
       "due_on",
-      "status",
+      "docstate",
       "total",
       "outstanding",
       "remarks",
@@ -9802,7 +9802,7 @@
      "sources": {},
      "state": {
       "default": "draft",
-      "field": "status",
+      "field": "docstate",
       "rules": [
        {
         "by": [
@@ -10461,7 +10461,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:e0270f28ef936f94e8df2e167a0c19ff01acfa763735d3b183c2c1d22bbe46a7"
+    "model_schema_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201"
    },
    "_deletable": false,
    "_effects": [
@@ -10498,6 +10498,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "void",
    "due_on": "2026-12-01",
    "id": "0000000000001",
    "name": null,
@@ -10505,11 +10506,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "void",
    "title": "INV-2026-00001",
    "total": "2680.00"
   },
-  "etag": "\"14064fd9b9274b517334b202aa9e7b2e340335b1e894d129e5e6aaa1f487e37c\"",
+  "etag": "\"ed79bb0675ac0bc5456a106896e6a2467f4b2d82892ff459a897c8007666acd1\"",
   "status": 200
  },
  "invoice_void_before": {
@@ -10603,6 +10603,7 @@
     ]
    },
    "customer": "0000000000001",
+   "docstate": "issued",
    "due_on": "2026-12-01",
    "id": "0000000000001",
    "name": null,
@@ -10610,11 +10611,10 @@
    "outstanding": "2680.00",
    "posting_date": "2026-11-01",
    "remarks": "",
-   "status": "issued",
    "title": "INV-2026-00001",
    "total": "2680.00"
   },
-  "etag": "\"53a3a7a4def2976b37d7c58dc2b3cc7f9ddd76bb1c22de7f17fe1d52e3497cae\"",
+  "etag": "\"4ffb2948cc7f7c8c5b38955f34ac774254a6a61d2a4b0ba5acd8c22ab318ca3a\"",
   "status": 200
  },
  "invoice_void_reason_missing": {
@@ -10632,6 +10632,7 @@
    "items": [
     {
      "customer": "0000000000001",
+     "docstate": "draft",
      "due_on": "2026-12-01",
      "id": "0000000000003",
      "name": null,
@@ -10639,12 +10640,12 @@
      "outstanding": "0.00",
      "posting_date": "2026-11-01",
      "remarks": "",
-     "status": "draft",
      "title": "0000000000003",
      "total": "2680.00"
     },
     {
      "customer": "0000000000001",
+     "docstate": "issued",
      "due_on": "2026-12-01",
      "id": "0000000000002",
      "name": null,
@@ -10652,12 +10653,12 @@
      "outstanding": "2680.00",
      "posting_date": "2026-11-01",
      "remarks": "",
-     "status": "issued",
      "title": "INV-2026-00002",
      "total": "2680.00"
     },
     {
      "customer": "0000000000001",
+     "docstate": "void",
      "due_on": "2026-12-01",
      "id": "0000000000001",
      "name": null,
@@ -10665,7 +10666,6 @@
      "outstanding": "2680.00",
      "posting_date": "2026-11-01",
      "remarks": "",
-     "status": "void",
      "title": "INV-2026-00001",
      "total": "2680.00"
     }

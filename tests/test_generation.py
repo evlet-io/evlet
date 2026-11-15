@@ -170,7 +170,7 @@ def test_project_migration_preserves_existing_records(tmp_path, installation):
     target.initialize()
     assert target.migrate(migrations) == []
     project = target.create(Project, title='Generated screens', budget='1.23')
-    assert project.to_dict()['budget'] == '1.23' and project.status == 'planned'
+    assert project.to_dict()['budget'] == '1.23' and project.docstate == 'planned'
     if installation != 'fresh':
         assert target.get(Customer, customer.id).customer_name == 'Keep'
         assert target.get(Invoice, invoice.id).to_dict()['total'] == '123.45'

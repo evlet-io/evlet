@@ -1,6 +1,6 @@
 """The state manager: a document's states, the rules that move it between them, and its hooks.
 
-    status = State(
+    docstate = State(
         State.Step("draft", "Draft"),
         State.Step("issued", "Issued", color="green", lock=True),
         State.Step("void", "Void", color="rose", lock=True, final=True),
@@ -52,6 +52,11 @@ def release(method):
     return _hook('release', ())(method)
 
 
+release.exit = lambda method: _hook('release_exit', ())(method)
+release.exit.__doc__ = ('@release.exit: runs when a move leaves the released set (from a release=True step to one that is not), '
+                        'after the snapshot and @state.exit, before the state changes.')
+
+
 def state(*states):
     """@state("approved", ...): runs when the document enters one of the states."""
     return _hook('enter', states)
@@ -70,8 +75,8 @@ def configure(model):
             hooks.append((kind, states, name))
     field = model.__declared_fields__.get(model.__state__) if model.__state__ else None
     for kind, states, name in hooks:
-        if kind in ('enter', 'exit', 'release') and field is None:
-            raise ValueError(f'{model.__name__}.{name}: @state, @state.exit and @release need a State on the model')
+        if kind in ('enter', 'exit', 'release', 'release_exit') and field is None:
+            raise ValueError(f'{model.__name__}.{name}: @state, @state.exit, @release and @release.exit need a State on the model')
         unknown = set(states) - set(field.choices if field else ())
         if unknown:
             raise ValueError(f'{model.__name__}.{name} names an unknown state: ' + ', '.join(sorted(unknown)))
@@ -699,14 +704,21 @@ def releasing(model):
     return model.__state__ is not None and bool(model.__declared_fields__[model.__state__].releases)
 
 
-def tree(item):
-    """A saved document tree (a Draft, or a record with `_rows`) as JSON values: every stored field, at every depth."""
+def tree(item, clean=False):
+    """A saved document tree (a Draft, or a record with `_rows`) as JSON values: every stored field, at every depth.
+    clean=True cleans each value first, for a draft that has not settled yet."""
     definition = item._definition if hasattr(item, '_definition') else type(item)
     result = {'id': str(item.id)}
     for name, field in definition.__fields__.items():
         if name not in getattr(definition, '__internal_fields__', ()):
-            result[name] = field.serialize(item._values.get(name))
-    result['children'] = {name: [tree(row) for row in rows] for name, rows in getattr(item, '_rows', {}).items()}
+            value = item._values.get(name)
+            try:
+                result[name] = field.serialize(field.clean(value) if clean else value)
+            except (ValueError, TypeError):
+                if not clean:
+                    raise
+                result[name] = repr(value)  # Input that does not clean never equals a saved value.
+    result['children'] = {name: [tree(row, clean) for row in rows] for name, rows in getattr(item, '_rows', {}).items()}
     return result
 
 
