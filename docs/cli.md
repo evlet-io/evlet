@@ -599,7 +599,9 @@ never 0.5. From 1.0 it stays within the current major. `--to VERSION` selects an
 an older version is refused because going back requires restoring matching data.
 
 If multiple installed instances share the project environment, the command refuses before pip
-unless you pass `--all-instances`. This plans, stops, backs up, migrates and restarts all of them:
+unless you pass `--all-instances`. This plans, stops, backs up, migrates and restarts all of them.
+A sibling with no installed `evlet-NAME.service`, such as a development instance, is planned,
+backed up and migrated too, but not started; start it yourself afterwards:
 
 ```sh
 evlet upgrade acme --all-instances
