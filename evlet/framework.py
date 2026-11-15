@@ -185,6 +185,12 @@ def _session_generations(connection):
         if connection.table_exists(table) and 'session_generation' not in connection.columns(table):
             connection.add_column(table, Column('session_generation', 'INTEGER', required=True), default=0)
 
+def _create_requests(connection):
+    """Retry receipts for creates sent with an Idempotency-Key (evlet/business.py)."""
+    from .business import CREATE_REQUESTS
+    connection.ensure_table(CREATE_REQUESTS)
+    connection.ensure_index('evlet_create_request_expiry', 'evlet_create_requests', ('expires',))
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -205,6 +211,8 @@ STEPS = (
                   'and revision rows; give records already in a release step a v0 release.', _state_manager, registry=True),
     FrameworkStep('0012_session_generations', 'Add the account session generation that ending sessions moves on, so a '
                   'revoked session or two-step ticket cannot be used again.', _session_generations),
+    FrameworkStep('0013_create_requests', 'Add evlet_create_requests, the retry receipts of creates sent with an '
+                  'Idempotency-Key.', _create_requests),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (
