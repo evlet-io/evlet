@@ -419,20 +419,25 @@ export function openReportPrint(ctx: AppContext, report: ReportSchema, designs: 
   const design = cell((designs.find(item => item.default) ?? designs[0]).name);
   const pdf = cell<string | null>(null), problem = cell<string | null>(null);
   let current: string | null = null;
+  let closed = false, ticket = 0, pending: AbortController | null = null;
   const release = () => { if (current) URL.revokeObjectURL(current); current = null; };
   const load = async (name: string) => {
+    if (closed) return;
+    const mine = ++ticket;
+    pending?.abort();
+    const request = pending = new AbortController();
     batch(() => { pdf.set(null); problem.set(null); });
+    release();
     try {
-      const file = await ctx.api.reportFile(report.name, { print: name }, { filters });
-      if (design.peek() !== name) return;
-      release();
+      const file = await ctx.api.reportFile(report.name, { print: name }, { filters }, request.signal);
+      if (closed || mine !== ticket) return;
       current = URL.createObjectURL(file);
       pdf.set(current);
-    } catch (error) { if (design.peek() === name) problem.set(error instanceof ApiError ? error.message : 'The PDF could not be made.'); }
+    } catch (error) { if (!closed && mine === ticket) problem.set(error instanceof ApiError ? error.message : 'The PDF could not be made.'); }
   };
   void load(design.peek());
   const title = designs.find(item => item.name === design.peek())?.title ?? report.label;
-  openDrawer({ title: `Print ${report.label}`, icon: 'printer', className: 'ev-print', onClose: release,
+  openDrawer({ title: `Print ${report.label}`, icon: 'printer', className: 'ev-print', onClose: () => { closed = true; ticket++; pending?.abort(); release(); },
     body: () => html`<div class="ev-print-body">
       ${designs.length > 1 ? html`<label class="ev-print-design"><span class="muted">Print design</span>
         <select class="input" aria-label="Print design" on:change=${(event: Event) => { const next = (event.target as HTMLSelectElement).value; design.set(next); void load(next); }}>

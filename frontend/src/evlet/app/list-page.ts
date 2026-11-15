@@ -197,10 +197,13 @@ export function ListPage(ctx: AppContext, name: string): HTMLElement {
   const measures = cell<Record<string, unknown> | null>(null), measureCurrencies = cell<Record<string, string>>({});
   if (declared.length) effect(() => {
     if (finding.get()) return;
+    let active = true;
+    onCleanup(() => { active = false; });
     const current = serverFilters.get(), text = query.get();
     reload.get();
-    void api.measures(name, current, text).then(result => batch(() => { measureCurrencies.set(result.currencies); measures.set(result.values); }),
-      () => measures.set(null));
+    void api.measures(name, current, text).then(result => {
+      if (active) batch(() => { measureCurrencies.set(result.currencies); measures.set(result.values); });
+    }, () => { if (active) measures.set(null); });
   });
   // Trend lines on the measure cards (a measure's trend=): one aggregate per measure, grouped by its trend field and
   // grain, with the same filters and search as the strip. Asked a moment after the filters settle; a failure hides the line.
