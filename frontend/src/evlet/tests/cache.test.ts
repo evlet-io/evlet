@@ -62,4 +62,15 @@ describe('record detail cache', () => {
     finish({ status: 200, body: { id: id(1), title: 'Old session' }, etag: '"1"' }); await oldSession;
     expect(held.peek()).toBeNull(); expect(api.detail('customer', id(1)).peek()).toBeNull();
   });
+
+  it('applies a successful write even when a later read of the record fails', async () => {
+    const replies: Array<(response: Response) => void> = [];
+    const api = new AppClient({ fetch: () => new Promise<Response>(resolve => replies.push(resolve)) });
+    const held = api.detail('customer', id(1));
+    const writing = api.update('customer', id(1), { title: 'New' }, '"1"');
+    const reading = api.get('customer', id(1)).catch(() => null);
+    replies[1](new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503 })); await reading;
+    replies[0](new Response(JSON.stringify({ id: id(1), title: 'New' }), { status: 200, headers: { etag: '"2"' } })); await writing;
+    expect(held.peek()?.title).toBe('New');
+  });
 });
