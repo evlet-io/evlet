@@ -242,10 +242,12 @@ def client_network(address):
 # Accounts, sessions and their framework tables. Columns added in later releases follow in initialize().
 USERS = TableDefinition('evlet_users', (
     Column('username', 'TEXT', required=True), Column('password', 'TEXT', required=True), Column('role', 'TEXT', required=True),
-    Column('active', 'INTEGER', required=True, default=1)), numbered=True, unique=(('username',),))
+    Column('active', 'INTEGER', required=True, default=1), Column('session_generation', 'INTEGER', required=True, default=0)),
+    numbered=True, unique=(('username',),))
 SESSIONS = TableDefinition('evlet_sessions', (
     Column('token', 'TEXT', primary=True), Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
-    Column('csrf', 'TEXT', required=True), Column('expires', 'INTEGER', required=True), Column('realm', 'TEXT', required=True, default='desk')))
+    Column('csrf', 'TEXT', required=True), Column('expires', 'INTEGER', required=True), Column('realm', 'TEXT', required=True, default='desk'),
+    Column('session_generation', 'INTEGER', required=True, default=0)))
 LOGIN_LIMITS = TableDefinition('evlet_login_limits', (
     Column('client', 'TEXT', primary=True), Column('attempts', 'INTEGER', required=True), Column('resets', 'INTEGER', required=True)))
 FORWARDED_PEERS = TableDefinition('evlet_forwarded_peers', (Column('peer', 'TEXT', primary=True), Column('last_seen', 'INTEGER', required=True)))
@@ -499,7 +501,8 @@ class LocalAuth:
                 .join(qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('s.user_id')))
                 .join(qb.table('evlet_roles', 'r'), qb.and_(qb.eq('r.id', qb.col('u.role')), qb.eq('r.realm', qb.col('s.realm'))))
                 .join(qb.table('evlet_user_links', 'l'), qb.eq('l.user_id', qb.col('u.id')), left=True)
-                .where(qb.eq('s.token', self.token(scope)), qb.eq('s.realm', realm), qb.gt('s.expires', int(time.time())), qb.eq('u.active', 1))
+                .where(qb.eq('s.token', self.token(scope)), qb.eq('s.realm', realm), qb.gt('s.expires', int(time.time())), qb.eq('u.active', 1),
+                       qb.eq('s.session_generation', qb.col('u.session_generation')))
                 .order_by('l.model', 'l.record_id')).all()
         row = rows[0] if rows else None
         links = tuple((item['model'], RecordId(item['record_id'])) for item in rows if item['model'] is not None)
@@ -593,7 +596,16 @@ class LocalAuth:
         (access and refresh tokens) and their unused authorization codes. keys=True also revokes their API keys,
         for takeover recovery: a two-step reset, deactivation and the break-glass grant."""
         now = int(time.time())
+        # Main is the authority for revocation even if its commit survives but a side-file commit does not.
+        # Keep a password-changing device signed in only by explicitly moving that session to the new generation.
+        if 'session_generation' in connection.columns('evlet_users'):
+            connection.run(qb.update('evlet_users', session_generation=qb.col('session_generation') + 1).where(id=user_id))
+            if keep:
+                generation = connection.run(qb.select('evlet_users', 'session_generation').where(id=user_id)).value()
+                connection.run(qb.update('evlet_sessions', session_generation=generation).where(user_id=user_id, token=keep))
         connection.run(qb.delete('evlet_sessions').where(user_id=user_id, *((qb.ne('token', keep),) if keep else ())))
+        if connection.table_exists('evlet_two_step_tickets'):
+            connection.run(qb.delete('evlet_two_step_tickets').where(user_id=user_id))
         # The server-shell commands may meet a database from before assistants or keys existed.
         if connection.table_exists('evlet_mcp_clients'):
             connection.run(qb.delete('evlet_oauth_codes').where(user_id=user_id))
@@ -775,10 +787,13 @@ class LocalAuth:
         realm = self.realm(scope)
         if not hmac.compare_digest(candidate, stored) or not usable or not account['active'] or account['role_realm'] != realm:
             raise AccessError(401, 'Invalid username or password')
-        with self.database.transaction() as tx:
+        with self.database.transaction(store='sessions') as tx:
             # A password/role change during hashing must not revive an old login.
-            current = tx.connection.run(qb.select('evlet_users').where(id=account['id'])).one()
-            if not current or not current['active'] or current['password'] != stored or current['role'] != account['role']:
+            current = tx.connection.run(qb.select(qb.table('evlet_users', 'u'), qb.all_columns('u'), qb.named('r.realm', 'role_realm'))
+                                        .join(qb.table('evlet_roles', 'r'), qb.eq('r.id', qb.col('u.role')), left=True)
+                                        .where(qb.eq('u.id', account['id']))).one()
+            if not current or not current['active'] or current['password'] != stored or current['role'] != account['role'] \
+                    or current['role_realm'] != realm or current['session_generation'] != account['session_generation']:
                 raise AccessError(401, 'Invalid username or password')
             # With two-step sign-in the failed-attempt count stays until the code is right too.
             challenge = self.second_step.challenge(tx, current, realm) if self.second_step is not None else None
@@ -795,7 +810,8 @@ class LocalAuth:
         now = int(time.time())
         tx.connection.run(qb.delete('evlet_sessions').where(token=self.token(scope)))
         tx.connection.run(qb.insert('evlet_sessions', token=hashlib.sha256(token.encode()).hexdigest(), user_id=account['id'], csrf=csrf,
-                                    expires=now + self.session_hours * 3600, realm=realm, started=now, agent=agent, two_step=now if verified else None))
+                                    expires=now + self.session_hours * 3600, realm=realm, started=now, agent=agent,
+                                    session_generation=account['session_generation'], two_step=now if verified else None))
         return {'user': User(account['id'], account['username'], account['role']).public(), 'csrf': csrf}, [self.cookie(token, realm)]
 
     def cookie(self, token, realm='desk'):
