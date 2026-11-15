@@ -309,6 +309,22 @@ class TenantApplication:
                 if self._initializing.get(tenant.slug) is pending:
                     self._initializing.pop(tenant.slug)
 
+    async def _ready(self, tenant):
+        """The tenant's application; only the request that builds a cold tenant takes an init slot."""
+        while True:
+            app = self._cached(tenant)
+            if app is not None:
+                return app
+            with self._lock:
+                pending = self._initializing.get(tenant.slug)
+            if pending is None:
+                return await self._work.run('init', self._application, tenant)
+            # Another request is building it: wait on the event loop, holding no thread or slot.
+            # Shielded so a cancelled waiter cannot cancel the builder's future.
+            wrapped = asyncio.wrap_future(pending)
+            wrapped.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
+            await asyncio.shield(wrapped)
+
     def _build(self, tenant):
         app = self.factory(tenant)
         if not isinstance(app, Application) or app.database.path.resolve() != tenant.database_path or app.business is None or not app.database.must_exist:
@@ -397,9 +413,7 @@ class TenantApplication:
             if tenant is None:
                 await self._error(send, 421, 'Unrecognized tenant host')
                 return
-            app = self._cached(tenant)
-            if app is None:
-                app = await self._work.run('init', self._application, tenant)
+            app = await self._ready(tenant)
         except Busy:
             await self._error(send, 503, 'Tenant temporarily busy; try again shortly')
             return

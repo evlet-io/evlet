@@ -422,3 +422,65 @@ def test_router_lifespan_restart_rebuilds_stopped_cached_apps(tenants):
     assert asyncio.run(lifespan(['lifespan.startup', 'lifespan.shutdown'], verify)) == [
         'lifespan.startup.complete', 'lifespan.shutdown.complete']
     assert previous._stopping.is_set()
+
+
+async def acall(router, host, method='GET', path='/api/auth/session', data=None, *, cookie='', csrf=''):
+    """One request on the caller's event loop, so a test can run many at once."""
+    events = [{'type': 'http.request', 'body': json.dumps(data or {}).encode()}]
+    sent = []
+    async def receive():
+        return events.pop(0) if events else {'type': 'http.disconnect'}
+    async def send(event):
+        sent.append(event)
+    headers = [(b'host', host.encode()), (b'content-type', b'application/json'), (b'x-evlet-request', b'1'),
+               (b'cookie', cookie.encode()), (b'x-csrf-token', csrf.encode())]
+    await router({'type': 'http', 'method': method, 'path': path, 'query_string': b'', 'headers': headers,
+                  'client': ('127.0.0.1', 1234)}, receive, send)
+    return sent[0]['status'], json.loads(sent[1]['body'])
+
+
+def test_default_capacity_serves_bursts_to_a_warm_tenant(tenants, http_capacity):
+    http_capacity()  # The shipped defaults, not raised test limits.
+    _, router = tenants
+    token = login(router, 'alpha')
+    async def run():
+        reads = await asyncio.gather(*(acall(router, 'alpha.localhost:8000', path='/api/project', **token) for _ in range(20)))
+        assert [status for status, _ in reads] == [200] * 20
+        creates = await asyncio.gather(*(acall(router, 'alpha.localhost:8000', 'POST', '/api/project', {'title': f'P{index}'}, **token)
+                                         for index in range(6)))
+        assert [status for status, _ in creates] == [201] * 6
+        return creates
+    creates = asyncio.run(run())
+    assert len({body['id'] for _, body in creates}) == 6
+
+
+def test_requests_waiting_for_a_cold_tenant_hold_no_init_slot(tenants, http_capacity):
+    import threading
+    http_capacity(init=2)
+    catalog, router = tenants
+    original = router.factory
+    building, release = threading.Event(), threading.Event()
+    def factory(tenant):
+        if tenant.slug == 'alpha':
+            building.set()
+            assert release.wait(5)
+        return original(tenant)
+    router.factory = factory
+    from evlet.runtime import runtime
+    async def run():
+        alpha = [asyncio.create_task(acall(router, 'alpha.localhost:8000')) for _ in range(4)]
+        try:
+            while not building.is_set():
+                await asyncio.sleep(.005)
+            await asyncio.sleep(.05)
+            # One builder holds one init slot; the three requests waiting for alpha hold none.
+            assert runtime().lanes['init'].active() == 1
+            assert (await asyncio.wait_for(acall(router, 'beta.localhost:8000'), 5))[0] == 200
+        finally:
+            release.set()
+        assert [status for status, _ in await asyncio.gather(*alpha)] == [200] * 4
+    try:
+        asyncio.run(run())
+    finally:
+        release.set()
+    assert runtime().lanes['init'].active() == 0

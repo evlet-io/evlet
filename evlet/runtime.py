@@ -1,10 +1,13 @@
-"""Bounded, process-wide HTTP work; no executor or waiting queue per tenant.
+"""Bounded, process-wide HTTP work with a short waiting queue per lane; no executor per tenant.
 
-Admission precedes body reads. A cancelled ASGI waiter does not cancel its synchronous work:
-that work retains its slot until its actual completion. See docs/production-operations.md.
+A request waits up to the queue time for a slot in its lane, then gets 503. Bodies are read
+before admission, so a slow client holds no slot. A cancelled ASGI waiter does not cancel its
+synchronous work: that work retains its slot until its actual completion. See
+docs/production-operations.md.
 """
 
 import asyncio
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextvars import copy_context
 import os
@@ -12,7 +15,7 @@ import threading
 
 
 class Busy(Exception):
-    """No capacity, or the application is draining."""
+    """No slot within the queue time, or the application is draining."""
 
 
 class _Lease:
@@ -32,31 +35,66 @@ class _Lease:
                 self.lane.release()
 
 
+def _grant(future):
+    if not future.done():
+        future.set_result(None)
+
+
 class _Lane:
     def __init__(self, name, limit, workers=None):
         self.limit = limit
         self.workers = 0 if name == 'stream' else workers or limit
-        self.slots = threading.BoundedSemaphore(limit)
         self._active = 0
-        self._counter_lock = threading.Lock()
+        # Waiters in arrival order: (event loop, future). A released slot passes straight to the
+        # first one, so a newcomer cannot overtake a queued request.
+        self._waiters = deque()
+        self._lock = threading.Lock()
         # Threads are created only as work arrives, and shared across every application/tenant.
         self.executor = None if name == 'stream' else ThreadPoolExecutor(self.workers, thread_name_prefix=f'evlet-http-{name}')
 
-    def acquire(self):
-        if not self.slots.acquire(blocking=False):
-            raise Busy()
-        with self._counter_lock:
-            self._active += 1
+    async def acquire(self, timeout):
+        """Take a slot, waiting at most timeout seconds for one, or raise Busy."""
+        loop = asyncio.get_running_loop()
+        with self._lock:
+            if self._active < self.limit and not self._waiters:
+                self._active += 1
+                return _Lease(self)
+            entry = (loop, loop.create_future())
+            self._waiters.append(entry)
+        try:
+            async with asyncio.timeout(timeout):
+                await entry[1]
+        except BaseException as exc:
+            with self._lock:
+                queued = entry in self._waiters
+                if queued:
+                    self._waiters.remove(entry)
+            if not queued:
+                # The slot was handed over just as the wait ended: pass it on.
+                self.release()
+            if isinstance(exc, TimeoutError):
+                raise Busy() from None
+            raise
         return _Lease(self)
 
     def release(self):
-        with self._counter_lock:
+        with self._lock:
+            while self._waiters:
+                loop, future = self._waiters.popleft()
+                try:
+                    loop.call_soon_threadsafe(_grant, future)
+                    return
+                except RuntimeError:
+                    continue  # Its event loop has closed; nobody is waiting there any more.
             self._active -= 1
-        self.slots.release()
 
     def active(self):
-        with self._counter_lock:
+        with self._lock:
             return self._active
+
+    def waiting(self):
+        with self._lock:
+            return len(self._waiters)
 
 
 class HTTPRuntime:
@@ -77,9 +115,12 @@ class HTTPRuntime:
         if not 1 <= read_workers <= values['read']:
             raise ValueError('EVLET_HTTP_READ_WORKERS must be from 1 to EVLET_HTTP_READ')
         self.lanes = {name: _Lane(name, limit, read_workers if name == 'read' else None) for name, limit in values.items()}
-        self.body_seconds = float(os.environ.get('EVLET_HTTP_BODY_SECONDS', '30'))
-        if not 0 < self.body_seconds <= 3600:
-            raise ValueError('EVLET_HTTP_BODY_SECONDS must be greater than 0 and at most 3600')
+        self.queue_seconds = float(os.environ.get('EVLET_HTTP_QUEUE_SECONDS', '5'))
+        if not 0 < self.queue_seconds <= 60:
+            raise ValueError('EVLET_HTTP_QUEUE_SECONDS must be greater than 0 and at most 60')
+        self.body_idle_seconds = float(os.environ.get('EVLET_HTTP_BODY_IDLE_SECONDS', '30'))
+        if not 0 < self.body_idle_seconds <= 3600:
+            raise ValueError('EVLET_HTTP_BODY_IDLE_SECONDS must be greater than 0 and at most 3600')
         self.log_requests = os.environ.get('EVLET_HTTP_LOG_REQUESTS') == '1'
 
     def close(self):
@@ -121,17 +162,32 @@ class Work:
         with self.lock:
             self.stopping = True
 
-    def acquire(self, name):
+    def ticket(self):
+        """The generation a request starts in; raises Busy while draining."""
         with self.lock:
             if self.stopping:
                 raise Busy()
-            lease = runtime().lanes[name].acquire()
-            lease.generation = self.generation
+            return self.generation
+
+    async def acquire(self, name, ticket=None):
+        """Wait for a slot in lane name for a request that started in generation ticket."""
+        ticket = self.ticket() if ticket is None else ticket
+        with self.lock:
+            if self.stopping or ticket != self.generation:
+                raise Busy()
+        current = runtime()
+        lease = await current.lanes[name].acquire(current.queue_seconds)
+        with self.lock:
+            # A stop or restart while it waited refuses work from the previous generation.
+            if self.stopping or ticket != self.generation:
+                lease.release()
+                raise Busy()
+            lease.generation = ticket
             return lease
 
     async def run(self, name, function, *args, lease=None):
         own = lease is None
-        lease = self.acquire(name) if own else lease
+        lease = await self.acquire(name) if own else lease
         try:
             context = copy_context()
             with self.lock:

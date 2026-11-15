@@ -201,8 +201,11 @@ class Application:
                          and path.startswith('/api/_eva/runs/') and path.endswith('/stream'))
                 lane = ('stream' if stream else 'probe' if path == '/health' else 'heavy' if '/prints' in path
                         else 'read' if scope['method'] in ('GET', 'HEAD', 'OPTIONS') else 'write')
-                admission = self._work.acquire(lane)
-                deadline = asyncio.get_running_loop().time() + runtime().body_seconds
+                # The request's generation: a restart while its body arrives refuses it. The lane slot
+                # is taken only once the body is in, so a slow client holds no scarce slot.
+                ticket = self._work.ticket()
+                if stream:
+                    admission = await self._work.acquire(lane, ticket)
                 if scope['path'] == '/api/_events/stream' and self.business:
                     await self._event_stream(scope, receive, send)
                     return
@@ -215,7 +218,7 @@ class Application:
                     # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
                     data = bytearray()
                     while scope['method'] == 'POST':
-                        event = await self._body_event(receive, deadline)
+                        event = await self._body_event(receive)
                         if event['type'] == 'http.disconnect':
                             return
                         chunk = event.get('body', b'')
@@ -224,6 +227,7 @@ class Application:
                         data.extend(chunk)
                         if not event.get('more_body', False):
                             break
+                    admission = await self._work.acquire(lane, ticket)
                     status, payload, headers = await self._work.run(lane, self._internal, scope, bytes(data), lease=admission)
                 # PUT carries a body only on the Controls routes (connectors) and unsaved changes; elsewhere it stays a 405.
                 elif scope["method"] in ("POST", "PATCH") or scope["method"] == "PUT" and scope["path"].startswith(("/api/_controls/", "/api/_unsaved/")):
@@ -232,7 +236,7 @@ class Application:
                         raise HTTPError(415, "Send application/json")
                     data = bytearray()
                     while True:
-                        event = await self._body_event(receive, deadline)
+                        event = await self._body_event(receive)
                         if event["type"] == "http.disconnect":
                             return
                         chunk = event.get("body", b"")
@@ -249,6 +253,7 @@ class Application:
                     if not isinstance(body, dict):
                         raise HTTPError(422, "Expected a JSON object")
                 if not internal:
+                    admission = await self._work.acquire(lane, ticket)
                     status, payload, headers = await self._work.run(lane, self._dispatch, scope, body, lease=admission)
             except Busy:
                 status, payload, headers = 503, {'error': 'Server busy; try again shortly'}, [(b'retry-after', b'1')]
@@ -294,9 +299,11 @@ class Application:
                 admission.release()
 
     @staticmethod
-    async def _body_event(receive, deadline):
+    async def _body_event(receive):
+        # An idle limit between chunks, not a total deadline: a large upload over a slow but
+        # steady link completes; the size limit bounds how much one request can send.
         try:
-            async with asyncio.timeout_at(deadline):
+            async with asyncio.timeout(runtime().body_idle_seconds):
                 return await receive()
         except TimeoutError:
             raise HTTPError(408, 'Request body timed out') from None

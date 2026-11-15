@@ -1,5 +1,7 @@
 """Public APIs for models, persistence, queries, and explicit migrations."""
 
+from typing import TYPE_CHECKING
+
 # The modules that register model build steps (evlet/models.py BUILD_ORDER), before any model class exists.
 from . import effects, guards, journal, ledger, meaning, measures, permissions, sequences, statemanager  # noqa: F401
 from .app import Application
@@ -130,6 +132,24 @@ _LAZY_EXPORTS = {
     'DevSignIn': 'devlink',
     'PrintDesign': 'printing',
 }
+
+if TYPE_CHECKING:
+    # Type checkers see the lazily loaded exports; at runtime __getattr__ imports them on first use.
+    # Keep in step with _LAZY_EXPORTS (tests/test_lazy_exports.py).
+    from .connector import ConnectorError, HTTPClient
+    from .connectors import ConnectionFailed, Connector, ConnectorField
+    from .controls import SCOPES
+    from .devlink import DevSignIn
+    from .eva import AI
+    from .instances import AppDefinition, Instance, Schedule
+    from .mailboxes import Mail
+    from .mcp import MCPServer
+    from .object_storage import S3Storage
+    from .printing import PrintDesign
+    from .serverless import LambdaHTTP
+    from .settings import AppSettings, UserPreferences
+    from .tenancy import Tenant, TenantApplication, TenantRegistry
+    from .ui.application import App
 
 
 def __dir__():

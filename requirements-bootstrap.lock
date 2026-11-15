@@ -1,2 +1,0 @@
-# The packaged lock also bootstraps generated projects and staged upgrades.
--r evlet/resources/bootstrap.lock

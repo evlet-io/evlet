@@ -54,7 +54,6 @@ Run from the repository root:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/python -m pip install --upgrade --require-hashes -r requirements-bootstrap.lock
 .venv/bin/python -m pip install --require-hashes -r requirements-dev.lock
 .venv/bin/python -m pip install --no-build-isolation --no-deps -e .
 npm --prefix frontend ci
@@ -161,7 +160,6 @@ npm --prefix frontend test
 npm --prefix frontend run build
 .venv/bin/python -m build --no-isolation
 python3 -m venv /tmp/evlet-wheel-check
-/tmp/evlet-wheel-check/bin/python -m pip install --upgrade --require-hashes -r requirements-bootstrap.lock
 /tmp/evlet-wheel-check/bin/python -m pip install dist/evlet-*.whl
 /tmp/evlet-wheel-check/bin/python -I scripts/check_package.py
 /tmp/evlet-wheel-check/bin/python -I scripts/smoke_cli.py
@@ -235,9 +233,6 @@ with the canonical UI, security, currency, migrations and API stability guides. 
 APIs only in clearly labeled upgrade/history sections; verify the documented command in
 a fresh disposable environment.
 
-`requirements-bootstrap.lock` includes the packaged `evlet/resources/bootstrap.lock`,
-which pins the installer for development/CI, generated projects and staged upgrades
-separately from runtime dependencies. Before each release, audit this lock and the runtime/optional locks against
-current advisories, deduplicate aliases, and record the affected environment. Refresh the
-installer pin and hashes when necessary; do not weaken the dependency hash checks or
-application-install trust prompts.
+Before each release, audit the runtime/optional locks against current advisories,
+deduplicate aliases, and record the affected environment. Refresh pins and hashes when
+necessary; do not weaken the dependency hash checks or application-install trust prompts.

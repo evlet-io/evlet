@@ -19,6 +19,7 @@ class Item(Model):
 def bounded(tmp_path, monkeypatch):
     module = importlib.import_module('evlet.runtime')
     runtime = module.HTTPRuntime({name: 1 for name in module.HTTPRuntime.DEFAULTS})
+    runtime.queue_seconds = .05  # Overload tests reach the 503 quickly.
     monkeypatch.setattr(module, '_runtime', runtime)
     app = Application(Database(tmp_path / 'data.sqlite3', Registry(Item)))
     app.initialize()
@@ -79,9 +80,9 @@ def test_cancelled_writer_keeps_admission_and_reads_keep_capacity(bounded):
         blocker.join(3)
 
 
-def test_prebody_admission_and_body_deadline(bounded):
+def test_stalled_body_holds_no_write_slot_and_times_out_when_idle(bounded):
     app, runtime = bounded
-    runtime.body_seconds = .05
+    runtime.body_idle_seconds = .05
     async def run():
         reading = asyncio.Event()
         async def stalled():
@@ -89,14 +90,60 @@ def test_prebody_admission_and_body_deadline(bounded):
             await asyncio.Future()
         first = asyncio.create_task(request(app, 'POST', '/api/item', receive=stalled))
         await reading.wait()
-        async def forbidden_read():
-            pytest.fail('An overloaded request must be refused before consuming its body')
-        rejected = await request(app, 'POST', '/api/item', receive=forbidden_read)
-        assert rejected[0]['status'] == 503
-        assert (b'retry-after', b'1') in rejected[0]['headers']
+        # The only write slot stays free while the first body has not arrived.
+        assert runtime.lanes['write'].active() == 0
+        assert (await asyncio.wait_for(request(app, 'POST', '/api/item', {'title': 'Other'}), 1))[0]['status'] == 201
         assert (await asyncio.wait_for(first, 1))[0]['status'] == 408
         assert (await request(app, 'POST', '/api/item', {'title': 'Recovered'}))[0]['status'] == 201
     asyncio.run(run())
+
+
+def test_slow_steady_body_is_accepted_beyond_the_idle_limit(bounded):
+    app, runtime = bounded
+    runtime.body_idle_seconds = .1
+    payload = json.dumps({'title': 'Slow but steady'}).encode()
+    chunks = [payload[index:index + 3] for index in range(0, len(payload), 3)]
+    async def run():
+        sent = iter(range(len(chunks)))
+        async def dribble():
+            index = next(sent)
+            await asyncio.sleep(.03)  # Total time well beyond the idle limit, each gap within it.
+            return {'type': 'http.request', 'body': chunks[index], 'more_body': index < len(chunks) - 1}
+        started = asyncio.get_running_loop().time()
+        response = await request(app, 'POST', '/api/item', receive=dribble)
+        assert asyncio.get_running_loop().time() - started > 2 * runtime.body_idle_seconds
+        assert response[0]['status'] == 201
+    asyncio.run(run())
+    assert [item.title for item in app.database.list(Item)] == ['Slow but steady']
+
+
+def test_full_lane_queues_then_refuses_with_retry_after(bounded):
+    app, runtime = bounded
+    held, release = threading.Event(), threading.Event()
+    original = app._dispatch
+    def gated(scope, body):
+        if body and body.get('title') == 'Hold':
+            held.set()
+            assert release.wait(5)
+        return original(scope, body)
+    app._dispatch = gated
+    async def run():
+        first = asyncio.create_task(request(app, 'POST', '/api/item', {'title': 'Hold'}))
+        await until(held.is_set)
+        rejected = await request(app, 'POST', '/api/item', {'title': 'Refused'})
+        assert rejected[0]['status'] == 503 and (b'retry-after', b'1') in rejected[0]['headers']
+        runtime.queue_seconds = 3
+        queued = asyncio.create_task(request(app, 'POST', '/api/item', {'title': 'Queued'}))
+        await until(lambda: runtime.lanes['write'].waiting() == 1)
+        release.set()
+        assert (await first)[0]['status'] == 201
+        assert (await asyncio.wait_for(queued, 2))[0]['status'] == 201
+        assert runtime.lanes['write'].active() == 0 and runtime.lanes['write'].waiting() == 0
+    try:
+        asyncio.run(run())
+    finally:
+        release.set()
+    assert sorted(item.title for item in app.database.list(Item)) == ['Hold', 'Queued']
 
 
 def test_slow_response_retains_admission(bounded):
@@ -218,6 +265,7 @@ def test_read_burst_has_a_bounded_queue_and_independent_probe(bounded, http_capa
         readers = [asyncio.create_task(request(app, path='/api/item')) for _ in range(32)]
         try:
             await until(lambda: len(app._work.futures) == 32 and len(entered) == 8)
+            runtime.queue_seconds = .05
             assert runtime.lanes['read'].active() == 32
             assert runtime.lanes['read'].executor._work_queue.qsize() == 24
             assert (await request(app, path='/api/item'))[0]['status'] == 503
@@ -285,3 +333,31 @@ def test_invalid_health_method_cannot_reserve_probe_while_waiting_for_body(bound
             invalid.cancel()
             await asyncio.gather(invalid, return_exceptions=True)
     asyncio.run(run())
+
+
+def test_stalled_bodies_do_not_block_writes_to_another_application(tmp_path, http_capacity):
+    http_capacity()  # Default write lane: 4 slots shared by every application in the process.
+    apps = [Application(Database(tmp_path / f'{name}.sqlite3', Registry(Item))) for name in ('slow', 'other')]
+    for app in apps:
+        app.initialize()
+    slow, other = apps
+    async def run():
+        stalled = asyncio.Event()
+        async def never():
+            await stalled.wait()
+            return {'type': 'http.disconnect'}
+        # Four clients that started a sign-in or create and stopped sending its body.
+        held = [asyncio.create_task(request(slow, 'POST', path, receive=never))
+                for path in ('/api/auth/login', '/api/item', '/api/item', '/api/item')]
+        await asyncio.sleep(.05)
+        try:
+            assert (await asyncio.wait_for(request(other, 'POST', '/api/item', {'title': 'Other app'}), 1))[0]['status'] == 201
+            assert (await asyncio.wait_for(request(slow, 'POST', '/api/item', {'title': 'Same app'}), 1))[0]['status'] == 201
+        finally:
+            stalled.set()
+            await asyncio.gather(*held, return_exceptions=True)
+    try:
+        asyncio.run(run())
+    finally:
+        for app in apps:
+            app.database.close()

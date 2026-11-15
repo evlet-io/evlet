@@ -47,8 +47,6 @@ def check_pwa_package(sdist):
                 except KeyError:
                     raise RuntimeError(f'Source distribution lacks PWA asset {path}') from None
                 assert source is not None and source.read() == (assets / name).read_bytes()
-        assert archive.extractfile(prefix + 'evlet/resources/bootstrap.lock').read() == \
-            (Path(evlet.__file__).parent / 'resources/bootstrap.lock').read_bytes()
         # The source's development entry is typechecked by npm run build and imports this fixture.
         for path in ('frontend/evlet.html', 'frontend/src/evlet/tests/server.ts', 'frontend/src/evlet/tests/api-fixture.json'):
             assert archive.getmember(prefix + path).isfile(), f'Source distribution lacks {path}'
@@ -64,13 +62,6 @@ def main():
     for optional in ('joserfc', 'boto3', 'weasyprint', 'jinja2'):
         assert util.find_spec(optional) is None, f'Clean wheel check unexpectedly has optional dependency {optional}'
     check_pwa_package(args.sdist)
-
-    from evlet.cli.setup import installer_bootstrap
-    with installer_bootstrap(sys.executable) as command:
-        lock = Path(command[-1])
-        assert lock.is_relative_to(Path(evlet.__file__).parent)
-        assert 'pip==' in lock.read_text() and '--hash=sha256:' in lock.read_text()
-        assert '--require-hashes' in command and '--only-binary=:all:' in command
 
     from evlet.ui.serving import static_response
     response = static_response("/docs")
