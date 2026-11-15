@@ -301,3 +301,34 @@ c.commit()
         if child.poll() is None:
             child.kill()
             child.wait()
+
+
+@pytest.mark.parametrize('damage', ['missing', 'garbage'])
+def test_restore_replaces_a_damaged_or_incomplete_live_set_and_keeps_its_files(tmp_path, damage):
+    path, main, source = instance(tmp_path)
+    side = writes.side_path(main, 'eva')
+    if damage == 'missing':
+        side.unlink()
+    else:
+        for item in (side, side.with_name(side.name + '-wal'), side.with_name(side.name + '-shm')):
+            item.unlink(missing_ok=True)
+        side.write_bytes(b'garbage' * 1000)
+    safety, _ = restore(tmp_path, 'acme', source)
+    assert numbers(main) == [1] * 4
+    # The live set could not pass the backup checks, so its files were kept as they were.
+    assert safety.is_dir() and (safety / 'database.sqlite3').is_file()
+    assert (safety / side.name).exists() == (damage == 'garbage')
+
+
+def test_secret_rotation_waits_for_an_interrupted_installation(tmp_path, capsys):
+    from evlet.cli.main import main
+    path, main_file, _ = instance(tmp_path)
+    for folder in ('apps', 'instances'):
+        (tmp_path / folder).mkdir(exist_ok=True)
+    (path / 'config.py').write_text('from evlet import Instance\n\ninstance = Instance(name="acme", database="sqlite", storage="local", domain=None)\n')
+    (path / 'secret.key').write_text('')
+    (path / '.install-journal.json').write_text('{}')
+    with pytest.raises(SystemExit):
+        main(['secrets', 'rotate', 'acme', '--project', str(tmp_path)])
+    assert 'needs recovery before rotating the secret key' in capsys.readouterr().err
+    assert (path / 'secret.key').read_text() == ''
