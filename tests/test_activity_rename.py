@@ -213,3 +213,25 @@ def test_the_journal_command_names_its_replacement(argv, capsys):
         main(argv)
     assert exit.value.code == 2
     assert "'evlet journal' was renamed: use 'evlet activity verify INSTANCE'" in capsys.readouterr().err
+
+
+def test_old_modules_meta_inheritance_and_operation_name_the_replacement():
+    import importlib
+    import pytest as _pytest
+    from evlet import Model, Policy, Registry, Text, User
+    from evlet.permissions import Rule
+    for name, replacement in (('evlet.journal', 'evlet.activity'), ('evlet.cli.journal', 'evlet.cli.activity')):
+        with _pytest.raises(ImportError, match=f'{name} was renamed: use {replacement}'):
+            importlib.import_module(name)
+    class Base:
+        journal = None
+    with _pytest.raises(ValueError, match='Meta.journal was renamed'):
+        class Inherited(Model):
+            title = Text()
+            Meta = type('Meta', (Base,), {})
+    class Plain(Model):
+        permissions = {'admin': Rule(('read',))}
+        title = Text()
+    policy = Policy(Registry(Plain))
+    with _pytest.raises(ValueError, match="'journal' operation was renamed: use 'activity'"):
+        policy.allows(User(1, 'admin', 'admin'), Plain, 'journal')

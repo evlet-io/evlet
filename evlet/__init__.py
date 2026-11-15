@@ -176,3 +176,20 @@ def __getattr__(name):
     if name == 'journal':
         raise ImportError('evlet.journal was renamed: use evlet.activity')
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+
+
+class _Renamed:
+    """Refuse the renamed modules with the replacement, instead of a bare ModuleNotFoundError."""
+    MODULES = {'evlet.journal': 'evlet.activity', 'evlet.cli.journal': 'evlet.cli.activity'}
+
+    @classmethod
+    def find_spec(cls, name, path=None, target=None):
+        if name in cls.MODULES:
+            raise ImportError(f'{name} was renamed: use {cls.MODULES[name]} (docs/activity.md)', name=name)
+        return None
+
+
+import sys as _sys
+if not any(finder is _Renamed or type(finder).__name__ == '_Renamed' for finder in _sys.meta_path):
+    _sys.meta_path.insert(0, _Renamed)
+del _sys

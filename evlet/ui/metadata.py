@@ -259,7 +259,7 @@ def check_focus(where, definition, name):
 def refuse_removed(name, meta):
     """Raise ValueError for a removed Meta option (Meta.tabs and Meta.default_tab in 0.4, Meta.journal after 0.4.7),
     saying what to use."""
-    if isinstance(meta, type) and 'journal' in vars(meta):
+    if isinstance(meta, type) and hasattr(meta, 'journal'):
         raise ValueError(f'{name}.Meta.journal was renamed: use Meta.activity = Activity(...), or Meta.activity = None '
                          'to turn it off (docs/activity.md)')
     for removed in ('tabs', 'default_tab'):

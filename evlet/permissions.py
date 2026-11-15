@@ -393,6 +393,8 @@ class Policy:
         return found
 
     def allows(self, user, model, operation):
+        if operation == 'journal':
+            raise ValueError("The 'journal' operation was renamed: use 'activity'")
         if not surface(self.registry, model, operation):
             return False
         if is_administrator(user):

@@ -15,8 +15,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `Activity`, `Meta.journal = Journal(...)` with `Meta.activity = Activity(...)` (or `None`), and the
   `journal` operation in `Rule(...)` with `activity`. HTTP clients use `/api/{model}/{id}/activity`
   and read `_activity` in record details and `activity` in schema entries and events; scripts run
-  `evlet activity verify`. There are no aliases: each old name fails with a message naming its
-  replacement. Step `0016_activity` renames `evlet_journal` and `evlet_journal_hashed` in place,
+  `evlet activity verify`. There are no aliases: each old Python name, module, route, operation and
+  command fails with a message naming its replacement; the old `_journal` and `journal` response
+  keys are simply gone. Step `0016_activity` renames `evlet_journal` and `evlet_journal_hashed` in place,
   with every entry and hash, and the `journal` operation in stored Controls overrides
   ([docs/activity.md](docs/activity.md#renamed-from-the-journal)).
 
