@@ -281,6 +281,16 @@ describe('Controls sidebar', () => {
   const rule = (selector: string) => [...css.matchAll(/([^{}@]+)\{([^{}]*)\}/g)]
     .filter(m => m[1].split(',').map(s => s.trim()).includes(selector)).map(m => m[2]).join(';');
 
+  it('searches, filters and pages users on the server', async () => {
+    const { host, sent } = open('/controls/users', () => ({ status: 200, body: {} }));
+    await until(() => expect(host.querySelector('input[aria-label="Search users"]')).toBeTruthy());
+    const input = host.querySelector<HTMLInputElement>('input[aria-label="Search users"]')!;
+    input.value = 'RA'; input.dispatchEvent(new Event('input'));
+    await until(() => expect(sent.some(item => item.method === 'GET' && item.url.includes('/api/_controls/users') && item.url.includes('q=RA'))).toBe(true));
+    click(byText(host, '.ctl-tabs button', /^Inactive/));
+    await until(() => expect(sent.some(item => item.url.includes('/api/_controls/users') && item.url.includes('active=false') && item.url.includes('q=RA'))).toBe(true));
+  });
+
   it('scrolls only the nav list between a fixed head and foot', async () => {
     const { host } = open('/controls/users', () => ({ status: 200, body: {} }));
     await until(() => expect(host.querySelector('.ctl-side .ctl-nav-item')).toBeTruthy());
