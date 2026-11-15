@@ -29,14 +29,23 @@ def empty(project):  # noqa: F811
     return project, runtime(project)
 
 
+class _Serving(Exception):
+    """Ends the lifespan loop after startup without shutting down, as a running dev server would leave it."""
+
+
 def start(app, capsys, announce=True, **options):
     async def run():
-        events = [{'type': 'lifespan.startup'}, {'type': 'lifespan.shutdown'}]
+        events = [{'type': 'lifespan.startup'}]
         async def receive():
+            if not events:
+                raise _Serving()
             return events.pop(0)
         async def send(message):
             pass
-        await DevSignIn(app, announce=announce, **options)({'type': 'lifespan'}, receive, send)
+        try:
+            await DevSignIn(app, announce=announce, **options)({'type': 'lifespan'}, receive, send)
+        except _Serving:
+            pass
     asyncio.run(run())
     captured = capsys.readouterr()
     return captured.out, captured.err
