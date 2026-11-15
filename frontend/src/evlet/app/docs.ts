@@ -255,7 +255,7 @@ function StateDisplay(): Child {
     ${section('show="none"', p('Neither a badge nor a bar: for an app that places the state itself, in a field or a custom block. The moves stay as the header button. When Meta.status names the State, its badge shows whatever show says.'),
       code(STATE_CODE.none),
       example('none', 'No state is drawn; the header keeps its moves.', header('Acme renewal', null, MovesButton(sampleEntries(DEAL, sampleMoves(DEAL, 'qualified'))))))}
-    ${section('Step colours and final steps', p('color is one of blue, green, amber, rose, violet, teal and slate; a step without one is neutral, and the screen never guesses a colour from the name. The default step reads as a dashed Draft pill. A final or locked step shows a lock and its label in grey, and a final step coloured rose reads as cancelled, in red with a ban icon.'),
+    ${section('Step colours and final steps', p('color is one of blue, green, amber, rose, violet, teal and slate; a step without one is neutral, and the screen never guesses a colour from the name. The default step reads as a dashed Draft pill. A final or locked step that declares a colour keeps its coloured pill, with a small lock; one without a colour shows a lock and its label in grey. A final step coloured rose reads as cancelled, in red with a ban icon.'),
       example('colours', 'Every step of the deal, then the invoice\'s steps.',
         labelled('Deal', DEAL.state!.steps.map(step => badge(DEAL, () => step.key))),
         labelled('Invoice', INVOICE.state!.steps.map(step => badge(INVOICE, () => step.key)))))}

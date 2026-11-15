@@ -52,6 +52,11 @@ def release(method):
     return _hook('release', ())(method)
 
 
+release.exit = lambda method: _hook('release_exit', ())(method)
+release.exit.__doc__ = ('@release.exit: runs when a move leaves the released set (from a release=True step to one that is not), '
+                        'after the snapshot and @state.exit, before the state changes.')
+
+
 def state(*states):
     """@state("approved", ...): runs when the document enters one of the states."""
     return _hook('enter', states)
@@ -70,8 +75,8 @@ def configure(model):
             hooks.append((kind, states, name))
     field = model.__declared_fields__.get(model.__state__) if model.__state__ else None
     for kind, states, name in hooks:
-        if kind in ('enter', 'exit', 'release') and field is None:
-            raise ValueError(f'{model.__name__}.{name}: @state, @state.exit and @release need a State on the model')
+        if kind in ('enter', 'exit', 'release', 'release_exit') and field is None:
+            raise ValueError(f'{model.__name__}.{name}: @state, @state.exit, @release and @release.exit need a State on the model')
         unknown = set(states) - set(field.choices if field else ())
         if unknown:
             raise ValueError(f'{model.__name__}.{name} names an unknown state: ' + ', '.join(sorted(unknown)))
@@ -699,25 +704,52 @@ def releasing(model):
     return model.__state__ is not None and bool(model.__declared_fields__[model.__state__].releases)
 
 
-def tree(item):
-    """A saved document tree (a Draft, or a record with `_rows`) as JSON values: every stored field, at every depth."""
+def tree(item, clean=False):
+    """A saved document tree (a Draft, or a record with `_rows`) as JSON values: every stored field, at every depth.
+    clean=True first cleans each value, for a draft that has not settled yet; a value that does not clean is kept as
+    its text, so it never equals a saved one."""
     definition = item._definition if hasattr(item, '_definition') else type(item)
     result = {'id': str(item.id)}
     for name, field in definition.__fields__.items():
         if name not in getattr(definition, '__internal_fields__', ()):
-            result[name] = field.serialize(item._values.get(name))
-    result['children'] = {name: [tree(row) for row in rows] for name, rows in getattr(item, '_rows', {}).items()}
+            value = item._values.get(name)
+            if clean:
+                try:
+                    value = field.clean(value)
+                except (ValueError, TypeError):
+                    result[name] = ('unclean', repr(value))
+                    continue
+            result[name] = field.serialize(value)
+    result['children'] = {name: [tree(row, clean) for row in rows] for name, rows in getattr(item, '_rows', {}).items()}
     return result
 
 
-def versioned(model, data, registry):
-    """The content of a document tree: versioned fields only (not the State, not versioned=False, not excluded)."""
+def versioned(model, data, registry, *, excluded=False):
+    """The content of a document tree: versioned fields only (not the State, not versioned=False, not excluded).
+    excluded=True keeps tracking="exclude" fields: everything but the State and versioned=False fields."""
     tables = {child.name: child.model for child in registry.children if child.parent is model}
     result = {key: value for key, value in data.items() if key in ('id', 'children') or (
-        key in model.__fields__ and model.__fields__[key].versioned and model.__fields__[key].tracking != 'exclude' and key != model.__state__)}
-    result['children'] = {name: [versioned(tables[name], row, registry) for row in rows]
+        key in model.__fields__ and model.__fields__[key].versioned and (excluded or model.__fields__[key].tracking != 'exclude')
+        and key != model.__state__)}
+    result['children'] = {name: [versioned(tables[name], row, registry, excluded=excluded) for row in rows]
                           for name, rows in data.get('children', {}).items() if name in tables}
     return result
+
+
+def within_release(model, previous, target):
+    """Whether a move from `previous` to `target` stays inside the released set (both steps are release=True)."""
+    releases = model.__declared_fields__[model.__state__].releases if model.__state__ else ()
+    return previous in releases and target in releases
+
+
+def process_only(model, before, draft, registry):
+    """Whether a write changed nothing but the State and versioned=False fields, at every depth."""
+    return versioned(model, tree(before), registry, excluded=True) == versioned(model, tree(draft, clean=True), registry, excluded=True)
+
+
+def same_content(model, before, draft, registry):
+    """Whether an unsettled draft has the versioned content (the release hash's content) of the saved record."""
+    return versioned(model, tree(before), registry) == versioned(model, tree(draft, clean=True), registry)
 
 
 def digest(model, data, registry):

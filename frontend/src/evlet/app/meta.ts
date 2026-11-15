@@ -108,6 +108,12 @@ export function stateLook(model: ScreenModel, value: unknown): StateLook | null 
   if (step?.final || step?.lock) return 'locked';
   return name === (state.default ?? state.steps[0]?.key) ? 'draft' : 'open';
 }
+/** The colour a locked step keeps: a `lock`/`final` step that declares a colour and is not cancelled draws as its
+ * coloured pill with a small lock. Null for every other step, which draws as stateLook says. */
+export function lockedColor(model: ScreenModel, value: unknown): Tint | null {
+  if (stateLook(model, value) !== 'locked') return null;
+  return model.state?.steps.find(item => item.key === String(value))?.color ?? null;
+}
 /** A State step by key, and its label (a value that is no step reads humanized). */
 export const stepOf = (model: ScreenModel, value: string): StepSchema | undefined => model.state?.steps.find(step => step.key === value);
 export const stepLabel = (model: ScreenModel, value: string): string => stepOf(model, value)?.label ?? humanize(value);

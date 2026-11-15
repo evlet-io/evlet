@@ -984,6 +984,11 @@ dated in it. The error is on the period field: `"This date is in a closed period
 31-03-2026)"`, a 422 over HTTP and a `ValidationError` in Python. A record with no date is in
 no period.
 
+One move passes: a move within the release (from one `release=True` step to another, such as
+unpaid to paid) that changes nothing but the State and `versioned=False` fields. A closed period
+protects content, not process ([states-actions.md](states-actions.md#moves-within-the-release)).
+Such a move also keeps the record's saved results, so it does not recalculate.
+
 For a migration or a data repair, trusted code opens closed periods for one block. The reason
 is required, logged on the `evlet.periods` logger and written to the audit log. No route
 reaches it.

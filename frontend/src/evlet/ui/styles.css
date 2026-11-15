@@ -385,6 +385,8 @@ table.dt{width:100%;border-collapse:separate;border-spacing:0;font-size:13px}
 .ev-status-locked{color:var(--fg-3);font-weight:500}
 .ev-status.ev-status-draft{background:none;border:1px dashed var(--border-strong);color:var(--fg-2);font-weight:500}
 .ev-status-ic{flex:none}
+.ev-status-lockpill{gap:4px}.ev-status-lockpill .ev-status-ic{margin-left:-1px}
+.ev-state-mark{height:18px;font-size:11.5px;margin-right:6px;vertical-align:1px}
 .ev-status-cancelled.ev-status-go:hover,.ev-status-locked.ev-status-go:hover{filter:none;text-decoration:underline}
 /* A cancelled board card: the title struck through and grey, the rest a little muted. */
 .card.is-cancelled .t{color:var(--fg-3);text-decoration:line-through}

@@ -133,3 +133,26 @@ describe('a cancelled record', () => {
     expect(host.querySelector('.ev-panel .doc-head')!.classList.contains('is-cancelled')).toBe(false);
   });
 });
+
+describe('locked steps keep their colour', () => {
+  it('draws a coloured locked step as its pill with a lock, and a plain locked or cancelled step as before', async () => {
+    const { stateBadgeLook } = await import('../app/record-page');
+    const { StateMark } = await import('../app/list-page');
+    const look = stateBadgeLook(project()).look;
+    // done is locked and green; cancelled is final and rose; a locked step without a colour stays grey.
+    expect(look('done')).toBe('locked-pill');
+    expect(look('cancelled')).toBe('cancelled');
+    const plain = { ...project(), state: { ...project().state!, steps: [step('draft'), step('closed', null, true)] } } as ScreenModel;
+    expect(stateBadgeLook(plain).look('closed')).toBe('locked');
+    const host = html`<div>${StatusBadge({ value: 'done', label: () => 'Done', tint: () => 'green', look: () => 'locked-pill' })}</div>` as HTMLElement;
+    const pill = host.firstElementChild as HTMLElement;
+    expect(pill.className).toBe('pill ev-status ev-status-lockpill b-green');
+    expect(pill.querySelector('svg')).not.toBeNull();
+    expect(pill.querySelector('.d')).toBeNull();
+    // A board card's mark: the small coloured pill for a coloured locked step, the icon otherwise.
+    expect(StateMark(project(), 'done').className).toContain('b-green');
+    expect(StateMark(project(), 'done').getAttribute('aria-label')).toBe('Locked: done');
+    expect(StateMark(plain, 'closed').className).toBe('ev-state-ic');
+    expect(StateMark(project(), 'cancelled').className).toBe('ev-state-ic');
+  });
+});

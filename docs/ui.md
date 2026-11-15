@@ -170,10 +170,13 @@ The State in the schema decides how a record's state is drawn, never the state's
   icon (no pill), and a soft red strip says "Cancelled on 09-11-2026 by sara. Reason: ...", from the newest move
   into that state in the activity (its remark, or a text value the move asked for). Without an activity the strip
   says only the state.
-- **Locked**: any other `lock=True` or `final` step, such as Confirmed or Done: a lock and the state's name in grey.
-  A separate `Meta.status` badge after it stays a soft pill ("Paid").
+- **Locked**: any other `lock=True` or `final` step, such as Confirmed or Done. A step that declares a colour keeps
+  its coloured pill, with a small lock in place of the dot, on the record, in the State column of lists and as the
+  mark on board cards; a step without a colour shows a lock and the state's name in grey. A separate
+  `Meta.status` badge after it stays a soft pill ("Paid").
 - In lists (the table, the narrow list beside a panel and board cards), a small muted icon before the first value
-  says the same: a ban for cancelled, a lock for locked or final, a pencil for a draft; only cancelled rows are
+  says the same: a ban for cancelled, a lock for locked or final (on a board card, a locked step with a colour shows
+  its small coloured pill with the lock), a pencil for a draft; only cancelled rows are
   struck through and greyed. A list of a model with a State keeps the icon's room on every row, so the first
   column stays aligned.
 - **Draft**: the state a record starts in (the State's `default`, else its first state) while not locked: a dashed

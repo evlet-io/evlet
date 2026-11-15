@@ -1687,13 +1687,17 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         draft, before = load_draft(context, model, record_id, values, complete=restored is not None)
     statemanager.bind(draft, before)
     ordinary = action is None and move is None
+    # A move from one release step to another (an invoice going unpaid, overdue, paid) changes the process, not the
+    # document: unless its values or hooks change versioned content, it keeps saved results, takes no snapshot and
+    # makes no release. Whether it does is known once its hooks have run, so the formula version is checked then.
+    within = rule is not None and statemanager.within_release(model, before._values.get(model.__state__), rule.to)
     kept_by = keeps_saved_results(context, model, before, ordinary=ordinary)
     kept = bool(kept_by)
     # A record with postings keeps its stored calculated values for every writer.
     posted = 'posted' in kept_by
     # An ordinary write on a locked record changes only versioned=False fields and keeps saved results.
     locked_write = ordinary and 'locked' in kept_by
-    if context._recalculate == (model, record_id) and before is not None:
+    if context._recalculate == (model, record_id) and before is not None and not within:
         if posted:
             raise AccessError(409, 'This record has postings. To change its totals, move it out of its posted state.')
         if locked_write:
@@ -1703,24 +1707,22 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     # A write that keeps saved results does not recalculate, so it neither checks nor updates the recorded formula version.
     if kept:
         plan = None
-    if plan is not None and record_id:
-        row = tx.connection.run(qb.select('evlet_calculation_versions', 'plan_hash')
-                                .where(resource=business.registry.name_for(model), record_id=record_id)).one()
-        # No recorded version (saved outside the pipeline or before tracking) adopts the active plan.
-        if row is not None and row[0] != version and context._recalculate != (model, record_id):
-            raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
-                                   'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
+    if plan is not None and record_id and not within:
+        check_plan_version(context, model, record_id, version)
     outcome, reversed_rows = None, []
     if rule is not None:
         previous = before._values.get(model.__state__)
-        if previous in model.__declared_fields__[model.__state__].releases:
-            # Leaving a release keeps its content first (the snapshot is taken once, lazily).
+        leaving = previous in model.__declared_fields__[model.__state__].releases and not within
+        if leaving:
+            # Leaving the released set keeps the release's content first (the snapshot is taken once, lazily).
             statemanager.diverge(context, model, before, draft, leaving=True)
         if any(bound.on == previous for bound in business.registry.effects.get(model, ())):
             # Leaving a posting state reverses what it posted, before any hook runs.
             from .effects import reverse
             reversed_rows = reverse(context, model, record_id)
         statemanager.run_hooks(context, draft, 'exit', previous)
+        if leaving:
+            statemanager.run_hooks(context, draft, 'release_exit')
         draft._values[model.__state__] = rule.to
         statemanager.run_hooks(context, draft, 'enter', rule.to)
     elif action is not None:
@@ -1733,6 +1735,14 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             outcome = method(draft, **arguments)
     elif before is not None:
         statemanager.check_state_lock(context, draft, before)
+    # A move within the release that changed versioned content is a real release: the normal rules apply.
+    process = within and statemanager.same_content(model, before, draft, business.registry)
+    if process:
+        if context._recalculate == (model, record_id):
+            raise AccessError(409, 'A move within the release keeps its saved results, so it cannot recalculate them')
+        kept, plan = True, None
+    elif within and plan is not None:
+        check_plan_version(context, model, record_id, version)
     # Settling runs @validate on the document and each row (validate_tree), after every value is final.
     settle(context, draft, complete=True, previous=before, kept=kept)
     if posted and not locked_write:
@@ -1755,13 +1765,14 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     # Entering a release step (or a Release) whose content changed since the last release releases it: @release,
     # then calculations and @validate again. The write that changes a released content snapshots that release first.
     released = None
-    if release or rule is not None and rule.to in model.__declared_fields__[model.__state__].releases:
+    if release or rule is not None and rule.to in model.__declared_fields__[model.__state__].releases and not process:
         released = statemanager.prepare_release(context, model, draft)
         if released is not None:
             settle(context, draft, complete=True, previous=before, kept=kept)
         elif release:
             raise AccessError(409, 'Nothing changed since the last release')
-    if rule is None or rule.sources and before._values.get(model.__state__) not in model.__declared_fields__[model.__state__].releases:
+    if rule is None or rule.sources and before._values.get(model.__state__) not in model.__declared_fields__[model.__state__].releases \
+            or within and not process:
         statemanager.diverge(context, model, before, draft)
     prior = before.stored_values() if before else None
     after = draft.stored_values()
@@ -1772,9 +1783,11 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
         add_outcome(result, outcome)
         return result
-    # A closed period (Meta.period) refuses the write whether the saved or the new date is in it.
+    # A closed period (Meta.period) refuses the write whether the saved or the new date is in it. It protects content,
+    # not process: a move within the release that changes only the State and versioned=False fields passes.
     from . import periods
-    periods.check(tx, model, before=before._values if before is not None else None, after=draft._values)
+    if not (within and statemanager.process_only(model, before, draft, business.registry)):
+        periods.check(tx, model, before=before._values if before is not None else None, after=draft._values)
     record = write_snapshot(tx, draft, before)
     if plan is not None:
         record_plan(tx, business.registry.name_for(model), record.id, version)
@@ -1804,6 +1817,17 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if keys: result['_row_ids'] = keys
     add_outcome(result, outcome)
     return result
+
+
+def check_plan_version(context, model, record_id, version):
+    """Refuse a recalculating write to a record calculated with another formula plan, unless it asked to recalculate."""
+    tx, registry = context._tx, context._business.registry
+    row = tx.connection.run(qb.select('evlet_calculation_versions', 'plan_hash')
+                            .where(resource=registry.name_for(model), record_id=record_id)).one()
+    # No recorded version (saved outside the pipeline or before tracking) adopts the active plan.
+    if row is not None and row[0] != version and context._recalculate != (model, record_id):
+        raise AccessError(409, 'SCHEMA_VERSION_MISMATCH: this record was calculated with another plan; '
+                               'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
 
 
 def keeps_saved_results(context, model, before, *, ordinary=True):

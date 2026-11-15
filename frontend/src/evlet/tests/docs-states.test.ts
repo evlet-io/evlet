@@ -76,9 +76,11 @@ describe('Docs, State display', () => {
     expect(cls('Lead')).toContain('ev-status-draft');
     expect(cls('Qualified')).toContain('b-blue');
     expect(cls('Negotiation')).toContain('b-amber');
-    expect(cls('Won')).toContain('ev-status-locked');
+    // A locked or final step with a colour keeps its coloured pill, with a lock instead of the dot.
+    expect(cls('Won')).toContain('ev-status-lockpill');
+    expect(cls('Won')).toContain('b-green');
     expect(cls('Lost')).toContain('ev-status-cancelled');
-    expect(cls('Issued')).toContain('ev-status-locked');
+    expect(cls('Issued')).toContain('ev-status-lockpill');
     expect(cls('Void')).toContain('ev-status-cancelled');
   });
 

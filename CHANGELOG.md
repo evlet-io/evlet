@@ -4,6 +4,27 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Added
+
+- **`@release.exit`.** A hook that runs when a move leaves the released set (from a
+  `release=True` step to one that is not), after the snapshot and `@state.exit`, before the state
+  changes ([states-actions.md](docs/states-actions.md#hooks)).
+
+### Changed
+
+- **Process states inside a release.** A move between two `release=True` steps (an invoice
+  going unpaid, overdue, paid) is a move within the release: unless its values or hooks change
+  versioned content, it makes no release, takes no snapshot, keeps its saved results (no
+  recalculation, no formula version check; `"recalculate": true` with it is refused with 409)
+  and passes a closed period when it changes only the State and `versioned=False` fields. Only a
+  release exit snapshots the release. `@state` and `@state.exit` still run on every move
+  ([states-actions.md](docs/states-actions.md#moves-within-the-release)).
+- **Locked steps keep their colour.** A `lock=True` step that declares a colour draws as its
+  coloured pill with a small lock, on the record, in lists and on board cards. A locked step
+  without a colour and a cancelled step draw as before.
+
 ## 0.4.9 (15-11-2026)
 
 ### Fixed
