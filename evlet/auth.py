@@ -242,10 +242,12 @@ def client_network(address):
 # Accounts, sessions and their framework tables. Columns added in later releases follow in initialize().
 USERS = TableDefinition('evlet_users', (
     Column('username', 'TEXT', required=True), Column('password', 'TEXT', required=True), Column('role', 'TEXT', required=True),
-    Column('active', 'INTEGER', required=True, default=1)), numbered=True, unique=(('username',),))
+    Column('active', 'INTEGER', required=True, default=1), Column('session_generation', 'INTEGER', required=True, default=0)),
+    numbered=True, unique=(('username',),))
 SESSIONS = TableDefinition('evlet_sessions', (
     Column('token', 'TEXT', primary=True), Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
-    Column('csrf', 'TEXT', required=True), Column('expires', 'INTEGER', required=True), Column('realm', 'TEXT', required=True, default='desk')))
+    Column('csrf', 'TEXT', required=True), Column('expires', 'INTEGER', required=True), Column('realm', 'TEXT', required=True, default='desk'),
+    Column('session_generation', 'INTEGER', required=True, default=0)))
 LOGIN_LIMITS = TableDefinition('evlet_login_limits', (
     Column('client', 'TEXT', primary=True), Column('attempts', 'INTEGER', required=True), Column('resets', 'INTEGER', required=True)))
 FORWARDED_PEERS = TableDefinition('evlet_forwarded_peers', (Column('peer', 'TEXT', primary=True), Column('last_seen', 'INTEGER', required=True)))
@@ -340,8 +342,6 @@ class LocalAuth:
             tx.connection.ensure_table(USERS)
             # Allow Eva and Allow MCP (Controls, Users): both off for new people. They open Eva or MCP and grant no record access.
             users = tx.connection.columns('evlet_users')
-            if 'session_generation' not in users:
-                tx.connection.add_column('evlet_users', Column('session_generation', 'INTEGER', required=True), default=0)
             for name in ('allow_eva', 'allow_mcp'):
                 if name not in users:
                     tx.connection.add_column('evlet_users', Column(name, 'INTEGER', required=True), default=0)
@@ -353,8 +353,6 @@ class LocalAuth:
             columns = tx.connection.columns('evlet_sessions')
             if 'realm' not in columns:
                 tx.connection.add_column('evlet_sessions', Column('realm', 'TEXT', required=True), default='desk')
-            if 'session_generation' not in columns:
-                tx.connection.add_column('evlet_sessions', Column('session_generation', 'INTEGER', required=True), default=0)
             for column, default in ((Column('started', 'INTEGER'), None), (Column('agent', 'TEXT', required=True), ''), (Column('two_step', 'INTEGER'), None)):
                 if column.name not in columns:
                     tx.connection.add_column('evlet_sessions', column, default=default)
