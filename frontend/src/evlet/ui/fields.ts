@@ -107,7 +107,7 @@ export interface LinkSource {
 }
 
 /** What apiLinks may use beyond the list route: a record read already in flight, or its last detail. */
-type LinkApi = ApiClient & { reading?(model: string, id: string): Promise<{ data: RecordData }> | undefined; detail?(model: string, id: string): Readable<RecordData | null>; watchDetails?(listener: (model: string, id: string, data: RecordData | null) => void): () => void };
+type LinkApi = ApiClient & { reading?(model: string, id: string): Promise<{ data: RecordData }> | undefined; known?(model: string, id: string): RecordData | null; watchDetails?(listener: (model: string, id: string, data: RecordData | null) => void): () => void };
 
 /**
  * A LinkSource over the API: list search with ?q=, and titles read in batches: the titles a page asks
@@ -159,12 +159,12 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
     const batch = wanted, ticket = generation;
     wanted = new Map();
     const accept = (model: string, id: string, data: RecordData | null) => {
-      if (ticket === generation) keep(model, id, api.detail?.(model, id).peek() ?? data);
+      if (ticket === generation) keep(model, id, api.known?.(model, id) ?? data);
     };
     for (const [model, ids] of batch) {
       const rest: string[] = [];
       for (const id of ids) {
-        const known = api.detail?.(model, id).peek(), reading = api.reading?.(model, id);
+        const known = api.known?.(model, id), reading = api.reading?.(model, id);
         if (known) keep(model, id, known);
         else if (reading) reading.then(response => accept(model, id, response.data), () => accept(model, id, null));
         else rest.push(id);
@@ -189,7 +189,7 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
       const key = `${model}:${id}`;
       let title = titles.peek(key);
       if (!title) {
-        const known = api.detail?.(model, id).peek();
+        const known = api.known?.(model, id);
         title = titles.get(key, known ? titleOf(model, known) : null);
         if (!known) want(model, id);
       }
@@ -203,7 +203,7 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
       const key = `${model}:${id}`;
       let record = records.peek(key);
       if (!record) {
-        const known = api.detail?.(model, id).peek() ?? null;
+        const known = api.known?.(model, id) ?? null;
         record = records.get(key, known);
         // Read through the list route, so the person's row and field permissions apply.
         if (!known) want(model, id);
