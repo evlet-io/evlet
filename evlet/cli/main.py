@@ -121,10 +121,11 @@ def parser():
     restart.add_argument('--yes', action='store_true', help='Restart without asking')
     restart.add_argument('--service', metavar='NAME', help='The systemd unit to restart (default: evlet-<instance>)')
     restart.add_argument('--timeout', type=float, default=30.0, help='Seconds to wait for /health after the restart (default: 30)')
-    upgrade = commands.add_parser('upgrade', help="Install a newer Evlet in the project's .venv, then plan, back up, stop, migrate and restart an instance")
+    upgrade = commands.add_parser('upgrade', help="Stage a newer Evlet, then plan, stop, back up, migrate and restart its instances")
     upgrade.add_argument('instance')
     upgrade.add_argument('--to', metavar='VERSION', help='Install this version (default: the newest 0.x.* of the current minor, or of the current major from 1.0)')
     upgrade.add_argument('--yes', action='store_true', help='Upgrade without asking')
+    upgrade.add_argument('--all-instances', action='store_true', help='Upgrade every installed instance sharing the project environment')
     upgrade.add_argument('--service', metavar='NAME', help='The systemd unit to stop and restart (default: evlet-<instance>)')
     routes = commands.add_parser('routes', help='Print the resolved hosts and paths of an instance')
     routes.add_argument('instance')
@@ -388,7 +389,7 @@ def main(argv=None):
                 raise SystemExit(1)
         elif args.command == 'upgrade':
             from .upgrade import upgrade
-            if not upgrade(root, args.instance, to=args.to, service=args.service, yes=args.yes):
+            if not upgrade(root, args.instance, to=args.to, service=args.service, yes=args.yes, all_instances=args.all_instances):
                 raise SystemExit(1)
         elif args.command == 'routes':
             from ..instances import load_runtime
