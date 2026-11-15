@@ -216,6 +216,11 @@ account setup, permissions, actions, children, attachments, and limits.
 
 ## Release versions
 
+Follow the version plan in [docs/api-stability.md](docs/api-stability.md#version-plan): 0.4.x
+patch releases until most bugs are fixed and the pending features are in, then 0.5, after which
+releases only perfect what exists, then 1.0 once Evlet has actual users. Do not bump the minor
+version for an ordinary release.
+
 Keep main on the next `.dev0` version between releases. To prepare a release,
 choose the next unused PyPI version, update `pyproject.toml`, build the frontend,
 then build and validate a wheel and source archive from that committed source.

@@ -43,6 +43,9 @@ never bypass account, tenant, row, field, or action checks.
   and installation when changing packaging. Never substitute mocks for SQLite.
 - Update documentation and demonstrate applicable public APIs in the Playground.
   A feature is done only when its tests and all existing tests pass.
+- Versions follow `docs/api-stability.md` (Version plan): stay on 0.4.x patch releases until
+  the owner moves to 0.5 (semi-stable, perfecting only), and 1.0 once Evlet has actual users.
+  Never bump the minor or major version on your own.
 - Work on feature branches and prepare PRs; never merge automatically or push
   experimental implementation into `main`.
 - Cloud tasks are already isolated. Use the existing checkout; create no Git
