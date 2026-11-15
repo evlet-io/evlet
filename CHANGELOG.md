@@ -4,9 +4,9 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.10 (15-11-2026)
 
-### Upgrading
+### Upgrading to 0.4.10
 
 - **Name every State field `docstate`.** A State under any other name now fails when the class is
   defined, for example `Invoice.status is a State: name the State field docstate (rename it with a
