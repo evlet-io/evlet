@@ -7,7 +7,7 @@ import { Avatar, Button, Checkbox, Icon, StatusPill, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
 import { Dropdown } from '../ui/pickers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
-import type { RoleRow, UserRow } from './client';
+import type { RoleRow, UserCounts, UserRow } from './client';
 
 const ROLE_ID = /^[a-z][a-z0-9_]{1,30}$/;
 const TINTS: Record<string, string> = { admin: 'violet', editor: 'blue', viewer: 'slate', portal: 'amber' };
@@ -51,33 +51,35 @@ const lengthHint = (minimum: number) => minimum <= 1 ? 'Any password will do' : 
 const sessionText = (user: UserRow) => [user.sessions ? plural(user.sessions, 'session') : '', user.assistants ? plural(user.assistants, 'AI assistant') : ''].filter(Boolean).join(' · ');
 
 export function UsersPage(ctx: ControlsContext): HTMLElement {
-  const users = cell<UserRow[]>([]), total = cell(0), loaded = cell(false);
+  const users = cell<UserRow[]>([]), total = cell(0), loaded = cell(false), counts = cell<UserCounts>({ all: 0, active: 0, inactive: 0 });
   const tab = cell<'all' | 'active' | 'inactive'>('all'), query = cell(''), role = cell('');
-  const load = async () => {
+  // The server filters and pages, so a search finds people beyond the first page; a newer load wins.
+  let ticket = 0, typing: ReturnType<typeof setTimeout> | undefined;
+  const load = async (more = false) => {
+    const mine = ++ticket;
     try {
-      const page = await ctx.api.users();
-      users.set(page.items);
-      total.set(page.total);
-    } catch (failure) { toast(message(failure), { icon: 'info' }); }
-    loaded.set(true);
+      const page = await ctx.api.users({ offset: more ? users.peek().length : 0, q: query.peek().trim() || undefined, role: role.peek() || undefined,
+        active: tab.peek() === 'all' ? undefined : tab.peek() === 'active' ? 'true' : 'false' });
+      if (mine !== ticket) return;
+      users.set(more ? [...users.peek(), ...page.items] : page.items);
+      total.set(page.total); counts.set(page.counts ?? { all: page.total, active: page.total, inactive: 0 });
+    } catch (failure) { if (mine === ticket) toast(message(failure), { icon: 'info' }); }
+    if (mine === ticket) loaded.set(true);
   };
   void load();
-  const shown = derive(() => users.get()
-    .filter(user => tab.get() === 'all' || (tab.get() === 'active') === user.active)
-    .filter(user => !role.get() || user.role === role.get())
-    .filter(user => !query.get() || user.username.includes(query.get().toLowerCase())));
+  const search = (value: string) => { query.set(value); clearTimeout(typing); typing = setTimeout(() => void load(), 250); };
+  const shown = users;
   const refresh = async () => { await load(); ctx.state.set(await ctx.api.state()); };
   const tabs: Array<['all' | 'active' | 'inactive', string, () => number]> = [
-    ['all', 'All users', () => users.get().length], ['active', 'Active', () => users.get().filter(user => user.active).length],
-    ['inactive', 'Inactive', () => users.get().filter(user => !user.active).length]];
+    ['all', 'All users', () => counts.get().all], ['active', 'Active', () => counts.get().active], ['inactive', 'Inactive', () => counts.get().inactive]];
   return html`<div>
     ${Head('Users', 'People who sign in to the desk.', Button({ label: 'Add user', icon: 'user-plus', variant: 'primary', onClick: () => addUser(ctx, refresh) }),
       html` <span class="ctl-badge">${total}</span>`)}
     <div class="ctl-tabs" role="tablist">${tabs.map(([id, label, count]) => html`<button type="button" role="tab" class:on=${() => tab.get() === id}
-      aria-selected=${() => String(tab.get() === id)} on:click=${() => tab.set(id)}>${label}<span class="tc">${count}</span></button>`)}</div>
+      aria-selected=${() => String(tab.get() === id)} on:click=${() => { tab.set(id); void load(); }}>${label}<span class="tc">${count}</span></button>`)}</div>
     <div class="toolbar"><label class="ctl-search">${Icon('search', { size: 'sm' })}<input class="input" placeholder="Search users…" aria-label="Search users"
-      prop:value=${query} on:input=${(event: Event) => query.set((event.target as HTMLInputElement).value)}></label>
-      ${Select({ id: 'ctl-user-role', label: 'Filter by role', value: () => role.get(), options: () => [['', 'All roles'], ...ctx.state.get().roles.map(item => [item.id, item.id] as [string, string])], onChange: value => role.set(value) })}</div>
+      prop:value=${query} on:input=${(event: Event) => search((event.target as HTMLInputElement).value)}></label>
+      ${Select({ id: 'ctl-user-role', label: 'Filter by role', value: () => role.get(), options: () => [['', 'All roles'], ...ctx.state.get().roles.map(item => [item.id, item.id] as [string, string])], onChange: value => { role.set(value); void load(); } })}</div>
     <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>User</th><th>Role</th><th>Two-step sign-in</th><th>Sessions</th><th>AI</th><th>Status</th><th></th></tr></thead>
       <tbody>${() => shown.get().length ? shown.get().map(user => html`<tr class="ctl-click" tabindex="0" on:click=${() => openUser(ctx, user, refresh)}
         on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') openUser(ctx, user, refresh); }}>
@@ -91,7 +93,8 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
         <td>${user.active ? StatusPill({ label: 'Active', tint: 'green' }) : StatusPill({ label: 'Inactive', tint: 'slate' })}</td>
         <td class="r">${Icon('chevron-right', { size: 'sm' })}</td></tr>`)
         : html`<tr><td colspan="7"><div class="ctl-empty">${() => loaded.get() ? 'No users match.' : 'Loading users…'}</div></td></tr>`}</tbody></table>
-      <div class="ctl-tfoot"><span>${() => `${shown.get().length} of ${total.get()}`}</span><span>Accounts are stored in this instance</span></div></div>
+      <div class="ctl-tfoot"><span>${() => `${shown.get().length} of ${total.get()}`}</span>${() => shown.get().length < total.get()
+        ? Button({ label: 'Load more', size: 'small', variant: 'ghost', onClick: () => void load(true) }) : null}<span>Accounts are stored in this instance</span></div></div>
   </div>` as HTMLElement;
 }
 

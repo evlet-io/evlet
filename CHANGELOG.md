@@ -8,6 +8,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Controls lists every user and API key.** The Users and API keys pages search and filter
+  on the server and load more past the first page, instead of stopping at 100 users or 200
+  keys. `GET /api/_controls/users` and `GET /api/_controls/keys` take paging and search
+  parameters ([controls.md](docs/controls.md)).
 - **Browser record and link caches are bounded.** Recent cells use approximate JSON budgets;
   active views retain their cell identity and receive updates after cache eviction. Renamed
   links refresh held labels, and link sources release their listeners and timers when the

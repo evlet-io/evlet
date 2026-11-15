@@ -634,6 +634,37 @@ class LocalAuth:
         with self.database._connection() as connection:
             return self.key_rows(connection, *((qb.eq('k.user_id', user_id),) if user_id is not None else ()))
 
+    def key_page(self, owner=None, *, before=None, limit=100, q='', user=None):
+        """Live keys, newest first; the cursor stays stable when a newer key is created or revoked."""
+        self._page_values(limit, q)
+        if before is not None and (type(before) is not int or not 1 <= before <= 2**63-1):
+            raise ValidationError({'before': 'Use a positive key id'})
+        if owner is not None and (type(owner) is not int or not 1 <= owner <= 2**63-1):
+            raise ValidationError({'owner': 'Use a positive user id'})
+        if user is not None:
+            check_username(user)
+        conditions = [qb.is_null('k.revoked_at')]
+        if owner is not None:
+            conditions.append(qb.eq('k.user_id', owner))
+        if user is not None:
+            conditions.append(qb.eq('u.username', user.lower()))
+        if q.strip():
+            conditions.append(qb.or_(*(qb.contains_ci(field, q.strip()) for field in ('k.name', 'k.prefix', 'u.username'))))
+        self.database.logs.flush()
+        with self.database._connection() as connection:
+            connection.snapshot()
+            def query(*fields):
+                return qb.select(qb.table('evlet_api_keys', 'k'), *fields).join(
+                    qb.table('evlet_users', 'u'), qb.eq('u.id', qb.col('k.user_id'))).where(*conditions)
+            total = connection.run(query(qb.count())).value()
+            page = query('k.id', 'k.user_id', 'u.username', 'u.role', 'k.name', 'k.prefix', 'k.scope', 'k.created_at', 'k.last_used')
+            if before is not None:
+                page = page.where(qb.lt('k.id', before))
+            rows = connection.run(page.order_by('-k.id').limit(limit + 1)).all()
+            items = [{**dict(row), 'scope': json.loads(row['scope'])} for row in rows[:limit]]
+            return {'items': items, 'total': total, 'limit': limit,
+                    'next_before': items[-1]['id'] if len(rows) > limit else None}
+
     def revoke_key(self, key_id, user_id=None, check=None):
         """Revoke a key now; with user_id, only that user's own key. check(connection, row) runs first."""
         with self.database.transaction() as tx:
@@ -822,14 +853,37 @@ class LocalAuth:
     def users(self):
         return self.user_page()['items']
 
-    def user_page(self, offset=0):
+    @staticmethod
+    def _page_values(limit, q):
+        if type(limit) is not int or not 1 <= limit <= 200:
+            raise ValidationError({'limit': 'Use a page of 1 to 200 entries'})
+        if not isinstance(q, str) or len(q) > 200:
+            raise ValidationError({'q': 'Use a search of at most 200 characters'})
+
+    def user_page(self, offset=0, *, limit=100, q='', active=None, role=None):
+        self._page_values(limit, q)
         if type(offset) is not int or not 0 <= offset <= 2**63-1:
             raise ValidationError({'offset': 'Use a nonnegative offset'})
+        if active is not None and type(active) is not bool:
+            raise ValidationError({'active': 'Use true or false'})
+        if role is not None and (not isinstance(role, str) or role not in ROLES and not ROLE_ID.fullmatch(role)):
+            raise ValidationError({'role': 'Choose an existing role'})
+        conditions = []
+        if q.strip():
+            conditions.append(qb.contains_ci('username', q.strip()))
+        if role is not None:
+            conditions.append(qb.eq('role', role))
         with self.database._connection() as connection:
             connection.snapshot()
-            items = [dict(row) for row in connection.run(qb.select('evlet_users', 'id', 'username', 'role', 'active').order_by('id').limit(100).offset(offset))]
-            total = connection.run(qb.select('evlet_users', qb.count())).value()
-            return {'items': items, 'total': total, 'offset': offset, 'limit': 100}
+            groups = {bool(row['active']): row['total'] for row in connection.run(
+                qb.select('evlet_users', 'active', qb.named(qb.count(), 'total')).where(*conditions).group_by('active'))}
+            counts = {'all': sum(groups.values()), 'active': groups.get(True, 0), 'inactive': groups.get(False, 0)}
+            if active is not None:
+                conditions.append(qb.eq('active', int(active)))
+            items = [dict(row) for row in connection.run(qb.select('evlet_users', 'id', 'username', 'role', 'active')
+                     .where(*conditions).order_by('id').limit(limit).offset(offset))]
+            return {'items': items, 'total': counts['all' if active is None else 'active' if active else 'inactive'],
+                    'counts': counts, 'offset': offset, 'limit': limit}
 
     def update_user(self, user_id, body, check=None, *, revoke_keys=False):
         """check(connection, row, changes) runs first in the transaction; what it returns runs after the writes."""
