@@ -909,7 +909,7 @@ export class RecordStore {
     const ticket = (this.checks.get(field) ?? 0) + 1;
     this.checks.set(field, ticket);
     let fits: boolean | null = scope.missing.length ? false
-      : fitsRecord(scope.filters, (this.api as ApiClient & { detail?(model: string, id: string): { peek(): RecordData | null } }).detail?.(target, String(id)).peek());
+      : fitsRecord(scope.filters, (this.api as ApiClient & { known?(model: string, id: string): RecordData | null }).known?.(target, String(id)));
     if (fits === null) {
       try {
         const page = await this.api.list(target, { filters: { ...scope.filters, id__in: [id] }, limit: 1 });
