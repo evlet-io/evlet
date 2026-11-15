@@ -4,9 +4,12 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.8 (15-11-2026)
 
-### Upgrading
+### Upgrading to 0.4.8
+
+- **0.4.7 was built but never published.** Its changes are listed under 0.4.7 below and are part
+  of this release.
 
 - **Module-level `Task` and `Schedule` objects in a flat app's `services/` now register.** One
   that was there unused before must be named after its app (`finance_...`) or the build refuses
@@ -85,7 +88,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   blocking another's. Committed edits are kept while another field is typed in. Callers without
   revision headers retain their existing behavior.
 
-## 0.4.7 (15-11-2026)
+## 0.4.7 (built 15-11-2026, not published)
 
 ### Upgrading to 0.4.7
 
