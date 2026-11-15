@@ -334,6 +334,60 @@ deployment process; rendering does not start them. Stop both API and worker befo
 backups, database upgrades, or restoring state. See the
 [tenant deployment guide](tenancy-deployment.md) for the server boundary.
 
+## Background work in a flat app
+
+A flat app declares trusted background work in `services/`, beside its `@api` and `@cron`
+functions: module-level `Task` and `Schedule` objects. Unlike `@cron`, which runs as a synthetic
+user with a limited role, these handlers get the same job context and database session as tasks
+passed to `JobQueue`: `handler(tx, job, payload)`, resumable steps and checkpoints, follow-ups and
+`job.business(tx, ...)`. They run as trusted code with full database access, so the install trust
+question lists them.
+
+```python
+# apps/finance/services/background.py
+from evlet import Schedule, Task
+from finance.models import Payment
+
+
+def drain(tx, job, payload):
+    # One queued payment per step; returning None ends the job.
+    rows = tx.list(Payment, filters={'status': 'queued'}, order_by='id', limit=1)
+    if not rows:
+        return None
+    tx.update(Payment, rows[0].id, status='sent')
+    return rows[0].id
+
+
+def nightly(tx, job, payload):
+    ...  # Check the books with the session tx.
+
+
+drain_queue = Task('finance_drain', drain, resumable=True)
+nightly_check = Task('finance_nightly', nightly)
+every_night = Schedule('finance_nightly', 'finance_nightly', every=86400, payload={'books': 'main'})
+```
+
+* Every `Task` and `Schedule` object bound at module level in a services module counts, however it
+  is made (a tuple assignment, inside `if`, from a factory). One object counts once, even when it
+  is imported into another services module or bound to two names.
+* Names start with the app's name and an underscore (`finance_drain`); names starting with
+  `eva_task` belong to Eva. Two objects with one name, in one app or across apps, fail the build
+  before anything is activated, naming both apps. A schedule must run a task its own app
+  declares, and a schedule name an earlier app declared, or one not declared in `services/` (an
+  operator's or an `AppDefinition`'s), is never taken over.
+* The trust question lists the names written as literals in `Task(...)` and `Schedule(...)` calls,
+  and warns about full database access whenever `services/` uses either class.
+* `evlet install` and `evlet migrate` register them, as they do `@cron` schedules: a new schedule
+  is due one interval after it is registered. Reloading keeps its next run and an operator's
+  disabled state; a changed task, payload or interval is applied (a new interval also sets a new
+  due time). A schedule the app no longer declares is disabled and kept with its job history, and
+  Controls stops listing it; declaring it again enables it with a fresh due time, unless an
+  operator had disabled it before it was removed.
+* A removed task leaves its queued jobs in the queue: they fail with "Task is no longer
+  registered" instead of being deleted.
+* `Schedule` is an interval. For a time of day, use `@cron`, or let a task queue its next run with
+  `job.follow_up(tx, run_at=...)`.
+
 ## Events, SSE, and polling
 
 `EventStore(database, retention=1000)` stores bounded record invalidations in the

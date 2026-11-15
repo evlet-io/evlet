@@ -8,6 +8,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Upgrading
 
+- **Module-level `Task` and `Schedule` objects in a flat app's `services/` now register.** One
+  that was there unused before must be named after its app (`finance_...`) or the build refuses
+  it. Moving an `AppDefinition` schedule into `services/` needs a new name: a declared schedule
+  never takes over an existing one.
 - **Run `evlet migrate` after upgrading.** Framework steps `0014_unsaved_versions` (draft versions),
   `0015_oidc_tickets` (company sign-in state) and `0016_activity` (the Journal tables renamed to
   Activity) change the database; `evlet upgrade` runs them.
@@ -23,6 +27,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Background work in flat apps.** A flat app can declare module-level `Task` and `Schedule`
+  objects in `services/`. Their handlers get the job context and database session that
+  `JobQueue` tasks get, including resumable steps. Names are app-qualified (`finance_drain`) and a
+  clash fails the build. Install and reload register them like `@cron`, keeping next runs and
+  operator-disabled schedules; a removed schedule is disabled, not deleted. The install trust
+  question lists them and says they run with full database access
+  ([jobs-realtime.md](docs/jobs-realtime.md#background-work-in-a-flat-app)).
 - **Optional company sign-in.** `OIDC` and `LocalAuth(oidc=...)` support an explicitly
   configured provider and immutable subject mappings to existing users. Install the `oidc`
   extra (joserfc) to enable it; local login, roles, realms and MFA remain enforced. Callback

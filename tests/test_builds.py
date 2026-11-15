@@ -201,9 +201,11 @@ def test_reference_app_full_public_flow(project):
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest
-    assert len(manifest['apis']) == len(manifest['schedules']) == 1
+    # One @cron calendar and the nightly stock check declared as a module-level Schedule.
+    assert len(manifest['apis']) == 1 and len(manifest['schedules']) == 2
+    assert 'amendment_stock_check' in app.business.jobs.tasks
     with app.database.transaction() as tx:
-        assert tx.connection.execute("SELECT count(*) FROM evlet_schedules WHERE name<>'evlet_unsaved_purge'").fetchone()[0] == 1
+        assert tx.connection.execute("SELECT count(*) FROM evlet_schedules WHERE name<>'evlet_unsaved_purge'").fetchone()[0] == 2
         assert tx.connection.execute('SELECT count(*) FROM evlet_jobs').fetchone()[0] == 0
     install(project, 'acme', trust=True)
 

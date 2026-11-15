@@ -22,7 +22,9 @@ evlet serve acme
 
 Installation asks whether you trust the selected Python apps. In automation,
 review their source first and pass `--trust`. App dependencies are included in
-that confirmation. Open http://127.0.0.1:8000 and create your administrator.
+that confirmation. When an app declares background work in `services/` (module-level `Task` and
+`Schedule` objects, see [jobs-realtime.md](jobs-realtime.md#background-work-in-a-flat-app)), the
+question lists it and says that it runs as trusted code with full database access. Open http://127.0.0.1:8000 and create your administrator.
 There is no default password. The existing Docs, generated models, forms,
 permissions, actions and private-file interfaces use the bundled browser UI.
 
