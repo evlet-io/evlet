@@ -4,6 +4,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, invoice, lastToast, requests, start, stopAll, headText, text, typeInto, typeRich, until, type Route } from './screens-helpers';
 import { copy, type Recorded, type Sent } from './server';
+import { ActionDialog } from '../app/record-page';
 
 afterEach(stopAll);
 
@@ -29,6 +30,34 @@ const openRow = (host: Element, title: string) => click(host.querySelector(`.ev-
 const banner = (host: Element) => text(host.querySelector('.inv-banner > div'));
 
 describe('transaction document (recorded fixtures)', () => {
+  it('displays server-owned action inputs without validating or submitting them', async () => {
+    const submissions: Record<string, unknown>[] = [];
+    ActionDialog({ name: 'approve', label: 'Approve' }, [
+      { name: 'reason', label: 'Reason', type: 'text', required: true, read_only: false },
+      { name: 'issuer', label: 'Issuer', type: 'text', required: true, read_only: true, default: 'Server' },
+      { name: 'pending', label: 'Pending value', type: 'text', required: true, read_only: true },
+      { name: 'flag', label: 'Flag', type: 'boolean', required: false, read_only: true, default: false },
+      { name: 'number', label: 'Number', type: 'integer', required: false, read_only: true, default: 0 },
+    ], async values => { submissions.push(values); return null; });
+    const dialog = document.querySelector('.modal')!;
+    const issuer = dialog.querySelector<HTMLInputElement>('[data-field="issuer"] input')!;
+    expect(issuer.disabled).toBe(true);
+    expect(issuer.value).toBe('Server');
+    expect(dialog.querySelector<HTMLInputElement>('[data-field="pending"] input')!.disabled).toBe(true);
+    expect(dialog.querySelector<HTMLButtonElement>('[data-field="flag"] button')!.disabled).toBe(true);
+    expect(dialog.querySelector<HTMLInputElement>('[data-field="number"] input')!.value).toBe('0');
+    click(byText(dialog, '.modal-f button', 'Approve'));
+    expect(submissions).toHaveLength(0);
+    expect(text(dialog.querySelector('[data-field="reason"] .err'))).toBe('Reason is required');
+    expect(text(dialog.querySelector('[data-field="pending"] .err'))).toBe('');
+    typeInto(dialog.querySelector<HTMLInputElement>('[data-field="reason"] input')!, 'Reviewed');
+    issuer.disabled = false;
+    typeInto(issuer, 'Forged');
+    click(byText(dialog, '.modal-f button', 'Approve'));
+    await until(() => expect(submissions).toEqual([{ reason: 'Reviewed' }]));
+    expect(document.querySelector('.modal')).toBeNull();
+  });
+
   it('shows a draft: number to come, status flow, the move, key fields, measures, journal and related records', async () => {
     const { host } = start(routes(), `/app/invoice/${draft}`);
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Draft invoice'));

@@ -296,6 +296,64 @@ describe('connections', () => {
 });
 
 describe('app settings', () => {
+  it('keeps server-owned shared settings disabled and out of saves, including resets', async () => {
+    const settings = copy(screen.settings_app);
+    const [terms, vat, lock] = settings.body.sections[0].fields;
+    terms.read_only = true; terms.value = 60;
+    lock.read_only = true; lock.value = false;
+    const days = settings.body.sections[1].fields[0];
+    days.read_only = true; days.value = ['mon'];
+    settings.body.sections[0].fields.push({ ...settings.body.preferences[0], read_only: true, value: 'tax' });
+    const { host, sent } = start(routes([['GET', /\/api\/_settings\/app\/sales$/, settings],
+      ['PATCH', /\/api\/_settings\/app\/sales$/, settings]]), '/settings/app/sales');
+    await until(() => expect(text(host.querySelector('.set-head h1'))).toBe('Sales settings'));
+    const termsInput = host.querySelector<HTMLInputElement>('input[aria-label="Default payment terms"]')!;
+    const lockInput = host.querySelector<HTMLButtonElement>('[aria-label="Lock orders once they are sent"]')!;
+    const formatInput = host.querySelector<HTMLButtonElement>('[aria-label="My default print format"]')!;
+    const dayInputs = [...host.querySelectorAll<HTMLButtonElement>('.set-multi button')];
+    for (const input of [termsInput, lockInput, formatInput, ...dayInputs]) expect(input.disabled).toBe(true);
+    expect(termsInput.value).toBe('60');
+    expect(lockInput.getAttribute('aria-checked')).toBe('false');
+    expect(text(formatInput)).toBe('Tax');
+    expect(host.querySelector('[aria-label="Back to default"]')).toBeNull();
+    // DOM tampering cannot add a server-owned setting to the local draft either.
+    termsInput.disabled = false;
+    typeInto(termsInput, '90');
+    lockInput.disabled = false; click(lockInput);
+    dayInputs[1].disabled = false; click(dayInputs[1]);
+    expect(host.querySelector('.set-bar')).toBeNull();
+    typeInto(host.querySelector<HTMLInputElement>(`input[aria-label="${vat.label}"]`)!, '7.5');
+    click(byText(host, '.set-bar button', 'Save for everyone'));
+    await until(() => expect(requests(sent, 'PATCH', /app\/sales$/)).toHaveLength(1));
+    expect(requests(sent, 'PATCH', /app\/sales$/)[0].body).toEqual({ values: { vat: '7.50' } });
+  });
+
+  it('keeps server-owned personal preferences visible but never patches them', async () => {
+    const settings = copy(screen.settings_app);
+    settings.body.preferences[0].read_only = true;
+    const locked = settings.body.sections.flatMap((group: any) => group.fields)
+      .filter((field: any) => ['terms', 'lock', 'days'].includes(field.name))
+      .map((field: any) => ({ ...field, read_only: true }));
+    settings.body.preferences.push(...locked);
+    const { host, sent } = start(routes([['GET', /\/api\/_settings\/app\/sales$/, settings],
+      ['PATCH', /\/api\/_settings\/me\/app\/sales$/, { status: 200, etag: null, body: {} }]]), '/settings/app/sales');
+    await until(() => expect(text(host.querySelector('.set-head h1'))).toBe('Sales settings'));
+    click(byText(host, '.tabs button', 'Just for you'));
+    const format = host.querySelector<HTMLButtonElement>('[aria-label="My default print format"]')!;
+    const terms = host.querySelector<HTMLInputElement>('[aria-label="Default payment terms"]')!;
+    const lock = host.querySelector<HTMLButtonElement>('[aria-label="Lock orders once they are sent"]')!;
+    const days = [...host.querySelectorAll<HTMLButtonElement>('.set-multi button')];
+    for (const input of [format, terms, lock, ...days]) expect(input.disabled).toBe(true);
+    expect(text(format)).toBe('Standard');
+    terms.disabled = false; typeInto(terms, '90');
+    lock.disabled = false; click(lock);
+    days[0].disabled = false; click(days[0]);
+    expect(requests(sent, 'PATCH', /me\/app\/sales$/)).toHaveLength(0);
+    click(host.querySelector('[aria-label="Copy me on orders I send"]'));
+    await until(() => expect(requests(sent, 'PATCH', /me\/app\/sales$/)).toHaveLength(1));
+    expect(requests(sent, 'PATCH', /me\/app\/sales$/)[0].body).toEqual({ cc_me: true });
+  });
+
   it('saves shared settings through the save bar and shows the default with a reset', async () => {
     const { host, sent } = start(routes([['GET', /\/api\/_settings\/app\/sales$/, screen.settings_app],
       ['PATCH', /\/api\/_settings\/app\/sales$/, screen.settings_app_saved]]), '/settings/app/sales');

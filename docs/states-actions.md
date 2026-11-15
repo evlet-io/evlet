@@ -493,6 +493,10 @@ def record_payment(self, amount): ...
   input field is copied, so one Field instance may be shared. Without
   `inputs`, the method's annotated scalar parameters (`str`, `int`, `bool`, `float`, `RecordId`) are its
   inputs, as before.
+* An input declared `read_only=True` is supplied by the server from its field default.
+  Callers must omit it: even an unchanged value or `null` is refused with a field error
+  (422) before the action runs. The browser displays it read only and omits it from the
+  request. Trusted Python application code may supply it through `context.action()`.
 * `available_when` is a finite-v1 Boolean expression decided on the saved record before
   the inputs are read. When it is not true the server answers 409, for example
   `Record payment is not available: the condition for this action is not met`. 409 is used
