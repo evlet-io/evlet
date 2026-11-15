@@ -4,7 +4,7 @@
 import { html } from '../dom';
 import { ValidationError } from '../api';
 import { cell } from '../reactive';
-import { Button, IconButton, StatusPill } from '../ui/base';
+import { Button, Icon, IconButton, StatusPill } from '../ui/base';
 import { copyText, DialogFooter, openModal, toast } from '../ui/layers';
 import { Callout, Head, stamp, type ControlsContext } from './app';
 import type { ApiKeyRow, KeyScope, KeysApi } from './client';
@@ -30,12 +30,21 @@ export const scopeText = (scope: KeyScope, models: Choice[] = []) =>
 
 /** The keys table with Create key and Revoke; Controls adds the Acts as column. */
 export function KeysPage(options: KeysOptions): HTMLElement {
-  const rows = cell<ApiKeyRow[] | null>(null);
-  const load = async () => {
-    try { rows.set((await options.api.keys()).items); } catch (failure) { toast(message(failure), { icon: 'info' }); rows.set([]); }
+  const rows = cell<ApiKeyRow[] | null>(null), next = cell<number | null>(null), query = cell('');
+  const controls = Boolean(options.users);
+  // Controls pages through every key, newest first, and searches on the server; a newer load wins.
+  let ticket = 0, typing: ReturnType<typeof setTimeout> | undefined;
+  const load = async (more = false) => {
+    const mine = ++ticket;
+    try {
+      const page = await options.api.keys(controls ? { before: more ? next.peek() ?? undefined : undefined, q: query.peek().trim() || undefined } : undefined);
+      if (mine !== ticket) return;
+      rows.set(more ? [...(rows.peek() ?? []), ...page.items] : page.items);
+      next.set(page.next_before ?? null);
+    } catch (failure) { if (mine === ticket) { toast(message(failure), { icon: 'info' }); rows.set(rows.peek() ?? []); } }
   };
   void load();
-  const controls = Boolean(options.users);
+  const search = (value: string) => { query.set(value); clearTimeout(typing); typing = setTimeout(() => void load(), 250); };
   const now = () => Math.floor(Date.now() / 1000);
   const revoke = (row: ApiKeyRow) => ask(`Revoke ${row.name}?`, 'Anything using this key gets a 401 from now on.', 'Revoke key', async () => {
     try { await options.api.revokeKey(row.id); toast('Key revoked'); await load(); }
@@ -43,7 +52,9 @@ export function KeysPage(options: KeysOptions): HTMLElement {
   }, true);
   const columns = controls ? 7 : 5;
   return html`<div>
-    ${Head(options.title, options.sub, Button({ label: 'Create key', icon: 'plus', variant: 'primary', onClick: () => createKey(options, load) }))}
+    ${Head(options.title, options.sub, Button({ label: 'Create key', icon: 'plus', variant: 'primary', onClick: () => createKey(options, () => load()) }))}
+    ${controls ? html`<div class="toolbar"><label class="ctl-search">${Icon('search', { size: 'sm' })}<input class="input" placeholder="Search keys…" aria-label="Search keys"
+      prop:value=${query} on:input=${(event: Event) => search((event.target as HTMLInputElement).value)}></label></div>` : null}
     <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>Name</th><th>Key</th>${controls ? html`<th>Acts as</th>` : null}
       <th>${controls ? 'Scope' : 'Can'}</th><th>Last used</th>${controls ? html`<th>Created</th>` : null}<th></th></tr></thead>
       <tbody>${() => rows.get() === null ? html`<tr><td colspan=${columns}><div class="ctl-empty">Loading keys…</div></td></tr>`
@@ -54,7 +65,8 @@ export function KeysPage(options: KeysOptions): HTMLElement {
           <td class="ctl-small-cell">${scopeText(row.scope, options.models())}</td>
           <td class="muted num">${row.last_used ? stamp(row.last_used) : 'Never'}</td>${controls ? html`<td class="muted num">${stamp(row.created_at)}</td>` : null}
           <td class="r">${Button({ label: 'Revoke', size: 'small', variant: 'soft-danger', onClick: () => revoke(row) })}</td></tr>`)
-        : html`<tr><td colspan=${columns}><div class="ctl-empty">${options.empty}</div></td></tr>`}</tbody></table></div>
+        : html`<tr><td colspan=${columns}><div class="ctl-empty">${() => query.get().trim() ? 'No keys match.' : options.empty}</div></td></tr>`}</tbody></table>
+      ${() => next.get() !== null ? html`<div class="ctl-tfoot">${Button({ label: 'Load more', size: 'small', variant: 'ghost', onClick: () => void load(true) })}</div>` : null}</div>
   </div>` as HTMLElement;
 }
 
@@ -105,7 +117,7 @@ function createKey(options: KeysOptions, reload: () => Promise<void>) {
 
 export function ApiKeysPage(ctx: ControlsContext): HTMLElement {
   const users = cell<Array<{ username: string; role: string }>>([]);
-  void ctx.api.users().then(page => users.set(page.items.filter(item => item.active && (ctx.state.peek().me.role === 'admin' || item.role !== 'admin'))))
+  void ctx.api.users({ active: 'true', limit: 200 }).then(page => users.set(page.items.filter(item => item.active && (ctx.state.peek().me.role === 'admin' || item.role !== 'admin'))))
     .catch(() => users.set([]));
   return KeysPage({ api: ctx.api, users: () => users.get(), models: () => ctx.state.get().models.map(item => ({ name: item.name, label: item.label })),
     title: 'API keys', sub: "Keys let scripts and other systems call the API as a user. Each key has that user's permissions, narrowed to its scope.",
