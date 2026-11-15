@@ -12,7 +12,6 @@ sees what each request needs. With Eva off there are no Eva routes, tables, prov
 """
 
 import base64
-from contextlib import nullcontext
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
@@ -49,9 +48,11 @@ MICRO = Decimal(1_000_000)
 MAX_FILE, MAX_FILES, MAX_TEXT = 1024 * 1024, 5, 20_000
 CONTEXT_CHARS, RESULT_CHARS = 120_000, 16_000
 MAX_TASKS, KEEP_EVENTS = 10, 2000
-# Reclaim an abandoned admission only after this grace period and proof its execution lease is free.
+# A running run with no sign of life for this long has no process working on it (two provider timeouts and a retry fit).
 STALE_SECONDS = 300
 PAUSED = 'An administrator paused this task in Controls, under Jobs. Ask them to resume it.'
+STOPPED = 'Stopped. Anything Eva finished before you stopped it stays done.'
+BUSY = 'Eva is busy. Wait for a running answer to finish, then try again.'
 NO_RATE = ("Eva's allowance is counted in AED, but the model has no rate yet, so its cost can't be checked. "
            'Ask your administrator to set rates in Controls, under AI, Eva.')
 EXTRA_TOOLS = ('create_file',)
@@ -66,8 +67,8 @@ class AI:
     models: dict = field(default_factory=dict)
     base_url: str = 'https://api.openai.com/v1'
     max_output_tokens: int = 4000
-    max_concurrent_runs: int = 4
-    max_runs_per_user: int = 2
+    max_concurrent_runs: int | None = None
+    max_runs_per_user: int | None = None
 
     def __post_init__(self):
         if type(self.enabled) is not bool:
@@ -84,8 +85,9 @@ class AI:
         if type(self.max_output_tokens) is not int or not 256 <= self.max_output_tokens <= 64000:
             raise ValueError('AI(max_output_tokens=...) is 256 to 64000')
         for name in ('max_concurrent_runs', 'max_runs_per_user'):
-            if type(getattr(self, name)) is not int or not 1 <= getattr(self, name) <= 64:
-                raise ValueError(f'AI({name}=...) is 1 to 64')
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or not 1 <= value <= 1000):
+                raise ValueError(f'AI({name}=...) is None (no limit) or 1 to 1000')
 
 
 class ProviderError(Exception):
@@ -651,20 +653,12 @@ class Eva:
         """Close runs nobody is working on: not running here and silent for STALE_SECONDS (a restart, a crashed worker).
         Called at start and before anything that would wait for a run, so a chat never stays blocked."""
         stale = int(time.time()) - STALE_SECONDS
-        stuck = qb.select('evlet_eva_runs', 'id', 'status', 'process').where(
-            qb.or_(qb.eq('status', 'running'), qb.not_null('process')), qb.lt('updated_at', stale))
+        stuck = qb.select('evlet_eva_runs', 'id').where(status='running').where(qb.lt('updated_at', stale))
         if conversation_id is not None:
             stuck = stuck.where(conversation_id=conversation_id)
         for row in connection.run(stuck).all():
-            key = self.lease_key(row['process'])
-            # The OS releases a worker lease on process exit. A blocked SQLite writer cannot
-            # make a live worker appear dead, unlike a persisted heartbeat alone.
-            with self.database.worker_lease(key) if key else nullcontext(True) as free:
-                if not free or self.alive(row['id']):
-                    continue
-                if row['status'] == 'running':
-                    self.close(connection, row['id'], 'failed', 'Evlet stopped while this answer was being written. Ask again to continue.')
-                connection.run(qb.update('evlet_eva_runs', process=None).where(id=row['id']))
+            if not self.alive(row['id']):
+                self.close(connection, row['id'], 'failed', 'Evlet stopped while this answer was being written. Ask again to continue.')
                 connection.run(qb.update('evlet_eva_task_runs', status='failed', error='Evlet stopped during this run.').where(run_id=row['id'], status='running'))
 
     # ---------- who may use Eva ----------
@@ -882,6 +876,9 @@ class Eva:
                                              qb.named(qb.coalesce(qb.sum('cost_micro'), 0), 'cost')).where(conversation_id=conversation_id)).one()
             approvals = {item['id']: item for item in connection.run(qb.select('evlet_tool_approvals', 'id', 'status').where(
                 qb.in_('run_id', qb.select('evlet_eva_runs', 'id').where(conversation_id=conversation_id)), user_id=user.id))}
+        if any(run['status'] == 'awaiting_approval' and 'answer' in json.loads(run['pending'] or '{}') for run in runs):
+            # Answered while Eva was full (perhaps before a restart): carry on if there is room now.
+            self.start_answered()
         activities = {}
         for event in events:
             activity(activities.setdefault(event['run_id'], {}), event['type'], json.loads(event['data']))
@@ -968,11 +965,12 @@ class Eva:
         return {'run': {'id': run_id, 'status': 'running'}, 'message': message}
 
     def begin(self, connection, user, conversation, text, files, model, origin, host):
-        self.admit_run(connection, user.id)
+        if not self.admit(connection, user.id):
+            raise AccessError(429, BUSY)
         now = int(time.time())
         writes = int(user.access is None or user.access.write)
         run_id = connection.run(qb.insert('evlet_eva_runs', conversation_id=conversation['id'], user_id=user.id, origin=origin, model=model, status='running',
-                                          started_at=now, updated_at=now, process=self.owner(connection), host=host, writes=writes).returning_id()).id
+                                          started_at=now, updated_at=now, process=self.process, host=host, writes=writes).returning_id()).id
         message_id = connection.run(qb.insert('evlet_eva_messages', conversation_id=conversation['id'], run_id=run_id, role='user', content=text,
                                               files=json.dumps(files) if files else None, created_at=now).returning_id()).id
         title = conversation['title']
@@ -982,44 +980,16 @@ class Eva:
         self.emit(connection, run_id, 'run.started', {'run_id': run_id, 'model': model})
         return run_id, {'id': message_id, 'role': 'user', 'content': text, 'files': files, 'created_at': now, 'run_id': run_id}
 
-    @staticmethod
-    def lease_key(owner):
-        match = re.fullmatch(r'[a-f0-9]{16}:([0-9]|[1-5][0-9]|6[0-3]):[a-f0-9]{16}', owner or '')
-        return 'eva-' + match[1] if match else None
-
-    def owner(self, connection, exclude=None):
-        """Reserve one of a bounded set of execution slots; its worker takes the OS lease before work."""
-        query = qb.select('evlet_eva_runs', 'process').where(qb.not_null('process'))
-        if exclude is not None:
-            query = query.where(qb.ne('id', exclude))
-        occupied = {self.lease_key(row[0]) for row in connection.run(query)}
-        for slot in range(self.ai.max_concurrent_runs):
-            key = f'eva-{slot}'
-            if key in occupied:
-                continue
-            with self.database.worker_lease(key) as free:
-                if free:
-                    return f'{self.process}:{slot}:{secrets.token_hex(8)}'
-        raise AccessError(429, 'Eva is busy. Wait for a running answer to finish, then try again.')
-
-    def admit_run(self, connection, user_id, exclude=None):
-        """Called inside the transaction that reserves a worker; no unbounded in-memory wait queue."""
+    def admit(self, connection, user_id):
+        """Whether one more run may start now under AI(max_concurrent_runs=..., max_runs_per_user=...). It counts the
+        running runs in the caller's write transaction, so two requests cannot both take the last place. A stopped
+        run whose worker is still finishing stays running, and counted, until that worker reaches its next checkpoint."""
+        instance, person = self.ai.max_concurrent_runs, self.ai.max_runs_per_user
+        if instance is None and person is None:
+            return True
         self.reap(connection)
-        if exclude is not None:
-            prior = connection.run(qb.select('evlet_eva_runs', 'process').where(id=exclude)).value()
-            key = self.lease_key(prior)
-            if key:
-                with self.database.worker_lease(key) as free:
-                    if not free:
-                        raise AccessError(429, 'Eva is still finishing its previous step. Try the approval again shortly.')
-        # Completed rows from older releases kept a plain process token forever. Only the new
-        # per-execution token (with ':') represents ownership after a terminal/approval result.
-        active = qb.select('evlet_eva_runs').where(qb.or_(qb.contains_ci('process', ':'), qb.eq('status', 'running')))
-        if exclude is not None:
-            active = active.where(qb.ne('id', exclude))
-        rows = connection.run(active).all()
-        if len(rows) >= self.ai.max_concurrent_runs or sum(row['user_id'] == user_id for row in rows) >= self.ai.max_runs_per_user:
-            raise AccessError(429, 'Eva is busy. Wait for a running answer to finish, then try again.')
+        owners = [row[0] for row in connection.run(qb.select('evlet_eva_runs', 'user_id').where(status='running'))]
+        return (instance is None or len(owners) < instance) and (person is None or owners.count(user_id) < person)
 
     def spawn(self, run_id, resume=None):
         thread = threading.Thread(target=self.execute, args=(run_id, resume), name=f'eva-run-{run_id}', daemon=True)
@@ -1032,7 +1002,6 @@ class Eva:
                 self.threads.pop(run_id, None)
             with self.database.transaction(store='eva') as tx:
                 self.close(tx.connection, run_id, 'failed', 'Eva could not start this answer. Please try again.')
-                tx.connection.run(qb.update('evlet_eva_runs', process=None).where(id=run_id))
             raise
 
     def wait(self, run_id, timeout=30):
@@ -1059,50 +1028,23 @@ class Eva:
         connection.run(qb.delete('evlet_eva_events').where(run_id=run_id, type='message.delta'))
 
     def execute(self, run_id, resume=None):
-        """Run Eva on a run until it answers, needs an approval, is stopped or fails. Runs on its own thread."""
-        # A run acts for a person, so it is a caller: Meta.api limits what it reaches (evlet/permissions.py).
-        with self.database._connection() as connection:
-            owner = connection.run(qb.select('evlet_eva_runs', 'process').where(id=run_id)).value()
-        key = self.lease_key(owner)
-        guard = None
+        """Run Eva on a run until it answers, needs an approval, is stopped or fails. Runs on its own thread
+        (or a job's, for a scheduled task), registered so Stop and recovery can tell the worker is alive."""
+        with self.lock:
+            self.threads[run_id] = threading.current_thread()
         try:
-            if key is None:
-                return  # Only a freshly admitted owner may start provider work.
-            while guard is None:
-                # Validate ownership before taking a possibly reused slot. A delayed, reclaimed
-                # worker must not briefly steal a fresh worker's lease and strand its admission.
-                with self.database.transaction(store='eva') as tx:
-                    run = tx.connection.run(qb.select('evlet_eva_runs').where(id=run_id)).one()
-                    if run is None or run['process'] != owner or run['status'] != 'running' or run['cancel']:
-                        return
-                    candidate = self.database.worker_lease(key)
-                    if candidate.__enter__():
-                        guard = candidate
-                    else:
-                        candidate.__exit__(None, None, None)
-                if guard is None:
-                    # The bounded admission remains occupied. A duplicate execution or reaper
-                    # may own the lease; retry outside the DB transaction and never clear its row.
-                    time.sleep(0.01)
-            with self.lock:
-                self.threads[run_id] = threading.current_thread()
+            # A run acts for a person, so it is a caller: Meta.api limits what it reaches (evlet/permissions.py).
             with calling():
                 self._execute(run_id, resume)
-        except Exception:
-            logger.exception('Eva could not start worker %s', run_id)
-            self.finish(run_id, 'failed', 'Eva could not start this answer. Please try again.', None)
         finally:
-            try:
-                if guard is not None:
-                    try:
-                        with self.database.transaction(store='eva') as tx:
-                            tx.connection.run(qb.update('evlet_eva_runs', process=None).where(id=run_id, process=owner))
-                    finally:
-                        guard.__exit__(None, None, None)
-            finally:
-                with self.lock:
-                    if self.threads.get(run_id) is threading.current_thread():
-                        self.threads.pop(run_id, None)
+            with self.lock:
+                if self.threads.get(run_id) is threading.current_thread():
+                    self.threads.pop(run_id, None)
+        try:
+            # This worker's place is free now: an approval answered while Eva was full can go on.
+            self.start_answered()
+        except Exception:
+            logger.exception('Eva could not resume answered approvals')
 
     def _execute(self, run_id, resume=None):
         try:
@@ -1190,7 +1132,7 @@ class Eva:
             return True
         if row['cancel']:
             with self.database.transaction(store='eva') as tx:
-                self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
+                self.close(tx.connection, run_id, 'cancelled', STOPPED)
             return True
         return False
 
@@ -1200,7 +1142,7 @@ class Eva:
             if run is None or run['status'] not in ('running', 'awaiting_approval'):
                 return
             if run['cancel']:
-                status, error, message = 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.', None
+                status, error, message = 'cancelled', STOPPED, None
             if message:
                 tx.connection.run(qb.insert('evlet_eva_messages', conversation_id=run['conversation_id'], run_id=run_id, role='assistant', content=message,
                                             created_at=int(time.time())))
@@ -1252,6 +1194,8 @@ class Eva:
                         tx.connection.run(qb.update('evlet_tool_approvals', status='declined', decided_at=int(time.time()))
                                           .where(id=approval['id'], status='pending'))
                         self.skip_calls(run, remaining or [call], 'Not executed: the person stopped this answer.', tx.connection)
+                        if tx.connection.run(qb.select('evlet_eva_runs', 'status').where(id=run_id)).value() == 'running':
+                            self.close(tx.connection, run_id, 'cancelled', STOPPED)
                         return False
                     self.emit(tx.connection, run_id, 'approval.requested', {'call_id': call['id'], 'tool': call['name'], 'label': title, 'approval': approval})
                 return False
@@ -1423,6 +1367,9 @@ class Eva:
         return parts
 
     def cancel(self, user, run_id):
+        """Stop a run. A waiting run closes at once. A live worker gets the flag and closes the run itself at its next
+        checkpoint (between streamed chunks and before each tool), so a tool call that is committing now finishes and
+        shows as done instead of being reported as stopped. A run whose worker is gone closes now."""
         # The cancellation fence lives with the run. A business writer must not delay Stop.
         # Pending approvals derive their refusal from this fence, without a cross-file write here.
         with self.database.transaction(store='eva') as tx:
@@ -1430,58 +1377,79 @@ class Eva:
                                     .where(qb.eq('r.id', run_id), qb.eq('c.user_id', user.id))).one()
             if run is None:
                 raise AccessError(404, 'Run not found')
-            if run['status'] == 'awaiting_approval':
+            status = run['status']
+            if status == 'awaiting_approval':
                 pending = json.loads(run['pending'] or '{}')
                 tx.connection.run(qb.update('evlet_eva_runs', cancel=1).where(id=run_id))
                 self.skip_calls(run, pending.get('calls', ()), 'Not executed: the person stopped this answer.', tx.connection)
-                self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
-            elif run['status'] == 'running':
+                self.close(tx.connection, run_id, 'cancelled', STOPPED)
+                status = 'cancelled'
+            elif status == 'running':
                 tx.connection.run(qb.update('evlet_eva_runs', cancel=1).where(id=run_id))
-                # The result is terminal now. Its persisted worker ownership still holds admission
-                # until the underlying thread/provider returns, even though the UI may leave this run.
-                self.close(tx.connection, run_id, 'cancelled', 'Stopped. Anything Eva finished before you stopped it stays done.')
-            key = self.lease_key(run['process'])
-            if run['status'] in ('running', 'awaiting_approval') and key:
-                with self.database.worker_lease(key) as free:
-                    if free:
-                        # Cancel may beat thread startup. That thread must recheck this owner under
-                        # the same Eva writer before work, so its unused reservation can end now.
-                        tx.connection.run(qb.update('evlet_eva_runs', process=None).where(id=run_id, process=run['process']))
-        return {'id': run_id, 'status': 'cancelled' if run['status'] in ('running', 'awaiting_approval') else run['status']}
+                status = 'stopping'
+                # No thread here and this process started it (its thread is gone), or another process that has been
+                # silent too long: nothing will read the flag, so close it now.
+                if not self.alive(run_id) and (run['process'] == self.process or run['updated_at'] < int(time.time()) - STALE_SECONDS):
+                    self.close(tx.connection, run_id, 'cancelled', STOPPED)
+                    status = 'cancelled'
+        return {'id': run_id, 'status': status}
 
-    def reserve_answer(self, connection, user, approval):
-        """Reserve resume capacity in the same transaction that records the person's decision."""
+    def record_answer(self, connection, user, approval, approve):
+        """Record the person's decision on the waiting run, in the transaction that records the approval. The fence:
+        a stopped run, or one that no longer waits for this approval, refuses the answer. Capacity never refuses it."""
         run = connection.run(qb.select('evlet_eva_runs').where(
             id=approval['run_id'], user_id=user.id, status='awaiting_approval')).one()
-        if run is None or run['cancel'] or json.loads(run['pending'] or '{}').get('approval') != approval['id']:
+        pending = json.loads(run['pending'] or '{}') if run is not None else {}
+        if run is None or run['cancel'] or pending.get('approval') != approval['id'] or 'answer' in pending:
             raise AccessError(409, 'This answer stopped or no longer waits for this approval.')
-        self.admit_run(connection, user.id, exclude=run['id'])
-        changed = connection.run(qb.update('evlet_eva_runs', status='running', updated_at=int(time.time()), process=self.owner(connection, run['id']))
+        pending['answer'] = 'approved' if approve else 'declined'
+        changed = connection.run(qb.update('evlet_eva_runs', pending=json.dumps(pending), updated_at=int(time.time()))
                                  .where(id=run['id'], status='awaiting_approval', cancel=0)).rowcount
         if not changed:
             raise AccessError(409, 'This answer stopped or no longer waits for this approval.')
 
     def answered(self, user, approval, scope):
-        """The Tool Engine tells Eva a person answered an approval: continue the run that waits for it."""
-        with self.database.transaction() as tx:
-            run = tx.connection.run(qb.select('evlet_eva_runs').where(qb.eq('id', qb.value(approval['run_id'])), user_id=user.id, status='running')).one()
-            if run is None or json.loads(run['pending'] or '{}').get('approval') != approval['id']:
+        """The Tool Engine tells Eva a person answered an approval: continue the run that waits for it, now if there is room."""
+        self.start_answered()
+
+    def start_answered(self):
+        """Continue runs whose approval was answered, oldest first, as far as capacity allows. One that does not fit
+        keeps waiting with its answer recorded, and starts when a run ends (or when its chat is read again)."""
+        waiting = qb.select('evlet_eva_runs', 'id', 'user_id', 'pending').where(status='awaiting_approval', cancel=0).order_by('updated_at', 'id')
+        with self.database._connection() as connection:
+            # Usually nothing is answered and waiting: then no write transaction is needed.
+            if not any('answer' in json.loads(run['pending'] or '{}') for run in connection.run(waiting)):
                 return
-            self.emit(tx.connection, run['id'], 'approval.answered', {'approval': approval['id'], 'status': approval['status']})
-        self.spawn(run['id'], 'approved' if approval['status'] == 'approved' else 'declined')
+        started = []
+        with self.database.transaction(store='eva') as tx:
+            for run in tx.connection.run(waiting).all():
+                pending = json.loads(run['pending'] or '{}')
+                if 'answer' not in pending or not self.admit(tx.connection, run['user_id']):
+                    continue
+                tx.connection.run(qb.update('evlet_eva_runs', status='running', updated_at=int(time.time()), process=self.process)
+                                  .where(id=run['id'], status='awaiting_approval', cancel=0))
+                self.emit(tx.connection, run['id'], 'approval.answered', {'approval': pending['approval'], 'status': pending['answer']})
+                started.append((run['id'], pending['answer']))
+        for run_id, answer in started:
+            self.spawn(run_id, answer)
 
     def events(self, user, run_id, after=0):
         """Stored events of one of my runs after an event id: the SSE stream and its polling fallback read these."""
         with self.database._connection() as connection:
-            run = connection.run(qb.select(qb.table('evlet_eva_runs', 'r'), 'r.id', 'r.status')
+            run = connection.run(qb.select(qb.table('evlet_eva_runs', 'r'), 'r.id', 'r.status', 'r.pending')
                                  .join(qb.table('evlet_eva_conversations', 'c'), qb.eq('c.id', qb.col('r.conversation_id')))
                                  .where(qb.eq('r.id', run_id), qb.eq('c.user_id', user.id))).one()
             if run is None:
                 raise AccessError(404, 'Run not found')
+        if run['status'] == 'awaiting_approval' and 'answer' in json.loads(run['pending'] or '{}'):
+            # Answered while Eva was full: a run in another process may have ended since.
+            self.start_answered()
+        with self.database._connection() as connection:
+            status = connection.run(qb.select('evlet_eva_runs', 'status').where(id=run_id)).value()
             rows = connection.run(qb.select('evlet_eva_events', 'id', 'at', 'type', 'data').where(qb.gt('id', after), run_id=run_id).order_by('id').limit(200)).all()
 
         items = [{'id': row['id'], 'type': row['type'], 'at': row['at'], **json.loads(row['data'])} for row in rows]
-        return {'items': items, 'status': run['status'], 'done': run['status'] in ('completed', 'failed', 'cancelled') and len(rows) < 200}
+        return {'items': items, 'status': status, 'done': status in ('completed', 'failed', 'cancelled') and len(rows) < 200}
 
     def stream_page(self, scope, after):
         """For the SSE route: check the host, origin and session again, then answer events(). Raises AccessError when access ended."""
@@ -1617,7 +1585,7 @@ class Eva:
         column = {'aed': 'cost_micro', 'tokens': 'total_tokens', 'requests': 'requests'}[limit['unit']]
         reserved = {'aed': 'cost_micro', 'tokens': 'tokens', 'requests': 'requests'}[limit['unit']]
         spent = qb.select('evlet_eva_usage', qb.coalesce(qb.sum(column), 0)).where(qb.ge('at', start))
-        owned = qb.select('evlet_eva_runs', 'id').where(qb.or_(qb.not_null('process'), qb.eq('status', 'running')))
+        owned = qb.select('evlet_eva_runs', 'id').where(status='running')
         held = qb.select('evlet_eva_reservations', qb.coalesce(qb.sum(reserved), 0)).where(
             qb.or_(qb.gt('expires_at', now), qb.in_('run_id', owned)))
         if scope != 'instance':
@@ -1923,6 +1891,7 @@ class Eva:
         except AccessError as exc:
             if exc.status != 429:
                 raise
+            # Only with AI(max_concurrent_runs=...) or max_runs_per_user set: no place is free for this run.
             record('skipped', exc.message)
             return
         self.execute(run_id)

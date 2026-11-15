@@ -159,25 +159,25 @@ def test_cancelled_underlying_worker_holds_capacity_until_it_really_exits(tmp_pa
     worker = app.business.eva
     worker.ai = replace(worker.ai, max_concurrent_runs=1, max_runs_per_user=1)
     person = client(app, 'editor')
-    _, response = send(person)
+    conversation, response = send(person)
     run = response[1]['run']['id']
     try:
         assert response[0] == 202 and provider.entered.wait(3)
-        assert person('POST', f'/api/_eva/runs/{run}/cancel', {})[1]['status'] == 'cancelled'
-        assert state(app, run)['status'] == 'cancelled'
+        # The worker is alive: Stop flags it, and the run stays running (and counted) until the worker stops.
+        assert person('POST', f'/api/_eva/runs/{run}/cancel', {})[1]['status'] == 'stopping'
+        assert state(app, run)['status'] == 'running' and state(app, run)['cancel'] == 1
+        assert person('POST', f'/api/_eva/conversations/{conversation}/messages', {'text': 'Again'})[0] == 409
         assert send(person)[1][0] == 429
         # Another Eva object models admission from a second serving process against the same DB.
         from evlet.eva import Eva
         other = Eva(app.business, worker.ai)
-        with pytest.raises(Exception) as refused:
-            with app.database.transaction() as tx:
-                other.admit_run(tx.connection, 2)
-        assert refused.value.status == 429
+        with app.database.transaction() as tx:
+            assert not other.admit(tx.connection, 2)
     finally:
         provider.release.set()
         worker.wait(run)
     assert provider.closed.is_set()
-    assert state(app, run)['status'] == 'cancelled' and state(app, run)['process'] is None
+    assert state(app, run)['status'] == 'cancelled'
     with app.database._connection() as connection:
         assert connection.run(qb.select('evlet_eva_events', qb.count()).where(run_id=run, type='run.completed')).value() == 0
     assert send(person)[1][0] == 202
@@ -218,9 +218,13 @@ def test_resume_and_scheduled_runs_share_capacity_without_consuming_an_unstarted
     busy = response[1]['run']['id']
     try:
         assert entered.wait(3)
-        assert person('POST', f'/api/_tools/approvals/{approval}', {'approve': True})[0] == 429
+        # Eva is full: the approval is recorded and the run waits for a place instead of refusing the click.
+        assert person('POST', f'/api/_tools/approvals/{approval}', {'approve': True})[0] == 200
         with app.database._connection() as connection:
-            assert connection.run(qb.select('evlet_tool_approvals', 'status').where(id=approval)).value() == 'pending'
+            assert connection.run(qb.select('evlet_tool_approvals', 'status').where(id=approval)).value() == 'approved'
+        assert state(app, waiting)['status'] == 'awaiting_approval'
+        assert person('GET', f'/api/_eva/runs/{waiting}/events')[1]['status'] == 'awaiting_approval'
+        assert person('GET', '/api/project?q=After')[1]['total'] == 0
         task = person('POST', '/api/_eva/tasks', {'name': 'Busy task', 'instructions': 'Read projects', 'cron': '0 9 * * 1', 'timezone': 'Asia/Dubai'})[1]
         assert person('POST', f"/api/_eva/tasks/{task['id']}/run", {})[0] == 202
         assert app.business.jobs.run_one()
@@ -231,9 +235,144 @@ def test_resume_and_scheduled_runs_share_capacity_without_consuming_an_unstarted
     finally:
         release.set()
         worker.wait(busy)
-    assert person('POST', f'/api/_tools/approvals/{approval}', {'approve': True})[0] == 200
+    # The busy run's end freed the place: the answered run carried on by itself.
     worker.wait(waiting)
+    assert state(app, waiting)['status'] == 'completed'
     assert person('GET', '/api/project?q=After')[1]['total'] == 1
+    assert person('POST', f'/api/_tools/approvals/{approval}', {'approve': True})[0] == 409
+
+
+def test_declining_is_never_refused_for_capacity(eva):
+    app, script = eva
+    worker = app.business.eva
+    worker.ai = replace(worker.ai, max_concurrent_runs=1, max_runs_per_user=1)
+    setting(app, 'eva.confirm', {**NEVER, 'create': 'ask'})
+    person = client(app, 'editor')
+    script.turns = [[call('create_record', model='project', values={'title': 'Declined while busy'})]]
+    _, waiting, stored = ask(app, person, 'Create')
+    approval = stored['runs'][0]['activities'][0]['approval']['id']
+    entered, release = threading.Event(), threading.Event()
+    def block():
+        entered.set()
+        assert release.wait(10)
+    script.before[2] = block
+    _, response = send(person)
+    busy = response[1]['run']['id']
+    try:
+        assert entered.wait(3)
+        assert person('POST', f'/api/_tools/approvals/{approval}', {'approve': False})[0] == 200
+        assert state(app, waiting)['status'] == 'awaiting_approval'
+    finally:
+        release.set()
+        worker.wait(busy)
+    worker.wait(waiting)
+    assert state(app, waiting)['status'] == 'completed'
+    replies = [item for item in script.requests[-1]['messages'] if item['role'] == 'tool']
+    assert 'declined' in replies[-1]['content']
+    assert person('GET', '/api/project?q=Declined')[1]['total'] == 0
+
+
+def test_a_waiting_answered_run_can_still_be_stopped(eva):
+    app, script = eva
+    worker = app.business.eva
+    worker.ai = replace(worker.ai, max_concurrent_runs=1)
+    setting(app, 'eva.confirm', {**NEVER, 'create': 'ask'})
+    person = client(app, 'editor')
+    script.turns = [[call('create_record', model='project', values={'title': 'Stopped in line'})]]
+    _, waiting, stored = ask(app, person, 'Create')
+    approval = stored['runs'][0]['activities'][0]['approval']['id']
+    entered, release = threading.Event(), threading.Event()
+    def block():
+        entered.set()
+        assert release.wait(10)
+    script.before[2] = block
+    _, response = send(person)
+    busy = response[1]['run']['id']
+    try:
+        assert entered.wait(3)
+        assert person('POST', f'/api/_tools/approvals/{approval}', {'approve': True})[0] == 200
+        assert person('POST', f'/api/_eva/runs/{waiting}/cancel', {})[1]['status'] == 'cancelled'
+    finally:
+        release.set()
+        worker.wait(busy)
+    worker.wait(waiting)
+    assert state(app, waiting)['status'] == 'cancelled'
+    assert person('GET', '/api/project?q=Stopped')[1]['total'] == 0
+
+
+def test_stop_during_a_write_tool_reports_the_write_and_then_stops(eva, monkeypatch):
+    app, script = eva
+    setting(app, 'eva.confirm', NEVER)
+    script.turns = [[call('create_record', model='project', values={'title': 'Committed write'}), call('list_records', model='project')]]
+    entered, release = threading.Event(), threading.Event()
+    execute, ran = app.business.tools.execute, []
+    def slow(user, name, *args, **kwargs):
+        ran.append(name)
+        if name == 'create_record':
+            entered.set()
+            assert release.wait(10)
+        return execute(user, name, *args, **kwargs)
+    monkeypatch.setattr(app.business.tools, 'execute', slow)
+    person = client(app, 'editor')
+    conversation, response = send(person)
+    run = response[1]['run']['id']
+    try:
+        assert entered.wait(3)
+        assert person('POST', f'/api/_eva/runs/{run}/cancel', {})[1]['status'] == 'stopping'
+        assert state(app, run)['status'] == 'running'
+        # Stop and Send cannot stack a second worker on this chat.
+        assert person('POST', f'/api/_eva/conversations/{conversation}/messages', {'text': 'Again'})[0] == 409
+    finally:
+        release.set()
+        app.business.eva.wait(run)
+    assert state(app, run)['status'] == 'cancelled'
+    assert ran == ['create_record']
+    assert person('GET', '/api/project?q=Committed')[1]['total'] == 1
+    with app.database._connection() as connection:
+        kinds = [row[0] for row in connection.run(qb.select('evlet_eva_events', 'type').where(run_id=run).order_by('id'))]
+    # The write that committed shows as done, before the run says it stopped.
+    assert kinds.index('tool.completed') < kinds.index('run.cancelled')
+    stored = person('GET', f'/api/_eva/conversations/{conversation}')[1]
+    assert stored['runs'][0]['activities'][0]['status'] == 'done'
+
+
+def test_default_limits_do_not_cap_people_or_scheduled_tasks(tmp_path, monkeypatch, hashed):
+    from evlet import AI
+    assert AI().max_concurrent_runs is None and AI().max_runs_per_user is None
+    for bad in (0, -1, 1001, True, 2.0, '4'):
+        with pytest.raises(ValueError):
+            AI(max_concurrent_runs=bad)
+        with pytest.raises(ValueError):
+            AI(max_runs_per_user=bad)
+    provider = Blocked()
+    app = make(tmp_path, monkeypatch, hashed, provider)
+    worker = app.business.eva
+    people = [client(app, role) for role in ('admin', 'editor', 'viewer')]
+    runs = []
+    try:
+        for person in people * 2:
+            response = send(person)[1]
+            assert response[0] == 202, response
+            runs.append(response[1]['run']['id'])
+        task = people[1]('POST', '/api/_eva/tasks', {'name': 'Unbounded task', 'instructions': 'Read', 'cron': '0 9 * * 1', 'timezone': 'Asia/Dubai'})[1]
+        assert people[1]('POST', f"/api/_eva/tasks/{task['id']}/run", {})[0] == 202
+        job = threading.Thread(target=app.business.jobs.run_one)
+        job.start()
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            with app.database._connection() as connection:
+                if connection.run(qb.select('evlet_eva_runs', qb.count()).where(status='running')).value() == 7:
+                    break
+            time.sleep(0.02)
+        with app.database._connection() as connection:
+            assert connection.run(qb.select('evlet_eva_runs', qb.count()).where(status='running')).value() == 7
+    finally:
+        provider.release.set()
+        for run in runs:
+            worker.wait(run)
+        job.join(10)
+    with app.database._connection() as connection:
+        assert connection.run(qb.select('evlet_eva_task_runs', 'status').where(task_id=task['id'])).value() == 'done'
 
 
 def test_one_person_cannot_take_the_other_persons_capacity(tmp_path, monkeypatch, hashed):
@@ -275,7 +414,7 @@ def test_stream_deadline_closes_provider_and_does_not_execute_late_calls(tmp_pat
     setting(app, 'eva.max_seconds', 10)
     person = client(app, 'editor')
     _, run, stored = ask(app, person, 'Work')
-    assert closed == [True] and state(app, run)['process'] is None
+    assert closed == [True] and state(app, run)['status'] == 'completed'
     assert 'time limit' in stored['messages'][-1]['content']
     assert person('GET', '/api/project?q=Too')[1]['total'] == 0
 
@@ -314,7 +453,7 @@ def test_cancellation_cannot_be_overwritten_by_a_late_approval_pause(eva, monkey
     run = response[1]['run']['id']
     try:
         assert entered.wait(3)
-        assert person('POST', f'/api/_eva/runs/{run}/cancel', {})[1]['status'] == 'cancelled'
+        assert person('POST', f'/api/_eva/runs/{run}/cancel', {})[1]['status'] == 'stopping'
     finally:
         release.set()
         app.business.eva.wait(run)
@@ -339,7 +478,7 @@ def test_thread_start_failure_releases_the_reserved_slot(eva, monkeypatch):
         assert send(person)[1][0] == 500
     with app.database._connection() as connection:
         row = connection.run(qb.select('evlet_eva_runs').order_by('-id').limit(1)).one()
-        assert row['status'] == 'failed' and row['process'] is None
+        assert row['status'] == 'failed'
     next_run = send(person)[1]
     assert next_run[0] == 202
     worker.wait(next_run[1]['run']['id'])

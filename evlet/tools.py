@@ -746,7 +746,7 @@ class Tools:
                 raise AccessError(409, 'This approval was already answered or has expired.')
             eva = getattr(self.business, 'eva', None)
             if eva is not None and row['run_id'] and row['origin'] == 'eva':
-                eva.reserve_answer(tx.connection, user, row)
+                eva.record_answer(tx.connection, user, row, approve)
             tx.connection.run(qb.update('evlet_tool_approvals', status='approved' if approve else 'declined', decided_at=now).where(id=approval_id))
             from .controls import audit
             summary = json.loads(row['summary'])
