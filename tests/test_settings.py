@@ -132,7 +132,7 @@ def test_app_settings_respect_editors_audit_and_the_config_version(secured):
 
 @pytest.mark.parametrize('scope,role', [('app', 'admin'), ('app', 'editor'),
                                         ('me/app', 'admin'), ('me/app', 'editor'), ('me/app', 'viewer')])
-@pytest.mark.parametrize('stored', [False, True], ids=['declared-default', 'server-stored'])
+@pytest.mark.parametrize('stored', [False, True], ids=['declared-default', 'stale-stored'])
 def test_readonly_app_settings_and_preferences_reject_changes_and_resets_atomically(secured, scope, role, stored):
     class Shared(AppSettings):
         editors = ('editor',)
@@ -149,13 +149,13 @@ def test_readonly_app_settings_and_preferences_reject_changes_and_resets_atomica
     user_id = next(user['id'] for user in secured.business.auth.users() if user['username'] == role)
     shared = scope == 'app'
     if stored:
-        # Values set by trusted server code must survive rejected HTTP changes, including resets.
+        # A value stored before the field became read only is ignored: the declared default wins.
         with secured.database.transaction() as tx:
             tx.connection.run(qb.insert('evlet_app_settings', app='locked', key='managed', value=json.dumps('server-owned')))
             tx.connection.run(qb.insert('evlet_user_prefs', user_id=user_id, scope='locked', key='managed', value=json.dumps('server-owned')))
             secured.business.controls.publish(tx)
         secured.business.controls.refresh()
-    expected = 'server-owned' if stored else 'declared'
+    expected = 'declared'
 
     def fields():
         state = c('GET', '/api/_settings/app/locked')[1]

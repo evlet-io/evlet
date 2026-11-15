@@ -25,7 +25,9 @@ export class AppClient extends ApiClient {
   private readonly details = new CellCache<RecordData | null>(null);
   private generation = 0;
   private sequence = 0;
-  private readonly latest = new WeakMap<Cell<RecordData | null>, number>();
+  // The ticket of the newest reply applied to each detail cell: an older reply never replaces a newer one,
+  // and a later request that fails or is aborted does not hold back an earlier one that succeeded.
+  private readonly applied = new WeakMap<Cell<RecordData | null>, number>();
   private readonly listeners = new Set<(model: string, id: string, data: RecordData | null) => void>();
   private readonly inflight = new Map<string, Promise<ApiResponse<RecordData>>>();
 
@@ -34,6 +36,11 @@ export class AppClient extends ApiClient {
   /** The last detail the server sent for a record (from a read, save, move or action). */
   detail(model: string, id: string): Cell<RecordData | null> {
     return this.details.get(`${model}:${id}`);
+  }
+
+  /** The cached detail of a record, if any, without keeping a cache entry for it (for title lookups). */
+  known(model: string, id: string): RecordData | null {
+    return this.details.peek(`${model}:${id}`)?.peek() ?? null;
   }
 
   /** Observe accepted record replies without retaining every detail for the entire session. */
@@ -60,12 +67,12 @@ export class AppClient extends ApiClient {
     const generation = this.generation, found = DETAIL.exec(path);
     const tracked = found ? this.detail(found[1], found[2]) : null;
     const ticket = ++this.sequence;
-    if (tracked) this.latest.set(tracked, ticket);
     const response = await super.request<T>(method, path, options);
     const data = response.data as any;
-    if (generation === this.generation && found && tracked && this.latest.get(tracked) === ticket && data && typeof data === 'object') {
+    if (generation === this.generation && found && tracked && ticket > (this.applied.get(tracked) ?? 0) && data && typeof data === 'object') {
       const record = 'job' in data && 'record' in data ? data.record : data;
       if (record && typeof record.id === 'string') {
+        this.applied.set(tracked, ticket);
         this.details.set(`${found[1]}:${record.id}`, record);
         for (const listener of this.listeners) listener(found[1], record.id, record);
       }
