@@ -20,9 +20,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   transaction. Keys remain kept by default.
 - **Readonly settings and action inputs are enforced on the server.** App settings,
   personal preferences and typed action inputs declared `read_only=True` reject caller
-  values, including unchanged values and null resets. Browser forms omit those values;
-  omitted settings retain their stored values/defaults, and action inputs use server
-  defaults. Trusted Python action calls can still supply server-owned inputs.
+  values, including unchanged values and null resets. Browser forms omit those values.
+  Readonly settings and preferences always use their declared default, ignoring a value
+  stored before they became read only, and action inputs use server defaults. Trusted
+  Python action calls can still supply server-owned inputs.
 
 ## 0.4.6 (13-11-2026)
 
