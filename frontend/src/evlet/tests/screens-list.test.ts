@@ -144,8 +144,8 @@ describe('board and saved views (recorded State fixtures)', () => {
     expect(requests(sent, 'GET', /list_tabs/)).not.toHaveLength(0);
     expect(requests(sent, 'GET', /aggregate/)).toHaveLength(0);
     click(byText(host, '.ev-list [role="tab"]', /^Issued/));
-    await until(() => expect(JSON.parse(listCalls(sent, 'invoice').pop()!.filters)).toEqual({ status: 'issued' }));
-    expect(JSON.parse(query(requests(sent, 'GET', /invoice\/measures/).pop()!).filters)).toEqual({ status: 'issued' });
+    await until(() => expect(JSON.parse(listCalls(sent, 'invoice').pop()!.filters)).toEqual({ docstate: 'issued' }));
+    expect(JSON.parse(query(requests(sent, 'GET', /invoice\/measures/).pop()!).filters)).toEqual({ docstate: 'issued' });
     // The state shows as a pill in the list.
     expect(text(host.querySelector('tbody .pill'))).not.toBe('');
   });
@@ -225,9 +225,9 @@ describe('list tabs by a chosen field, opening on the model default (Meta.list_t
   const filtersOf = (call: Record<string, string>) => call.filters === undefined ? undefined : JSON.parse(call.filters);
 
   it('opens on the default tab with nothing in the address, and puts All there when chosen', async () => {
-    const { host, sent } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'issued' })), '/app/invoice');
+    const { host, sent } = start(routes(withTabs({ field: 'docstate', kind: 'state', default: 'issued' })), '/app/invoice');
     await until(() => expect(selected(host)).toBe('Issued1'));
-    expect(listCalls(sent, 'invoice').map(filtersOf)).toEqual([{ status: 'issued' }]);
+    expect(listCalls(sent, 'invoice').map(filtersOf)).toEqual([{ docstate: 'issued' }]);
     expect(location.search).toBe('');
     click(byText(host, '.ev-list [role="tab"]', /^All invoices/));
     await until(() => expect(location.search).toBe('?tab=all'));
@@ -238,7 +238,7 @@ describe('list tabs by a chosen field, opening on the model default (Meta.list_t
   });
 
   it('keeps a tab the address names on arrival, the default one too, until another is chosen', async () => {
-    const { host } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'issued' })), '/app/invoice?tab=issued');
+    const { host } = start(routes(withTabs({ field: 'docstate', kind: 'state', default: 'issued' })), '/app/invoice?tab=issued');
     await until(() => expect(selected(host)).toBe('Issued1'));
     await new Promise(resolve => setTimeout(resolve, 20));
     expect(location.search).toBe('?tab=issued');
@@ -249,20 +249,20 @@ describe('list tabs by a chosen field, opening on the model default (Meta.list_t
   });
 
   it('keeps the tab from the address over the default, and Clear filters goes back to the default', async () => {
-    const { host, sent } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'issued' })), '/app/invoice?tab=all&q=zzz');
+    const { host, sent } = start(routes(withTabs({ field: 'docstate', kind: 'state', default: 'issued' })), '/app/invoice?tab=all&q=zzz');
     await until(() => expect(byText(host, 'button', 'Clear filters')).toBeTruthy());
     expect(selected(host)).toMatch(/^All invoices/);
     expect(listCalls(sent, 'invoice')[0]).toMatchObject({ q: 'zzz' });
     expect(filtersOf(listCalls(sent, 'invoice')[0])).toBeUndefined();
     click(byText(host, 'button', 'Clear filters'));
-    await until(() => expect(filtersOf(listCalls(sent, 'invoice').pop()!)).toEqual({ status: 'issued' }));
+    await until(() => expect(filtersOf(listCalls(sent, 'invoice').pop()!)).toEqual({ docstate: 'issued' }));
     await until(() => expect(location.search).toBe(''));
     expect(selected(host)).toMatch(/^Issued/);
   });
 
   it('offers All when the list is empty only because of its tab', async () => {
     const empty = { status: 200, etag: null, body: { items: [], total: 0, limit: 50, offset: 0 } };
-    const { host, sent } = start(routes(withTabs({ field: 'status', kind: 'state', default: 'paid' }),
+    const { host, sent } = start(routes(withTabs({ field: 'docstate', kind: 'state', default: 'paid' }),
       [['GET', /\/api\/invoice\?.*filters=/, empty]]), '/app/invoice');
     await until(() => expect(byText(host, 'button', 'Show all invoices')).toBeTruthy());
     expect(text(host.querySelector('.dt-empty h3, .dt-empty .empty-t, .dt-empty'))).toContain('No invoices in this tab');

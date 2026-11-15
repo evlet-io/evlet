@@ -148,7 +148,7 @@ def test_changes_that_need_approval_wait_then_run_exactly_once(eva):
     [activity] = stored['runs'][0]['activities']
     approval = activity['approval']
     assert activity['status'] == 'approval' and approval['summary']['operation'] == 'start' and approval['summary']['record']['title'] == 'Approval'
-    assert editor('GET', f"/api/project/{project['id']}")[1]['status'] == 'planned'
+    assert editor('GET', f"/api/project/{project['id']}")[1]['docstate'] == 'planned'
     # Another message waits until this is answered; an API key or assistant can't answer it.
     assert editor('POST', f'/api/_eva/conversations/{conversation}/messages', {'text': 'And?'})[0] == 409
     assert client(app)('POST', f"/api/_tools/approvals/{approval['id']}", {'approve': True})[0] == 404
@@ -157,7 +157,7 @@ def test_changes_that_need_approval_wait_then_run_exactly_once(eva):
     stored = editor('GET', f'/api/_eva/conversations/{conversation}')[1]
     assert stored['runs'][0]['status'] == 'completed' and stored['messages'][-1]['content'] == 'Started.'
     assert stored['runs'][0]['activities'][0]['status'] == 'done'
-    assert editor('GET', f"/api/project/{project['id']}")[1]['status'] == 'active'
+    assert editor('GET', f"/api/project/{project['id']}")[1]['docstate'] == 'active'
     assert editor('POST', f"/api/_tools/approvals/{approval['id']}", {'approve': True})[0] == 409
     log = client(app)('GET', '/api/_controls/tools?tool=change_state')[1]['items']
     assert [item['outcome'] for item in log] == ['ok', 'approval']

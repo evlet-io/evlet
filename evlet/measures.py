@@ -277,7 +277,7 @@ def compile_where(registry, model, where):
     except CalcError as exc:
         raise ValueError(exc.message) from None
     if result != 'boolean':
-        raise ValueError('where: use a Boolean condition such as F("status") == "issued"')
+        raise ValueError('where: use a Boolean condition such as F("docstate") == "issued"')
     reads = set()
     predicate(model, ir, reads)
     return ir, frozenset(reads)

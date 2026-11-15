@@ -45,7 +45,7 @@ class Invoice(Model):
     account = Link(Account)
     lines = Table(InvoiceLine)
     total = Currency(compute=lines.sum("amount"))
-    status = State(
+    docstate = State(
         State.Step("draft"),
         State.Step("issued", lock=True, release=True),
         State.Step("void", color="rose", lock=True, final=True),

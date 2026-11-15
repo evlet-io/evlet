@@ -283,7 +283,7 @@ class Visit(Model):
 | `Tags` | TEXT JSON array | at most 20 distinct tags (ignoring case) of 1 to 40 characters, without quotes, backslashes, commas or control characters; a text value is split on commas | `contains` matches one whole tag exactly, including case (duplicates are detected ignoring case); equality matches the whole list |
 | `MultiSelect` | TEXT JSON array, like `Tags` | some of its choices, each once, saved in the order of the choices | `contains` matches one choice; equality matches the whole list |
 | `Reference` | two columns `<name>_model`, `<name>_id`, no SQL foreign key; `index=True` indexes both columns together (not `unique`) | a registered model and a record that exists, checked when the value changes | equality with `{"model", "id"}` and `isnull` |
-| `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its rules; at most one per root document; see [states-actions.md](states-actions.md) | text filters |
+| `State` | TEXT like `Select` | one of its states; set only to the default on create, then changed only by its rules; at most one per root document, always named `docstate` (label "Status" unless declared); see [states-actions.md](states-actions.md) | text filters |
 | `Sequence` | TEXT, null until assigned, unique with its scope fields | a document number such as `INV-{year}-{n:05}` written only by the engine on create or when a move enters `assign_on`; root documents only; see [sequences.md](sequences.md) | text filters |
 
 Every field takes `help_text=` and `tooltip=`, both text. Forms show `help_text` in grey under
@@ -709,6 +709,10 @@ class Customer(Model):
 it with `RenameField('customer', 'name', 'customer_name')` in an app migration. Frozen classes in
 older migrations may keep their `name` field, because they describe the schema of that time.
 
+`docstate` is reserved for the State field: a State under any other name, and a `docstate` that is
+not a State, fail when the class is defined. Rename an older State with
+`RenameField('invoice', 'status', 'docstate')` in an app migration.
+
 Tables made before these columns existed get them at the end of the next app migration batch, or
 from framework migration `0003_record_names`, which `evlet migrate` runs
 ([app-upgrades.md](app-upgrades.md#upgrade-evlet)). Every title is filled; existing rows keep an
@@ -1115,6 +1119,13 @@ it cannot write become `#` comments; fill both in by hand. A removed field's val
 moved anywhere: add a `RunData` step when they belong in new fields.
 `migrate()` refuses a mismatch with the same list of differences, so the error names the
 model, field and property that differs.
+
+`RenameField` also renames the field in the Controls settings stored for its model: the field's own
+override, a list view's columns, sort and tabs, a layout's fields and side panel, a role's readable
+and writable fields, and the filters of workspace shortcuts to the model. Text that names the field
+inside a condition or template (a naming series, an approval rule override, a custom field's rule,
+a print design) is not rewritten; Controls lists such an override under Needs attention until it is
+saved again.
 
 Migrations run under one SQLite write transaction. The complete pending batch,
 its history entries, and the schema snapshot commit together after structure,

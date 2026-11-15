@@ -18,7 +18,7 @@ def test_restore_complete_nested_release_preserves_ids_and_public_page_guard(tmp
         Meta = FiniteMeta
         permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'restore'))}
         lines = Table(Line, max_rows=101)
-        status = State(State.Step('draft'), State.Step('issued', release=True), rules=(
+        docstate = State(State.Step('draft'), State.Step('issued', release=True), rules=(
             State.Rule('draft', 'issued', 'Issue', key='issue'), State.Rule('issued', 'draft', 'Reopen', key='reopen')))
         @validate
         def valid(self):

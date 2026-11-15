@@ -90,7 +90,7 @@ function demoFields() {
     url: localField({ name: 'website', type: 'url', label: 'Website' }, 'https://alsahra-trading.ae'),
     phone: localField({ name: 'mobile', type: 'phone', label: 'Mobile' }, '+971504182290'),
     tags: localField({ name: 'tags', type: 'tags', label: 'Tags' }, ['Hot', 'Renewal']),
-    state: localField({ name: 'status', type: 'state', label: 'Status' }, 'issued'),
+    state: localField({ name: 'docstate', type: 'state', label: 'Status' }, 'issued'),
     sequence: localField({ name: 'number', type: 'sequence', label: 'Number' }, 'INV-2026-00041'),
     reference: localField({ name: 'source_doc', type: 'reference', label: 'Settles' }, { model: 'invoice', id: 41 }),
     computed: localField({ name: 'total', type: 'currency', label: 'Total', scale: 6, read_only: true,

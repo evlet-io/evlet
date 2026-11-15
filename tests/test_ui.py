@@ -22,7 +22,7 @@ def test_revision_checks_prevent_stale_update_delete_and_move(secured):
     ]:
         assert c(method, path + suffix, body, headers={b"if-match": revision})[0] == 409
     _, latest, headers = c("GET", path)
-    assert latest["title"] == "Changed" and latest["status"] == "planned"
+    assert latest["title"] == "Changed" and latest["docstate"] == "planned"
     task = latest["children"]["tasks"][0]
     assert (
         c(

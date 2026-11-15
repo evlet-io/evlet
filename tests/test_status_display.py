@@ -14,7 +14,7 @@ class Member(Model):
     """Active or left: not a pipeline, so it shows as a badge (the default)."""
     permissions = {**ALL, 'viewer': Rule(('read',), read_fields=('title',))}
     title = Text(required=True)
-    standing = State(
+    docstate = State(
         State.Step('active'),
         State.Step('left'),
         rules=(
@@ -33,7 +33,7 @@ class Bill(Model):
         status = 'payment_status'
 
     title = Text(required=True)
-    stage = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('submitted'),
         State.Step('approved'),
@@ -55,7 +55,7 @@ class Ledger(Model):
         api = 'read'
 
     title = Text(required=True)
-    phase = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed'),
         rules=(
@@ -181,7 +181,7 @@ def test_moves_in_a_closed_period_are_blocked(tmp_path):
 
         title = Text(required=True)
         posted_on = Date()
-        stage = State(
+        docstate = State(
             State.Step('draft'),
             State.Step('submitted'),
             rules=(

@@ -33,7 +33,7 @@ class Card(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
     label = Text(default='')
     photo = Image()
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         State.Step('void', lock=True, final=True),

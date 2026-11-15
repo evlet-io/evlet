@@ -25,7 +25,7 @@ class Build(Model):
     title = Text(required=True, max_length=60)
     ready = Boolean(default=True)
     note = Text(default='', max_length=200)
-    status = State(
+    docstate = State(
         State.Step('new'),
         State.Step('queued'),
         State.Step('building'),
@@ -40,7 +40,7 @@ class Build(Model):
     def started(self):
         self.note = 'Started'
 
-    @action('Build now', roles=('admin', 'editor'), available_when=F('status') == 'new')
+    @action('Build now', roles=('admin', 'editor'), available_when=F('docstate') == 'new')
     def build_now(self):
         """Queue the record and the job that builds it; the job runs once this action commits."""
         self.note = 'Waiting for the worker'
@@ -66,7 +66,7 @@ def build_job(tx, job, payload):
     """Start and finish the build as the system, through the document context."""
     context = job.business(tx, system='Build worker', role='admin')
     SEEN.append((context.user.username, context.user.role))
-    context.move(Build, payload['build'], 'queued') if tx.get(Build, RecordId(payload['build'])).status == 'new' else None
+    context.move(Build, payload['build'], 'queued') if tx.get(Build, RecordId(payload['build'])).docstate == 'new' else None
     context.move(Build, payload['build'], 'building')
     context.move(Build, payload['build'], 'done')
 
@@ -102,7 +102,7 @@ def post(caller, record_id, what, body=None, model='build'):
 
 def status_of(app, record_id):
     with app.database.transaction() as tx:
-        return tx.get(Build, RecordId(record_id)).status
+        return tx.get(Build, RecordId(record_id)).docstate
 
 
 def queue(app, record_id, user=User(1, 'admin', 'admin')):
@@ -346,7 +346,7 @@ def test_the_background_playground_builds_a_price_list_in_a_job(tmp_path):
     while jobs.run_one():
         pass
     detail = admin('GET', f'/api/pricelist/{record_id}')[1]
-    assert (detail['status'], detail['progress'], detail['requested']) == ('ready', 'Priced 40 items', False)
+    assert (detail['docstate'], detail['progress'], detail['requested']) == ('ready', 'Priced 40 items', False)
     assert [move['to'] for move in detail['_moves']] == ['draft']
     assert jobs.status(job_id, User(1, 'admin', 'admin'))['progress']['done'] == STEPS
     moved = [entry for entry in admin('GET', f'/api/pricelist/{record_id}/activity')[1]['items'] if entry['kind'] == 'moved']

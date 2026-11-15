@@ -14,7 +14,7 @@ class Order(Model):
     number = Text(required=True, unique=True)
     customer = Text(required=True)
     remarks = Text(versioned=False)
-    status = State(
+    docstate = State(
         State.Step('draft', 'Draft'),
         State.Step('confirmed', 'Confirmed', color='green', lock=True, release=True),
         State.Step('cancelled', 'Cancelled', color='rose', lock=True, final=True),
@@ -35,7 +35,7 @@ class Order(Model):
 
     @validate
     def positive_rates(self):
-        if self.status == 'confirmed' and any(line.rate <= 0 for line in self.lines):
+        if self.docstate == 'confirmed' and any(line.rate <= 0 for line in self.lines):
             raise ValidationError({'lines': 'Enter positive rates before confirmation'})
 
     @state('confirmed')

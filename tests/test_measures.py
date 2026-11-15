@@ -563,8 +563,8 @@ class NumberedMeta:
     numeric_profile = 'finite40-hu18-v1'
     measures = {
         # Declared conditions decide whether void records count.
-        'live_total': Sum('total', where=(F('status') == 'draft') | (F('status') == 'issued')),
-        'void_total': Sum('total', where=F('status') == 'void'),
+        'live_total': Sum('total', where=(F('docstate') == 'draft') | (F('docstate') == 'issued')),
+        'void_total': Sum('total', where=F('docstate') == 'void'),
         'quotes': Count(),
         'numbered': CountDistinct('number'),
     }
@@ -581,7 +581,7 @@ class NumberedQuote(Model):
     lines = Table(NumberedLine, max_rows=10)
     total = Currency(default='0')
     number = Sequence('NQ-{n:03}', assign_on='issued')
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         State.Step('void', lock=True, final=True),
@@ -612,12 +612,12 @@ def test_measures_with_void_moves_and_sequences(numbered):
         status, moved, _ = c('POST', url + '/moves/issued', {}, headers=tag(url))
         assert status == 200 and moved['number'] is not None, moved
     status, voided, _ = c('POST', urls[0] + '/moves/void', {'remark': 'Duplicate'}, headers=tag(urls[0]))
-    assert status == 200 and voided['status'] == 'void' and voided['number'] == 'NQ-001', voided
+    assert status == 200 and voided['docstate'] == 'void' and voided['number'] == 'NQ-001', voided
     assert c('GET', base + '/measures')[1] == {
         'measures': {'live_total': '25.00', 'void_total': '10.00', 'quotes': 3, 'numbered': 2}}
-    by_status = c('GET', f'{base}/aggregate?measures=n:count,t:sum:total&group_by=status')[1]
-    assert by_status['items'] == [{'status': 'draft', 'n': 1, 't': '5.00'}, {'status': 'issued', 'n': 1, 't': '20.00'},
-                                  {'status': 'void', 'n': 1, 't': '10.00'}]
+    by_status = c('GET', f'{base}/aggregate?measures=n:count,t:sum:total&group_by=docstate')[1]
+    assert by_status['items'] == [{'docstate': 'draft', 'n': 1, 't': '5.00'}, {'docstate': 'issued', 'n': 1, 't': '20.00'},
+                                  {'docstate': 'void', 'n': 1, 't': '10.00'}]
     # Measure routes are GET only; moves stay POST only.
     assert c('POST', base + '/measures', {})[0] in (404, 405) and c('POST', base + '/aggregate', {})[0] in (404, 405)
     assert c('GET', urls[0] + '/moves/void')[0] in (404, 405)

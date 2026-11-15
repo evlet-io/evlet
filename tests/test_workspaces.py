@@ -27,7 +27,7 @@ class Deal(Model):
     title = Text(required=True)
     client = Link(Client)
     amount = Decimal(scale=2, default='0')
-    stage = State(
+    docstate = State(
         State.Step('open'),
         State.Step('won'),
         State.Step('lost'),
@@ -42,7 +42,7 @@ class Deal(Model):
     lines = Table(Line)
 
     class Meta:
-        board = 'stage'
+        board = 'docstate'
 
 
 class Payroll(Model):

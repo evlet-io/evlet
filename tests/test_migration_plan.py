@@ -32,7 +32,7 @@ class Employee(Model):
 
 class LeaveApplication(Model):
     permissions = LIFECYCLE
-    status = State(State.Step('draft'), State.Step('confirmed', lock=True, release=True),
+    docstate = State(State.Step('draft'), State.Step('confirmed', lock=True, release=True),
                    rules=(State.Rule('draft', 'confirmed', 'Confirm', key='confirm'),))
     employee = Text(required=True)
     days = Integer(default=0)
@@ -149,7 +149,7 @@ def test_plan_names_each_difference_writes_nothing_and_its_suggestion_migrates(p
             rows = tx.connection.execute('SELECT evlet_owner, full_name, age FROM employee_dependents').fetchall()
         assert [tuple(row) for row in rows] == [(employee, 'Omar', 7)]
         with app.business.context(ADMIN) as context:
-            assert (context.get(Leave, leave).status, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
+            assert (context.get(Leave, leave).docstate, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
     finally:
         app.database.close()
     main(['activity', 'verify', 'acme'])
@@ -269,7 +269,7 @@ def hr_models(*, dependents=False, nationality=False):
     if dependents:
         employee['dependents'] = Table(type('Dependent', (Child,), {'__module__': __name__, 'full_name': Text(required=True), 'age': Integer()}))
     leave = {'__module__': __name__, 'permissions': lifecycle,
-             'status': State(State.Step('draft'), State.Step('confirmed', lock=True, release=True),
+             'docstate': State(State.Step('draft'), State.Step('confirmed', lock=True, release=True),
                              rules=(State.Rule('draft', 'confirmed', 'Confirm', key='confirm'),)),
              'employee': Text(required=True), 'days': Integer(default=0), 'reason': Text(),
              'Meta': type('Meta', (), {'activity': Activity(tamper_evident=True)})}
@@ -319,7 +319,7 @@ def check_plan_and_add_table(make):
     with app.business.context(ADMIN) as context:
         assert context.get(Employee, employee).nationality == 'AE'
         context.update(Employee, employee, children={'dependents': [{'full_name': 'Omar', 'age': 7}]})
-        assert (context.get(Leave, leave).status, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
+        assert (context.get(Leave, leave).docstate, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
         assert context.get(Leave, leave).days == 3
     checked, breaks = verify(database)
     assert checked and not breaks
@@ -342,7 +342,7 @@ def people_models(*, days=None, split=False):
     employee = {key: value for key, value in vars(Employee).items() if key in ('permissions', '__module__')}
     employee.update({'first_name': Text(default=''), 'last_name': Text(default='')} if split else {'full_name': Text(required=True)})
     leave = {key: value for key, value in vars(Leave).items()
-             if key in ('status', 'permissions', '__module__', 'Meta')}
+             if key in ('docstate', 'permissions', '__module__', 'Meta')}
     leave.update({'employee': Text(required=True), 'days': days or Integer(default=0), 'reason': Text()})
     return Registry(type('Employee', (Model,), employee), type('LeaveApplication', (Model,), leave))
 
@@ -392,7 +392,7 @@ def check_retire_alter_and_run_data(make):
     Leave = decimal_days.models['leaveapplication']
     with app.business.context(ADMIN) as context:
         assert context.get(Leave, leave).days == '3.0'
-        assert (context.get(Leave, leave).status, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
+        assert (context.get(Leave, leave).docstate, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
         half = context.create(Leave, employee='Mariam', days='1.5')['id']
         assert context.get(Leave, half).days == '1.5'
 

@@ -440,6 +440,86 @@ class RenameField:
             connection.rename_column(self.table, old, new)
 
 
+def rename_in_overrides(connection, table, model, old, new):
+    """Rename a field in the stored Controls overrides that name it, for migrate() after a RenameField. `table` is
+    the model's storage name and `model` its class name (Controls keys its overrides by it), or None when the
+    registry no longer has the table: the field's own override (kind "field", key "<Model>.<old>"), a list
+    view's columns, sort and list_tabs, a layout's fields and side panel, a permission override's read and
+    write fields, and the filters of workspace shortcuts to the model.
+
+    Conditions and templates written as text (naming series, approval rule overrides, custom field rules,
+    print designs) are not rewritten: they are redone in Controls, which lists one that no longer checks under
+    Needs attention."""
+    if not connection.table_exists('evlet_overrides'):
+        return
+    rename = lambda name: new if name == old else name
+    changed = False
+    for row in connection.run(qb.select('evlet_overrides', 'kind', 'key', 'value')).all():
+        kind, key, text = row['kind'], row['key'], row['value']
+        try:
+            value = json.loads(text)
+        except ValueError:
+            continue
+        target = key
+        if model is None and kind != 'workspace':
+            continue
+        if kind == 'field' and key == f'{model}.{old}':
+            target = f'{model}.{new}'
+        elif kind == 'list' and key == model and isinstance(value, dict):
+            if isinstance(value.get('columns'), list):
+                value['columns'] = [rename(name) for name in value['columns']]
+            if isinstance(value.get('sort'), str):
+                descending = value['sort'].startswith('-')
+                value['sort'] = ('-' if descending else '') + rename(value['sort'].removeprefix('-'))
+            if 'list_tabs' in value:
+                value['list_tabs'] = rename(value['list_tabs'])
+        elif kind == 'layout' and key == model:
+            sections = value.get('sections') if isinstance(value, dict) else value
+            for section in sections if isinstance(sections, list) else ():
+                for item in section.get('fields', ()) if isinstance(section, dict) else ():
+                    if isinstance(item, dict) and item.get('name') == old:
+                        item['name'] = new
+            panel = value.get('panel') if isinstance(value, dict) else None
+            if isinstance(panel, dict) and isinstance(panel.get('fields'), list):
+                panel['fields'] = sorted(rename(name) for name in panel['fields'])
+        elif kind == 'perm' and key.partition('|')[2] == model and isinstance(value, dict):
+            for part in ('read', 'write'):
+                if isinstance(value.get(part), list):
+                    value[part] = [rename(name) for name in value[part]]
+        elif kind == 'workspace' and isinstance(value, dict):
+            for group in value.get('groups') or ():
+                for item in group.get('items') or () if isinstance(group, dict) else ():
+                    shortcut = item.get('shortcut') if isinstance(item, dict) else None
+                    if isinstance(shortcut, dict) and shortcut.get('model') == table and 'filters' in shortcut:
+                        shortcut['filters'] = renamed_filters(shortcut['filters'], old, new)
+        updated = json.dumps(value, sort_keys=True)
+        if target == key and updated == json.dumps(json.loads(text), sort_keys=True):
+            continue
+        if target != key:
+            if connection.run(qb.select('evlet_overrides', 'key').where(kind=kind, key=target)).one() is not None:
+                continue
+            connection.run(qb.update('evlet_overrides', key=target).where(kind=kind, key=key))
+        else:
+            connection.run(qb.update('evlet_overrides', value=updated).where(kind=kind, key=key))
+        changed = True
+    if changed and connection.table_exists('evlet_config'):
+        # Running servers read overrides again when the version moves.
+        connection.run(qb.update('evlet_config', version=qb.col('version') + 1).where(id=1))
+
+
+def renamed_filters(filters, old, new):
+    """Shortcut filters with the field renamed: {"old": ..., "old__op": ...} keys and [old, op, value] conditions."""
+    if isinstance(filters, dict):
+        out = {}
+        for key, value in filters.items():
+            name, sep, operator = key.partition('__')
+            out[(new + sep + operator) if name == old else key] = value
+        return out
+    if isinstance(filters, list):
+        return [[new, *entry[1:]] if isinstance(entry, list) and entry and entry[0] == old else entry for entry in filters]
+    return filters
+
+
 @dataclass(frozen=True)
 class AddIndex:
     """Index one field (`field` names it), or add a Meta.indexes entry (`field` is a tuple of field names,
@@ -1336,6 +1416,10 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
                 if not fresh and not baseline:
                     for operation in migration.operations:
                         operation.apply(connection, *step_arguments(operation, steps))
+                        if isinstance(operation, RenameField):
+                            renamed = database.registry.models.get(operation.table)
+                            rename_in_overrides(connection, operation.table, renamed.__name__ if renamed is not None else None,
+                                                operation.old_name, operation.new_name)
                     run_data(connection, database.registry, migration)
                 connection.run(qb.insert('evlet_migrations', position=position, name=migration.name, checksum=checksums[position - 1]))
             applied = Applied(item.name for item in pending)

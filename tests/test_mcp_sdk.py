@@ -55,7 +55,7 @@ def test_official_client_can_discover_read_write_and_receive_validation(live_con
                 assert waiting.isError and 'approval' in waiting.structuredContent['error']
                 approve(live_connector)
                 moved = await session.call_tool('change_state', {'model': 'project', 'id': record['id'], 'rule': 'start'})
-                assert not moved.isError and moved.structuredContent['status'] == 'active'
+                assert not moved.isError and moved.structuredContent['docstate'] == 'active'
                 Draft202012Validator(metadata['schemas']['read']).validate(moved.structuredContent)
                 selected = await session.call_tool('list_records', {'model': 'project', 'filters': {'id': record['id']}})
                 assert selected.structuredContent['total'] == 1

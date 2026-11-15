@@ -49,13 +49,13 @@ def test_leaving_keeps_writable_edits_apart_from_the_record(secured):
     editor = client(secured, 'editor')
     revision = opened(editor, record)
     before = counts(secured)
-    changes = {'values': {'title': 'Renamed', 'notes': 'Draft notes', 'status': 'done'}, 'base': {'title': 'Plan', 'status': 'planned'},
+    changes = {'values': {'title': 'Renamed', 'notes': 'Draft notes', 'docstate': 'done'}, 'base': {'title': 'Plan', 'docstate': 'planned'},
                'children': {'tasks': {'added': [{'key': 'n1', 'values': {'title': 'Second'}}],
                                       'changed': {str(task.id): {'values': {'done': True}, 'base': {'done': False}}}, 'removed': []}}}
     status, saved, _ = editor('PUT', path(record), {'changes': changes, 'base_revision': revision})
     assert status == 200, saved
-    # status is read only, so it is dropped and listed; everything else is kept as sent.
-    assert saved['dropped'] == ['status'] and saved['size'] > 0
+    # docstate is read only, so it is dropped and listed; everything else is kept as sent.
+    assert saved['dropped'] == ['docstate'] and saved['size'] > 0
     # The record, its rows, events, history and jobs are untouched.
     assert secured.database.get(Project, record.id).title == 'Plan'
     assert secured.database.get(ProjectTask, task.id).done is False

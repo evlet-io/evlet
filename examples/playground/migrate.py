@@ -236,6 +236,10 @@ migrations.append(Migration('0019_more_currencies',
 migrations.append(Migration('0020_project_state', AlterField('project', 'status', State(
     State.Step('planned', 'Planned'), State.Step('active', 'Active', color='blue'), State.Step('done', 'Done', color='green', lock=True)))))
 
+# A State field is always named docstate: the column and its values move, and so do the Controls
+# overrides and workspace shortcuts that named project.status.
+migrations.append(Migration('0021_project_docstate', RenameField('project', 'status', 'docstate')))
+
 
 
 def legacy_registry():

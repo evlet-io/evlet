@@ -119,7 +119,7 @@ def test_arguments_and_redaction():
 class Shipment(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update'))}
     title = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('packed'),
         State.Step('sent', final=True),
@@ -146,13 +146,13 @@ def test_change_state_makes_state_moves_through_the_move_route(moves):
     shipment = admin('POST', '/api/shipment', {'title': 'Box'})[1]['id']
     # A move the role has.
     moved = execute(editor, 'change_state', model='shipment', id=shipment, rule='packed')
-    assert moved[0] == 200 and moved[1]['result']['status'] == 'packed'
+    assert moved[0] == 200 and moved[1]['result']['docstate'] == 'packed'
     # A move for other roles is refused as the route refuses it.
     refused = execute(editor, 'change_state', model='shipment', id=shipment, rule='sent')
-    assert refused[0] == 403 and admin('GET', f'/api/shipment/{shipment}')[1]['status'] == 'packed'
+    assert refused[0] == 403 and admin('GET', f'/api/shipment/{shipment}')[1]['docstate'] == 'packed'
     # A rule the State does not have is not found.
     assert execute(admin, 'change_state', model='shipment', id=shipment, rule='draft')[0] == 404
-    assert execute(admin, 'change_state', model='shipment', id=shipment, rule='sent')[1]['result']['status'] == 'sent'
+    assert execute(admin, 'change_state', model='shipment', id=shipment, rule='sent')[1]['result']['docstate'] == 'sent'
     assert execute(admin, 'change_state', model='shipment', id=shipment, rule='lost')[0] == 409
     assert execute(admin, 'change_state', model='shipment', id=shipment, rule='a/../b')[0] == 422
     log = admin('GET', '/api/_controls/tools?tool=change_state')[1]['items']

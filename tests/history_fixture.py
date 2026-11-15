@@ -27,7 +27,7 @@ class Order(Model):
     permissions = ROLES
     title = Text(default='')
     amount = Currency(default=0)
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('placed', lock=True),
         rules=(State.Rule('draft', 'placed', 'Place', key='place', remark='optional'),))
@@ -73,7 +73,7 @@ def make_dumps(folder):
         # A custom role whose stored Controls override (stricter than the file: no amount) names the operation; step
         # 0016 renames it there.
         assert admin('POST', '/api/_controls/roles', {'id': 'clerk', 'base': 'viewer'})[0] == 201
-        change = {'kind': 'perm', 'key': 'clerk|Order', 'value': {'ops': ['read', NOTES], 'read': ['title', 'status'],
+        change = {'kind': 'perm', 'key': 'clerk|Order', 'value': {'ops': ['read', NOTES], 'read': ['title', 'docstate'],
                                                                  'write': None, 'scope': None}}
         assert admin('POST', '/api/_controls/overrides', {'changes': [change]})[0] == 200
         people = {name: User(index, name, name) for index, name in enumerate(('admin', 'editor', 'viewer'), 1)}

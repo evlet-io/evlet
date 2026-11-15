@@ -54,7 +54,7 @@ describe('testCRM: sign in and the deals list', () => {
     await until(() => expect(titles(host).length).toBe(8));
     click(byText(host, '.ev-list [role="tab"]', /^Proposal/));
     await until(() => expect(titles(host)).toEqual(expect.arrayContaining(['Production planning module', 'Project costing and BOQ'])));
-    expect(JSON.parse(listed(run, sent).pop()!.filters)).toEqual({ stage: 'proposal' });
+    expect(JSON.parse(listed(run, sent).pop()!.filters)).toEqual({ docstate: 'proposal' });
     click(byText(host, '.ev-list [role="tab"]', /^All deals/));
     await until(() => expect(titles(host).length).toBe(8));
     const total = host.querySelector<HTMLElement>('thead th[data-key="total"]')!;

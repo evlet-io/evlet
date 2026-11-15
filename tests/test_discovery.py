@@ -28,7 +28,7 @@ def test_description_permissions_required_defaults_and_child_contract(secured):
     item = c('GET', '/api/_discovery/project')[1]
     create, update = item['schemas']['create'], item['schemas']['update']
     assert 'title' in create['required'] and 'progress' not in create['required']
-    assert update['required'] == [] and 'status' not in create['properties']
+    assert update['required'] == [] and 'docstate' not in create['properties']
     assert create['properties']['progress']['default'] == 0
     child = create['properties']['children']['properties']['tasks']['items']['oneOf'][0]
     assert child['required'] == ['title'] and 'project' not in child['properties'] and 'id' not in child['properties']
@@ -155,7 +155,7 @@ def test_read_schema_covers_approval_release_restore_and_action_metadata(tmp_pat
         amount = Integer(default=2)
         total = Integer(compute=F('amount') * 2)
         lines = Table(ReportLine, max_rows=101)
-        status = State(State.Step('draft'), State.Step('issued', release=True), rules=(
+        docstate = State(State.Step('draft'), State.Step('issued', release=True), rules=(
             State.Rule('draft', 'issued', 'Issue', key='issue', primary=True, ask=('title',),
                        remark='optional', self_approve=True,
                        levels=(State.Level(by=('admin',), pending='Waiting for approval'),)),

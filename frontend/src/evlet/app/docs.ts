@@ -31,7 +31,7 @@ class Invoice(Model):
     due_on = Date()
     lines = Table(InvoiceLine)
     total = Currency(compute=lines.sum("amount"))
-    status = State(
+    docstate = State(
         State.Step("draft", "Draft"),
         State.Step("issued", "Issued", color="blue", lock=True),
         State.Step("paid", "Paid", color="green", lock=True, final=True),
@@ -40,8 +40,8 @@ class Invoice(Model):
     )
 
     class Meta:
-        list_fields = ("customer", "due_on", "status", "total")
-        layout = [{"label": "Invoice", "fields": ["customer", "due_on", "status"]},
+        list_fields = ("customer", "due_on", "docstate", "total")
+        layout = [{"label": "Invoice", "fields": ["customer", "due_on", "docstate"]},
                   {"label": "Amounts", "fields": ["total"]}]`;
 
 const rulesCode = `from evlet import Currency, Select, Text, action
@@ -85,7 +85,7 @@ class Deal(Model):
     name = Text(required=True)
     amount = Currency()
     competitor = Text()
-    stage = State(
+    docstate = State(
         State.Step("lead", "Lead"),
         State.Step("qualified", "Qualified", color="blue"),
         State.Step("proposal", "Proposal", color="violet"),
@@ -103,11 +103,11 @@ class Deal(Model):
         ),
         show="badge",  # the default: a coloured badge in the record header
     )`,
-  bar: `stage = State(
+  bar: `docstate = State(
     ...,  # the same steps and rules
     show="bar",  # the stage bar under the header
 )`,
-  none: `stage = State(
+  none: `docstate = State(
     ...,
     show="none",  # no badge, no bar: the app places the state itself
 )`,
@@ -116,7 +116,7 @@ class Deal(Model):
 class Invoice(Model):
     total = Currency(required=True)
     remarks = Text(default="", versioned=False)  # stays editable while locked
-    status = State(
+    docstate = State(
         State.Step("draft", "Draft"),
         State.Step("issued", "Issued", color="blue", lock=True, release=True),
         State.Step("paid", "Paid", color="green", lock=True, final=True),
@@ -136,7 +136,7 @@ Level = State.Level
 class Expense(Model):
     title = Text(required=True)
     total = Currency(required=True)
-    status = State(
+    docstate = State(
         State.Step("draft", "Draft"),
         State.Step("review", "In review", color="amber", lock=True),
         State.Step("approved", "Approved", color="green", lock=True, final=True),
@@ -157,17 +157,17 @@ type SampleRule = { key: string; from: string[]; to: string; label: string; prim
 const sampleField = (name: string, type: string, label: string, extra: Partial<FieldSchema> = {}) => ({ name, type, label, required: false, read_only: false,
   hidden: false, default: null, help_text: '', placeholder: '', operators: [], applies_when: null, required_when: null, locked_when: null, ...extra }) as unknown as FieldSchema;
 
-/** A model as /api/schema sends it, cut down to what the State pieces read. */
-function sampleModel(name: string, label: string, field: string, steps: SampleStep[], rules: SampleRule[], fields: FieldSchema[] = [], show: 'badge' | 'bar' | 'none' = 'badge'): ScreenModel {
+/** A model as /api/schema sends it, cut down to what the State pieces read. The State field is always docstate. */
+function sampleModel(name: string, label: string, steps: SampleStep[], rules: SampleRule[], fields: FieldSchema[] = [], show: 'badge' | 'bar' | 'none' = 'badge'): ScreenModel {
   const colors = Object.fromEntries(steps.filter(step => step[2]).map(step => [step[0], step[2]]));
-  return { name, label, plural: `${label}s`, title_field: 'name', fields: [...fields, sampleField(field, 'select', humanizeKey(field), { read_only: true, required: true,
+  const field = 'docstate';
+  return { name, label, plural: `${label}s`, title_field: 'name', fields: [...fields, sampleField(field, 'select', 'Status', { read_only: true, required: true,
     choices: steps.map(step => step[0]), colors } as Partial<FieldSchema>)],
     state: { field, default: steps[0][0], show, rules, steps: steps.map(([key, text, color, flags]) => ({ key, label: text, color, lock: Boolean(flags?.lock || flags?.final),
       release: Boolean(flags?.release), final: Boolean(flags?.final) })) } } as unknown as ScreenModel;
 }
-const humanizeKey = (key: string) => key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ');
 
-const DEAL = sampleModel('deal', 'Deal', 'stage', [['lead', 'Lead', null], ['qualified', 'Qualified', 'blue'], ['proposal', 'Proposal', 'violet'],
+const DEAL = sampleModel('deal', 'Deal', [['lead', 'Lead', null], ['qualified', 'Qualified', 'blue'], ['proposal', 'Proposal', 'violet'],
   ['negotiation', 'Negotiation', 'amber'], ['won', 'Won', 'green', { final: true }], ['lost', 'Lost', 'rose', { final: true }]], [
   { key: 'lead_to_qualified', from: ['lead'], to: 'qualified', label: 'Qualify' },
   { key: 'qualified_to_proposal', from: ['qualified'], to: 'proposal', label: 'Send proposal' },
@@ -177,7 +177,7 @@ const DEAL = sampleModel('deal', 'Deal', 'stage', [['lead', 'Lead', null], ['qua
   { key: 'lose', from: ['lead', 'qualified', 'proposal', 'negotiation'], to: 'lost', label: 'Mark lost', remark: { mode: 'required', label: 'Why was it lost?' }, asks: ['competitor'] },
 ], [sampleField('name', 'text', 'Name', { required: true }), sampleField('amount', 'currency', 'Amount'), sampleField('competitor', 'text', 'Competitor')]);
 
-const INVOICE = sampleModel('invoice', 'Invoice', 'status', [['draft', 'Draft', null], ['issued', 'Issued', 'blue', { lock: true, release: true }],
+const INVOICE = sampleModel('invoice', 'Invoice', [['draft', 'Draft', null], ['issued', 'Issued', 'blue', { lock: true, release: true }],
   ['paid', 'Paid', 'green', { final: true }], ['void', 'Void', 'rose', { final: true }]], [
   { key: 'issue', from: ['draft'], to: 'issued', label: 'Issue', primary: true },
   { key: 'pay', from: ['issued'], to: 'paid', label: 'Mark paid' },
@@ -185,7 +185,7 @@ const INVOICE = sampleModel('invoice', 'Invoice', 'status', [['draft', 'Draft', 
   { key: 'void', from: ['issued'], to: 'void', label: 'Void', remark: { mode: 'required', label: null } },
 ], [sampleField('total', 'currency', 'Total', { required: true }), sampleField('remarks', 'text', 'Remarks', { versioned: false } as Partial<FieldSchema>)]);
 
-const EXPENSE = sampleModel('expense', 'Expense', 'status', [['draft', 'Draft', null], ['review', 'In review', 'amber', { lock: true }],
+const EXPENSE = sampleModel('expense', 'Expense', [['draft', 'Draft', null], ['review', 'In review', 'amber', { lock: true }],
   ['approved', 'Approved', 'green', { final: true }]], [
   { key: 'submit', from: ['draft'], to: 'review', label: 'Submit', primary: true },
   { key: 'approve', from: ['review'], to: 'approved', label: 'Approve', primary: true, remark: { mode: 'optional', label: null } },

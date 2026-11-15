@@ -28,7 +28,7 @@ class PriceList(Model):
     items = Integer(default=100, minimum=1, maximum=10000, label='Items to price')
     requested = Boolean(default=False, label='Build requested')
     progress = Text(default='', max_length=200)
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('building'),
         State.Step('ready'),
@@ -42,7 +42,7 @@ class PriceList(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')),
                    'viewer': Rule(('read',))}
 
-    @action('Build', available_when=(F('status') == 'draft') & (F('requested') == False))  # noqa: E712
+    @action('Build', available_when=(F('docstate') == 'draft') & (F('requested') == False))  # noqa: E712
     def build(self):
         """Queue the build. The job runs once this action commits; nothing is queued if it fails."""
         self.requested = True
@@ -59,10 +59,10 @@ def build_price_list(tx, job, payload):
     """One step of a build, acting as the system: the first step starts it, the last one finishes it."""
     context = job.business(tx, system='Price list builder', role='admin')
     price_list = context.get(PriceList, payload['price_list'])
-    if price_list.status == 'draft':
+    if price_list.docstate == 'draft':
         context.move(PriceList, price_list.id, 'building')
         return 0
-    if price_list.status != 'building':
+    if price_list.docstate != 'building':
         return None
     done = job.checkpoint + 1
     job.progress(done, STEPS, f'Step {done} of {STEPS}')

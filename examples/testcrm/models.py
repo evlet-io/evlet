@@ -47,7 +47,7 @@ class Organization(Model):
                      Related('contact', 'organization', label='People', limit=10, order=('full_name',)))
         measures = {
             'deals': Count('deal', link='organization'),
-            'won_value': Sum('total', model='deal', link='organization', where=F('stage') == 'won'),
+            'won_value': Sum('total', model='deal', link='organization', where=F('docstate') == 'won'),
             'customers': Count(where=F('status') == 'customer'),
         }
         attachments = Attachments(max_files=10)
@@ -113,13 +113,13 @@ class Deal(Model):
         # Sales people own their deals: they see only those, and never the internal notes.
         'editor': Rule(('read', 'create', 'update'), scope=lambda user: {'owner': user.username},
                        read_fields=('number', 'title', 'organization', 'contact', 'owner', 'lead_source', 'expected_close',
-                                    'stage', 'probability', 'payment_days', 'vat_rate', 'lost_reason', 'next_step',
+                                    'docstate', 'probability', 'payment_days', 'vat_rate', 'lost_reason', 'next_step',
                                     'follow_up_on', 'won_on', 'tags', 'subtotal', 'vat_total', 'total',
                                     'recurring_total', 'line_count', 'weighted', 'payment_expected', 'days_to_close'),
                        write_fields=('title', 'organization', 'contact', 'owner', 'lead_source', 'expected_close',
                                      'payment_days', 'vat_rate', 'lost_reason', 'next_step', 'tags')),
         'viewer': Rule(('read',), read_fields=('number', 'title', 'organization', 'contact', 'owner', 'lead_source',
-                                               'expected_close', 'stage', 'probability', 'vat_rate', 'subtotal', 'vat_total',
+                                               'expected_close', 'docstate', 'probability', 'vat_rate', 'subtotal', 'vat_total',
                                                'total', 'weighted', 'won_on', 'lost_reason')),
     }
 
@@ -132,7 +132,7 @@ class Deal(Model):
     owner = Text(required=True, default=CurrentUser, max_length=60)
     lead_source = Select(SOURCES, label='Source')
     expected_close = Date()
-    stage = State(
+    docstate = State(
         State.Step('lead', 'Lead'),
         State.Step('qualified', 'Qualified'),
         State.Step('proposal', 'Proposal'),
@@ -149,14 +149,14 @@ class Deal(Model):
             State.Rule('lost', 'lead', 'Reopen', key='lead', by=('admin',)),
             State.Rule('won', 'negotiation', 'Reopen', key='reopen', by=('admin',), remark='required'),
             State.Rule('won', 'void', 'Void', key='void', by=('admin',), remark='required'),
-        ), show='bar')
+        ), show='bar', label='Stage')  # docstate shows as "Status" unless it has a label
     # A won deal that has to change is reopened with a remark: its postings are reversed and it is won again later.
-    probability = Percent(compute=choose(F('stage'), {'won': 100, 'negotiation': 75, 'proposal': 50, 'qualified': 25, 'lead': 10},
+    probability = Percent(compute=choose(F('docstate'), {'won': 100, 'negotiation': 75, 'proposal': 50, 'qualified': 25, 'lead': 10},
                                          default=0))
     payment_days = Integer(initial=F('organization.payment_days'), minimum=0, maximum=180)
     vat_rate = Percent(default=5)
     # Shown once the deal is lost, required then and still editable after it is locked. Mark lost asks for it.
-    lost_reason = Text(applies_when=F('stage') == 'lost', required_when=F('stage') == 'lost', versioned=False,
+    lost_reason = Text(applies_when=F('docstate') == 'lost', required_when=F('docstate') == 'lost', versioned=False,
                        max_length=200)
     next_step = Text(max_length=200, versioned=False)
     follow_up_on = Date()
@@ -196,20 +196,20 @@ class Deal(Model):
         calculation_language = 'finite-v1'
         numeric_profile = 'finite40-hu18-v1'
         title_field = 'title'
-        list_fields = ('number', 'title', 'organization', 'owner', 'stage', 'total', 'expected_close')
-        board = 'stage'
+        list_fields = ('number', 'title', 'organization', 'owner', 'docstate', 'total', 'expected_close')
+        board = 'docstate'
         search_fields = ('title', 'number')
         key_fields = ('organization', 'contact', 'total', 'expected_close', 'owner')
         layout = (('Deal', ('number', 'title', 'organization', 'contact', 'owner', 'lead_source', 'tags')),
-                  ('Forecast', ('stage', 'probability', 'expected_close', 'days_to_close', 'weighted', 'lost_reason')),
+                  ('Forecast', ('docstate', 'probability', 'expected_close', 'days_to_close', 'weighted', 'lost_reason')),
                   ('Amounts', ('subtotal', 'vat_total', 'total', 'recurring_total', 'line_count')),
                   ('Terms', ('payment_days', 'vat_rate', 'next_step', 'follow_up_on', 'won_on', 'payment_expected')),
                   ('Internal', ('internal_notes',)))
         relations = (Related('task', 'deal', label='Tasks', limit=10, order=('due_on',)),)
         measures = {
-            'pipeline': Sum('total', where=(F('stage') != 'won') & (F('stage') != 'lost') & (F('stage') != 'void')),
-            'won': Sum('total', where=F('stage') == 'won'),
-            'won_this_month': Sum('total', where=(F('stage') == 'won') & (F('won_on') >= month_start())),
+            'pipeline': Sum('total', where=(F('docstate') != 'won') & (F('docstate') != 'lost') & (F('docstate') != 'void')),
+            'won': Sum('total', where=F('docstate') == 'won'),
+            'won_this_month': Sum('total', where=(F('docstate') == 'won') & (F('won_on') >= month_start())),
             'deals': Count(),
             'open_tasks': Count('task', link='deal', where=F('done') == False),  # noqa: E712
         }
@@ -229,7 +229,7 @@ class Deal(Model):
                             assignee=self.owner, due_on=won_on + timedelta(days=7))
 
     @action('Schedule follow up', inputs={'due_on': Date(required=True), 'note': Text(required=True, max_length=200)},
-            available_when=(F('stage') != 'won') & (F('stage') != 'lost') & (F('stage') != 'void'))
+            available_when=(F('docstate') != 'won') & (F('docstate') != 'lost') & (F('docstate') != 'void'))
     def schedule_follow_up(self, due_on, note):
         """Sets the next step and adds a call task for the owner."""
         self.next_step = note
@@ -274,7 +274,7 @@ class Lead(Model):
     lead_source = Select(SOURCES, label='Source')
     score = Integer(default=50, minimum=0, maximum=100)
     owner = Text(default=CurrentUser, max_length=60)
-    status = State(
+    docstate = State(
         State.Step('new'),
         State.Step('qualified'),
         State.Step('lost', lock=True),
@@ -284,20 +284,20 @@ class Lead(Model):
             State.Rule('lost', 'new', 'Reopen', key='new'),
         ))
     # Mark lost asks for the reason: the move carries it and checks it in the same transaction.
-    lost_reason = Text(applies_when=F('status') == 'lost', required_when=F('status') == 'lost',
+    lost_reason = Text(applies_when=F('docstate') == 'lost', required_when=F('docstate') == 'lost',
                        versioned=False, max_length=200)
     deal = Link(Deal)
 
     class Meta:
         title_field = 'full_name'
-        list_fields = ('full_name', 'company', 'lead_source', 'score', 'owner', 'status')
-        board = 'status'
+        list_fields = ('full_name', 'company', 'lead_source', 'score', 'owner', 'docstate')
+        board = 'docstate'
         search_fields = ('full_name', 'company', 'email')
         key_fields = ('company', 'score', 'owner', 'lead_source')
         mail = Mail(match=('email',), kind='lead')
 
     @action('Convert to deal', inputs={'title': Text(required=True, max_length=160), 'expected_close': Date()},
-            available_when=(F('status') == 'qualified') & is_empty(F('deal')))
+            available_when=(F('docstate') == 'qualified') & is_empty(F('deal')))
     def convert(self, title, expected_close):
         """Creates the organization, the contact and a deal at qualified, and links the deal here."""
         organization = self.context.create(Organization, title=self.company, phone=self.phone, tags=['From lead'])

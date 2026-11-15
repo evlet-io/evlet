@@ -113,11 +113,11 @@ class LedgerEntry(Model):
 class Project(Model):
     class Meta:
         description = "Track a small project and its customer."
-        list_fields = ('title', 'customer', 'status', 'budget')
+        list_fields = ('title', 'customer', 'docstate', 'budget')
         # A compact record page: Main is the primary area, with no heading; every Section after it is
         # "more information", which a person can open and close. Budget starts open, Schedule starts
         # closed and Notes starts closed when it is empty. A layout with Main has no record tabs.
-        layout = (Main(('title', 'customer', 'status')),
+        layout = (Main(('title', 'customer', 'docstate')),
                   Section('Budget', ('budget', 'progress'), description='What the project may spend and how far the work has come.'),
                   Section('Schedule', ('starts_on',), collapsed=True, description='When the work starts.'),
                   Section('Notes', ('brief', 'notes'), collapsed='empty', description='Goals, scope and anything else worth keeping.'))
@@ -134,7 +134,7 @@ class Project(Model):
         # can change it per instance.
         panel = ('Project', 'Budget', 'related', 'info')
         # The list's tabs: All, Planned, Active and Done, with counts. It opens on Active.
-        list_tabs = 'status'
+        list_tabs = 'docstate'
         list_tab = 'active'
         # Totals over the listed projects. trend= lets the browser chart the budget by start month (the last
         # 6 months), read from GET /api/project/aggregate with the list's filters; color= picks its colour.
@@ -149,7 +149,7 @@ class Project(Model):
     title = Text(required=True, max_length=120, label='Project')
     customer = Link(Customer)
     # Start and Complete are its rules (POST /api/project/{id}/moves/start and /complete).
-    status = State(
+    docstate = State(
         State.Step('planned', 'Planned'),
         State.Step('active', 'Active', color='blue'),
         State.Step('done', 'Done', color='green', lock=True),

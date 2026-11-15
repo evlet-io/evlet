@@ -169,7 +169,7 @@ describe('records', () => {
     expect(sent[1]).toMatchObject({ method: 'POST', url: `/api/invoice/${id}/moves/issue`, body: {} });
     expect(sent[1].headers['if-match']).toBe(draft.etag);
     expect(moved.etag).toBe(issued.etag);
-    expect(moved.data).toMatchObject({ status: 'issued', number: issued.body.number, _locked: true });
+    expect(moved.data).toMatchObject({ docstate: 'issued', number: issued.body.number, _locked: true });
     expect(moved.data._moves).toEqual([{ key: 'mark_paid', to: 'paid', label: 'Mark paid', allowed: false, reason: 'Your role cannot use this move' },
       { key: 'reopen', to: 'draft', label: 'Reopen', allowed: false, reason: 'Your role cannot use this move', remark: { mode: 'required', label: null, required: true } },
       { key: 'void', to: 'void', label: 'Void', allowed: true, remark: { mode: 'required', label: 'Reason', required: true } }]);
@@ -191,13 +191,13 @@ describe('records', () => {
     expect(page).toMatchObject({ total: 2, limit: 1, offset: 1 });
     expect(page.items.map(item => item.item)).toEqual(['Licence']);
     const { data } = await api.get('invoice', id(1));
-    expect(data).toMatchObject({ status: 'void', _moves: [], _locked: true });
+    expect(data).toMatchObject({ docstate: 'void', _moves: [], _locked: true });
     expect(data._effects).toEqual([{ target: 'ledgerentry', rows: 3, reversals: 3, balanced: true }]);
   });
 
   it('reads the document schema: state, effects, measures, key fields and relations', () => {
     const invoice = responses.invoice_schema.body.models.find((model: any) => model.name === 'invoice');
-    expect(invoice.state).toMatchObject({ field: 'status', default: 'draft', show: 'bar' });
+    expect(invoice.state).toMatchObject({ field: 'docstate', default: 'draft', show: 'bar' });
     expect(invoice.state.steps.map((step: any) => [step.key, step.label, step.color, step.lock, step.final])).toEqual([
       ['draft', 'Draft', null, false, false], ['issued', 'Issued', 'green', true, false], ['paid', 'Paid', 'teal', true, true], ['void', 'Void', 'rose', true, true]]);
     expect(invoice.state.rules.map((rule: any) => [rule.key, rule.from, rule.to, rule.guarded, rule.remark?.mode ?? null])).toEqual([

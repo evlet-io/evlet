@@ -54,7 +54,7 @@ class Invoice(Model):
     number = Sequence('INV-{n:03}', assign_on='issued')
     lines = Table(Item)
     total = Currency(compute=lines.sum('amount'))
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         State.Step('void', lock=True, final=True),
@@ -82,7 +82,7 @@ class Ticket(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')),
                    'viewer': Rule(('read', 'activity'))}
     title = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed'),
         rules=(
@@ -95,7 +95,7 @@ class Notice(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read',)),
                    'viewer': Rule(('read', 'activity'))}
     title = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed'),
         rules=(
@@ -114,7 +114,7 @@ class Silent(Model):
         activity = None
     permissions = ALL
     title = Text(default='')
-    status = State(
+    docstate = State(
         State.Step('open'),
         State.Step('closed'),
         rules=(
@@ -225,7 +225,7 @@ def check_engine(app):
     assert (created['kind'], created['actor']) == ('created', 1)
     fields = created['data']['fields']
     assert fields['title'] == {'old': None, 'new': 'First'} and fields['total'] == {'old': None, 'new': '13.00'}
-    assert fields['status'] == {'old': None, 'new': 'draft'} and fields['account'] == {'old': None, 'new': ACCOUNTS['Private']}
+    assert fields['docstate'] == {'old': None, 'new': 'draft'} and fields['account'] == {'old': None, 'new': ACCOUNTS['Private']}
     # Numbers have their own entries; row links and positions are not values.
     assert 'number' not in fields
     added = created['data']['rows']['lines']['added']
@@ -574,7 +574,7 @@ def check_rollback(app, monkeypatch):
         monkeypatch.undo()
         context.update(Invoice, record['id'], title='After')
     saved = c('GET', url)[1]
-    assert saved['status'] == 'draft' and saved['number'] is None and saved['title'] == 'After'
+    assert saved['docstate'] == 'draft' and saved['number'] is None and saved['title'] == 'After'
     assert [item['kind'] for item in history(c, url)['items']] == ['changed', 'created']
     assert activity_module.verify(app.database)[1] == []
     assert post(c, url, 'moves/issued')[1]['number'] == 'INV-001'
@@ -606,7 +606,7 @@ class BigQuiet(Model):
     title = Text(default='')
     lines = Table(BigLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         rules=(
@@ -620,7 +620,7 @@ class BigHashed(Model):
     title = Text(default='')
     lines = Table(BigLine, max_rows=1000)
     total = Currency(compute=lines.sum('amount'))
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('issued', lock=True),
         rules=(

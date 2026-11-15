@@ -32,7 +32,7 @@ class Ticket(Model):
     discount = Integer(default=0)
     # Where the ticket is in its process, so it may change while the ticket is locked.
     reason = Text(versioned=False)
-    status = State(
+    docstate = State(
         State.Step('draft', 'Draft'),
         State.Step('review', 'In review', color='amber', lock=True),
         State.Step('done', 'Done', color='green', lock=True),
@@ -47,7 +47,7 @@ class Ticket(Model):
         ))
 
     def hook(self, kind):
-        ORDER.append((kind, self.status, self.before.status if self.before else None, self.is_new))
+        ORDER.append((kind, self.docstate, self.before.docstate if self.before else None, self.is_new))
         if kind in FAIL:
             if kind != 'validate':
                 self.context.session.create(Note, text=f'written by {kind}')
@@ -64,7 +64,7 @@ class Ticket(Model):
 
     @validate
     def check(self):
-        if self.status in ('review', 'done') or 'validate' in FAIL:
+        if self.docstate in ('review', 'done') or 'validate' in FAIL:
             self.hook('validate')
         if self.title == 'read only':
             self.title = 'changed'
@@ -102,7 +102,7 @@ def test_rules_check_by_when_and_remarks_and_log_the_rule(app):
         context._tx.update(Ticket, url.rsplit('/', 1)[1], discount=20)
     assert move(editor, url, 'submit')[1]['fields'] == {'remark': 'Submit needs a remark'}
     status, body, _ = move(editor, url, 'submit', {'remark': '  Big discount  '})
-    assert status == 200 and body['status'] == 'review', body
+    assert status == 200 and body['docstate'] == 'review', body
     entry = editor('GET', url + '/activity')[1]['items'][0]
     assert (entry['kind'], entry['rule'], entry['remark'], entry['data']['to']) == ('moved', 'submit', 'Big discount', 'review')
     # by: a custom role or the user a field names; the editor is neither.
@@ -113,14 +113,14 @@ def test_rules_check_by_when_and_remarks_and_log_the_rule(app):
     assert move(manager, url, 'approve', {'remark': 'ok'})[1]['fields'] == {'remark': 'Approve takes no remark'}
     assert move(editor, url, 'back', {'reason': 'Wrong model'})[1]['fields'] == {'remark': 'Send back needs a remark'}
     status, body, _ = move(editor, url, 'back', {'remark': 'Please check', 'reason': 'Wrong model'})
-    assert status == 200 and (body['status'], body['reason']) == ('draft', 'Wrong model'), body
+    assert status == 200 and (body['docstate'], body['reason']) == ('draft', 'Wrong model'), body
     # The user named by a field may use the rule.
     with app.database.transaction() as tx:
         editor_id = tx.connection.execute("SELECT id FROM evlet_users WHERE username='editor'").fetchone()[0]
     with app.business.context(ADMIN) as context, context._tx.maintenance():
         context._tx.update(Ticket, url.rsplit('/', 1)[1], approver=editor_id)
     assert move(editor, url, 'submit', {'remark': 'Again'})[0] == 200
-    assert move(editor, url, 'approve')[1]['status'] == 'done'
+    assert move(editor, url, 'approve')[1]['docstate'] == 'done'
 
 
 def test_unknown_wrong_state_final_and_application_rules(app):
@@ -130,12 +130,12 @@ def test_unknown_wrong_state_final_and_application_rules(app):
     assert move(c, url, 'approve')[:2] == (409, {'error': 'This record cannot move from draft to done'})
     # by=() is for application code only: never offered and refused over HTTP, allowed in trusted Python.
     with app.business.context(ADMIN) as context, context._tx.maintenance():
-        context._tx.update(Ticket, url.rsplit('/', 1)[1], status='done')
+        context._tx.update(Ticket, url.rsplit('/', 1)[1], docstate='done')
     assert 'reopen' not in [item['key'] for item in c('GET', url)[1]['_moves']]
     assert 'reopen' not in [rule['key'] for rule in next(m for m in c('GET', '/api/schema')[1]['models'] if m['name'] == 'ticket')['state']['rules']]
     assert move(c, url, 'reopen')[:2] == (403, {'error': 'Reopen is made by the application only'})
     with app.business.context(ADMIN) as context:
-        assert context.move(Ticket, url.rsplit('/', 1)[1], 'reopen')['status'] == 'draft'
+        assert context.move(Ticket, url.rsplit('/', 1)[1], 'reopen')['docstate'] == 'draft'
         context.move(Ticket, url.rsplit('/', 1)[1], 'void', remark='Duplicate')
     assert move(c, url, 'reopen')[:2] == (409, {'error': 'This record is void, which is final; it has no moves'})
 
@@ -149,7 +149,7 @@ def test_the_schema_publishes_steps_and_rules(app):
     rules = {rule['key']: rule for rule in state_schema['rules']}
     assert rules['submit']['remark'] == {'mode': 'optional', 'label': 'Note'} and rules['back']['asks'] == ['reason']
     assert rules['approve']['by'] == ['manager'] and rules['approve']['primary'] and rules['void']['from'] == ['draft', 'review', 'done']
-    field = next(item for item in entry['fields'] if item['name'] == 'status')
+    field = next(item for item in entry['fields'] if item['name'] == 'docstate')
     assert field['state'] and field['colors'] == {'review': 'amber', 'done': 'green', 'void': 'rose'}
 
 
@@ -173,13 +173,13 @@ def test_a_refusal_from_any_hook_rolls_back_the_move_and_what_hooks_wrote(app, k
     FAIL.add(kind)
     status, body, _ = move(manager, url, 'approve')
     assert (status, body['fields']) == (422, {'_form': f'{kind} refused'})
-    assert c('GET', url)[1]['status'] == 'review' and app.database.count(Note) == 0
+    assert c('GET', url)[1]['docstate'] == 'review' and app.database.count(Note) == 0
     assert c('GET', url + '/activity')[1]['total'] == entries
     # Python callers get the same error, and their context carries on.
     with app.business.context(ADMIN) as context:
         with pytest.raises(ValidationError, match=f'{kind} refused'):
             context.move(Ticket, url.rsplit('/', 1)[1], 'approve')
-        assert context.get(Ticket, url.rsplit('/', 1)[1]).status == 'review'
+        assert context.get(Ticket, url.rsplit('/', 1)[1]).docstate == 'review'
 
 
 def test_validate_runs_on_every_save_read_only_with_is_new(app):
@@ -235,7 +235,7 @@ def test_eva_and_mcp_moves_go_through_the_same_checks(app):
             tools.execute(caller, 'change_state', {'model': 'ticket', 'id': record_id, 'rule': 'void', 'remark': 'x'})
         assert refused.value.status == 403
         run(caller, {'model': 'ticket', 'id': record_id, 'rule': 'submit'})
-        assert c('GET', url)[1]['status'] == 'review'
+        assert c('GET', url)[1]['docstate'] == 'review'
         # Through the tool the remark rules hold too, and the move is logged as the person, via the assistant.
         with pytest.raises(ConnectorError) as refused:
             run(caller, {'model': 'ticket', 'id': record_id, 'rule': 'back', 'values': {'reason': 'x'}})
@@ -243,7 +243,7 @@ def test_eva_and_mcp_moves_go_through_the_same_checks(app):
         run(caller, {'model': 'ticket', 'id': record_id, 'rule': 'back', 'remark': 'Recheck', 'values': {'reason': 'x'}})
         entry = c('GET', url + '/activity')[1]['items'][0]
         assert (entry['rule'], entry['remark'], entry['actor'], entry.get('via')) == ('back', 'Recheck', editor_id, 'Eva' if origin == 'eva' else entry.get('via'))
-        assert c('GET', url)[1]['status'] == 'draft'
+        assert c('GET', url)[1]['docstate'] == 'draft'
 
 
 def test_a_move_and_its_moves_cost_a_bounded_number_of_statements(app):
@@ -263,7 +263,7 @@ def test_hooks_and_rules_are_checked_when_the_model_is_defined():
     with pytest.raises(ValueError, match='need a State'):
         type('Hooked', (Model,), {'title': Text(), 'go': state('x')(lambda self: None)})
     with pytest.raises(ValueError, match='unknown state'):
-        type('Hooked', (Model,), {'status': State(State.Step('a'), State.Step('b')), 'go': state.exit('c')(lambda self: None)})
+        type('Hooked', (Model,), {'docstate': State(State.Step('a'), State.Step('b')), 'go': state.exit('c')(lambda self: None)})
     with pytest.raises(ValueError, match='take only self'):
         validate(lambda self, other: None)
     with pytest.raises(ValueError, match='at least one state'):
@@ -277,7 +277,7 @@ def test_hooks_and_rules_are_checked_when_the_model_is_defined():
         type('Old', (Model,), {'title': Text(), 'confirmable': True})
     # A subclass replaces a hook by name, in the base's place.
     class Base(Model):
-        status = State(State.Step('a'), State.Step('b'), rules=(State.Rule('a', 'b'),))
+        docstate = State(State.Step('a'), State.Step('b'), rules=(State.Rule('a', 'b'),))
 
         @state('b')
         def first(self): pass
@@ -331,7 +331,7 @@ def levels():
 class Purchase(Model):
     permissions = APPROVERS
     total = Integer(default=0)
-    status = State(
+    docstate = State(
         State.Step('draft'), State.Step('review', 'In review', lock=True), State.Step('approved', lock=True, final=True),
         rules=(State.Rule('draft', 'review', 'Submit', key='submit', by=('editor', 'manager')),
                State.Rule('review', 'approved', 'Approve', key='approve', levels=levels(), remark='optional'),
@@ -342,7 +342,7 @@ class Purchase(Model):
 class Expense(Model):
     permissions = APPROVERS
     total = Integer(default=0)
-    status = State(State.Step('draft'), State.Step('approved', final=True),
+    docstate = State(State.Step('draft'), State.Step('approved', final=True),
                    rules=(State.Rule('draft', 'approved', 'Approve', key='approve', self_approve=True,
                                      levels=(Level(by=('manager',), pending='Pending manager approval'),)),))
 
@@ -377,7 +377,7 @@ def test_levels_run_in_order_skip_what_does_not_apply_and_take_one_person_each(a
                                             'level': 1, 'pending': 'Pending manager approval', 'can_approve': False}
     assert move(people['cfo'], url, 'approve')[0] == 403
     status, body, _ = move(people['manager'], url, 'approve', {'remark': 'Within budget'})
-    assert status == 200 and body['status'] == 'review'
+    assert status == 200 and body['docstate'] == 'review'
     entry = people['manager']('GET', url + '/activity')[1]['items'][0]
     assert (entry['kind'], entry['rule'], entry['level'], entry['remark']) == ('approved', 'approve', 0, 'Within budget')
     # Level 2 names managers too, but the manager approved level 1 already.
@@ -386,15 +386,15 @@ def test_levels_run_in_order_skip_what_does_not_apply_and_take_one_person_each(a
     assert approval(people['cfo'], url)['pending'] == 'Pending CFO approval'
     # The director level does not apply under 50,000: the CFO's approval is the last, and moves the record.
     status, body, _ = move(people['cfo'], url, 'approve')
-    assert status == 200 and body['status'] == 'approved', body
+    assert status == 200 and body['docstate'] == 'approved', body
     moved = people['cfo']('GET', url + '/activity')[1]['items'][0]
     assert (moved['kind'], moved['rule'], moved['level']) == ('moved', 'approve', 1)
     # All three levels when the total is high enough.
     url = submitted(people, 60000)
     for role in ('manager', 'cfo'):
-        assert move(people[role], url, 'approve')[1]['status'] == 'review'
+        assert move(people[role], url, 'approve')[1]['docstate'] == 'review'
     assert approval(people['director'], url)['pending'] == 'Pending director approval'
-    assert move(people['director'], url, 'approve')[1]['status'] == 'approved'
+    assert move(people['director'], url, 'approve')[1]['docstate'] == 'approved'
 
 
 def test_levels_are_decided_on_entry_and_approvals_expire_on_leaving(approvals):
@@ -407,11 +407,11 @@ def test_levels_are_decided_on_entry_and_approvals_expire_on_leaving(approvals):
         tx.update(Purchase, record_id, total=90000)
     assert approval(people['cfo'], url)['level'] == 2
     # Withdrawing ends the stay: resubmitted, it starts again at level 1, with levels decided anew.
-    assert move(people['editor'], url, 'withdraw')[1]['status'] == 'draft'
+    assert move(people['editor'], url, 'withdraw')[1]['docstate'] == 'draft'
     assert move(people['editor'], url, 'submit')[0] == 200
     assert approval(people['manager'], url)['level'] == 1
     for role in ('manager', 'cfo'):
-        assert move(people[role], url, 'approve')[1]['status'] == 'review'
+        assert move(people[role], url, 'approve')[1]['docstate'] == 'review'
     assert approval(people['director'], url)['level'] == 3
 
 
@@ -423,7 +423,7 @@ def test_only_the_waiting_level_rejects_and_one_rejection_ends_the_round(approva
     reject = next(item for item in people['cfo']('GET', url)[1]['_moves'] if item['key'] == 'reject')
     assert reject['allowed'] is False and reject['reason'] == 'Only the approvers of the waiting level can use this move'
     assert move(people['manager'], url, 'reject')[1]['fields'] == {'remark': 'Reject needs a remark'}
-    assert move(people['manager'], url, 'reject', {'remark': 'Quote missing'})[1]['status'] == 'draft'
+    assert move(people['manager'], url, 'reject', {'remark': 'Quote missing'})[1]['docstate'] == 'draft'
     assert move(people['editor'], url, 'submit')[0] == 200 and approval(people['manager'], url)['level'] == 1
 
 
@@ -433,7 +433,7 @@ def test_the_creator_approves_only_with_self_approve(approvals):
     assert approval(people['manager'], url)['can_approve'] is False and move(people['manager'], url, 'approve')[0] == 403
     expense = people['manager']('POST', '/api/expense', {'total': 5})[1]
     expense_url = f"/api/expense/{expense['id']}"
-    assert move(people['manager'], expense_url, 'approve')[1]['status'] == 'approved'
+    assert move(people['manager'], expense_url, 'approve')[1]['docstate'] == 'approved'
 
 
 def test_awaiting_my_approval_lists_what_each_approver_may_approve_now(approvals):
@@ -458,7 +458,7 @@ def test_the_schema_lists_levels_and_bad_declarations_are_refused():
         with pytest.raises(ValueError):
             bad()
     quiet = type('Quiet', (Model,), {'Meta': type('Meta', (), {'activity': None}),
-                                     'status': State(State.Step('a'), State.Step('b'), rules=(State.Rule('a', 'b', levels=levels()[:1]),))})
+                                     'docstate': State(State.Step('a'), State.Step('b'), rules=(State.Rule('a', 'b', levels=levels()[:1]),))})
     with pytest.raises(ValueError, match='approval levels are kept in its Activity'):
         Registry(quiet)
 
@@ -486,12 +486,12 @@ class BillLine(Child):
 
 class Bill(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'release')), 'editor': Rule(('read', 'create', 'update')),
-                   'viewer': Rule(('read',), read_fields=('title', 'status'))}
+                   'viewer': Rule(('read',), read_fields=('title', 'docstate'))}
     title = Text(default='')
     secret = Text(default='')
     note = Text(versioned=False)
     lines = Table(BillLine)
-    status = State(
+    docstate = State(
         State.Step('draft'), State.Step('issued', lock=True, release=True), State.Step('void', lock=True, final=True),
         rules=(State.Rule('draft', 'issued', 'Issue', key='issue'), State.Rule('issued', 'draft', 'Reopen', key='reopen', remark='required'),
                State.Rule('issued', 'void', 'Void', key='void', remark='required')))
@@ -540,7 +540,7 @@ def test_entering_a_release_step_releases_and_snapshots_only_on_leaving(bills):
     assert c('PATCH', url, {'title': 'Desk 2'}, headers=etag(c, url))[1]['_version'] == {'number': 0, 'released': False, 'state': 'issued'}
     body = move(c, url, 'issue')[1]
     assert body['_version'] == {'number': 1, 'released': True, 'state': 'issued'}
-    assert RELEASED[-1][0] == 1 and RELEASED[-1][1]['title'] == 'Desk' and 'note' not in RELEASED[-1][1] and 'status' not in RELEASED[-1][1]
+    assert RELEASED[-1][0] == 1 and RELEASED[-1][1]['title'] == 'Desk' and 'note' not in RELEASED[-1][1] and 'docstate' not in RELEASED[-1][1]
     # A document with a release cannot be deleted.
     move(c, url, 'reopen', {'remark': 'x'})
     assert c('DELETE', url, headers=etag(c, url))[0] == 409
@@ -551,7 +551,7 @@ def test_a_manual_release_and_the_first_edit_after_it(bills):
     editor = add_user(app, 'editor')
     assert editor('POST', url + '/release', {}, headers=etag(editor, url))[0] == 403
     status, body, _ = c('POST', url + '/release', {'remark': 'Quote sent'}, headers=etag(c, url))
-    assert status == 200 and body['_version'] == {'number': 0, 'released': True, 'state': 'draft'} and body['status'] == 'draft'
+    assert status == 200 and body['_version'] == {'number': 0, 'released': True, 'state': 'draft'} and body['docstate'] == 'draft'
     entry = c('GET', url + '/activity')[1]['items'][0]
     assert (entry['kind'], entry['base'], entry['remark']) == ('released', 0, 'Quote sent')
     assert c('POST', url + '/release', {}, headers=etag(c, url))[:2] == (409, {'error': 'Nothing changed since the last release'})
@@ -604,7 +604,7 @@ def test_the_framework_step_converts_old_rows_and_backfills_v0(tmp_path):
     c = client(app)
     issued, draft = (c('POST', '/api/bill', {'title': title})[1]['id'] for title in ('Issued before', 'Revised before'))
     with app.database.transaction() as tx, tx.maintenance():
-        tx.update(Bill, issued, status='issued')
+        tx.update(Bill, issued, docstate='issued')
     path = tmp_path / 'old.sqlite3'
     with sqlite3.connect(path) as raw:
         # A 0.4.4 database: no releases yet, a confirmable lifecycle row and a revision.
@@ -646,7 +646,7 @@ class Contract(Model):
     note = Text(versioned=False)
     days = Integer(default=30)
     clauses = Table(Clause)
-    status = State(State.Step('draft'), State.Step('signed', lock=True, release=True),
+    docstate = State(State.Step('draft'), State.Step('signed', lock=True, release=True),
                    rules=(State.Rule('draft', 'signed', 'Sign', key='sign'), State.Rule('signed', 'draft', 'Reopen', key='reopen')))
 
 
@@ -768,7 +768,7 @@ def test_an_added_rule_with_a_text_condition_and_approval_levels(app):
     assert hold['allowed'] is False and hold['reason'] == 'The condition for this move is not met'
     assert approval(manager, url)['pending'] == 'Pending manager approval'
     # The admin level does not apply under 50, so the manager's approval moves it.
-    assert move(manager, url, 'approve')[1]['status'] == 'done'
+    assert move(manager, url, 'approve')[1]['docstate'] == 'done'
 
 
 @pytest.mark.parametrize('change, message', [
@@ -820,7 +820,7 @@ class Spend(Model):
     total = Integer(default=0)
     approver = Integer()
     note = Text(versioned=False)
-    status = State(
+    docstate = State(
         State.Step('draft'), State.Step('review'), State.Step('approved', lock=True, final=True),
         rules=(State.Rule('draft', 'review', 'Submit', key='submit', by=('editor', 'manager')),
                State.Rule('review', 'approved', 'Approve', key='approve',
@@ -862,8 +862,8 @@ def test_a_raise_after_entry_brings_back_the_levels_it_needs(spends):
     assert approval(people['manager'], url)['level'] == 1
     patch(people['editor'], url, {'total': 100000})
     # The CFO level now applies: the manager's approval is no longer the last.
-    assert move(people['manager'], url, 'approve')[1]['status'] == 'review'
-    assert approval(people['cfo'], url)['level'] == 2 and move(people['cfo'], url, 'approve')[1]['status'] == 'approved'
+    assert move(people['manager'], url, 'approve')[1]['docstate'] == 'review'
+    assert approval(people['cfo'], url)['level'] == 2 and move(people['cfo'], url, 'approve')[1]['docstate'] == 'approved'
 
 
 def test_a_versioned_change_voids_earlier_approvals_and_an_unversioned_one_does_not(spends):
@@ -899,7 +899,7 @@ class Offer(Model):
                    'clerk': Rule(('read', 'update', 'restore')), 'scribe': Rule(('read', 'update', 'restore'))}
     title = Text(default='')
     lines = Table(Line)
-    status = State(State.Step('draft'), State.Step('sent', lock=True, release=True),
+    docstate = State(State.Step('draft'), State.Step('sent', lock=True, release=True),
                    rules=(State.Rule('draft', 'sent', 'Send', key='send'), State.Rule('sent', 'draft', 'Reopen', key='reopen')))
 
 

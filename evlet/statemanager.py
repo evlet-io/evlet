@@ -1,6 +1,6 @@
 """The state manager: a document's states, the rules that move it between them, and its hooks.
 
-    status = State(
+    docstate = State(
         State.Step("draft", "Draft"),
         State.Step("issued", "Issued", color="green", lock=True),
         State.Step("void", "Void", color="rose", lock=True, final=True),

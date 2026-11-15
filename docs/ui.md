@@ -19,7 +19,7 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   sections and shortcuts ([below](#sidebar-and-workspaces)) beside a light grey main area whose cards are white.
   Each page's breadcrumb is a small line above its title ([Breadcrumb](#breadcrumb)). New records start from the New button
   on a model's list page or from the search palette.
-- Generated model screens: lists, boards for models that name their State in `Meta.board`, record views (on their own
+- Generated model screens: lists, boards for models that name their State in `Meta.board` (`board = "docstate"`), record views (on their own
   page or in a side panel beside the list, `Meta.open_in`), new records, actions, moves (with their remarks), child tables, measures, related records and
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
@@ -484,7 +484,8 @@ class Employee(Model):
 
 The Playground's Projects list opens on Active, with tabs for Planned, Active and Done.
 
-A record's State shows as a coloured badge on the title's line by default, with its moves on the
+A record's State (the field is always `docstate`, labelled "Status" unless it declares a label)
+shows as a coloured badge on the title's line by default, with its moves on the
 header's split button; `State(..., show="bar")` draws the stage bar instead, for pipelines, and `show="none"`
 draws neither. `Meta.status` adds a status badge for a Select the system sets, such as a
 payment status, coloured by `Select(..., colors={...})`. Badges and bar steps offer only the
@@ -550,7 +551,7 @@ the message names both and where each comes from (`app tasks (AppDefinition)`,
   names exactly one target:
   - `Shortcut(model, view=None, filters=None, label=None)`: a model given by name or class. `view`
     is `'list'` (the default) or `'board'`, for a model whose `Meta.board` names its State.
-    `filters` is a filter object (`{'status__in': ['planned', 'active']}`) or a list of conditions,
+    `filters` is a filter object (`{'docstate__in': ['planned', 'active']}`) or a list of conditions,
     the forms a list request takes; it needs a `label`.
   - `Shortcut(report=SalesByCustomer)` or `Shortcut(report='SalesByCustomer')`: a registered report.
   - `Shortcut(slip=QuickInvoice)` or `Shortcut(slip='quick_invoice')`: a registered slip without a

@@ -21,7 +21,7 @@ submission key does not create duplicates.
 A Quote is a finite-v1 document. Its `payment_days` are suggested from the
 selected Company through a Link path and stay editable; `valid_until` adds them
 to the issue date. The discount is rounded half up to cents without an explicit
-`round()`. The stage is a State: Send (only with a positive total), Mark won,
+`round()`. The stage is a State (`docstate`): Send (only with a positive total), Mark won,
 Mark lost and Reopen (administrators only) are its rules. A sent, won or lost
 quote is locked against ordinary edits, except its lost reason, which applies
 only to lost quotes. Extend validity is an action with one input that works on

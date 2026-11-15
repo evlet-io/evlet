@@ -27,7 +27,7 @@ class Transfer(Model):
     quantity = Integer(default=1)
     note = Text(default='', versioned=False)
     number = Sequence('TR{n:04}', assign_on='sent')
-    status = State(
+    docstate = State(
         State.Step('draft'),
         State.Step('sent', lock=True, final=True),
         rules=(
@@ -74,7 +74,7 @@ class Transfer(Model):
     @validate
     def refuse(self):
         # Runs after the @state hook wrote its rows and before the number is assigned.
-        if self.status == 'sent' and self.before is not None and self.before.note == 'fail after the hook':
+        if self.docstate == 'sent' and self.before is not None and self.before.note == 'fail after the hook':
             raise ValidationError({'note': 'Refused after the hook wrote its rows'})
 
 
@@ -170,9 +170,9 @@ def test_a_move_posts_ledger_rows_and_takes_its_number_in_one_transaction(app):
     record_id = transfer(admin, quantity=4)
     status, body, _ = post(admin, record_id, 'moves/sent', {})
     assert status == 200, body
-    assert body['status'] == 'sent' and body['number'] == 'TR0001' and body['note'] == 'Posted; 6 left at store'
+    assert body['docstate'] == 'sent' and body['number'] == 'TR0001' and body['note'] == 'Posted; 6 left at store'
     row, rows = saved(app.database, record_id)
-    assert row.status == 'sent' and rows == [('store', -4), ('site', 4)]
+    assert row.docstate == 'sent' and rows == [('store', -4), ('site', 4)]
     with app.database.transaction() as tx:
         assert on_hand(tx, 'bolt', 'store') == 6 and on_hand(tx, 'bolt', 'site') == 4
 
@@ -184,7 +184,7 @@ def test_a_failure_in_run_rolls_back_the_state_the_number_and_the_rows(app):
     status, body, _ = post(admin, record_id, 'moves/sent', {})
     assert status == 422 and body['fields'] == {'quantity': 'Only 3 on hand'}
     row, rows = saved(app.database, record_id)
-    assert row.status == 'draft' and row.number is None and rows == [] and row.note == ''
+    assert row.docstate == 'draft' and row.number is None and rows == [] and row.note == ''
     with app.database.transaction() as tx:
         assert tx.count(Movement) == 1
     # No number was used up: the next successful move takes the first one.
@@ -199,7 +199,7 @@ def test_a_failure_after_the_hook_rolls_back_the_rows_and_takes_no_number(app):
     status, body, _ = post(admin, record_id, 'moves/sent', {})
     assert status == 422 and body['fields'] == {'note': 'Refused after the hook wrote its rows'}
     row, rows = saved(app.database, record_id)
-    assert row.status == 'draft' and row.number is None and rows == []
+    assert row.docstate == 'draft' and row.number is None and rows == []
     assert counter(app.database) == 0
     other = transfer(admin, quantity=1)
     assert post(admin, other, 'moves/sent', {})[1]['number'] == 'TR0001'
@@ -217,7 +217,7 @@ def test_python_moves_get_the_session_too_and_a_caught_failure_still_rolls_back(
         assert refused(context) == 403
     assert saved(app.database, first)[1] == [('store', -1), ('site', 1)]
     row, rows = saved(app.database, second)
-    assert row.status == 'draft' and row.number is None and rows == []
+    assert row.docstate == 'draft' and row.number is None and rows == []
 
 
 # An @action handler

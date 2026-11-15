@@ -28,7 +28,7 @@ class Invoice(Model):
     lines = Table(Line)
     total = Currency(compute=lines.sum("amount"))
     remarks = Text(default="", versioned=False)
-    status = State(
+    docstate = State(
         State.Step("draft", "Draft"),
         State.Step("issued", "Issued", color="blue", lock=True, release=True),
         State.Step("paid", "Paid", color="green", lock=True, final=True),
@@ -43,7 +43,7 @@ class Invoice(Model):
 
     @validate
     def has_lines(self):
-        if self.status != "draft" and not self.lines:
+        if self.docstate != "draft" and not self.lines:
             raise ValidationError({"lines": "Add a line"})
 
     @state("issued")
@@ -51,15 +51,23 @@ class Invoice(Model):
         self.remarks = "Issued"
 
     @action("Record payment", inputs={"amount": Currency(required=True), "paid_on": Date(required=True)},
-            available_when=F("status") == "issued")
+            available_when=F("docstate") == "issued")
     def record_payment(self, amount, paid_on):
         self.remarks = f"Paid {amount} on {paid_on}"
 ```
 
 `State(*steps, rules=(), default=..., show="badge")`:
 
+* The State field is always named `docstate`. Any other name fails when the class is defined
+  (`Invoice.status is a State: name the State field docstate (rename it with a migration;
+  docs/states-actions.md)`), and so does a field named `docstate` that is not a State. Every
+  document reads it the same way: `F("docstate")`, `self.docstate`, `Meta.board = "docstate"`,
+  `Meta.list_tabs = "docstate"`, `{"docstate": "issued"}` in filters and `docstate` in API records.
+  An app that named it otherwise renames it with `RenameField("invoice", "status", "docstate")`
+  in an app migration ([model-engine.md](model-engine.md#explicit-migrations)); there is no alias.
+* Its label is "Status" unless it declares one: `State(..., label="Stage")`.
 * It is a `Select` over the step keys. Its schema type is `select`, it is read only in forms,
-  and finite expressions read it like any other Select (`F("status") == "issued"`).
+  and finite expressions read it like any other Select (`F("docstate") == "issued"`).
 * `default` is the first step when left out. A new record always starts in it. It cannot be
   final.
 * A model has at most one State, and only root documents have one (not `Table` rows).
@@ -163,7 +171,7 @@ and finishes a build, or an action on one record closes another. Declare them wi
 
 ```python
 class PriceList(Model):
-    status = State(
+    docstate = State(
         State.Step("draft"), State.Step("building"), State.Step("ready"), State.Step("failed"),
         rules=(
             State.Rule("draft", "building", "Start", key="building", by=()),
@@ -318,7 +326,7 @@ Sequence number is used up.
 | `before_close(self, to)` | `@state.exit(...)` or `@validate` |
 | `changed(self, change)` | `@state(...)`, or a job queued from a hook |
 | `Model.validate()` | `@validate` |
-| `check_lifecycle`, `@validate.confirm/.cancel` | `@validate` reading `self.status` and `self.before` |
+| `check_lifecycle`, `@validate.confirm/.cancel` | `@validate` reading `self.docstate` and `self.before` |
 | `@action.confirm/.cancel` | `@state("confirmed")`, `@state.exit("confirmed")` |
 
 ## Releases and versions
@@ -493,7 +501,7 @@ state of the rule, and is true (or depends on other values) in the target state,
 field the rule lists in `ask`. Only fields the role may write are asked for.
 
 ```python
-lost_reason = Text(applies_when=F("stage") == "lost", required_when=F("stage") == "lost", versioned=False)
+lost_reason = Text(applies_when=F("docstate") == "lost", required_when=F("docstate") == "lost", versioned=False)
 # POST /api/deal/01hc1sd9vc1ye/moves/lost  {"lost_reason": "Chose another vendor"}
 context.move(Deal, deal_id, "lost", lost_reason="Chose another vendor")
 ```
@@ -512,7 +520,7 @@ context.move(Deal, deal_id, "lost", lost_reason="Chose another vendor")
 ## Model actions
 
 ```python
-@action("Record payment", inputs={"amount": Currency(required=True)}, available_when=F("status") == "issued")
+@action("Record payment", inputs={"amount": Currency(required=True)}, available_when=F("docstate") == "issued")
 def record_payment(self, amount): ...
 ```
 
@@ -570,8 +578,8 @@ class Transfer(Model):
     destination = Text(default="site")
     quantity = Integer(default=1)
     number = Sequence("TR{n:04}", assign_on="sent")
-    status = State(State.Step("draft"), State.Step("sent", lock=True),
-                   rules=(State.Rule("draft", "sent", "Send", key="send"),))
+    docstate = State(State.Step("draft"), State.Step("sent", lock=True),
+                     rules=(State.Rule("draft", "sent", "Send", key="send"),))
 
     @state("sent")
     def post_movements(self):
@@ -652,7 +660,7 @@ include keys that are not part of the ETag:
 `/api/schema` model entries carry, for roles that can read the State:
 
 ```json
-"state": {"field": "status", "default": "draft", "show": "bar",
+"state": {"field": "docstate", "default": "draft", "show": "bar",
           "steps": [{"key": "draft", "label": "Draft", "color": null, "lock": false, "release": false, "final": false}],
           "rules": [{"key": "void", "from": ["issued"], "to": "void", "label": "Void", "by": ["admin"],
                      "guarded": false, "when": null, "primary": false, "reject": false,

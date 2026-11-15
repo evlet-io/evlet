@@ -49,7 +49,7 @@ describe('measure cards with a trend', () => {
     expect(card.querySelector('.ev-spark')!.getAttribute('aria-label')).toContain('3 points, from 100 to 40, low 0, high 100');
     const asked = requests(sent, 'GET', /invoice\/aggregate/).map(query).find(item => item.group_by === 'posting_date:month')!;
     expect(asked.measures).toBe('outstanding');
-    expect(JSON.parse(asked.filters)).toEqual({ status: 'issued' });
+    expect(JSON.parse(asked.filters)).toEqual({ docstate: 'issued' });
     // The count has no trend: no line, and the next accent in turn.
     expect(host.querySelectorAll('.stat-card .ev-spark')).toHaveLength(1);
   });

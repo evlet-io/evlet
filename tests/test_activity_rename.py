@@ -19,10 +19,24 @@ HASHED = 9  # Entries of the tamper-evident Order and Tally in the fixture.
 
 
 def restore(folder):
-    """The fixture's files, restored from their SQL dumps."""
+    """The fixture's files, restored from their SQL dumps.
+
+    The dumps predate the reserved State name, so Order's State column is still called status. Restoring renames it
+    to docstate, with the saved schema and the clerk's override, as RenameField("order", "status", "docstate") does,
+    so these tests stay about the Activity rename. Entries written before keep the name they were hashed with."""
     for name in fixture.FILES:
         with sqlite3.connect(folder / (name + '.sqlite3')) as connection:
             connection.executescript((FIXTURE / (name + '.sql')).read_text())
+    with sqlite3.connect(folder / 'database.sqlite3') as connection:
+        connection.execute('ALTER TABLE "order" RENAME COLUMN "status" TO "docstate"')
+        definition = json.loads(connection.execute('SELECT definition FROM evlet_schema').fetchone()[0])
+        for field in next(model for model in definition['models'] if model['name'] == 'order')['fields']:
+            if field['name'] == 'status':
+                field['name'] = 'docstate'
+        connection.execute('UPDATE evlet_schema SET definition = ?', (json.dumps(definition, sort_keys=True, separators=(',', ':')),))
+        value = json.loads(connection.execute("SELECT value FROM evlet_overrides WHERE key = 'clerk|Order'").fetchone()[0])
+        value['read'] = ['docstate' if item == 'status' else item for item in value['read']]
+        connection.execute("UPDATE evlet_overrides SET value = ? WHERE key = 'clerk|Order'", (json.dumps(value, sort_keys=True),))
     return folder / 'database.sqlite3'
 
 
@@ -69,7 +83,7 @@ def test_the_step_renames_the_tables_in_place_and_keeps_every_row(tmp_path):
     assert ('evlet_activity', 11) in rows(path, 'sqlite_sequence')
     # The Controls override of the custom role names the new operation.
     stored = dict((row[1], json.loads(row[2])) for row in rows(path, 'evlet_overrides') if row[0] == 'perm')
-    assert stored['clerk|Order'] == {'ops': ['read', 'activity'], 'read': ['title', 'status'], 'scope': None, 'write': None}
+    assert stored['clerk|Order'] == {'ops': ['read', 'activity'], 'read': ['title', 'docstate'], 'scope': None, 'write': None}
     # Its index, triggers and columns are those a new database gets.
     fresh = tmp_path / 'fresh'
     fresh.mkdir()

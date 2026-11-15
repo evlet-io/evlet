@@ -337,6 +337,10 @@ class Rule:
         return f'Rule({self.sources!r}, {self.to!r}, key={self.key!r})'
 
 
+# The name every State field has; it shows as "Status" unless it declares a label.
+STATE_FIELD = 'docstate'
+
+
 class State(Select):
     """A document's state field: its steps in order and the rules between them. See the module docstring.
 

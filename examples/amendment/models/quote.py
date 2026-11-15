@@ -22,12 +22,12 @@ class Quote(Model):
         numeric_profile = 'finite40-hu18-v1'
         # Totals a quote list can show: GET /api/quote/measures, or /api/quote/aggregate to group them.
         measures = {
-            'open_total': Sum('grand_total', where=F('stage') == 'sent'),
-            'won_total': Sum('grand_total', where=F('stage') == 'won'),
+            'open_total': Sum('grand_total', where=F('docstate') == 'sent'),
+            'won_total': Sum('grand_total', where=F('docstate') == 'won'),
             'quotes': Count(),
         }
         # Shown beside the quote.
-        key_fields = ('company', 'stage', 'payable', 'valid_until')
+        key_fields = ('company', 'docstate', 'payable', 'valid_until')
         # Winning a quote posts one row to the sales ledger in the same transaction. A won quote is final,
         # so it is never voided and the effect needs no reverse.
         effects = (Effect(SalesLedger, rows='ledger_rows', on='won'),)
@@ -38,10 +38,10 @@ class Quote(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
     title = Text(required=True)
-    # The stage changes only through its rules. Sent, won and lost quotes are locked against ordinary
+    # The stage (docstate) changes only through its rules. Sent, won and lost quotes are locked against ordinary
     # edits; a won quote is final and a release (it posts to the sales ledger). Only an administrator can
     # reopen a sent or lost quote, or void a sent one with a remark (POST /api/quote/{id}/moves/void).
-    stage = State(
+    docstate = State(
         State.Step('draft', 'Draft'),
         State.Step('sent', 'Sent', color='blue', lock=True),
         State.Step('won', 'Won', color='green', lock=True, release=True, final=True),
@@ -53,7 +53,7 @@ class Quote(Model):
             State.Rule('sent', 'lost', 'Mark lost', key='lost'),
             State.Rule(('sent', 'lost'), 'draft', 'Reopen', key='draft', by=('admin',)),
             State.Rule('sent', 'void', 'Void', key='void', by=('admin',), remark='required'),
-        ), show='bar')
+        ), show='bar', label='Stage')
     # The quote number is given when a quote is first sent, counted per year (Q-2026-0001). A reopened
     # and resent quote keeps its number; only the engine writes it.
     number = Sequence('Q-{year}-{n:04}', assign_on='sent')
@@ -67,9 +67,9 @@ class Quote(Model):
     valid_until = Date(compute=when((F('payment_days') == None) | (F('issued_on') == None), None,  # noqa: E711
                                     F('issued_on') + days(F('payment_days'))))
     # Percent is a two-place decimal from 0 to 100. A won quote keeps the discount it was won with.
-    discount_rate = Percent(default='0', locked_when=F('stage') == 'won')
+    discount_rate = Percent(default='0', locked_when=F('docstate') == 'won')
     # Filled in after a quote is lost, so it stays editable while the quote is locked.
-    lost_reason = Text(applies_when=F('stage') == 'lost', versioned=False)
+    lost_reason = Text(applies_when=F('docstate') == 'lost', versioned=False)
     labels = Tags()
 
     class Line(Child):
@@ -95,7 +95,7 @@ class Quote(Model):
 
     # An action may change a locked quote; the inputs are validated before it runs.
     @action('Extend validity', inputs={'extra_days': Integer(required=True, minimum=1, maximum=365)},
-            available_when=F('stage') == 'sent')
+            available_when=F('docstate') == 'sent')
     def extend_validity(self, extra_days):
         self.payment_days = (self.payment_days or 0) + extra_days
 

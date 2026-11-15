@@ -31,7 +31,7 @@
                 "number",
                 "customer",
                 "remarks",
-                "status"
+                "docstate"
               ],
               "collapsible": false,
               "collapsed": false,
@@ -47,20 +47,20 @@
             "number",
             "customer",
             "remarks",
-            "status"
+            "docstate"
           ],
           "search_fields": [
             "number",
             "customer",
             "remarks",
-            "status",
+            "docstate",
             "title",
             "name"
           ],
           "open_in": "page",
           "autosave": true,
           "list_tabs": {
-            "field": "status",
+            "field": "docstate",
             "kind": "state",
             "default": "all"
           },
@@ -160,7 +160,7 @@
               "locked_when": null
             },
             {
-              "name": "status",
+              "name": "docstate",
               "type": "select",
               "required": true,
               "unique": false,
@@ -266,7 +266,7 @@
             "number": {},
             "customer": {},
             "remarks": {},
-            "status": {},
+            "docstate": {},
             "name": {},
             "title": {}
           },
@@ -274,7 +274,7 @@
             "number",
             "customer",
             "remarks",
-            "status",
+            "docstate",
             "name",
             "title",
             "lines.description",
@@ -304,7 +304,7 @@
           ],
           "actions": [],
           "state": {
-            "field": "status",
+            "field": "docstate",
             "default": "draft",
             "show": "bar",
             "steps": [
@@ -613,7 +613,7 @@
       "number": "ORD-001",
       "customer": "A",
       "remarks": null,
-      "status": "draft",
+      "docstate": "draft",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -689,7 +689,7 @@
       "number": "ORD-001",
       "customer": "A",
       "remarks": "Confirmed by admin",
-      "status": "confirmed",
+      "docstate": "confirmed",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -765,7 +765,7 @@
       "number": "ORD-001",
       "customer": "A",
       "remarks": "Confirmed by admin",
-      "status": "draft",
+      "docstate": "draft",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -837,7 +837,7 @@
       "number": "ORD-001",
       "customer": "B",
       "remarks": "Confirmed by admin",
-      "status": "draft",
+      "docstate": "draft",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -918,7 +918,7 @@
       "number": "ORD-001",
       "customer": "B",
       "remarks": "Confirmed by admin",
-      "status": "confirmed",
+      "docstate": "confirmed",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -1000,7 +1000,7 @@
       "number": "ORD-001",
       "customer": "B",
       "remarks": "Confirmed by admin",
-      "status": "cancelled",
+      "docstate": "cancelled",
       "name": null,
       "title": "0000000000001",
       "children": {
@@ -1197,12 +1197,12 @@
                 "new": "A",
                 "old": null
               },
-              "number": {
-                "new": "ORD-001",
+              "docstate": {
+                "new": "draft",
                 "old": null
               },
-              "status": {
-                "new": "draft",
+              "number": {
+                "new": "ORD-001",
                 "old": null
               }
             },

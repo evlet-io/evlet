@@ -31,7 +31,7 @@ function declared(): any {
       { key: 'invoices', label: 'Invoices', icon: 'file-text', items: [
         { key: 'model:invoice', kind: 'model', label: 'Invoices', model: 'invoice', view: 'list', filters: null },
         { key: 'model:invoice:board', kind: 'model', label: 'Board', model: 'invoice', view: 'board', filters: null },
-        { key: 'model:invoice:issued', kind: 'model', label: 'Issued', model: 'invoice', view: 'list', filters: [['status', 'eq', 'issued']] },
+        { key: 'model:invoice:issued', kind: 'model', label: 'Issued', model: 'invoice', view: 'list', filters: [['docstate', 'eq', 'issued']] },
       ] },
       { key: 'people', label: 'Customers', icon: null, items: [
         { key: 'model:customer', kind: 'model', label: 'Customers', model: 'customer', view: 'list', filters: null },
