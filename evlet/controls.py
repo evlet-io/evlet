@@ -917,8 +917,8 @@ class Controls:
 
     # ---------- users and roles ----------
 
-    def users(self, offset):
-        page = self.business.auth.user_page(offset)
+    def users(self, offset=0, **filters):
+        page = self.business.auth.user_page(offset, **filters)
         with self.database._connection() as connection:
             sessions = {row[0]: row[1] for row in connection.run(
                 qb.select('evlet_sessions', 'user_id', qb.count()).where(qb.gt('expires', int(time.time()))).group_by('user_id'))}
@@ -1398,14 +1398,11 @@ class Controls:
                 return 200, self.save(user, body), []
         if path == '/users':
             if method == 'GET':
-                try:
-                    query = parse_qs(scope.get('query_string', b'').decode('ascii'), keep_blank_values=True, max_num_fields=1)
-                    if set(query) - {'offset'}:
-                        raise ValueError()
-                    offset = int(query.get('offset', ['0'])[0])
-                except (ValueError, UnicodeError):
-                    raise ValidationError({'offset': 'Use a valid offset'})
-                return 200, self.users(offset), []
+                query = params(scope, 'offset', 'limit', 'q', 'active', 'role')
+                if query.get('active', 'true') not in ('true', 'false'):
+                    raise ValidationError({'active': 'Use true or false'})
+                return 200, self.users(_number(query, 'offset', 0), limit=_number(query, 'limit', 100), q=query.get('q', ''),
+                                       active=None if 'active' not in query else query['active'] == 'true', role=query.get('role') or None), []
             if method == 'POST':
                 return 201, self.add_user(user, body).public(), []
         match = re.fullmatch(r'/users/([1-9][0-9]{0,18})', path)
@@ -1488,13 +1485,15 @@ class Controls:
             return 200, self.business.assistants.overview(scope), []
         if path == '/keys':
             if method == 'GET':
-                return 200, {'items': self.business.auth.keys()}, []
+                query = params(scope, 'before', 'limit', 'q', 'user')
+                return 200, self.business.auth.key_page(before=_number(query, 'before', None), limit=_number(query, 'limit', 100),
+                                                         q=query.get('q', ''), user=query.get('user') or None), []
             if method == 'POST':
                 return 201, self.create_key(user, body), []
         match = re.fullmatch(r'/keys/([1-9][0-9]{0,18})', path)
         if match and method == 'DELETE' and int(match[1]) <= 2**63 - 1:
             self.revoke_key(user, int(match[1]))
-            return 200, {'items': self.business.auth.keys()}, []
+            return 200, self.business.auth.key_page(), []
         match = re.fullmatch(r'/roles/([a-z][a-z0-9_]{1,30})', path)
         if match and method == 'PATCH':
             self.change_role(user, match[1], body)
@@ -1503,6 +1502,15 @@ class Controls:
             self.delete_role(user, match[1])
             return 200, {'items': self.role_list()}, []
         raise AccessError(404, NOT_FOUND)
+
+
+def _number(query, name, default):
+    """A whole-number query parameter, or default when it is absent."""
+    if name not in query:
+        return default
+    if not re.fullmatch(r'[0-9]{1,19}', query[name]):
+        raise ValidationError({name: 'Use a whole number'})
+    return int(query[name])
 
 
 def params(scope, *names):
