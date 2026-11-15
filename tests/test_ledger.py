@@ -10,7 +10,7 @@ import threading
 import pytest
 
 from evlet import (AddField, AddIndex, Application, Boolean, Column, ConflictError, CreateModel, Currency, Database, Date,
-                   DateTime, Decimal, Integer, Journal, Link, LockTimeout, LongText, Migration, Model, MultiSelect, Percent,
+                   DateTime, Decimal, Integer, Activity, Link, LockTimeout, LongText, Migration, Model, MultiSelect, Percent,
                    Reference, Registry, RenameField, Report, RetireField, RichText, Rule, SchemaError, Select, SetAppendOnly,
                    State, Sum, Table, Tags, Text, ValidationError, action, AlterField, Count, Child, Email, Duration)
 from evlet.auth import LocalAuth, User
@@ -49,7 +49,7 @@ class PointMove(Model):
     class Meta:
         ledger = True
         append_only = True
-        journal = Journal(tamper_evident=True)
+        activity = Activity(tamper_evident=True)
         timestamps = 'created'
         indexes = [('member', 'on_date')]
         period = 'on_date'
@@ -294,9 +294,9 @@ def test_triggers_refuse_raw_update_delete_and_replace(points):
     assert [(item.id, item.points) for item in app.database.list(PointMove)] == [(row, D('1.00'))]
 
 
-# Rollback, foreign keys, journal, timestamps
+# Rollback, foreign keys, activity, timestamps
 
-def test_a_rollback_leaves_no_rows_and_no_journal_entries(points):
+def test_a_rollback_leaves_no_rows_and_no_activity_entries(points):
     app, _ = points
     aisha = member(app)
     with pytest.raises(RuntimeError):
@@ -306,7 +306,7 @@ def test_a_rollback_leaves_no_rows_and_no_journal_entries(points):
             raise RuntimeError('stop')
     assert app.database.count(PointMove) == 0 and app.database.count(PointBalance) == 0
     with app.database.transaction() as tx:
-        assert tx.connection.execute("SELECT count(*) FROM evlet_journal WHERE model = 'pointmove'").fetchone()[0] == 0
+        assert tx.connection.execute("SELECT count(*) FROM evlet_activity WHERE model = 'pointmove'").fetchone()[0] == 0
 
 
 def test_foreign_keys_hold_between_ledger_and_normal_models(points):
@@ -328,35 +328,35 @@ def test_foreign_keys_hold_between_ledger_and_normal_models(points):
             tx.create(PointBalance, member=omar, points='1.00', last_move=row + 100)
 
 
-def test_the_journal_records_ledger_rows_and_detects_tampering(points):
-    from evlet import journal
+def test_the_activity_records_ledger_rows_and_detects_tampering(points):
+    from evlet import activity
     app, _ = points
     aisha = member(app)
     with app.database.transaction() as tx:
         tx.actor = 1
         first, second = tx.insert_many(PointMove, [move(member=aisha), move(member=aisha, points='3.00')])
     with app.database.transaction() as tx:
-        rows = tx.connection.execute("SELECT record_id, kind, actor, data FROM evlet_journal WHERE model='pointmove' ORDER BY id").fetchall()
+        rows = tx.connection.execute("SELECT record_id, kind, actor, data FROM evlet_activity WHERE model='pointmove' ORDER BY id").fetchall()
     assert [(row[0], row[1], row[2]) for row in rows] == [(first, 'created', '1'), (second, 'created', '1')]
     assert '"points":{"new":"3.00","old":null}' in rows[1][3]
-    assert journal.verify(app.database) == (2, [])
+    assert activity.verify(app.database) == (2, [])
     with sqlite3.connect(app.database.path) as connection:
-        connection.execute('DROP TRIGGER evlet_journal_no_update')
-        connection.execute("UPDATE evlet_journal SET data = replace(data, '3.00', '30.00') WHERE record_id = ?", (second,))
-    checked, breaks = journal.verify(app.database)
+        connection.execute('DROP TRIGGER evlet_activity_no_update')
+        connection.execute("UPDATE evlet_activity SET data = replace(data, '3.00', '30.00') WHERE record_id = ?", (second,))
+    checked, breaks = activity.verify(app.database)
     assert checked == 2 and [item[3] for item in breaks] == ['the hash does not match the entry']
 
 
-def test_a_mutable_journaled_ledger_records_changes_and_deletes(tmp_path):
-    journaled = type('Tally', (Model,), {'Meta': type('Meta', (), {'ledger': True, 'journal': Journal()}), 'amount': Integer()})
-    database = Database(tmp_path / 'tally.sqlite3', Registry(journaled))
+def test_a_mutable_ledger_with_activity_records_changes_and_deletes(tmp_path):
+    tally = type('Tally', (Model,), {'Meta': type('Meta', (), {'ledger': True, 'activity': Activity()}), 'amount': Integer()})
+    database = Database(tmp_path / 'tally.sqlite3', Registry(tally))
     database.initialize()
     with database.transaction() as tx:
-        row = tx.create(journaled, amount=1).id
-        tx.update(journaled, row, amount=2)
-        tx.delete(journaled, row)
+        row = tx.create(tally, amount=1).id
+        tx.update(tally, row, amount=2)
+        tx.delete(tally, row)
     with database.transaction() as tx:
-        kinds = [item[0] for item in tx.connection.execute("SELECT kind FROM evlet_journal WHERE model='tally' ORDER BY id")]
+        kinds = [item[0] for item in tx.connection.execute("SELECT kind FROM evlet_activity WHERE model='tally' ORDER BY id")]
     assert kinds == ['created', 'changed', 'deleted']
 
 
@@ -446,7 +446,7 @@ def test_a_ledger_model_has_no_public_surface(points):
     assert field['grouping'] is False
 
 
-def test_the_journal_shows_a_link_to_a_ledger_row_as_its_integer_id(tmp_path):
+def test_the_activity_shows_a_link_to_a_ledger_row_as_its_integer_id(tmp_path):
     """The record history shows a Link to a ledger row as the plain integer id record responses
     show, not a text record id (which the browser read as a malformed number)."""
     entry = lean('Entry', {'amount': Decimal(scale=2, required=True)})
@@ -459,7 +459,7 @@ def test_the_journal_shows_a_link_to_a_ledger_row_as_its_integer_id(tmp_path):
         last_entry = Link(entry)
 
         class Meta:
-            journal = Journal()
+            activity = Activity()
 
         @action('Pick')
         def pick(self):
@@ -474,7 +474,7 @@ def test_the_journal_shows_a_link_to_a_ledger_row_as_its_integer_id(tmp_path):
         for row in (first, second):
             picked.append(row)
             context.action(Holder, record, 'pick')
-    items = admin('GET', f'/api/holder/{record}/journal')[1]['items']
+    items = admin('GET', f'/api/holder/{record}/activity')[1]['items']
     assert [item['data']['fields']['last_entry'] for item in items if item['kind'] == 'changed'] == [
         {'old': first, 'new': second}, {'old': None, 'new': first}]
     assert type(first) is int
@@ -607,13 +607,13 @@ def test_ledger_list_prints_each_ledger_model(points, tmp_path, monkeypatch, cap
     monkeypatch.setattr(command, 'load_runtime', lambda project, name: app if (project, name) == (root, 'acme') else None)
     main(['ledger', 'list', '--instance', 'acme', '--project', str(root)])
     lines = capsys.readouterr().out.splitlines()
-    assert lines[0].split() == ['Model', 'Table', 'Rows', 'Append', 'only', 'Journal', 'Timestamps', 'Period']
+    assert lines[0].split() == ['Model', 'Table', 'Rows', 'Append', 'only', 'Activity', 'Timestamps', 'Period']
     assert [line.split() for line in lines[1:]] == [
         ['PointMove', 'pointmove', '3', 'yes', 'tamper', 'evident', 'created', 'on_date'],
         ['PointBalance', 'pointbalance', '0', 'no', 'off', 'modified', 'off'],
         ['Reading', 'reading', '0', 'no', 'off', 'off', 'off']]
     assert describe(app.database)[0] == {'model': 'PointMove', 'table': 'pointmove', 'rows': 3, 'append_only': True,
-                                         'journal': 'tamper evident', 'timestamps': 'created', 'period': 'on_date'}
+                                         'activity': 'tamper evident', 'timestamps': 'created', 'period': 'on_date'}
     assert ledger_table([]) == 'No ledger models'
 
 

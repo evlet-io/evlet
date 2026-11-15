@@ -4,7 +4,7 @@ replies on the records they can read.
 Microsoft 365 and Google sign in with OAuth (authorization code with PKCE); any other mailbox uses
 IMAP and SMTP with an app password. Tokens and passwords are sealed with the instance secret key.
 A sync job copies in only messages whose addresses match records the person can read, in the
-models apps opt in with Meta.mail, as `message` entries in each record's Journal (the person is the
+models apps opt in with Meta.mail, as `message` entries in each record's Activity (the person is the
 actor); nothing else is stored, not even headers. evlet_mail_links(model, record_id, message_key,
 entry_id) keeps a message once per record and finds the records of a thread. No route lets an
 admin read a mailbox or its credentials.
@@ -128,7 +128,7 @@ MAILBOXES = TableDefinition('evlet_mailboxes', (
 STATES = TableDefinition('evlet_mail_states', (
     Column('hash', 'TEXT', primary=True), Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
     Column('provider', 'TEXT', required=True), Column('secrets', 'BLOB', required=True), Column('expires', 'INTEGER', required=True)))
-# Messages themselves are Journal entries; this index keeps one per record and finds a thread's records.
+# Messages themselves are Activity entries; this index keeps one per record and finds a thread's records.
 LINKS = TableDefinition('evlet_mail_links', (
     Column('model', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True), Column('message_key', 'TEXT', required=True),
     Column('entry_id', 'INTEGER', required=True)), primary_key=('model', 'record_id', 'message_key', 'entry_id'))
@@ -149,7 +149,7 @@ def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
-# ---------- sealed secrets and Journal messages ----------
+# ---------- sealed secrets and Activity messages ----------
 
 def seal(business, connection, data, context):
     """Seal with the instance key (evlet.secrets). The key file is created only while nothing is sealed yet."""
@@ -161,27 +161,27 @@ def unseal(business, blob, context):
 
 
 def link_message(business, tx, user, model, record_id, key, data, field=None):
-    """Store one copied message on a record as a Journal `message` entry, with the person as the actor.
+    """Store one copied message on a record as an Activity `message` entry, with the person as the actor.
 
     The same message is stored once per record; a different message reusing its Message-ID is kept too.
-    `field` names the Email field of the record that matched; the Journal hides `party` from readers who
+    `field` names the Email field of the record that matched; the Activity hides `party` from readers who
     can't read that field. Returns the entry id, or None when the record already has the message.
     """
-    from . import journal
-    if model not in business.journals:
+    from . import activity
+    if model not in business.activities:
         return None
     entry = {**data, 'source': 'mailbox', **({'field': field} if field else {})}
-    same = journal.canonical({name: value for name, value in entry.items() if name != 'field'})
+    same = activity.canonical({name: value for name, value in entry.items() if name != 'field'})
     for row in tx.connection.run(qb.select(qb.table('evlet_mail_links', 'l'), 'j.data')
-                                 .join(qb.table('evlet_journal', 'j'), qb.eq('j.id', qb.col('l.entry_id')))
+                                 .join(qb.table('evlet_activity', 'j'), qb.eq('j.id', qb.col('l.entry_id')))
                                  .where(qb.eq('l.model', business.registry.name_for(model)), qb.eq('l.record_id', record_id),
                                         qb.eq('l.message_key', key))):
-        if journal.canonical({name: value for name, value in json.loads(row[0]).items() if name not in ('field', 'via')}) == same:
+        if activity.canonical({name: value for name, value in json.loads(row[0]).items() if name not in ('field', 'via')}) == same:
             return None
-    entry_id = journal.append(business, tx, user, model, record_id, 'message', entry)
+    entry_id = activity.append(business, tx, user, model, record_id, 'message', entry)
     tx.connection.run(qb.insert('evlet_mail_links', model=business.registry.name_for(model), record_id=record_id, message_key=key,
                                 entry_id=entry_id))
-    business.changed(tx, model, record_id, journal=True)
+    business.changed(tx, model, record_id, activity=True)
     return entry_id
 
 
@@ -323,8 +323,8 @@ class Mailboxes:
             for name in mail.match:
                 if not isinstance(model.__declared_fields__.get(name), Email) or not getattr(model.__declared_fields__[name], 'stored', True):
                     raise ValueError(f'{model.__name__}: Meta.mail matches stored Email fields; {name} is not one')
-            if model not in business.journals:
-                raise ValueError(f'{model.__name__}: Meta.mail keeps messages in the record journal. Add Meta.journal = Journal().')
+            if model not in business.activities:
+                raise ValueError(f'{model.__name__}: Meta.mail keeps messages in the record activity. Add Meta.activity = Activity().')
             self.declared[model] = mail
 
     def initialize(self):
@@ -891,14 +891,14 @@ class Mailboxes:
 
     def threads(self, user, references):
         """{message key: [(Model, id, None)]}: records this person put an earlier message of the thread on, and can still read.
-        Who put it there is the actor of its Journal entry, so someone else's links never pull a message along."""
+        Who put it there is the actor of its Activity entry, so someone else's links never pull a message along."""
         if not references:
             return {}
         keys = [key_of(item) for item in references]
         found = {}
         with self.database.transaction() as tx:
             rows = tx.connection.run(qb.select(qb.table('evlet_mail_links', 'l'), 'l.message_key', 'l.model', 'l.record_id').distinct()
-                                     .join(qb.table('evlet_journal', 'j'), qb.eq('j.id', qb.col('l.entry_id')))
+                                     .join(qb.table('evlet_activity', 'j'), qb.eq('j.id', qb.col('l.entry_id')))
                                      .where(qb.eq('j.actor', str(user.id)), qb.in_('l.message_key', keys))).all()
             by_model = {}
             for row in rows:

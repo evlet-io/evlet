@@ -260,8 +260,8 @@ def record_api(folder):
 def documents(out, folder):
     """Responses of the document routes, recorded as an editor: a move refused by its condition, a move,
     an action, a void move with its remark, an admin's reopen, per-record and model measures, related records,
-    line pages and details carrying _moves, _actions, _effects and _journal, with the schema's state, key_fields,
-    relations and journal, and the journal itself: engine and user entries, follow ups, and a viewer's partial view."""
+    line pages and details carrying _moves, _actions, _effects and _activity, with the schema's state, key_fields,
+    relations and activity, and the activity itself: engine and user entries, follow ups, and a viewer's partial view."""
     database = Database(folder / 'documents.sqlite3', Registry(Customer, LedgerEntry, Invoice, Payment))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
     app = Application(database, auth=auth)
@@ -322,8 +322,8 @@ def documents(out, folder):
     keep('invoice_list_tabs', editor('GET', '/api/invoice/list_tabs'))
     keep('invoice_attachment_upload', editor('POST', f'{url}/attachments', {'name': 'signed-copy.pdf', 'content': 'JVBERi0='}))
     keep('invoice_attachments', editor('GET', f'{url}/attachments'))
-    # The draft's journal so far: created, its lines added, the file.
-    keep('invoice_draft_journal', editor('GET', f'{url}/journal?limit=50'))
+    # The draft's activity so far: created, its lines added, the file.
+    keep('invoice_draft_activity', editor('GET', f'{url}/activity?limit=50'))
     # The draft is issued and paid in part.
     keep('invoice_issued', write('POST', url, '/moves/issue', {}))
     keep('invoice_issued_detail', editor('GET', url))
@@ -336,26 +336,26 @@ def documents(out, folder):
     keep('invoice_related_payments', editor('GET', f'{url}/related/payment.invoice?limit=5&offset=0'))
     # Files of a locked record cannot change.
     keep('invoice_attachment_locked', editor('POST', f'{url}/attachments', {'name': 'receipt.pdf', 'content': 'JVBERi0='}))
-    # People add to the journal of the locked invoice: a note, a follow up that is done, one that stays open.
-    keep('invoice_journal_note', editor('POST', f'{url}/journal', {'kind': 'note', 'text': 'Customer asked for a copy by email'}))
+    # People add to the activity of the locked invoice: a note, a follow up that is done, one that stays open.
+    keep('invoice_activity_note', editor('POST', f'{url}/activity', {'kind': 'note', 'text': 'Customer asked for a copy by email'}))
     # Sara is account 2, after admin (the built-in Administrator).
-    called = keep('invoice_journal_follow_up', editor('POST', f'{url}/journal', {'kind': 'follow_up', 'text': 'Call about the balance',
+    called = keep('invoice_activity_follow_up', editor('POST', f'{url}/activity', {'kind': 'follow_up', 'text': 'Call about the balance',
                                                                                 'due': '2026-11-15', 'assignee': 2}))
-    keep('invoice_journal_follow_up_done', editor('POST', f'{url}/journal', {'kind': 'follow_up_done', 'follow_up': called['id'],
+    keep('invoice_activity_follow_up_done', editor('POST', f'{url}/activity', {'kind': 'follow_up_done', 'follow_up': called['id'],
                                                                              'text': 'Balance due by the end of the month'}))
-    editor('POST', f'{url}/journal', {'kind': 'follow_up', 'text': 'Send the statement', 'due': '2026-11-30'})
+    editor('POST', f'{url}/activity', {'kind': 'follow_up', 'text': 'Send the statement', 'due': '2026-11-30'})
     # A scheduled job logs a reminder: an entry without a signed in user (actor null).
-    from evlet import journal
+    from evlet import activity
     from evlet.auth import User
     with app.business.context(User(0, 'schedule', 'admin')) as context:
-        journal.post(context, Invoice, int(url.rsplit('/', 1)[1]), 'message', text='Payment reminder logged', subject='Balance due')
-    keep('invoice_journal', editor('GET', f'{url}/journal?limit=50'))
+        activity.post(context, Invoice, int(url.rsplit('/', 1)[1]), 'message', text='Payment reminder logged', subject='Balance due')
+    keep('invoice_activity', editor('GET', f'{url}/activity?limit=50'))
     # The viewer cannot read ledger entries, so the posting entry is a partial `changed` entry for it.
     keep('invoice_viewer_session', viewer('GET', '/api/auth/session'))
     keep('invoice_viewer_schema', viewer('GET', '/api/schema'))
     keep('invoice_viewer_detail', viewer('GET', url))
-    keep('invoice_viewer_journal', viewer('GET', f'{url}/journal?limit=50'))
-    keep('invoice_viewer_note_refused', viewer('POST', f'{url}/journal', {'kind': 'note', 'text': 'Seen'}))
+    keep('invoice_viewer_activity', viewer('GET', f'{url}/activity?limit=50'))
+    keep('invoice_viewer_note_refused', viewer('POST', f'{url}/activity', {'kind': 'note', 'text': 'Seen'}))
     # An admin reopens an issued invoice (a remark is required), which reverses its postings; the editor's
     # reopen is listed but blocked by role.
     def admin_write(method, record, route='', body=None):

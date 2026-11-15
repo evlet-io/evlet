@@ -46,7 +46,12 @@ def check_pwa_package(sdist):
                     source = archive.extractfile(prefix + path)
                 except KeyError:
                     raise RuntimeError(f'Source distribution lacks PWA asset {path}') from None
-                assert source is not None and source.read() == (assets / name).read_bytes()
+                assert source is not None
+                if folder == 'frontend/public/assets' and name.endswith('.js'):
+                    # The worker's source keeps the marker that vite build replaces with the emitted files.
+                    assert b'evlet:build-assets' in source.read()
+                else:
+                    assert source.read() == (assets / name).read_bytes()
         # The source's development entry is typechecked by npm run build and imports this fixture.
         for path in ('frontend/evlet.html', 'frontend/src/evlet/tests/server.ts', 'frontend/src/evlet/tests/api-fixture.json'):
             assert archive.getmember(prefix + path).isfile(), f'Source distribution lacks {path}'

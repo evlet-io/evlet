@@ -31,7 +31,7 @@ class Order(Model):
         rate = Currency(default="0")
     lines = Table(Line, required=True)
     permissions = {"admin": Rule(("read", "create", "update", "delete")),
-                   "editor": Rule(("read", "create", "update", "journal")),
+                   "editor": Rule(("read", "create", "update", "activity")),
                    "viewer": Rule(("read",))}
 
     @validate
@@ -62,8 +62,8 @@ class Order(Model):
 
 Each move is a `POST /api/{model}/{id}/moves/{key}` with `If-Match` and `{"remark": "..."}`
 when the rule takes one, or `context.move(Order, order_id, "confirmed_to_draft", remark="Price change")`.
-The record's [Journal](journal.md) gets a `moved` entry with the rule key and the remark; models
-with a State journal by default.
+The record's [Activity](activity.md) gets a `moved` entry with the rule key and the remark; models
+with a State activity by default.
 
 Numbers given on confirm use `Sequence(..., assign_on="confirmed")` or
 `Naming(..., assign_on="confirmed")`, the state's name ([sequences.md](sequences.md)).
@@ -79,7 +79,7 @@ Run the Lifecycle Playground, which declares the model above, with:
 | Removed in 0.4.6 | Use |
 | --- | --- |
 | `confirmable = True` | a State with draft, a locked release step and a final cancelled step |
-| `track_changes = True` | `Meta.journal = Journal(tamper_evident=True)`; a State journals by default |
+| `track_changes = True` | `Meta.activity = Activity(tamper_evident=True)`; a State keeps an Activity by default |
 | `Meta.revisable`, `revises`, `revised_by`, `/revise` | a rule back to draft (Reopen) with a remark |
 | `/void` | a rule into a final `void` step with `remark="required"` |
 | `/unpost`, `/repost` | a rule out of the effect's `on` step (it reverses the rows) and the rule back into it |

@@ -60,7 +60,7 @@ instance without making another full backup.
 
 ## Upgrade Evlet
 
-Evlet's own tables (accounts, sessions, jobs, the journal and the rest) have a
+Evlet's own tables (accounts, sessions, jobs, the activity and the rest) have a
 version too. `apps.lock` and the database's installed manifest record the Evlet
 version and the last framework migration an instance was migrated with:
 
@@ -95,14 +95,14 @@ MCP call log (`evlet_mcp_calls`) into the Tool Engine's `evlet_tool_calls` and d
 the old table. `0003_record_names` gives every record table the standard `name` and
 `title` columns ([model-engine.md](model-engine.md#name-and-title)) and fills each title
 from the models; names stay empty for existing rows. `0004_record_times` adds the created and
-modified time and user columns to every model table and fills them from the Journal or the record id
+modified time and user columns to every model table and fills them from the Activity or the record id
 ([model-engine.md](model-engine.md#record-times)). `0005_unsaved_changes` adds `evlet_unsaved`, the
 unsaved changes people leave on saved records ([ui.md](ui.md#unsaved-changes)). `0006_fixed_ids` adds the
 trigger that refuses an id change to every model table ([model-engine.md](model-engine.md#only-evlet-makes-ids)). `0007_money_scale` records that every
 Currency amount is stored at 6 places; `evlet migrate` moves the amounts before any app migration runs
 ([model-engine.md](model-engine.md#decimal-places-per-currency)). `0010_split_files` moves sign-in sessions, the
 tool-call log and Eva into their own SQLite files next to the database (see From 0.4.2 to 0.4.3 below).
-`0011_state_manager` adds the journal's `rule`, `remark`, `level`, `base` and `rules_version` columns
+`0011_state_manager` adds the `rule`, `remark`, `level`, `base` and `rules_version` columns to the Journal (now Activity)
 (old entries keep their values and their hashes), creates `evlet_releases`, lets `evlet_overrides` take the
 kinds `state` and `rule`, turns confirmable
 revisions into releases and lifecycle states into State values (it refuses, naming the models, when
@@ -117,6 +117,14 @@ so a newer draft is never replaced by an older one.
 `0015_oidc_tickets` adds the small `evlet_oidc_tickets` table of company sign-in state and finish receipts
 to the sessions file, whether or not OIDC is configured, so enabling [company sign-in](oidc.md) later never
 changes the schema when the instance starts.
+`0016_activity` renames the record history from Journal to [Activity](activity.md): `evlet_journal` becomes
+`evlet_activity` and `evlet_journal_hashed` becomes `evlet_activity_hashed`, in place with every row, id and hash
+(`ALTER TABLE ... RENAME TO`). Their index and the three append-only triggers keep their names through a rename,
+so the step drops them and makes them again as `evlet_activity_record` and `evlet_activity_no_update`,
+`_no_delete` and `_no_replace`, with the same checks (their message now reads `Activity is append only`). Stored Controls permission overrides that name the
+`journal` operation name `activity` instead. No hash covers a table name, so every chain verifies as before.
+`evlet migrate` also renames the tables before app migrations run, since a `Recompute` or a ledger write in
+`RunData` adds entries; the step then finds them renamed.
 Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet

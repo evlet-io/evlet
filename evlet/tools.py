@@ -80,7 +80,7 @@ class Tool:
     group: str | None = None  # a GROUPS entry; change_state decides per move
     origins: tuple = ORIGINS
     label: str = ''  # what the activity row says while it runs, such as "Reading records"
-    # The result carries stored data (records, journals, reports, files, results of app code). Once an Eva
+    # The result carries stored data (records, activities, reports, files, results of app code). Once an Eva
     # conversation has seen such a result, every change it makes asks first (Tools.read_content).
     content: bool = False
 
@@ -113,7 +113,7 @@ TOOLS = (
          'measures: comma separated field:function[:name] such as amount:sum:total,count:count. group_by: comma separated fields, date fields may add :month or :year.',
          {'model': MODEL, 'measures': {'type': 'string', 'maxLength': 500}, 'group_by': {'type': 'string', 'maxLength': 200},
           'filters': {'type': 'object'}, 'search': {'type': 'string', 'maxLength': 200}}, ('model', 'measures'), label='Totalling {model}', content=True),
-    Tool('record_history', "Read a permitted record's journal: who changed what and when, notes and calls.",
+    Tool('record_history', "Read a permitted record's activity: who changed what and when, notes and calls.",
          {'model': MODEL, 'id': RECORD, **PAGE}, ('model', 'id'), label='Reading the history of {model} {id}', content=True),
     Tool('list_reports', 'List the reports this person can run, with their filters and columns.', {}, label='Looking at reports'),
     Tool('run_report', 'Run a permitted report with its filters. Returns one page of rows.',
@@ -328,7 +328,7 @@ class Tools:
         # A State with rules, on a model this role may change.
         states = any((entry.get('state') or {}).get('rules') and entry['permissions'].get('update') for entry in schema['models'])
         files = any(entry.get('attachments') for entry in schema['models'])
-        journals = any(entry.get('journal') for entry in schema['models'])
+        activities = any(entry.get('activity') for entry in schema['models'])
         services = bool(self.services(user))
         result = []
         for tool in (*TOOLS, *(entry[0] for entry in self.extra.values())):
@@ -344,7 +344,7 @@ class Tools:
                 continue
             if tool.name == 'run_action' and not actions or tool.name == 'change_state' and not states:
                 continue
-            if tool.name in ('list_files', 'read_file') and not files or tool.name == 'record_history' and not journals:
+            if tool.name in ('list_files', 'read_file') and not files or tool.name == 'record_history' and not activities:
                 continue
             result.append(tool)
         return result
@@ -530,7 +530,7 @@ class Tools:
             return request.get(path)
         if name == 'record_history':
             query = {key: values[key] for key in ('limit', 'offset') if key in values}
-            return request.get(path + '/journal' + ('?' + urlencode(query) if query else ''))
+            return request.get(path + '/activity' + ('?' + urlencode(query) if query else ''))
         if name == 'list_files':
             return request.get(path + '/attachments')
         if name == 'read_file':

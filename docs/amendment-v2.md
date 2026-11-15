@@ -271,6 +271,11 @@ retained. The schedule context is a synthetic identity with the declared role,
 not an implicit administrator. Queued effect intents retain that limited role;
 the worker rechecks target access under current policies before execution.
 
+Trusted background work that needs a real database session is declared as module-level
+`Task` and `Schedule` objects in `services/`, with app-qualified names such as
+`finance_drain`; install and reload register them like `@cron`. See
+[Background work in a flat app](jobs-realtime.md#background-work-in-a-flat-app).
+
 Short `Task` handlers retain `handler(tx, job_context, payload)`. For external
 effects use `Task(..., external=True)` with `handler(job_context, payload)`.
 Enqueue its intent within the source transaction. The worker validates actor

@@ -16,7 +16,7 @@ export const recorded = base as Record<string, Recorded>;
 export const screen = screens as Record<string, Recorded>;
 
 // The invoice responses, recorded as the editor sara (invoice_* and invoices in api-fixture.json),
-// the journal included; invoice_viewer_* are recorded as the viewer omar.
+// the activity included; invoice_viewer_* are recorded as the viewer omar.
 export const invoice: Record<string, Recorded> = {
   ...Object.fromEntries(Object.entries(recorded).filter(([key]) => key === 'invoices' || key.startsWith('invoice_'))),
   session: recorded.invoice_session,

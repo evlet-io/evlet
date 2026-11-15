@@ -52,6 +52,7 @@ def discover(package, modules=None):
     from .forms import Report
     from .workspaces import Workspace
     models, migrations, seen, reports, endpoints, tasks, schedules, workspaces = [], [], set(), [], [], [], [], []
+    collected_ids = set()
     for name in modules if modules is not None else module_names(package):
         module = import_module(name)
         if name == package.name + '.workspaces' or name.startswith(package.name + '.workspaces.'):
@@ -64,6 +65,8 @@ def discover(package, modules=None):
             from .services import collect_service
             collected = collect_service(package, module)
             endpoints.extend(collected[0]); tasks.extend(collected[1]); schedules.extend(collected[2])
+            declared = background(package, module, collected_ids)
+            tasks.extend(declared[0]); schedules.extend(declared[1])
         for key, value in sorted(vars(module).items()):
             if isinstance(value, type) and issubclass(value, Model) and value is not Model and value.__module__ == name:
                 if issubclass(value, Report) and value is not Report:
@@ -78,6 +81,12 @@ def discover(package, modules=None):
             if isinstance(value, Migration) and name.startswith(package.name + '.migrations') and id(value) not in seen:
                 seen.add(id(value))
                 migrations.append(value)
+    from .instances import AppSchedule
+    own = {task.name for task in tasks}
+    for schedule in schedules:
+        if isinstance(schedule, AppSchedule) and schedule.task not in own:
+            raise ValueError(f'Schedule {schedule.name} in app {package.name} runs task {schedule.task!r}, '
+                             f'which is not a Task declared in {package.name}/services')
     rules = {}
     for model in models:
         declarations = getattr(model, 'permissions', {})
@@ -89,6 +98,101 @@ def discover(package, modules=None):
             raise ValueError(f'Unknown permission role in {model.__resource_id__}')
     return AppDefinition(models=models, reports=reports, apis=endpoints, tasks=tasks, schedules=schedules,
                          permissions=rules, migrations=sorted(migrations, key=lambda migration: migration.name), workspaces=workspaces)
+
+
+def qualified(package, kind, value):
+    """A declared task or schedule name, which starts with the app's name and an underscore.
+
+    The prefix shows which app owns a name; clash() still checks uniqueness, since app fin may name fin_ops_sync."""
+    if not value.startswith(package.name + '_'):
+        raise ValueError(f'{kind} {value!r} in app {package.name} must be named after its app, such as {package.name}_{value}')
+    if value.startswith('eva_task'):
+        raise ValueError(f'{kind} names starting with eva_task belong to Eva: rename {value!r}')
+    return value
+
+
+def background(package, module, seen):
+    """Module-level Task and Schedule objects of a services module: trusted background work with full database access.
+
+    seen holds the ids already collected for this app, so an object imported into another services module, or
+    bound to two names, registers once. Two different objects with one name reach clash(), which refuses them."""
+    from .instances import AppSchedule, Schedule
+    from .jobs import Task
+    tasks, schedules = [], []
+    for value in vars(module).values():
+        if id(value) in seen or not isinstance(value, (Task, Schedule)) or isinstance(value, AppSchedule):
+            continue
+        seen.add(id(value))
+        if isinstance(value, Task):
+            qualified(package, 'Task', value.name)
+            tasks.append(value)
+        else:
+            qualified(package, 'Schedule', value.name)
+            schedules.append(AppSchedule(value.name, value.task, value.every, dict(value.payload), app=package.name))
+    return tasks, schedules
+
+
+def background_work(package):
+    """What a flat app's services/ declares as background work, read from source without importing it.
+
+    Returns (names, uses): the literal names of Task(...) and Schedule(...) calls, and whether the source uses Task or
+    Schedule at all (an alias, a factory or a name that is not a string literal counts too). The install trust prompt
+    shows them, since their handlers run with full database access."""
+    import ast
+    names, uses = [], False
+    if package.layout != 'flat':
+        return names, uses
+    for path in package.source_files():
+        relative = path.relative_to(package.source_root) if path.is_relative_to(package.source_root) else None
+        if path.suffix != '.py' or relative is None or relative.parts[0] not in ('services', 'services.py'):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+        except (SyntaxError, UnicodeError):
+            continue
+        kinds = {'Task': 'task', 'Schedule': 'schedule'}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name in ('Task', 'Schedule'):
+                        uses = True
+                        kinds[alias.asname or alias.name] = alias.name.lower()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Name, ast.Attribute)) and (getattr(node, 'id', None) or getattr(node, 'attr', None)) in ('Task', 'Schedule'):
+                uses = True
+            if isinstance(node, ast.Call):
+                callee = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else ''
+                label = next((keyword.value for keyword in node.keywords if keyword.arg == 'name'), node.args[0] if node.args else None)
+                if callee in kinds and isinstance(label, ast.Constant) and isinstance(label.value, str):
+                    names.append(f'{kinds[callee]} {label.value}')
+    return names, uses
+
+
+def trust_question(packages, changed):
+    """The install trust prompt: the apps whose code runs, and the background work that runs with full database access."""
+    question = 'Trust and execute these local Python apps: ' + ', '.join(changed) + '?'
+    work = []
+    for package in packages:
+        if package.name in changed:
+            names, uses = background_work(package)
+            if uses:
+                work.append(f"{package.name} ({', '.join(names)})" if names else f'{package.name} (names set in code)')
+    if work:
+        question += (' Their background tasks and schedules in services/ run as trusted code with full database access, '
+                     "outside any user's permissions: " + '; '.join(work) + '. Names built in code are not listed.')
+    return question
+
+
+def clash(definitions, attribute, kind):
+    """Refuse two registrations with one name, naming both apps, before anything is activated."""
+    owners = {}
+    for app, definition in definitions:
+        for item in getattr(definition, attribute):
+            if item.name in owners:
+                first = owners[item.name]
+                where = f'app {first}' if first == app else f'apps {first} and {app}'
+                raise ValueError(f'{kind} name {item.name!r} is declared twice, in {where}; give each a unique name')
+            owners[item.name] = app
 
 
 def imported_names(package, module):
@@ -127,7 +231,8 @@ def describe(packages):
     endpoints = [endpoint for _, definition in definitions for endpoint in definition.apis]
     schedules = [schedule for _, definition in definitions for schedule in definition.schedules]
     if len({endpoint.name for endpoint in endpoints}) != len(endpoints): raise ValueError('Duplicate endpoint identity')
-    if len({schedule.name for schedule in schedules}) != len(schedules): raise ValueError('Duplicate schedule identity')
+    clash(definitions, 'tasks', 'Task')
+    clash(definitions, 'schedules', 'Schedule')
     for endpoint in endpoints:
         registry.resolve(endpoint.permission[0])
         if endpoint.permission[1] not in ('read', 'create', 'update', 'delete'): raise ValueError('Unknown API permission')

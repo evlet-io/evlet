@@ -19,7 +19,7 @@ from evlet.instances import load_runtime
 
 ADMIN = User(1, 'admin', 'admin')
 
-MODELS = '''from evlet import Integer, Journal, Model, Rule, State, Text{imports}
+MODELS = '''from evlet import Integer, Activity, Model, Rule, State, Text{imports}
 
 RULES = {{'admin': Rule(('read', 'create', 'update', 'delete'))}}
 LIFECYCLE = {{'admin': Rule(('read', 'create', 'update', 'delete'))}}
@@ -39,7 +39,7 @@ class LeaveApplication(Model):
     reason = Text()
 
     class Meta:
-        journal = Journal(tamper_evident=True)
+        activity = Activity(tamper_evident=True)
 '''
 
 
@@ -82,7 +82,7 @@ def runtime(root):
 
 
 def seed(root):
-    """An employee and a confirmed leave application with hashed journal entries."""
+    """An employee and a confirmed leave application with hashed activity entries."""
     app = runtime(root)
     try:
         with app.business.context(ADMIN) as context:
@@ -152,7 +152,7 @@ def test_plan_names_each_difference_writes_nothing_and_its_suggestion_migrates(p
             assert (context.get(Leave, leave).status, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
     finally:
         app.database.close()
-    main(['journal', 'verify', 'acme'])
+    main(['activity', 'verify', 'acme'])
 
 
 def test_plan_suggests_a_rename_and_flags_removals(project, capsys):
@@ -260,7 +260,7 @@ def test_mismatch_names_the_changed_property(tmp_path):
 
 
 def hr_models(*, dependents=False, nationality=False):
-    from evlet import Journal, Rule
+    from evlet import Activity, Rule
     from evlet import State
     lifecycle = {'admin': Rule(('read', 'create', 'update', 'delete'))}
     employee = {'__module__': __name__, 'full_name': Text(required=True), 'permissions': {'admin': Rule(('read', 'create', 'update', 'delete'))}}
@@ -272,7 +272,7 @@ def hr_models(*, dependents=False, nationality=False):
              'status': State(State.Step('draft'), State.Step('confirmed', lock=True, release=True),
                              rules=(State.Rule('draft', 'confirmed', 'Confirm', key='confirm'),)),
              'employee': Text(required=True), 'days': Integer(default=0), 'reason': Text(),
-             'Meta': type('Meta', (), {'journal': Journal(tamper_evident=True)})}
+             'Meta': type('Meta', (), {'activity': Activity(tamper_evident=True)})}
     return Registry(type('Employee', (Model,), employee), type('LeaveApplication', (Model,), leave))
 
 
@@ -284,7 +284,7 @@ def application(database):
 
 
 def confirmed_leave(database):
-    """An employee and a leave application confirmed once (hashed journal entries)."""
+    """An employee and a leave application confirmed once (hashed activity entries)."""
     app = application(database)
     Leave = database.registry.models['leaveapplication']
     with app.business.context(ADMIN) as context:
@@ -297,7 +297,7 @@ def confirmed_leave(database):
 def check_plan_and_add_table(make):
     """make(registry, migrations, migrate=False, plan=False) builds a database on one engine, then initializes it,
     migrates it or returns its plan."""
-    from evlet.journal import verify
+    from evlet.activity import verify
     database = make(hr_models(), [])
     employee, leave = confirmed_leave(database)
     target = hr_models(dependents=True, nationality=True)
@@ -368,7 +368,7 @@ def check_retire_alter_and_run_data(make):
     """make(registry, migrations, migrate=False, plan=False, allow_destructive=False) on one engine."""
     from decimal import Decimal as D
     from evlet import AddField, AlterField, Decimal, DropField, RetireField, RunData
-    from evlet.journal import verify
+    from evlet.activity import verify
     database = make(people_models(), [])
     app = application(database)
     with app.business.context(ADMIN) as context:

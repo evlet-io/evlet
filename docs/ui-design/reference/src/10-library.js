@@ -136,18 +136,18 @@ C('display', 'mini-card', 'MiniCard', 'Composite', 'Compact bordered row for a r
   () => stack(`<div class="mini-card" style="width:320px">${avatar('c1')}<div class="grow"><div class="nm">Khalid Al Mansoori <span class="chip">Primary</span></div><div class="sub">Finance Director</div></div><div class="acts"><button class="icon-btn" style="width:26px;height:26px" data-tip="Copy email">${icon('mail', 'sm')}</button></div></div>`, `<div class="mini-card" style="width:320px">${orgMark(org('o1'), 'lg')}<div class="grow"><div class="nm">Al Sahra Trading LLC</div><div class="sub">Trading · Dubai</div></div>${icon('chevron-right', 'sm muted')}</div>`));
 C('display', 'task-row', 'TaskRow', 'Composite', 'Checkbox, title, due and the linked record. Overdue turns the due date red.', { props: [['task', 'record', ''], ['onToggle', 'action', '']], from: ['checkbox', 'avatar'], used: ['My tasks', 'Home', 'Tasks tab'] },
   () => `<div style="width:420px;border:1px solid var(--border);border-radius:12px">${inert(taskRow(TASKS[6]) + taskRow(TASKS[0]))}</div>`);
-C('display', 'timeline-item', 'TimelineItem', 'Composite', 'One journal entry: icon by kind, sentence, time and an optional body.', { props: [['entry', 'journal entry', ''], ['kind', 'note, email, call, changed, moved…', '']], from: ['icon-tile', 'message-card', 'diff'], used: ['Journal'] },
+C('display', 'timeline-item', 'TimelineItem', 'Composite', 'One activity entry: icon by kind, sentence, time and an optional body.', { props: [['entry', 'activity entry', ''], ['kind', 'note, email, call, changed, moved…', '']], from: ['icon-tile', 'message-card', 'diff'], used: ['Activity'] },
   () => inert(timeline([ACTS.find(a => a.id === 'a3')])));
-C('display', 'diff', 'ChangeDiff', 'Element', 'Field, old value struck through, new value. One line per changed field.', { props: [['changes', 'list', 'label, old, new']], used: ['Journal'] },
+C('display', 'diff', 'ChangeDiff', 'Element', 'Field, old value struck through, new value. One line per changed field.', { props: [['changes', 'list', 'label, old, new']], used: ['Activity'] },
   () => `<div class="diffs" style="width:420px">${[['Contact', 'Khalid Al Mansoori', 'Priya Menon'], ['Credit days', '0 days', '30 days']].map(([l, o, n]) => `<div class="diff"><span class="dl">${l}</span><span class="old">${o}</span>${icon('arrow-right', 'xs')}<span class="new">${n}</span></div>`).join('')}</div>`);
-C('display', 'message-card', 'MessageCard', 'Element', 'Bordered body for notes, calls and emails. Emails show a subject line.', { props: [['subject', 'text', 'Emails only'], ['body', 'text', '']], used: ['Journal'] },
+C('display', 'message-card', 'MessageCard', 'Element', 'Bordered body for notes, calls and emails. Emails show a subject line.', { props: [['subject', 'text', 'Emails only'], ['body', 'text', '']], used: ['Activity'] },
   () => stack(`<div class="tl-item" style="padding:0"><div class="bd" style="padding:0"><div class="note mail"><div class="subj">Revised commercial proposal v3</div>Hi Khalid, please find the revised proposal attached.</div></div></div>`));
 C('display', 'empty-state', 'EmptyState', 'Composite', 'Tinted icon, a short heading, what to do next and an optional button.', { props: [['icon', 'icon', ''], ['title', 'text', ''], ['text', 'text', ''], ['action', 'button', 'Optional']], from: ['icon-tile', 'button'], used: ['Empty lists', 'Empty tabs'] },
   () => emptyState('paperclip', 'slate', 'No files', 'Proposals and signed copies live here.', '<button class="btn sm" style="margin-top:10px">Upload file</button>'));
 C('display', 'banner', 'StateBanner', 'Element', 'Full-width note under a header about the record\'s state, with optional actions.', { props: [['tone', 'neutral, info, danger', ''], ['text', 'text', ''], ['actions', 'list', 'Optional']], from: ['icon', 'button'], used: ['Doc view'] },
   () => stack(inert(invBanner(invoice('i42d'))), inert(invBanner(i41())), inert(invBanner(invoice('i39')))));
-C('display', 'info-note', 'InfoNote', 'Element', 'Quiet explanation above a block that behaves differently from the rest.', { props: [['text', 'text', '']], used: ['Postings', 'Journal'] },
-  () => stack(`<div class="eff-note" style="margin:0">${icon('info', 'sm')}<span>Written by the engine. Read only.</span></div>`, `<div class="journal-note" style="margin:0">${icon('lock', 'xs')}Append-only history.</div>`));
+C('display', 'info-note', 'InfoNote', 'Element', 'Quiet explanation above a block that behaves differently from the rest.', { props: [['text', 'text', '']], used: ['Postings', 'Activity'] },
+  () => stack(`<div class="eff-note" style="margin:0">${icon('info', 'sm')}<span>Written by the engine. Read only.</span></div>`, `<div class="activity-note" style="margin:0">${icon('lock', 'xs')}Append-only history.</div>`));
 C('display', 'filter-chip', 'FilterChip', 'Element', 'An active filter with a remove button.', { props: [['label', 'text', ''], ['onRemove', 'action', '']], used: ['List toolbars'] },
   () => row(`<span class="filter-chip">Tag: Hot<button>${icon('x', 'xs')}</button></span>`, `<span class="filter-chip">Owner: Aslam K<button>${icon('x', 'xs')}</button></span>`));
 C('display', 'toast', 'Toast', 'Element', 'Short confirmation at the bottom of the screen. Undo when the change can be reversed.', { props: [['text', 'text', ''], ['icon', 'icon', ''], ['undo', 'action', 'Optional']], used: ['Every save and move'] },
@@ -156,7 +156,7 @@ C('display', 'data-table', 'DataTable', 'Composite', 'List table with a sticky h
   () => `<div style="width:100%">${inert(dealTable(DEALS.slice(0, 4)))}</div>`);
 C('display', 'board-card', 'BoardCard', 'Composite', 'Draggable record card for boards: tags, title, linked record, value, date and owner.', { props: [['record', 'record', ''], ['fields', 'list', 'From key fields']], from: ['chip', 'org-mark', 'avatar'], used: ['Board'] },
   () => `<div style="width:270px">${inert(dealCard(deal('d1')))}</div>`);
-C('display', 'feed-item', 'FeedItem', 'Composite', 'Compact activity line with a link to the record, for feeds across records.', { props: [['entry', 'journal entry', '']], from: ['icon-tile'], used: ['Home', 'Inbox'] },
+C('display', 'feed-item', 'FeedItem', 'Composite', 'Compact activity line with a link to the record, for feeds across records.', { props: [['entry', 'activity entry', '']], from: ['icon-tile'], used: ['Home', 'Inbox'] },
   () => `<div style="width:420px">${inert(`<div class="feed-item"><span class="ic b-green">${icon('phone', 'sm')}</span><div class="tx">${actSentence(ACTS[0], true)}<div class="tm">4h ago</div></div></div>`)}</div>`);
 C('display', 'list-row', 'ListRow', 'Composite', 'Mark, title and subtitle on the left, value and date on the right.', { props: [['record', 'record', ''], ['value', 'field', ''], ['meta', 'field', '']], from: ['org-mark'], used: ['Closing soon'] },
   () => { const d = deal('d14'), o = org(d.org); return `<div style="width:420px;border:1px solid var(--border);border-radius:12px"><div class="close-row">${orgMark(o)}<div style="min-width:0"><div class="nm">${d.t}</div><div class="sub">${o.n} · Negotiation</div></div><div style="text-align:right"><div class="num" style="font-weight:600">${money(d.v)}</div><div class="sub due-over">2 days overdue</div></div></div></div>`; });
@@ -217,9 +217,9 @@ C('sections', 'status-flow', 'StatusFlow', 'Section', 'The states of the State f
   () => stack(inert(docFlow('deal', d1())), inert(docFlow('invoice', invoice('i39')))));
 C('sections', 'state-banner', 'LockBanner', 'Section', 'The record\'s lifecycle under the header: draft, locked with void and revise, or void with the reason.', { props: [['record', 'record', '']], from: ['banner', 'button'], used: ['Transaction records'] },
   () => inert(invBanner(i41())));
-C('sections', 'activity-composer', 'ActivityComposer', 'Section', 'One box for a note, email, call log or task. Cmd Enter saves to the journal.', { props: [['modes', 'list', 'note, email, call, task'], ['record', 'record', '']], from: ['segmented', 'button', 'icon-button', 'kbd'], used: ['Activity tab'] },
+C('sections', 'activity-composer', 'ActivityComposer', 'Section', 'One box for a note, email, call log or task. Cmd Enter saves to the activity.', { props: [['modes', 'list', 'note, email, call, task'], ['record', 'record', '']], from: ['segmented', 'button', 'icon-button', 'kbd'], used: ['Activity tab'] },
   () => `<div style="width:100%">${inert(composer())}</div>`);
-C('sections', 'journal', 'Journal', 'Section', 'Append-only history grouped by day: notes, messages, field changes, moves, postings and payments.', { props: [['record', 'record', ''], ['kinds', 'filter', 'Optional']], from: ['timeline-item', 'diff', 'message-card'], used: ['Activity tab'] },
+C('sections', 'activity', 'Activity', 'Section', 'Append-only history grouped by day: notes, messages, field changes, moves, postings and payments.', { props: [['record', 'record', ''], ['kinds', 'filter', 'Optional']], from: ['timeline-item', 'diff', 'message-card'], used: ['Activity tab'] },
   () => `<div style="width:100%">${inert(timeline(actsFor('invoice', i41()).slice(0, 4)))}</div>`);
 C('sections', 'child-table', 'ChildTable', 'Section', 'Lines of a record. Pinned row and first column, resizable and reorderable columns saved per user, Tab and Enter editing, inline row expand, focus view and live totals. Locks with the record.', { props: [['lines', 'Lines field', ''], ['columns', 'line fields', ''], ['totals', 'list', ''], ['locked', 'rule', '']], from: ['checkbox', 'button', 'data-table', 'base-field'], used: ['Items', 'Lines', 'Branches'], live: 1 },
   () => `<div style="width:100%">${gridBlock('deal-items', d1())}</div>`);
@@ -263,7 +263,7 @@ VIEWS.library = () => {
 };
 function libCard(c) {
   let demo; try { demo = c.demo(); } catch (e) { demo = `<span class="muted">Preview unavailable</span>`; }
-  const wide = c.level === 'Section' || ['data-table', 'summary-strip', 'tabs', 'toolbar', 'top-bar', 'page-header', 'quick-access', 'banner', 'journal'].includes(c.id);
+  const wide = c.level === 'Section' || ['data-table', 'summary-strip', 'tabs', 'toolbar', 'top-bar', 'page-header', 'quick-access', 'banner', 'activity'].includes(c.id);
   return `<article class="lib-card ${wide ? 'wide' : ''}" id="libc-${c.id}" data-libcard="${c.id}">
     <div class="lib-demo">${demo}</div>
     <button class="lib-foot" data-a="libOpen" data-id="${c.id}"><b>${c.name}</b><span class="lvl b-${LEVELS[c.level]}">${c.level}</span><span class="grow"></span><span class="muted">Details</span>${icon('chevron-right', 'xs muted')}</button></article>`;

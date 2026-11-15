@@ -165,7 +165,7 @@ def test_autoname_runs_in_the_transaction_and_names_are_unique(app):
     assert status == 422 and body['fields']['name'] == 'Assigned on save'
 
 
-def test_a_name_changes_through_the_normal_edit_and_the_journal_has_no_rename_feature(app):
+def test_a_name_changes_through_the_normal_edit_and_the_activity_has_no_rename_feature(app):
     c = client(app)
     ticket = c('POST', '/api/ticket', {'subject': 'Login'})[1]
     url = f"/api/ticket/{ticket['id']}"
@@ -221,7 +221,7 @@ def test_upgrading_a_database_with_data_adds_the_columns_and_fills_titles(tmp_pa
         connection.execute("INSERT INTO contact (first_name, last_name) VALUES ('Old', 'Row')")
     database = Database(path, Registry(Contact))
     database.initialize()  # A table without the standard columns is accepted until the framework step runs.
-    assert upgrade(database)[-13:] == ['0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets']
+    assert upgrade(database)[-14:] == ['0003_record_names', '0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity']
     with sqlite3.connect(path) as connection:
         assert connection.execute('SELECT id, name, title FROM contact').fetchall() == [(1, None, 'Old Row')]
         assert any(row[2] for row in connection.execute("PRAGMA index_list(contact)") if row[1].endswith('name_unique'))

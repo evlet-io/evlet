@@ -27,7 +27,7 @@ import { DataTable, gridPrefs, type Column } from '../ui/table';
 import { RelativeTime } from '../ui/time';
 import { formatDate, formatDateTime } from '../model/format';
 import type { AppContext } from './context';
-import type { JournalEntry, JournalPage, MeasureValues } from './client';
+import type { ActivityEntry, ActivityPage, MeasureValues } from './client';
 import { displayOf, extrasOf, fieldOf, formatOf, headerFacts, identity, isStateField, listFields, measureLabel, measureView, numberField, screenModel, sections, sequenceField, summaryFields, titleOf, LIST_KEYS, panelView, stateLook, stepLabel, stepOf, type ActionMeta, type DetailExtras, type DetailMove, type ScreenModel } from './meta';
 import { cellView } from './list-page';
 import { blockFilters, declaresRelated, HtmlContent, MeasureChart, RelatedRecords, type BlockRecord } from './record-blocks';
@@ -555,13 +555,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- banners ----------
 
-  // When and by whom a cancelled record was cancelled, from its journal: the newest move into its state, with the
-  // reason the move recorded (or a value the move asked for). Nothing without a journal.
+  // When and by whom a cancelled record was cancelled, from its activity: the newest move into its state, with the
+  // reason the move recorded (or a value the move asked for). Nothing without an activity.
   const cancelled = cell<{ at: string; by: string | null; reason: string | null } | null>(null);
-  if (!isNew && model.journal) effect(() => {
+  if (!isNew && model.activity) effect(() => {
     const value = stateValue();
     if (lookNow() !== 'cancelled') return cancelled.set(null);
-    untrack(() => void api.journal(name, store.id!, { limit: 50 }).then(page => {
+    untrack(() => void api.activity(name, store.id!, { limit: 50 }).then(page => {
       const entry = page.items.find(item => item.kind === 'moved' && String(item.data?.to ?? '') === value);
       if (!entry) return cancelled.set(null);
       const asked = Object.entries((entry.data.fields ?? {}) as Record<string, { new?: unknown }>)
@@ -667,7 +667,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // ---------- blocks ----------
 
   const tables = (model.children ?? []).filter(child => store.root.tables.has(child.name));
-  const journal = Boolean(model.journal) && !isNew;
+  const activity = Boolean(model.activity) && !isNew;
   const relations = !isNew ? (model.relations ?? []).filter(relation => ctx.schema.schema.models.some(item => item.name === relation.model)) : [];
   // A declared record layout (Meta.layout with Main or blocks, record-blocks.ts). Once it lists related records itself,
   // the automatic Related row is off, unless Meta.side_blocks names 'related'.
@@ -905,7 +905,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // (DocFrame: a side panel, a narrow window) keeps it out of the way, behind the drawer button.
   // Activity never opens first: in a narrow frame the side column is a drawer the record's content comes before.
   const files = (!shows || shows.block('files')) && (model.side_blocks ?? ['files']).includes('files');
-  const side = isNew ? undefined : CompactSide(ctx, model, store, journal && tabShown('activity'), files);
+  const side = isNew ? undefined : CompactSide(ctx, model, store, activity && tabShown('activity'), files);
 
   // A new record focuses its first editable field in an open section, the primary area first: when it opens, and
   // again once its draft is restored or set aside (the restore bar held the focus).
@@ -920,7 +920,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // button closes it.
   const sideOpen = cell(false, { name: `${name} side drawer` });
   const sideId = uid('ev-side');
-  const sideWhat = [model.attachments && files ? 'attachments' : null, journal && tabShown('activity') ? 'activity' : null].filter(Boolean).join(' and ') || 'side panel';
+  const sideWhat = [model.attachments && files ? 'attachments' : null, activity && tabShown('activity') ? 'activity' : null].filter(Boolean).join(' and ') || 'side panel';
   const sideToggle = side ? html`<span class="ev-side-toggle">${IconButton({ icon: 'panel-right', tip: () => `${sideOpen.get() ? 'Hide' : 'Show'} ${sideWhat}`,
     active: sideOpen, onClick: () => sideOpen.set(!sideOpen.peek()) })}</span>` as HTMLElement : null;
   sideToggle?.firstElementChild?.setAttribute('aria-controls', sideId);
@@ -1115,11 +1115,11 @@ export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (va
 // ---------- side column ----------
 
 /** A compact page's side column: Attachments and Activity (with the slim note editor). */
-function CompactSide(ctx: AppContext, model: ScreenModel, store: RecordStore, journal: boolean, files: boolean): Child[] | null {
-  if (!(model.attachments && files) && !journal) return null;
+function CompactSide(ctx: AppContext, model: ScreenModel, store: RecordStore, activity: boolean, files: boolean): Child[] | null {
+  if (!(model.attachments && files) && !activity) return null;
   return [
     model.attachments && files ? SideBlock({ title: 'Attachments', body: Files(ctx, model, store) }) : null,
-    journal ? SideBlock({ title: 'Activity', body: html`<div class="ev-cmp-activity">${Activity(ctx, model, store, 'compact')}</div>` }) : null,
+    activity ? SideBlock({ title: 'Activity', body: html`<div class="ev-cmp-activity">${Activity(ctx, model, store, 'compact')}</div>` }) : null,
   ];
 }
 
@@ -1285,9 +1285,9 @@ function Postings(ctx: AppContext, effects: Readable<DetailExtras['_effects'] | 
         <td>${item.balanced === undefined ? html`<span class="muted">Not checked</span>` : item.balanced ? Chip({ label: 'Balanced', tone: 'green', icon: 'check' }) : Chip({ label: 'Not balanced', tone: 'rose', icon: 'info' })}</td></tr>`)}</tbody></table></div>`]);
 }
 
-// ---------- activity (journal) ----------
+// ---------- activity ----------
 
-// Icon, tint and verb per entry kind (docs/journal.md). `changed` also stands for entries the
+// Icon, tint and verb per entry kind (docs/activity.md). `changed` also stands for entries the
 // reader may only partly see (a move, void or posting about a State or target it cannot read).
 const KINDS: Record<string, [string, any, string]> = {
   created: ['plus', 'green', 'created this record'], changed: ['pencil', 'blue', 'changed it'], moved: ['arrow-right', 'violet', 'moved it'],
@@ -1301,10 +1301,10 @@ interface Change { old: unknown; new: unknown }
 interface RowChanges { added?: Array<{ id: string }>; updated?: Array<{ id: string }>; removed?: Array<{ id: string }>; reordered?: boolean }
 
 function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolbar: 'full' | 'compact' = 'full'): Child {
-  const page = cell<JournalPage | null>(null), problem = cell('');
-  const load = () => void ctx.api.journal(model.name, store.id!, { limit: 50 }).then(result => page.set(result), error => problem.set(error instanceof ApiError ? error.message : 'The history could not be loaded.'));
+  const page = cell<ActivityPage | null>(null), problem = cell('');
+  const load = () => void ctx.api.activity(model.name, store.id!, { limit: 50 }).then(result => page.set(result), error => problem.set(error instanceof ApiError ? error.message : 'The history could not be loaded.'));
   load();
-  const canNote = Boolean(model.journal?.kinds?.includes('note'));
+  const canNote = Boolean(model.activity?.kinds?.includes('note'));
   const label = (field: string) => fieldOf(model, field)?.label ?? humanize(field);
   // A Link shows the linked record's title, as on the form; a Link to a ledger row is described as
   // an integer id (no grouping) by the schema, so it never reads as an amount.
@@ -1335,7 +1335,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolb
     });
     return [...fields, ...rows];
   };
-  const sentence = (item: JournalEntry): string => {
+  const sentence = (item: ActivityEntry): string => {
     const data = item.data ?? {};
     switch (item.kind) {
       case 'changed': return data.action ? `ran ${action(data.action)}` : 'changed it';
@@ -1352,7 +1352,7 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolb
       default: return (KINDS[item.kind] ?? ['', '', humanize(item.kind).toLowerCase()])[2];
     }
   };
-  const body = (item: JournalEntry): Child => {
+  const body = (item: ActivityEntry): Child => {
     const data = item.data ?? {};
     switch (item.kind) {
       case 'created': return null;
@@ -1373,14 +1373,14 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolb
   };
   // A note written with the composer: formatted, mentions shown with each person's current name.
   const richNote = (markup: string) => RichTextView(markup, { mentions: id => page.peek()?.users[id] });
-  const entry = (item: JournalEntry) => {
+  const entry = (item: ActivityEntry) => {
     const [icon, tint] = KINDS[item.kind] ?? ['activity', 'slate'];
     const hidden = item.partial ? html`<span class="muted ev-partial" title="Parts of this entry are hidden from your role">${Icon('eye-off', { size: 'xs' })} Some details are hidden</span>` : null;
     return html`<div class="tl-item"><span class=${`ic b-${tint}`}>${Icon(icon, { size: 'sm' })}</span><div class="bd">
       <div class="hd"><b>${person(item.actor) ?? 'The system'}</b> ${sentence(item)}${item.via ? ` via ${item.via}` : ''}${RelativeTime({ at: item.at, className: 'tm' })}</div>${body(item)}${hidden}</div></div>`;
   };
   return [
-    InfoNote(model.journal?.tamper_evident ? 'Append-only history, chained so tampering shows. Entries are never edited or removed.' : 'Append-only history. Entries are never edited or removed.', 'lock'),
+    InfoNote(model.activity?.tamper_evident ? 'Append-only history, chained so tampering shows. Entries are never edited or removed.' : 'Append-only history. Entries are never edited or removed.', 'lock'),
     canNote ? NoteComposer({ api: ctx.api, model: model.name, id: store.id!, toolbar, name: id => page.peek()?.users[id],
       onAdded: () => { toast('Note added', { icon: 'sticky-note' }); load(); }, onError: message => toast(message, { icon: 'info' }) }) : null,
     live(() => problem.get() ? html`<p class="muted">${problem.get()}</p>` : page.get() === null ? html`<p class="muted">Loading…</p>`

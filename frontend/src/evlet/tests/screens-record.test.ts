@@ -63,7 +63,7 @@ describe('generated record view', () => {
     // The record page's small breadcrumb sits in its main column, directly above the record's header.
     const crumbs = host.querySelector<HTMLElement>('.doc-main > .ev-crumb-row > .page-crumbs')!;
     expect(crumbs.parentElement!.nextElementSibling!.classList.contains('doc-head')).toBe(true);
-    // An order has no attachments or journal, so no side column and no drawer button at the end of the row.
+    // An order has no attachments or activity, so no side column and no drawer button at the end of the row.
     expect(host.querySelector('.doc-side')).toBeNull();
     expect(crumbs.nextElementSibling).toBeNull();
     expect(host.querySelector('.topbar .crumbs')).toBeNull();

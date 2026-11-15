@@ -179,7 +179,7 @@ lifted to the third level.
 
 ## PR 3: mentions
 
-- The activity composer (notes and messages, `docs/journal.md`) uses the editor.
+- The activity composer (notes and messages, `docs/activity.md`) uses the editor.
 - `@` opens a picker of active users (search by name and username, keyboard and touch).
 - A mention is `<span data-mention="USER_ID">Name</span>` and shows the user's current name when
   displayed.
@@ -193,8 +193,8 @@ lifted to the third level.
 
 ### As built
 
-- The sanitiser keeps mentions only when asked (`sanitise(html, mentions=True)`, the journal); in a
-  `RichText` field a mention is plain text, so fields and the journal share one schema otherwise.
+- The sanitiser keeps mentions only when asked (`sanitise(html, mentions=True)`, the activity); in a
+  `RichText` field a mention is plain text, so fields and the activity share one schema otherwise.
 - The inbox is `evlet_inbox` (`kind`, `actor`, `model`, `record_id`, `entry_id`, `at`, `read_at`,
   `email`, `hidden`), generic so readiness gap B6's notification feed can add kinds to it.
 - The browser had no realtime subscription yet; the bell opens one (`EventSource` on the event

@@ -79,7 +79,7 @@ class JobContext:
 
     def business(self, tx, *, user=None, system=None, role=None):
         """A document context (evlet.documents.Context) in this job's transaction, for moves, actions and
-        document writes with every rule, permission check and Journal entry they have over HTTP.
+        document writes with every rule, permission check and Activity entry they have over HTTP.
 
         * `job.business(tx)` acts as the job's own user: the account that queued it, read again when the
           job started (or the role a system job was queued with).
@@ -87,7 +87,7 @@ class JobContext:
           and its current role, row scopes and field permissions apply.
         * `job.business(tx, system="Nightly import", role="admin")` acts as the system under that name.
           The role's permissions apply (a row scope that names the account matches nothing), writes are
-          recorded under no account, and the Journal names the system as `via`.
+          recorded under no account, and the Activity names the system as `via`.
 
         Job handlers are trusted code, so the context may also make system moves (rules with by=()).
         Writes commit or roll back with the job's own transaction (or the step of a resumable task)."""
@@ -327,18 +327,27 @@ class JobQueue:
         self._woken.clear()
         return woken
 
-    def schedule(self, schedule, task, payload, *, every, start_at=None, user=None, target=None, calendar=None):
-        name(schedule)
+    def _validated(self, tx, task, payload, every, user=None, target=None):
+        """The job row a schedule would queue, checked with the enqueue contract and rolled back."""
         if type(every) is not int or not 60 <= every <= 31536000:
             raise ValueError('Use an interval between 60 seconds and one year')
+        try:
+            with tx.connection.savepoint('validate_schedule'):
+                receipt = self.enqueue(tx, task, payload, user=user, target=target)
+                raise _Validated(tx.connection.run(qb.select('evlet_jobs').where(id=receipt.id)).one())
+        except _Validated as validated:
+            return validated.row
+
+    def _check_schedule(self, task, payload, *, every):
+        """Check a schedule's task, payload and interval as schedule() does, without writing; returns the stored payload."""
+        with self.database.transaction() as tx:
+            return self._validated(tx, task, payload, every)['payload']
+
+    def schedule(self, schedule, task, payload, *, every, start_at=None, user=None, target=None, calendar=None):
+        name(schedule)
         with self.database.transaction() as tx:
             # Validate using the same enqueue contract, without publishing a job.
-            try:
-                with tx.connection.savepoint('validate_schedule'):
-                    receipt = self.enqueue(tx, task, payload, user=user, target=target)
-                    raise _Validated(tx.connection.run(qb.select('evlet_jobs').where(id=receipt.id)).one())
-            except _Validated as validated:
-                row = validated.row
+            row = self._validated(tx, task, payload, every, user, target)
             due = int(time.time()) + every if start_at is None else timestamp(start_at)
             tx.connection.run(qb.insert('evlet_schedules', name=schedule, task=task, payload=row['payload'], actor=row['actor'], model=row['model'],
                                         record_id=row['record_id'], interval=every, next_run=due))

@@ -178,7 +178,7 @@ frozen for every writer, so the rows it posted keep matching it:
   state (void), and reports how many records it kept. Locked records that never posted, and
   records that left `on` for a step that is not final, are recalculated. An admin may include
   posted records with `evlet migrate <instance> --recompute-posted`; each one that changes gets
-  a `recomputed` Journal entry with `"posted": true`, and its saved rows no longer match it until
+  a `recomputed` Activity entry with `"posted": true`, and its saved rows no longer match it until
   it leaves `on` and enters it again (the check below reports them as `changed`).
 
 To correct the totals of a posted record, move it out of `on` with a rule (Reopen), correct it
@@ -195,7 +195,7 @@ for each live original row of every effect with a `reverse`:
   rejects it), the move fails with `The reversal of StockMove row 1 is not valid: ...` and
   rolls back. A balanced effect also checks the balance of the mirror rows.
 * Original rows are never changed or deleted.
-* The record's [Journal](journal.md) gets an `effects` entry with `"reversal": true`, and a
+* The record's [Activity](activity.md) gets an `effects` entry with `"reversal": true`, and a
   move that posts rows gets one with `"reversal": false`, after the `moved` entry.
 
 A record that is reopened and moved into `on` again posts fresh rows from the record as it is

@@ -72,7 +72,7 @@ its WAL state through a consistent backup rather than copying only the main file
 There is no automatic failover.
 
 From 0.4.3 an instance keeps four SQLite files in `data/`: `database.sqlite3` (records, audit,
-journal, jobs, accounts and settings), `sessions.sqlite3`, `logs.sqlite3` and `eva.sqlite3`.
+Activity, jobs, accounts and settings), `sessions.sqlite3`, `logs.sqlite3` and `eva.sqlite3`.
 They are one set: back them up, restore them and move them together. Writers in one process
 take turns per file, requests before job steps, and a job step never waits long. A write that
 holds a file longer than a second logs a warning naming the request or the job; watch for it

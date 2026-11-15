@@ -19,7 +19,7 @@ CHUNK = 500
 # State manager operations beyond moves: admin has them by default and a Rule may grant them to other roles.
 CORRECTIONS = ('release', 'restore')
 # Operations that change a record or what is kept with it; Meta.api = "read" refuses them to callers.
-WRITES = frozenset(('create', 'update', 'delete', 'journal', *CORRECTIONS))
+WRITES = frozenset(('create', 'update', 'delete', 'activity', *CORRECTIONS))
 # Meta.api values: what callers (HTTP routes, MCP, Eva, connectors) reach of a model.
 API = ('full', 'read', None)
 # True while a request is served. The app code it runs (actions, moves, reactions, services) is trusted again.
@@ -312,11 +312,13 @@ class Policy:
         self.rules = MappingProxyType(self.rules)
         for (role, model), rule in self.rules.items():
             registry.name_for(model)
-            if role not in (*self.roles, PUBLIC) or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS}:
+            if isinstance(rule, Rule) and 'journal' in rule.operations:
+                raise ValueError(f"{model.__name__}: the Rule operation 'journal' was renamed; use 'activity' (docs/activity.md)")
+            if role not in (*self.roles, PUBLIC) or not isinstance(rule, Rule) or set(rule.operations) - {'read', 'create', 'update', 'delete', 'activity', 'print', *CORRECTIONS}:
                 raise ValueError('Invalid permission rule')
-            if 'journal' in rule.operations and model not in registry.journals:
-                raise ValueError(f'{model.__name__}: Rule names \'journal\', but the model has no journal '
-                                 '(declare Meta.journal = Journal() or a State)')
+            if 'activity' in rule.operations and model not in registry.activities:
+                raise ValueError(f'{model.__name__}: Rule names \'activity\', but the model has no activity '
+                                 '(declare Meta.activity = Activity() or a State)')
             for operation in CORRECTIONS:
                 if operation in rule.operations and not corrects(model, operation):
                     raise ValueError(f'{model.__name__}: Rule names {operation!r}, but the model has no State with a release step')
@@ -342,18 +344,18 @@ class Policy:
                     named.add('admin')
                 corrections[model, operation] = frozenset(named)
         self.corrections = MappingProxyType(corrections)
-        # Journal entries (notes, messages, calls, follow ups): admin when its Rule reads the model, the
+        # Activity entries (notes, messages, calls, follow ups): admin when its Rule reads the model, the
         # editor and roles based on it when their Rule reads and updates it, and every role whose Rule
-        # names 'journal'. Naming a role only adds it, like release and restore.
-        journalers = {}
-        for model in registry.journals:
+        # names 'activity'. Naming a role only adds it, like release and restore.
+        activity_writers = {}
+        for model in registry.activities:
             operations = {role: self.rules.get((role, model), default_rule(base)).operations for role, base in self.roles.items()}
-            named = {role for role in self.roles if 'journal' in operations[role]}
+            named = {role for role in self.roles if 'activity' in operations[role]}
             if 'read' in operations['admin']:
                 named.add('admin')
             named |= {role for role, base in self.roles.items() if base == 'editor' and {'read', 'update'} <= set(operations[role])}
-            journalers[model] = frozenset(named)
-        self.journalers = MappingProxyType(journalers)
+            activity_writers[model] = frozenset(named)
+        self.activity_writers = MappingProxyType(activity_writers)
         # Printing is its own operation: admin when its Rule reads the model, and every role whose Rule names
         # 'print'. Read access is still required when a record prints.
         printers = {}
@@ -370,8 +372,8 @@ class Policy:
         cache = self.__dict__.setdefault('_administrator', {})
         if model not in cache:
             operations = ['read', 'create', 'update', 'delete', 'print']
-            if model in self.registry.journals:
-                operations.append('journal')
+            if model in self.registry.activities:
+                operations.append('activity')
             operations += [operation for operation in CORRECTIONS if corrects(model, operation)]
             cache[model] = Rule(tuple(operations))
         return cache[model]
@@ -391,6 +393,8 @@ class Policy:
         return found
 
     def allows(self, user, model, operation):
+        if operation == 'journal':
+            raise ValueError("The 'journal' operation was renamed: use 'activity'")
         if not surface(self.registry, model, operation):
             return False
         if is_administrator(user):
@@ -400,8 +404,8 @@ class Policy:
             if access is not None and (not access.write or access.models is not None and model not in access.models):
                 return False
             return user.role in self.corrections.get((model, operation), ())
-        if operation == 'journal':
-            return user.role in self.journalers.get(model, ())
+        if operation == 'activity':
+            return user.role in self.activity_writers.get(model, ())
         if operation == 'print':
             return user.role in self.printers.get(model, ()) and 'read' in self.rule(user, model).operations
         return operation in self.rule(user, model).operations

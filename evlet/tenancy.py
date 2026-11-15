@@ -212,6 +212,10 @@ class TenantRegistry:
             return None if row is None else self._tenant(db, row['tenant'])
 
 
+class _Abandoned(Exception):
+    """A cold-start claim released before its build ran; requests waiting on it try again."""
+
+
 class TenantApplication:
     """Resolve Host before touching a tenant database. Forwarded hosts are ignored."""
 
@@ -243,17 +247,28 @@ class TenantApplication:
             found = self._apps.get(tenant.slug)
             return found[1] if found and found[0] == tenant else None
 
-    def _application(self, tenant):
+    def _application(self, tenant, claimed=None):
+        """The tenant's application, building it once; claimed is the future a caller already registered for it."""
         cached = self._cached(tenant)
-        if cached is not None:
+        if cached is not None and claimed is None:
             return cached
-        with self._lock:
-            if self._stopping:
-                raise Busy()
-            pending = self._initializing.get(tenant.slug)
-            owner = pending is None
-            if owner:
-                pending = self._initializing[tenant.slug] = Future()
+        if claimed is not None:
+            pending, owner = claimed, True
+            if cached is not None:
+                # Built by an earlier generation of the same claim: hand it to the waiters.
+                with self._lock:
+                    if self._initializing.get(tenant.slug) is pending:
+                        self._initializing.pop(tenant.slug)
+                pending.set_result(cached)
+                return cached
+        else:
+            with self._lock:
+                if self._stopping:
+                    raise Busy()
+                pending = self._initializing.get(tenant.slug)
+                owner = pending is None
+                if owner:
+                    pending = self._initializing[tenant.slug] = Future()
         if not owner:
             pending.result()
             # A domain generation may have changed while the other caller initialized it.
@@ -310,20 +325,40 @@ class TenantApplication:
                     self._initializing.pop(tenant.slug)
 
     async def _ready(self, tenant):
-        """The tenant's application; only the request that builds a cold tenant takes an init slot."""
+        """The tenant's application; only the request that builds a cold tenant takes an init slot.
+
+        The build is claimed under the lock before the slot is taken, so simultaneous first requests
+        cannot each take a slot and then wait for one another while holding it."""
         while True:
             app = self._cached(tenant)
             if app is not None:
                 return app
             with self._lock:
+                if self._stopping:
+                    raise Busy()
                 pending = self._initializing.get(tenant.slug)
-            if pending is None:
-                return await self._work.run('init', self._application, tenant)
+                claimed = pending is None
+                if claimed:
+                    pending = self._initializing[tenant.slug] = Future()
+            if claimed:
+                try:
+                    return await self._work.run('init', self._application, tenant, pending)
+                except BaseException:
+                    # Refused or cancelled before the build started: release the claim so waiters retry.
+                    if not pending.done():
+                        with self._lock:
+                            if self._initializing.get(tenant.slug) is pending:
+                                self._initializing.pop(tenant.slug)
+                        pending.set_exception(_Abandoned())
+                    raise
             # Another request is building it: wait on the event loop, holding no thread or slot.
             # Shielded so a cancelled waiter cannot cancel the builder's future.
             wrapped = asyncio.wrap_future(pending)
             wrapped.add_done_callback(lambda done: done.exception() if not done.cancelled() else None)
-            await asyncio.shield(wrapped)
+            try:
+                await asyncio.shield(wrapped)
+            except _Abandoned:
+                continue
 
     def _build(self, tenant):
         app = self.factory(tenant)

@@ -40,7 +40,7 @@ from . import qb
 
 row = connection.run(qb.select('evlet_users', 'id', 'role').where(username=name)).one()
 connection.run(qb.update('evlet_config', version=qb.col('version') + 1).where(id=1))
-entry_id = connection.run(qb.insert('evlet_journal', model=name, record_id=record_id, kind=kind,
+entry_id = connection.run(qb.insert('evlet_activity', model=name, record_id=record_id, kind=kind,
                                     actor=actor, at=at, data=text).returning_id()).id
 ```
 
@@ -196,13 +196,13 @@ The move onto the query builder was done in steps, one commit each, in the 0.4.5
 
 | Step | Modules | State |
 | --- | --- | --- |
-| 1 | Remove PostgreSQL. Add the query builder, the SQLite compiler and the conformance tests. Move the data layer: `database.py` (the record API), `query.py`, `migrations.py`, `documents.py`, row scopes in `permissions.py`, and the record helpers `naming`, `audit`, `identity`, `ledger`, `periods`, `sequences`, `sections`, `images`, `lifecycle`, `journal`. | Done |
+| 1 | Remove PostgreSQL. Add the query builder, the SQLite compiler and the conformance tests. Move the data layer: `database.py` (the record API), `query.py`, `migrations.py`, `documents.py`, row scopes in `permissions.py`, and the record helpers `naming`, `audit`, `identity`, `ledger`, `periods`, `sequences`, `sections`, `images`, `lifecycle`, `activity`. | Done |
 | 2 | Accounts and sign-in: `auth.py`, `settings.py`, `secrets.py`, `unsaved.py`, and the batched log writes. | Done |
 | 3 | Controls: `controls.py`, `controls_system.py`, `customization.py`. | Done |
 | 4 | Jobs and messages: `jobs.py`, `events.py`, `mailboxes.py`, `mentions.py`, `connectors.py`, `tools.py`, `devlink.py`, `services.py`, `framework.py`. | Done |
 | 5 | Eva: `eva.py`, `assistants.py`. | Done |
 | 6 | The rest: `measures.py`, `business.py`, `effects.py`, `corrections.py`, `currencies.py`, `forms.py`, `printing.py`, `slips.py`, `storage.py`, `object_storage.py`. The temporary text bridge (`SqlQuery.where_sql`, `ordering_sql`, `reference_sql`, `Policy.scope_sql`, `compile_condition`) is removed. | Done |
-| 7 | The instance tools (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/journal.py`, `cli/main.py`, `cli/serve.py`, `cli/site.py`). They keep working on SQLite files, which is what an instance is, but open them with the file tools in `evlet/writes.py` (`read_file`, `file_transaction`, `copy_set`, `copy_file`, `snapshot_set`, `check_file`, `settle`) and run query builder statements on the connection they get. The tenant catalog's tables are `TableDefinition`s. | Done |
+| 7 | The instance tools (`instances.py`, `tenancy.py`, `cli/backup.py`, `cli/install.py`, `cli/activity.py`, `cli/main.py`, `cli/serve.py`, `cli/site.py`). They keep working on SQLite files, which is what an instance is, but open them with the file tools in `evlet/writes.py` (`read_file`, `file_transaction`, `copy_set`, `copy_file`, `snapshot_set`, `check_file`, `settle`) and run query builder statements on the connection they get. The tenant catalog's tables are `TableDefinition`s. | Done |
 
 `tests/test_query_builder_boundary.py` fails on SQL text anywhere outside the dialect, so new
 framework code uses the query builder from the start.

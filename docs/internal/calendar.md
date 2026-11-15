@@ -38,7 +38,7 @@ Scheduling that is decent by default and open to change by apps. No dependency o
 | Read-only and hidden models | `Meta.api` (`"full"`, `"read"`, `None`) | PR #100 |
 | Row and field rules | `Rule(operations, read_fields, write_fields, scope)` and scope forms (`any_of`, `Hierarchy`, `own_customer`) | business-capabilities.md |
 | Links to any record | `Reference()` field | model-engine.md |
-| History | `Meta.journal = Journal(...)`, Activity tab | journal.md |
+| History | `Meta.activity = Activity(...)`, Activity tab | activity.md |
 | Background work | `JobQueue`, `Task(..., external=True)` for network calls outside a transaction, `CalendarSchedule` | jobs-realtime.md |
 | Live updates | `EventStore` record invalidations over SSE | jobs-realtime.md |
 | Sending mail | `connectors.send_mail`, `mailboxes.send_mail(user, ..., record=...)` | controls.md (Email, Personal mailboxes) |
@@ -122,7 +122,7 @@ that applies to any edit applies here:
 - the period lock: a drag from or into a closed period gets
   `This date is in a closed period (locked up to DD-MM-YYYY)`;
 - `Meta.api = "read"`: no drag at all;
-- journal entries, effects, events and live updates.
+- activity entries, effects, events and live updates.
 
 The card snaps back and the error shows in a toast. The items route returns `locked_until` per
 source with `Meta.period`, so the grid can shade closed days and refuse a drag before sending it.
@@ -135,12 +135,12 @@ field in the same PATCH. That is the only hand-off a record source has; it is a 
 
 Plain events that belong to no record live in a framework app, `evlet.calendar`, shipped inside
 the framework and enabled per project like any app. Its models are ordinary Evlet models, so they
-get list and record screens, Controls overrides, instance fields, journals, permissions and MCP
+get list and record screens, Controls overrides, instance fields, activities, permissions and MCP
 tools with no special code.
 
 ```python
 # evlet/calendar/models.py (sketch)
-from evlet import (Boolean, Child, DateTime, Email, Integer, Journal, Link, LongText, Model,
+from evlet import (Boolean, Child, DateTime, Email, Integer, Activity, Link, LongText, Model,
                    Reference, Select, State, Table, Text, User)
 
 class Event(Model):
@@ -189,7 +189,7 @@ class Event(Model):
     class Meta:
         title_field = "title"
         open_in = "panel"
-        journal = Journal()
+        activity = Activity()
         calendar = Calendar(start="starts", end="ends", all_day="all_day", color_by="calendar")
 ```
 
@@ -371,7 +371,7 @@ calendar never grants a write the model's rules refuse.
 ## 5. Hand-off
 
 Hand-off passes an event to another calendar. It is a declared action on `Event`, so it has a
-dialog, a journal entry and an HTTP route like every action:
+dialog, an activity entry and an HTTP route like every action:
 `POST /api/calendar.event/<id>/actions/hand_off`.
 
 ```python
@@ -401,7 +401,7 @@ Rules:
 - **Free-time check.** The sheet lists targets with Free or Busy at that time, from the busy route
   (so a `free_busy` member sees no more than they may). When the target is `no_overlap` and busy,
   the action is refused in the transaction (section 3). Otherwise a busy target is a warning.
-- **History.** Every hand-off and every answer writes a journal entry on the event: who, mode, from,
+- **History.** Every hand-off and every answer writes an activity entry on the event: who, mode, from,
   to, note, accepted by. `HandOff` rows are the list the detail panel shows under History.
 - **Guests.** With `tell_guests`, external guests get an updated invite (REQUEST with a higher
   SEQUENCE, new ORGANIZER for Delegate), and internal guests get an app notification. Move to a

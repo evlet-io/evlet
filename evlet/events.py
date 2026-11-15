@@ -27,9 +27,9 @@ class EventStore:
         with self.database.transaction() as tx:
             tx.connection.ensure_table(TABLE)
 
-    def publish(self, tx, model, record_id, *, deleted=False, journal=False):
-        """Record that a record changed (or was deleted), or with journal=True that its journal gained an
-        entry; clients refresh the record or its journal. Stored as deleted = 0, 1 or 2."""
+    def publish(self, tx, model, record_id, *, deleted=False, activity=False):
+        """Record that a record changed (or was deleted), or with activity=True that its activity gained an
+        entry; clients refresh the record or its activity. Stored as deleted = 0, 1 or 2."""
         if not self.database.owns(tx):
             raise ValueError('Event transaction belongs to another database')
         try:
@@ -38,7 +38,7 @@ class EventStore:
             raise ValueError('Use a valid record ID') from None
         token = secrets.token_hex(24)
         event_id = tx.connection.run(qb.insert('evlet_events', token=token, model=self.database.registry.name_for(model), record_id=record_id,
-                                               deleted=1 if deleted else 2 if journal else 0).returning_id()).id
+                                               deleted=1 if deleted else 2 if activity else 0).returning_id()).id
         tx.connection.run(qb.delete('evlet_events').where(qb.le('id', event_id - self.retention)))
         return token
 
@@ -97,6 +97,6 @@ class EventStore:
                         continue
                 item = {'model': row['model'], 'id': text_id(row['record_id']), 'deleted': row['deleted'] == 1}
                 if row['deleted'] == 2:
-                    item['journal'] = True
+                    item['activity'] = True
                 items.append(item)
             return {'items': items, 'cursor': rows[-1]['token'] if rows else after, 'reset': False, 'more': bool(rows and latest and rows[-1]['id'] < latest['id'])}

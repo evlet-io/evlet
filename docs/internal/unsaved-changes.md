@@ -96,7 +96,7 @@ cleanup. Save still invalidates old empty-state draft requests when it preserves
   'update')`). Fields the caller may not write are dropped and listed in `dropped`; field and table
   names the model does not have are refused with 422. A model with `Meta.autosave = False`, a
   child table, or a person who turned the setting off is refused.
-* PUT never runs validators, events, sequences, history or the journal, and never touches the
+* PUT never runs validators, events, sequences, history or the activity, and never touches the
   record. The values are kept as JSON as the browser sent them; Save validates them later.
 * GET drops fields the caller can no longer write (and says so in `dropped`). When the caller can
   read but no longer update the record, the entry is deleted and `dropped` is `"record"`. When the

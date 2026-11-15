@@ -106,7 +106,7 @@ class _Reader(HTMLParser):
         if tag == 'span' and not self.skip:
             values = {key.lower(): value for key, value in attrs if isinstance(key, str)}
             if ATTACHMENT.fullmatch(values.get('data-mention') or ''):
-                # A mention of a user (the activity journal): kept only when the caller allows mentions.
+                # A mention of a user (the Activity): kept only when the caller allows mentions.
                 node = _Node('mention', {'data-mention': values['data-mention']})
                 self.node().children.append(node)
                 self.stack.append((tag, node))
@@ -599,7 +599,7 @@ def _list_tag(kind):
 
 def sanitise(markup, *, mentions=False):
     """Canonical safe HTML for any input text, and its plain-text extract: (html, text). With mentions,
-    `<span data-mention="<user id>">` nodes are kept (the activity journal); otherwise they are text."""
+    `<span data-mention="<user id>">` nodes are kept (the Activity); otherwise they are text."""
     if not isinstance(markup, str):
         raise ValueError('Expected HTML text')
     document = Document.parse(markup.replace('\x00', ''), mentions)

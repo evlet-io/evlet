@@ -1821,11 +1821,11 @@
    "id": "timeline-item",
    "name": "TimelineItem",
    "level": "Composite",
-   "desc": "One journal entry: icon by kind, sentence, time and an optional body.",
+   "desc": "One activity entry: icon by kind, sentence, time and an optional body.",
    "props": [
     [
      "entry",
-     "journal entry",
+     "activity entry",
      ""
     ],
     [
@@ -1840,7 +1840,7 @@
     "diff"
    ],
    "used": [
-    "Journal"
+    "Activity"
    ],
    "variants": []
   },
@@ -1859,7 +1859,7 @@
    ],
    "from": [],
    "used": [
-    "Journal"
+    "Activity"
    ],
    "variants": []
   },
@@ -1883,7 +1883,7 @@
    ],
    "from": [],
    "used": [
-    "Journal"
+    "Activity"
    ],
    "variants": []
   },
@@ -1973,7 +1973,7 @@
    "from": [],
    "used": [
     "Postings",
-    "Journal"
+    "Activity"
    ],
    "variants": []
   },
@@ -2109,7 +2109,7 @@
    "props": [
     [
      "entry",
-     "journal entry",
+     "activity entry",
      ""
     ]
    ],
@@ -2881,7 +2881,7 @@
    "id": "activity-composer",
    "name": "ActivityComposer",
    "level": "Section",
-   "desc": "One box for a note, email, call log or task. Cmd Enter saves to the journal.",
+   "desc": "One box for a note, email, call log or task. Cmd Enter saves to the activity.",
    "props": [
     [
      "modes",
@@ -2907,8 +2907,8 @@
   },
   {
    "cat": "sections",
-   "id": "journal",
-   "name": "Journal",
+   "id": "activity",
+   "name": "Activity",
    "level": "Section",
    "desc": "Append-only history grouped by day: notes, messages, field changes, moves, postings and payments.",
    "props": [

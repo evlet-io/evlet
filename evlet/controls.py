@@ -22,7 +22,7 @@ from .periods import TABLE as PERIOD_LOCKS
 from . import qb, writes
 from .permissions import CORRECTIONS, Policy, Rule, default_rule, own_customer, scope_condition
 
-OPERATIONS = ('read', 'create', 'update', 'delete', 'journal', 'print', *CORRECTIONS)
+OPERATIONS = ('read', 'create', 'update', 'delete', 'activity', 'print', *CORRECTIONS)
 KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting', 'state', 'rule')
 # Workspace overrides share the table but have their own routes (/api/_controls/workspaces), not POST /overrides.
 OVERRIDE_KINDS = ('perm', 'field', 'custom', 'layout', 'list', 'naming', 'setting', 'workspace', 'state', 'rule')
@@ -600,6 +600,8 @@ class Controls:
         strings = lambda items: isinstance(items, list) and all(isinstance(item, str) for item in items)
         if not strings(ops) or any(names is not None and not strings(names) for names in (read, write)) or not (scope is None or isinstance(scope, str)):
             raise ValueError('Use lists of names for ops, read and write, and a name or null for scope.')
+        if 'journal' in ops:
+            raise ValueError('The operation journal was renamed; use activity.')
         if not isinstance(ops, list) or any(op not in OPERATIONS for op in ops) or len(set(ops)) != len(ops):
             raise ValueError('Use read, create, update and delete, each once.')
         for names in (read, write):

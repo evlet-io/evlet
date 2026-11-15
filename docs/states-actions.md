@@ -8,7 +8,7 @@ available only in some states.
 
 The state manager is `evlet/statemanager.py`; its declarations (`State` and its steps, rules, levels and remarks) are in `evlet/declarations.py`. Rows a document posts to other models when it
 enters a state, and their reversal when it leaves, are described in [effects.md](effects.md).
-Each move is recorded in the record's [Journal](journal.md). Confirm, cancel, reopen and void
+Each move is recorded in the record's [Activity](activity.md). Confirm, cancel, reopen and void
 are modelled as steps and rules ([document-lifecycle.md](document-lifecycle.md)).
 
 ## Declaring a State
@@ -85,7 +85,7 @@ class Invoice(Model):
 
 * Write the states positionally: `State.Rule("draft", "issued", "Issue")`. `from_` is one
   state or a tuple of states. `label` defaults to the target, humanized.
-* `key` is the rule's stable id, used in the route, the Journal and the schema. It defaults to
+* `key` is the rule's stable id, used in the route, the Activity and the schema. It defaults to
   `<from>_to_<to>`, with tuple sources joined by `_` (`draft_issued_to_void`). Two rules with
   the same key fail at declaration; give one its own `key=`.
 * `by` names who may use the rule: role names, built-in or custom, and `F("field")` user fields
@@ -128,7 +128,7 @@ State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="requi
   20,000 this runs manager, then CFO, then the move; the director level is skipped.
 * Conditions are decided when the record enters the state and logged with that entry, so a later
   change outside the engine does not add or drop a level.
-* Approving a level that is not the last writes an `approved` journal entry (with `rule`, `level`
+* Approving a level that is not the last writes an `approved` activity entry (with `rule`, `level`
   and the remark) and changes nothing else; the last one is the `moved` entry, with its `level`.
   Values the move asks for are taken with the last approval only.
 * Someone who approved a level cannot approve a later level of the same rule. The record's creator
@@ -147,8 +147,8 @@ State.Rule("review", "draft", "Reject", key="reject", reject=True, remark="requi
   schema's rule lists `levels` (`by`, `pending`, `guarded`) and `self_approve`.
 * `GET /api/{model}?awaiting=me` lists the records whose waiting level this user may approve now,
   when the rule's `when` holds and the user may change the record
-  ("Awaiting my approval"). It is computed from the rules and the journal, so approvals need the
-  journal: `Meta.journal = None` with `levels` is refused.
+  ("Awaiting my approval"). It is computed from the rules and the activity, so approvals need the
+  activity: `Meta.activity = None` with `levels` is refused.
 
 Eva's write confirmations (Eva asking before it changes a record) are a different feature: an
 approval level is part of the record's rules and applies to every caller.
@@ -183,7 +183,7 @@ class PriceList(Model):
   hook through `self.context.move(...)` on another record, and `business.context(user)` in a
   script. Only the `by` check is left out. Everything else applies: update permission and row
   scope of the context's user, the guard, the hooks, calculations, validation, a closed period,
-  the Journal's `moved` entry and the one transaction.
+  the Activity's `moved` entry and the one transaction.
 
 The [Background Playground](jobs-realtime.md#background-playground) declares these rules.
 
@@ -291,7 +291,7 @@ The order of a move:
 7. Document numbers due in the new state are assigned.
 8. Entering a `release=True` step whose content changed since the last release: `@release`
    runs, then calculations and `@validate` again, and the release is stored.
-9. The record is written, effects on the new state post, and the Journal gets its `moved`
+9. The record is written, effects on the new state post, and the Activity gets its `moved`
    entry with the rule key and the remark; a move that released names it in `data.release`.
 
 Everything commits in one transaction. A failure anywhere rolls all of it back, and no
@@ -326,13 +326,13 @@ or deleted.
   never reopened has no snapshot.
 * **Drift.** On taking a snapshot, its hash is compared with the release's. A mismatch means the
   row changed outside the engine; the snapshot is kept, marked `drifted`, logged, and its
-  `snapshot` journal entry says so.
+  `snapshot` activity entry says so.
 * `@release` gets `self.release.number` and `self.release.previous` (the previous version's
   content, or `None` for v0). It usually sets `versioned=False` fields, such as a posting
   reference.
 * A document with a release cannot be deleted; move it to a final state such as void.
 * The detail carries `_version: {"number": 2, "released": false, "state": "issued"}`. `number`
-  is `null` before v0. `released` is false once the journal has an entry that changed versioned
+  is `null` before v0. `released` is false once the activity has an entry that changed versioned
   content since v2: every such entry carries `base` 2 ("changes after v2"), so this is one indexed
   read, and the content is hashed only to release, snapshot and check for drift.
 * `GET /api/{model}/{id}/versions` lists the releases, newest first; `.../versions/{n}` returns
@@ -348,7 +348,7 @@ or deleted.
 `POST /api/{model}/{id}/restore` with `{"version": 1, "remark": "..."}` (If-Match;
 `context.restore(model, id, version=1, remark=...)`) writes version 1's content onto the
 document as a new change, then recalculates, so values read from linked records stay current. It
-moves forward: nothing in the history or the releases changes, the journal gets a `restored`
+moves forward: nothing in the history or the releases changes, the activity gets a `restored`
 entry (`data.number`, the remark), and the next release takes the next number.
 
 * It needs the `restore` permission (admin by default) and a remark, and the record must be in an

@@ -380,7 +380,7 @@ rich text images). The field's value is that attachment's id: an `int` in Python
   storage (a bare `Database`) refuses any image value.
 - **Duplicate.** `copy=` is always `False`: the browser's Duplicate leaves the image out, because
   an image belongs to one record. `copy=True` is refused with a `ValueError`.
-- **Journal and audit.** A change is journaled like any value, as the old and new ids.
+- **Activity and audit.** A change is recorded in Activity like any value, as the old and new ids.
 - **Deleting the record** deletes its images, from the HTTP route and from trusted Python
   (`tx.delete`). Files on disk or in object storage are reclaimed by the storage's `collect()`.
 - **Trusted Python and the Connector.** A trusted session may save any held image's id (it has no
@@ -495,7 +495,7 @@ currency, so changing a currency's places never rewrites stored values: the larg
 them is refused while a stored amount in that currency has more places; `round_stored_money(app,
 code, places, actor=...)` is the explicit step that rounds those amounts half up and then lowers
 the places. Rounding changes stored values, so a document's total may no longer equal the sum of
-its rounded lines until it is recalculated; the Journal keeps what it recorded, and
+its rounded lines until it is recalculated; the Activity keeps what it recorded, and
 rows of append-only ledgers are never changed (the step refuses instead). Values still travel as
 decimal strings with at least 2 places: `"12.50"`, `"1.500"` reads `"1.50"`, `"0.12345"`.
 
@@ -603,7 +603,7 @@ checks as rows:
 - `GET /api/{model}/{id}/lines/{name}` pages count real rows (`total`, `limit`, `offset`); each page
   also carries the section rows placed after the previous page's last row, and the last page those
   after all rows.
-- The Journal records `"sections": {"added", "renamed", "removed", "moved"}` under the Table in a
+- The Activity records `"sections": {"added", "renamed", "removed", "moved"}` under the Table in a
   `created` or `changed` entry.
 
 ## Updates, deletes, and relationships
@@ -630,7 +630,7 @@ sessions. Reverse traversal uses ordinary filters on the referencing model.
 
 ## Record ids
 
-Every record has an `id` that never changes. Links, child rows, the journal and
+Every record has an `id` that never changes. Links, child rows, the activity and
 URLs all point to it.
 
 - **In storage** it is a 63-bit integer: 42 bits of milliseconds since 01-01-2026 UTC, then
@@ -673,7 +673,7 @@ or negative (only raw SQL can write one) and tables missing the trigger. Nothing
 because links depend on them. [Ledger models](ledger.md#ids) keep database-assigned ids.
 
 Writes also take a JSON integer for a Link or a row id, so older clients keep working;
-responses only ever send text ids. Framework rows that are not records (accounts, journal
+responses only ever send text ids. Framework rows that are not records (accounts, activity
 entries, jobs, attachments) keep their own number ids.
 
 ## Name and title
@@ -743,12 +743,12 @@ not declare a field with one of these names.
 - imports and data migrations, which write through `Session`.
 
 A record route or document write that changes nothing leaves the times alone. A change to a Table row counts as a
-change of its document. A note, message, file or other Journal entry does not change the record, so
+change of its document. A note, message, file or other Activity entry does not change the record, so
 it does not move "Last modified". `sequences.backfill()` and `Recompute` migrations are repairs and
 leave the times alone.
 
-**Why columns and not the Journal.** The [Journal](journal.md) records who and when, but only for
-models that journal (a State, effects or `Meta.journal`), and raw `Session` writes, data migrations
+**Why columns and not the Activity.** The [Activity](activity.md) records who and when, but only for
+models that activity (a State, effects or `Meta.activity`), and raw `Session` writes, data migrations
 and `sequences.backfill()` write no entries. Columns are right for every write path and cost nothing
 to read: they come with the row the detail already loads.
 
@@ -763,11 +763,11 @@ make open records stale:
 `name` is the person's short name, then full name, then username, as Settings shows it. `created_by`
 and `modified_by` are `null` for engine writes, and always `null` for portal roles, who may see when a
 record changed but not which staff member changed it. Every desk reader of the record sees them, as
-the Journal already shows actors to readers. Lists do not carry `_audit`. Discovery's read schema describes
+the Activity already shows actors to readers. Lists do not carry `_audit`. Discovery's read schema describes
 `_audit`, so MCP clients and the connector can check record output against it.
 
 **Existing databases.** Framework migration `0004_record_times` (`evlet migrate`) adds the columns and
-fills them: from the record's Journal where it has one (the first entry that changed the record, and
+fills them: from the record's Activity where it has one (the first entry that changed the record, and
 the last), otherwise from the time in the record's [id](#record-ids), with no one as who. Rows whose
 id holds no time (small ids from before time-ordered ids) stay empty, and screens show nothing for
 them. The next app migration batch adds them too, before its first step, so data migrations can write.
@@ -933,7 +933,7 @@ A table that only trusted code writes, at high volume, is usually a [ledger mode
 `Meta.ledger = True` gives it an integer id and its declared columns only, and no surface at all.
 
 **`api = "read"`.** Every write route answers 403 "Receipt records are read only here. The
-application changes them.": create, update, delete, drafts, actions, moves, journal entries, attachments and filing a print. So
+application changes them.": create, update, delete, drafts, actions, moves, activity entries, attachments and filing a print. So
 do the MCP and Eva write tools, which call the same routes. The schema carries `"api": "read"`
 and every write permission as false, so screens show no New, Edit, Delete, actions or moves.
 Controls overrides cannot grant a write back: the rule is checked before any `Rule`. It is the
@@ -955,7 +955,7 @@ document.
 
 `Meta.ledger = True` makes a lean model for high-volume rows that trusted Python writes, such as
 movements and balances: an integer `id` the database assigns, the declared columns and nothing
-else, no public surface, and optional `append_only`, `journal`, `timestamps`, `indexes` and
+else, no public surface, and optional `append_only`, `activity`, `timestamps`, `indexes` and
 `period`. Transactions also take named locks on business keys with `tx.lock(...)`, and reserve
 ledger ids with `tx.reserve_ids(model, count)` so the rows of one batch can link to each other. See
 [ledger.md](ledger.md).
@@ -1141,7 +1141,7 @@ how to transform existing data. Changes to runtime defaults alone do not require
 
 `RetireField(model, name)` takes a field out of the models: remove it from `models.py` and the
 field leaves schema checks, the HTTP API and every screen. Its column and stored values stay, and
-the column becomes nullable so new records leave it empty. Data in the Journal is not touched. Use it whenever a field stops being used; nothing is lost.
+the column becomes nullable so new records leave it empty. Data in the Activity is not touched. Use it whenever a field stops being used; nothing is lost.
 
 `DropField(model, name)` later deletes the column and its values. It needs a field an earlier
 migration retired (not one retired in the same migration, so the values can be checked or moved
@@ -1171,7 +1171,7 @@ defensive mode refuses this, and the migration then fails with a message saying 
 `minimum`, `maximum` and `required` may change too (below). `unique`, `index` and Link targets may not.
 Each stored row is converted and validated against the new definition inside the migration
 transaction; a value that overflows or fails (a bound, a length) names the record and rolls the
-batch back. Journal entries keep the values they recorded.
+batch back. Activity entries keep the values they recorded.
 
 ```python
 from evlet import AlterField, Decimal, Migration
@@ -1240,8 +1240,8 @@ By default the session refuses writes to confirmed, tracked, posted and finite-v
 trusted session does. A step that must change them is declared `RunData(function, maintenance=True)`
 and runs only when the admin allows it for that run: `evlet migrate <instance> --allow-maintenance`,
 or `migrate(migrations, allow_maintenance=True)` from Python. Each such step writes a Controls
-audit row (actor `cli`, area `Records`, the migration's name) and logs a warning. Their Journal entries
-stay as they were; the step writes no Journal entries of its own.
+audit row (actor `cli`, area `Records`, the migration's name) and logs a warning. Their Activity entries
+stay as they were; the step writes no Activity entries of its own.
 
 The migration checksum covers the function's source and `maintenance`, so keep the function in
 the migration file and never change it once applied. Any exception rolls back the whole run,
@@ -1278,8 +1278,8 @@ effect rows they posted, and their reversals, still match. A locked record that 
 left the posting state for a step that is not final, is recalculated and moves to the active
 formula version. `database.migrate()` returns the applied migration names as a list whose
 `skipped` attribute counts the records kept, and the `evlet.migrations` logger reports the
-count. Each record Recompute changes gets a `recomputed` [Journal](journal.md) entry when its
-model journals.
+count. Each record Recompute changes gets a `recomputed` [Activity](activity.md) entry when its
+model keeps an Activity.
 
 Posted records are recalculated only when an admin asks for it, for one migration run:
 `evlet migrate <instance> --recompute-posted`, or `database.migrate(migrations,

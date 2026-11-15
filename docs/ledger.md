@@ -10,7 +10,7 @@ A ledger model computes nothing. Rows are stored exactly as given, and the busin
 decides them stays in the app.
 
 ```python
-from evlet import Date, Decimal, Journal, Link, Model, Text
+from evlet import Date, Decimal, Activity, Link, Model, Text
 
 
 class PointMove(Model):
@@ -22,7 +22,7 @@ class PointMove(Model):
     class Meta:
         ledger = True
         append_only = True              # the database refuses UPDATE and DELETE
-        journal = None                  # or Journal(), Journal(tamper_evident=True)
+        activity = None                  # or Activity(), Activity(tamper_evident=True)
         timestamps = 'created'          # None (default), "created", "modified" or "both"
         indexes = [('member', 'on_date')]
         period = 'on_date'              # closed periods, as for any model
@@ -68,7 +68,7 @@ Eva, the connector) must reach them.
   foreign keys. A normal model may link to a ledger row: callers see that field as the plain
   integer id, read only (the schema describes it as an `integer` with `"grouping": false`, so
   screens show it without thousands separators), and cannot write it. The record's history
-  (`GET /api/{model}/{id}/journal`) shows that field's old and new values as the same integer ids.
+  (`GET /api/{model}/{id}/activity`) shows that field's old and new values as the same integer ids.
 
 Ledger models are part of the saved schema and the startup check like any model.
 
@@ -163,7 +163,7 @@ Ids always increase, but gaps are normal. Never read meaning into them, such as 
 | Option | Default | Meaning |
 | --- | --- | --- |
 | `append_only` | `False` | Database triggers refuse `UPDATE` and `DELETE` (and so `REPLACE` and upsert updates), as on `evlet_audit`. The session refuses updates and deletes first, with a clear error. Inserts work |
-| `journal` | `None` | The [Journal](journal.md): `created`, `changed` and `deleted` entries per row, written by the session as the engine or as `tx.actor`. `Journal(tamper_evident=True)` hashes them and `evlet journal verify` checks them |
+| `activity` | `None` | The [Activity](activity.md): `created`, `changed` and `deleted` entries per row, written by the session as the engine or as `tx.actor`. `Activity(tamper_evident=True)` hashes them and `evlet activity verify` checks them |
 | `timestamps` | `None` | `"created"` adds `created_at`, `"modified"` adds `modified_at`, `"both"` adds both. The framework fills them on insert and update; a write that names them is refused |
 | `indexes` | `[]` | Composite and unique indexes: `("a", "b")` or `(("a", "b"), {"unique": True})`. An entry may name the row `id`, such as `("serial", "id")`. Normal models declare them the same way ([model-engine.md](model-engine.md#composite-and-unique-indexes)). A single field can also take `index=True` or `unique=True` |
 | `period` | `None` | [Closed periods](model-engine.md#closed-periods), exactly as for normal models, `unlocked_periods(reason)` included |
@@ -171,7 +171,7 @@ Ids always increase, but gaps are normal. Never read meaning into them, such as 
 `append_only` and `timestamps` are for ledger models only; a normal model that sets them is
 refused. A write that breaks a unique `indexes` entry raises `ValidationError` naming its fields.
 
-Journaling every row of a large append-only ledger doubles the writes, and the rows already
+Recording every row in Activity of a large append-only ledger doubles the writes, and the rows already
 never change, so it is rarely needed. Use it for a mutable ledger whose changes must be traced.
 
 ## Migrations
@@ -202,7 +202,7 @@ evlet ledger list --instance acme
 ```
 
 ```text
-Model         Table         Rows     Append only  Journal         Timestamps  Period
+Model         Table         Rows     Append only  Activity         Timestamps  Period
 PointMove     pointmove     1204331  yes          off             created     on_date
 PointBalance  pointbalance  812      no           off             modified    off
 ```

@@ -163,7 +163,7 @@ field must lead to it. Declare the parent Link with `index=True` so each level i
 lookup; see [performance.md](performance.md#team-row-scopes) for plans and measurements.
 
 These scopes apply wherever a filter-object scope does: lists, counts, search, detail, writes,
-actions, attachments, related records, measures and aggregates, journal reads, realtime
+actions, attachments, related records, measures and aggregates, activity reads, realtime
 events, Link values in responses, the Link filter guard, and filter lists with child table
 groups (`EXISTS`) on list, aggregate and measures routes. HR roles without a scope see
 every row. Controls offers an app-registered team or `any_of` scope for every model it compiles
@@ -173,7 +173,7 @@ for. The Playground's Employees show a manager, a team member and an outsider
 A link decides what a team scope shows, so `LocalAuth.link_user` and `unlink_user` write each
 change to the Controls audit log (area Users, with an `actor` argument; `evlet link-user` records
 `cli`). A move in the tree is an ordinary edit of the parent Link: declare the hierarchy model with
-`Meta.journal = Journal(tamper_evident=True)` to keep who moved whom and when, as the
+`Meta.activity = Activity(tamper_evident=True)` to keep who moved whom and when, as the
 Playground's Employee does.
 
 Operations may also name `print` (printing with a print design; admin has it by default, see

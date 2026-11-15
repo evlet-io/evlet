@@ -103,7 +103,7 @@ def test_rules_check_by_when_and_remarks_and_log_the_rule(app):
     assert move(editor, url, 'submit')[1]['fields'] == {'remark': 'Submit needs a remark'}
     status, body, _ = move(editor, url, 'submit', {'remark': '  Big discount  '})
     assert status == 200 and body['status'] == 'review', body
-    entry = editor('GET', url + '/journal')[1]['items'][0]
+    entry = editor('GET', url + '/activity')[1]['items'][0]
     assert (entry['kind'], entry['rule'], entry['remark'], entry['data']['to']) == ('moved', 'submit', 'Big discount', 'review')
     # by: a custom role or the user a field names; the editor is neither.
     assert move(editor, url, 'approve')[:2] == (403, {'error': 'Your role cannot use Approve'})
@@ -169,12 +169,12 @@ def test_a_refusal_from_any_hook_rolls_back_the_move_and_what_hooks_wrote(app, k
     c, manager = client(app), add_user(app, 'manager')
     url = ticket(c)
     assert move(c, url, 'submit')[0] == 200
-    entries = c('GET', url + '/journal')[1]['total']
+    entries = c('GET', url + '/activity')[1]['total']
     FAIL.add(kind)
     status, body, _ = move(manager, url, 'approve')
     assert (status, body['fields']) == (422, {'_form': f'{kind} refused'})
     assert c('GET', url)[1]['status'] == 'review' and app.database.count(Note) == 0
-    assert c('GET', url + '/journal')[1]['total'] == entries
+    assert c('GET', url + '/activity')[1]['total'] == entries
     # Python callers get the same error, and their context carries on.
     with app.business.context(ADMIN) as context:
         with pytest.raises(ValidationError, match=f'{kind} refused'):
@@ -241,7 +241,7 @@ def test_eva_and_mcp_moves_go_through_the_same_checks(app):
             run(caller, {'model': 'ticket', 'id': record_id, 'rule': 'back', 'values': {'reason': 'x'}})
         assert refused.value.status == 422 and refused.value.fields == {'remark': 'Send back needs a remark'}
         run(caller, {'model': 'ticket', 'id': record_id, 'rule': 'back', 'remark': 'Recheck', 'values': {'reason': 'x'}})
-        entry = c('GET', url + '/journal')[1]['items'][0]
+        entry = c('GET', url + '/activity')[1]['items'][0]
         assert (entry['rule'], entry['remark'], entry['actor'], entry.get('via')) == ('back', 'Recheck', editor_id, 'Eva' if origin == 'eva' else entry.get('via'))
         assert c('GET', url)[1]['status'] == 'draft'
 
@@ -254,7 +254,7 @@ def test_a_move_and_its_moves_cost_a_bounded_number_of_statements(app):
     headers = etag(c, url)
     (status, _, _), moving = counted(c, 'POST', url + '/moves/submit', {}, headers=headers)
     assert status == 200
-    # The detail reads the rules from the registry; the move adds its rule check, write and one journal entry.
+    # The detail reads the rules from the registry; the move adds its rule check, write and one activity entry.
     # Measured 11 and 23 on 13-11-2026; the bound leaves room for small changes, not for a statement per rule.
     assert reading <= 14 and moving <= 28, (reading, moving)
 
@@ -299,9 +299,9 @@ def test_field_permissions_hide_rule_conditions_and_reasons(app):
     assert {item['reason'] for item in moves} <= {'Your role cannot use this move', 'You cannot change this record'}
 
 
-def test_a_journal_from_before_the_state_manager_gains_its_columns(tmp_path):
+def test_an_activity_table_from_before_the_state_manager_gains_its_columns(tmp_path):
     import sqlite3
-    from evlet import framework, journal
+    from evlet import framework, activity
     path = tmp_path / 'old.sqlite3'
     with sqlite3.connect(path) as raw:
         raw.execute('CREATE TABLE evlet_journal (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, '
@@ -310,10 +310,10 @@ def test_a_journal_from_before_the_state_manager_gains_its_columns(tmp_path):
     database = Database(path, Registry(Note, Ticket))
     with database.schema_transaction() as connection:
         framework._state_manager(connection, database.registry)
-        assert set(journal.SCALARS) <= set(connection.columns('evlet_journal'))
+        assert set(activity.SCALARS) <= set(connection.columns('evlet_journal'))
         # The step is idempotent, and the old entry keeps its values.
         framework._state_manager(connection, database.registry)
-        assert connection.run(journal.qb.select('evlet_journal', 'kind', 'rule')).all()[0][:] == ('created', None)
+        assert connection.run(activity.qb.select('evlet_journal', 'kind', 'rule')).all()[0][:] == ('created', None)
 
 
 # Approval levels
@@ -378,7 +378,7 @@ def test_levels_run_in_order_skip_what_does_not_apply_and_take_one_person_each(a
     assert move(people['cfo'], url, 'approve')[0] == 403
     status, body, _ = move(people['manager'], url, 'approve', {'remark': 'Within budget'})
     assert status == 200 and body['status'] == 'review'
-    entry = people['manager']('GET', url + '/journal')[1]['items'][0]
+    entry = people['manager']('GET', url + '/activity')[1]['items'][0]
     assert (entry['kind'], entry['rule'], entry['level'], entry['remark']) == ('approved', 'approve', 0, 'Within budget')
     # Level 2 names managers too, but the manager approved level 1 already.
     assert approval(people['manager'], url)['level'] == 2 and approval(people['manager'], url)['can_approve'] is False
@@ -387,7 +387,7 @@ def test_levels_run_in_order_skip_what_does_not_apply_and_take_one_person_each(a
     # The director level does not apply under 50,000: the CFO's approval is the last, and moves the record.
     status, body, _ = move(people['cfo'], url, 'approve')
     assert status == 200 and body['status'] == 'approved', body
-    moved = people['cfo']('GET', url + '/journal')[1]['items'][0]
+    moved = people['cfo']('GET', url + '/activity')[1]['items'][0]
     assert (moved['kind'], moved['rule'], moved['level']) == ('moved', 'approve', 1)
     # All three levels when the total is high enough.
     url = submitted(people, 60000)
@@ -457,9 +457,9 @@ def test_the_schema_lists_levels_and_bad_declarations_are_refused():
                 lambda: State.Rule('a', 'b', levels=('cfo',))):
         with pytest.raises(ValueError):
             bad()
-    quiet = type('Quiet', (Model,), {'Meta': type('Meta', (), {'journal': None}),
+    quiet = type('Quiet', (Model,), {'Meta': type('Meta', (), {'activity': None}),
                                      'status': State(State.Step('a'), State.Step('b'), rules=(State.Rule('a', 'b', levels=levels()[:1]),))})
-    with pytest.raises(ValueError, match='approval levels are kept in the journal'):
+    with pytest.raises(ValueError, match='approval levels are kept in its Activity'):
         Registry(quiet)
 
 
@@ -469,7 +469,7 @@ def test_moves_with_an_approval_waiting_cost_a_bounded_number_of_statements(appr
     move(people['manager'], url, 'approve')
     (status, body, _), reading = counted(people['cfo'], 'GET', url)
     assert status == 200 and approval(people['cfo'], url)['can_approve']
-    # Measured 15 on 13-11-2026: the record's stay in the journal is one statement, the creator one more, for
+    # Measured 15 on 13-11-2026: the record's stay in the activity is one statement, the creator one more, for
     # all three rules out of the state together.
     assert reading <= 17, reading
 
@@ -525,12 +525,12 @@ def test_entering_a_release_step_releases_and_snapshots_only_on_leaving(bills):
     assert RELEASED == [(0, None)] and body['note'] == 'released v0'
     assert body['_version'] == {'number': 0, 'released': True, 'state': 'issued'}
     assert [row[:2] for row in rows(app, url)] == [(0, 0)]
-    issued = c('GET', url + '/journal')[1]['items'][0]
+    issued = c('GET', url + '/activity')[1]['items'][0]
     assert issued['data']['release'] == 0 and 'base' not in issued
     # Leaving the release snapshots it, once; the content is unchanged, so it still reads as v0.
     body = move(c, url, 'reopen', {'remark': 'Price'})[1]
     assert [row[:2] for row in rows(app, url)] == [(0, 0), (0, 1)] and body['_version']['released'] is True
-    assert [item['kind'] for item in c('GET', url + '/journal')[1]['items'][:2]] == ['moved', 'snapshot']
+    assert [item['kind'] for item in c('GET', url + '/activity')[1]['items'][:2]] == ['moved', 'snapshot']
     # Issued again unchanged: no new release, no @release.
     assert move(c, url, 'issue')[1]['_version'] == {'number': 0, 'released': True, 'state': 'issued'} and RELEASED == [(0, None)]
     move(c, url, 'reopen', {'remark': 'Again'})
@@ -552,7 +552,7 @@ def test_a_manual_release_and_the_first_edit_after_it(bills):
     assert editor('POST', url + '/release', {}, headers=etag(editor, url))[0] == 403
     status, body, _ = c('POST', url + '/release', {'remark': 'Quote sent'}, headers=etag(c, url))
     assert status == 200 and body['_version'] == {'number': 0, 'released': True, 'state': 'draft'} and body['status'] == 'draft'
-    entry = c('GET', url + '/journal')[1]['items'][0]
+    entry = c('GET', url + '/activity')[1]['items'][0]
     assert (entry['kind'], entry['base'], entry['remark']) == ('released', 0, 'Quote sent')
     assert c('POST', url + '/release', {}, headers=etag(c, url))[:2] == (409, {'error': 'Nothing changed since the last release'})
     # The first versioned edit keeps v0 first; later edits add nothing.
@@ -572,7 +572,7 @@ def test_drift_is_marked_and_logged(bills, caplog):
     with caplog.at_level('WARNING', logger='evlet.statemanager'):
         move(c, url, 'reopen', {'remark': 'Fix'})
     assert rows(app, url, snapshot=1)[0][2] == 1 and 'changed outside the engine' in caplog.text
-    entry = next(item for item in c('GET', url + '/journal')[1]['items'] if item['kind'] == 'snapshot')
+    entry = next(item for item in c('GET', url + '/activity')[1]['items'] if item['kind'] == 'snapshot')
     assert entry['data'] == {'number': 0, 'drifted': True}
 
 
@@ -684,7 +684,7 @@ def test_restore_moves_forward_with_the_release_content(contracts):
     assert [(row['id'], row['text']) for row in body['children']['clauses']] == [(first[0]['id'], 'a'), (first[1]['id'], 'b')]
     # A restore is a change after the latest release (v0 here), so the record reads as modified, with v0's content.
     assert body['_restore'] == {'version': 0, 'dropped': [], 'kept': []} and body['_version'] == {'number': 0, 'released': False, 'state': 'signed'}
-    entry = c('GET', url + '/journal')[1]['items'][0]
+    entry = c('GET', url + '/activity')[1]['items'][0]
     assert (entry['kind'], entry['remark'], entry['data']['number']) == ('restored', 'Back to the signed terms', 0)
     # Numbers only increase: v0's content signed again is no new release; changed and signed it is v1.
     c('PATCH', url, {'title': 'Third'}, headers=etag(c, url))
@@ -749,7 +749,7 @@ def test_labels_colours_and_code_rules_change_by_key(app):
     # The move logs the rule key and the rule set version it used.
     with app.database.transaction() as tx:
         version = tx.connection.execute('SELECT version FROM evlet_config').fetchone()[0]
-        assert tuple(tx.connection.execute("SELECT rule, rules_version FROM evlet_journal WHERE kind='moved' ORDER BY id DESC").fetchone()) == ('submit', version)
+        assert tuple(tx.connection.execute("SELECT rule, rules_version FROM evlet_activity WHERE kind='moved' ORDER BY id DESC").fetchone()) == ('submit', version)
     # Reset to code: delete the overrides.
     overrides(c, ('rule', 'Ticket.void', None), ('rule', 'Ticket.submit', None), ('state', 'Ticket.review', None))
     assert [rule['key'] for rule in schema_state(c)['rules']] == ['submit', 'approve', 'back', 'void']

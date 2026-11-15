@@ -1,7 +1,7 @@
 """Image fields: one private image attachment per field, and Meta.image (evlet/images.py, docs/model-engine.md).
 
 Declaration checks, schema output, upload type and size refusal, linking on save, replace and clear,
-no cross-record or cross-person images, field-level read and write checks on the image route, journal,
+no cross-record or cross-person images, field-level read and write checks on the image route, activity,
 migrations, and deleting the record with its images. Real SQLite throughout."""
 import base64
 
@@ -9,7 +9,7 @@ import pytest
 
 from evlet import (AddField, Application, Database, Image, LocalAuth, Migration, Model, Policy, Registry, RichText, Rule,
                    State, Text, ValidationError)
-from evlet.journal import Journal
+from evlet.activity import Activity
 from tests.test_business import PASSWORD, http
 
 PNG = b'\x89PNG\r\n\x1a\n' + b'\x00' * 40
@@ -20,7 +20,7 @@ SVG = b'<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>'
 class Item(Model):
     class Meta:
         image = 'photo'
-        journal = Journal()
+        activity = Activity()
     label = Text(required=True)
     photo = Image(label='Photo')
     logo = Image()
@@ -46,7 +46,7 @@ class Card(Model):
 class Memo(Model):
     """A document with rich text: its images are linked on save like a plain model's."""
     class Meta:
-        journal = Journal()
+        activity = Activity()
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
     label = Text(default='')
     body = RichText()
@@ -87,7 +87,7 @@ def signed_in(app, role='editor'):
         if etag is not None:
             headers = {b'if-match': http(app, 'GET', etag, cookie=cookie, csrf=csrf)[2][b'etag']}
         elif method in ('PATCH', 'DELETE') and '/attachments' not in path:
-            # Documents (Meta.journal) need the revision the person saw.
+            # Documents (Meta.activity) need the revision the person saw.
             headers = {b'if-match': http(app, 'GET', path, cookie=cookie, csrf=csrf)[2][b'etag']}
         return http(app, method, path, body, cookie=cookie, csrf=csrf, headers=headers)
     return call
@@ -242,15 +242,15 @@ def test_field_checks_on_read_and_write(app):
     assert clerk('GET', f'{url}/attachments/{record["photo"]}')[0] == 200
 
 
-def test_changes_are_journaled(app):
+def test_changes_are_recorded_in_activity(app):
     editor = signed_in(app)
     record = new_item(editor, photo=held(editor))
     url = f'/api/item/{record["id"]}'
     status, added, _ = editor('POST', f'{url}/attachments', upload(WEBP))
     editor('PATCH', url, {'photo': added['id']})
-    status, page, _ = editor('GET', f'{url}/journal')
+    status, page, _ = editor('GET', f'{url}/activity')
     assert status == 200, page
-    # The journal records the image ids, as text, like any other value.
+    # The activity records the image ids, as text, like any other value.
     changed, created = page['items'][0], page['items'][1]
     assert changed['kind'] == 'changed' and changed['data']['fields']['photo'] == {'old': record['photo'], 'new': added['id']}
     assert created['data']['fields']['photo'] == {'old': None, 'new': record['photo']}

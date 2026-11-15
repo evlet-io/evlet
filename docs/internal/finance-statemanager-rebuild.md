@@ -54,7 +54,7 @@ Hooks are ordinary methods, so `ForModel` and the `*_entry` class attributes go.
 
 Order on a move: rule check; `@state.exit(old)`; the state changes; `@state(new)`; calculations
 (and `derive()`); `@validate`; numbers; then, entering a `release=True` step whose content changed
-since the last release, `@release`, calculations and `@validate` again; write; journal. A
+since the last release, `@release`, calculations and `@validate` again; write; activity. A
 `ValidationError` anywhere rolls back the whole move, including what hooks wrote through
 `self.context.session`. `self.before` is the document as last saved, `self.is_new` is false on a
 move.
@@ -147,7 +147,7 @@ today.
 
 `evlet migrate` runs framework step `0011_state_manager` (one transaction, after a backup):
 
-1. adds the journal's `rule`, `remark`, `level`, `base` and `rules_version` columns and creates
+1. adds the activity's `rule`, `remark`, `level`, `base` and `rules_version` columns and creates
    `evlet_releases`;
 2. converts confirmable lifecycle and revision rows (Finance has none);
 3. backfills a v0 release, with no snapshot, for every record of a State model that is in a
@@ -170,7 +170,7 @@ document's first Cancel snapshots v0 and reverses through the exit hook, as a ne
 
 - [ ] `.venv/bin/python -m pytest -q` passes on SQLite.
 - [ ] Each document type: create a draft, Post (`post`), the posting exists and `posting` is set;
-      the journal's `moved` entry has `rule == "post"` and `data.release == 0`, and `_version` is v0.
+      the activity's `moved` entry has `rule == "post"` and `data.release == 0`, and `_version` is v0.
 - [ ] Cancel needs a remark (422 without one); with one, the posting is reversed on the right date
       and the document is cancelled and locked; the reversal's `reverses` points at the original.
 - [ ] Payment: Bounce cheque is offered only when `cheque_date > date`; it reverses the clearing
@@ -188,4 +188,4 @@ document's first Cancel snapshots v0 and reverses through the exit hook, as a ne
       v0 release (`GET /api/{model}/{id}/versions`), its ledger is unchanged, and `evlet-finance
       verify` reports nothing.
 - [ ] `evlet migrate --plan` reports no difference; the pinned migration checksums still match.
-- [ ] `evlet journal verify` reports no breaks.
+- [ ] `evlet activity verify` reports no breaks.

@@ -530,8 +530,8 @@ def rows_of(context, bound, document):
                       f'{bound.source.__name__}.{bound.rows} could not produce the {bound.target.__name__} rows') from None
 
 
-def journal_item(business, bound, drafts, *, reversal):
-    """One target of a Journal `effects` entry: how many rows were written, whether they reverse
+def activity_item(business, bound, drafts, *, reversal):
+    """One target of an Activity `effects` entry: how many rows were written, whether they reverse
     earlier rows and, for a balanced effect, whether they balance (always true once written)."""
     item = {'target': business.registry.name_for(bound.target), 'rows': len(drafts), 'reversal': reversal}
     if bound.balanced is not None:
@@ -542,7 +542,7 @@ def journal_item(business, bound, drafts, *, reversal):
 def post(context, model, record_id, state):
     """Called once a move into `state` is saved, in its transaction: write the rows of every effect on it.
 
-    Returns the Journal items of the targets that received rows (see `journal_item`)."""
+    Returns the Activity items of the targets that received rows (see `activity_item`)."""
     business, tx = context._business, context._tx
     bounds = [bound for bound in business.registry.effects.get(model, ()) if bound.on == state]
     if not bounds:
@@ -562,7 +562,7 @@ def post(context, model, record_id, state):
         for draft in drafts:
             write(engine, bound, draft)
         if drafts:
-            written.append(journal_item(business, bound, drafts, reversal=False))
+            written.append(activity_item(business, bound, drafts, reversal=False))
     return written
 
 
@@ -667,7 +667,7 @@ def reverse(context, model, record_id):
     """Called when a rule leaves an effect's state: write a mirror row for each live original row, marked as a
     reversal. Rows are only ever added, so earlier postings and their reversals stay as they are.
 
-    Returns the Journal items of the targets that received mirror rows."""
+    Returns the Activity items of the targets that received mirror rows."""
     business, tx = context._business, context._tx
     engine = engine_context(business, tx)
     written = []
@@ -693,7 +693,7 @@ def reverse(context, model, record_id):
         check_periods(context, model, bound, drafts)
         for draft in drafts:
             write(engine, bound, draft)
-        written.append(journal_item(business, bound, drafts, reversal=True))
+        written.append(activity_item(business, bound, drafts, reversal=True))
     return written
 
 

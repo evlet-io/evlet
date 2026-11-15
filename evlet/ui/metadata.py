@@ -26,7 +26,7 @@ OPEN_IN = ('page', 'panel')
 # The options a model's Meta may declare; each is public (docs/api-stability.md).
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'measures', 'key_fields', 'relations', 'attachments',
-                          'effects', 'journal', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
+                          'effects', 'activity', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'panel_summary', 'ledger', 'append_only', 'timestamps', 'indexes',
                           'focus', 'cards', 'duplicate', 'derives', 'image'))
 
@@ -257,7 +257,11 @@ def check_focus(where, definition, name):
 
 
 def refuse_removed(name, meta):
-    """Raise ValueError for a Meta option removed in 0.4 (Meta.tabs, Meta.default_tab), saying what to use."""
+    """Raise ValueError for a removed Meta option (Meta.tabs and Meta.default_tab in 0.4, Meta.journal after 0.4.7),
+    saying what to use."""
+    if isinstance(meta, type) and hasattr(meta, 'journal'):
+        raise ValueError(f'{name}.Meta.journal was renamed: use Meta.activity = Activity(...), or Meta.activity = None '
+                         'to turn it off (docs/activity.md)')
     for removed in ('tabs', 'default_tab'):
         if isinstance(meta, type) and removed in vars(meta):
             raise ValueError(f'{name}.Meta.{removed} was removed: record pages have no tabs. Lay the page out with '

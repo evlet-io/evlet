@@ -6,7 +6,7 @@ Every model has three standard columns:
 
 | Column | What it is | Unique | Changes |
 |---|---|---|---|
-| `id` | Compact, time-ordered 63-bit key. Links, child rows, revisions, the journal and URLs point to it. | yes | never |
+| `id` | Compact, time-ordered 63-bit key. Links, child rows, revisions, the activity and URLs point to it. | yes | never |
 | `name` | The human identifier, such as `INV-2026-0001`. Not on child tables. | per model (and tenant) | a normal edit, where the field is writable |
 | `title` | The display text, such as a customer's full name. | no | kept in sync on every write |
 
@@ -47,7 +47,7 @@ behave as ints. `RecordId.parse(value)` takes an int or the text form.
 above 2^53):
 
 - HTTP JSON: record `id`, Link values, Reference `{"model", "id"}`, child rows, revisions,
-  lifecycle results, journal entries and their row ids, attachments' `record_id`, events,
+  lifecycle results, activity entries and their row ids, attachments' `record_id`, events,
   jobs' `record_id`, Slips' `source`, saved filters, related lists and lines.
 - URL paths: `/api/invoice/01hc1sd9vc1ye` and `/app/invoice/01hc1sd9vc1ye`. The API refuses a
   decimal path segment. The browser router turns an old decimal bookmark (`/app/invoice/42`) into
@@ -60,7 +60,7 @@ Writes accept the text form. They also accept a JSON integer below 2^53 so that 
 keep working; responses never contain one.
 
 **Not record ids.** Framework rows that are not models keep their own integer keys: users, API
-keys, journal entry numbers, jobs, attachments, events and tool calls. Where one of them names a
+keys, activity entry numbers, jobs, attachments, events and tool calls. Where one of them names a
 record (`record_id`), that value is a record id and uses the text form.
 
 ## 2. `name`
@@ -89,10 +89,10 @@ state is taken in that move's transaction, so drafts never use a number. Until t
 so it keeps its id and name. Revise and its copies were removed in 0.4.6.
 
 **Changing a name** (owner, 03-11-2026). `id` is the primary key and the only thing Links, child
-rows, revisions, the journal and URLs point to, so changing `name` is a plain one-row update with
+rows, revisions, the activity and URLs point to, so changing `name` is a plain one-row update with
 no cascade and no separate Rename feature. A client cannot type a name a series or autoname is
 about to assign (`Assigned on save`); once assigned, anyone who may write the `name` field
-changes it through the normal edit. The unique index refuses a taken name and the journal records
+changes it through the normal edit. The unique index refuses a taken name and the activity records
 the change like any field. A confirmed document stays locked as before.
 
 ## 3. `title`

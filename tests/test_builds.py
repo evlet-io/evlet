@@ -143,13 +143,13 @@ def test_reference_app_full_public_flow(project):
     sent = move(url, 'sent')[1]
     assert sent['stage'] == 'sent' and [item['to'] for item in sent['_moves']] == ['won', 'lost', 'draft', 'void']
     assert re.fullmatch(r'Q-[0-9]{4}-0001', sent['number'])
-    # The quote's journal: the move and its number, then a note added on the locked quote.
-    number_entry, moved = c('GET', url + '/journal')[1]['items'][:2]
+    # The quote's activity: the move and its number, then a note added on the locked quote.
+    number_entry, moved = c('GET', url + '/activity')[1]['items'][:2]
     assert moved['kind'] == 'moved' and moved['data']['from'] == 'draft' and moved['data']['to'] == 'sent' and moved['data']['move'] == 'Send'
     assert number_entry['data'] == {'field': 'number', 'number': sent['number']}
-    status, note, _ = c('POST', url + '/journal', {'kind': 'note', 'text': 'Customer asked for the PDF'})
-    assert status == 201 and note['kind'] == 'note' and c('GET', url + '/journal')[1]['items'][0]['id'] == note['id']
-    assert sent['_journal']['open_follow_ups'] == 0 and c('GET', url)[1]['_journal']['count'] == sent['_journal']['count'] + 1
+    status, note, _ = c('POST', url + '/activity', {'kind': 'note', 'text': 'Customer asked for the PDF'})
+    assert status == 201 and note['kind'] == 'note' and c('GET', url + '/activity')[1]['items'][0]['id'] == note['id']
+    assert sent['_activity']['open_follow_ups'] == 0 and c('GET', url)[1]['_activity']['count'] == sent['_activity']['count'] + 1
     assert edit({'discount_rate': '5'})[1]['fields'] == {'discount_rate': 'This record is sent, so it is locked'}
     assert act({'extra_days': 0})[1]['fields'] == {'extra_days': 'Must be at least 1'}
     extended = act({'extra_days': 5})[1]
@@ -201,9 +201,11 @@ def test_reference_app_full_public_flow(project):
     calculation = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'quote')['calculation']
     assert calculation['plan']['root_resource'] == 'amendment.Quote' and saved['_calculation']['model_schema_hash'] == calculation['model_schema_hash']
     manifest = app.business.build_manifest
-    assert len(manifest['apis']) == len(manifest['schedules']) == 1
+    # One @cron calendar and the nightly stock check declared as a module-level Schedule.
+    assert len(manifest['apis']) == 1 and len(manifest['schedules']) == 2
+    assert 'amendment_stock_check' in app.business.jobs.tasks
     with app.database.transaction() as tx:
-        assert tx.connection.execute("SELECT count(*) FROM evlet_schedules WHERE name<>'evlet_unsaved_purge'").fetchone()[0] == 1
+        assert tx.connection.execute("SELECT count(*) FROM evlet_schedules WHERE name<>'evlet_unsaved_purge'").fetchone()[0] == 2
         assert tx.connection.execute('SELECT count(*) FROM evlet_jobs').fetchone()[0] == 0
     install(project, 'acme', trust=True)
 

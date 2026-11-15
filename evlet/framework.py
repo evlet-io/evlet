@@ -1,6 +1,6 @@
 """Versioned framework schema: ordered, checksummed steps that `evlet migrate` runs.
 
-Framework tables (users, sessions, jobs, journal and the rest) are still created and extended
+Framework tables (users, sessions, jobs, activity and the rest) are still created and extended
 at startup with idempotent, additive DDL. Any change that can lose or rewrite data (moving rows,
 dropping or rebuilding a table) is a step here instead. An instance runs pending steps only
 inside `evlet migrate`, on a staged copy after a backup; serving refuses until they are applied.
@@ -69,7 +69,7 @@ def _record_names(connection, registry):
 
 def _record_times(connection, registry):
     """Give every record table the created and modified columns (evlet/audit.py) and fill them: from the
-    record's Journal where it has one, otherwise from the time in its id. New tables have them from the
+    record's Activity where it has one, otherwise from the time in its id. New tables have them from the
     start, and every app migration batch adds them too; this step covers an instance with nothing to migrate."""
     from .audit import add_columns
     for table, model in registry.models.items():
@@ -105,19 +105,20 @@ def _administrator(connection):
 
 
 def _state_manager(connection, registry):
-    """0.4.6: give the journal the state manager's columns (empty on old entries), create evlet_releases, let
+    """0.4.6: give the activity table (then evlet_journal) the state manager's columns (empty on old entries), create evlet_releases, let
     evlet_overrides take the kinds "state" and "rule", turn
     confirmable revisions into releases with their snapshots and lifecycle states into State values, then give
     every record that is in a release step and has no release a v0 release (no snapshot)."""
     import json
     from .database import Session
-    from .journal import SCALAR_COLUMNS
+    from .activity import SCALAR_COLUMNS, stored_table
     from .statemanager import digest, ensure_releases, releasing, store, tree, versioned
-    if connection.table_exists('evlet_journal'):
-        present = connection.columns('evlet_journal')
+    entries = stored_table(connection)
+    if connection.table_exists(entries):
+        present = connection.columns(entries)
         for column in SCALAR_COLUMNS:
             if column.name not in present:
-                connection.add_column('evlet_journal', column)
+                connection.add_column(entries, column)
     ensure_releases(connection)
     # The overrides table takes the new kinds "state" and "rule" (Controls widens an older table's check).
     if connection.table_exists('evlet_overrides'):
@@ -203,6 +204,19 @@ def _oidc_tickets(connection):
     from .oidc import ensure_tickets
     ensure_tickets(connection)
 
+def _activity(connection):
+    """0016: the record history is Activity. Rename evlet_journal, evlet_journal_hashed, their index and append-only
+    triggers to evlet_activity names, keeping every row (ids, hashes and chains are unchanged: no table name is
+    hashed), and rename the `journal` operation of stored Controls permission overrides to `activity`."""
+    from .activity import rename_legacy
+    rename_legacy(connection)
+    if connection.table_exists('evlet_overrides'):
+        for row in connection.run(qb.select('evlet_overrides', 'key', 'value').where(kind='perm')).all():
+            value = json.loads(row['value'])
+            if isinstance(value, dict) and isinstance(value.get('ops'), list) and 'journal' in value['ops']:
+                value['ops'] = ['activity' if op == 'journal' else op for op in value['ops']]
+                connection.run(qb.update('evlet_overrides', value=json.dumps(value, sort_keys=True)).where(kind='perm', key=row['key']))
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -229,6 +243,9 @@ STEPS = (
                   'draft is never replaced by an older one.', _unsaved_versions),
     FrameworkStep('0015_oidc_tickets', 'Add evlet_oidc_tickets, the one-use state and finish receipts of company '
                   'sign-in, to the sessions file.', _oidc_tickets),
+    FrameworkStep('0016_activity', 'Rename the record history from journal to activity: evlet_journal and its hashed '
+                  'models table, index and append-only triggers, and the journal permission operation of stored overrides.',
+                  _activity),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

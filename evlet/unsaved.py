@@ -2,7 +2,7 @@
 
 Leaving a record with unsaved edits never changes the record. The browser sends the edited
 writable fields here; the next visit offers to restore or discard them. Nothing here runs
-validators, events, sequences, history or the journal. See docs/internal/unsaved-changes.md.
+validators, events, sequences, history or the activity. See docs/internal/unsaved-changes.md.
 """
 
 import json

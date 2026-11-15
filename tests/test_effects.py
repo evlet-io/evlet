@@ -926,15 +926,15 @@ def test_effects_beside_numbers_measures_and_relations(tmp_path, check):
     check(stacked_books(Database(tmp_path / 'stacked.sqlite3', Registry(*STACKED))))
 
 
-# The Journal (Phase 8): `effects` entries when a move posts rows and when a void writes their mirrors
+# The Activity (Phase 8): `effects` entries when a move posts rows and when a void writes their mirrors
 
 def history(c, url):
-    status, body, _ = c('GET', f'{url}/journal')
+    status, body, _ = c('GET', f'{url}/activity')
     assert status == 200, body
     return body['items']
 
 
-def check_the_journal_records_postings_and_reversals(books):
+def check_the_activity_records_postings_and_reversals(books):
     app, c, account = books
     url = invoice(c, account)
     assert move(c, url, 'issued')[0] == 200
@@ -954,16 +954,16 @@ def check_the_journal_records_postings_and_reversals(books):
     assert reversed_rows['kind'] == 'effects' and reversed_rows['data'] == {
         'targets': [{'target': 'ledgerentry', 'rows': 3, 'reversal': True, 'balanced': True},
                     {'target': 'stockmove', 'rows': 2, 'reversal': True}]}
-    assert c('GET', url)[1]['_journal']['count'] == len(history(c, url))
-    from evlet import journal
-    assert journal.verify(app.database)[1] == []
+    assert c('GET', url)[1]['_activity']['count'] == len(history(c, url))
+    from evlet import activity
+    assert activity.verify(app.database)[1] == []
 
 
-def test_the_journal_records_postings_and_reversals(books):
-    check_the_journal_records_postings_and_reversals(books)
+def test_the_activity_records_postings_and_reversals(books):
+    check_the_activity_records_postings_and_reversals(books)
 
 
-def test_journal_effects_entries_hide_targets_the_reader_cannot_read(books, tmp_path):
+def test_activity_effects_entries_hide_targets_the_reader_cannot_read(books, tmp_path):
     app, c, account = books
     editor, viewer = add_user(app, 'editor'), add_user(app, 'viewer')
     url = invoice(c, account)
@@ -1005,7 +1005,7 @@ def test_journal_effects_entries_hide_targets_the_reader_cannot_read(books, tmp_
 
 
 def check_a_rolled_back_move_leaves_no_effects_entry(books, monkeypatch):
-    from evlet import journal
+    from evlet import activity
     from evlet.auth import User
     app, c, office = books
     record_id = bill(c, office)
@@ -1013,7 +1013,7 @@ def check_a_rolled_back_move_leaves_no_effects_entry(books, monkeypatch):
     def fail(*args):
         raise RuntimeError('number entry failed')
     with app.business.context(User(1, 'admin', 'admin')) as context:
-        monkeypatch.setattr(journal, 'number', fail)
+        monkeypatch.setattr(activity, 'number', fail)
         with pytest.raises(RuntimeError):
             context.move(Bill, record_id, 'issued')
         monkeypatch.undo()
@@ -1027,16 +1027,16 @@ def test_a_rolled_back_move_leaves_no_effects_entry(tmp_path, monkeypatch):
     check_a_rolled_back_move_leaves_no_effects_entry(stacked_books(Database(tmp_path / 'stacked.sqlite3', Registry(*STACKED))), monkeypatch)
 
 
-def test_models_with_effects_journal_by_default(tmp_path):
-    from evlet import Journal
-    from evlet.journal import compile_journals
-    assert Registry(*MODELS).journals[Invoice] == Journal()
-    # Effects need a State, which journals already; the rule names Effects too, so a model is journaled by either.
+def test_models_with_effects_keep_activity_by_default(tmp_path):
+    from evlet import Activity
+    from evlet.activity import compile_activities
+    assert Registry(*MODELS).activities[Invoice] == Activity()
+    # Effects need a State, which keeps an Activity already; the rule names Effects too, so either turns it on.
     plain = type('Loose', (Model,), {'name': Text(default='')})
-    assert compile_journals((plain,), (), {plain: ()}) == {plain: Journal()} and compile_journals((plain,), ()) == {}
-    # Meta.journal = None is the one way out: rows are posted, no entry is written.
+    assert compile_activities((plain,), (), {plain: ()}) == {plain: Activity()} and compile_activities((plain,), ()) == {}
+    # Meta.activity = None is the one way out: rows are posted, no entry is written.
     class Quiet(Model):
-        Meta = type('Meta', (FiniteMeta,), {'journal': None, 'effects': (Effect(StockMove, rows='rows', on='done'),)})
+        Meta = type('Meta', (FiniteMeta,), {'activity': None, 'effects': (Effect(StockMove, rows='rows', on='done'),)})
         permissions = ALL
         status = State(
             State.Step('open'),
@@ -1050,8 +1050,8 @@ def test_models_with_effects_journal_by_default(tmp_path):
     app = start(Database(tmp_path / 'quiet.sqlite3', Registry(StockMove, Quiet)))
     c = client(app)
     url = f"/api/quiet/{c('POST', '/api/quiet', {})[1]['id']}"
-    assert Quiet not in app.business.journals and move(c, url, 'done')[0] == 200
-    assert len(entries(app, 'stockmove')) == 1 and c('GET', f'{url}/journal')[0] == 404
+    assert Quiet not in app.business.activities and move(c, url, 'done')[0] == 200
+    assert len(entries(app, 'stockmove')) == 1 and c('GET', f'{url}/activity')[0] == 404
 
 
 # Posted records keep their calculated values
@@ -1163,7 +1163,7 @@ def test_posted_records_keep_their_calculated_values_on_moves_and_actions(tmp_pa
     assert effects.check(app) == []
 
 
-def test_recompute_skips_posted_records_and_journals_the_rest(tmp_path, caplog):
+def test_recompute_skips_posted_records_and_records_activity_for_the_rest(tmp_path, caplog):
     from evlet import AddIndex, Migration, Recompute
     path, base = tmp_path / 'db.sqlite3', Migration('0000_base', AddIndex('bill', 'memo'))
     app = start(Database(path, Registry(*posting_models(1)), migrations=[base]))
@@ -1188,12 +1188,12 @@ def test_recompute_skips_posted_records_and_journals_the_rest(tmp_path, caplog):
     assert [c('GET', url)[1]['total'] for url in (draft, approved, issued, voided)] == ['6.00', '6.00', '3.00', '3.00']
     assert effects.check(app) == []
     for url in (draft, approved):
-        latest = c('GET', url + '/journal')[1]['items'][0]
+        latest = c('GET', url + '/activity')[1]['items'][0]
         assert latest['kind'] == 'recomputed' and latest['actor'] is None
         assert latest['data'] == {'fields': {'total': {'old': '3.00', 'new': '6.00'}},
                                   'rows': {'lines': {'updated': [{'id': latest['data']['rows']['lines']['updated'][0]['id'],
                                                                   'fields': {'amount': {'old': '3.00', 'new': '6.00'}}}]}}}
-    assert [item['kind'] for item in c('GET', issued + '/journal')[1]['items']].count('recomputed') == 0
+    assert [item['kind'] for item in c('GET', issued + '/activity')[1]['items']].count('recomputed') == 0
     # Posted records stay on their old formula version; recalculated ones move to the active one.
     for url in (draft, approved):
         status, body, _ = move(c, url, 'issued')

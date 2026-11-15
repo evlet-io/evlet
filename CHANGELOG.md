@@ -4,15 +4,39 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.8 (15-11-2026)
 
-### Upgrading
+### Upgrading to 0.4.8
 
-- **Run `evlet migrate` after upgrading.** Framework steps `0014_unsaved_versions` (draft versions)
-  and `0015_oidc_tickets` (company sign-in state) change the database; `evlet upgrade` runs them.
+- **0.4.7 was built but never published.** Its changes are listed under 0.4.7 below and are part
+  of this release.
+
+- **Module-level `Task` and `Schedule` objects in a flat app's `services/` now register.** One
+  that was there unused before must be named after its app (`finance_...`) or the build refuses
+  it. Moving an `AppDefinition` schedule into `services/` needs a new name: a declared schedule
+  never takes over an existing one.
+- **Run `evlet migrate` after upgrading.** Framework steps `0014_unsaved_versions` (draft versions),
+  `0015_oidc_tickets` (company sign-in state) and `0016_activity` (the Journal tables renamed to
+  Activity) change the database; `evlet upgrade` runs them.
+- **The Journal is now Activity; rename it in your apps.** Replace `from evlet import Journal` with
+  `Activity`, `Meta.journal = Journal(...)` with `Meta.activity = Activity(...)` (or `None`), and the
+  `journal` operation in `Rule(...)` with `activity`. HTTP clients use `/api/{model}/{id}/activity`
+  and read `_activity` in record details and `activity` in schema entries and events; scripts run
+  `evlet activity verify`. There are no aliases: each old Python name, module, route, operation and
+  command fails with a message naming its replacement; the old `_journal` and `journal` response
+  keys are simply gone. Step `0016_activity` renames `evlet_journal` and `evlet_journal_hashed` in place,
+  with every entry and hash, and the `journal` operation in stored Controls overrides
+  ([docs/activity.md](docs/activity.md#renamed-from-the-journal)).
 
 ### Added
 
+- **Background work in flat apps.** A flat app can declare module-level `Task` and `Schedule`
+  objects in `services/`. Their handlers get the job context and database session that
+  `JobQueue` tasks get, including resumable steps. Names are app-qualified (`finance_drain`) and a
+  clash fails the build. Install and reload register them like `@cron`, keeping next runs and
+  operator-disabled schedules; a removed schedule is disabled, not deleted. The install trust
+  question lists them and says they run with full database access
+  ([jobs-realtime.md](docs/jobs-realtime.md#background-work-in-a-flat-app)).
 - **Optional company sign-in.** `OIDC` and `LocalAuth(oidc=...)` support an explicitly
   configured provider and immutable subject mappings to existing users. Install the `oidc`
   extra (joserfc) to enable it; local login, roles, realms and MFA remain enforced. Callback
@@ -27,6 +51,22 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   unavailable.
 - **The browser retries creates safely.** New-record forms send an `Idempotency-Key`, so a
   create whose answer was lost is retried without making a second record.
+
+### Changed
+
+- **The record history is called Activity everywhere, as the UI already labels it.** `Activity`,
+  `Meta.activity`, `evlet.activity`, the `activity` permission operation, `/api/{model}/{id}/activity`,
+  `_activity`, the schema and event key `activity`, `evlet activity verify` and the `evlet_activity`
+  and `evlet_activity_hashed` tables replace their Journal names. `Registry.activities`,
+  `Policy.activity_writers`, `Business.changed(..., activity=True)`, `EventStore.publish(..., activity=True)`
+  and `evlet.effects.activity_item` follow. Existing hash chains verify unchanged.
+
+### Removed
+
+- **The Journal names.** `evlet.Journal`, `evlet.journal`, `Meta.journal`, the `journal` operation
+  (in `Rule`, `Policy` and Controls), `/api/{model}/{id}/journal` (answers 410) and `evlet journal
+  verify` were removed without a deprecation release, by owner decision; each fails with a message
+  naming its Activity replacement.
 
 ### Fixed
 
@@ -48,7 +88,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   blocking another's. Committed edits are kept while another field is typed in. Callers without
   revision headers retain their existing behavior.
 
-## 0.4.7 (15-11-2026)
+## 0.4.7 (built 15-11-2026, not published)
 
 ### Upgrading to 0.4.7
 

@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email,
-                   Integer, Journal, Link, LongText, Mail, Model, Negate, Percent, Phone, Reference, Related, Rule,
+                   Integer, Activity, Link, LongText, Mail, Model, Negate, Percent, Phone, Reference, Related, Rule,
                    Select, Sequence, State, Sum, Table, Tags, Text, Time, URL, action, state)
 from evlet.calc import D, F, choose, coalesce, days, has_value, is_empty, month_start, parent, round, today, when
 
@@ -70,7 +70,7 @@ class Contact(Model):
         search_fields = ('full_name', 'email')
         key_fields = ('organization', 'job_title', 'email', 'phone')
         # Emails with this person, from a salesperson's own mailbox, land in the Activity tab.
-        journal = Journal()
+        activity = Activity()
         mail = Mail(match=('email',), kind='contact')
 
 

@@ -323,7 +323,7 @@ describe('testCRM: activity', () => {
     // The line save is a change with its rows counted.
     expect([...host.querySelectorAll('.ev-diff')].map(text)).toEqual(expect.arrayContaining(['Lines 1 added, 1 updated', 'Subtotal AED 83,400.00 AED 95,400.00']));
     expect(host.querySelector('.ev-partial')).toBeNull();
-    // A note goes to the journal and the history is read again.
+    // A note goes to the activity and the history is read again.
     typeRich(host.querySelector<HTMLElement>('.composer .rt-surface')!, 'Kick-off agreed for next week');
     click(byText(host, '.composer button', 'Save note'));
     await until(() => expect(lastToast()).toBe('Note added'));

@@ -30,7 +30,7 @@ as callers. Inside trusted code, `context.create(LedgerEntry, ...)` works as it 
 - `api=None`: no operation at all while a caller is active.
 
 `Policy.allows` asks it first, so Controls overrides (which only change Rules) cannot grant
-anything back. Write operations are create, update, delete, journal and every correction.
+anything back. Write operations are create, update, delete, activity and every correction.
 Attachments, actions, moves and lifecycle routes all check `update` or one of those, and
 `model_dispatch` also refuses every method except GET on an `api="read"` model with
 403 "<Model> is read only here. The application changes it.", so a route that forgets a check still
@@ -99,7 +99,7 @@ with the usual recent two-step code. The Periods page (Controls, Build) shows th
 
 ## 3. Decisions for the owner
 
-- Journal entries (notes, messages) count as writes, so an `api="read"` model takes none from callers.
+- Activity entries (notes, messages) count as writes, so an `api="read"` model takes none from callers.
 - Mirror rows in a closed period move to the first open date, not today, unless today is later.
 - A scope lock and the instance lock combine as the later of the two.
 

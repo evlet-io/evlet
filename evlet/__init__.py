@@ -3,7 +3,7 @@
 from typing import TYPE_CHECKING
 
 # The modules that register model build steps (evlet/models.py BUILD_ORDER), before any model class exists.
-from . import effects, guards, journal, ledger, meaning, measures, permissions, sequences, statemanager  # noqa: F401
+from . import effects, guards, activity, ledger, meaning, measures, permissions, sequences, statemanager  # noqa: F401
 from .app import Application
 from .database import ConflictError, Database, NotFoundError
 from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Duration, Email, Integer,
@@ -75,8 +75,8 @@ from .measures import Count, CountDistinct, Day, Max, Min, Month, Sum, Year
 __all__ += ["Count", "CountDistinct", "Day", "Max", "Min", "Month", "Sum", "Year"]
 from .meaning import Attachments, Related
 __all__ += ["Attachments", "Related"]
-from .journal import Journal
-__all__ += ["Journal"]
+from .activity import Activity
+__all__ += ["Activity"]
 
 __all__ += ["SCOPES"]
 
@@ -170,4 +170,26 @@ def __getattr__(name):
     if name == 'PostgreSQLDatabase':
         from .database import POSTGRESQL_REMOVED
         raise ImportError(POSTGRESQL_REMOVED)
+    # Renamed after 0.4.7 (docs/activity.md).
+    if name == 'Journal':
+        raise ImportError('evlet.Journal was renamed: use evlet.Activity, declared as Meta.activity = Activity(...)')
+    if name == 'journal':
+        raise ImportError('evlet.journal was renamed: use evlet.activity')
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+
+
+class _Renamed:
+    """Refuse the renamed modules with the replacement, instead of a bare ModuleNotFoundError."""
+    MODULES = {'evlet.journal': 'evlet.activity', 'evlet.cli.journal': 'evlet.cli.activity'}
+
+    @classmethod
+    def find_spec(cls, name, path=None, target=None):
+        if name in cls.MODULES:
+            raise ImportError(f'{name} was renamed: use {cls.MODULES[name]} (docs/activity.md)', name=name)
+        return None
+
+
+import sys as _sys
+if not any(finder is _Renamed or type(finder).__name__ == '_Renamed' for finder in _sys.meta_path):
+    _sys.meta_path.insert(0, _Renamed)
+del _sys

@@ -2008,7 +2008,7 @@
         "max_files": 10,
         "max_size": 1048576
       },
-      "journal": {
+      "activity": {
         "tamper_evident": false,
         "kinds": [
           "note",
@@ -9936,7 +9936,7 @@
           "link": null
         }
       ],
-      "journal": {
+      "activity": {
         "tamper_evident": true,
         "kinds": [
           "note",

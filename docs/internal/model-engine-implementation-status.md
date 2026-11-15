@@ -355,7 +355,7 @@ Branch `model/04-state`, stacked on `model/03-lines`. Guide: [states-actions.md]
   update permission and row scope as for updates, then unknown target 404, final state 409,
   no such move 409, role 403, guard 409. The move, `run`, settlement and rows commit in one
   transaction. `changed()` receives `"move"`. `evlet.states.moved()` is the empty hook
-  where Phase 8 will write the Journal entry.
+  where Phase 8 will write the Activity entry.
 * **Actions.** `@action("Label", roles=..., inputs={...}, available_when=...)`. With
   `inputs`, fields clean the values and the signature is not read for types; without, the
   typed-signature rule stays. `available_when` failing is 409. Moves and actions bypass the
@@ -472,7 +472,7 @@ section of [states-actions.md](../states-actions.md).
   (Phase 6), `prepare_copy(context, model, original, copy)` before the copy settles (Phase 7
   clears Sequence numbers here; no longer empty once Phase 7 is stacked), `voided(context, model, record_id, previous, reason)` and
   `revised(context, model, original_id, copy_id, reason)` once each operation is saved
-  (Phase 8 Journal; `voided` is skipped when a void record is revised again). A failure in any of them rolls the whole operation back (tested).
+  (Phase 8 Activity; `voided` is skipped when a void record is revised again). A failure in any of them rolls the whole operation back (tested).
 * **Playground.** The amendment Quote has a `void` state (locked and final), `sent` is
   voidable and the Quote is revisable; administrators may void or revise a sent quote.
 * **Changed tests.** `tests/test_builds.py`: the Quote's final states are now `won` and
@@ -482,7 +482,7 @@ section of [states-actions.md](../states-actions.md).
 
 Known limitations:
 
-* The void reason is passed to the Journal hook but not stored until Phase 8.
+* The void reason is passed to the Activity hook but not stored until Phase 8.
 * Other reasons a copy can fail (a row scope on the root that the copy's values leave, a
   fetched field the caller cannot read) are not predicted; they roll back with 403, 404 or 422.
 * Revising a document copies its rows one statement per row, like creating one.
@@ -521,7 +521,7 @@ as `model/07-stacked`. Guide: [sequences.md](../sequences.md).
   reads it to show the number read only and when it will be assigned.
 * **Hooks for later phases.** `sequences.clear_for_copy(model, values)` for revise
   (Phase 5); `sequences.assigned(...)`, an empty hook called after the write, for the
-  Journal (Phase 8). Void keeps the number with no extra code.
+  Activity (Phase 8). Void keeps the number with no extra code.
 * **Playground.** The amendment Quote has `number = Sequence("Q-{year}-{n:04}",
   assign_on="sent")`; `tests/test_builds.py` checks it is null until sent, refused on PATCH,
   kept when a lost quote is reopened and resent, and described in the schema.
@@ -788,18 +788,18 @@ Restacked on `model/10-stacked` as `model/06-stacked` (02-11-2026):
 * The amendment Quote keeps its number, measures and key fields and adds the SalesLedger
   effect. The generated fixtures were regenerated and match the committed files.
 
-## Phase 8: the Journal (02-11-2026)
+## Phase 8: the Activity (02-11-2026)
 
 Branch `model/08-journal`, stacked on `model/10-stacked`; restacked on `model/06-stacked` as
-`model/08-stacked`. Guide: [journal.md](../journal.md).
+`model/08-stacked`. Guide: [activity.md](../activity.md).
 
-* **Declaration.** `Meta.journal = Journal(tamper_evident=False)`, exported from `evlet`.
-  Left out, it is on for models with a State and off otherwise; `journal = None` is the one
-  way to turn it off. `Journal()` on a model without a State makes it a document. Row models
-  cannot declare one. `Registry.journals` holds the result; `view_for` accepts the key.
-* **Storage.** `evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash)`
+* **Declaration.** `Meta.activity = Activity(tamper_evident=False)`, exported from `evlet`.
+  Left out, it is on for models with a State and off otherwise; `activity = None` is the one
+  way to turn it off. `Activity()` on a model without a State makes it a document. Row models
+  cannot declare one. `Registry.activities` holds the result; `view_for` accepts the key.
+* **Storage.** `evlet_activity(id, model, record_id, kind, actor, at, data, prev_hash, hash)`
   with an index on (model, record_id, id), created by `Business.initialize()` when any model
-  journals. Triggers refuse UPDATE and DELETE (and TRUNCATE on PostgreSQL). No route, Session
+  keeps an Activity. Triggers refuse UPDATE and DELETE (and TRUNCATE on PostgreSQL). No route, Session
   method, connector or MCP tool writes the table.
 * **Engine entries** in the operation's transaction and savepoint: `created` and `changed`
   (field old and new values, and Table rows at every depth: added, updated with field diffs,
@@ -807,77 +807,77 @@ Branch `model/08-journal`, stacked on `model/10-stacked`; restacked on `model/06
   `states.moved()`), `voided` (with the reason, through `corrections.voided()`), `revised` (the
   copy's id, through `corrections.revised()`; the copy starts with `created`), `number` (its own
   kind, through `sequences.assigned()`; numbers are left out of field diffs), `file`
-  (attachment added or removed through the HTTP routes) and `deleted`. `journal.effects_posted()`
+  (attachment added or removed through the HTTP routes) and `deleted`. `activity.effects_posted()`
   writes the `effects` entry; `documents.operate()` and void call it (see below). The actor is the user id, or
   `engine` without a signed in user.
-* **User entries.** `POST /api/{model}/{id}/journal` and `journal.post()`: `note`, `message`
+* **User entries.** `POST /api/{model}/{id}/activity` and `activity.post()`: `note`, `message`
   (logged, nothing is sent), `call`, `follow_up` (text, due date, assignee who can read the
-  record) and `follow_up_done` (once per follow up, 409 after). A new `journal` operation in
-  `Rule` (defaults changed by the review fixes below). `Policy.journalers` holds the result.
-* **Reading.** `GET /api/{model}/{id}/journal` and `journal.entries()`: paged, newest first,
+  record) and `follow_up_done` (once per follow up, 409 after). A new `activity` operation in
+  `Rule` (defaults changed by the review fixes below). `Policy.activity_writers` holds the result.
+* **Reading.** `GET /api/{model}/{id}/activity` and `activity.entries()`: paged, newest first,
   read access and row scope required. Every entry is listed; unreadable fields, unreadable or
   out-of-scope rows (all removed rows under a row scope) and Link values to hidden records are
   removed and the entry is marked `partial`. Entries about the State or a number the caller
   cannot read are shown as `changed`. Row and Link checks are batched per page.
-* **Details, schema, events.** Details carry `_journal` (`count`, `open_follow_ups`), outside
-  the ETag. Schema entries carry `journal` (`tamper_evident`, the kinds the role may post).
-  User entries publish an event with `"journal": true` (stored as `deleted = 2` in
+* **Details, schema, events.** Details carry `_activity` (`count`, `open_follow_ups`), outside
+  the ETag. Schema entries carry `activity` (`tamper_evident`, the kinds the role may post).
+  User entries publish an event with `"activity": true` (stored as `deleted = 2` in
   `evlet_events`, no schema change).
 * **Tamper evidence.** SHA-256 over `[model, record_id, kind, actor, at, data, prev_hash]`,
-  chained per record. `evlet journal verify <instance>` reads the SQLite database read only in
-  one snapshot, prints breaks and exits 1; `journal.verify(database)` works on both databases.
-* **Playground.** The amendment Quote declares `Journal(tamper_evident=True)`;
+  chained per record. `evlet activity verify <instance>` reads the SQLite database read only in
+  one snapshot, prints breaks and exits 1; `activity.verify(database)` works on both databases.
+* **Playground.** The amendment Quote declares `Activity(tamper_evident=True)`;
   `tests/test_builds.py` reads its `moved` and `number` entries and posts a note on the sent
   quote.
-* **Tests.** `tests/test_journal.py`: declarations and defaults, field and nested row diffs,
+* **Tests.** `tests/test_activity.py`: declarations and defaults, field and nested row diffs,
   reorder, actions, moves, numbers, void reason, revise link, attachments, deletion, no entry
   for an unchanged write, field, row, Link and State filtering for viewers, row scope, paging,
-  user entry validation per kind, follow up completion once by permitted roles, the `journal`
-  Rule operation, the Python API, the journal event, triggers, hash chains with three kinds of
+  user entry validation per kind, follow up completion once by permitted roles, the `activity`
+  Rule operation, the Python API, the activity event, triggers, hash chains with three kinds of
   tampering, the verify command, rollback of a caught failure, and a PATCH of a 1,000-row
-  document (at most three more statements than without a journal). PostgreSQL variants in
+  document (at most three more statements than without an activity). PostgreSQL variants in
   `tests/test_postgres.py`.
 * **Changed tests.** Two statement budgets in `tests/test_states.py` for stated documents
-  allow one more statement, the `_journal` summary, since a State now journals by default.
+  allow one more statement, the `_activity` summary, since a State now keeps an Activity by default.
 
 Known limitations:
 
 * Rename migrations do not rewrite stored entries.
 * The hash chain does not detect a deliberate rewrite of every hash or the removal of a
   record's latest entries.
-* The connector and the MCP server do not show the journal yet; the Evlet UI does.
+* The connector and the MCP server do not show the activity yet; the Evlet UI does.
 
 Review fixes (02-11-2026):
 
 * A SQLite trigger refuses inserts that reuse an id, since `INSERT OR REPLACE` replaced an entry
   without firing the DELETE trigger. It is created idempotently, so older databases get it.
-* Journal text with a lone surrogate is a 422 (`Expected valid Unicode text`), not a 500.
-* `journal.post()` runs in the per-operation savepoint with the recursion guard.
-* Owner decision: admin always keeps the `journal` operation (when it reads the model), the
-  editor has it when its Rule reads and updates the model, and a Rule naming `journal` only adds
+* Activity text with a lone surrogate is a 422 (`Expected valid Unicode text`), not a 500.
+* `activity.post()` runs in the per-operation savepoint with the recursion guard.
+* Owner decision: admin always keeps the `activity` operation (when it reads the model), the
+  editor has it when its Rule reads and updates the model, and a Rule naming `activity` only adds
   roles, like void and revise.
-* `verify` knows the tamper-evident models (from the registry and `evlet_journal_hashed`,
+* `verify` knows the tamper-evident models (from the registry and `evlet_activity_hashed`,
   written at startup) and reports their unhashed entries. The CLI falls back to a
   `query_only` connection when a WAL database cannot be opened read only; tenant and
-  PostgreSQL databases use `journal.verify(database)`.
+  PostgreSQL databases use `activity.verify(database)`.
 * An action's name is left out of entries for roles that cannot read the State. The guide
   documents what stays visible of hidden changes and the request size limit.
 * The 1,000-row PATCH budget is four statements (the SQLite guard trigger is traced as one).
 
 Restacked on `model/06-stacked` as `model/08-stacked` (02-11-2026):
 
-* `Meta.journal` joins `Meta.effects` among the Meta keys; `Business.availability` returns
-  `_effects` and `_journal` together; the CLI has both `evlet effects check` and
-  `evlet journal verify`. The amendment Quote keeps its SalesLedger effect and declares
-  `Journal(tamper_evident=True)`.
-* Effects write to the Journal. `effects.post()` and `effects.reverse()` return one item per
+* `Meta.activity` joins `Meta.effects` among the Meta keys; `Business.availability` returns
+  `_effects` and `_activity` together; the CLI has both `evlet effects check` and
+  `evlet activity verify`. The amendment Quote keeps its SalesLedger effect and declares
+  `Activity(tamper_evident=True)`.
+* Effects write to the Activity. `effects.post()` and `effects.reverse()` return one item per
   target that received rows (`target`, `rows`, `reversal`, and `balanced` for a balanced
-  effect). `documents.operate()` calls `journal.effects_posted()` after `states.moved()`, and
+  effect). `documents.operate()` calls `activity.effects_posted()` after `states.moved()`, and
   `corrections.void_record()` after `voided()`, so the `effects` entry follows the `moved` or
   `voided` entry in the same savepoint. No entry is written when no rows were written.
 * Readers see the targets they read fully; `balanced` needs both balanced fields; a reader of
   no target sees a `partial` `changed` entry with no data, as for other hidden entries.
-* `compile_journals()` turns the journal on by default for models with a State or Effects.
+* `compile_activities()` turns the activity on by default for models with a State or Effects.
 * Tests in `tests/test_effects.py` (posting, void reversal, hidden targets per role, a caught
-  failure after the entry leaves nothing, default journaling with Effects, `journal = None`)
+  failure after the entry leaves nothing, default Activity with Effects, `activity = None`)
   and PostgreSQL variants in `tests/test_postgres.py`.

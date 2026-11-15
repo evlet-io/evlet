@@ -3,7 +3,7 @@
 from datetime import date
 
 from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Main, Model, Naming,
-                   Journal, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, Text, ValidationError,
+                   Activity, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, Text, ValidationError,
                    action, state)
 from evlet.calc import F
 
@@ -231,8 +231,8 @@ class Employee(Model):
         derives = ('skill_count', 'skill_levels')
         # A key card may show a value derive() sets, like a formula's result.
         cards = ('skill_count',)
-        # Each save keeps who changed what, in a hash-chained journal.
-        journal = Journal(tamper_evident=True)
+        # Each save keeps who changed what, in a hash-chained activity.
+        activity = Activity(tamper_evident=True)
 
     # Moving someone changes every team above them, so each save keeps who changed reports_to and when.
     # Deleting someone who still has reports is refused by the reports_to Link.

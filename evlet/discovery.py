@@ -46,7 +46,7 @@ READ_ANNOTATIONS = {
                                                         ('name', 'label', 'allowed'))},
     '_moves': {'type': 'array', 'items': _MOVE},
     '_locked': _BOOL,
-    '_journal': object_schema({'count': _COUNT, 'open_follow_ups': _COUNT}, ('count', 'open_follow_ups')),
+    '_activity': object_schema({'count': _COUNT, 'open_follow_ups': _COUNT}, ('count', 'open_follow_ups')),
     '_row_ids': {'type': 'object', 'additionalProperties': dict(ID)},
     '_calculation': object_schema({'language': _TEXT, 'model_schema_hash': _TEXT}, ('language', 'model_schema_hash')),
     '_job': object_schema({'id': {'type': 'integer', 'minimum': 1}, 'state': _TEXT}, ('id', 'state')),

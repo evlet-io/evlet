@@ -189,7 +189,7 @@ job and rebuilds its `Policy` and settings when it moved. Open pages get a
 
 **Permissions** (kind `perm`, key `role|Model`, value
 `{"ops": [...], "read": [...] | null, "write": [...] | null, "scope": id | null}`):
-operations (`read`, `create`, `update`, `delete`, `journal`, `print`), readable and
+operations (`read`, `create`, `update`, `delete`, `activity`, `print`), readable and
 writable fields must stay within the file rule. Stricter only applies to the fields declared in
 app files. An instance field (`x_`, added by Controls) follows the record for every signed-in
 staff role, that is every desk role: each one that reads the model reads it, and each one that
@@ -202,9 +202,9 @@ grants it to a portal role with a permission override, and fields added later st
 it until ticked there.
 The API, generated screens, API keys, exports and AI assistants all read fields through the same
 `Policy`. Write needs read, and no access clears fields and
-rows. Admin rules can't be overridden. The page shows the first four; `journal` and `print`
+rows. Admin rules can't be overridden. The page shows the first four; `activity` and `print`
 named in the file rule are kept on save. A role based on the
-editor journals like the editor when its rule reads and updates the model (`docs/journal.md`).
+editor adds to Activity like the editor when its rule reads and updates the model (`docs/activity.md`).
 Row scopes are named presets: `created_by`, `owner`, `account_manager` and `assignee` (for
 models with that field), `own_customer` and the app's own (`AppDefinition(scopes={...})`).
 A row scope set in the app file can't be changed. The `own_customer` preset is
@@ -740,7 +740,7 @@ A stored value that no longer validates turns it off. Changes are audited under 
 **Which records mail matches.** Apps opt models in, naming the `Email` fields to match:
 
 ```python
-from evlet import Email, Journal, Mail, Model, Text
+from evlet import Email, Activity, Mail, Model, Text
 
 class Contact(Model):
     full_name = Text()
@@ -748,14 +748,14 @@ class Contact(Model):
 
     class Meta:
         title_field = "full_name"
-        journal = Journal()
+        activity = Activity()
         mail = Mail(match=("email",), kind="contact")
 ```
 
 `kind` is `customer`, `contact`, `lead` or `other` (the default). A model without `Meta.mail` is
 never matched, whatever fields it has. The fields must be stored `Email` fields; the model can't
-be a table row, and it must keep a journal (a model with a State does; others add
-`journal = Journal()`), since messages are Journal entries. A CRM app would declare its
+be a table row, and it must keep an activity (a model with a State does; others add
+`activity = Activity()`), since messages are Activity entries. A CRM app would declare its
 organizations or customers, contacts and leads; testCRM declares Contact and Lead (its
 Organization has no email field).
 
@@ -843,12 +843,12 @@ the saved sign-in and any pending sign-in, and stops syncing at once. Messages a
 records stay there.
 
 **Privacy.** No Controls route reads a personal mailbox, its messages or its credentials. A
-linked message is a Journal `message` entry on the record ([journal.md](journal.md)), with the
+linked message is an Activity `message` entry on the record ([activity.md](activity.md)), with the
 mailbox owner as the actor and `{"text", "subject", "party", "direction", "source": "mailbox"}`.
-It shows in the record's Activity and through `GET /api/{model}/{id}/journal` (add
+It shows in the record's Activity and through `GET /api/{model}/{id}/activity` (add
 `?kind=message` for messages only), only to people who can read that record; API keys and AI
 assistants only within their scope. The entry also keeps the `Email` field that matched; the
-Journal read path leaves the address out (`party` is `null`, the entry `partial`) for readers who
+Activity read path leaves the address out (`party` is `null`, the entry `partial`) for readers who
 can't read that field, and never returns the field's name. `evlet_mail_links(model, record_id,
 message_key, entry_id)` is only an index: it keeps a message once per record (a different message
 reusing a Message-ID is kept too) and finds the records a reply belongs to, among the entries the
@@ -1003,7 +1003,7 @@ sign-in. An assistant acts as the person's role through the same policy as the b
 Controls permission and field overrides and custom roles apply to it; the `mcp.*` settings and
 the person's own app choice only narrow it further.
 
-**Journal.** A record changed through an assistant is journaled with the person as the actor,
+**Activity.** A record changed through an assistant is recorded in Activity with the person as the actor,
 like any of their writes, and the entry names the client: `"via": "Claude"` on the entry
 (`"Local MCP connector"` for `evlet mcp`). The record's Activity shows "Sara changed it via Claude".
 The client name is the one the client registered, so it is a label, not proof of identity.

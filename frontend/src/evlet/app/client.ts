@@ -138,19 +138,19 @@ export class AppClient extends ApiClient {
     return (await this.request<Page<RecordData>>('GET', `/api/${model}/${id}/related/${relation}`, { query: page })).data;
   }
 
-  /** One page of the record's journal, newest first (docs/journal.md), with the names of its actors and assignees. */
-  async journal(model: string, id: string, page: { limit?: number; offset?: number } = {}) {
-    return (await this.request<JournalPage>('GET', `/api/${model}/${id}/journal`, { query: page })).data;
+  /** One page of the record's activity, newest first (docs/activity.md), with the names of its actors and assignees. */
+  async activity(model: string, id: string, page: { limit?: number; offset?: number } = {}) {
+    return (await this.request<ActivityPage>('GET', `/api/${model}/${id}/activity`, { query: page })).data;
   }
 
-  /** Add a note to the record's journal; answers the entry as the caller sees it. */
+  /** Add a note to the record's activity; answers the entry as the caller sees it. */
   async addNote(model: string, id: string, text: string) {
-    return (await this.request<JournalEntry>('POST', `/api/${model}/${id}/journal`, { body: { kind: 'note', text } })).data;
+    return (await this.request<ActivityEntry>('POST', `/api/${model}/${id}/activity`, { body: { kind: 'note', text } })).data;
   }
 
-  /** Add a note written with the rich text composer: sanitised HTML, mentions kept (docs/journal.md). */
+  /** Add a note written with the rich text composer: sanitised HTML, mentions kept (docs/activity.md). */
   async addRichNote(model: string, id: string, html: string) {
-    return (await this.request<JournalEntry>('POST', `/api/${model}/${id}/journal`, { body: { kind: 'note', html } })).data;
+    return (await this.request<ActivityEntry>('POST', `/api/${model}/${id}/activity`, { body: { kind: 'note', html } })).data;
   }
 
   /** Active people to mention on a record, with whether each can open it. */
@@ -252,13 +252,13 @@ export interface ReportPage { rows: Array<Record<string, unknown>>; total: numbe
   /** With Report.group_by: the groups on this page with their row count and totals (of every row, or of the page). */
   groups?: { scope: 'all' | 'page'; items: Array<{ value: unknown; count: number; totals: Record<string, string | null> }> } }
 
-/** A journal entry (docs/journal.md). `actor` is a user id, or null for the engine; `partial` marks an entry
+/** An activity entry (docs/activity.md). `actor` is a user id, or null for the engine; `partial` marks an entry
  * the caller sees only in part; `done` is set on follow ups (the completing entry's id, or null). */
 /** `via` names the AI assistant a person's write came through; `actor` stays the person. */
-export interface JournalEntry { id: number; kind: string; actor: number | null; at: string; data: Record<string, any>; partial?: true; done?: number | null; via?: string }
+export interface ActivityEntry { id: number; kind: string; actor: number | null; at: string; data: Record<string, any>; partial?: true; done?: number | null; via?: string }
 /** One inbox row. `record` is null when the person cannot open the record: then nothing about it is sent. */
 export interface InboxItem { id: number; kind: string; at: number; read: boolean; actor: string; text: string
   record: { model: string; id: string; label: string; title: string } | null }
 export interface InboxPage { items: InboxItem[]; total: number; unread: number }
-/** A page of a journal: `users` names the actors and assignees on it by user id. */
-export interface JournalPage extends Page<JournalEntry> { users: Record<string, string> }
+/** A page of an activity: `users` names the actors and assignees on it by user id. */
+export interface ActivityPage extends Page<ActivityEntry> { users: Record<string, string> }

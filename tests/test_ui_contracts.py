@@ -17,16 +17,16 @@ def test_schema_and_record_fixtures_match_http_contracts():
         assert json.loads((fixtures / name).read_text()) == actual, name
 
 
-JOURNAL_TIME = re.compile(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z')
+ACTIVITY_TIME = re.compile(r'\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z')
 
 
-def without_journal_times(value):
-    """Journal entries carry the moment they were written; everything else must match exactly."""
+def without_activity_times(value):
+    """Activity entries carry the moment they were written; everything else must match exactly."""
     if isinstance(value, dict):
-        return {key: 'at' if key == 'at' and isinstance(item, str) and JOURNAL_TIME.fullmatch(item) else without_journal_times(item)
+        return {key: 'at' if key == 'at' and isinstance(item, str) and ACTIVITY_TIME.fullmatch(item) else without_activity_times(item)
                 for key, item in value.items()}
     if isinstance(value, list):
-        return [without_journal_times(item) for item in value]
+        return [without_activity_times(item) for item in value]
     return value
 
 
@@ -35,7 +35,7 @@ def test_ui_framework_fixtures_match_http_contracts():
     from scripts.generate_ui_framework_fixtures import generate as framework
     fixtures = Path(__file__).resolve().parents[1] / 'frontend/src/evlet/tests'
     for name, actual in framework().items():
-        assert without_journal_times(json.loads((fixtures / name).read_text())) == without_journal_times(actual), name
+        assert without_activity_times(json.loads((fixtures / name).read_text())) == without_activity_times(actual), name
 
 
 def test_default_plural_labels_follow_simple_english_rules():

@@ -15,7 +15,7 @@ wins, and this document should be corrected.
 Companion documents in the repo:
 
 - `docs/internal/handoff-model.md`: model engine amendments (expressions, Lines, State,
-  void and revise, Effects, Sequence, Journal, Measures). The UI below is
+  void and revise, Effects, Sequence, Activity, Measures). The UI below is
   designed against those concepts.
 - `docs/ui.md` and `AGENTS.md`: current UI contract rules. Python stays the
   source of truth; components never appear in model definitions.
@@ -36,7 +36,7 @@ Companion documents in the repo:
 | `src/5-views.js` | Home, deals board and list, leads, contacts, organizations, tasks, inbox, reports, timeline and composer. |
 | `src/6-actions.js` | Mutations, drag and drop, command palette with quick access, create forms, peek drawers, tooltip, action map, keyboard. |
 | `src/7-doc.js` | Doc view engine: record types, fields, sections, blocks, template and user layout, side panel, child table, list table resizing, layout control, Doc layout page with placeholders. |
-| `src/9-invoice.js` | Invoice as the transaction sample: states, moves, lock, void, revise, sequence, postings, payments, field-level journal. |
+| `src/9-invoice.js` | Invoice as the transaction sample: states, moves, lock, void, revise, sequence, postings, payments, field-level activity. |
 | `src/10-library.js` | The component library page and its catalog data. |
 | `src/8-boot.js` | Boot: restores theme, sidebar and view preferences, then renders. |
 | `build.sh` | Rebuilds `mockup.html` from `src/` in the correct order. |
@@ -250,7 +250,7 @@ its details in a popup. Build components at four levels:
   Switch, Icon, Divider).
 - **Element**: single-purpose pieces (each field type, pills, avatars, chips).
 - **Composite**: elements combined (InlineValue, MiniCard, DataTable, KpiTile).
-- **Section**: whole screen areas (DocHeader, ChildTable, Journal, Board).
+- **Section**: whole screen areas (DocHeader, ChildTable, Activity, Board).
 
 **Fields** are one `BaseField` (label, value cell, required, locked,
 applies-when, error, hint) wrapped by one component per model field type. A field
@@ -687,23 +687,23 @@ Checkbox, title, due and the linked record. Overdue turns the due date red.
 - Appears in: My tasks, Home, Tasks tab
 
 **TimelineItem** · Composite  
-One journal entry: icon by kind, sentence, time and an optional body.
+One activity entry: icon by kind, sentence, time and an optional body.
 
-- Props: `entry` (journal entry); `kind` (note, email, call, changed, moved…)
+- Props: `entry` (activity entry); `kind` (note, email, call, changed, moved…)
 - Built from: IconTile, MessageCard, ChangeDiff
-- Appears in: Journal
+- Appears in: Activity
 
 **ChangeDiff** · Element  
 Field, old value struck through, new value. One line per changed field.
 
 - Props: `changes` (list) label, old, new
-- Appears in: Journal
+- Appears in: Activity
 
 **MessageCard** · Element  
 Bordered body for notes, calls and emails. Emails show a subject line.
 
 - Props: `subject` (text) Emails only; `body` (text)
-- Appears in: Journal
+- Appears in: Activity
 
 **EmptyState** · Composite  
 Tinted icon, a short heading, what to do next and an optional button.
@@ -723,7 +723,7 @@ Full-width note under a header about the record's state, with optional actions.
 Quiet explanation above a block that behaves differently from the rest.
 
 - Props: `text` (text)
-- Appears in: Postings, Journal
+- Appears in: Postings, Activity
 
 **FilterChip** · Element  
 An active filter with a remove button.
@@ -755,7 +755,7 @@ Draggable record card for boards: tags, title, linked record, value, date and ow
 **FeedItem** · Composite  
 Compact activity line with a link to the record, for feeds across records.
 
-- Props: `entry` (journal entry)
+- Props: `entry` (activity entry)
 - Built from: IconTile
 - Appears in: Home, Inbox
 
@@ -944,13 +944,13 @@ The record's lifecycle under the header: draft, locked with void and revise, or 
 - Appears in: Transaction records
 
 **ActivityComposer** · Section  
-One box for a note, email, call log or task. Cmd Enter saves to the journal.
+One box for a note, email, call log or task. Cmd Enter saves to the activity.
 
 - Props: `modes` (list) note, email, call, task; `record` (record)
 - Built from: SegmentedControl, Button, IconButton, Key
 - Appears in: Activity tab
 
-**Journal** · Section  
+**Activity** · Section  
 Append-only history grouped by day: notes, messages, field changes, moves, postings and payments.
 
 - Props: `record` (record); `kinds` (filter) Optional
@@ -1203,7 +1203,7 @@ invoice: total, outstanding, due, payments).
 Activity is always first. Then Details, the child tables, Postings (effects),
 Emails, Tasks, Notes, Files. Counts show in a small grey badge.
 
-- **Activity**: composer (Note, Email, Log call, Task) then the journal grouped
+- **Activity**: composer (Note, Email, Log call, Task) then the activity grouped
   by day: Today, Yesterday, then weekday and date. Entry kinds: note, email,
   call, meeting, task, file, created, changed (with old and new values), moved,
   posted or reversed effects, voided (with reason), revised (with link),
@@ -1219,7 +1219,7 @@ Emails, Tasks, Notes, Files. Counts show in a small grey badge.
 Titled blocks: Next step (task card or a dashed prompt), Key fields (with All
 fields link), highlight card, People (mini cards with copy email and phone),
 Related (linked records, payments, revision links), Tags (chips and add), Record
-info (owner, created, last change, ID, journal count and chain status).
+info (owner, created, last change, ID, activity count and chain status).
 
 ### Transactions (invoice pattern)
 
@@ -1359,7 +1359,7 @@ they belong in server-side user settings so they follow the user.
 | Void, revise | Dialogs with required reason; banners and links both ways |
 | `Effects` | Postings tab with reversals and balance check |
 | `Sequence` | Mono number title; "Assigned on issue" |
-| `Journal` | Activity tab entries including field diffs |
+| `Activity` | Activity tab entries including field diffs |
 | `Measures` | Summary strip, KPI tiles, board column totals |
 | `key_fields`, `relations` | Key fields block, Related block |
 | `@action` with inputs | Primary button plus ActionDialog |

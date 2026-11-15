@@ -179,7 +179,7 @@ docBody = (dt, d) => {
   if (dt !== 'invoice') return baseBody(dt, d);
   if (S.recTab === 'lines') return gridBlock('invoice-lines', d);
   if (S.recTab === 'effects') return invPostings(d);
-  if (S.recTab === 'activity') return `<div class="journal-note">${icon('lock', 'xs')}Append-only history. Entries can't be edited or deleted. Chain verified.</div>` + baseBody(dt, d);
+  if (S.recTab === 'activity') return `<div class="activity-note">${icon('lock', 'xs')}Append-only history. Entries can't be edited or deleted. Chain verified.</div>` + baseBody(dt, d);
   return baseBody(dt, d);
 };
 const baseForm = docForm;
@@ -217,11 +217,11 @@ docSide = (dt, d) => {
   }
   if (blockOn(dt, 'people')) { const ppl = CONTACTS.filter(x => x.org === d.customer); out.push(sideSec('People', ppl.map(x => `<div class="mini-card" style="cursor:pointer" data-a="peekContact" data-id="${x.id}">${avatar(x.id)}<div class="grow"><div class="nm">${esc(x.n)}${x.id === d.contact ? ' <span class="chip">Billing</span>' : ''}</div><div class="sub">${esc(x.t)}</div></div></div>`).join('') || '<p class="muted side-empty">Choose a customer first.</p>')); }
   if (blockOn(dt, 'tags')) out.push(sideSec('Tags', `<div class="tag-row">${d.tags.map(t => `<span class="chip">${esc(t)}</span>`).join('')}<button class="chip add" data-a="tagMenu">${icon('plus', 'xs')}Tag</button></div>`));
-  if (blockOn(dt, 'info')) { const n = actsFor(dt, d).length; out.push(sideSec('Record info', `<dl class="fields info"><dt>Number</dt><dd><div class="fval ro"><span class="tx mono">${d.number || 'On issue'}</span></div></dd><dt>Created</dt><dd><div class="fval ro"><span class="num tx">${fmtDate(d.created)}</span></div></dd><dt>Journal</dt><dd><div class="fval ro"><span class="tx">${n} entries</span><span class="chip b-green" style="margin-left:auto">${icon('check', 'xs')}Chain OK</span></div></dd><dt>ID</dt><dd><div class="fval ro"><span class="tx mono">INVOICE-${d.id.toUpperCase()}</span></div></dd></dl>`)); }
+  if (blockOn(dt, 'info')) { const n = actsFor(dt, d).length; out.push(sideSec('Record info', `<dl class="fields info"><dt>Number</dt><dd><div class="fval ro"><span class="tx mono">${d.number || 'On issue'}</span></div></dd><dt>Created</dt><dd><div class="fval ro"><span class="num tx">${fmtDate(d.created)}</span></div></dd><dt>Activity</dt><dd><div class="fval ro"><span class="tx">${n} entries</span><span class="chip b-green" style="margin-left:auto">${icon('check', 'xs')}Chain OK</span></div></dd><dt>ID</dt><dd><div class="fval ro"><span class="tx mono">INVOICE-${d.id.toUpperCase()}</span></div></dd></dl>`)); }
   return out.join('');
 };
 
-/* journal entries */
+/* activity entries */
 Object.assign(actIcon, { changed: ['pencil', 'slate'], moved: ['arrow-right', 'blue'], voided: ['circle-x', 'rose'], revised: ['copy', 'violet'], effects: ['layers', 'teal'], payment: ['wallet', 'green'] });
 const baseSentence = actSentence;
 actSentence = (a, withDeal) => {

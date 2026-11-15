@@ -160,7 +160,7 @@ WRITES = [
     ('DELETE', '/api/entry/{entry}', None),
     ('POST', '/api/entry/{entry}/actions/touch', {}),
     ('POST', '/api/entry/{entry}/attachments', {'name': 'a.txt', 'content_type': 'text/plain', 'data': 'aGk='}),
-    ('POST', '/api/entry/{entry}/journal', {'kind': 'note', 'body': 'hello'}),
+    ('POST', '/api/entry/{entry}/activity', {'kind': 'note', 'body': 'hello'}),
     ('POST', '/api/book', {'memo': 'x'}),
     ('PATCH', '/api/book/{book}', {'memo': 'x'}),
     ('DELETE', '/api/book/{book}', None),
@@ -257,7 +257,7 @@ def test_a_model_without_surface_answers_404_everywhere(shop):
     for method, path, body in (('GET', '/api/secret', None), ('POST', '/api/secret', {'code': 'x'}), ('GET', f'/api/secret/{secret}', None),
                                ('PATCH', f'/api/secret/{secret}', {'code': 'x'}), ('DELETE', f'/api/secret/{secret}', None),
                                ('GET', '/api/secret/aggregate?measures=count:count', None), ('GET', f'/api/secret/{secret}/attachments', None),
-                               ('POST', f'/api/secret/{secret}/journal', {'kind': 'note', 'body': 'x'}), ('GET', '/api/_discovery/secret', None),
+                               ('POST', f'/api/secret/{secret}/activity', {'kind': 'note', 'body': 'x'}), ('GET', '/api/_discovery/secret', None),
                                ('GET', '/app/secret', None)):
         assert admin(method, path, body)[0] == 404, (method, path)
     assert 'secret' not in {entry['name'] for entry in admin('GET', '/api/schema')[1]['models']}

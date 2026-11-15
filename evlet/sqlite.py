@@ -15,8 +15,9 @@ from .models import identifier
 # Dropping a column needs SQLite 3.35 or later.
 DROP_COLUMN = (3, 35, 0)
 
-# Append-only tables that kept their trigger names from before the adapter; others use evlet_<table>.
-_APPEND_ONLY_PREFIX = {'evlet_journal': 'evlet_journal', 'evlet_document_revisions': 'evlet_revision', 'evlet_audit': 'evlet_audit'}
+# Append-only tables that kept their trigger names from before the adapter; others use evlet_<table>. evlet_journal is
+# the name of evlet_activity before framework step 0016_activity, which drops its triggers by these names.
+_APPEND_ONLY_PREFIX = {'evlet_activity': 'evlet_activity', 'evlet_journal': 'evlet_journal', 'evlet_document_revisions': 'evlet_revision', 'evlet_audit': 'evlet_audit'}
 
 # One column as Evlet writes it in CREATE TABLE: "name" TYPE, then NOT NULL, then its foreign key.
 _DEFINITION = r' (\w+)( NOT NULL)?( REFERENCES "[A-Za-z0-9_]+"\("id"\))?'
