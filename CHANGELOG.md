@@ -8,6 +8,11 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **`evlet upgrade` stages the new release and covers every instance of a project.** pip installs
+  into a copy of `.venv`, and the live environment changes only after every affected instance is
+  planned, stopped and backed up. `--all-instances` upgrades instances that share the
+  environment together; one without a service is migrated but not started. A failure keeps
+  the previous environment and a recovery record in `.evlet-upgrade.json`.
 - **Browser record and link caches are bounded.** Recent cells use approximate JSON budgets;
   active views retain their cell identity and receive updates after cache eviction. Renamed
   links refresh held labels, and disposed link controls release listeners and timers.
