@@ -887,18 +887,10 @@ class Business:
                     # A save replaces the saver's unsaved changes (docs/internal/unsaved-changes.md).
                     self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id,
                                               if_match=dict(scope.get('headers', [])).get(b'x-evlet-draft-revision'))
-                extra = self.availability(context, model, context._tx.get(model, result['id']))
-                # The write returns every readable row; the ETag covers them all and the body embeds the first page.
-                etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome', '_job')})
-                result = {**self.embedded(result), **extra}
-                if result.get('id') is not None and self.virtual_models(model) and self.policy.allows(user, model, 'read'):
-                    from .documents import Context
-                    reader = Context(self, context._tx, user, readonly=True)
-                    result = self.add_virtual_values(reader, model, RecordId(result['id']), result)
+                answer = self.saved_answer(context._tx, user, model, result['id'], context=context, written=result,
+                                           status=201 if record_id is None else 200)
                 self.remember_create(context._tx, retry, result['id'])
-            if plan is not None:
-                result['_calculation'] = {'language': plan['language'], 'model_schema_hash': plan['model_schema_hash']}
-            return (201 if record_id is None else 200), result, [(b'etag', etag)]
+            return answer
         if len(parts) == 3 and method == 'GET':
             return self.page(scope, user, model)
         if len(parts) == 3 and method == 'POST':
@@ -907,9 +899,10 @@ class Business:
                     repeated = self.repeated_create(tx, user, model, retry)
                     if repeated is not None:
                         return repeated
-                record, result = self.create_plain(tx, user, model, body)
+                record = self.create_plain(tx, user, model, body)
+                status, result, headers = self.saved_answer(tx, user, model, record.id)
                 self.remember_create(tx, retry, record.id)
-            return 201, result, [(b'location', f'/api/{parts[2]}/{record.id}'.encode())]
+            return status, result, [*headers, (b'location', f'/api/{parts[2]}/{record.id}'.encode())]
         if len(parts) == 4 and parts[3] in ('aggregate', 'measures', 'list_tabs') or len(parts) == 5 and parts[4] == 'measures':
             from .measures import route
             return route(self, scope, user, model, parts)
@@ -1016,18 +1009,37 @@ class Business:
             return None
         if previous['request_hash'] != request['request_hash']:
             raise AccessError(409, 'This Idempotency-Key was already used with different values')
+        # The replay applies today's read permissions: a record this caller can no longer read is not found.
         record = self.policy.record(tx, user, model, RecordId(previous['record_id']))
+        status, result, headers = self.saved_answer(tx, user, model, record.id)
+        return status, result, [*headers, (b'location', f'/api/{request["model"]}/{record.id}'.encode()),
+                                (b'idempotency-replayed', b'true')]
+
+    def saved_answer(self, tx, user, model, record_id, *, context=None, written=None, status=201):
+        """(status, body, headers) answering a save of one record, so a create and its replay answer alike.
+
+        The body is the record's detail with its first page of rows, the moves and actions available now, its
+        virtual results and the `_calculation` stamp; the ETag covers every readable row. `written` is what a
+        document write returned (every readable row, and possibly `_row_ids`, `_outcome` and `_job`, which only
+        the write itself reports and the ETag leaves out); without it the record is read here.
+        """
         from .documents import Context
-        context, loaded = Context(self, tx, user, readonly=True), {}
-        result = self.detail(tx, user, record, row_limit=None, loaded=loaded)
-        etag = self.revision(result)
-        extra = self.availability(context, model, record, loaded)
-        result = self.add_virtual_values(context, model, record.id, self.embedded(result), loaded, record)
+        record, loaded = tx.get(model, RecordId(record_id)), None
+        if written is None:
+            loaded = {}
+            written = self.detail(tx, user, record, row_limit=None, loaded=loaded)
+        # A read context is made only when needed: making one reads the database list.
+        extra = self.availability(context or Context(self, tx, user, readonly=True), model, record, loaded)
+        etag = self.revision({key: value for key, value in written.items() if key not in ('_row_ids', '_outcome', '_job')})
+        result = self.embedded(written)
+        if self.virtual_models(model) and self.policy.allows(user, model, 'read'):
+            reader = Context(self, tx, user, readonly=True)
+            result = self.add_virtual_values(reader, model, record.id, result, loaded, record if loaded is not None else None)
+        result = {**result, **extra}
         plan = self.registry.plan_for(model)
         if plan is not None:
             result['_calculation'] = {'language': plan['language'], 'model_schema_hash': plan['model_schema_hash']}
-        return 201, {**result, **extra}, [(b'etag', etag), (b'location', f'/api/{request["model"]}/{record.id}'.encode()),
-                                         (b'idempotency-replayed', b'true')]
+        return status, result, [(b'etag', etag)]
 
     @staticmethod
     def remember_create(tx, request, record_id):
@@ -1300,7 +1312,9 @@ class Business:
         raise AccessError(405, 'Method not allowed')
 
     def create_plain(self, tx, user, model, body):
-        """POST /api/{model} for a model that is not declarative: permissions, Controls, naming, child rows."""
+        """POST /api/{model} for a model that is not declarative: permissions, Controls, naming, child rows.
+
+        Returns the new record; `saved_answer` gives the response."""
         self.policy.require(user, model, 'create')
         tx.actor = actor_id(user)
         values, children = self.split_body(body)
@@ -1322,7 +1336,7 @@ class Business:
         self.policy.record(tx, user, model, record.id, 'create')
         self.save_children(tx, user, record, children)
         self.changed(tx, model, record.id)
-        return record, self.detail(tx, user, record)
+        return record
 
     @staticmethod
     def split_body(body):

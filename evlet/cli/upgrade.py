@@ -12,7 +12,7 @@ import sys
 from packaging.version import InvalidVersion, Version
 
 from .project import child, atomic_json, instance_guard, sync_directory
-from ..writes import file_lock, require_space
+from ..writes import file_lock, require_space, sync_file
 from .restart import Failed, check_service, service_name
 from .setup import environment_version, python_in
 from . import site
@@ -238,8 +238,7 @@ def sync_environment(path):
         if item.is_dir():
             directories.append(item)
         elif item.is_file():
-            with item.open('rb') as stream:
-                os.fsync(stream.fileno())
+            sync_file(item)
     for directory in reversed(directories):
         sync_directory(directory)
     sync_directory(path.parent)

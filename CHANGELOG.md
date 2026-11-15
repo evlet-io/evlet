@@ -22,6 +22,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   browser's draft of a new record, offered by New, and a message says they were not applied
   ([docs/ui.md](docs/ui.md), Unsaved changes). The 23-hour retry window and account checks are
   unchanged.
+- **Backups, installation and upgrades flush files on Windows.** Copied database files, staged
+  installation files and prepared upgrade environments were flushed through read-only handles,
+  which Windows refuses (fsync needs write access there). They are now flushed through one helper,
+  `evlet.writes.sync_file`, that opens the file for reading and writing without truncating it.
+  Attachment storage flushes its directory through `sync_directory`, which skips directories on
+  Windows. The Windows CI job runs the new `tests/test_file_sync.py`.
+- **A create answers as its replay does.** A first `POST /api/{model}` and an `Idempotency-Key`
+  replay of it are built by one helper, so they carry the same body, ETag and `_calculation` stamp;
+  a replay adds only `Idempotency-Replayed: true` and Location. A create of a model that is not
+  declarative now also returns its ETag and action availability, as its replay already did.
 
 ## 0.4.8 (15-11-2026)
 

@@ -31,6 +31,9 @@ children and action availability, rather than a cached original response. It doe
 not rerun creation hooks, defaults or effects, and does not repeat transient
 `_row_ids` mappings. Current model and row permissions are checked again, fields
 are filtered again, and a deleted or now-inaccessible record is not recreated.
+A first create and its replay are built the same way: both carry the ETag and
+action availability, and a create of a model that is not declarative also carries
+its Location.
 After 24 hours the key may create a new record; callers must not depend on a longer
 retry window. Expired receipts are removed on keyed creates. The receipt stores a
 key hash, request hash and record reference, not request or response contents.
