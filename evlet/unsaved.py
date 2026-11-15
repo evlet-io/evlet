@@ -23,7 +23,27 @@ TABLE = TableDefinition('evlet_unsaved', (
     Column('base_revision', 'TEXT', required=True),
     Column('saved_at', 'INTEGER', required=True),
     Column('size', 'INTEGER', required=True),
+    Column('version', 'INTEGER', required=True, default=0),
 ), primary_key=('user_id', 'model', 'record_id'))
+# One clock per account numbers every kept copy and every clearing, so tokens never repeat.
+VERSIONS = TableDefinition('evlet_unsaved_versions', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
+    Column('version', 'INTEGER', required=True),
+), primary_key=('user_id',))
+# When a record's entry was last cleared (Save, Discard, an empty keep, clean-up), on that clock. An empty-state
+# token "unsaved-empty-<clock>" stays valid while no entry exists and nothing cleared that same record after it was
+# issued, so work on other records never invalidates it. The row (model '', record 0) is the floor for all of a
+# person's records (Settings turned keeping off). Rows expire with the entries' retention: by then no request that
+# could hold an older token is still in flight.
+CLEARED = TableDefinition('evlet_unsaved_cleared', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
+    Column('model', 'TEXT', required=True),
+    Column('record_id', 'INTEGER', required=True),
+    Column('version', 'INTEGER', required=True),
+    Column('cleared_at', 'INTEGER', required=True),
+), primary_key=('user_id', 'model', 'record_id'))
+EVERY = ('', 0)
+EMPTY = re.compile(r'"unsaved-empty-([0-9]{1,18})"')
 TASK = 'evlet_unsaved_purge'
 BATCH = 500
 DAY = 86400
@@ -41,9 +61,14 @@ TOO_LARGE = ('These unsaved changes are larger than {kb} KB, so they are not kep
 
 
 def ensure(connection):
-    """Create the table. Framework step 0004 and startup both call it."""
+    """Create the tables and upgrade internal metadata; framework migration and startup call it."""
     connection.ensure_table(TABLE)
+    if 'version' not in connection.columns('evlet_unsaved'):
+        connection.add_column('evlet_unsaved', Column('version', 'INTEGER', required=True, default=0))
+    connection.ensure_table(VERSIONS)
+    connection.ensure_table(CLEARED)
     connection.ensure_index('evlet_unsaved_saved_at', 'evlet_unsaved', ('saved_at',))
+    connection.ensure_index('evlet_unsaved_cleared_at', 'evlet_unsaved_cleared', ('cleared_at',))
 
 
 def autosave(model):
@@ -126,6 +151,13 @@ class Unsaved:
             removed += len(rows)
             if len(rows) < BATCH:
                 break
+        for _ in range(batches):
+            rows = connection.run(qb.select('evlet_unsaved_cleared', 'user_id', 'model', 'record_id')
+                                  .where(qb.lt('cleared_at', cutoff)).order_by('cleared_at').limit(BATCH)).all()
+            for row in rows:
+                connection.run(qb.delete('evlet_unsaved_cleared').where(user_id=row[0], model=row[1], record_id=row[2]))
+            if len(rows) < BATCH:
+                break
         cap = self.limit('unsaved.server_entries')
         for (user_id,) in connection.run(qb.select('evlet_unsaved', 'user_id').group_by('user_id').having(qb.gt(qb.count(), cap))
                                          .order_by('user_id').limit(BATCH)).all():
@@ -136,7 +168,7 @@ class Unsaved:
     def trim(connection, user_id, cap):
         """Keep a person's newest `cap` entries."""
         rows = connection.run(qb.select('evlet_unsaved', 'model', 'record_id').where(user_id=user_id)
-                              .order_by('-saved_at', 'model', 'record_id').limit(BATCH).offset(cap)).all()
+                              .order_by('-version', '-saved_at', 'model', 'record_id').limit(BATCH).offset(cap)).all()
         for row in rows:
             connection.run(qb.delete('evlet_unsaved').where(user_id=user_id, model=row[0], record_id=row[1]))
         return len(rows)
@@ -144,18 +176,71 @@ class Unsaved:
     # ---------- hooks from record writes ----------
 
     @staticmethod
+    def advance(connection, user_id):
+        return connection.run(qb.insert('evlet_unsaved_versions', user_id=user_id, version=1)
+                              .on_conflict('user_id').do_update(version=qb.col('version') + 1).returning('version')).id
+
+    @staticmethod
+    def clock(connection, user_id):
+        return connection.run(qb.select('evlet_unsaved_versions', 'version').where(user_id=user_id)).value() or 0
+
+    @staticmethod
+    def etag(connection, user_id, model_name, record_id):
+        row = connection.run(qb.select('evlet_unsaved', 'version').where(user_id=user_id, model=model_name, record_id=record_id)).one()
+        if row is not None:
+            return f'"unsaved-{row[0]}"'
+        return f'"unsaved-empty-{Unsaved.clock(connection, user_id)}"'
+
+    @staticmethod
+    def matches(connection, user_id, model_name, record_id, expected):
+        """Whether `expected` (bytes) still names this record's state: the kept copy's exact version, or, with no copy,
+        an empty-state token issued after the record was last cleared."""
+        row = connection.run(qb.select('evlet_unsaved', 'version').where(user_id=user_id, model=model_name, record_id=record_id)).one()
+        if row is not None:
+            return expected == f'"unsaved-{row[0]}"'.encode()
+        found = EMPTY.fullmatch(expected.decode('ascii', 'replace'))
+        if found is None:
+            return False
+        cleared = connection.run(
+            qb.select('evlet_unsaved_cleared', qb.max('version')).where(user_id=user_id).where(qb.or_(
+                qb.and_(qb.eq('model', model_name), qb.eq('record_id', record_id)),
+                qb.and_(qb.eq('model', EVERY[0]), qb.eq('record_id', EVERY[1]))))).value() or 0
+        return cleared <= int(found[1]) <= Unsaved.clock(connection, user_id)
+
+    @classmethod
+    def check_match(cls, connection, user_id, model_name, record_id, expected):
+        if expected is not None and not cls.matches(connection, user_id, model_name, record_id, expected):
+            raise AccessError(412, 'The kept draft changed in another tab or an earlier request. Your open edits were not kept. Review the draft or save the record before continuing.')
+
+    @staticmethod
+    def cleared(connection, user_id, model_name, record_id):
+        """Fence requests that read this record's state before now; returns the clearing's version."""
+        version = Unsaved.advance(connection, user_id)
+        connection.run(qb.insert('evlet_unsaved_cleared', user_id=user_id, model=model_name, record_id=record_id,
+                                 version=version, cleared_at=int(time.time()))
+                       .on_conflict('user_id', 'model', 'record_id')
+                       .do_update(version=qb.col('excluded.version'), cleared_at=qb.col('excluded.cleared_at')))
+        return version
+
+    @staticmethod
     def record_deleted(connection, model_name, record_id):
         """Every person's entry for a deleted record, in the delete's transaction."""
         connection.run(qb.delete('evlet_unsaved').where(model=model_name, record_id=record_id))
+        connection.run(qb.delete('evlet_unsaved_cleared').where(model=model_name, record_id=record_id))
 
     @staticmethod
-    def record_saved(connection, user, model_name, record_id):
-        """The saver's own entry, in the save's transaction."""
+    def record_saved(connection, user, model_name, record_id, *, if_match=None):
+        """Clear the saver's acknowledged copy in the save transaction; legacy callers clear any copy."""
         if user is not None and getattr(user, 'id', 0):
-            connection.run(qb.delete('evlet_unsaved').where(user_id=user.id, model=model_name, record_id=record_id))
+            remove = if_match is None or Unsaved.matches(connection, user.id, model_name, record_id, if_match)
+            # Even a save preserving another tab's draft invalidates this record's older empty-state requests.
+            Unsaved.cleared(connection, user.id, model_name, record_id)
+            if remove:
+                connection.run(qb.delete('evlet_unsaved').where(user_id=user.id, model=model_name, record_id=record_id))
 
     @staticmethod
     def clear_user(connection, user_id):
+        Unsaved.cleared(connection, user_id, *EVERY)
         connection.run(qb.delete('evlet_unsaved').where(user_id=user_id))
 
     # ---------- HTTP ----------
@@ -176,12 +261,15 @@ class Unsaved:
         if not autosave(model):
             raise AccessError(404, "This model doesn't keep unsaved changes")
         name = parts[3]
+        expected = dict(scope.get('headers', [])).get(b'if-match')
         if method == 'DELETE':
             with self.database.transaction() as tx:
+                self.check_match(tx.connection, user.id, name, record_id, expected)
                 self.record_saved(tx.connection, user, name, record_id)
-            return 204, None, []
+                etag = self.etag(tx.connection, user.id, name, record_id)
+            return 204, None, [(b'etag', etag.encode())]
         if method == 'PUT':
-            return self.put(user, model, name, record_id, body)
+            return self.put(user, model, name, record_id, body, if_match=expected)
         return self.get(user, model, name, record_id)
 
     def info(self, user):
@@ -190,8 +278,8 @@ class Unsaved:
             count = connection.run(qb.select('evlet_unsaved', qb.count()).where(user_id=user.id)).value()
         return {'limits': self.limits(), 'count': int(count), 'enabled': self.enabled(user)}
 
-    def enabled(self, user):
-        return self.business.settings.core(user.id).get('keep_unsaved', True) is not False
+    def enabled(self, user, connection=None):
+        return self.business.settings.core(user.id, connection).get('keep_unsaved', True) is not False
 
     def access(self, tx, user, model, record_id):
         """The record when the person can read it and update it now; AccessError otherwise."""
@@ -200,9 +288,7 @@ class Unsaved:
         policy.record(tx, user, model, record_id, 'update')
         return record
 
-    def put(self, user, model, name, record_id, body):
-        if not self.enabled(user):
-            raise AccessError(403, 'You turned off keeping unsaved changes in Settings.')
+    def put(self, user, model, name, record_id, body, *, if_match=None):
         checked_body(body, {'changes', 'base_revision'}, 'Send changes and base_revision', exact=True)
         revision = body['base_revision']
         if not isinstance(revision, str) or not REVISION.fullmatch(revision):
@@ -214,34 +300,43 @@ class Unsaved:
         kb = self.limit('unsaved.entry_kb')
         if size > kb * 1024:
             raise AccessError(413, TOO_LARGE.format(kb=kb))
-        now = int(time.time())
         with self.database.transaction() as tx:
+            # Read in the write transaction, so turning keeping off in another tab cannot race this write.
+            if not self.enabled(user, tx.connection):
+                raise AccessError(403, 'You turned off keeping unsaved changes in Settings.')
             self.access(tx, user, model, record_id)
+            self.check_match(tx.connection, user.id, name, record_id, if_match)
             if empty(changes):
                 self.record_saved(tx.connection, user, name, record_id)
-                return 200, {'saved_at': None, 'size': 0, 'dropped': dropped}, []
+                return 200, {'saved_at': None, 'size': 0, 'dropped': dropped}, [(b'etag', self.etag(tx.connection, user.id, name, record_id).encode())]
+            now = int(time.time())
+            version = self.advance(tx.connection, user.id)
             tx.connection.run(
                 qb.insert('evlet_unsaved', user_id=user.id, model=name, record_id=record_id, changes=encoded, base_revision=revision,
-                          saved_at=now, size=size)
+                          saved_at=now, size=size, version=version)
                 .on_conflict('user_id', 'model', 'record_id')
                 .do_update(changes=qb.col('excluded.changes'), base_revision=qb.col('excluded.base_revision'),
-                           saved_at=qb.col('excluded.saved_at'), size=qb.col('excluded.size')))
+                           saved_at=qb.col('excluded.saved_at'), size=qb.col('excluded.size'), version=qb.col('excluded.version')))
             self.trim(tx.connection, user.id, self.limit('unsaved.server_entries'))
-        return 200, {'saved_at': now, 'size': size, 'dropped': dropped}, []
+            etag = self.etag(tx.connection, user.id, name, record_id)
+        return 200, {'saved_at': now, 'size': size, 'dropped': dropped}, [(b'etag', etag.encode())]
 
     def get(self, user, model, name, record_id):
         """The person's kept changes for one record, from a plain read. An entry that can no longer be used is
         removed afterwards, in a short write of its own."""
-        answer, forget = self.read_entry(user, model, name, record_id)
+        answer, forget, etag = self.read_entry(user, model, name, record_id)
         if forget:
             with self.database.transaction() as tx:
-                self.record_saved(tx.connection, user, name, record_id)
+                # Permission/expiry cleanup must not delete a newer draft written after the read.
+                if self.matches(tx.connection, user.id, name, record_id, etag.encode()):
+                    self.record_saved(tx.connection, user, name, record_id)
+                    etag = self.etag(tx.connection, user.id, name, record_id)
         if isinstance(answer, AccessError):
             raise answer
-        return 200, answer, []
+        return 200, answer, [(b'etag', etag.encode())]
 
     def read_entry(self, user, model, name, record_id):
-        """(answer, forget) from one read snapshot. The answer is the response body, or the AccessError to raise
+        """(answer, forget, etag) from one read snapshot. The answer is the response body, or the AccessError to raise
         when the person can't read the record any more. `forget` is True when the stored entry should go."""
         from .database import Session
         business, policy = self.business, self.business.policy
@@ -252,19 +347,20 @@ class Unsaved:
             tx._business = business
             row = connection.run(qb.select('evlet_unsaved', 'changes', 'base_revision', 'saved_at', 'size')
                                  .where(user_id=user.id, model=name, record_id=record_id)).one()
+            etag = self.etag(connection, user.id, name, record_id)
             try:
                 record = policy.record(tx, user, model, record_id, 'read')
             except AccessError as exc:
                 # The person can't see the record any more: the entry goes, and the answer is the record's.
-                return exc, row is not None
+                return exc, row is not None, etag
             if row is None:
-                return nothing, False
+                return nothing, False, etag
             if row['saved_at'] < int(time.time()) - self.limit('unsaved.server_days') * DAY:
-                return nothing, True
+                return nothing, True, etag
             try:
                 policy.record(tx, user, model, record_id, 'update')
             except AccessError:
-                return {'entry': None, 'dropped': 'record'}, True
+                return {'entry': None, 'dropped': 'record'}, True, etag
             dropped = []
             try:
                 stored = json.loads(row['changes'])
@@ -272,10 +368,10 @@ class Unsaved:
                 stored = {}
             changes = self.clean(user, model, stored, '', dropped, strict=False)
             if empty(changes):
-                return {'entry': None, 'dropped': dropped or 'record'}, True
+                return {'entry': None, 'dropped': dropped or 'record'}, True, etag
             stale = row['base_revision'].encode() != business.record_revision(tx, user, record)
         entry = {'changes': changes, 'base_revision': row['base_revision'], 'saved_at': row['saved_at'], 'size': row['size'], 'stale': stale}
-        return {'entry': entry, 'dropped': dropped}, False
+        return {'entry': entry, 'dropped': dropped}, False, etag
 
     def clean(self, user, model, node, prefix, dropped, *, strict, added=False):
         """Only the fields and rows the person may write now. Unknown names are refused (strict) or dropped."""

@@ -56,4 +56,22 @@ describe('section rows', () => {
     store.field('title').set('Renamed');
     expect(buildChanges(store.root)).toEqual({ title: 'Renamed' });
   });
+
+  it('counts every row move and section edit as a draft change, so a kept draft is never claimed for them', async () => {
+    const { store } = sectioned();
+    await store.open(id(1));
+    const table = store.table('lines'), rows = table.rows.peek();
+    const steps: Array<() => void> = [
+      () => table.move(rows[0], 1),
+      () => { table.addSection('Extra', rows[1].key); },
+      () => table.renameSection(table.sections.peek()[0].key, 'Goods and parts'),
+      () => table.moveSection(table.sections.peek()[0].key, rows[2].key),
+      () => table.removeSection(table.sections.peek()[0].key),
+    ];
+    for (const step of steps) {
+      const before = store.editVersion.peek();
+      step();
+      expect(store.editVersion.peek()).toBe(before + 1);
+    }
+  });
 });

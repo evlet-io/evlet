@@ -339,7 +339,7 @@ CADDY = '''# Evlet reads client addresses from X-Forwarded-For only from trusted
 erp.acme.com {
 \t@internal {
 \t\tpath /_/*
-\t\tnot path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js
+\t\tnot path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js /_/oidc/start /_/oidc/callback /_/oidc/finish
 \t}
 \trespond @internal 404
 \treverse_proxy 127.0.0.1:8000
@@ -348,7 +348,7 @@ erp.acme.com {
 portal.acme.com {
 \t@internal {
 \t\tpath /_/*
-\t\tnot path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js
+\t\tnot path /_/mcp /_/oauth/authorize /_/oauth/token /_/oauth/register /_/oauth/revoke /_/mail/callback /_/mail/continue.js /_/oidc/start /_/oidc/callback /_/oidc/finish
 \t}
 \trespond @internal 404
 \t@primary_only path_regexp (?i)^/(controls|docs)(/|$)

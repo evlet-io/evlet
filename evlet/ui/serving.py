@@ -13,6 +13,8 @@ TYPES = {
     ".js": "text/javascript; charset=utf-8",
     ".css": "text/css; charset=utf-8",
     ".svg": "image/svg+xml",
+    ".png": "image/png",
+    ".webmanifest": "application/manifest+json",
     ".woff2": "font/woff2",
 }
 # What a static frontend may serve; anything else answers 404.
@@ -87,13 +89,19 @@ def static_response(path, config=None, theme=None):
         if not target.is_file():
             return None
     content = target.read_bytes()
+    if path == '/assets/evlet-offline.html':
+        # A worker may cache this fixed public notice, never personalized HTML/config.
+        config, theme = None, None
     if config is not None and target.suffix == ".html":
         content = with_config(content, config)
     theme = theme or (config or {}).get("theme")
     if theme in ("light", "dark") and target.suffix == ".html":
         # The chosen theme is on <html> before the first paint; "system" leaves it to the stylesheet.
         content = HTML.sub(b'<html data-theme="' + theme.encode() + b'"', content, count=1)
-    return page(content, TYPES[target.suffix])
+    response = page(content, TYPES[target.suffix])
+    if path == '/assets/evlet-sw.js':
+        response[2].extend([(b'service-worker-allowed', b'/'), (b'cache-control', b'no-cache')])
+    return response
 
 
 def _file(folder, relative):

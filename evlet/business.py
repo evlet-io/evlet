@@ -235,6 +235,8 @@ class Business:
         images.initialize(self.database)
         mentions.initialize(self.database)
         self.settings.initialize()
+        if getattr(self, 'oidc', None) is not None:
+            self.oidc.initialize()
         self.unsaved.initialize()
         if any(endpoint.public for endpoint in getattr(self, 'apis', ())):
             with self.database.transaction() as tx:
@@ -592,6 +594,8 @@ class Business:
                     info['docs'] = self.docs_path(scope, None)
                 extra = {'application': info} if info else {}
                 # First-run setup creates an admin, so it asks for config.py's admin minimum.
+                if getattr(self, 'oidc', None) is not None and (provider := self.oidc.options(scope)) is not None:
+                    extra['oidc'] = provider
                 if self.auth.allow_setup and self.auth.setup_needed():
                     extra['password_min'] = self.auth.minimum('admin')
                 # Security(admin_sign_in=True): the sign-in page starts with the Administrator's username.
@@ -878,7 +882,8 @@ class Business:
                                         move=move, remark=remark)
                 if record_id and not (action or move):
                     # A save replaces the saver's unsaved changes (docs/internal/unsaved-changes.md).
-                    self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id)
+                    self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id,
+                                              if_match=dict(scope.get('headers', [])).get(b'x-evlet-draft-revision'))
                 extra = self.availability(context, model, context._tx.get(model, result['id']))
                 # The write returns every readable row; the ETag covers them all and the body embeds the first page.
                 etag = self.revision({key: value for key, value in result.items() if key not in ('_row_ids', '_outcome', '_job')})
@@ -969,7 +974,8 @@ class Business:
                 self.policy.record(tx, user, model, record_id, 'update')
                 self.save_children(tx, user, record, children)
                 self.changed(tx, model, record_id)
-                self.unsaved.record_saved(tx.connection, user, parts[2], record_id)
+                self.unsaved.record_saved(tx.connection, user, parts[2], record_id,
+                                          if_match=dict(scope.get('headers', [])).get(b'x-evlet-draft-revision'))
             loaded = {} if method == 'GET' else None
             result = self.detail(tx, user, record, row_limit=None, loaded=loaded)
             etag = self.revision(result)

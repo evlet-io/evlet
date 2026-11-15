@@ -32,6 +32,11 @@ there and verifies it. It does not create a database or start a service. Use
 are never overwritten. Commands discover the project from the current directory
 or its parents. `--project /path/to/myproject` works before or after a command.
 
+`setup` installs Evlet with the pip bundled in the new `.venv`, using the existing pip
+index, mirror and `PIP_FIND_LINKS` configuration. Offline installs need Evlet's dependency
+wheels; a local `--framework` path alone does not provide them. If installation fails,
+setup removes only the new project it created.
+
 ### Setup in one go
 
 `setup` can also run the commands above for you:
@@ -584,8 +589,9 @@ On a server set up with `evlet setup --host --apply`, move an instance to a newe
 evlet upgrade acme
 ```
 
-It checks every affected service and prepares a copy of `.venv` outside the running environment.
-Pip installs the new release into that copy, and its Python prints a migration plan against a
+It checks every affected service and prepares a copy of `.venv` outside the running environment,
+then installs the new release into that copy with its pip. This uses the same index/mirror/offline
+configuration as setup; failure discards the copy before stopping services. Its Python then prints a migration plan against a
 staged database. Answering no, or failing installation or planning, leaves the live environment
 and services unchanged.
 

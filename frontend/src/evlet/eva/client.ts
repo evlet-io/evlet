@@ -49,8 +49,9 @@ export class Eva {
     return (await this.api.request<T>(method, path, { body, query })).data;
   }
   status() { return this.call<EvaStatus>('GET', '/api/_eva'); }
-  conversations(query: { q?: string; archived?: boolean } = {}) {
-    return this.call<{ items: Conversation[]; archived: number; next: number | null }>('GET', '/api/_eva/conversations', undefined, { q: query.q || undefined, archived: query.archived ? '1' : undefined });
+  conversations(query: { q?: string; archived?: boolean; before?: string } = {}) {
+    return this.call<{ items: Conversation[]; archived: number; next: string | null }>('GET', '/api/_eva/conversations', undefined,
+      { q: query.q || undefined, archived: query.archived ? '1' : undefined, before: query.before });
   }
   create(body: { title?: string; context?: { model: string; id: string } } = {}) { return this.call<Conversation>('POST', '/api/_eva/conversations', body); }
   open(id: number) { return this.call<Stored>('GET', `/api/_eva/conversations/${id}`); }
@@ -80,14 +81,16 @@ export class Eva {
 export function follow(eva: Eva, run: number, onEvent: (event: RunEvent) => void, onEnd: () => void): () => void {
   let stopped = false, last = 0, source: EventSource | null = null, timer: ReturnType<typeof setTimeout> | null = null;
   const stop = () => { stopped = true; source?.close(); if (timer) clearTimeout(timer); };
-  const seen = (event: RunEvent) => { if (event.id <= last) return; last = event.id; onEvent(event); };
+  const seen = (event: RunEvent) => { if (stopped || event.id <= last) return; last = event.id; onEvent(event); };
   const poll = async () => {
     if (stopped) return;
     try {
       const page = await eva.events(run, last);
+      if (stopped) return;
       page.items.forEach(seen);
       if (page.done) { stop(); onEnd(); return; }
     } catch (failure) {
+      if (stopped) return;
       if (failure instanceof ApiError && failure.kind === 'not_found') { stop(); onEnd(); return; }
     }
     if (!stopped) timer = setTimeout(() => void poll(), 700);
@@ -97,7 +100,7 @@ export function follow(eva: Eva, run: number, onEvent: (event: RunEvent) => void
     const types = ['run.started', 'message.delta', 'tool.started', 'tool.completed', 'tool.failed', 'approval.requested', 'approval.answered',
       'usage.updated', 'run.completed', 'run.failed', 'run.cancelled'];
     for (const type of types) source.addEventListener(type, message => seen(JSON.parse((message as MessageEvent).data)));
-    source.addEventListener('end', () => { stop(); onEnd(); });
+    source.addEventListener('end', () => { if (!stopped) { stop(); onEnd(); } });
     // The stream reconnects on its own with the last id; after repeated failures, poll instead.
     let failures = 0;
     source.onerror = () => { if (++failures > 3 && !stopped) { source?.close(); source = null; void poll(); } };

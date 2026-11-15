@@ -8,6 +8,7 @@ import { Button, Checkbox, Icon, IconButton, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
 import { Callout, Head, plural, type ControlsContext } from './app';
 import type { FieldInfo, FieldOverride, FieldProps, LayoutSection, LayoutValue, ListValue, ModelInfo, PanelHidden } from './client';
+import { layoutValue } from './client';
 import { dragList } from '../ui/draglist';
 import { flowGrid } from '../ui/fold';
 import { idOf } from './drafts';
@@ -286,10 +287,7 @@ function addField(ctx: ControlsContext, model: ModelInfo) {
 
 /** A layout value as sections plus what a list's side panel hides: layouts without it are a plain list. panel is null
  * when the layout leaves the side panel to the app. A record tab order saved before 0.4 is read past and not saved again. */
-export function layoutValue(value: LayoutValue | null | undefined): { sections: LayoutSection[]; panel: PanelHidden | null } {
-  if (Array.isArray(value)) return { sections: value, panel: null };
-  return { sections: value?.sections ?? [], panel: value?.panel ?? null };
-}
+export { layoutValue } from './client';
 
 /** The value to save: a plain list unless it sets the side panel, so other layouts keep their old shape. */
 export function layoutToSave(sections: LayoutSection[], panel: PanelHidden | null = null): LayoutValue {

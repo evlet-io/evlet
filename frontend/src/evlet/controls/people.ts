@@ -1,13 +1,12 @@
 // Users and Roles: instance data, so every change saves at once and writes an audit row.
 
-import { html, when, type Child } from '../dom';
-import { ApiError, ValidationError } from '../api';
-import { cell, derive } from '../reactive';
+import { html, when } from '../dom';
+import { ValidationError } from '../api';
+import { cell, derive, onCleanup } from '../reactive';
 import { Avatar, Button, Checkbox, Icon, StatusPill, Switch } from '../ui/base';
 import { DialogFooter, openDrawer, openModal, toast } from '../ui/layers';
-import { Dropdown } from '../ui/pickers';
 import { Callout, Head, plural, stamp, type ControlsContext } from './app';
-import type { RoleRow, UserCounts, UserRow } from './client';
+import type { RoleRow, UserRow } from './client';
 
 const ROLE_ID = /^[a-z][a-z0-9_]{1,30}$/;
 const TINTS: Record<string, string> = { admin: 'violet', editor: 'blue', viewer: 'slate', portal: 'amber' };
@@ -15,17 +14,8 @@ export const RoleChip = (role: string) => StatusPill({ label: role, tint: (TINTS
 /** Only admins change admin accounts, give the admin role, manage roles and decide who opens Controls. */
 export const isAdmin = (ctx: ControlsContext) => ctx.state.peek().me.role === 'admin';
 const assignable = (ctx: ControlsContext) => ctx.state.peek().roles.filter(item => isAdmin(ctx) || item.id !== 'admin');
-export const message = (failure: unknown) => failure instanceof ApiError ? failure.message : 'Something went wrong. Try again.';
-
-/** A Controls select: Evlet's Dropdown over [value, label] pairs. */
-export function Select(props: { id: string; value: () => string; options: () => Array<[string, string]>; onChange: (value: string) => void; label?: string; disabled?: boolean }) {
-  return Dropdown({ id: props.id, label: props.label, ariaLabel: props.label, value: props.value, disabled: props.disabled, className: 'ctl-select',
-    choices: () => props.options().map(([value, label]) => ({ value, label })), onChange: value => { if (value !== null) props.onChange(value); } });
-}
-
-export const field = (label: string, id: string, control: Node, hint: () => string | null = () => null, error: () => string | null = () => null) =>
-  html`<div class="ctl-field"><label for=${id}>${label}</label>${control}
-    ${() => error() ? html`<span class="ctl-err">${error()}</span>` : hint() ? html`<span class="ctl-hint">${hint()}</span>` : null}</div>`;
+export { message, Select, field, ask } from '../ui/settings-helpers';
+import { message, Select, field, ask } from '../ui/settings-helpers';
 
 // ---------- users ----------
 
@@ -51,35 +41,45 @@ const lengthHint = (minimum: number) => minimum <= 1 ? 'Any password will do' : 
 const sessionText = (user: UserRow) => [user.sessions ? plural(user.sessions, 'session') : '', user.assistants ? plural(user.assistants, 'AI assistant') : ''].filter(Boolean).join(' · ');
 
 export function UsersPage(ctx: ControlsContext): HTMLElement {
-  const users = cell<UserRow[]>([]), total = cell(0), loaded = cell(false), counts = cell<UserCounts>({ all: 0, active: 0, inactive: 0 });
+  const users = cell<UserRow[]>([]), total = cell(0), loaded = cell(false);
+  const offset = cell(0), limit = cell(100), counts = cell({ all: 0, active: 0, inactive: 0 });
   const tab = cell<'all' | 'active' | 'inactive'>('all'), query = cell(''), role = cell('');
-  // The server filters and pages, so a search finds people beyond the first page; a newer load wins.
-  let ticket = 0, typing: ReturnType<typeof setTimeout> | undefined;
-  const load = async (more = false) => {
-    const mine = ++ticket;
+  let request = 0, alive = true, timer: ReturnType<typeof setTimeout> | undefined;
+  onCleanup(() => { alive = false; request++; clearTimeout(timer); });
+  const load = async (start = offset.peek()) => {
+    clearTimeout(timer);
+    const mine = ++request;
+    loaded.set(false);
     try {
-      const page = await ctx.api.users({ offset: more ? users.peek().length : 0, q: query.peek().trim() || undefined, role: role.peek() || undefined,
-        active: tab.peek() === 'all' ? undefined : tab.peek() === 'active' ? 'true' : 'false' });
-      if (mine !== ticket) return;
-      users.set(more ? [...users.peek(), ...page.items] : page.items);
-      total.set(page.total); counts.set(page.counts ?? { all: page.total, active: page.total, inactive: 0 });
-    } catch (failure) { if (mine === ticket) toast(message(failure), { icon: 'info' }); }
-    if (mine === ticket) loaded.set(true);
+      const page = await ctx.api.users(start, { q: query.peek().trim(), role: role.peek(),
+        ...(tab.peek() === 'all' ? {} : { active: tab.peek() === 'active' }) });
+      if (!alive || mine !== request) return;
+      if (!page.items.length && page.total && start >= page.total) return await load(Math.floor((page.total - 1) / page.limit) * page.limit);
+      users.set(page.items);
+      total.set(page.total);
+      offset.set(page.offset); limit.set(page.limit);
+      counts.set(page.counts ?? { all: page.total, active: page.items.filter(user => user.active).length, inactive: page.items.filter(user => !user.active).length });
+    } catch (failure) { if (alive && mine === request) toast(message(failure), { icon: 'info' }); }
+    finally { if (alive && mine === request) loaded.set(true); }
+  };
+  const search = () => {
+    clearTimeout(timer); request++; loaded.set(false); users.set([]); offset.set(0);
+    timer = setTimeout(() => void load(0), 200);
   };
   void load();
-  const search = (value: string) => { query.set(value); clearTimeout(typing); typing = setTimeout(() => void load(), 250); };
   const shown = users;
   const refresh = async () => { await load(); ctx.state.set(await ctx.api.state()); };
   const tabs: Array<['all' | 'active' | 'inactive', string, () => number]> = [
-    ['all', 'All users', () => counts.get().all], ['active', 'Active', () => counts.get().active], ['inactive', 'Inactive', () => counts.get().inactive]];
+    ['all', 'All users', () => counts.get().all], ['active', 'Active', () => counts.get().active],
+    ['inactive', 'Inactive', () => counts.get().inactive]];
   return html`<div>
     ${Head('Users', 'People who sign in to the desk.', Button({ label: 'Add user', icon: 'user-plus', variant: 'primary', onClick: () => addUser(ctx, refresh) }),
       html` <span class="ctl-badge">${total}</span>`)}
     <div class="ctl-tabs" role="tablist">${tabs.map(([id, label, count]) => html`<button type="button" role="tab" class:on=${() => tab.get() === id}
-      aria-selected=${() => String(tab.get() === id)} on:click=${() => { tab.set(id); void load(); }}>${label}<span class="tc">${count}</span></button>`)}</div>
+      aria-selected=${() => String(tab.get() === id)} on:click=${() => { tab.set(id); void load(0); }}>${label}<span class="tc">${count}</span></button>`)}</div>
     <div class="toolbar"><label class="ctl-search">${Icon('search', { size: 'sm' })}<input class="input" placeholder="Search users…" aria-label="Search users"
-      prop:value=${query} on:input=${(event: Event) => search((event.target as HTMLInputElement).value)}></label>
-      ${Select({ id: 'ctl-user-role', label: 'Filter by role', value: () => role.get(), options: () => [['', 'All roles'], ...ctx.state.get().roles.map(item => [item.id, item.id] as [string, string])], onChange: value => { role.set(value); void load(); } })}</div>
+      prop:value=${query} on:input=${(event: Event) => { query.set((event.target as HTMLInputElement).value); search(); }}></label>
+      ${Select({ id: 'ctl-user-role', label: 'Filter by role', value: () => role.get(), options: () => [['', 'All roles'], ...ctx.state.get().roles.map(item => [item.id, item.id] as [string, string])], onChange: value => { role.set(value); void load(0); } })}</div>
     <div class="table-wrap"><table class="dt ctl-table"><thead><tr><th>User</th><th>Role</th><th>Two-step sign-in</th><th>Sessions</th><th>AI</th><th>Status</th><th></th></tr></thead>
       <tbody>${() => shown.get().length ? shown.get().map(user => html`<tr class="ctl-click" tabindex="0" on:click=${() => openUser(ctx, user, refresh)}
         on:keydown=${(event: KeyboardEvent) => { if (event.key === 'Enter') openUser(ctx, user, refresh); }}>
@@ -93,8 +93,9 @@ export function UsersPage(ctx: ControlsContext): HTMLElement {
         <td>${user.active ? StatusPill({ label: 'Active', tint: 'green' }) : StatusPill({ label: 'Inactive', tint: 'slate' })}</td>
         <td class="r">${Icon('chevron-right', { size: 'sm' })}</td></tr>`)
         : html`<tr><td colspan="7"><div class="ctl-empty">${() => loaded.get() ? 'No users match.' : 'Loading users…'}</div></td></tr>`}</tbody></table>
-      <div class="ctl-tfoot"><span>${() => `${shown.get().length} of ${total.get()}`}</span>${() => shown.get().length < total.get()
-        ? Button({ label: 'Load more', size: 'small', variant: 'ghost', onClick: () => void load(true) }) : null}<span>Accounts are stored in this instance</span></div></div>
+      <div class="ctl-tfoot"><span>${() => `${shown.get().length ? offset.get() + 1 : 0}–${offset.get() + shown.get().length} of ${total.get()}`}</span>
+        <span class="ctl-line">${Button({ label: 'Previous users', size: 'small', disabled: () => !loaded.get() || offset.get() === 0, onClick: () => void load(Math.max(0, offset.peek() - limit.peek())) })}
+        ${Button({ label: 'Next users', size: 'small', disabled: () => !loaded.get() || offset.get() + limit.get() >= total.get(), onClick: () => void load(offset.peek() + limit.peek()) })}</span></div></div>
   </div>` as HTMLElement;
 }
 
@@ -253,13 +254,6 @@ export function RolesPage(ctx: ControlsContext): HTMLElement {
           ${row.kind === 'custom' && !row.declared && isAdmin(ctx) ? Button({ icon: 'trash-2', tip: `Delete ${row.id}`, size: 'small', variant: 'ghost', onClick: () => remove(row) }) : null}</td></tr>`)}</tbody></table></div>
     ${Callout('info', 'info', html`Opening Controls is a separate right from any model permission. It never applies to portal roles, and admin always has it so the instance can't be locked out. Only admins change who opens Controls, manage roles and change admin accounts. From the server shell, <code>evlet controls grant &lt;instance&gt; &lt;user&gt;</code> restores access.`)}
   </div>` as HTMLElement;
-}
-
-export function ask(title: string, body: Child, yes: string, run: (() => unknown) | null, danger = false) {
-  openModal({ title, narrow: true, icon: danger ? 'trash-2' : 'info', tint: danger ? 'rose' : 'blue',
-    body: () => html`<p class="ctl-confirm">${body}</p>`,
-    footer: close => run ? DialogFooter({ cancel: close, submit: { label: yes, variant: danger ? 'danger' : 'primary', onClick: () => { close(); void run(); } } })
-      : DialogFooter({ submit: { label: yes, onClick: close } }) });
 }
 
 function newRole(ctx: ControlsContext) {

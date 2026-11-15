@@ -138,6 +138,7 @@ describe('API keys', () => {
     await until(() => expect(text(host)).toContain('No keys yet.'));
     click(byText(host, 'button', 'Create key'));
     await until(() => expect(document.querySelector('.modal #ctl-k-name')).toBeTruthy());
+    await until(() => expect((byText(document.body, '.modal button', 'Create key') as HTMLButtonElement).disabled).toBe(false));
     click(byText(document.body, '.modal button', 'Create key'));
     await until(() => expect(text(document.querySelector('.modal'))).toContain('Give the key a name so you can recognise it later.'));
     typeInto(document.querySelector<HTMLInputElement>('#ctl-k-name')!, 'Website lead form');

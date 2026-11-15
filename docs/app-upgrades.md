@@ -111,7 +111,12 @@ release ([states-actions.md](states-actions.md#releases-and-versions)). `0012_se
 account session generation to `evlet_users`, `evlet_sessions` and `evlet_two_step_tickets` (existing rows start
 at 0, so people stay signed in); ending a person's sessions moves it on, so an old session or two-step ticket
 cannot be used again. `0013_create_requests` adds `evlet_create_requests`, the retry receipts of creates
-sent with an `Idempotency-Key` header.
+sent with an `Idempotency-Key` header. `0014_unsaved_versions` adds a `version` to `evlet_unsaved` and the
+per-account `evlet_unsaved_versions` clock and `evlet_unsaved_cleared` (when each record's draft was last cleared),
+so a newer draft is never replaced by an older one.
+`0015_oidc_tickets` adds the small `evlet_oidc_tickets` table of company sign-in state and finish receipts
+to the sessions file, whether or not OIDC is configured, so enabling [company sign-in](oidc.md) later never
+changes the schema when the instance starts.
 Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet

@@ -1,0 +1,11 @@
+{
+  "id": "/app",
+  "name": "Evlet",
+  "short_name": "Evlet",
+  "start_url": "/app",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f5f8",
+  "theme_color": "#2563eb",
+  "icons": [{ "src": "/assets/evlet-icon-blue.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

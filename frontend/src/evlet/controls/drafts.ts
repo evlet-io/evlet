@@ -3,7 +3,7 @@
 
 import { ConflictError, ValidationError } from '../api';
 import { cell, derive } from '../reactive';
-import type { ControlsClient, FieldOverride, LayoutSection, ListValue, OverrideItem, PermValue, SeriesValue } from './client';
+import { layoutValue, type ControlsClient, type FieldOverride, type LayoutValue, type ListValue, type OverrideItem, type PermValue, type SeriesValue } from './client';
 
 export const idOf = (kind: string, key: string) => `${kind}:${key}`;
 const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -11,6 +11,8 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a ?? null) === JSON.stri
 export interface Change { id: string; item: OverrideItem; from: unknown; to: unknown }
 
 export class Drafts {
+  private pending: Map<string, unknown> | null = null;
+  private version = -1;
   readonly saved = cell(new Map<string, OverrideItem>(), { name: 'controls.saved' });
   readonly draft = cell(new Map<string, unknown>(), { name: 'controls.draft' });
   readonly errors = cell(new Map<string, string>(), { name: 'controls.errors' });
@@ -23,10 +25,13 @@ export class Drafts {
   constructor(private readonly api: ControlsClient) {}
 
   /** Saved overrides from the server. Drafts that still differ are kept. */
-  load(items: OverrideItem[]) {
+  load(items: OverrideItem[], version?: number) {
+    if (version !== undefined && version < this.version) return;
+    if (version !== undefined) this.version = version;
     const saved = new Map(items.map(item => [idOf(item.kind, item.key), item]));
     this.saved.set(saved);
-    const draft = new Map([...this.draft.peek()].filter(([id, value]) => saved.has(id) && !same(value, saved.get(id)!.value)));
+    const draft = new Map([...this.draft.peek()].filter(([id, value]) => saved.has(id)
+      && (!same(value, saved.get(id)!.value) || (this.pending?.has(id) && !same(value, this.pending.get(id))))));
     this.draft.set(draft);
   }
 
@@ -45,7 +50,7 @@ export class Drafts {
     if (!item) return;
     const next = same(value, item.file) ? null : value;
     const draft = new Map(this.draft.peek());
-    if (same(next, item.value)) draft.delete(id); else draft.set(id, next);
+    if (same(next, item.value) && (!this.pending?.has(id) || same(next, this.pending.get(id)))) draft.delete(id); else draft.set(id, next);
     this.draft.set(draft);
     if (this.errors.peek().has(id)) { const errors = new Map(this.errors.peek()); errors.delete(id); this.errors.set(errors); }
   }
@@ -54,14 +59,25 @@ export class Drafts {
 
   /** Save every change at once. Per-item errors land in `errors`; nothing is saved then. */
   async save(): Promise<boolean> {
-    const changes = this.changes.peek();
+    const changes = this.changes.peek().map(change => ({ ...change, to: structuredClone(change.to) }));
     if (!changes.length || this.saving.peek()) return false;
     this.saving.set(true);
+    this.pending = new Map(changes.map(change => [change.id, change.to]));
     try {
-      await this.api.saveOverrides(changes.map(change => ({ kind: change.item.kind, key: change.item.key, value: change.to })));
-      this.draft.set(new Map());
+      const result = await this.api.saveOverrides(changes.map(change => ({ kind: change.item.kind, key: change.item.key, value: change.to })));
+      const saved = new Map(this.saved.peek()), draft = new Map(this.draft.peek());
+      for (const change of changes) {
+        const item = saved.get(change.id);
+        if (item && result.version >= this.version) saved.set(change.id, { ...item, value: change.to });
+        if (draft.has(change.id) && same(draft.get(change.id), change.to)) draft.delete(change.id);
+      }
+      this.saved.set(saved);
+      this.draft.set(draft);
+      this.version = Math.max(this.version, result.version);
+      const refreshed = await this.api.overrides();
+      this.pending = null;
       this.errors.set(new Map());
-      this.load((await this.api.overrides()).items);
+      this.load(refreshed.items, refreshed.version);
       return true;
     } catch (failure) {
       // A setting the stored data refuses (lowering a currency's decimals while amounts have more places) answers
@@ -75,6 +91,7 @@ export class Drafts {
       })));
       return false;
     } finally {
+      this.pending = null;
       this.saving.set(false);
     }
   }
@@ -132,17 +149,21 @@ export function fieldSummary(value: FieldOverride | null) {
 }
 
 function modelText(kind: string, value: unknown) {
+  if (value === null || value === undefined) return 'No longer defined in the app';
   if (kind === 'field') return fieldSummary(value as FieldOverride | null);
   if (kind === 'layout') {
-    const sections = value as LayoutSection[];
-    return sections.map(section => `${section.title} (${section.fields.length})`).join(' · ');
+    const { sections, panel } = layoutValue(value as LayoutValue);
+    const hidden = Object.entries(panel ?? {}).filter(([, names]) => names.length)
+      .map(([kind, names]) => `Hidden panel ${kind}: ${names.join(', ')}`);
+    return [...sections.map(section => `${section.title} (${section.fields.length})`), ...hidden].join(' · ');
   }
   if (kind === 'list') {
     const list = value as ListValue;
     const tabs = list.list_tabs === undefined ? '' : list.list_tabs === null ? ' · no tabs' : ` · tabs by ${list.list_tabs}${list.list_tab && list.list_tab !== 'all' ? `, opens on ${list.list_tab}` : ''}`;
     return `${list.columns.join(', ')} · ${list.page_size} rows · sorted by ${list.sort}${list.open_in === 'panel' ? ' · opens in a side panel' : ''}${tabs}`;
   }
-  return (value as SeriesValue[]).map(series => series.when ? `${series.format} when ${series.when}` : series.format).join(' · ');
+  if (kind === 'naming') return (value as SeriesValue[]).map(series => series.when ? `${series.format} when ${series.when}` : series.format).join(' · ');
+  return JSON.stringify(value);
 }
 
 /** Area, target and the before and after text of one change, for Review. */

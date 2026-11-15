@@ -27,19 +27,27 @@ export function EvaPage(ctx: AppContext, status: Cell<EvaStatus | null>, convers
   const eva = new Eva(ctx.api);
   const list = cell<Conversation[]>([]), archivedCount = cell(0), search = cell(''), archived = cell(false), loaded = cell(false);
   const current = cell<number | null>(conversationId ?? null);
+  const next = cell<string | null>(null), loading = cell(false);
+  let alive = true, generation = 0;
   ctx.crumbs.set([{ label: 'Eva', href: ctx.router.href('eva', {}) }, ...(conversationId ? [{ label: 'Chat' }] : [])]);
-  const load = async () => {
+  const load = async (more = false) => {
+    if (!alive || more && (loading.peek() || !next.peek())) return;
+    const request = ++generation;
+    loading.set(true);
+    if (!more) next.set(null);
     try {
-      const page = await eva.conversations({ q: search.peek(), archived: archived.peek() });
-      list.set(page.items);
+      const page = await eva.conversations({ q: search.peek(), archived: archived.peek(), before: more ? next.peek() ?? undefined : undefined });
+      if (!alive || request !== generation) return;
+      list.set(more ? [...list.peek(), ...page.items.filter(item => !list.peek().some(old => old.id === item.id))] : page.items);
       archivedCount.set(page.archived);
-    } catch (failure) { toast(errorText(failure), { icon: 'info' }); }
-    loaded.set(true);
+      next.set(page.next);
+    } catch (failure) { if (alive && request === generation) toast(errorText(failure), { icon: 'info' }); }
+    finally { if (alive && request === generation) { loaded.set(true); loading.set(false); } }
   };
   let typing: ReturnType<typeof setTimeout> | null = null;
-  const searchFor = (value: string) => { search.set(value); if (typing) clearTimeout(typing); typing = setTimeout(() => void load(), 200); };
+  const searchFor = (value: string) => { search.set(value); generation++; next.set(null); if (typing) clearTimeout(typing); typing = setTimeout(() => void load(), 200); };
   void load();
-  onCleanup(() => { if (typing) clearTimeout(typing); });
+  onCleanup(() => { alive = false; generation++; if (typing) clearTimeout(typing); });
 
   const groups = derive(() => {
     const now = Date.now() / 1000, today = new Date(); today.setHours(0, 0, 0, 0);
@@ -61,7 +69,7 @@ export function EvaPage(ctx: AppContext, status: Cell<EvaStatus | null>, convers
   const archive = async (item: Conversation) => {
     try {
       await eva.change(item.id, { archived: !item.archived });
-      toast(item.archived ? 'Restored' : 'Archived', item.archived ? {} : { undo: () => void eva.change(item.id, { archived: false }).then(load) });
+      toast(item.archived ? 'Restored' : 'Archived', item.archived ? {} : { undo: () => void eva.change(item.id, { archived: false }).then(() => load()) });
       if (current.peek() === item.id && !item.archived) void ctx.router.go('eva', {});
       await load();
     } catch (failure) { toast(errorText(failure), { icon: 'info' }); }
@@ -96,6 +104,7 @@ export function EvaPage(ctx: AppContext, status: Cell<EvaStatus | null>, convers
       ${() => archived.get() ? html`<div class="eva-group-h">Archived</div>` : null}
       ${() => groups.get().map(([label, items]) => html`<div class="eva-group-h">${archived.get() ? '' : label}</div>${each(() => items, item => item.id, row)}`)}
       ${when(() => loaded.get() && !list.get().length, () => html`<p class="eva-none">${() => search.get() ? 'No chats match.' : archived.get() ? 'Nothing archived.' : 'Your chats show up here.'}</p>`)}
+      ${when(() => next.get() !== null, () => Button({ label: 'Load more chats', size: 'small', disabled: loading, onClick: () => void load(true) }))}
     </div>
     <div class="eva-side-foot"><button type="button" class="nav-item" on:click=${() => { archived.set(!archived.peek()); void load(); }}>
       ${Icon(archived.get() ? 'arrow-left' : 'inbox', { size: 'sm' })}<span class="lbl">${() => archived.get() ? 'Back to chats' : 'Archived'}</span>
@@ -103,8 +112,10 @@ export function EvaPage(ctx: AppContext, status: Cell<EvaStatus | null>, convers
   </aside>`;
 
   const started = async (conversation: Conversation) => {
+    if (!alive) return;
     current.set(conversation.id);
     await load();
+    if (!alive) return;
     void ctx.router.go('evaChat', { conversation: String(conversation.id) }, {}, { replace: true });
   };
   return html`<div class="eva">${side}<section class="eva-main">${conversationId
@@ -118,10 +129,13 @@ const STARTERS = ['Which invoices are overdue by more than 30 days?', 'Summarise
 
 function EvaWelcome(props: { ctx: AppContext; eva: Eva; status: Cell<EvaStatus | null>; onStarted: (conversation: Conversation) => void; context?: { model: string; id: string }; starters?: string[] }): HTMLElement {
   const { eva, status } = props;
-  const composer = Composer({ eva, status, busy: cell(false), send: async (text, files) => {
+  let alive = true;
+  onCleanup(() => { alive = false; });
+  const composer = Composer({ eva, status, busy: cell(false), lockDuringSend: true, send: async (text, files) => {
     const conversation = await eva.create(props.context ? { context: props.context, title: 'New chat' } : {});
+    if (!alive) return;
     await eva.send(conversation.id, text, files.map(file => file.id));
-    props.onStarted(conversation);
+    if (alive) props.onStarted(conversation);
   } });
   return html`<div class="eva-thread eva-welcome">
     <div class="eva-hello">${html`<span class="eva-mark lg">${Icon('sparkles')}</span>`}<h1>What can I help with?</h1>
@@ -138,27 +152,39 @@ export function EvaThread(props: { ctx: AppContext; eva: Eva; status: Cell<EvaSt
   const { ctx, eva, status, id } = props;
   const stored = cell<Stored | null>(null), failure = cell(''), live = cell<Live | null>(null), busy = cell(false);
   let stop: (() => void) | null = null;
-  onCleanup(() => stop?.());
+  let alive = true, generation = 0;
+  const streams = new Map<number, Cell<Live | null>>();
+  const streamFor = (run: number) => { let value = streams.get(run); if (!value) streams.set(run, value = cell<Live | null>(null)); return value; };
+  const setLive = (value: Live | null) => {
+    const old = live.peek();
+    if (old && old.run !== value?.run) streamFor(old.run).set(null);
+    live.set(value);
+    if (value) streamFor(value.run).set(value);
+  };
+  onCleanup(() => { alive = false; generation++; stop?.(); streams.clear(); });
 
   const reload = async () => {
+    const request = ++generation;
     try {
       const data = await eva.open(id);
+      if (!alive || request !== generation) return;
       stored.set(data);
       if (!props.compact) ctx.crumbs.set([{ label: 'Eva', href: ctx.router.href('eva', {}) }, { label: data.conversation.title }]);
       const running = data.runs.find(run => run.status === 'running');
       if (running && live.peek()?.run !== running.id) watch(running.id);
-      if (!running) live.set(null);
-    } catch (error) { failure.set(errorText(error)); }
+      if (!running) setLive(null);
+    } catch (error) { if (alive && request === generation) failure.set(errorText(error)); }
   };
   const watch = (run: number) => {
+    if (!alive) return;
     stop?.();
-    live.set({ run, text: '', activities: new Map(), status: 'running', error: null });
-    stop = follow(eva, run, event => apply(event), () => { stop = null; void reload().then(() => { props.onChanged?.(); void refreshStatus(); }); });
+    setLive({ run, text: '', activities: new Map(), status: 'running', error: null });
+    stop = follow(eva, run, event => { if (alive) apply(event); }, () => { if (!alive) return; stop = null; void reload().then(() => { if (alive) { props.onChanged?.(); void refreshStatus(); } }); });
   };
   const apply = (event: RunEvent) => {
     const now = live.peek();
     if (!now) return;
-    const next: Live = { ...now, activities: new Map(now.activities) };
+    const next: Live = { ...now, activities: event.type === 'message.delta' ? now.activities : new Map(now.activities) };
     const key = String(event.call_id ?? '');
     if (event.type === 'message.delta') next.text += String(event.text ?? '');
     else if (event.type === 'tool.started') {
@@ -171,19 +197,20 @@ export function EvaThread(props: { ctx: AppContext; eva: Eva; status: Cell<EvaSt
     else if (event.type === 'approval.requested') { next.activities.set(key, { call_id: key, tool: String(event.tool), label: String(event.label), status: 'approval', approval: event.approval as Approval }); next.status = 'awaiting_approval'; }
     else if (event.type === 'run.failed' || event.type === 'run.cancelled') { next.status = event.type === 'run.failed' ? 'failed' : 'cancelled'; next.error = String(event.error ?? ''); }
     else if (event.type === 'run.completed') next.status = 'completed';
-    live.set(next);
+    setLive(next);
   };
-  const refreshStatus = async () => { try { status.set(await eva.status()); } catch { /* the next send will say */ } };
+  const refreshStatus = async () => { try { const value = await eva.status(); if (alive) status.set(value); } catch { /* the next send will say */ } };
   void reload();
 
   const answer = async (approval: Approval, approve: boolean) => {
     try {
       await eva.answer(approval.id, approve);
+      if (!alive) return;
       toast(approve ? 'Approved. Eva carries on.' : 'Declined. Nothing was changed.');
       const run = approval.run_id;
       await reload();
-      if (run) watch(run);
-    } catch (error) { toast(errorText(error), { icon: 'info' }); await reload(); }
+      if (alive && run && live.peek()?.run !== run) watch(run);
+    } catch (error) { if (alive) { toast(errorText(error), { icon: 'info' }); await reload(); } }
   };
   const stopRun = async (run: number) => { try { await eva.cancel(run); toast('Stopped'); } catch (error) { toast(errorText(error), { icon: 'info' }); } };
 
@@ -192,28 +219,37 @@ export function EvaThread(props: { ctx: AppContext; eva: Eva; status: Cell<EvaSt
     waiting: () => Boolean(stored.get()?.runs.some(run => run.status === 'awaiting_approval')),
     send: async (text, files) => {
       const sent = await eva.send(id, text, files.map(file => file.id));
+      if (!alive) return;
+      generation++; // A read started before this successful mutation must not erase the new turn.
       const data = stored.peek();
-      if (data) stored.set({ ...data, messages: [...data.messages, sent.message] });
+      if (data) stored.set({ ...data, messages: data.messages.some(message => message.id === sent.message.id) ? data.messages : [...data.messages, sent.message],
+        runs: data.runs.some(run => run.id === sent.run.id) ? data.runs : [...data.runs, {
+        id: sent.run.id, status: 'running', error: null, model: status.peek()?.model ?? '', origin: 'eva',
+        started_at: sent.message.created_at, finished_at: null, activities: [],
+      }] });
+      else await reload();
       watch(sent.run.id);
     } });
 
-  const turn = (run: Run) => {
-    const data = stored.get()!;
-    const asked = data.messages.filter(message => message.run_id === run.id && message.role === 'user');
-    const answers = data.messages.filter(message => message.run_id === run.id && message.role === 'assistant');
-    const now = live.get();
-    const streaming = now && now.run === run.id ? now : null;
-    const activities = streaming && streaming.activities.size ? [...streaming.activities.values()] : run.activities;
-    const files = activities.flatMap(activity => (activity.records ?? []).filter(record => record.file)).map(record => ({ id: record.file!, name: record.name ?? 'File' }));
-    return html`${asked.map(message => UserMessage(message, eva))}
+  const turn = (run: () => Run) => {
+    const streaming = streamFor(run().id);
+    let previous: Map<string, Activity> | undefined, cached: Activity[] = [];
+    const activities = derive(() => {
+      const current = streaming.get()?.activities;
+      if (!current?.size) return run().activities;
+      if (current !== previous) { previous = current; cached = [...current.values()]; }
+      return cached;
+    });
+    const files = derive(() => activities.get().flatMap(activity => (activity.records ?? []).filter(record => record.file)).map(record => ({ id: record.file!, name: record.name ?? 'File' })));
+    return html`${() => stored.get()!.messages.filter(message => message.run_id === run().id && message.role === 'user').map(message => UserMessage(message, eva))}
       <div class="eva-turn">${html`<span class="eva-mark">${Icon('sparkles', { size: 'sm' })}</span>`}<div class="eva-body">
-        ${activities.length ? html`<div class="eva-acts">${activities.map(activity => ActivityRow(ctx, activity, answer))}</div>` : null}
-        ${answers.map(message => Markdown(message.content))}
-        ${streaming && streaming.text ? html`<div class="eva-md">${Markdown(streaming.text)}<span class="eva-caret" aria-hidden="true"></span></div>` : null}
-        ${streaming && streaming.status === 'running' ? html`<div class="eva-live" role="status"><span class="eva-spin"></span><span class="eva-shim">${liveLabel(streaming)}</span></div>` : null}
-        ${files.length ? html`<div class="eva-files">${files.map(file => FileChip({ name: file.name, href: eva.fileUrl(file.id) }))}</div>` : null}
-        ${run.status === 'failed' || streaming?.status === 'failed' ? RunProblem(run.error ?? streaming?.error ?? '') : null}
-        ${run.status === 'cancelled' ? html`<p class="eva-note">Stopped. Anything Eva finished before that stays done.</p>` : null}
+        <div class="eva-acts">${each(() => activities.get(), activity => activity.call_id, activity => html`${() => ActivityRow(ctx, activity(), answer)}`)}</div>
+        ${() => stored.get()!.messages.filter(message => message.run_id === run().id && message.role === 'assistant').map(message => Markdown(message.content))}
+        ${() => { const now = streaming.get(); return now?.text ? html`<div class="eva-md">${Markdown(now.text)}<span class="eva-caret" aria-hidden="true"></span></div>` : null; }}
+        ${() => { const now = streaming.get(); return now?.status === 'running' ? html`<div class="eva-live" role="status"><span class="eva-spin"></span><span class="eva-shim">${liveLabel(now)}</span></div>` : null; }}
+        ${() => files.get().length ? html`<div class="eva-files">${files.get().map(file => FileChip({ name: file.name, href: eva.fileUrl(file.id) }))}</div>` : null}
+        ${() => run().status === 'failed' || streaming.get()?.status === 'failed' ? RunProblem(run().error ?? streaming.get()?.error ?? '') : null}
+        ${() => run().status === 'cancelled' ? html`<p class="eva-note">Stopped. Anything Eva finished before that stays done.</p>` : null}
       </div></div>`;
   };
 
@@ -222,9 +258,10 @@ export function EvaThread(props: { ctx: AppContext; eva: Eva; status: Cell<EvaSt
       ${() => stored.get()?.conversation.context ? html`<a class="chip" href=${ctx.router.href('record', { model: stored.get()!.conversation.context!.model, id: String(stored.get()!.conversation.context!.id) })}>
         ${Icon('link', { size: 'xs' })}${stored.get()!.conversation.context!.model.replace(/_/g, ' ')} ${stored.get()!.conversation.context!.id}</a>` : null}
       ${() => stored.get() ? html`<span class="chip num" title="This chat so far">${stored.get()!.usage.tokens.toLocaleString('en')} tokens · AED ${stored.get()!.usage.cost}</span>` : null}</div>`}
-    <div class="eva-scroll" ref=${(el: HTMLElement) => effect(() => { live.get(); stored.get(); queueMicrotask(() => { el.scrollTop = el.scrollHeight; }); })}>
+    <div class="eva-scroll" ref=${(el: HTMLElement) => effect(() => { live.get(); stored.get(); const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80; queueMicrotask(() => { if (alive && atBottom) el.scrollTop = el.scrollHeight; }); })}>
       <div class="eva-msgs">${() => failure.get() ? EmptyState({ icon: 'info', tint: 'slate', title: 'This chat is not available', text: failure.get() })
-        : stored.get() === null ? html`<p class="eva-none">Loading…</p>` : stored.get()!.runs.map(turn)}</div></div>
+        : stored.get() === null ? html`<p class="eva-none">Loading…</p>` : null}
+        ${each(() => stored.get()?.runs ?? [], run => run.id, turn)}</div></div>
     ${composer.node}</div>` as HTMLElement;
 }
 
@@ -303,38 +340,55 @@ interface ComposerOptions {
   eva: Eva; status: Cell<EvaStatus | null>; busy: Cell<boolean>;
   send(text: string, files: FileRef[]): Promise<void>;
   running?: () => number | null; stop?: (run: number) => void; waiting?: () => boolean;
+  /** A new chat navigates on success; prevent a second draft being lost in that navigation. */
+  lockDuringSend?: boolean;
 }
 
 function Composer(options: ComposerOptions): { node: HTMLElement; fill(text: string): void } {
   const { eva, status, busy } = options;
-  const text = cell(''), files = cell<FileRef[]>([]);
+  const text = cell(''), files = cell<FileRef[]>([]), uploading = cell(0);
   let area: HTMLTextAreaElement | null = null, picker: HTMLInputElement | null = null;
+  let revision = 0, alive = true;
+  onCleanup(() => { alive = false; });
   const exhausted = () => Boolean(status.get()?.allowance.exhausted);
+  const locked = () => Boolean(options.waiting?.() || options.lockDuringSend && busy.get());
   const submit = async () => {
     const value = text.peek().trim();
-    if (!value || busy.peek()) return;
+    if (!value || busy.peek() || uploading.peek()) return;
+    const submitted = revision, attached = files.peek();
     busy.set(true);
     try {
-      await options.send(value, files.peek());
-      text.set('');
-      files.set([]);
+      await options.send(value, attached);
+      if (!alive) return;
+      if (revision === submitted) text.set('');
+      files.set(files.peek().filter(file => !attached.includes(file)));
     } catch (failure) {
+      if (!alive) return;
       toast(errorText(failure), { icon: 'info' });
-      if (failure instanceof ApiError && failure.kind === 'limited') { try { status.set(await eva.status()); } catch { /* shown already */ } }
+      if (failure instanceof ApiError && failure.kind === 'limited') { try { const value = await eva.status(); if (alive) status.set(value); } catch { /* shown already */ } }
     } finally { busy.set(false); }
   };
   const upload = async (list: FileList | null) => {
-    for (const file of Array.from(list ?? [])) {
-      if (files.peek().length >= (status.peek()?.files.max_files ?? 5)) { toast('Attach up to 5 files to one message', { icon: 'info' }); break; }
-      if (file.size > (status.peek()?.files.max_size ?? 1048576)) { toast(`${file.name} is larger than 1 MB`, { icon: 'info' }); continue; }
-      try { files.set([...files.peek(), await eva.upload(file.name, await readFile(file))]); }
-      catch (failure) { toast(errorText(failure), { icon: 'info' }); }
-    }
-    if (picker) picker.value = '';
+    uploading.set(uploading.peek() + 1);
+    try {
+      for (const file of Array.from(list ?? [])) {
+        if (!alive || locked()) break;
+        if (files.peek().length >= (status.peek()?.files.max_files ?? 5)) { toast('Attach up to 5 files to one message', { icon: 'info' }); break; }
+        if (file.size > (status.peek()?.files.max_size ?? 1048576)) { toast(`${file.name} is larger than 1 MB`, { icon: 'info' }); continue; }
+        try {
+          const content = await readFile(file);
+          if (!alive) return;
+          const uploaded = await eva.upload(file.name, content);
+          if (!alive) return;
+          files.set([...files.peek(), uploaded]);
+        } catch (failure) { if (alive) toast(errorText(failure), { icon: 'info' }); }
+      }
+      if (picker) picker.value = '';
+    } finally { uploading.set(uploading.peek() - 1); }
   };
   const attach = (anchor: HTMLElement) => openPopover(anchor, close => Menu([
     { label: 'Upload from this computer', icon: 'upload', onSelect: () => picker?.click() },
-    { label: 'Choose a file in Evlet', icon: 'paperclip', onSelect: () => chooseFile(eva, file => files.set([...files.peek(), file])) },
+    { label: 'Choose a file in Evlet', icon: 'paperclip', onSelect: () => chooseFile(eva, file => { if (alive && !locked()) files.set([...files.peek(), file]); }) },
   ], close), { label: 'Attach' });
   const keydown = (event: KeyboardEvent) => { if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) { event.preventDefault(); void submit(); } };
 
@@ -343,21 +397,21 @@ function Composer(options: ComposerOptions): { node: HTMLElement; fill(text: str
       <p>${() => { const allowance = status.get()!.allowance; return `${allowance.unit === 'aed' ? 'AED ' : ''}${allowance.used} of ${allowance.unit === 'aed' ? 'AED ' : ''}${allowance.limit ?? '—'}${allowance.unit === 'aed' ? '' : ` ${allowance.unit}`} used. It resets on ${allowance.resets_text ?? stamp(allowance.resets)} GST. Your chats and files stay here. Ask your administrator if you need more.`; }}</p></div></div>`
     : html`<div class="eva-compose">
       ${when(() => files.get().length > 0, () => html`<div class="eva-chips">${() => files.get().map(file => html`<span class="eva-chip">${Icon('paperclip', { size: 'xs' })}${file.name}
-        <button type="button" aria-label=${`Remove ${file.name}`} on:click=${() => files.set(files.peek().filter(item => item.id !== file.id))}>${Icon('x', { size: 'xs' })}</button></span>`)}</div>`)}
+        <button type="button" disabled=${locked} aria-label=${`Remove ${file.name}`} on:click=${() => files.set(files.peek().filter(item => item.id !== file.id))}>${Icon('x', { size: 'xs' })}</button></span>`)}</div>`)}
       <textarea rows="2" placeholder=${() => options.waiting?.() ? 'Answer the approval above first' : 'Ask Eva about your records, or ask it to do something'} aria-label="Message Eva"
-        prop:value=${text} disabled=${() => Boolean(options.waiting?.())} ref=${(el: HTMLTextAreaElement) => { area = el; }}
-        on:input=${(event: Event) => text.set((event.target as HTMLTextAreaElement).value)} on:keydown=${keydown}></textarea>
+        prop:value=${text} disabled=${locked} ref=${(el: HTMLTextAreaElement) => { area = el; }}
+        on:input=${(event: Event) => { revision++; text.set((event.target as HTMLTextAreaElement).value); }} on:keydown=${keydown}></textarea>
       <div class="eva-compose-bar">
-        ${IconButton({ icon: 'paperclip', tip: 'Attach a file', onClick: event => attach(event.currentTarget as HTMLElement) })}
+        ${IconButton({ icon: 'paperclip', tip: 'Attach a file', disabled: locked, onClick: event => attach(event.currentTarget as HTMLElement) })}
         <input type="file" hidden multiple accept=${() => (status.get()?.files.kinds ?? []).join(',')} ref=${(el: HTMLInputElement) => { picker = el; }}
           on:change=${(event: Event) => void upload((event.target as HTMLInputElement).files)}>
-        <span class="grow"></span><span class="muted eva-small">Uses your permissions</span>
+        <span class="grow"></span><span class="muted eva-small">${() => uploading.get() ? 'Uploading…' : 'Uses your permissions'}</span>
         ${() => { const run = options.running?.(); return run
           ? html`<button type="button" class="eva-send stop" aria-label="Stop" on:click=${() => options.stop?.(run)}>${Icon('circle', { size: 'sm' })}</button>`
-          : html`<button type="button" class="eva-send" aria-label="Send" disabled=${() => busy.get() || !text.get().trim() || Boolean(options.waiting?.())} on:click=${() => void submit()}>${Icon('arrow-up', { size: 'sm' })}</button>`; }}
+          : html`<button type="button" class="eva-send" aria-label="Send" disabled=${() => busy.get() || uploading.get() > 0 || !text.get().trim() || Boolean(options.waiting?.())} on:click=${() => void submit()}>${Icon('arrow-up', { size: 'sm' })}</button>`; }}
       </div></div>`}
     <p class="eva-hint">Eva can make mistakes. Check important numbers before you rely on them.</p></div>` as HTMLElement;
-  return { node, fill: value => { text.set(value); area?.focus(); } };
+  return { node, fill: value => { if (!alive || locked()) return; revision++; text.set(value); area?.focus(); } };
 }
 
 function chooseFile(eva: Eva, picked: (file: FileRef) => void) {

@@ -1,3 +1,4 @@
+import { rememberOidcNext } from './signin-return';
 // Sign in and first-run setup. Setup creates the first administrator, then signs in with it. An account
 // without a password yet (the built-in Administrator after a development link) chooses one first.
 
@@ -25,6 +26,7 @@ export const Lockup = () => html`<span class="ev-lockup"><img class="ev-lockup-l
 export function LoginScreen(props: LoginProps): HTMLElement {
   const application = props.session?.application ?? {};
   const setup = Boolean(props.session?.setup);
+  const provider = !setup && props.session?.oidc?.start === '/_/oidc/start' ? props.session.oidc : null;
   const place = application.playground ? 'your Playground' : application.name || 'your workspace';
   const tenant = (props.session?.tenant as { label?: string } | undefined)?.label;
   const minimum = props.session?.password_min ?? 15;
@@ -57,6 +59,12 @@ export function LoginScreen(props: LoginProps): HTMLElement {
         ${setup ? html`<small id="ev-password-hint">${minimum <= 1 ? 'Any password will do.' : `Use at least ${minimum} characters.`}</small>` : null}
         ${when(() => Boolean(props.error.get()), () => html`<p class="ev-error" role="alert">${() => props.error.get()}</p>`)}
         ${Button({ label, variant: 'primary', type: 'submit', icon: 'arrow-right', disabled: props.busy, className: 'ev-login-submit' })}
+        ${provider ? html`<a class="btn ev-login-submit" href=${provider.start} rel="external"
+          aria-disabled=${() => String(props.busy.get())} tabindex=${() => props.busy.get() ? -1 : 0}
+          on:click=${(event: MouseEvent) => {
+            if (props.busy.peek()) { event.preventDefault(); return; }
+            rememberOidcNext(new URLSearchParams(window.location.search).get('next'));
+          }}>${provider.label}</a>` : null}
       </form>
       ${when(() => Boolean(props.error.get()), () => html`<button type="button" class="link" on:click=${props.onRetry}>Check connection</button>`)}
       <footer>Simple tools. Your application.</footer>

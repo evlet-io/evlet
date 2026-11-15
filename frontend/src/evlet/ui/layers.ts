@@ -314,8 +314,18 @@ export function toast(text: string, options: ToastOptions = {}): () => void {
 
 /** Copy text and confirm with a toast showing what was copied. */
 export async function copyText(text: string, what = text) {
-  try { await navigator.clipboard?.writeText(text); toast(`Copied ${what}`, { icon: 'copy' }); }
-  catch { toast(`Could not copy ${what}`, { icon: 'info' }); }
+  try {
+    if (!navigator.clipboard?.writeText) throw new Error('Clipboard unavailable');
+    await navigator.clipboard.writeText(text);
+    toast(`Copied ${what}`, { icon: 'copy' });
+  } catch {
+    // Restricted/insecure browsers still provide a manual way to recover the exact text.
+    openModal({ title: `Copy ${what}`, icon: 'copy', narrow: true,
+      body: () => html`<p>Automatic copying is unavailable. Copy the selected text with your keyboard or browser menu.</p>
+        <textarea class="input" rows="10" readonly aria-label="Text to copy" prop:value=${text}
+          on:focus=${(event: FocusEvent) => (event.target as HTMLTextAreaElement).select()}></textarea>`,
+      footer: close => Button({ label: 'Done', variant: 'primary', onClick: close }) });
+  }
 }
 
 /** A dialog's standard footer: a note on the left, Cancel and the main action on the right. The main action

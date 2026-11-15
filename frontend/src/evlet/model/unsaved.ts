@@ -56,10 +56,10 @@ export function capture(row: Row): NodeChanges {
 }
 
 /** A new record's draft: the fields the person set and every row. */
-export function captureNew(row: Row): NodeChanges {
+export function captureNew(row: Row, all = false): NodeChanges {
   const node: NodeChanges = {};
   const values: Record<string, unknown> = {};
-  for (const field of writable(row)) if (field.touched) values[field.name] = field.value.peek() ?? null;
+  for (const field of writable(row)) if (field.touched || (all && present(field.value.peek()))) values[field.name] = field.value.peek() ?? null;
   if (Object.keys(values).length) node.values = values;
   const children: Record<string, TableChanges> = {};
   for (const [name, table] of row.tables) {

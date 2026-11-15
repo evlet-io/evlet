@@ -133,7 +133,8 @@ number is used, until Create, which sends a create (POST) like any new record.
   form: `Meta.focus`, or the first editable field.
 - **Unsaved.** The copy has values, so it counts as unsaved from the start: leaving it keeps it as
   an unfinished new record or asks, as described in [Unsaved changes](#unsaved-changes). It does
-  not offer to restore an earlier unfinished draft.
+  not automatically offer to restore an earlier unfinished draft; a review link opens that draft
+  separately so the copied values stay intact.
 
 Only the main area scrolls, on every page: the sidebar and the top bar stay in place. On a record
 page the side column stays in place too while the main column scrolls, and scrolls on its own when
@@ -1038,9 +1039,52 @@ edits back in the form as unsaved edits; Save is still needed. If someone saved 
 the meantime, the bar lists each field both of them changed, with both values, and the person
 keeps theirs or the saved one per field, or discards all of it.
 
+While a record stays open, committed edits are kept after a 1.5-second pause, with one
+active browser keep at a time per record. The small draft status distinguishes pending, keeping, kept
+and failed attempts; failures offer Retry. Committed edits are kept even while another field is
+being typed in; the status then says the text still in that field is not kept yet. Hiding the
+tab attempts the same bounded operation. Moving rows and editing sections count as edits too. Existing-record drafts need a working
+connection: there is no offline queue or implicit browser copy of their data. A mobile browser
+that kills a tab before an acknowledged keep can lose those latest edits. Save before closing
+when the status is not kept. The current draft format does not represent row reordering or
+section edits; these explicitly ask the person to Save or keep the tab open rather than
+claiming a partial draft is complete.
+
+Kept drafts have their own version, separate from the record revision. A timed-out request may
+still finish at the server, but cannot overwrite a newer acknowledged copy. The browser keeps
+its expected version across retries; if another tab or earlier request changed that copy,
+keeping pauses and the open edits stay intact. Keeping, saving or discarding a different
+record, in any tab, does not count as such a change. Restore or discard an existing kept draft before
+replacing it. Save and discard clear only the copy this view acknowledged, preserving a newer
+copy from another tab. A keep that finishes while a Save is still on its way waits for that Save
+and removes the copy it wrote once the Save has stored those edits, also when the view closed. These checks do not replace the record's normal Save version check.
+
+A conflicting Save offers **Compare changes**. It reads the latest record separately and shows
+both values for overlapping edits. Cancel or a failed read preserves the open draft. Applying
+chosen values keeps them unsaved against the latest revision; Save still checks that revision.
+Locked records, missing/unwritable fields and structural changes that cannot be restored block
+automatic comparison. **Copy my changes** preserves the full update body for manual recovery.
+
 An unsaved new record stays in the browser only, so no record is created and no number is used
 until Save. Opening New for that model again asks "Restore your unfinished new ...?" with
-Restore and Start fresh. Signing out, or another person signing in on that browser, clears it.
+Restore and Start fresh. Copies already kept remain reviewable when future keeping is turned off. Signing out, or another person signing in on that browser, clears it.
+
+Create carries a request receipt so an explicit retry of the same values can recover a lost
+response without creating the record twice. The receipt is kept with the new browser draft
+before sending, when browser keeping is enabled and available. Restoring that draft restores
+the receipt too. The browser allows retries for 23 hours; an expired receipt requires checking
+the record list before starting fresh. Changed values, such as a field corrected after the server
+refused a retry as invalid, are sent with the same receipt key: the server creates at most one
+record per key, and when the lost first request did create one it answers that the record already
+exists instead of creating another. A create that finishes after its view closed removes its kept
+draft, so New does not offer to create that record again. There is no automatic retry. Without
+browser storage, the form warns to keep the tab open and retry there. If an older kept copy
+cannot be updated with the receipt, Create waits for an explicit restore/discard decision
+instead of deleting that copy. Starting fresh while another tab is creating does not let its
+late response remove the newer draft. Pending receipts count toward the browser draft limit;
+other drafts cannot evict them, and their data expires with the configured draft retention.
+Concurrent tabs can briefly exceed the entry count during admission; the existing copies remain
+recoverable and further growth stops until one is resolved. Browser storage quota still applies.
 
 Server entries are kept for 30 days (200 per person), browser ones for 7 days (20 per person);
 an entry over 256 KB is not kept and stays only in the open tab. These are instance settings in
@@ -1066,6 +1110,30 @@ unknown fields are refused. Keeping edits never runs validators, events, numberi
 A save removes the saver's entry, and deleting a record removes everyone's, in the same
 transaction. The format of `changes` is in
 [internal/unsaved-changes.md](internal/unsaved-changes.md).
+
+### Installation and optional offline notice
+
+The bundled desk at `/app`, on HTTPS (or a secure localhost development origin), advertises
+an install manifest using the existing Evlet icon. Appearance includes the browser install
+prompt when supported and instructions for Add to Home Screen. Custom mounts, custom/public
+frontends and portal Settings are not claimed as installable by this manifest.
+
+**Offline notice and static assets** is an explicit device preference, off by default. It
+registers `/assets/evlet-sw.js` only after opt-in. The worker keeps a fixed public offline
+notice, the public icon and up to 64 of the fingerprinted JavaScript, CSS or font files of the
+Evlet build it ships with; `vite build` writes their names into the worker. Only those files are
+served cache-first. The icon is fetched from the network each time and its copy used only offline;
+any other `/assets/` file, such as an app's own script, is never cached. A new build's worker drops
+the files of earlier builds when it activates. Requests for these assets omit credentials. Successful navigation HTML, sessions, API responses,
+records and mutations are never cached, queued or replayed. An offline navigation shows only
+`/assets/evlet-offline.html`, without injected configuration or user data.
+
+Updates wait for existing tabs to close; there is no automatic activation, reload or takeover
+of editors. Finish or keep work before closing tabs. Turning the feature off unregisters its
+worker and deletes its asset cache; a non-sensitive disabled marker prevents a restarted
+worker from recreating it. The worker reads that marker again when it is turned back on, so a
+worker still running since it was turned off resumes without a browser restart. Browser storage failures do not block ordinary online assets.
+Installation itself does not enable offline business workflows.
 
 ### Keyboard shortcuts
 

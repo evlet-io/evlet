@@ -352,7 +352,8 @@ def test_the_framework_step_creates_the_table(tmp_path):
     assert '0005_unsaved_changes' in upgrade(database)
     with sqlite3.connect(path) as connection:
         assert [row[1] for row in connection.execute('PRAGMA table_info(evlet_unsaved)')] == [
-            'user_id', 'model', 'record_id', 'changes', 'base_revision', 'saved_at', 'size']
+            'user_id', 'model', 'record_id', 'changes', 'base_revision', 'saved_at', 'size', 'version']
+        assert [row[1] for row in connection.execute('PRAGMA table_info(evlet_unsaved_versions)')] == ['user_id', 'version']
 
 
 def test_read_only_api_models_keep_nothing(secured):

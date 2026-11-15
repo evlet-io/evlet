@@ -4,7 +4,7 @@
 
 import { html, match, when, type Child } from '../dom';
 import { ApiError, ValidationError, type ApiClient, type User } from '../api';
-import { cell, derive, untrack, type Cell } from '../reactive';
+import { cell, derive, getOwner, onCleanup, runWithOwner, untrack, type Cell } from '../reactive';
 import { formatDate, formatDateTime, setRegion, type DateFormat, type NumberFormat } from '../model/format';
 import type { FieldSchema } from '../model/schema';
 import { Avatar, Button, Checkbox, Icon, Switch } from '../ui/base';
@@ -14,6 +14,7 @@ import { applyTheme, type Theme } from '../ui/theme';
 import { humanize, InputError, kindOf } from '../ui/kinds';
 import type { UnsavedInfo } from './client';
 import './settings.css';
+import { PwaSettings } from './pwa';
 
 export interface Me {
   user: User;
@@ -191,7 +192,7 @@ export function SettingsView(ctx: SettingsContext, page: string): HTMLElement {
     }}</nav>`;
   const options: Array<[string, string]> = [...me.pages.map(id => [id, PAGES[id][0]] as [string, string]), ...me.apps.map(app => [`app/${app.id}`, `${app.title} settings`] as [string, string])];
   const content = page.startsWith('app/') ? AppSettingsPage(ctx, page.slice(4)) : ({ profile: ProfilePage, appearance: AppearancePage, security: SecurityPage,
-    notifications: NotificationsPage, email: EmailPage, ai: AiPage, keys: (ctx: SettingsContext) => later(async () => (await import('../settings/keys')).MyKeysPage({ api: ctx.api, twoStep: ctx.me.peek().security.two_step.on })) } as Record<string, (ctx: SettingsContext) => Node>)[page]?.(ctx) ?? null;
+    notifications: NotificationsPage, email: EmailPage, ai: AiPage, keys: (ctx: SettingsContext) => later(() => import('../settings/keys').then(module => () => module.MyKeysPage({ api: ctx.api, twoStep: ctx.me.peek().security.two_step.on }))) } as Record<string, (ctx: SettingsContext) => Node>)[page]?.(ctx) ?? null;
   return html`<div class="set-wrap">${nav}<div class="set-main">${select(page, options, value => ctx.go(value), 'Settings page')}${content}</div></div>` as HTMLElement;
 }
 
@@ -423,6 +424,7 @@ function AppearancePage(ctx: SettingsContext): Node {
       row('Keep unsaved changes when I leave a record', 'Your edits wait for you to restore or discard them. Only Save changes the record. Off asks before discarding them, and forgets what was kept.',
         Switch({ on: () => prefs.get().keep_unsaved !== false, ariaLabel: 'Keep unsaved changes', onChange: next => set('keep_unsaved', next) })),
     ])}
+    ${PwaSettings()}
     ${section('Language and region', '', [
       row('Language', 'Arabic switches the layout to right-to-left.', select(prefs.peek().lang, [['en', 'English'], ['ar', 'العربية (Arabic)']], value => set('lang', value), 'Language')),
       row('Time zone', '', select(prefs.peek().tz, ZONES.some(([zone]) => zone === prefs.peek().tz) ? ZONES : [...ZONES, [prefs.peek().tz, prefs.peek().tz]], value => set('tz', value), 'Time zone')),
@@ -653,15 +655,20 @@ function NotificationsPage(ctx: SettingsContext): Node {
 // ---------- connections ----------
 
 /** A page that shares the Controls pages' code, loaded with them on first use so the app chunk stays small. */
-function later(load: () => Promise<Node>): Node {
+function later(load: () => Promise<() => Node>): Node {
+  const owner = getOwner();
+  let alive = true;
+  onCleanup(() => { alive = false; });
   const holder = html`<div><p class="set-p">Loading…</p></div>` as HTMLElement;
-  load().then(page => holder.replaceChildren(page), () => holder.replaceChildren(callout('warn', 'info', 'This page could not load. Reload and try again.')));
+  load().then(create => { if (alive) runWithOwner(owner, () => holder.replaceChildren(create())); }).catch(() => {
+    if (alive) runWithOwner(owner, () => holder.replaceChildren(callout('warn', 'info', 'This page could not load. Reload and try again.')));
+  });
   return holder;
 }
 
 /** /settings/email: the person's own mailbox (MyEmailPage). */
 function EmailPage(ctx: SettingsContext): Node {
-  return later(async () => (await import('../settings/email')).MyEmailPage({ api: ctx.api }));
+  return later(() => import('../settings/email').then(module => () => module.MyEmailPage({ api: ctx.api })));
 }
 
 /** /settings/ai: remote assistants (MyAIPage) with the local `evlet mcp` steps and its signed-in command line sessions. */
@@ -679,7 +686,7 @@ function AiPage(ctx: SettingsContext): Node {
         try { await ctx.api.request('DELETE', `/api/_settings/me/sessions/${item.id}`); toast('Disconnected'); ctx.me.set({ ...ctx.me.peek(), security: { ...ctx.me.peek().security, sessions: ctx.me.peek().security.sessions.filter(each => each.id !== item.id) } }); }
         catch (failure) { fail(failure); }
       } }))) : html`<div class="set-empty">No command line session is signed in.</div>`}`;
-  return later(async () => (await import('../settings/ai')).MyAIPage({ api: ctx.api, local }));
+  return later(() => import('../settings/ai').then(module => () => module.MyAIPage({ api: ctx.api, local })));
 }
 
 // ---------- app settings ----------

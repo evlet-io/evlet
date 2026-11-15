@@ -18,6 +18,7 @@ import { compare, parse, type CurrencyInput, type FiniteDocument } from './finit
 import { ApiError, ConflictError, ValidationError, type ApiClient, type DraftResult, type FieldErrors, type RecordData, type User } from '../api';
 import { batch, cell, derive, getOwner, runWithOwner, scope, untrack, type Cell, type Derive } from '../reactive';
 import { buildChanges, findField } from './changes';
+import { prepareCreate, type CreateAttempt } from './create-attempt';
 import { dependentsOf, fitsRecord, linkScope } from './links';
 import { currencyDecimalsTable, todayGst } from './format';
 import { Session } from './session';
@@ -40,6 +41,7 @@ export function derivedField(model: ModelSchema, path: string[], name: string): 
 }
 
 export const STALE_FORMULAS = 'This record was calculated with older formulas, so it cannot be saved yet. Ask an administrator to recalculate it.';
+export const CREATED_BEFORE = 'An earlier attempt already created this record with the values sent then. Check the record list before choosing Start fresh; sending those values again opens it.';
 
 /** Whether two field values mean the same: '' and null are both empty, '1.50' equals '1.5' for numbers, lists by content. */
 export function sameValue(meta: FieldSchema | undefined, a: unknown, b: unknown): boolean {
@@ -335,6 +337,7 @@ export class Table {
       this.record.session?.reorder(this, rows);
       this.rows.set(rows);
     });
+    this.record.noteChange();
   }
 
   // ---------- section rows ----------
@@ -346,12 +349,14 @@ export class Table {
     const list = this.sections.peek().slice(), at = before === null ? list.length : list.findIndex(item => item.before === before);
     list.splice(at < 0 ? list.length : at, 0, section);
     this.sections.set(list);
+    this.record.noteChange();
     return section;
   }
 
   renameSection(key: string, label: string) {
     this.record.assertEditable();
     this.sections.set(this.sections.peek().map(section => section.key === key ? { ...section, label } : section));
+    this.record.noteChange();
   }
 
   /** Remove a section row; its lines stay, under the section before it. */
@@ -363,6 +368,7 @@ export class Table {
       this.sections.set(this.sections.peek().filter(item => item !== section));
       if (section.id) this.removedSections.set([...this.removedSections.peek(), section.id]);
     });
+    this.record.noteChange();
   }
 
   /** Put a section row before line `before` (null: after the last line), after any section already there, or just
@@ -377,6 +383,7 @@ export class Table {
     const at = ahead ? rest.findIndex(item => item.key === ahead) : -1;
     const list = (at >= 0 ? [...rest.slice(0, at), moved, ...rest.slice(at)] : [...rest, moved]).map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map(entry => entry.item);
     this.sections.set(list);
+    this.record.noteChange();
   }
 
   /** The saved state of the section rows of a payload: each anchored before the line that follows it. */
@@ -522,13 +529,27 @@ export class RecordStore {
   readonly user: User | null;
   /** The ETag of the saved version the draft is based on. */
   readonly etag = cell<string | null>(null, { name: 'record.etag' });
+  /** The kept draft this view acknowledged; never clear an unobserved copy after Save. */
+  draftRevision = 'preserve';
   /** Set when a save found the record changed on the server (409, 412, 428). Reload to continue. */
   readonly conflict = cell<ApiError | null>(null, { name: 'record.conflict' });
   /** A message for the whole form: an error the server did not tie to a field. */
   readonly formError = cell<string | null>(null, { name: 'record.formError' });
   readonly saving = cell(false, { name: 'record.saving' });
+  /** Revision of local edits, including changes after dirty first becomes true. */
+  readonly editVersion = cell(0, { name: 'record.edits' });
   /** What the last action returned (`_outcome`), such as a slip to present next. */
   outcome: unknown = null;
+  /** Last acknowledged save, retained even if its view closed before the answer arrived. */
+  lastSavedId: string | null = null;
+  /** Receipt of the acknowledged create, including when its view closed while awaiting it. */
+  lastCreatedKey: string | null = null;
+  /** Retained after an uncertain create; restoring a kept draft restores this too. */
+  createAttempt: CreateAttempt | null = null;
+  readonly createNotice = cell<string | null>(null, { name: 'record.createNotice' });
+  private saveRun: Promise<void> | null = null;
+  /** Synchronous durability hook, called before the request and after a first-attempt 422. */
+  onCreateAttempt?: (attempt: CreateAttempt | null, previous: CreateAttempt | null) => string | null;
   /** Every row is loaded and calculations are attached: the record can be edited. */
   readonly ready = cell(false, { name: 'record.ready' });
   /** Set when rows could not be paged in; call loadAll() again to retry. */
@@ -598,6 +619,9 @@ export class RecordStore {
   /** Start a new, unsaved record. Defaults, initial values and calculations apply. */
   async create(values: Record<string, unknown> = {}) {
     if (this.disposed) return;
+    this.createAttempt = null;
+    this.lastCreatedKey = null;
+    this.createNotice.set(null);
     this.opening++;
     // Field values, and optionally children: {table: [rows]} for new rows.
     this.detach();
@@ -676,18 +700,58 @@ export class RecordStore {
   }
 
   /** Save the draft. Returns false when the server refused it; see conflict, formError and field errors. */
-  async save(): Promise<boolean> {
+  save(): Promise<boolean> {
+    const run = this.saveNow(), tracked = run.then(() => undefined, () => undefined);
+    this.saveRun = tracked;
+    void tracked.then(() => { if (this.saveRun === tracked) this.saveRun = null; });
+    return run;
+  }
+
+  /** Resolves once no Save of this record is in flight (including reading its answer). */
+  async settled(): Promise<void> {
+    while (this.saveRun) await this.saveRun;
+  }
+
+  private async saveNow(): Promise<boolean> {
     this.assertEditable();
     const root = this.root, body = buildChanges(root);
     if (!root.isNew && !Object.keys(body).length) return true;
     const calculation = this.meta.calculation;
     if (calculation?.plan) body._calculation = { language: calculation.language, model_schema_hash: calculation.model_schema_hash };
+    const previous = this.createAttempt;
+    let attempted: CreateAttempt | null = null, dispatched = false;
     this.saving.set(true);
     try {
-      const response = root.isNew ? await this.api.create(this.meta.name, body) : await this.api.update(this.meta.name, root.id!, body, this.etag.peek());
+      if (root.isNew) {
+        const path = this.api.url?.(`/api/${this.meta.name}`) ?? `/api/${this.meta.name}`;
+        const endpoint = new URL(path, typeof location === 'undefined' ? 'http://local.invalid' : location.href).href;
+        attempted = prepareCreate(body, previous, this.user?.id ?? null, endpoint);
+        this.createAttempt = attempted;
+        this.createNotice.set(this.onCreateAttempt ? this.onCreateAttempt(attempted, previous)
+          : 'If the connection fails, keep this tab open and retry the same values. This create is not kept across reloads.');
+      }
+      dispatched = true;
+      const response = attempted ? await this.api.create(this.meta.name, JSON.parse(attempted.body), attempted.key)
+        : await this.api.update(this.meta.name, root.id!, body, this.etag.peek(), this.draftRevision);
+      this.lastSavedId = response.data.id;
+      if (attempted) this.lastCreatedKey = attempted.key;
+      this.createAttempt = null;
+      this.createNotice.set(null);
       this.applyServer(response.data, response.etag);
     } catch (error) {
+      if (!dispatched) this.createAttempt = previous;
+      // A later 422 cannot prove an earlier lost response rolled back. Release only a
+      // newly sent request with a definitive validation refusal, never an uncertain retry.
+      else if (attempted && previous === null && error instanceof ValidationError && error.status === 422) {
+        this.createAttempt = null;
+        try { this.createNotice.set(this.onCreateAttempt?.(null, attempted) ?? null); } catch { /* no create committed */ }
+      }
       this.saving.set(false);
+      // The key was used by a create that did commit, with the values sent before (evlet/business.py).
+      if (attempted && error instanceof ConflictError && error.status === 409 && error.message.includes('Idempotency-Key')) {
+        this.formError.set(CREATED_BEFORE);
+        return false;
+      }
       return this.refused(error);
     }
     // Saved. If paging the answer fails, loadError says so and loadAll() retries.
@@ -834,6 +898,7 @@ export class RecordStore {
    * the save. Formulas the browser runs need no server call; a model without Meta.derives never asks.
    */
   noteChange() {
+    this.editVersion.update(version => version + 1);
     if (!this.meta.derives?.length) return;
     // An answer still on its way was worked out from the draft before this change: drop it, the next one follows.
     this.previewTicket++;

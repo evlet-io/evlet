@@ -25,7 +25,8 @@ def test_fifty_concurrent_writers_do_not_lose_read_modify_write_updates(tmp_path
     assert db.get(Counter, record.id).value == 200
 
 
-def test_concurrent_tenant_cookie_replay_and_warmed_route_revocation(tenants):
+def test_concurrent_tenant_cookie_replay_and_warmed_route_revocation(tenants, http_capacity):
+    http_capacity(read=50, route=50)
     catalog, router = tenants
     tokens = {slug: login(router, slug) for slug in ('alpha','beta')}
     projects = {}

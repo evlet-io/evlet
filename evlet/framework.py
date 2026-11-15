@@ -191,6 +191,18 @@ def _create_requests(connection):
     connection.ensure_table(CREATE_REQUESTS)
     connection.ensure_index('evlet_create_request_expiry', 'evlet_create_requests', ('expires',))
 
+def _unsaved_versions(connection):
+    """Version unsaved changes per account, so a newer draft is never replaced by an older one (evlet/unsaved.py)."""
+    from .unsaved import ensure
+    if connection.table_exists('evlet_users'):
+        ensure(connection)
+
+def _oidc_tickets(connection):
+    """The one-use company sign-in tickets, in the sessions file (evlet/oidc.py). Created for every database, so
+    enabling OIDC later never changes the schema at startup; the table stays empty while OIDC is off."""
+    from .oidc import ensure_tickets
+    ensure_tickets(connection)
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -213,6 +225,10 @@ STEPS = (
                   'revoked session or two-step ticket cannot be used again.', _session_generations),
     FrameworkStep('0013_create_requests', 'Add evlet_create_requests, the retry receipts of creates sent with an '
                   'Idempotency-Key.', _create_requests),
+    FrameworkStep('0014_unsaved_versions', 'Add the version of unsaved changes and evlet_unsaved_versions, so a newer '
+                  'draft is never replaced by an older one.', _unsaved_versions),
+    FrameworkStep('0015_oidc_tickets', 'Add evlet_oidc_tickets, the one-use state and finish receipts of company '
+                  'sign-in, to the sessions file.', _oidc_tickets),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

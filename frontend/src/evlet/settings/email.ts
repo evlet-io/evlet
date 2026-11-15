@@ -8,8 +8,8 @@ import { ApiClient, ValidationError, type ClientOptions } from '../api';
 import { cell } from '../reactive';
 import { Button, StatusPill, Switch } from '../ui/base';
 import { mountToasts, toast } from '../ui/layers';
-import { Callout, Head, stamp } from '../controls/app';
-import { ask, field, message, Select } from '../controls/people';
+import { Callout, Head, stamp } from '../ui/settings-helpers';
+import { ask, field, message, Select } from '../ui/settings-helpers';
 import '../controls/controls.css';
 
 export interface MyMailbox {

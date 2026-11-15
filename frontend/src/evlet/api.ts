@@ -44,6 +44,10 @@ export interface RequestOptions {
   query?: Record<string, string | number | undefined>;
   /** The ETag of the version being changed. */
   ifMatch?: string | null;
+  /** Clear only this acknowledged kept draft after a record save; preserve leaves it untouched. */
+  draftRevision?: string;
+  /** A caller-owned receipt key for retrying the identical model create. */
+  idempotencyKey?: string;
   signal?: AbortSignal;
   /** Read the body as a file (a Blob) instead of JSON, for downloads and PDFs. */
   file?: boolean;
@@ -67,6 +71,8 @@ export interface User { id: number; username: string; role: string }
 export interface Session { user: User | null; csrf?: string; setup?: boolean; tenant?: unknown; application?: { name?: string; playground?: boolean; docs?: string | null };
   /** Security(admin_sign_in=True) in config.py: the username the sign-in page starts with. */
   sign_in?: { username: string };
+  /** Optional company identity provider on this origin; browser navigation starts the flow. */
+  oidc?: { label: string; start: string };
   /** Signed in, but the account has no password yet (the Administrator after a development link). */
   password_needed?: boolean;
   /** First-run setup: the shortest password the new administrator may have. */
@@ -161,6 +167,8 @@ export class ApiClient {
     const body = options.body === undefined && ['POST', 'PATCH', 'PUT'].includes(method) ? {} : options.body;
     if (body !== undefined) headers['Content-Type'] = 'application/json';
     if (options.ifMatch) headers['If-Match'] = options.ifMatch;
+    if (options.draftRevision) headers['X-Evlet-Draft-Revision'] = options.draftRevision;
+    if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey;
     const query = Object.entries(options.query ?? {}).filter(([, value]) => value !== undefined && value !== '');
     const url = this.url(path) + (query.length ? '?' + new URLSearchParams(query.map(([key, value]) => [key, String(value)])) : '');
     const { signal, release } = anySignal([options.signal, this.options.signal?.()]);
@@ -179,7 +187,7 @@ export class ApiClient {
       if (signal?.aborted || (cause as Error)?.name === 'AbortError') throw new ApiError('The request was cancelled.', 0, 'aborted');
       throw new ApiError('Unable to reach the server. Check the connection and try again.', 0, 'network');
     }
-    if (response.status === 401 && !path.startsWith('/api/auth/login')) {
+    if (response.status === 401 && !path.startsWith('/api/auth/login') && path !== '/_/oidc/finish') {
       this.csrf = '';
       this.options.onSessionEnded?.();
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('evlet-session-ended'));
@@ -211,6 +219,12 @@ export class ApiClient {
     this.csrf = data.csrf ?? '';
     return data;
   }
+  /** Consume the one-use, HttpOnly provider-return cookie. No token or ticket is read from the URL. */
+  async finishOidc(): Promise<Session> {
+    const { data } = await this.request<Session>('POST', '/_/oidc/finish', { body: {} });
+    this.csrf = data.csrf ?? '';
+    return data;
+  }
   async logout(): Promise<void> {
     await this.request('POST', '/api/auth/logout');
     this.csrf = '';
@@ -232,14 +246,14 @@ export class ApiClient {
   async get(model: string, id: string, signal?: AbortSignal) { return this.request<RecordData>('GET', recordPath(model, id), { signal }); }
 
   /** Create a record. Child rows go in `children: {table: [rows]}`, each new row with a `_key`. */
-  async create(model: string, values: Record<string, unknown>) { return this.request<RecordData>('POST', modelPath(model), { body: values }); }
+  async create(model: string, values: Record<string, unknown>, idempotencyKey?: string) { return this.request<RecordData>('POST', modelPath(model), { body: values, idempotencyKey }); }
 
   /**
    * Change a record. A Table may be sent as a change set
    * `children: {lines: {create: [...], update: [{id, ...}], delete: [ids], order: [ids and _keys]}}`.
    */
-  async update(model: string, id: string, changes: Record<string, unknown>, etag: string | null) {
-    return this.request<RecordData>('PATCH', recordPath(model, id), { body: changes, ifMatch: etag });
+  async update(model: string, id: string, changes: Record<string, unknown>, etag: string | null, draftRevision?: string) {
+    return this.request<RecordData>('PATCH', recordPath(model, id), { body: changes, ifMatch: etag, draftRevision });
   }
 
   async remove(model: string, id: string, etag: string | null) { return this.request<null>('DELETE', recordPath(model, id), { ifMatch: etag }); }

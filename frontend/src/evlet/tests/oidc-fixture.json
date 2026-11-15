@@ -1,0 +1,29 @@
+{
+  "session": {
+    "user": null,
+    "setup": false,
+    "application": {
+      "name": "Evlet",
+      "playground": false,
+      "docs": "/docs"
+    },
+    "oidc": {
+      "label": "Company sign-in",
+      "start": "/_/oidc/start"
+    }
+  },
+  "finish": {
+    "user": {
+      "id": 2,
+      "username": "editor",
+      "role": "editor"
+    },
+    "csrf": "fixture-csrf"
+  },
+  "challenge": {
+    "two_step": "setup",
+    "ticket": "fixture-ticket",
+    "secret": "fixture-secret",
+    "uri": "otpauth://totp/Evlet%3Aadmin?secret=fixture-secret&issuer=Evlet&digits=6&period=30"
+  }
+}

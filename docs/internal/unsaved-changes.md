@@ -29,12 +29,18 @@ leaving must not do. The store is a separate, small route family.
 evlet_unsaved(user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE,
               model TEXT NOT NULL, record_id INTEGER NOT NULL,
               changes TEXT NOT NULL, base_revision TEXT NOT NULL,
-              saved_at INTEGER NOT NULL, size INTEGER NOT NULL,
+              saved_at INTEGER NOT NULL, size INTEGER NOT NULL, version INTEGER NOT NULL DEFAULT 0,
               PRIMARY KEY (user_id, model, record_id))
+evlet_unsaved_versions(user_id INTEGER PRIMARY KEY REFERENCES evlet_users(id) ON DELETE CASCADE,
+                       version INTEGER NOT NULL)
+evlet_unsaved_cleared(user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE,
+                      model TEXT NOT NULL, record_id INTEGER NOT NULL,
+                      version INTEGER NOT NULL, cleared_at INTEGER NOT NULL,
+                      PRIMARY KEY (user_id, model, record_id))
 ```
 
-* Framework step `0005_unsaved_changes` creates it (the framework migration ledger), and startup
-  creates it too on a database the step already ran on. `model` is the model's storage name, as
+* Framework step `0005_unsaved_changes` creates the tables (the framework migration ledger), and startup
+  adds missing version metadata on a database the step already ran on. `model` is the model's storage name, as
   in the record URL and `evlet_attachments`.
 * `changes` holds only the edited writable fields:
 
@@ -57,6 +63,32 @@ evlet_unsaved(user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASC
 | `PUT /api/_unsaved/<model>/<id>` | Upsert `{"changes", "base_revision"}`. Idempotent. Answers `{saved_at, size, dropped}` |
 | `GET /api/_unsaved/<model>/<id>` | The caller's own entry: `{entry: {changes, base_revision, saved_at, size, stale}, dropped}`, or `{entry: null}` |
 | `DELETE /api/_unsaved/<model>/<id>` | Discard the caller's own entry. Answers 204 even when there was none |
+
+GET, successful PUT and DELETE also return an opaque draft `ETag`, including when no entry
+exists. New clients send that token as `If-Match` on PUT and DELETE. The check and mutation
+share one transaction; a changed token returns 412 and preserves the current draft. This
+draft token is separate from `base_revision`, which describes the business record.
+Requests without `If-Match` retain the previous unconditional behavior and JSON shapes.
+
+Keep the expected draft token after a timeout or lost response: aborting a browser request
+does not prove its server worker stopped. Do not silently reread and overwrite after 412.
+A late Save cleanup must DELETE with the token returned by its own draft PUT, so it cannot
+remove another tab's newer copy. Successful record Save, explicit Discard and preference
+clearing invalidate pending empty-state tokens too. One clock row per account numbers every
+entry and every clearing, so old requests never become valid again after deletion. An entry's
+token is its exact version. With no entry, the token is `unsaved-empty-<clock>`; it stays valid
+until that same record is kept, saved or discarded, which `evlet_unsaved_cleared` records with
+the clock's next value (the row with model `''` and record 0 covers all of a person's records
+when Settings turns keeping off). Keeping, saving or discarding another record never
+invalidates it. Clearing marks expire with the server retention (`unsaved.server_days`) in the
+daily clean-up, and deleting a record removes its marks.
+
+Record PATCH clients can send `X-Evlet-Draft-Revision` with the draft token this editor
+acknowledged, or `preserve` when it has not acknowledged a copy. Successful Save clears only
+that matching draft; a newer copy stays available and may now be stale against the record.
+This cleanup check never substitutes for the record's own `If-Match` or permissions, and a
+draft mismatch does not refuse a valid record save. Omitting this header preserves legacy
+cleanup. Save still invalidates old empty-state draft requests when it preserves another copy.
 
 * Session sign-in only. API keys, Eva, MCP, the Tool Engine and connectors are refused (they use
   `user.access`), and sub-hosts answer 404. CSRF is checked like every other write.

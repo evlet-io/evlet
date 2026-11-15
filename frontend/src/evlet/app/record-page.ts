@@ -37,8 +37,9 @@ import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } 
 import { filterFields } from './filters';
 import { presentSlip, takePrefill } from './slips';
 import { openEvaPanel } from '../eva/chat';
-import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden } from './unsaved';
+import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden, keepCreateAttempts, discardKeptChanges } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
+import { reviewConflict } from './conflict-review';
 import { SCREEN_KEYS, useShortcuts } from './shortcuts';
 import { dropDuplicate, duplicateAllowed, duplicateOf, holdDuplicate, takeDuplicate, type DuplicateCopy } from './duplicate';
 import { ariaKeys, commitTyped, formatKeys, withShortcut } from '../ui/shortcuts';
@@ -112,6 +113,8 @@ export interface PanelHost {
 type Handoff = { model: string; id: string; store: RecordStore; duplicate?: DuplicateCopy | null };
 let handoff: Handoff | null = null;
 const handedOff = new WeakSet<RecordStore>();
+// Expand transfers a pending save to the live view; a closed view must never navigate.
+const saveViews = new WeakMap<RecordStore, (ok: boolean, created: boolean) => void>();
 function takeHandoff(model: string, id: string): Handoff | null {
   const found = handoff && handoff.model === model && handoff.id === id ? handoff : null;
   handoff = null;
@@ -242,6 +245,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- unsaved changes ----------
 
+  if (isNew) keepCreateAttempts(ctx, model, store);
   let leaving = false;
   const changedNew = () => [...store.root.fields.values()].some(field => field.touched) || [...store.root.tables.values()].some(table => table.rows.peek().length > 0);
   // In a side panel, leaving the record (another row, Close, Back) asks; the list's own changes do not.
@@ -255,11 +259,13 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return true;
   };
   router.confirmLeave(unsaved, () => leave(), panel ? { stays: to => panel.stays(to) } : {});
-  keepWhenHidden(ctx, model, store, isNew, unsaved);
+  const draft = keepWhenHidden(ctx, model, store, isNew, unsaved);
   // Discard and Cancel mean the kept copy goes too.
   const forget = () => {
-    if (isNew) ctx.unsaved.remove(name);
-    else if (keepsUnsaved(ctx, model) && store.id) void ctx.api.discardUnsaved(name, store.id).catch(() => undefined);
+    if (isNew) {
+      if (!ctx.unsaved.remove(name, store.createAttempt?.key ?? null)) toast('The kept copy changed or could not be discarded and was left intact.', { icon: 'info' });
+    }
+    else if (keepsUnsaved(ctx, model) && store.id) void discardKeptChanges(ctx, model, store).catch(() => toast('The kept copy changed elsewhere and was not discarded.', { icon: 'info' }));
   };
   // Expand: the record page takes this store, unsaved edits included, so it does not ask.
   const expand = () => {
@@ -270,6 +276,27 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     void going.then(done => { if (!done) { leaving = false; handoff = null; handedOff.delete(store); } });
   };
 
+  const saved = (ok: boolean, created: boolean) => {
+    if (!ok) {
+      toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : 'Not saved. Check the highlighted values.', { icon: 'info' });
+      showErrors();
+      return;
+    }
+    if (created) {
+      leaving = true;
+      if (store.lastCreatedKey) ctx.unsaved.remove(name, store.lastCreatedKey);
+      toast(`${model.label} created`);
+      if (panel) panel.show(store.id!);
+      else void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
+    } else {
+      // A keep may have completed while Save was pending. Clear only our acknowledged
+      // copy; a changed/deleted copy is left alone by its draft precondition.
+      void discardKeptChanges(ctx, model, store).catch(() => undefined);
+      toast('Saved');
+    }
+  };
+  saveViews.set(store, saved);
+  onCleanup(() => { if (saveViews.get(store) === saved) saveViews.delete(store); });
   const save = async () => {
     if (store.saving.peek() || !commitTyped()) return false;
     if (store.saving.peek()) return false;
@@ -277,19 +304,16 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const created = isNew;
     let ok = false;
     try { ok = await store.save(); } catch (error) { toast((error as Error).message, { icon: 'info' }); return false; }
-    if (!ok) {
-      toast(store.conflict.peek() ? 'Not saved: this record changed since you opened it.' : 'Not saved. Check the highlighted values.', { icon: 'info' });
-      showErrors();
-      return false;
-    }
-    if (created) {
-      leaving = true;
-      ctx.unsaved.remove(name);
-      toast(`${model.label} created`);
-      if (panel) panel.show(store.id!);
-      else void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
-    } else toast('Saved');
-    return true;
+    const live = saveViews.get(store);
+    if (live) live(ok, created);
+    else if (ok) {
+      // The created record's own kept draft goes, so New does not offer to create it again; the
+      // receipt key spares a newer draft made while this request was pending. A notification
+      // acknowledges the server result without changing the page the person chose to visit meanwhile.
+      if (created && store.lastCreatedKey) ctx.unsaved.remove(name, store.lastCreatedKey);
+      toast(created ? `${model.label} created (${store.lastSavedId}). Open ${model.plural.toLowerCase()} to view it.` : `${model.label} saved`, { duration: 8000 });
+    } else toast(`${model.label} was not saved. ${store.formError.peek() ?? 'Reopen the draft to retry.'}`, { icon: 'info', duration: 8000 });
+    return ok;
   };
 
   // ---------- moves and actions ----------
@@ -558,12 +582,16 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const value = stateValue(), now = extras.get();
     return LockBanner(model, value, Boolean(now._locked), () => cancelledLine(value));
   } : null;
+  let closeComparison = () => {};
+  onCleanup(() => closeComparison());
   const problems = () => {
     const conflict = store.conflict.get(), form = store.formError.get(), load = store.loadError.get();
     return [
-      conflict ? StateBanner({ tone: 'danger', title: 'Changed elsewhere.', text: 'This record changed since you opened it. Your draft is still here: copy what you need, then reload.',
-        actions: [Button({ label: 'Reload', icon: 'rotate-ccw', size: 'small', onClick: () => void store.reload().catch(() => {}) })] }) : null,
-      form && !conflict ? StateBanner({ tone: 'danger', title: 'Not saved.', text: form }) : null,
+      conflict ? StateBanner({ tone: 'danger', title: 'Changed elsewhere.', text: 'This record changed since you opened it. Compare the saved values with your draft before continuing.',
+        actions: [Button({ label: 'Compare changes', icon: 'history', size: 'small', onClick: () => { closeComparison(); closeComparison = reviewConflict(store); } })] }) : null,
+      form && !conflict ? StateBanner({ tone: 'danger', title: 'Not saved.', text: form,
+        actions: isNew && ctx.unsaved.get(name, ctx.me.peek()?.unsaved?.limits) ? [html`<a class="btn sm ghost"
+          href=${router.href('create', { model: name })} target="_blank" rel="noopener external" aria-label="Review previous unfinished draft in a new tab">Review previous unfinished draft</a>`] : [] }) : null,
       load ? StateBanner({ tone: 'danger', title: 'Some rows did not load.', text: `${load.message} Editing waits until every row is here.`,
         actions: [Button({ label: 'Try again', size: 'small', onClick: () => void store.loadAll().catch(() => {}) })] }) : null,
     ];
@@ -858,9 +886,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
 
   // ---------- save bar ----------
 
+  const draftStatus = () => when(() => draft.state.get().kind !== 'idle', () => html`<p class="muted ev-draft-status" role="status">
+    ${() => draft.state.get().text} ${when(() => draft.state.get().kind === 'failed', () => Button({ label: 'Retry keeping draft', size: 'small', variant: 'ghost', onClick: () => void draft.retry() }))}</p>`);
   const saveBarView = () => isNew
     ? html`<div class="ev-savebar ev-createbar" role="region" aria-label="Create">${Button({ label: 'Cancel', variant: 'ghost', onClick: () => void discardNew() })}
-        <span class="grow muted">${Icon('info', { size: 'sm' })} Values are checked again when you create it.</span>
+        <span class="grow muted" role="status">${Icon('info', { size: 'sm' })} ${() => store.createNotice.get() ?? 'Values are checked again when you create it.'}</span>
         ${withSaveKeys(Button({ label: () => store.saving.get() ? 'Creating…' : `Create ${model.label.toLowerCase()}`, variant: 'primary', icon: 'check', disabled: () => store.saving.get() || !store.ready.get(), onClick: () => void save(),
           tip: withShortcut(`Create ${model.label.toLowerCase()}`, SCREEN_KEYS.save) }))}</div>`
     : when(() => store.dirty.get(), () => html`<div class="ev-savebar" role="region" aria-label="Unsaved changes">
@@ -904,8 +934,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
       options.duplicate.unique.length ? html` <span class="ev-dup-unique">Unique fields were left empty: ${options.duplicate.unique.join(', ')}.</span>` : null] }) : null, live(problems),
-    compactContent(), fullPageNote, footer, saveBar], side: side ?? undefined });
+    compactContent(), fullPageNote, footer, draftStatus(), saveBar], side: side ?? undefined });
   frame.classList.add('doc-compact');
+  draft.watch(frame);
   if (side) {
     const aside = frame.querySelector<HTMLElement>(':scope > .doc-side');
     if (aside) { aside.id = sideId; aside.tabIndex = -1; }

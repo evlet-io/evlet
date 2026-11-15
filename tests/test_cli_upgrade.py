@@ -132,6 +132,8 @@ def test_a_failed_pip_changes_nothing(ready):
     assert result is False and len(server.ran) == 1
     assert lines[-1] == 'The staged installation failed. The project environment and services were left unchanged.'
     assert setting.environment_version(root) == '0.4.3'
+    assert not (root / '.evlet-upgrade.json').exists()
+    assert not list(root.glob('.evlet-upgrade-*'))
 
 
 def test_no_newer_release_stops_after_pip(ready):

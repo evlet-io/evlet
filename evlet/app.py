@@ -3,6 +3,8 @@
 import asyncio
 import json
 import logging
+import time
+import uuid
 from urllib.parse import parse_qs, urlsplit
 
 from .adapter import OperationalError
@@ -13,6 +15,7 @@ from .permissions import CALLER, CORRECTIONS, read_only
 from .auth import AccessError
 from .business import Business, Download
 from .writes import WRITE_LABEL
+from .runtime import Busy, Work, runtime
 from .storage import StorageError
 
 logger = logging.getLogger(__name__)
@@ -24,9 +27,27 @@ UNSAVED_BODY = 1024 * 1024 + 4096
 # that evlet proxy and evlet setup write pass exactly these and refuse every other /_/ path.
 MCP_PATHS = ('/_/mcp', '/_/oauth/authorize', '/_/oauth/token', '/_/oauth/register', '/_/oauth/revoke')
 MAIL_PATHS = ('/_/mail/callback', '/_/mail/continue.js')
-PUBLIC_PATHS = MCP_PATHS + MAIL_PATHS
+OIDC_PATHS = ('/_/oidc/start', '/_/oidc/callback', '/_/oidc/finish')
+PUBLIC_PATHS = MCP_PATHS + MAIL_PATHS + OIDC_PATHS
 # The Caddy on-demand TLS check answers loopback callers only; the proxy refuses it from outside.
 TLS_CHECK = '/_/tls-allowed'
+
+
+def request_body_limit(path, image_bytes=None):
+    """JSON envelope ceilings shared with reverse-proxy generation; image_bytes includes current policy."""
+    if image_bytes is None:
+        return MAX_BODY_BYTES
+    if path.endswith(('/attachments', '/_images')):
+        return max(1500000, image_bytes * 4 // 3 + 4096)
+    if path == '/api/_eva/files':
+        return 1500000
+    if path == '/api/_settings/me/photo':
+        return 2900000
+    if path.startswith('/api/_controls/prints'):
+        return 300000
+    if path.startswith('/api/_unsaved/'):
+        return UNSAVED_BODY
+    return MAX_BODY_BYTES
 
 
 def image_limit(business):
@@ -58,6 +79,7 @@ class Application:
         if hosts is not None and (not self.hosts or any(not isinstance(host, str) or not host for host in self.hosts)):
             raise ValueError("Configure explicit Host header values")
         self._stopping = asyncio.Event()
+        self._work = Work()
         self.name = name
         self.database = database
         self.registry = database.registry
@@ -91,6 +113,10 @@ class Application:
                 self.business.secret_key = secret_key
             path = getattr(database, 'path', None)
             self.business.connectors.fallback = path.parent / 'secret.key' if path is not None else None
+            self.business.oidc = None
+            if getattr(auth, 'oidc', None) is not None:
+                from .oidc import OIDCFlow
+                self.business.oidc = OIDCFlow(self.business)
             # Eva only when config.py turns AI on: AI(enabled=True, models={...}). Otherwise nothing of Eva exists.
             if ai is not None:
                 from .eva import AI, Eva
@@ -101,14 +127,43 @@ class Application:
         elif reports or apis or connectors or slips or prints or workspaces or ai is not None:
             raise ValueError('Reports, slips, print designs, workspaces, APIs, connectors and AI require authentication')
 
+    @staticmethod
+    def _redact_oidc_query(scope):
+        # Uvicorn logs its original scope after the response. Keep callback credentials
+        # out of that query string, including when a tenant router copies the scope.
+        if scope.get('type') == 'http' and scope.get('path') == '/_/oidc/callback':
+            scope.setdefault('evlet.oidc_query', scope.get('query_string', b''))
+            scope['query_string'] = b''
+
     async def __call__(self, scope, receive, send):
+        self._redact_oidc_query(scope)
         # A request is a caller: Meta.api limits what it reaches (evlet/permissions.py); app code it runs is trusted.
         token = CALLER.set(scope.get("type") == "http")
         # Slow-write warnings name the request (evlet/writes.py); the value follows the request into its threads.
-        label = WRITE_LABEL.set(f"{scope.get('method', '')} {scope.get('path', '')}".strip() if scope.get("type") == "http" else '')
+        request_id = uuid.uuid4().hex if scope.get('type') == 'http' else None
+        route = self._route_label(scope.get('path', ''))
+        method = scope.get('method', '')
+        method = method if method in ('GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS') else 'OTHER'
+        label = WRITE_LABEL.set(f'{method} {route} request_id={request_id}' if request_id else '')
+        started, status = time.monotonic(), None
+        original_send = send
+        async def correlated_send(event):
+            nonlocal status
+            if event['type'] == 'http.response.start':
+                status = event['status']
+                event = {**event, 'headers': [*event.get('headers', []), (b'x-request-id', request_id.encode())]}
+            await original_send(event)
+        if request_id:
+            scope = {**scope, 'evlet.request_id': request_id}
+            send = correlated_send
         try:
             await self._serve(scope, receive, send)
         finally:
+            if request_id and runtime().log_requests:
+                logging.getLogger('evlet.http').info('request complete', extra={'request_id': request_id,
+                    'http_method': method, 'http_route': route, 'http_status': status,
+                    'duration_ms': round((time.monotonic() - started) * 1000, 3),
+                    'http_active': {name: lane.active() for name, lane in runtime().lanes.items()}})
             WRITE_LABEL.reset(label)
             CALLER.reset(token)
 
@@ -121,110 +176,153 @@ class Application:
             return
         if scope["type"] != "http":
             raise ValueError("Unsupported ASGI scope")
-        headers = []
-        path = scope['path']
-        # HEAD is GET without the body, for pages and files; the API keeps its own methods.
-        head = scope['method'] == 'HEAD' and path != '/api' and not path.startswith(('/api/', '/_', '/.well-known/'))
-        if head:
-            scope = {**scope, 'method': 'GET'}
-        host = dict(scope.get('headers', [])).get(b'host', b'')
-        # A public host (its root frontend has auth=None) serves its site's files and the public endpoints its
-        # scopes list. Everything else, Evlet's own paths and errors included, gets the site's not-found page.
-        public = self.routes.public(host)
-        service = public and self._public_service(host, path)
+        admission = None
         try:
-            if self.business is None:
-                self._guard_local(scope, navigation=public and scope['method'] == 'GET')
-            if public and not service and (scope['method'] != 'GET' or path == '/api' or path.startswith(('/api/', '/_', '/.well-known'))):
-                raise HTTPError(404, 'Route not found')
-            self._api_scope(scope)
-            if scope['path'] == '/api/_events/stream' and self.business:
-                await self._event_stream(scope, receive, send)
-                return
-            if self.business and self.business.eva is not None and scope['path'].startswith('/api/_eva/runs/') and scope['path'].endswith('/stream'):
-                await self._eva_stream(scope, receive, send)
-                return
-            body = None
-            internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] != TLS_CHECK
-            if internal:
-                # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
-                data = bytearray()
-                while scope['method'] == 'POST':
-                    event = await receive()
-                    if event['type'] == 'http.disconnect':
-                        return
-                    data.extend(event.get('body', b''))
-                    if len(data) > MAX_BODY_BYTES:
-                        raise HTTPError(413, 'Request body exceeds the allowed size')
-                    if not event.get('more_body', False):
-                        break
-                status, payload, headers = await asyncio.to_thread(self._internal, scope, bytes(data))
-            # PUT carries a body only on the Controls routes (connectors) and unsaved changes; elsewhere it stays a 405.
-            elif scope["method"] in ("POST", "PATCH") or scope["method"] == "PUT" and scope["path"].startswith(("/api/_controls/", "/api/_unsaved/")):
-                content_type = dict(scope.get("headers", [])).get(b"content-type", b"")
-                if content_type.split(b";", 1)[0].strip().lower() != b"application/json":
-                    raise HTTPError(415, "Send application/json")
-                data = bytearray()
-                while True:
-                    event = await receive()
-                    if event["type"] == "http.disconnect":
-                        return
-                    data.extend(event.get("body", b""))
-                    # Print designs carry their images as data: URIs (a design is at most 256 KiB).
-                    # Attachment routes also take rich text images, up to the Controls image limit (as base64).
-                    uploads = max(1500000, image_limit(self.business) * 4 // 3 + 4096) if self.business else 1500000
-                    maximum = (uploads if scope['path'].endswith(('/attachments', '/_images')) else 1500000 if scope['path'] == '/api/_eva/files' else 2900000 if scope['path'] == '/api/_settings/me/photo'
-                               else 300000 if scope['path'].startswith('/api/_controls/prints')
-                               else UNSAVED_BODY if scope['path'].startswith('/api/_unsaved/') else MAX_BODY_BYTES) if self.business else MAX_BODY_BYTES
-                    if len(data) > maximum:
-                        raise HTTPError(413, "Request body exceeds the allowed size")
-                    if not event.get("more_body", False):
-                        break
-                try:
-                    body = json.loads(data, parse_constant=self._invalid_constant)
-                except (ValueError, UnicodeError, RecursionError) as exc:
-                    raise HTTPError(400, "Malformed JSON") from exc
-                if not isinstance(body, dict):
-                    raise HTTPError(422, "Expected a JSON object")
-            if not internal:
-                status, payload, headers = await asyncio.to_thread(self._dispatch, scope, body)
-        except AccessError as exc:
-            status, payload = exc.status, {"error": exc.message}
-        except HTTPError as exc:
-            status, payload, headers = exc.status, {"error": exc.message}, list(exc.headers)
-        except ValidationError as exc:
-            status, payload = 422, {"error": "Validation failed", "fields": exc.errors}
-        except NotFoundError:
-            status, payload = 404, {"error": "Record not found"}
-        except ConflictError as exc:
-            status, payload = 409, {"error": str(exc)}
-        except StorageError:
-            logger.exception("Attachment storage failed")
-            status, payload = 503, {"error": "Attachment temporarily unavailable"}
-        except OperationalError:
-            logger.exception("Database operation failed")
-            status, payload = 503, {"error": "Database temporarily unavailable"}
-        except Exception:
-            logger.exception("Unhandled request failure")
-            status, payload = 500, {"error": "Internal server error"}
-        if public and not service and status >= 400:
-            from .ui.routes import site_not_found
-            status, payload, headers = site_not_found(self, host)
-        download = isinstance(payload, Download)
+            headers = []
+            path = scope['path']
+            # HEAD is GET without the body, for pages and files; the API keeps its own methods.
+            head = scope['method'] == 'HEAD' and path != '/api' and not path.startswith(('/api/', '/_', '/.well-known/'))
+            if head:
+                scope = {**scope, 'method': 'GET'}
+            host = dict(scope.get('headers', [])).get(b'host', b'')
+            # A public host (its root frontend has auth=None) serves its site's files and the public endpoints its
+            # scopes list. Everything else, Evlet's own paths and errors included, gets the site's not-found page.
+            public = self.routes.public(host)
+            service = public and self._public_service(host, path)
+            try:
+                if self.business is None:
+                    self._guard_local(scope, navigation=public and scope['method'] == 'GET')
+                if public and not service and (scope['method'] != 'GET' or path == '/api' or path.startswith(('/api/', '/_', '/.well-known'))):
+                    raise HTTPError(404, 'Route not found')
+                self._api_scope(scope)
+                if path == '/health':
+                    self._method(scope['method'], ['GET'])
+                stream = bool(self.business) and (path == '/api/_events/stream' or self.business.eva is not None
+                         and path.startswith('/api/_eva/runs/') and path.endswith('/stream'))
+                lane = ('stream' if stream else 'probe' if path == '/health' else 'heavy' if '/prints' in path
+                        else 'read' if scope['method'] in ('GET', 'HEAD', 'OPTIONS') else 'write')
+                # The request's generation: a restart while its body arrives refuses it. The lane slot
+                # is taken only once the body is in, so a slow client holds no scarce slot.
+                ticket = self._work.ticket()
+                if stream:
+                    admission = await self._work.acquire(lane, ticket)
+                if scope['path'] == '/api/_events/stream' and self.business:
+                    await self._event_stream(scope, receive, send)
+                    return
+                if self.business and self.business.eva is not None and scope['path'].startswith('/api/_eva/runs/') and scope['path'].endswith('/stream'):
+                    await self._eva_stream(scope, receive, send)
+                    return
+                body = None
+                internal = bool(self.business) and scope['path'].startswith(('/_/', '/.well-known/')) and scope['path'] != TLS_CHECK
+                if internal:
+                    # OAuth and the remote MCP endpoint read their own bodies (JSON or form), at most 64 KiB like /api.
+                    data = bytearray()
+                    while scope['method'] == 'POST':
+                        event = await self._body_event(receive)
+                        if event['type'] == 'http.disconnect':
+                            return
+                        chunk = event.get('body', b'')
+                        if len(data) + len(chunk) > MAX_BODY_BYTES:
+                            raise HTTPError(413, 'Request body exceeds the allowed size')
+                        data.extend(chunk)
+                        if not event.get('more_body', False):
+                            break
+                    admission = await self._work.acquire(lane, ticket)
+                    status, payload, headers = await self._work.run(lane, self._internal, scope, bytes(data), lease=admission)
+                # PUT carries a body only on the Controls routes (connectors) and unsaved changes; elsewhere it stays a 405.
+                elif scope["method"] in ("POST", "PATCH") or scope["method"] == "PUT" and scope["path"].startswith(("/api/_controls/", "/api/_unsaved/")):
+                    content_type = dict(scope.get("headers", [])).get(b"content-type", b"")
+                    if content_type.split(b";", 1)[0].strip().lower() != b"application/json":
+                        raise HTTPError(415, "Send application/json")
+                    data = bytearray()
+                    while True:
+                        event = await self._body_event(receive)
+                        if event["type"] == "http.disconnect":
+                            return
+                        chunk = event.get("body", b"")
+                        maximum = request_body_limit(scope['path'], image_limit(self.business) if self.business else None)
+                        if len(data) + len(chunk) > maximum:
+                            raise HTTPError(413, "Request body exceeds the allowed size")
+                        data.extend(chunk)
+                        if not event.get("more_body", False):
+                            break
+                    try:
+                        body = json.loads(data, parse_constant=self._invalid_constant)
+                    except (ValueError, UnicodeError, RecursionError) as exc:
+                        raise HTTPError(400, "Malformed JSON") from exc
+                    if not isinstance(body, dict):
+                        raise HTTPError(422, "Expected a JSON object")
+                if not internal:
+                    admission = await self._work.acquire(lane, ticket)
+                    status, payload, headers = await self._work.run(lane, self._dispatch, scope, body, lease=admission)
+            except Busy:
+                status, payload, headers = 503, {'error': 'Server busy; try again shortly'}, [(b'retry-after', b'1')]
+            except AccessError as exc:
+                status, payload = exc.status, {"error": exc.message}
+            except HTTPError as exc:
+                status, payload, headers = exc.status, {"error": exc.message}, list(exc.headers)
+            except ValidationError as exc:
+                status, payload = 422, {"error": "Validation failed", "fields": exc.errors}
+            except NotFoundError:
+                status, payload = 404, {"error": "Record not found"}
+            except ConflictError as exc:
+                status, payload = 409, {"error": str(exc)}
+            except StorageError:
+                logger.exception("Attachment storage failed", extra={'request_id': scope.get('evlet.request_id')})
+                status, payload = 503, {"error": "Attachment temporarily unavailable"}
+            except OperationalError:
+                logger.exception("Database operation failed", extra={'request_id': scope.get('evlet.request_id')})
+                status, payload = 503, {"error": "Database temporarily unavailable"}
+            except Exception:
+                logger.exception("Unhandled request failure", extra={'request_id': scope.get('evlet.request_id')})
+                status, payload = 500, {"error": "Internal server error"}
+            if public and not service and status >= 400:
+                from .ui.routes import site_not_found
+                status, payload, headers = site_not_found(self, host)
+            download = isinstance(payload, Download)
+            try:
+                encoded = payload.content if download else b"" if status == 204 else json.dumps(jsonable(payload), ensure_ascii=True, allow_nan=False).encode("utf-8")
+            except (TypeError, ValueError, RecursionError):
+                # Keep the application's JSON error and headers if a payload cannot be encoded.
+                logger.exception("Response encoding failed", extra={'request_id': scope.get('evlet.request_id')})
+                status, headers, download = 500, [], False
+                encoded = b'{"error": "Internal server error"}'
+            response_headers = [(b"x-content-type-options", b"nosniff"), (b"cache-control", b"no-store"), *headers]
+            if status != 204:
+                if not download:
+                    response_headers.append((b"content-type", b"application/json; charset=utf-8"))
+                response_headers.append((b"content-length", str(len(encoded)).encode()))
+            await send({"type": "http.response.start", "status": status, "headers": response_headers})
+            await send({"type": "http.response.body", "body": b"" if head else encoded})
+        finally:
+            if admission is not None:
+                admission.release()
+
+    @staticmethod
+    async def _body_event(receive):
+        # An idle limit between chunks, not a total deadline: a large upload over a slow but
+        # steady link completes; the size limit bounds how much one request can send.
         try:
-            encoded = payload.content if download else b"" if status == 204 else json.dumps(jsonable(payload), ensure_ascii=True, allow_nan=False).encode("utf-8")
-        except (TypeError, ValueError, RecursionError):
-            # Keep the application's JSON error and headers if a payload cannot be encoded.
-            logger.exception("Response encoding failed")
-            status, headers, download = 500, [], False
-            encoded = b'{"error": "Internal server error"}'
-        response_headers = [(b"x-content-type-options", b"nosniff"), (b"cache-control", b"no-store"), *headers]
-        if status != 204:
-            if not download:
-                response_headers.append((b"content-type", b"application/json; charset=utf-8"))
-            response_headers.append((b"content-length", str(len(encoded)).encode()))
-        await send({"type": "http.response.start", "status": status, "headers": response_headers})
-        await send({"type": "http.response.body", "body": b"" if head else encoded})
+            async with asyncio.timeout(runtime().body_idle_seconds):
+                return await receive()
+        except TimeoutError:
+            raise HTTPError(408, 'Request body timed out') from None
+
+    def _route_label(self, path):
+        """Low-cardinality telemetry: never include queries, record ids or arbitrary paths."""
+        if path == '/health':
+            return path
+        parts = path.split('/')
+        if len(parts) > 2 and parts[1] == 'api':
+            name = parts[2]
+            if name in self.registry.exposed:
+                return '/api/' + name + ('/{record_or_operation}' if len(parts) > 3 else '')
+            if name in ('auth', '_controls', '_settings', '_events', '_eva', '_reports', '_services', '_unsaved'):
+                return '/api/' + name + '/*'
+            return '/api/{unknown}'
+        if path in PUBLIC_PATHS:
+            return path
+        return '/{page}'
 
     def _public_service(self, host, path):
         """Whether path is a public service endpoint that a public host's API scopes list."""
@@ -307,7 +405,7 @@ class Application:
             raise AccessError(403, 'Unrecognized host or origin') from None
 
     async def _event_stream(self, scope, receive, send):
-        page = await asyncio.to_thread(self.business.event_page, scope)
+        page = await self._work.run('read', self.business.event_page, scope)
         await send({'type': 'http.response.start', 'status': 200, 'headers': [
             (b'content-type', b'text/event-stream'), (b'cache-control', b'no-store'),
             (b'x-accel-buffering', b'no'), (b'x-content-type-options', b'nosniff')]})
@@ -327,8 +425,8 @@ class Application:
                 headers = [(key, value) for key, value in scope.get('headers', []) if key != b'last-event-id']
                 headers.append((b'last-event-id', page['cursor'].encode()))
                 try:
-                    page = await asyncio.to_thread(self.business.event_page, {**scope, 'headers': headers})
-                except AccessError:
+                    page = await self._work.run('read', self.business.event_page, {**scope, 'headers': headers})
+                except (AccessError, Busy):
                     await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
                     return
                 except Exception:
@@ -345,6 +443,10 @@ class Application:
             except OSError:
                 pass
 
+    def _eva_page(self, scope, after):
+        self.business.controls.refresh()
+        return self.business.eva.stream_page(scope, after)
+
     async def _eva_stream(self, scope, receive, send):
         """One Eva run's events as SSE: stored events after Last-Event-ID, then new ones as they are written, for about
         25 seconds or until the run ends. A reconnect continues from the last id, so nothing runs twice."""
@@ -352,8 +454,7 @@ class Application:
             raise HTTPError(405, 'Method not allowed', [(b'allow', b'GET')])
         last = dict(scope.get('headers', [])).get(b'last-event-id', b'0')
         after = int(last) if last.isdigit() and len(last) <= 19 else 0
-        self.business.controls.refresh()
-        page = await asyncio.to_thread(self.business.eva.stream_page, scope, after)
+        page = await self._work.run('read', self._eva_page, scope, after)
         await send({'type': 'http.response.start', 'status': 200, 'headers': [
             (b'content-type', b'text/event-stream'), (b'cache-control', b'no-store'),
             (b'x-accel-buffering', b'no'), (b'x-content-type-options', b'nosniff')]})
@@ -378,8 +479,8 @@ class Application:
                 if done:
                     return
                 try:
-                    page = await asyncio.to_thread(self.business.eva.stream_page, scope, after)
-                except AccessError:
+                    page = await self._work.run('read', self._eva_page, scope, after)
+                except (AccessError, Busy):
                     await send({'type': 'http.response.body', 'body': b'event: unavailable\ndata: {}\n\n', 'more_body': True})
                     return
                 except Exception:
@@ -409,6 +510,11 @@ class Application:
 
     def _internal(self, scope, raw):
         self.business.controls.refresh()
+        if scope['path'] in OIDC_PATHS:
+            flow = self.business.oidc
+            if flow is None:
+                raise HTTPError(404, 'Route not found')
+            return flow.dispatch(scope, raw)
         if scope['path'] in MAIL_PATHS:
             return self.business.mailboxes.callback(scope, raw)
         return self.business.assistants.dispatch(scope, raw)
@@ -489,7 +595,8 @@ class Application:
             self.business.initialize()
 
     def stop(self):
-        """End live streams before an ASGI server waits for open connections. Safe from any thread."""
+        """Stop admission and end live streams before server shutdown. Safe from any thread."""
+        self._work.stop()
         loop = getattr(self, '_loop', None)
         try:
             running = asyncio.get_running_loop()
@@ -506,7 +613,9 @@ class Application:
             event = await receive()
             if event["type"] == "lifespan.startup":
                 self._stopping = asyncio.Event()
+                self._work.start()
                 try:
+                    runtime()  # Validate process limits before accepting traffic.
                     from .instances import activate_generation
                     generation = activate_generation(self)
                     generation.__enter__()
@@ -519,6 +628,7 @@ class Application:
                 await send({"type": "lifespan.startup.complete"})
             elif event["type"] == "lifespan.shutdown":
                 self.stop()
+                await self._work.drain()
                 await asyncio.to_thread(self.database.close)
                 if generation: generation.__exit__(None, None, None)
                 await send({"type": "lifespan.shutdown.complete"})

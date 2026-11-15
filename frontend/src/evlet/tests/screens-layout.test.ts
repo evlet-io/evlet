@@ -48,7 +48,7 @@ describe('the shell scrolls only its view', () => {
     const app = rule(styles, '.app');
     expect(app).toContain('grid-template-rows:var(--topbar-h) minmax(0,1fr)');
     expect(rule(styles, '.topbar')).toContain('grid-column:1/-1');
-    expect(rule(styles, '.lib-app')).toContain('grid-template-rows:minmax(0,1fr)');
+    expect(rule(css('ui/library.css'), '.lib-app')).toContain('grid-template-rows:minmax(0,1fr)');
     expect(app).toContain('height:100%');
     expect(app).toContain('overflow:clip');
     expect(rule(styles, '.main')).toContain('min-height:0');

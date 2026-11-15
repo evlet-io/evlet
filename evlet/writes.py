@@ -22,6 +22,7 @@ from contextvars import ContextVar
 from contextlib import closing, contextmanager
 from pathlib import Path
 import atexit
+import errno
 import hashlib
 import json
 import logging
@@ -37,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 # The side files and the framework tables each holds. Every other table stays in the main file.
 STORES = {
-    'sessions': ('evlet_sessions', 'evlet_two_step_tickets', 'evlet_login_limits'),
+    'sessions': ('evlet_sessions', 'evlet_two_step_tickets', 'evlet_login_limits', 'evlet_oidc_tickets'),
     'logs': ('evlet_tool_calls', 'evlet_public_limits', 'evlet_forwarded_peers'),
     'eva': ('evlet_eva_lock', 'evlet_eva_conversations', 'evlet_eva_runs', 'evlet_eva_messages', 'evlet_eva_events',
             'evlet_eva_files', 'evlet_eva_usage', 'evlet_eva_reservations', 'evlet_eva_tasks', 'evlet_eva_task_runs'),
@@ -241,12 +242,18 @@ def file_lock(path, *, shared=False):
                 import fcntl
                 fcntl.flock(stream, (fcntl.LOCK_SH if shared else fcntl.LOCK_EX) | fcntl.LOCK_NB)
                 unlock = lambda: fcntl.flock(stream, fcntl.LOCK_UN)
-        except OSError:
-            raise ValueError('Resource is in use by another process; retry when its operation finishes') from None
+        except OSError as exc:
+            if exc.errno not in (errno.EACCES, errno.EAGAIN) and getattr(exc, 'winerror', None) != 33:
+                raise
+            raise LockBusy('Resource is in use by another process; retry when its operation finishes') from None
         try:
             yield
         finally:
             unlock()
+
+
+class LockBusy(ValueError):
+    """A live process owns the requested file lease; other filesystem failures are not contention."""
 
 
 def _windows_lock(stream, *, exclusive):

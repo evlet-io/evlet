@@ -90,6 +90,11 @@ class RemoteServer(MCPServer):
     def limit(self):
         pass
 
+    def call(self, name, values):
+        # Unlike stdio, this server is recreated for each request. Admission and all
+        # authorization/argument checks belong to the shared Tool Engine.
+        return self.invoke(name, values)
+
 
 class Assistants:
     def __init__(self, business):
@@ -395,6 +400,8 @@ class Assistants:
             challenge = f'Bearer resource_metadata="{origin}/.well-known/oauth-protected-resource/_/mcp"' + (', error="invalid_token"' if token else '')
             raise HTTPError(401, 'Sign in to continue', [(b'www-authenticate', challenge.encode())])
         user = self.narrow(User(row['user_id'], row['username'], row['role'], links), row)
+        if not self.auth._count(f"mcp:{row['id']}", LIGHT_RATE):
+            return 429, MCPServer.error(None, -32000, 'Too many requests. Try again in a minute.')
         if dict(scope.get('headers', [])).get(b'content-type', b'').split(b';', 1)[0].strip().lower() != b'application/json':
             raise HTTPError(415, 'Send application/json')
         try:
@@ -408,8 +415,6 @@ class Assistants:
             return 400, MCPServer.error(None, -32600, 'Unsupported MCP protocol version')
         if isinstance(message, dict) and 'method' not in message and ('result' in message or 'error' in message):
             return 202, None  # A client's reply; this server sends no requests, so there is nothing to match it with.
-        if isinstance(message, dict) and message.get('method') != 'tools/call' and not self.auth._count(f"mcp:{row['id']}", LIGHT_RATE):
-            return 429, MCPServer.error(message.get('id') if type(message.get('id')) in (str, int) else None, -32000, 'Too many requests. Try again in a minute.')
         server = RemoteServer(LocalClient(self.business, scope, user), row)
         if isinstance(message, dict) and message.get('method') == 'initialize':
             server.state = 'new'

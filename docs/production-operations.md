@@ -144,3 +144,66 @@ workers, file storage, proxy/TLS, sign-ins, and failure recovery. The local repo
 has no public-network latency, failover, or long-duration load evidence. Its numbers
 are not service-level guarantees or evidence for the specification's larger tenant
 and employee-count targets.
+
+## Bounded HTTP work and correlation
+
+Each process shares a small set of HTTP worker lanes across its applications and tenants.
+A request **reads its body first** and only then takes a slot in its lane, so a slow client
+holds no slot. When a lane is full the request waits in that lane's queue, first come first
+served, for up to `EVLET_HTTP_QUEUE_SECONDS`; if no slot frees in time the API returns 503
+with `Retry-After: 1`. A burst larger than a lane therefore queues briefly instead of being
+refused. A body whose next chunk does not arrive within `EVLET_HTTP_BODY_IDLE_SECONDS`
+returns 408; there is no total body deadline, so a large upload over a slow but steady link
+completes, and the route's size limit bounds what one request can send. Size/type/permission
+checks still apply. Public sites keep their own not-found response rather than exposing
+framework errors.
+
+Set these environment variables before starting the process; restart to change them:
+
+| Variable | Default | Work admitted |
+|---|---:|---|
+| `EVLET_HTTP_READ` |32| Total admitted reads: running, queued for a worker and sending responses |
+| `EVLET_HTTP_READ_WORKERS` |8| Concurrent ordinary GET/HEAD/OPTIONS and individual stream polls |
+| `EVLET_HTTP_WRITE` |4| Mutating HTTP requests, including sign-in and uploads, once their body has arrived |
+| `EVLET_HTTP_PROBE` |2| Health checks, isolated from blocked writes |
+| `EVLET_HTTP_HEAVY` |2| Print routes, including PDF rendering |
+| `EVLET_HTTP_STREAM` |64| Open event/Eva streams; sleeping streams hold no worker |
+| `EVLET_HTTP_ROUTE` |8| Tenant-catalog lookups (one short catalog read per tenant request) |
+| `EVLET_HTTP_INIT` |8| Cold tenant initialization; cached tenants, and requests waiting for a tenant another request is building, bypass this lane |
+| `EVLET_HTTP_QUEUE_SECONDS` |5| Longest wait for a lane slot before 503, greater than 0 and at most 60 |
+| `EVLET_HTTP_BODY_IDLE_SECONDS` |30| Longest wait for the next body chunk before 408, greater than 0 and at most 3600 |
+
+Lane limits accept integers 1–256; read workers cannot exceed read admission. The default
+read lane admits at most 32 requests with 8 workers (at most 24 queued); reducing read
+admission also lowers the implicit worker limit. Other worker lanes admit only their
+worker count; requests beyond a lane's limit wait in its queue. Threads start only when needed; limits are process-wide,
+not multiplied by the tenant count. There are no extra services or runtime dependencies.
+These are admission ceilings, not workload capacity promises. On a small host begin with
+fewer read/write/print workers, then measure real requests and sign-in memory. Additional
+server processes multiply these limits and memory budgets; SQLite still has one writer
+per file. Bodies are read before admission, so the memory held by bodies in flight is bounded
+by the route size limits times the open connections: the reverse proxy should separately bound
+connections, header time, body size and slow clients (the generated nginx files set body limits).
+
+A request retains its slot through response delivery. Cancelling its ASGI task does not
+stop an already running Python thread or undo a committed operation: the underlying work
+retains its slot until it actually finishes. Retrying a write must follow the API's revision
+and idempotency rules. Shutdown rejects new work, ends streams and drains tracked synchronous
+work before closing databases. A hung application callback can therefore delay shutdown;
+use bounded I/O and an operator-defined graceful shutdown deadline.
+
+Every application HTTP response carries a generated 32-character `X-Request-ID`. Slow-write
+warnings include this ID in their existing request label, and application error logs attach
+`request_id`. Set `EVLET_HTTP_LOG_REQUESTS=1` and configure the standard-library `evlet.http`
+logger at INFO to receive completion records with `request_id`, `http_method`, `http_route`,
+`http_status`, `duration_ms` and a fixed-size `http_active` lane snapshot. A normal logging
+handler can forward those fields to the operator's metrics/tracing system. The default install
+requires no collector or OpenTelemetry dependency. Route labels omit record IDs, arbitrary
+paths and queries; bodies, cookies and tokens are never included. Keep request IDs as log
+correlation values, not metric labels. Job age/retry state remains available through Controls;
+this change does not claim distributed tracing of external jobs.
+
+Generated nginx files use route-specific body ceilings shared with the HTTP implementation.
+Image routes allow the largest supported encoded image envelope so changing the Controls
+image limit needs no proxy edit; the application continues enforcing the configured limit.
+Deployments using an older generated file must regenerate/review it and reload nginx.

@@ -511,7 +511,8 @@ def test_a_year_change_starts_a_new_counter(app):
     assert {item['changed_by'] for item in counters['items']} == {'admin'}
 
 
-def test_fifty_concurrent_creates_get_distinct_names(app):
+def test_fifty_concurrent_creates_get_distinct_names(app, http_capacity):
+    http_capacity(write=10)
     admin = client(app)
     with ThreadPoolExecutor(max_workers=10) as pool:
         results = list(pool.map(lambda index: admin('POST', '/api/invoice', {'customer': f'C{index}', 'posting_date': '2026-05-05'}), range(50)))
@@ -638,7 +639,10 @@ def test_two_applications_sharing_classes_keep_their_own_instance_fields(tmp_pat
 
 
 @pytest.mark.parametrize('phase', ['add', 'remove'])
-def test_requests_during_instance_field_changes_never_fail(app, phase):
+def test_requests_during_instance_field_changes_never_fail(app, phase, http_capacity):
+    # Four request workers plus the administrator's migration must all be admitted;
+    # this test detects migration failures, while overload refusal has its own tests.
+    http_capacity(write=5)
     admin, editor = client(app), client(app, 'editor')
     record = admin('POST', '/api/lead', {'title': 'seed'})[1]
     if phase == 'remove':

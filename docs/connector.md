@@ -236,9 +236,10 @@ OAuth 2.1, served on the primary host only (any other host gets 404):
   answer is 401 with `WWW-Authenticate: Bearer resource_metadata="..."`. A request with an
   `Origin` header that isn't one of the instance's origins is refused. Tokens only work here,
   never on `/api`. Bodies are at most 64 KiB, as on `/api`. An `MCP-Protocol-Version` header
-  this server doesn't support gets 400; a client's JSON-RPC response gets 202. Requests other
-  than tool calls (initialize, ping, tools/list) are limited to 120 a minute per client and
-  process.
+  this server doesn't support gets 400; a client's JSON-RPC response gets 202. Authenticated
+  requests, including malformed envelopes, are limited to 120 a minute per client and process.
+  Tool calls additionally use the configured shared rate; rejected arguments, disabled tools
+  and unknown names spend a slot too. Rate refusals do not grow the Tool log.
 - **Clients and calls.** `evlet_oauth_clients` holds registrations, `evlet_mcp_clients(id,
   user_id, oauth_client, client_name, created_at, last_used, calls, allow_changes, apps,
   revoked_at)` each person's connected clients, `evlet_oauth_codes` and `evlet_mcp_tokens`

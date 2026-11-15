@@ -58,6 +58,16 @@ describe('related records on a record page', () => {
     expect(related(sent)).toHaveLength(2);
   });
 
+  it('disconnects hidden related observers when leaving a record', async () => {
+    vi.stubGlobal('IntersectionObserver', FakeObserver);
+    const { host, router } = start(routes(), '/app/customer/0000000000001');
+    await until(() => expect(relatedRow(host)).not.toBeNull());
+    expect(watched.size).toBeGreaterThan(0);
+    await router.navigate('/docs');
+    await until(() => expect(host.querySelector('.ev-record')).toBeNull());
+    expect(watched.size).toBe(0);
+  });
+
   it('loads a Related section only once it scrolls into view', async () => {
     vi.stubGlobal('IntersectionObserver', FakeObserver);
     const { host, sent } = start(routes(), '/app/customer/0000000000001');
