@@ -6,6 +6,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **Idempotent creates.** `POST /api/{model}` accepts an `Idempotency-Key` header. A retry with
+  the same key and values from the same account and credential answers the record created the
+  first time (with `Idempotency-Replayed: true`), read under the caller's current permissions;
+  different values with the same key get 409. Receipts are kept for a day. Framework step
+  `0013_create_requests` adds their table ([request-integrity.md](docs/request-integrity.md)).
+
 ### Fixed
 
 - **SQLite backups and restores cover the whole database set.** `evlet backup`, Controls
