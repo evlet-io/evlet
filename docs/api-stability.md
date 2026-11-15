@@ -4,6 +4,17 @@ An Evlet app is a separate package that imports Evlet. This page says which Evle
 app may rely on, how they change, and what stays internal. Evlet is pre-1.0 and not
 production ready, but the rules below hold from 0.3 on.
 
+## Version plan
+
+- **0.4.x: finishing.** Releases keep fixing bugs and adding the pending features. Breaking
+  changes still happen, each with an upgrade note in the changelog; renames and removals fail
+  with a message naming the replacement.
+- **0.5: semi-stable.** Evlet moves to 0.5 only once most known bugs are fixed and the pending
+  features are in. From 0.5 on, releases only perfect what exists: fixes, polish, performance and
+  documentation, with no new feature areas.
+- **1.0: first users.** Once Evlet has actual users, it moves straight to 1.0, skipping any
+  further 0.x minors.
+
 ## The app-facing surface
 
 - **Root exports.** Every name in `evlet.__all__`: fields, `Model`, `Child`, `Registry`,

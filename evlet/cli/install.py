@@ -13,7 +13,7 @@ from ..instances import (INSTALLED_APPS, read_instance, require_consistent, data
                          build_instance, register_schedules)
 from ..builds import trust_question
 from ..packages import resolve_packages, portable_lock_entry
-from ..writes import files, file_digest, release_idle, require_space, settle, snapshot_set
+from ..writes import files, file_digest, release_idle, require_space, settle, snapshot_set, sync_file
 from .project import child, instance_guard, atomic_json, json_text, sync_directory
 
 
@@ -50,8 +50,7 @@ def publish_set(path, stage, after):
                 settle(source)
                 os.replace(source, target)
                 target.chmod(0o600)
-                with target.open('rb') as stream:
-                    os.fsync(stream.fileno())
+                sync_file(target)
                 members.append({'name': target.name, 'sha256': file_digest(target)})
         sync_directory(directory)
         sync_directory(data)
@@ -195,8 +194,7 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
                     continue
                 settle(staged)
                 os.chmod(staged, 0o600)
-                with staged.open('rb') as stream:
-                    os.fsync(stream.fileno())
+                sync_file(staged)
             for current in files(database):
                 if current.exists():
                     settle(current)

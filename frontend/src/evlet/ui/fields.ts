@@ -504,7 +504,8 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
     field.error.set(`Couldn't read ${typed} as ${PICKED[kind.picker!]}`);
     return false;
   };
-  const onChange = () => { if (options.commitOn !== 'manual') commit(); };
+  // A failed commit cancels the change event, so a shortcut that committed it first knows not to save (ui/shortcuts.ts, commitTyped).
+  const onChange = (event: Event) => { if (options.commitOn !== 'manual' && !commit()) event.preventDefault(); };
   const onKey = (event: KeyboardEvent) => {
     if (event.key === 'Enter' && !textarea && options.commitOn !== 'manual') { event.preventDefault(); commit(); }
   };

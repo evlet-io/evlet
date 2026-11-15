@@ -250,6 +250,18 @@ export function keepCreateAttempts(ctx: AppContext, model: ScreenModel, store: R
       throw new ApiError('This browser could not keep the create receipt. Create was not sent, and your earlier draft is unchanged. Restore it or choose Start fresh before retrying.', 0, 'response');
     return `${failure} ${warning}`;
   };
+  // A retry with corrected values opened the record its first attempt created (model/record.ts). The
+  // corrected values were not applied: they become this browser's ordinary new-record draft, which New
+  // offers to restore, once the create receipt they replace is gone.
+  store.onOriginalReplayed = attempt => {
+    if (!keepsUnsaved(ctx, model)) return 'browser draft keeping is off.';
+    if (unfinishedStructure(store.root)) return 'they include row order or sections that cannot be kept.';
+    const changes = captureNew(store.root);
+    if (isEmpty(changes)) return null;
+    if (!ctx.unsaved.remove(model.name, attempt.key)) return 'the create receipt could not be cleared.';
+    const failure = ctx.unsaved.put(model.name, changes, unsavedInfo(ctx).limits);
+    return failure === null ? null : failure.charAt(0).toLowerCase() + failure.slice(1);
+  };
 }
 
 /** The person's limits and entry count, from /api/_settings/me; defaults on a server without them. */

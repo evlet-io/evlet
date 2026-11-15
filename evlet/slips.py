@@ -335,7 +335,7 @@ class Slips:
             if getattr(target, '__declaration_mode__', False):
                 record_id = context.create(target, **body)['id']
             else:
-                record_id = self.business.create_plain(context._tx, user, target, body)[0].id
+                record_id = self.business.create_plain(context._tx, user, target, body).id
             return {'document': {'model': name, 'id': record_id}, 'open': {'model': name, 'id': record_id}}
         fields = target.__declared_fields__
         prefill = {key: None if value is None else fields[key].serialize(fields[key].validate(value)) for key, value in scalars.items()}

@@ -8,6 +8,7 @@ import stat
 
 from . import qb
 from .adapter import Column, TableDefinition
+from .writes import sync_directory
 
 
 # The largest private file read back: a rich text image of 8 MiB at most (Controls, files.image_max_kb).
@@ -115,11 +116,7 @@ class LocalFileStorage(SQLiteStorage):
                 stream.write(content)
                 stream.flush()
                 os.fsync(stream.fileno())
-            directory = os.open(self.root, os.O_RDONLY)
-            try:
-                os.fsync(directory)
-            finally:
-                os.close(directory)
+            sync_directory(self.root)
         except (OSError, UnicodeError) as exc:
             raise StorageError('Private file storage is unavailable') from exc
         return tx.connection.run(qb.insert('evlet_attachments', model=model, record_id=record_id, name=name, content=b'',

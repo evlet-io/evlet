@@ -188,8 +188,7 @@ def copy_set(source_main, target_main):
                     reader.backup(copy, name=schema)
                     copy.execute('PRAGMA journal_mode=DELETE').fetchone()
                 staged.chmod(0o600)
-                with staged.open('rb') as stream:
-                    os.fsync(stream.fileno())
+                sync_file(staged)
                 entries.append({'name': target.name, 'sha256': file_digest(staged)})
             reader.rollback()
         for target in targets:
@@ -215,6 +214,21 @@ def _set_connection(members):
         connection.close()
         raise
     return connection
+
+
+def sync_file(path):
+    """Flush a closed file's contents to disk. Windows flushes only through a handle with write access,
+    so the file is opened for reading and writing, never truncated."""
+    try:
+        fd = os.open(path, os.O_RDWR | getattr(os, 'O_BINARY', 0))
+    except PermissionError:
+        if os.name == 'nt':
+            raise
+        fd = os.open(path, os.O_RDONLY)  # POSIX flushes through any descriptor, so a read-only file still syncs.
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
 
 
 def sync_directory(path):

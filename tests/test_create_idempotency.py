@@ -75,3 +75,34 @@ def test_invalid_key_is_refused_before_create_and_deleted_records_are_not_recrea
     assert person('DELETE', '/api/customer/' + first['id'])[0] == 204
     assert person('POST', '/api/customer', values, headers=KEY)[0] == 404
     assert secured.database.count(Customer) == 0
+
+
+def test_plain_replay_answers_exactly_as_the_first_create(secured):
+    person = client(secured, 'editor')
+    values = {'customer_name': 'Same answer'}
+    first = person('POST', '/api/customer', values, headers=KEY)
+    replay = person('POST', '/api/customer', values, headers=KEY)
+    assert first[0] == replay[0] == 201 and replay[1] == first[1]
+    # One answer: the first create carries the ETag a replay carries, so a client can save without reloading.
+    assert first[2][b'etag'] == replay[2][b'etag'] and first[2][b'location'] == replay[2][b'location']
+    assert b'idempotency-replayed' not in first[2]
+    assert person('PATCH', '/api/customer/' + first[1]['id'], {'customer_name': 'Renamed'},
+                  headers={b'if-match': first[2][b'etag']})[0] == 200
+
+
+def test_document_replay_answers_as_the_first_create_without_write_reports(tmp_path):
+    from test_nested_documents import Plan, application, stages
+    app = application(tmp_path, Plan)
+    person = client(app)
+    values = {'children': {'stages': stages()}}
+    first = person('POST', '/api/plan', values, headers=KEY)
+    replay = person('POST', '/api/plan', values, headers=KEY)
+    assert first[0] == replay[0] == 201
+    # Only the write itself reports the keys of new rows; the ETag never covers them.
+    assert set(first[1]['_row_ids']) == {'A', 'B', 'a1', 'a2', 'b1'} and '_row_ids' not in replay[1]
+    assert {key: value for key, value in first[1].items() if key != '_row_ids'} == replay[1]
+    assert first[2][b'etag'] == replay[2][b'etag'] and replay[2][b'idempotency-replayed'] == b'true'
+    assert replay[1]['_calculation']['model_schema_hash'] == app.registry.plans[Plan]['model_schema_hash']
+    # Virtual (stored=False) results are part of both answers.
+    assert [stage['hourly_rate'] for stage in replay[1]['children']['stages']] == ['100.00', '100.00']
+    assert replay[2][b'location'] == f"/api/plan/{first[1]['id']}".encode()

@@ -41,6 +41,9 @@ export function derivedField(model: ModelSchema, path: string[], name: string): 
 }
 
 export const STALE_FORMULAS = 'This record was calculated with older formulas, so it cannot be saved yet. Ask an administrator to recalculate it.';
+/** A retry with corrected values found its first create committed: that record opened instead (saveNow). */
+export const REPLAYED_ORIGINAL = 'An earlier attempt already created this record with the values sent first, so it opened instead. Your later edits were not applied.';
+const REPLAY_KEPT = 'They are kept as a draft of a new record: choose New to restore them.';
 export const CREATED_BEFORE = 'An earlier attempt already created this record with the values sent then. Check the record list before choosing Start fresh; sending those values again opens it.';
 
 /** Whether two field values mean the same: '' and null are both empty, '1.50' equals '1.5' for numbers, lists by content. */
@@ -547,6 +550,11 @@ export class RecordStore {
   /** Retained after an uncertain create; restoring a kept draft restores this too. */
   createAttempt: CreateAttempt | null = null;
   readonly createNotice = cell<string | null>(null, { name: 'record.createNotice' });
+  /** Set when the last Save opened the record an earlier attempt created, not these values: what to tell the person. */
+  createReplayed: string | null = null;
+  /** Called after such a replay, before the draft shows the created record: keep the edits it did not apply.
+   * Resolves null when they are kept, or why not. */
+  onOriginalReplayed?: (attempt: CreateAttempt) => string | null;
   private saveRun: Promise<void> | null = null;
   /** Synchronous durability hook, called before the request and after a first-attempt 422. */
   onCreateAttempt?: (attempt: CreateAttempt | null, previous: CreateAttempt | null) => string | null;
@@ -621,6 +629,7 @@ export class RecordStore {
     if (this.disposed) return;
     this.createAttempt = null;
     this.lastCreatedKey = null;
+    this.createReplayed = null;
     this.createNotice.set(null);
     this.opening++;
     // Field values, and optionally children: {table: [rows]} for new rows.
@@ -720,6 +729,7 @@ export class RecordStore {
     if (calculation?.plan) body._calculation = { language: calculation.language, model_schema_hash: calculation.model_schema_hash };
     const previous = this.createAttempt;
     let attempted: CreateAttempt | null = null, dispatched = false;
+    this.createReplayed = null;
     this.saving.set(true);
     try {
       if (root.isNew) {
@@ -731,7 +741,7 @@ export class RecordStore {
           : 'If the connection fails, keep this tab open and retry the same values. This create is not kept across reloads.');
       }
       dispatched = true;
-      const response = attempted ? await this.api.create(this.meta.name, JSON.parse(attempted.body), attempted.key)
+      const response = attempted ? await this.sendCreate(attempted)
         : await this.api.update(this.meta.name, root.id!, body, this.etag.peek(), this.draftRevision);
       this.lastSavedId = response.data.id;
       if (attempted) this.lastCreatedKey = attempted.key;
@@ -757,6 +767,26 @@ export class RecordStore {
     // Saved. If paging the answer fails, loadError says so and loadAll() retries.
     try { await this.loadAll(); } catch { /* reported in loadError */ } finally { this.saving.set(false); }
     return true;
+  }
+
+  /**
+   * Send a create. When a retry with other values gets 409 because its key already created a record,
+   * send the body first sent under the key again: the server replays that record (201,
+   * idempotency-replayed). The edits that were not applied go to onOriginalReplayed, and
+   * createReplayed says so. A second 409 (another sent body committed) is reported as before.
+   */
+  private async sendCreate(attempt: CreateAttempt) {
+    try { return await this.api.create(this.meta.name, JSON.parse(attempt.body), attempt.key); }
+    catch (error) {
+      if (!(attempt.original && attempt.original !== attempt.body && error instanceof ConflictError && error.status === 409 &&
+        error.message.includes('Idempotency-Key'))) throw error;
+      const response = await this.api.create(this.meta.name, JSON.parse(attempt.original), attempt.key);
+      let kept: string | null = 'nothing in this tab keeps them.';
+      try { kept = this.onOriginalReplayed ? this.onOriginalReplayed(attempt) : kept; }
+      catch (failure) { kept = failure instanceof Error ? failure.message : String(failure); }
+      this.createReplayed = `${REPLAYED_ORIGINAL} ${kept === null ? REPLAY_KEPT : `They could not be kept: ${kept}`}`;
+      return response;
+    }
   }
 
   /** Run a model action on the saved record. The record must have no unsaved changes. */
