@@ -4,6 +4,25 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **Mod+S from a select no longer does nothing.** With the focus on a select, tags, image or link
+  field that still showed an error from the server, Ctrl/⌘+S silently did nothing while the Save
+  button saved. Mod+S now stops only when committing the text being typed fails, and then says
+  "Not saved. Check the highlighted values." and keeps the focus in the field; otherwise it saves
+  as the button does. A field's change handler cancels the change event when its commit fails, and
+  `commitTyped()` (`ui/shortcuts.ts`) reads that instead of `aria-invalid`.
+- **Create recovery opens the record that was created.** After a lost create, a retry with
+  corrected values got 409 and the form kept the corrected values, so the record the first request
+  created could not be opened from it. The create receipt now keeps the values first sent under its
+  key (`CreateAttempt.original`); after that 409 the browser sends them again under the same key, the
+  server replays the created record, and the form opens it. The corrected values are kept as the
+  browser's draft of a new record, offered by New, and a message says they were not applied
+  ([docs/ui.md](docs/ui.md), Unsaved changes). The 23-hour retry window and account checks are
+  unchanged.
+
 ## 0.4.8 (15-11-2026)
 
 ### Upgrading to 0.4.8

@@ -119,6 +119,42 @@ describe('record form shortcuts', () => {
     await until(() => expect(location.pathname).toBe('/app/customer/000000000001r'));
   });
 
+  it('Mod+S from a select that still shows the server\'s error creates, as the Create button does', async () => {
+    let replies = 0;
+    const refused = { status: 422, etag: null, body: { error: 'Validation failed', fields: { stage: 'Pick a stage this order can take' } } };
+    const created = { status: 201, etag: '"new"', body: { ...recorded.detail.body, id: id(57) } };
+    const { host, sent } = start([...orderRoutes(), ['POST', /\/api\/order$/, () => copy((replies += 1) === 1 ? refused : created)],
+      ['GET', /\/api\/order\/000000000001s$/, { ...created, status: 200 }]], '/app/order/new?title=T');
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New order'));
+    click(byText(host, '.ev-savebar button', /^Create/));
+    await until(() => expect(requests(sent, 'POST', /\/api\/order$/)).toHaveLength(1));
+    const invalidStage = () => host.querySelector<HTMLElement>('.fld[data-field="stage"] [aria-invalid="true"]');
+    await until(() => expect(invalidStage()).not.toBeNull());
+    const stage = invalidStage()!;
+    // The select is not committed by the shortcut, and its stale error does not stop the create: the server answers again.
+    stage.focus();
+    expect(key(stage, 's', mod(true)).defaultPrevented).toBe(false);
+    platform('MacIntel');
+    expect(key(stage, 's', mod(true)).defaultPrevented).toBe(true);
+    await until(() => expect(requests(sent, 'POST', /\/api\/order$/)).toHaveLength(2));
+    await until(() => expect(location.pathname).toBe('/app/order/000000000001s'));
+  });
+
+  it('Mod+S from a text field whose typing cannot be read does not save, says why and keeps the focus there', async () => {
+    const { host, sent } = start([...adminRoutes(), ['POST', /\/api\/customer$/, { status: 201, etag: '"new"', body: { id: id(56) } }]], '/app/customer/new?title=Acme%20Trading');
+    await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('New customer'));
+    const days = host.querySelector<HTMLInputElement>('.fld[data-field="credit_days"] input')!;
+    days.focus();
+    days.value = 'soon';
+    days.dispatchEvent(new Event('input', { bubbles: true }));
+    key(days, 's', mod(false));
+    await until(() => expect(lastToast()).toBe('Not saved. Check the highlighted values.'));
+    expect(days.getAttribute('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(days);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(requests(sent, 'POST', /customer$/)).toHaveLength(0);
+  });
+
   it('Mod+Shift+D opens the delete confirmation with Delete focused; the arrows reach Cancel, which closes it', async () => {
     platform('MacIntel');
     const { host, sent } = start(orderRoutes(), '/app/order/0000000000001');

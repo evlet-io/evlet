@@ -82,21 +82,58 @@ describe('create receipt recovery', () => {
     expect(f.records.size).toBe(1);
   });
 
-  it('sends changed values after a lost response under the same key, so the server refuses a second record', async () => {
-    const f = fixture(); await f.store.create({ title: 'Sent' });
+  it('after a lost create and a 409 for edited values, sends the first body again, opens that record and keeps the edits as a draft', async () => {
+    const f = fixture(); await f.store.create({ title: 'Sent', credit_days: 30 });
     expect(await f.store.save()).toBe(false);
     const attempt = f.store.createAttempt!;
+    expect(attempt.original).toBeUndefined();
+    f.store.field('title').set('Changed');
+    expect(await f.store.save()).toBe(true);
+    // The edited retry got 409 under the same key; the original body then replayed the committed record.
+    expect(f.sent).toHaveLength(3);
+    expect(f.sent.map(item => item.key)).toEqual([attempt.key, attempt.key, attempt.key]);
+    expect(f.sent[1].body.title).toBe('Changed');
+    expect(f.sent[2].body).toEqual(f.sent[0].body);
+    expect(f.records.size).toBe(1);
+    expect(f.store.lastSavedId).toBe(id(1)); expect(f.store.lastCreatedKey).toBe(attempt.key);
+    expect(f.store.field('title').value.peek()).toBe('Sent');
+    expect(f.store.createReplayed).toContain('Your later edits were not applied. They are kept as a draft of a new record');
+    expect(f.store.formError.peek()).toBeNull();
+    // The receipt is gone; the edited values are this browser's ordinary new-record draft.
+    const kept = f.ctx.unsaved.get('customer');
+    expect(kept.createAttempt).toBeUndefined();
+    expect(kept.changes.values.title).toBe('Changed');
+    expect(f.ctx.unsaved.hasAttempt('customer', attempt.key)).toBe(false);
+  });
+
+  it('keeps the original body in the receipt across later edits, and it survives a reload', async () => {
+    const f = fixture(); await f.store.create({ title: 'Sent' });
+    expect(await f.store.save()).toBe(false);
+    const first = f.store.createAttempt!;
+    for (const title of ['Second', 'Third']) {
+      f.store.field('title').set(title);
+      // A second lost answer: the server never saw these values commit, the key stays uncertain.
+      f.records.clear();
+      f.next({ lose: true });
+      await f.store.save();
+    }
+    expect(f.store.createAttempt!.original).toBe(first.body);
+    expect(JSON.parse(f.store.createAttempt!.body).title).toBe('Third');
+    expect(f.ctx.unsaved.get('customer').createAttempt.original).toBe(first.body);
+    expect(prepareCreate({ title: 'Fourth' }, f.store.createAttempt, user.id, f.store.createAttempt!.endpoint).original).toBe(first.body);
+  });
+
+  it('reports the earlier create as before when the first body also gets 409', async () => {
+    const f = fixture(); await f.store.create({ title: 'Sent' });
+    expect(await f.store.save()).toBe(false);
+    // Another body sent under the key committed (here: a receipt whose first body differs from it).
+    f.store.createAttempt = { ...f.store.createAttempt!, original: canonicalCreate({ title: 'Never committed' }) };
     f.store.field('title').set('Changed');
     expect(await f.store.save()).toBe(false);
-    // The lost first request committed: the server answers 409 for other values under its key.
     expect(f.store.formError.peek()).toContain('already created this record');
-    expect(f.store.conflict.peek()).toBeNull();
-    expect(f.sent).toHaveLength(2); expect(f.sent[1].key).toBe(attempt.key); expect(f.records.size).toBe(1);
-    await keepChanges(f.ctx, f.store.meta as any, f.store, true);
-    expect(f.ctx.unsaved.get('customer').createAttempt.key).toBe(attempt.key);
-    f.store.field('title').set('Sent');
-    expect(await f.store.save()).toBe(true); expect(f.records.size).toBe(1);
-    expect(f.sent[2].key).toBe(attempt.key);
+    expect(f.store.createReplayed).toBeNull();
+    expect(f.records.size).toBe(1);
+    expect(f.ctx.unsaved.get('customer').createAttempt.key).toBe(f.sent[0].key);
   });
 
   it('refuses expiry and account/server changes instead of allocating a fresh key', async () => {

@@ -1075,8 +1075,15 @@ before sending, when browser keeping is enabled and available. Restoring that dr
 the receipt too. The browser allows retries for 23 hours; an expired receipt requires checking
 the record list before starting fresh. Changed values, such as a field corrected after the server
 refused a retry as invalid, are sent with the same receipt key: the server creates at most one
-record per key, and when the lost first request did create one it answers that the record already
-exists instead of creating another. A create that finishes after its view closed removes its kept
+record per key, and when the lost first request did create one it answers 409 instead of creating
+another. The receipt keeps the values first sent under its key beside the latest ones, so after
+that 409 the browser sends the first values again under the same key; the server answers with the
+record it created then, and the form opens that record as a successful Create would. A message
+says the later edits were not applied. They are not lost: the corrected values become this
+browser's ordinary draft of a new record (without a receipt), which New offers to restore, so they
+can be compared with the opened record and applied to it. When browser keeping is off or full, the
+message says the edits could not be kept. If the first values also get 409 (another lost retry
+committed), the form says the record already exists, as before. A create that finishes after its view closed removes its kept
 draft, so New does not offer to create that record again. There is no automatic retry. Without
 browser storage, the form warns to keep the tab open and retry there. If an older kept copy
 cannot be updated with the receipt, Create waits for an explicit restore/discard decision
@@ -1161,6 +1168,12 @@ does (⌘S and ⇧⌘D on a Mac, Ctrl+S and Ctrl+Shift+D elsewhere).
 - **Duplicate is Alt+Shift+D.** Like Alt+N it is read from the physical key, because Option+Shift+D
   on a Mac types a character.
 - **Plain keys stay out of the way.** C, / and ? never fire while typing in a field. Mod+S does.
+- **Mod+S commits what is typed first.** In a text field it commits the typing, as leaving the field
+  would. Only when that commit fails (the text can't be read, or a required field is empty) does Mod+S
+  stop: the field shows its error, a "Not saved. Check the highlighted values." message appears, and
+  the focus stays in the field. On any other control (a select, tags, an image, a link picker) a
+  stale error from the server does not stop it: the save runs, as with the Save button, and the
+  server answers again.
 - **One screen at a time.** A shortcut acts on the screen that holds the focus. With a record open in a
   side panel, the keys act on that record while the focus is inside the panel, and on the list
   otherwise (Alt+N from the panel opens the new record in the panel). Nothing on the screen fires while

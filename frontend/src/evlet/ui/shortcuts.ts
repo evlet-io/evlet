@@ -72,9 +72,16 @@ export function isTyping(element: Element | null = document.activeElement): bool
   return !['button', 'checkbox', 'radio', 'submit', 'reset', 'range', 'color', 'file'].includes((element as HTMLInputElement).type);
 }
 
-/** Commit what is typed in the focused input before a shortcut saves (fields commit on change). */
+/**
+ * Commit what is typed in the focused input before a shortcut saves (fields commit on change).
+ * False only when that commit failed: a field's change handler cancels the change event when the
+ * typed text could not be read or broke a rule (ui/fields.ts), so the field now shows that error.
+ * Any other focused control (a select, tags, an image, a link picker, a cell that commits by hand)
+ * is not committed here, and a stale error it shows (one the server sent) does not block the save:
+ * as with the Save button, the save runs and the server answers again.
+ */
 export function commitTyped(): boolean {
   const active = document.activeElement;
-  if ((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) && isTyping(active)) active.dispatchEvent(new Event('change', { bubbles: true }));
-  return active?.getAttribute('aria-invalid') !== 'true';
+  if (!((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) && isTyping(active))) return true;
+  return active.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 }

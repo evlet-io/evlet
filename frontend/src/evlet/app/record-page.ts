@@ -285,7 +285,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     if (created) {
       leaving = true;
       if (store.lastCreatedKey) ctx.unsaved.remove(name, store.lastCreatedKey);
-      toast(`${model.label} created`);
+      // A retry opened the record its first attempt created: say the later edits were not applied, and where they are.
+      if (store.createReplayed) toast(store.createReplayed, { icon: 'info', duration: 12000 });
+      else toast(`${model.label} created`);
       if (panel) panel.show(store.id!);
       else void router.go('record', { model: name, id: String(store.id) }, {}, { replace: true });
     } else {
@@ -298,8 +300,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   saveViews.set(store, saved);
   onCleanup(() => { if (saveViews.get(store) === saved) saveViews.delete(store); });
   const save = async () => {
-    if (store.saving.peek() || !commitTyped()) return false;
     if (store.saving.peek()) return false;
+    // What is typed in the focused field could not be read: say so, and leave the focus there to fix it.
+    if (!commitTyped()) { toast('Not saved. Check the highlighted values.', { icon: 'info' }); return false; }
     if (!isNew && !store.dirty.peek()) return true;
     const created = isNew;
     let ok = false;
@@ -311,7 +314,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       // receipt key spares a newer draft made while this request was pending. A notification
       // acknowledges the server result without changing the page the person chose to visit meanwhile.
       if (created && store.lastCreatedKey) ctx.unsaved.remove(name, store.lastCreatedKey);
-      toast(created ? `${model.label} created (${store.lastSavedId}). Open ${model.plural.toLowerCase()} to view it.` : `${model.label} saved`, { duration: 8000 });
+      toast(created ? `${model.label} created (${store.lastSavedId}). ${store.createReplayed ? `${store.createReplayed} ` : ''}Open ${model.plural.toLowerCase()} to view it.` : `${model.label} saved`, { duration: store.createReplayed ? 12000 : 8000 });
     } else toast(`${model.label} was not saved. ${store.formError.peek() ?? 'Reopen the draft to retry.'}`, { icon: 'info', duration: 8000 });
     return ok;
   };
