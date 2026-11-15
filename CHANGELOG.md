@@ -18,7 +18,7 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   going unpaid, overdue, paid) is a move within the release: unless its values or hooks change
   versioned content, it makes no release, takes no snapshot, keeps its saved results (no
   recalculation, no formula version check; `"recalculate": true` with it is refused with 409)
-  and passes a closed period when it changes only the State and `versioned=False` fields. Only a
+  and passes a closed period, since it changes no versioned content. Only a
   release exit snapshots the release. `@state` and `@state.exit` still run on every move
   ([states-actions.md](docs/states-actions.md#moves-within-the-release)).
 - **Locked steps keep their colour.** A `lock=True` step that declares a colour draws as its

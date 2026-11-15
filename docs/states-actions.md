@@ -301,8 +301,8 @@ The order of a move:
 9. Document numbers due in the new state are assigned.
 10. Entering a `release=True` step whose content changed since the last release: `@release`
     runs, then calculations and `@validate` again, and the release is stored.
-11. A closed period is checked, unless the move stays within the release and changes only the
-    State and `versioned=False` fields.
+11. A closed period is checked, unless the move stays within the release and changes no
+    versioned content.
 12. The record is written, effects on the new state post, and the Activity gets its `moved`
     entry with the rule key and the remark; a move that released names it in `data.release`.
 
@@ -388,9 +388,11 @@ change versioned content:
 * It keeps the saved results: nothing recalculates and the formula version is not checked,
   exactly as an ordinary write on a locked record. `"_calculation": {"recalculate": true}` sent
   with it is refused with 409.
-* A closed period does not refuse it when it changes nothing but the State and
-  `versioned=False` fields: a closed period protects content, not process. Every other write to a
-  record in a closed period is refused as before.
+* A closed period does not refuse it: a closed period protects content, not process. Every other
+  write to a record in a closed period is refused as before.
+
+Versioned content is what a release hashes: every stored field and row except the State,
+`versioned=False` fields and `tracking="exclude"` fields.
 
 When its values or hooks do change versioned content, it is a real release as before: the latest
 release is snapshotted, the document recalculates (and needs the active formula version),

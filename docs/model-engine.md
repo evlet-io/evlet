@@ -985,7 +985,8 @@ dated in it. The error is on the period field: `"This date is in a closed period
 no period.
 
 One move passes: a move within the release (from one `release=True` step to another, such as
-unpaid to paid) that changes nothing but the State and `versioned=False` fields. A closed period
+unpaid to paid) that changes no versioned content, only the State, `versioned=False` fields and
+`tracking="exclude"` fields. A closed period
 protects content, not process ([states-actions.md](states-actions.md#moves-within-the-release)).
 Such a move also keeps the record's saved results, so it does not recalculate.
 
