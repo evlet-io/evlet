@@ -6,6 +6,8 @@ from .auth import AccessError
 from .identity import SCHEMA as ID_SCHEMA
 from .models import ValidationError
 from .query import OPERATORS
+from .calc import LIMITS
+from .sections import LABEL_LENGTH, MAX_SECTIONS
 
 # Record ids travel as their 13-character text form (evlet/identity.py).
 ID = dict(ID_SCHEMA)
@@ -121,8 +123,85 @@ class Discovery:
     def __init__(self, business, user):
         self.business, self.user = business, user
         schema = business.schema(user)
-        reachable = {child['model'] for entry in schema['models'] if not entry['child_only'] for child in entry['children']}
-        self.models = {entry['name']: entry for entry in schema['models'] if not entry['child_only'] or entry['name'] in reachable}
+        available = {entry['name']: entry for entry in schema['models']}
+        self.models = {}
+        pending = [entry for entry in available.values() if not entry['child_only']]
+        while pending:
+            entry = pending.pop()
+            if entry['name'] in self.models:
+                continue
+            self.models[entry['name']] = entry
+            pending.extend(available[child['model']] for child in entry['children'] if child['model'] in available)
+        self.models = {name: entry for name, entry in available.items() if name in self.models}
+
+    @staticmethod
+    def section_schema(*, existing=False, keys=False):
+        fields = {'section': {'type': 'string', 'minLength': 1, 'maxLength': LABEL_LENGTH}}
+        required = ['section']
+        if existing:
+            fields['id'] = dict(ID)
+            required.append('id')
+        if keys:
+            fields['_key'] = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,64}$'}
+        return object_schema(fields, required)
+
+    def read_schema(self, entry, *, omit=()):
+        result = object_schema({'id': dict(ID), **{field['name']: value_schema(field, read=True)
+                               for field in entry['fields'] if field['name'] not in omit}}, ('id',))
+        for child in entry['children']:
+            row = self.read_schema(self.models[child['model']], omit=(child['link'],))
+            sections = child.get('sections', False)
+            if sections:
+                row = {'oneOf': [row, self.section_schema(existing=True)]}
+            result['properties'].setdefault('children', object_schema({}))['properties'][child['name']] = {
+                'type': 'array', 'maxItems': 100 + (MAX_SECTIONS if sections else 0), 'items': row}
+            result['properties'].setdefault('children_pages', object_schema({}))['properties'][child['name']] = _PAGE
+        return result
+
+    def write_schema(self, entry, *, create=False, omit=()):
+        if not entry['permissions']['create' if create else 'update']:
+            # Changing descendants also changes this owned row. Its caller may echo an id, but cannot
+            # reach writable grandchildren through a row it may only read (documents.persist_rows).
+            return object_schema({})
+        result = writable(entry, create=create, omit=omit)
+        for child in entry['children']:
+            if child.get('read_only'):
+                continue
+            child_entry = self.models[child['model']]
+            variants, new, saved = [], [], []
+            for existing in (False, True):
+                if existing and create or not existing and not child_entry['permissions']['create']:
+                    continue
+                row = self.write_schema(child_entry, create=not existing, omit=(child['link'],))
+                if existing:
+                    row['properties']['id'] = dict(ID)
+                    row['required'] = ['id']
+                if child.get('row_changes'):
+                    row['properties']['_key'] = {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,64}$'}
+                kinds = [row]
+                if child.get('sections') and child_entry['permissions']['update' if existing else 'create']:
+                    kinds.append(self.section_schema(existing=existing, keys=True))
+                (saved if existing else new).extend(kinds)
+                variants.extend(kinds)
+            if not variants:
+                continue
+            collection = {'type': 'array', 'maxItems': child['max_rows'] + (MAX_SECTIONS if child.get('sections') else 0),
+                          'items': {'oneOf': variants}}
+            if child.get('row_changes'):
+                # JSON Schema applies items/maxItems to arrays and properties to objects. Keeping both
+                # describes full lists and bounded change sets without changing the existing items contract.
+                changes = {}
+                for name, rows in (('create', new), ('update', saved)):
+                    if rows:
+                        changes[name] = {'type': 'array', 'maxItems': LIMITS['collection_rows'], 'items': {'oneOf': rows}}
+                if not create and child_entry['permissions']['delete']:
+                    changes['delete'] = {'type': 'array', 'maxItems': LIMITS['collection_rows'], 'items': dict(ID), 'uniqueItems': True}
+                if child_entry['permissions']['update'] or create and child_entry['permissions']['create']:
+                    changes['order'] = {'type': 'array', 'maxItems': LIMITS['collection_rows'],
+                                        'items': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{1,64}$'}, 'uniqueItems': True}
+                collection.update(type=['array', 'object'], properties=changes, additionalProperties=False)
+            result['properties'].setdefault('children', object_schema({}))['properties'][child['name']] = collection
+        return result
 
     @staticmethod
     def operations(entry):
@@ -163,35 +242,17 @@ class Discovery:
             keys = ('name', 'type', 'required', 'read_only', 'unique', 'default_kind', 'max_length', 'minimum', 'maximum', 'scale', 'choices', 'target')
             fields.append({key: field[key] for key in keys if key in field})
             fields[-1]['read_only'] = field['read_only'] or not any(entry['permissions'][operation] for operation in ('create', 'update'))
-        schemas = {'read': object_schema({'id': dict(ID), **{field['name']: value_schema(field, read=True) for field in entry['fields']}}, ('id',))}
+        schemas = {'read': self.read_schema(entry)}
         if not entry['child_only']:
             schemas['read']['properties'].update(READ_ANNOTATIONS)
         if not entry['child_only']:
             for operation in ('create', 'update'):
                 if entry['permissions'][operation]:
-                    schemas[operation] = writable(entry, create=operation == 'create')
+                    schemas[operation] = self.write_schema(entry, create=operation == 'create')
         children = []
         for child in entry['children']:
             child_entry = self.models[child['model']]
             children.append({**child, 'operations': self.operations(child_entry), 'replacement': 'Omit to preserve; supplied rows replace the collection. Existing IDs stay with this parent.'})
-            read_properties = {'id': dict(ID), **{field['name']: value_schema(field, read=True) for field in child_entry['fields'] if field['name'] != child['link']}}
-            child_read = {'type': 'array', 'maxItems': 100, 'items': object_schema(read_properties, ('id',))}
-            schemas['read']['properties'].setdefault('children', object_schema({}))['properties'][child['name']] = child_read
-            schemas['read']['properties'].setdefault('children_pages', object_schema({}))['properties'][child['name']] = _PAGE
-            for operation in ('create', 'update'):
-                if operation not in schemas:
-                    continue
-                variants = []
-                if child_entry['permissions']['create']:
-                    variants.append(writable(child_entry, create=True, omit=(child['link'],)))
-                if operation == 'update':
-                    existing = writable(child_entry, omit=(child['link'],)) if child_entry['permissions']['update'] else object_schema({})
-                    existing['properties']['id'] = dict(ID)
-                    existing['required'] = ['id']
-                    variants.append(existing)
-                if variants:
-                    schemas[operation]['properties'].setdefault('children', object_schema({}))['properties'][child['name']] = {
-                        'type': 'array', 'maxItems': 100, 'items': {'oneOf': variants}}
         model = self.business.registry.models[name]
         query_fields = ['id', *[field['name'] for field in entry['fields'] if field['type'] != 'link' or self.business.policy.rule(self.user, model.__fields__[field['name']].target).scope is None]]
         return {'discovery_version': 1, 'name': name, 'label': entry['label'], 'description': entry['description'],
