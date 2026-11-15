@@ -1006,7 +1006,7 @@ newest first, 50 rows at a time.
 |---|---|
 | `GET /api/_controls/state` | Instance, apps, models, roles, routes, settings, attention list, recent audit rows |
 | `GET/POST /api/_controls/overrides` | File value, override, who and when; save changes. `display.currencies` needs an admin |
-| `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end", "revoke_keys": false}`. Each user row counts active `keys` |
+| `GET/POST /api/_controls/users`, `PATCH /api/_controls/users/<id>` | Wraps `LocalAuth`: role, active, password, `{"sessions": "end", "revoke_keys": false}`. Each user row counts active `keys`. `GET` takes `offset`, `limit` (1–200, default 100), `q` (username contains), `active` (`true`/`false`) and `role`, and returns `total` for the filter plus `counts` (`all`, `active`, `inactive`) for the search |
 | `/api/auth/users` | The older account routes, kept. They use the same access check, admin rules, fresh two-step code and audit rows; refused access is a 403 there |
 | `GET/POST /api/_controls/roles`, `PATCH/DELETE /api/_controls/roles/<id>` | Roles, "Opens Controls", "Customize workspaces" and descriptions |
 | `GET /api/_controls/workspaces`, `PUT/DELETE /api/_controls/workspaces/<key>` | Workspace overrides: list, save, reset ([Workspaces](#workspaces)). Admins and roles with "Customize workspaces" |
@@ -1028,7 +1028,7 @@ newest first, 50 rows at a time.
 | `GET /api/_controls/mcp`, `DELETE /api/_controls/mcp/<id>` | MCP address, connected clients, 24-hour totals; sign a client out |
 | `GET /api/_controls/tools?origin=&outcome=&tool=&q=&before=` | The Tool log, newest first, 50 rows a page |
 | `PATCH /api/_controls/users/<id>` with `{"allow_eva"}` or `{"allow_mcp"}` | Allow Eva or Allow MCP, on its own, saved at once |
-| `GET/POST /api/_controls/keys`, `DELETE /api/_controls/keys/<id>` | API keys: list, create `{"name", "user", "scope"}` (the key is in this reply only), revoke |
+| `GET/POST /api/_controls/keys`, `DELETE /api/_controls/keys/<id>` | API keys: list, create `{"name", "user", "scope"}` (the key is in this reply only), revoke. `GET` lists live keys newest first: `limit` (1–200, default 100), `q` (name, prefix or username contains), `user` (exact username), and `before` with the previous page's `next_before` for the next page; the cursor does not move when keys are created or revoked |
 | `GET/POST/PATCH/DELETE /api/_settings/me/mailbox` | The person's own mailbox: read, connect with a password, change options, disconnect. Sessions only |
 | `POST /api/_settings/me/mailbox/oauth`, `POST .../sync` | Start a Microsoft 365 or Google sign-in (`{"provider"}`, answers `{"url"}`); sync now |
 | `GET/POST /_/mail/callback`, `GET /_/mail/continue.js` | Where the provider sends the person back; the page posts the code from this origin |
