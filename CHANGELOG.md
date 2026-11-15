@@ -6,18 +6,25 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Upgrading
+
+- **Run `evlet migrate` after upgrading.** Framework steps `0014_unsaved_versions` (draft versions)
+  and `0015_oidc_tickets` (company sign-in state) change the database; `evlet upgrade` runs them.
+
 ### Added
 
 - **Optional company sign-in.** `OIDC` and `LocalAuth(oidc=...)` support an explicitly
   configured provider and immutable subject mappings to existing users. Install the `oidc`
-  extra to enable it; local login, roles, realms and MFA remain enforced. Callback queries
-  are excluded from generated proxy access logs. See [docs/oidc.md](docs/oidc.md).
-- **Bounded AI execution.** `AI(max_concurrent_runs=4, max_runs_per_user=2)` adds configurable
-  process-safe limits. Existing declarations keep working with these defaults. Live work
-  retains its slot and budget reservation until it actually stops.
-- **Optional PWA shell and honest recovery.** Installation caches public static assets only;
-  private data and writes stay online. Kept drafts report their storage status, compare
-  conflicting copies, and support manual copying when clipboard access is unavailable.
+  extra (joserfc) to enable it; local login, roles, realms and MFA remain enforced. Callback
+  queries are excluded from generated proxy access logs. See [docs/oidc.md](docs/oidc.md).
+- **Optional AI limits.** `AI(max_concurrent_runs=..., max_runs_per_user=...)` caps running Eva
+  runs per instance and per person. Both default to no cap. Approve and Decline are never
+  refused for capacity; an answered run resumes when a place frees. Stop lets a running tool
+  finish and reports it before the run ends as stopped.
+- **Optional PWA shell and honest recovery.** Installation caches only the files the build
+  produced; app assets, private data and writes stay online. Kept drafts report their storage
+  status, compare conflicting copies, and support manual copying when clipboard access is
+  unavailable.
 - **The browser retries creates safely.** New-record forms send an `Idempotency-Key`, so a
   create whose answer was lost is retried without making a second record.
 
@@ -25,18 +32,21 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 - **Closed record views release deferred visibility callbacks.** First delivery and disposal
   release the captured view, and queued observer/fallback callbacks cannot load data after close.
-- **Server work stays bounded.** HTTP and tenant-startup admission, body limits, deadlines,
-  request IDs and optional aggregate metrics make overload observable and reject excess work.
-  Optional exports load lazily; generated installers use a reviewed hash-pinned bootstrap.
+- **Server work stays bounded.** HTTP and tenant-startup lanes queue work for a bounded time
+  (`EVLET_HTTP_QUEUE_SECONDS`) and answer 503 with Retry-After only after it; a write slot is
+  taken once the body has arrived, and the body timeout counts idle time between chunks.
+  Request IDs and optional aggregate metrics make overload observable. Optional exports load
+  lazily and stay visible to type checkers.
 - **Controls preserves concurrent edits.** Save acknowledges only submitted values, and the
   API key form can pick any active user as the owner. Layout summaries accept every supported shape,
   and orphaned overrides can be removed without weakening permissions.
 - **AI tools enforce limits throughout a run.** Budget checks, approval authorization,
   durable cancellation, tool result validation and taint survive resumes and cleanup.
   Chat drafts and same-time pagination remain stable during asynchronous updates.
-- **Draft writes preserve newer copies.** Conditional revisions prevent aborted or delayed
-  writes and older record Saves from deleting newer drafts. Callers without revision headers
-  retain their existing behavior.
+- **Draft writes preserve newer copies.** Conditional revisions per record prevent aborted or
+  delayed writes and older record Saves from deleting newer drafts, without one record's change
+  blocking another's. Committed edits are kept while another field is typed in. Callers without
+  revision headers retain their existing behavior.
 
 ## 0.4.7 (15-11-2026)
 
