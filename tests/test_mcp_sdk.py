@@ -28,7 +28,7 @@ def test_official_client_can_discover_read_write_and_receive_validation(live_con
                 tools = await session.list_tools()
                 names = {tool.name for tool in tools.tools}
                 assert {'discover_models', 'describe_model', 'get_record', 'list_records', 'create_record', 'update_record', 'delete_record', 'run_action', 'job_status',
-                        'aggregate_records'} <= names
+                        'aggregate_records', 'change_state'} <= names
                 for tool in tools.tools:
                     Draft202012Validator.check_schema(tool.inputSchema)
                 description = await session.call_tool('describe_model', {'model': 'project'})
@@ -41,18 +41,22 @@ def test_official_client_can_discover_read_write_and_receive_validation(live_con
                 assert not created.isError
                 record = created.structuredContent
                 Draft202012Validator(metadata['schemas']['read']).validate(record)
+                assert next(move for move in record['_moves'] if move['key'] == 'start')['primary'] is True
                 assert json.loads(created.content[0].text) == record
                 read = await session.call_tool('get_record', {'model': 'project', 'id': record['id']})
+                assert not read.isError
+                Draft202012Validator(metadata['schemas']['read']).validate(read.structuredContent)
                 assert read.structuredContent['children']['tasks'][0]['title'] == 'Done'
                 invalid = await session.call_tool('update_record', {'model': 'project', 'id': record['id'], 'values': {'progress': 101}})
                 assert invalid.isError and invalid.structuredContent['status'] == 422
                 assert 'progress' in invalid.structuredContent['fields']
-                # Actions and deletes wait for the person's approval in Evlet; the same call then runs.
-                waiting = await session.call_tool('run_action', {'model': 'project', 'id': record['id'], 'action': 'start'})
+                # State moves and deletes wait for the person's approval in Evlet; the same call then runs.
+                waiting = await session.call_tool('change_state', {'model': 'project', 'id': record['id'], 'rule': 'start'})
                 assert waiting.isError and 'approval' in waiting.structuredContent['error']
                 approve(live_connector)
-                action = await session.call_tool('run_action', {'model': 'project', 'id': record['id'], 'action': 'start'})
-                assert action.structuredContent['status'] == 'active'
+                moved = await session.call_tool('change_state', {'model': 'project', 'id': record['id'], 'rule': 'start'})
+                assert not moved.isError and moved.structuredContent['status'] == 'active'
+                Draft202012Validator(metadata['schemas']['read']).validate(moved.structuredContent)
                 selected = await session.call_tool('list_records', {'model': 'project', 'filters': {'id': record['id']}})
                 assert selected.structuredContent['total'] == 1
                 assert (await session.call_tool('delete_record', {'model': 'project', 'id': record['id']})).isError
