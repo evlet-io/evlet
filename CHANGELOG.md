@@ -4,7 +4,25 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.7 (15-11-2026)
+
+### Upgrading to 0.4.7
+
+- **Run `evlet migrate` after upgrading.** Framework steps `0012_session_generations` and
+  `0013_create_requests` add the session generation columns and the create receipts table; an
+  instance with pending steps refuses to serve until they run. `evlet upgrade` runs them for you.
+- **Readonly settings use their default.** A setting or preference declared `read_only=True`
+  ignores any value stored before it became read only; change its default in code instead.
+- **Controls list routes page.** `GET /api/_controls/users` and `GET /api/_controls/keys` return
+  at most 100 entries by default; follow `offset` or `next_before` for the rest.
+
+### Added
+
+- **Idempotent creates.** `POST /api/{model}` accepts an `Idempotency-Key` header. A retry with
+  the same key and values from the same account and credential answers the record created the
+  first time (with `Idempotency-Replayed: true`), read under the caller's current permissions;
+  different values with the same key get 409. Receipts are kept for a day. Framework step
+  `0013_create_requests` adds their table ([request-integrity.md](docs/request-integrity.md)).
 
 ### Added
 
@@ -17,9 +35,38 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   retains its slot and budget reservation until it actually stops.
 ### Fixed
 
+- **Hidden fields cannot be probed by echoing guesses.** A create or update that sends a field
+  value the caller cannot read is refused whatever was guessed, instead of being dropped as an
+  unchanged echo. Link filters in `Context.list` and measures check row access as HTTP does.
+- **Restoring a release brings back every row.** A document with more rows than one page, and
+  nested rows deleted since the release, restore completely under their original ids.
+- **Discovery describes nested and sectioned documents.** Read and write schemas cover child
+  rows at every depth, section rows and the row-change sets the server accepts
+  ([request-integrity.md](docs/request-integrity.md)).
+- **`evlet upgrade` stages the new release and covers every instance of a project.** pip installs
+  into a copy of `.venv`, and the live environment changes only after every affected instance is
+  planned, stopped and backed up. `--all-instances` upgrades instances that share the
+  environment together; one without a service is migrated but not started. A failure keeps
+  the previous environment and a recovery record in `.evlet-upgrade.json`.
+- **SQLite backups and restores cover the whole database set.** `evlet backup`, Controls
+  backups and installation backups copy all four SQLite files from one snapshot with a
+  checksummed manifest; a restore no longer deletes the live sessions, logs and Eva files.
+  Interrupted installations and restores are journaled and replayed by `evlet migrate`.
+  Restoring over a damaged or incomplete set keeps its files and goes ahead. Idle
+  connections and the log retry backlog are bounded, and key rotation takes an
+  interprocess lock ([persistence-recovery.md](docs/persistence-recovery.md)).
+- **Ending sessions revokes them in the main database.** Sessions and two-step tickets carry the
+  account's session generation, which ending a person's sessions moves on, so a session or ticket
+  kept in the sessions file cannot be used again. Framework step `0012_session_generations` adds
+  the columns: run `evlet migrate` after upgrading.
+- **Controls lists every user and API key.** The Users and API keys pages search and filter
+  on the server and load more past the first page, instead of stopping at 100 users or 200
+  keys. `GET /api/_controls/users` and `GET /api/_controls/keys` take paging and search
+  parameters ([controls.md](docs/controls.md)).
 - **Browser record and link caches are bounded.** Recent cells use approximate JSON budgets;
   active views retain their cell identity and receive updates after cache eviction. Renamed
-  links refresh held labels, and disposed link controls release listeners and timers.
+  links refresh held labels, and link sources release their listeners and timers when the
+  session ends. A successful save is applied even when a later read of the same record fails.
 - **Model screens preserve work across asynchronous completion.** Lists discard stale measure
   responses, disposed records and report previews stop loading, and Ctrl/Command+Enter commits
   active text before saving. Narrow create footers keep the form visible.
@@ -35,9 +82,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   transaction. Keys remain kept by default.
 - **Readonly settings and action inputs are enforced on the server.** App settings,
   personal preferences and typed action inputs declared `read_only=True` reject caller
-  values, including unchanged values and null resets. Browser forms omit those values;
-  omitted settings retain their stored values/defaults, and action inputs use server
-  defaults. Trusted Python action calls can still supply server-owned inputs.
+  values, including unchanged values and null resets. Browser forms omit those values.
+  Readonly settings and preferences always use their declared default, ignoring a value
+  stored before they became read only, and action inputs use server defaults. Trusted
+  Python action calls can still supply server-owned inputs.
 
 ## 0.4.6 (13-11-2026)
 
