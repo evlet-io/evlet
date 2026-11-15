@@ -155,8 +155,12 @@ export interface ApiKeyRow {
 }
 export interface CreatedKey { key: ApiKeyRow; token: string }
 /** The key routes a keys page needs: Controls (every user) or a person's own. */
+/** A page of keys; next_before, when set, asks for the older ones. */
+export interface KeyQuery { before?: number; q?: string }
+export interface UserQuery { offset?: number; limit?: number; q?: string; active?: 'true' | 'false'; role?: string }
+export interface UserCounts { all: number; active: number; inactive: number }
 export interface KeysApi {
-  keys(): Promise<{ items: ApiKeyRow[]; models?: Array<{ name: string; label: string }> }>;
+  keys(query?: KeyQuery): Promise<{ items: ApiKeyRow[]; models?: Array<{ name: string; label: string }>; total?: number; next_before?: number | null }>;
   createKey(body: { name: string; scope: KeyScope; user?: string; password?: string; code?: string }): Promise<CreatedKey>;
   revokeKey(id: number): Promise<unknown>;
 }
@@ -221,8 +225,8 @@ export class ControlsClient extends ApiClient implements KeysApi {
   async saveOverrides(changes: Array<{ kind: string; key: string; value: unknown }>) {
     return (await this.request<{ version: number; saved: number }>('POST', '/api/_controls/overrides', { body: { changes } })).data;
   }
-  async users(offset = 0) {
-    return (await this.request<{ items: UserRow[]; total: number; offset: number; limit: number }>('GET', '/api/_controls/users', { query: { offset } })).data;
+  async users(query: UserQuery = {}) {
+    return (await this.request<{ items: UserRow[]; total: number; counts: UserCounts; offset: number; limit: number }>('GET', '/api/_controls/users', { query: { ...query } })).data;
   }
   async addUser(body: { username: string; password: string; role: string }) {
     return (await this.request<{ id: number; username: string; role: string }>('POST', '/api/_controls/users', { body })).data;
@@ -288,7 +292,9 @@ export class ControlsClient extends ApiClient implements KeysApi {
     return (await this.request<TestResult>('POST', `/api/_controls/connectors/${encodeURIComponent(id)}/test`, { body })).data;
   }
   async makeDefault(id: string) { return (await this.request<ConnectorRow>('POST', `/api/_controls/connectors/${encodeURIComponent(id)}/default`, { body: {} })).data; }
-  async keys() { return (await this.request<{ items: ApiKeyRow[] }>('GET', '/api/_controls/keys')).data; }
+  async keys(query: KeyQuery = {}) {
+    return (await this.request<{ items: ApiKeyRow[]; total: number; next_before: number | null }>('GET', '/api/_controls/keys', { query: { ...query } })).data;
+  }
   async createKey(body: { name: string; scope: KeyScope; user?: string }) { return (await this.request<CreatedKey>('POST', '/api/_controls/keys', { body })).data; }
   async revokeKey(id: number) { return (await this.request<{ items: ApiKeyRow[] }>('DELETE', `/api/_controls/keys/${id}`)).data; }
   async mcp() { return (await this.request<McpOverview>('GET', '/api/_controls/mcp')).data; }

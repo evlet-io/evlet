@@ -107,7 +107,10 @@ tool-call log and Eva into their own SQLite files next to the database (see From
 kinds `state` and `rule`, turns confirmable
 revisions into releases and lifecycle states into State values (it refuses, naming the models, when
 a model has no State with those steps), and gives every record already in a release step a v0
-release ([states-actions.md](states-actions.md#releases-and-versions)).
+release ([states-actions.md](states-actions.md#releases-and-versions)). `0012_session_generations` adds the
+account session generation to `evlet_users`, `evlet_sessions` and `evlet_two_step_tickets` (existing rows start
+at 0, so people stay signed in); ending a person's sessions moves it on, so an old session or two-step ticket
+cannot be used again.
 Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet
