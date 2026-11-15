@@ -114,3 +114,108 @@ it('preserves unobserved kept drafts during record Save and sends only the ackno
   await api.update('customer', id(1), { title: 'Legacy API caller' }, '"record-saved"');
   expect(stub.sent[2].headers['x-evlet-draft-revision']).toBeUndefined();
 });
+
+// The server's draft tokens (evlet/unsaved.py): one clock per account numbers copies and clearings;
+// an empty-state token stays valid until that same record is kept, saved or discarded.
+function accountDrafts() {
+  let clock = 0;
+  const entries = new Map<string, { version: number; title: string }>(), cleared = new Map<string, number>();
+  const recordOf = (request: Sent) => /customer\/(\d+)$/.exec(request.url)![1];
+  const token = (key: string) => entries.has(key) ? `"unsaved-${entries.get(key)!.version}"` : `"unsaved-empty-${clock}"`;
+  const matches = (key: string, expected: string | undefined) => {
+    const entry = entries.get(key);
+    if (entry) return expected === `"unsaved-${entry.version}"`;
+    const found = /^"unsaved-empty-(\d+)"$/.exec(expected ?? '');
+    return Boolean(found) && Number(found![1]) >= (cleared.get(key) ?? 0) && Number(found![1]) <= clock;
+  };
+  const clear = (key: string) => { cleared.set(key, ++clock); entries.delete(key); };
+  const stub = server([
+    ['GET', /\/api\/_unsaved\/customer\/\d+$/, request => {
+      const key = recordOf(request), entry = entries.get(key);
+      return { status: 200, etag: token(key), body: { entry: entry ? { changes: { values: { title: entry.title } }, base_revision: '"record0"', saved_at: 1, size: 40, stale: false } : null, dropped: [] } };
+    }],
+    ['PUT', /\/api\/_unsaved\/customer\/\d+$/, request => {
+      const key = recordOf(request);
+      if (!matches(key, request.headers['if-match'])) return refused();
+      entries.set(key, { version: ++clock, title: request.body.changes.values.title });
+      return { status: 200, etag: token(key), body: { saved_at: 1, size: 40, dropped: [] } };
+    }],
+    ['DELETE', /\/api\/_unsaved\/customer\/\d+$/, request => {
+      const key = recordOf(request);
+      if (!matches(key, request.headers['if-match'])) return refused();
+      clear(key);
+      return { status: 204, etag: token(key), body: null };
+    }],
+    ['PATCH', /\/api\/customer\/\d+$/, request => {
+      const key = recordOf(request), keep = entries.get(key);
+      const remove = matches(key, request.headers['x-evlet-draft-revision']);
+      clear(key);
+      if (!remove && keep) entries.set(key, keep);
+      return { status: 200, etag: `"record-${key}-saved"`, body: { id: id(Number(key)), title: request.body.title, rate: '1.00', credit_days: 30 } };
+    }],
+  ]);
+  const api = new AppClient({ fetch: stub.fetch }), ctx: any = { api, me: cell(null) };
+  const open = async (record: number) => {
+    const store = new RecordStore({ api, schema: responses.schema.body as any, model: 'customer' });
+    store.applyServer({ id: id(record), title: 'Original', rate: '1.00', credit_days: 30 }, '"record0"');
+    await store.loadAll(); stops.push(() => store.dispose());
+    return store;
+  };
+  return { ctx, api, open, sent: stub.sent, kept: (record: number) => entries.get(String(record).padStart(13, '0'))?.title };
+}
+
+it('keeps a draft with the empty version read at open after another tab kept and saved a different record', async () => {
+  const drafts = accountDrafts();
+  const first = await drafts.open(1), second = await drafts.open(2);
+  // Tab A opens record 1 and accepts its empty draft version.
+  acceptDraftVersion(first, (await drafts.api.unsaved('customer', id(1))).etag);
+  // Tab B keeps, saves and keeps record 2 again, moving the account's clock.
+  second.field('title').set('Other tab');
+  expect(await keepChanges(drafts.ctx, second.meta as any, second, false)).toBeNull();
+  expect(await second.save()).toBe(true);
+  second.field('title').set('Other tab again');
+  expect(await keepChanges(drafts.ctx, second.meta as any, second, false)).toBeNull();
+  // Tab A's first keep of record 1 succeeds with the version it accepted.
+  first.field('title').set('Tab A');
+  expect(await keepChanges(drafts.ctx, first.meta as any, first, false)).toBeNull();
+  expect(drafts.kept(1)).toBe('Tab A'); expect(drafts.kept(2)).toBe('Other tab again');
+});
+
+it('still pauses keeping when another tab kept the same record', async () => {
+  const drafts = accountDrafts();
+  const first = await drafts.open(1), other = await drafts.open(1);
+  acceptDraftVersion(first, (await drafts.api.unsaved('customer', id(1))).etag);
+  other.field('title').set('Other tab');
+  expect(await keepChanges(drafts.ctx, other.meta as any, other, false)).toBeNull();
+  first.field('title').set('Tab A');
+  expect(await keepChanges(drafts.ctx, first.meta as any, first, false)).toContain('Another tab or an earlier request');
+  expect(drafts.kept(1)).toBe('Other tab');
+});
+
+it('removes a copy kept while a Save was in flight once that Save finishes, also with the view closed', async () => {
+  let finishKeep!: () => void, finishSave!: () => void;
+  const durable: { title: string | null } = { title: null };
+  const stub = server([
+    ['GET', path, () => ({ status: 200, etag: '"unsaved-empty-0"', body: { entry: null, dropped: [] } })],
+    ['PUT', path, request => new Promise(resolve => { finishKeep = () => { durable.title = request.body.changes.values.title; resolve({ status: 200, etag: '"unsaved-1"', body: { saved_at: 1, size: 40, dropped: [] } }); }; })],
+    ['DELETE', path, request => { if (request.headers['if-match'] !== '"unsaved-1"') return refused(); durable.title = null; return { status: 204, etag: '"unsaved-empty-2"', body: null }; }],
+    // The Save was sent before the keep was acknowledged, so it could not clear that copy.
+    ['PATCH', /\/api\/customer\/0000000000001$/, () => new Promise(resolve => { finishSave = () => resolve({ status: 200, etag: '"record1"', body: { id: id(1), title: 'Saved', rate: '1.00', credit_days: 30 } }); })],
+  ]);
+  const api = new AppClient({ fetch: stub.fetch }), ctx: any = { api, me: cell(null) };
+  const store = new RecordStore({ api, schema: responses.schema.body as any, model: 'customer' });
+  store.applyServer({ id: id(1), title: 'Original', rate: '1.00', credit_days: 30 }, '"record0"');
+  await store.loadAll(); stops.push(() => store.dispose());
+  store.field('title').set('Saved');
+  const keeping = keepChanges(ctx, store.meta as any, store, false);
+  await vi.waitFor(() => expect(stub.sent.filter(request => request.method === 'PUT')).toHaveLength(1));
+  const saving = store.save();
+  await vi.waitFor(() => expect(stub.sent.filter(request => request.method === 'PATCH')).toHaveLength(1));
+  finishKeep(); await vi.waitFor(() => expect(store.draftRevision).toBe('"unsaved-1"'));
+  await new Promise(resolve => setTimeout(resolve, 10));
+  expect(durable.title).toBe('Saved'); expect(stub.sent.filter(request => request.method === 'DELETE')).toHaveLength(0);
+  finishSave();
+  expect(await saving).toBe(true); expect(await keeping).toBeNull();
+  expect(durable.title).toBeNull();
+  expect(stub.sent.find(request => request.method === 'DELETE')?.headers['if-match']).toBe('"unsaved-1"');
+});

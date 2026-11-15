@@ -15,15 +15,17 @@ const user = { id: 7, username: 'editor', role: 'editor' };
 
 function fixture(options: { storage?: Storage | null; keep?: boolean; model?: string; schema?: any; user?: typeof user; apiBase?: string } = {}) {
   const sent: Array<{ key: string; body: any; init: RequestInit }> = [];
-  const records = new Map<string, any>();
+  const records = new Map<string, any>(), bodies = new Map<string, string>();
   let lose = true, status = 201, pending: (() => Promise<void>) | null = null;
   const fetcher = vi.fn(async (_url: RequestInfo | URL, init: RequestInit = {}) => {
     const headers = new Headers(init.headers), key = headers.get('Idempotency-Key')!;
     const body = JSON.parse(String(init.body));
     sent.push({ key, body, init });
     if (pending) await pending();
+    if (records.has(key) && bodies.get(key) !== init.body)
+      return new Response(JSON.stringify({ error: 'This Idempotency-Key was already used with different values' }), { status: 409 });
     if (status === 422) return new Response(JSON.stringify({ error: 'Invalid title', fields: { title: 'Change it' } }), { status });
-    if (!records.has(key)) records.set(key, { ...body, id: id(records.size + 1) });
+    if (!records.has(key)) { records.set(key, { ...body, id: id(records.size + 1) }); bodies.set(key, String(init.body)); }
     if (lose) { lose = false; throw new TypeError('response lost after commit'); }
     return new Response(JSON.stringify(records.get(key)), { status: 201, headers: { etag: '"saved"' } });
   });
@@ -80,18 +82,21 @@ describe('create receipt recovery', () => {
     expect(f.records.size).toBe(1);
   });
 
-  it('blocks changed ambiguous payloads without making another request or dropping the receipt', async () => {
+  it('sends changed values after a lost response under the same key, so the server refuses a second record', async () => {
     const f = fixture(); await f.store.create({ title: 'Sent' });
     expect(await f.store.save()).toBe(false);
-    const attempt = f.store.createAttempt;
+    const attempt = f.store.createAttempt!;
     f.store.field('title').set('Changed');
     expect(await f.store.save()).toBe(false);
-    expect(f.store.formError.peek()).toContain('different values');
-    expect(f.store.createAttempt).toBe(attempt); expect(f.sent).toHaveLength(1);
+    // The lost first request committed: the server answers 409 for other values under its key.
+    expect(f.store.formError.peek()).toContain('already created this record');
+    expect(f.store.conflict.peek()).toBeNull();
+    expect(f.sent).toHaveLength(2); expect(f.sent[1].key).toBe(attempt.key); expect(f.records.size).toBe(1);
     await keepChanges(f.ctx, f.store.meta as any, f.store, true);
-    expect(f.ctx.unsaved.get('customer').createAttempt.key).toBe(attempt!.key);
+    expect(f.ctx.unsaved.get('customer').createAttempt.key).toBe(attempt.key);
     f.store.field('title').set('Sent');
     expect(await f.store.save()).toBe(true); expect(f.records.size).toBe(1);
+    expect(f.sent[2].key).toBe(attempt.key);
   });
 
   it('refuses expiry and account/server changes instead of allocating a fresh key', async () => {
@@ -117,8 +122,23 @@ describe('create receipt recovery', () => {
     const uncertain = f.store.createAttempt;
     f.next({ status: 422 }); expect(await f.store.save()).toBe(false);
     expect(f.store.createAttempt).toBe(uncertain);
-    f.store.field('title').set('Changed again'); expect(await f.store.save()).toBe(false);
-    expect(f.sent).toHaveLength(3);
+  });
+
+  it('lets a retry refused as invalid be corrected and created once, keeping the typed values', async () => {
+    const f = fixture(); await f.store.create({ title: 'Bad', credit_days: 45 });
+    // The first request never reached the server; its retry is refused as invalid.
+    f.next({ pending: async () => { if (f.sent.length === 1) { f.next({ pending: null }); throw new TypeError('lost before the server'); } } });
+    f.next({ lose: false });
+    expect(await f.store.save()).toBe(false); expect(f.records.size).toBe(0);
+    const attempt = f.store.createAttempt!;
+    f.next({ status: 422 }); expect(await f.store.save()).toBe(false);
+    expect(f.store.field('title').error.peek()).toBe('Change it');
+    f.store.field('title').set('Good'); f.next({ status: 201 });
+    expect(await f.store.save()).toBe(true);
+    expect(f.records.size).toBe(1); expect(f.sent).toHaveLength(3);
+    expect(f.sent.map(item => item.key)).toEqual([attempt.key, attempt.key, attempt.key]);
+    expect(f.sent[2].body).toMatchObject({ title: 'Good', credit_days: 45 });
+    expect(f.store.lastCreatedKey).toBe(attempt.key);
   });
 
   it('preserves client row keys in a restored attempted draft, including nested rows', async () => {
@@ -356,7 +376,8 @@ describe('create receipt recovery', () => {
     const body = { z: undefined, title: 'Unicode \u00e9', children: { lines: [{ _key: 'a', qty: '1' }, { _key: 'b', qty: '2' }] }, _calculation: { language: 1, model_schema_hash: 'first' } };
     const attempt = prepareCreate(body, null, 7, '/api/order');
     expect(prepareCreate({ _calculation: body._calculation, children: body.children, title: body.title }, attempt, 7, '/api/order')).toBe(attempt);
-    expect(() => prepareCreate({ ...body, _calculation: { ...body._calculation, model_schema_hash: 'changed' } }, attempt, 7, '/api/order')).toThrow('different values');
+    const changed = prepareCreate({ ...body, _calculation: { ...body._calculation, model_schema_hash: 'changed' } }, attempt, 7, '/api/order');
+    expect(changed).toMatchObject({ key: attempt.key, startedAt: attempt.startedAt }); expect(changed.body).not.toBe(attempt.body);
     expect(canonicalCreate(body)).not.toBe(canonicalCreate({ ...body, children: { lines: [...body.children.lines].reverse() } }));
   });
 });

@@ -194,16 +194,17 @@ def test_thousand_row_document_pages_and_loads_with_bounded_statements(make_app)
     assert status == 200 and saved['title'] == 'renamed' and saved['total'] == '2500.00'
     # 2,021 for 100 rows before batching; two of these open and release the operation savepoint,
     # one names who created and changed the record, one removes the saver's unsaved changes,
-    # and one advances the account's draft clock, independent of child-row count.
+    # one advances the account's draft clock and one records that this record's draft was cleared,
+    # independent of child-row count.
     assert Counting.draft_clock_writes == 1
-    assert statements <= 38, statements  # one claims the write lock of the main file only
+    assert statements <= 39, statements  # one claims the write lock of the main file only
 
     last = order['_row_ids']['l999']
     headers = {b'if-match': c('GET', url)[2][b'etag']}
     (status, saved, _), statements = counted(c, 'PATCH', url, {'children': {'lines': {'update': [{'id': last, 'qty': '3'}]}}}, headers=headers)
     assert status == 200 and saved['total'] == '2505.00' and saved['line_count'] == 1000
     assert Counting.draft_clock_writes == 1
-    assert statements <= 40, statements  # one main writer claim and one draft clock advance
+    assert statements <= 41, statements  # one main writer claim, one draft clock advance and one draft clearing
     assert page(c, url, limit=1, offset=999)[1]['items'][0]['qty'] == '3.0000'
 
     status, error, _ = edit(c, url, {'children': {'lines': {'create': [{'qty': '1'}]}}})
@@ -225,7 +226,7 @@ def test_nested_rows_load_with_a_bounded_statement_count(make_app):
     (status, saved, _), statements = counted(c, 'PATCH', url, {'title': 'nested'}, headers={b'if-match': headers[b'etag']})
     assert status == 200, saved
     assert Counting.draft_clock_writes == 1
-    assert statements <= 34, statements  # 9,221 before batching; one main writer claim and one draft clock advance.
+    assert statements <= 35, statements  # 9,221 before batching; one main writer claim, one draft clock advance and one draft clearing.
     first = detail['children']['lines'][0]
     status, parts, _ = page(c, url, f"lines/{first['id']}/parts", limit=5)
     assert status == 200 and parts['total'] == 9 and [part['id'] for part in parts['items']] == [part['id'] for part in first['children']['parts'][:5]]

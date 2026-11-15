@@ -285,9 +285,9 @@ export class ApiClient {
   }
 
   /** Run a model action. A long action answers 202 with {job, record}. */
-  async action(model: string, id: string, name: string, args: Record<string, unknown> = {}, etag: string | null = null, draftRevision?: string) {
+  async action(model: string, id: string, name: string, args: Record<string, unknown> = {}, etag: string | null = null) {
     if (!NAME.test(name)) throw new ApiError(`Unknown action ${name}`, 0, 'response');
-    return this.request<RecordData | { job: unknown; record: RecordData }>('POST', `${recordPath(model, id)}/actions/${name}`, { body: args, ifMatch: etag, draftRevision });
+    return this.request<RecordData | { job: unknown; record: RecordData }>('POST', `${recordPath(model, id)}/actions/${name}`, { body: args, ifMatch: etag });
   }
 
   /**
@@ -295,9 +295,9 @@ export class ApiClient {
    * the move asks for (`remark` and `asks` in `_moves`); the server answers with the record and its new `_moves`,
    * 422 with field errors, or 409 when the move is not available.
    */
-  async move(model: string, id: string, key: string, etag: string | null, values: Record<string, unknown> = {}, draftRevision?: string) {
+  async move(model: string, id: string, key: string, etag: string | null, values: Record<string, unknown> = {}) {
     if (!SEGMENT.test(key)) throw new ApiError(`Unknown move ${key}`, 0, 'response');
-    return this.request<RecordData>('POST', `${recordPath(model, id)}/moves/${key}`, { body: values, ifMatch: etag, draftRevision });
+    return this.request<RecordData>('POST', `${recordPath(model, id)}/moves/${key}`, { body: values, ifMatch: etag });
   }
 }
 

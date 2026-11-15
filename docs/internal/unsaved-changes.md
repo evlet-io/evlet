@@ -33,6 +33,10 @@ evlet_unsaved(user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASC
               PRIMARY KEY (user_id, model, record_id))
 evlet_unsaved_versions(user_id INTEGER PRIMARY KEY REFERENCES evlet_users(id) ON DELETE CASCADE,
                        version INTEGER NOT NULL)
+evlet_unsaved_cleared(user_id INTEGER NOT NULL REFERENCES evlet_users(id) ON DELETE CASCADE,
+                      model TEXT NOT NULL, record_id INTEGER NOT NULL,
+                      version INTEGER NOT NULL, cleared_at INTEGER NOT NULL,
+                      PRIMARY KEY (user_id, model, record_id))
 ```
 
 * Framework step `0005_unsaved_changes` creates the tables (the framework migration ledger), and startup
@@ -70,10 +74,14 @@ Keep the expected draft token after a timeout or lost response: aborting a brows
 does not prove its server worker stopped. Do not silently reread and overwrite after 412.
 A late Save cleanup must DELETE with the token returned by its own draft PUT, so it cannot
 remove another tab's newer copy. Successful record Save, explicit Discard and preference
-clearing invalidate pending empty-state tokens too. A bounded clock row per account and an
-internal version on each entry prevent old requests from becoming valid again after deletion;
-there is no per-record tombstone history. Existing entries keep their tokens when another
-record's draft changes; an empty-state token can conservatively change with other draft work.
+clearing invalidate pending empty-state tokens too. One clock row per account numbers every
+entry and every clearing, so old requests never become valid again after deletion. An entry's
+token is its exact version. With no entry, the token is `unsaved-empty-<clock>`; it stays valid
+until that same record is kept, saved or discarded, which `evlet_unsaved_cleared` records with
+the clock's next value (the row with model `''` and record 0 covers all of a person's records
+when Settings turns keeping off). Keeping, saving or discarding another record never
+invalidates it. Clearing marks expire with the server retention (`unsaved.server_days`) in the
+daily clean-up, and deleting a record removes its marks.
 
 Record PATCH clients can send `X-Evlet-Draft-Revision` with the draft token this editor
 acknowledged, or `preserve` when it has not acknowledged a copy. Successful Save clears only

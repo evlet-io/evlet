@@ -41,6 +41,7 @@ export function derivedField(model: ModelSchema, path: string[], name: string): 
 }
 
 export const STALE_FORMULAS = 'This record was calculated with older formulas, so it cannot be saved yet. Ask an administrator to recalculate it.';
+export const CREATED_BEFORE = 'An earlier attempt already created this record with the values sent then. Check the record list before choosing Start fresh; sending those values again opens it.';
 
 /** Whether two field values mean the same: '' and null are both empty, '1.50' equals '1.5' for numbers, lists by content. */
 export function sameValue(meta: FieldSchema | undefined, a: unknown, b: unknown): boolean {
@@ -336,6 +337,7 @@ export class Table {
       this.record.session?.reorder(this, rows);
       this.rows.set(rows);
     });
+    this.record.noteChange();
   }
 
   // ---------- section rows ----------
@@ -347,12 +349,14 @@ export class Table {
     const list = this.sections.peek().slice(), at = before === null ? list.length : list.findIndex(item => item.before === before);
     list.splice(at < 0 ? list.length : at, 0, section);
     this.sections.set(list);
+    this.record.noteChange();
     return section;
   }
 
   renameSection(key: string, label: string) {
     this.record.assertEditable();
     this.sections.set(this.sections.peek().map(section => section.key === key ? { ...section, label } : section));
+    this.record.noteChange();
   }
 
   /** Remove a section row; its lines stay, under the section before it. */
@@ -364,6 +368,7 @@ export class Table {
       this.sections.set(this.sections.peek().filter(item => item !== section));
       if (section.id) this.removedSections.set([...this.removedSections.peek(), section.id]);
     });
+    this.record.noteChange();
   }
 
   /** Put a section row before line `before` (null: after the last line), after any section already there, or just
@@ -378,6 +383,7 @@ export class Table {
     const at = ahead ? rest.findIndex(item => item.key === ahead) : -1;
     const list = (at >= 0 ? [...rest.slice(0, at), moved, ...rest.slice(at)] : [...rest, moved]).map((item, index) => ({ item, index })).sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map(entry => entry.item);
     this.sections.set(list);
+    this.record.noteChange();
   }
 
   /** The saved state of the section rows of a payload: each anchored before the line that follows it. */
@@ -541,6 +547,7 @@ export class RecordStore {
   /** Retained after an uncertain create; restoring a kept draft restores this too. */
   createAttempt: CreateAttempt | null = null;
   readonly createNotice = cell<string | null>(null, { name: 'record.createNotice' });
+  private saveRun: Promise<void> | null = null;
   /** Synchronous durability hook, called before the request and after a first-attempt 422. */
   onCreateAttempt?: (attempt: CreateAttempt | null, previous: CreateAttempt | null) => string | null;
   /** Every row is loaded and calculations are attached: the record can be edited. */
@@ -693,7 +700,19 @@ export class RecordStore {
   }
 
   /** Save the draft. Returns false when the server refused it; see conflict, formError and field errors. */
-  async save(): Promise<boolean> {
+  save(): Promise<boolean> {
+    const run = this.saveNow(), tracked = run.then(() => undefined, () => undefined);
+    this.saveRun = tracked;
+    void tracked.then(() => { if (this.saveRun === tracked) this.saveRun = null; });
+    return run;
+  }
+
+  /** Resolves once no Save of this record is in flight (including reading its answer). */
+  async settled(): Promise<void> {
+    while (this.saveRun) await this.saveRun;
+  }
+
+  private async saveNow(): Promise<boolean> {
     this.assertEditable();
     const root = this.root, body = buildChanges(root);
     if (!root.isNew && !Object.keys(body).length) return true;
@@ -728,6 +747,11 @@ export class RecordStore {
         try { this.createNotice.set(this.onCreateAttempt?.(null, attempted) ?? null); } catch { /* no create committed */ }
       }
       this.saving.set(false);
+      // The key was used by a create that did commit, with the values sent before (evlet/business.py).
+      if (attempted && error instanceof ConflictError && error.status === 409 && error.message.includes('Idempotency-Key')) {
+        this.formError.set(CREATED_BEFORE);
+        return false;
+      }
       return this.refused(error);
     }
     // Saved. If paging the answer fails, loadError says so and loadAll() retries.
@@ -737,12 +761,12 @@ export class RecordStore {
 
   /** Run a model action on the saved record. The record must have no unsaved changes. */
   async runAction(name: string, args: Record<string, unknown> = {}): Promise<boolean> {
-    return this.command(() => this.api.action(this.meta.name, this.root.id!, name, args, this.etag.peek(), this.draftRevision));
+    return this.command(() => this.api.action(this.meta.name, this.root.id!, name, args, this.etag.peek()));
   }
 
   /** Move by a State rule's key; `values` hold its remark and the fields the move asks for. */
   async move(key: string, values: Record<string, unknown> = {}): Promise<boolean> {
-    return this.command(() => this.api.move(this.meta.name, this.root.id!, key, this.etag.peek(), values, this.draftRevision));
+    return this.command(() => this.api.move(this.meta.name, this.root.id!, key, this.etag.peek(), values));
   }
 
   private async command(send: () => Promise<{ data: any; etag: string | null }>) {

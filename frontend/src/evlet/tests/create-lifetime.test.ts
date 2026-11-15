@@ -24,7 +24,7 @@ async function submit(host: Element, sent: ReturnType<typeof start>['sent']) {
   await until(() => expect(requests(sent, 'POST', /contact$/)).toHaveLength(1));
 }
 
-it('acknowledges a late create without leaving the chosen page or deleting its kept draft', async () => {
+it('acknowledges a late create without leaving the chosen page and removes the created draft', async () => {
   const { host, sent, router, resolve } = deferredCreate();
   await submit(host, sent);
   await router.go('docs', {});
@@ -34,7 +34,8 @@ it('acknowledges a late create without leaving the chosen page or deleting its k
   resolve();
   await until(() => expect(lastToast()).toContain('Contact created (0000000000001)'));
   expect(location.pathname).toBe('/docs');
-  expect(localStorage.getItem(draftKey)).toBe(kept);
+  // The record exists now: neither the draft nor its receipt may offer to create it again.
+  expect(Object.keys(localStorage).filter(key => localStorage.getItem(key)!.includes('Late create'))).toEqual([]);
   expect(requests(sent, 'GET', /contact\/null/)).toHaveLength(0);
 });
 

@@ -5,6 +5,7 @@ from contextlib import contextmanager
 import json
 from pathlib import Path
 import threading
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -87,6 +88,35 @@ def test_empty_draft_version_changes_when_pending_work_must_be_fenced(secured, o
     after = person('GET', route)
     assert after[1]['entry'] is None and after[2][b'etag'] != before
     assert person('PUT', route, body('Old in-flight copy', revision), headers=match(before))[0] == 412
+
+
+def test_work_on_another_record_does_not_invalidate_an_empty_draft_token(secured):
+    """Tab A opened record X and read its empty draft token; tab B keeps, saves and discards record Y meanwhile."""
+    first, _ = project(secured)
+    second, _ = project(secured)
+    person = client(secured, 'editor')
+    revision, route = opened(person, first), path(first)
+    empty = person('GET', route)[2][b'etag']
+    other_revision, other = opened(person, second), path(second)
+    kept = person('PUT', other, body('Other tab', other_revision), headers=match(person('GET', other)[2][b'etag']))
+    assert kept[0] == 200
+    assert person('PATCH', f'/api/project/{second.id}', {'title': 'Saved other'},
+                  headers={b'if-match': other_revision.encode(), b'x-evlet-draft-revision': kept[2][b'etag']})[0] == 200
+    again = person('PUT', other, body('Other again', opened(person, second)), headers=match(person('GET', other)[2][b'etag']))
+    assert person('DELETE', other, headers=match(again[2][b'etag']))[0] == 204
+    # The first keep of X with the token it read succeeds.
+    own = person('PUT', route, body('Tab A draft', revision), headers=match(empty))
+    assert own[0] == 200
+    assert person('GET', route)[1]['entry']['changes']['values']['title'] == 'Tab A draft'
+    # A concurrent keep, save or discard of the same record is still detected.
+    assert person('PUT', route, body('Stale tab', revision), headers=match(empty))[0] == 412
+    assert person('DELETE', route, headers=match(own[2][b'etag']))[0] == 204
+    assert person('PUT', route, body('Late request', revision), headers=match(empty))[0] == 412
+    fresh = person('GET', route)[2][b'etag']
+    assert person('PUT', route, body('After reading again', revision), headers=match(fresh))[0] == 200
+    # A forged token from the future is not a valid empty state.
+    assert person('DELETE', route)[0] == 204
+    assert person('PUT', route, body('Forged', revision), headers=match(b'"unsaved-empty-999999999"'))[0] == 412
 
 
 @pytest.mark.parametrize('kind', ['document', 'plain'])
@@ -303,3 +333,15 @@ def test_delayed_writer_keeps_the_copy_it_confirms(secured, monkeypatch, clock_b
     assert dict(result[2])[b'etag'] == f'"unsaved-{saved["version"]}"'.encode()
     assert saved['saved_at'] == now[0]
     assert json.loads(saved['changes'])['values']['title'] == 'Confirmed after wait'
+
+
+def test_clearing_marks_expire_with_the_entries_retention(secured):
+    record, _ = project(secured)
+    person = client(secured, 'editor')
+    route = path(record)
+    assert person('DELETE', route)[0] == 204
+    with secured.database._connection() as connection:
+        assert connection.run(qb.select('evlet_unsaved_cleared', qb.count()).where(model='project', record_id=record.id)).value() == 1
+    assert secured.business.unsaved.purge(now=int(time.time()) + 31 * 86400) == 0
+    with secured.database._connection() as connection:
+        assert connection.run(qb.select('evlet_unsaved_cleared', qb.count()).where(model='project', record_id=record.id)).value() == 0

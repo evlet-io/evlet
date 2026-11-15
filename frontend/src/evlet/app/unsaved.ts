@@ -106,8 +106,9 @@ export class LocalUnsaved {
       for (const [old] of this.receipts(limits, true)) this.storage.removeItem(old);
       const previous = this.storage.getItem(key);
       if (previous !== null) {
+        // The same key may carry corrected values (model/create-attempt.ts); another start time is another attempt.
         const held = (JSON.parse(previous) as ReceiptEntry).entry.createAttempt!;
-        if (held.body !== attempt.body || held.startedAt !== attempt.startedAt) return RECEIPT_PENDING;
+        if (held.startedAt !== attempt.startedAt) return RECEIPT_PENDING;
       } else if (this.receipts(limits).length >= limits.browser_entries) return RECEIPT_FULL;
       this.storage.setItem(key, text);
       // Another tab may already have discovered this published receipt. Retain it if
@@ -321,6 +322,9 @@ export async function keepChanges(ctx: AppContext, model: ScreenModel, store: Re
     // the server; a retry keeps the old token, so it cannot overwrite a later acknowledged copy.
     draftVersions.set(store, { base: revision, etag: result.etag });
     store.draftRevision = result.etag;
+    // A Save sent before this copy was written could not clear it: wait for that Save, and when it
+    // saved these edits, remove the copy this request wrote so it does not outlive the Save.
+    if (store.saving.peek()) await store.settled();
     if (store.etag.peek() !== revision && !store.dirty.peek()) {
       try { await timeout(ctx.api.discardUnsaved(model.name, id, result.etag), WAIT_MS); }
       catch (error) { if (!(error instanceof ApiError && error.status === 412)) throw error; }
@@ -352,6 +356,7 @@ export function unfinishedStructure(row: Row): boolean {
 
 export interface DraftState { kind: 'idle' | 'pending' | 'keeping' | 'kept' | 'failed'; text: string }
 export const KEEP_PAUSE_MS = 1500;
+const TYPING = 'Latest text is not kept yet. Finish the field to keep it.';
 
 /** Keep committed edits after a pause and on tab hide. The status never promises offline recovery
  * for server drafts, and an unfinished text field is explicitly not covered by the last copy. */
@@ -368,19 +373,24 @@ export function keepWhenHidden(ctx: AppContext, model: ScreenModel, store: Recor
   const run = async () => {
     cancelTimer();
     if (!alive || !keepsUnsaved(ctx, model) || !dirty() || store.saving.peek()) return;
-    if (typing()) { state.set({ kind: 'pending', text: 'Latest text is not kept yet. Finish the field to keep it.' }); return; }
     if (running) { again = true; return; }
+    // Committed edits are always kept, also while another field is being typed in; only the
+    // status says that text still in a field is not part of the kept copy.
     const version = store.editVersion.peek();
-    if (version === keptVersion) return;
+    if (version === keptVersion) { if (typing()) state.set({ kind: 'pending', text: TYPING }); return; }
     running = true;
     state.set({ kind: 'keeping', text: 'Keeping draft…' });
     const failure = await keepChanges(ctx, model, store, isNew);
     running = false;
     if (!alive) return;
     if (!keepsUnsaved(ctx, model)) { state.set({ kind: 'idle', text: '' }); return; }
-    if (version === store.editVersion.peek() && !typing() && dirty()) {
+    if (version === store.editVersion.peek() && dirty()) {
       if (failure) state.set({ kind: 'failed', text: `Draft not kept. ${failure}` });
-      else { keptVersion = version; state.set({ kind: 'kept', text: isNew ? 'Draft kept on this browser. Not created.' : 'Draft kept on the server. Not saved to the record.' }); }
+      else {
+        keptVersion = version;
+        state.set(typing() ? { kind: 'pending', text: TYPING }
+          : { kind: 'kept', text: isNew ? 'Draft kept on this browser. Not created.' : 'Draft kept on the server. Not saved to the record.' });
+      }
     }
     if (again || version !== store.editVersion.peek()) { again = false; schedule(); }
   };
@@ -388,7 +398,7 @@ export function keepWhenHidden(ctx: AppContext, model: ScreenModel, store: Recor
     cancelTimer();
     if (!alive || !keepsUnsaved(ctx, model) || !dirty() || store.saving.peek()) { state.set({ kind: 'idle', text: '' }); return; }
     if (store.editVersion.peek() === keptVersion && !typing()) return;
-    state.set({ kind: 'pending', text: typing() ? 'Latest text is not kept yet. Finish the field to keep it.' : 'Draft not kept yet.' });
+    state.set({ kind: 'pending', text: typing() ? TYPING : 'Draft not kept yet.' });
     timer = setTimeout(() => { timer = null; void run(); }, KEEP_PAUSE_MS);
   };
   effect(() => {

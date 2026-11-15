@@ -307,8 +307,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const live = saveViews.get(store);
     if (live) live(ok, created);
     else if (ok) {
-      // Keep any draft made while this request was pending. A notification acknowledges the
-      // actual server result without changing the page the person chose to visit meanwhile.
+      // The created record's own kept draft goes, so New does not offer to create it again; the
+      // receipt key spares a newer draft made while this request was pending. A notification
+      // acknowledges the server result without changing the page the person chose to visit meanwhile.
+      if (created && store.lastCreatedKey) ctx.unsaved.remove(name, store.lastCreatedKey);
       toast(created ? `${model.label} created (${store.lastSavedId}). Open ${model.plural.toLowerCase()} to view it.` : `${model.label} saved`, { duration: 8000 });
     } else toast(`${model.label} was not saved. ${store.formError.peek() ?? 'Reopen the draft to retry.'}`, { icon: 'info', duration: 8000 });
     return ok;

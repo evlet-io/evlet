@@ -1041,8 +1041,9 @@ keeps theirs or the saved one per field, or discards all of it.
 
 While a record stays open, committed edits are kept after a 1.5-second pause, with one
 active browser keep at a time per record. The small draft status distinguishes pending, keeping, kept
-and failed attempts; failures offer Retry. Text still being edited is not described as kept.
-Hiding the tab attempts the same bounded operation. Existing-record drafts need a working
+and failed attempts; failures offer Retry. Committed edits are kept even while another field is
+being typed in; the status then says the text still in that field is not kept yet. Hiding the
+tab attempts the same bounded operation. Moving rows and editing sections count as edits too. Existing-record drafts need a working
 connection: there is no offline queue or implicit browser copy of their data. A mobile browser
 that kills a tab before an acknowledged keep can lose those latest edits. Save before closing
 when the status is not kept. The current draft format does not represent row reordering or
@@ -1052,9 +1053,11 @@ claiming a partial draft is complete.
 Kept drafts have their own version, separate from the record revision. A timed-out request may
 still finish at the server, but cannot overwrite a newer acknowledged copy. The browser keeps
 its expected version across retries; if another tab or earlier request changed that copy,
-keeping pauses and the open edits stay intact. Restore or discard an existing kept draft before
+keeping pauses and the open edits stay intact. Keeping, saving or discarding a different
+record, in any tab, does not count as such a change. Restore or discard an existing kept draft before
 replacing it. Save and discard clear only the copy this view acknowledged, preserving a newer
-copy from another tab. These checks do not replace the record's normal Save version check.
+copy from another tab. A keep that finishes while a Save is still on its way waits for that Save
+and removes the copy it wrote once the Save has stored those edits, also when the view closed. These checks do not replace the record's normal Save version check.
 
 A conflicting Save offers **Compare changes**. It reads the latest record separately and shows
 both values for overlapping edits. Cancel or a failed read preserves the open draft. Applying
@@ -1069,8 +1072,12 @@ Restore and Start fresh. Copies already kept remain reviewable when future keepi
 Create carries a request receipt so an explicit retry of the same values can recover a lost
 response without creating the record twice. The receipt is kept with the new browser draft
 before sending, when browser keeping is enabled and available. Restoring that draft restores
-the receipt too. The browser allows retries for 23 hours; changed values or an expired receipt
-require checking the record list before starting fresh. There is no automatic retry. Without
+the receipt too. The browser allows retries for 23 hours; an expired receipt requires checking
+the record list before starting fresh. Changed values, such as a field corrected after the server
+refused a retry as invalid, are sent with the same receipt key: the server creates at most one
+record per key, and when the lost first request did create one it answers that the record already
+exists instead of creating another. A create that finishes after its view closed removes its kept
+draft, so New does not offer to create that record again. There is no automatic retry. Without
 browser storage, the form warns to keep the tab open and retry there. If an older kept copy
 cannot be updated with the receipt, Create waits for an explicit restore/discard decision
 instead of deleting that copy. Starting fresh while another tab is creating does not let its

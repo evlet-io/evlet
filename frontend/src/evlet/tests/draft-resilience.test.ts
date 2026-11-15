@@ -97,6 +97,28 @@ describe('visible bounded draft keeping', () => {
     expect(keepUnsaved).toHaveBeenCalledTimes(1);
     expect(keeper.state.peek().kind).toBe('idle');
   });
+  it('keeps a committed field when the tab is hidden while another field is being typed in', async () => {
+    vi.useFakeTimers();
+    const keepUnsaved = vi.fn().mockResolvedValue({ dropped: [], etag: '"draft1"' });
+    const store = await saved();
+    const frame = document.createElement('div'); frame.innerHTML = '<div class="fld"><textarea></textarea></div>';
+    let keeper!: ReturnType<typeof keepWhenHidden>;
+    stops.push(scope(() => { keeper = keepWhenHidden({ api: draftApi({ keepUnsaved }), me: cell(null) } as any, store.meta as any, store, false, () => store.dirty.peek()); keeper.watch(frame); }));
+    store.field('title').set('Committed A');
+    frame.querySelector('textarea')!.dispatchEvent(new Event('input', { bubbles: true }));
+    const visibility = Object.getOwnPropertyDescriptor(document, 'visibilityState');
+    Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+      await vi.advanceTimersByTimeAsync(0);
+    } finally {
+      if (visibility) Object.defineProperty(document, 'visibilityState', visibility); else delete (document as any).visibilityState;
+    }
+    expect(keepUnsaved).toHaveBeenCalledOnce();
+    expect((keepUnsaved.mock.calls[0] as any[])[2]).toMatchObject({ values: { title: 'Committed A' } });
+    expect(keeper.state.peek()).toMatchObject({ kind: 'pending', text: expect.stringContaining('Latest text is not kept') });
+  });
+
   it('does not mark one invalid field kept when another field commits', async () => {
     vi.useFakeTimers();
     const keepUnsaved = vi.fn().mockResolvedValue({ dropped: [], etag: '"draft1"' });
@@ -108,10 +130,13 @@ describe('visible bounded draft keeping', () => {
     first.value = 'invalid still visible'; first.dispatchEvent(new Event('input', { bubbles: true })); first.dispatchEvent(new Event('change', { bubbles: true }));
     second.dispatchEvent(new Event('input', { bubbles: true })); store.field('title').set('Other field committed'); second.dispatchEvent(new Event('change', { bubbles: true }));
     await vi.advanceTimersByTimeAsync(KEEP_PAUSE_MS);
-    expect(keeper.state.peek().text).toContain('Latest text is not kept'); expect(keepUnsaved).not.toHaveBeenCalled();
+    // The committed field is kept; the status still says the invalid text is not.
+    expect(keepUnsaved).toHaveBeenCalledOnce();
+    expect((keepUnsaved.mock.calls[0] as any[])[2]).toMatchObject({ values: { title: 'Other field committed' } });
+    expect(keeper.state.peek()).toMatchObject({ kind: 'pending', text: expect.stringContaining('Latest text is not kept') });
     first.removeAttribute('aria-invalid'); store.field('rate').set('2.00'); first.dispatchEvent(new Event('change', { bubbles: true }));
     await vi.advanceTimersByTimeAsync(KEEP_PAUSE_MS);
-    expect(keeper.state.peek().kind).toBe('kept'); expect(keepUnsaved).toHaveBeenCalledOnce();
+    expect(keeper.state.peek().kind).toBe('kept'); expect(keepUnsaved).toHaveBeenCalledTimes(2);
   });
 
 });

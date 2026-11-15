@@ -25,12 +25,25 @@ TABLE = TableDefinition('evlet_unsaved', (
     Column('size', 'INTEGER', required=True),
     Column('version', 'INTEGER', required=True, default=0),
 ), primary_key=('user_id', 'model', 'record_id'))
-# One bounded clock per account makes an empty entry distinguishable after Save or Discard,
-# without retaining a tombstone for every record the person ever edited.
+# One clock per account numbers every kept copy and every clearing, so tokens never repeat.
 VERSIONS = TableDefinition('evlet_unsaved_versions', (
     Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
     Column('version', 'INTEGER', required=True),
 ), primary_key=('user_id',))
+# When a record's entry was last cleared (Save, Discard, an empty keep, clean-up), on that clock. An empty-state
+# token "unsaved-empty-<clock>" stays valid while no entry exists and nothing cleared that same record after it was
+# issued, so work on other records never invalidates it. The row (model '', record 0) is the floor for all of a
+# person's records (Settings turned keeping off). Rows expire with the entries' retention: by then no request that
+# could hold an older token is still in flight.
+CLEARED = TableDefinition('evlet_unsaved_cleared', (
+    Column('user_id', 'INTEGER', required=True, references='evlet_users', on_delete='cascade'),
+    Column('model', 'TEXT', required=True),
+    Column('record_id', 'INTEGER', required=True),
+    Column('version', 'INTEGER', required=True),
+    Column('cleared_at', 'INTEGER', required=True),
+), primary_key=('user_id', 'model', 'record_id'))
+EVERY = ('', 0)
+EMPTY = re.compile(r'"unsaved-empty-([0-9]{1,18})"')
 TASK = 'evlet_unsaved_purge'
 BATCH = 500
 DAY = 86400
@@ -53,7 +66,9 @@ def ensure(connection):
     if 'version' not in connection.columns('evlet_unsaved'):
         connection.add_column('evlet_unsaved', Column('version', 'INTEGER', required=True, default=0))
     connection.ensure_table(VERSIONS)
+    connection.ensure_table(CLEARED)
     connection.ensure_index('evlet_unsaved_saved_at', 'evlet_unsaved', ('saved_at',))
+    connection.ensure_index('evlet_unsaved_cleared_at', 'evlet_unsaved_cleared', ('cleared_at',))
 
 
 def autosave(model):
@@ -136,6 +151,13 @@ class Unsaved:
             removed += len(rows)
             if len(rows) < BATCH:
                 break
+        for _ in range(batches):
+            rows = connection.run(qb.select('evlet_unsaved_cleared', 'user_id', 'model', 'record_id')
+                                  .where(qb.lt('cleared_at', cutoff)).order_by('cleared_at').limit(BATCH)).all()
+            for row in rows:
+                connection.run(qb.delete('evlet_unsaved_cleared').where(user_id=row[0], model=row[1], record_id=row[2]))
+            if len(rows) < BATCH:
+                break
         cap = self.limit('unsaved.server_entries')
         for (user_id,) in connection.run(qb.select('evlet_unsaved', 'user_id').group_by('user_id').having(qb.gt(qb.count(), cap))
                                          .order_by('user_id').limit(BATCH)).all():
@@ -159,36 +181,66 @@ class Unsaved:
                               .on_conflict('user_id').do_update(version=qb.col('version') + 1).returning('version')).id
 
     @staticmethod
+    def clock(connection, user_id):
+        return connection.run(qb.select('evlet_unsaved_versions', 'version').where(user_id=user_id)).value() or 0
+
+    @staticmethod
     def etag(connection, user_id, model_name, record_id):
         row = connection.run(qb.select('evlet_unsaved', 'version').where(user_id=user_id, model=model_name, record_id=record_id)).one()
         if row is not None:
             return f'"unsaved-{row[0]}"'
-        version = connection.run(qb.select('evlet_unsaved_versions', 'version').where(user_id=user_id)).value() or 0
-        return f'"unsaved-empty-{version}"'
+        return f'"unsaved-empty-{Unsaved.clock(connection, user_id)}"'
+
+    @staticmethod
+    def matches(connection, user_id, model_name, record_id, expected):
+        """Whether `expected` (bytes) still names this record's state: the kept copy's exact version, or, with no copy,
+        an empty-state token issued after the record was last cleared."""
+        row = connection.run(qb.select('evlet_unsaved', 'version').where(user_id=user_id, model=model_name, record_id=record_id)).one()
+        if row is not None:
+            return expected == f'"unsaved-{row[0]}"'.encode()
+        found = EMPTY.fullmatch(expected.decode('ascii', 'replace'))
+        if found is None:
+            return False
+        cleared = connection.run(
+            qb.select('evlet_unsaved_cleared', qb.max('version')).where(user_id=user_id).where(qb.or_(
+                qb.and_(qb.eq('model', model_name), qb.eq('record_id', record_id)),
+                qb.and_(qb.eq('model', EVERY[0]), qb.eq('record_id', EVERY[1]))))).value() or 0
+        return cleared <= int(found[1]) <= Unsaved.clock(connection, user_id)
 
     @classmethod
     def check_match(cls, connection, user_id, model_name, record_id, expected):
-        if expected is not None and expected != cls.etag(connection, user_id, model_name, record_id).encode():
+        if expected is not None and not cls.matches(connection, user_id, model_name, record_id, expected):
             raise AccessError(412, 'The kept draft changed in another tab or an earlier request. Your open edits were not kept. Review the draft or save the record before continuing.')
+
+    @staticmethod
+    def cleared(connection, user_id, model_name, record_id):
+        """Fence requests that read this record's state before now; returns the clearing's version."""
+        version = Unsaved.advance(connection, user_id)
+        connection.run(qb.insert('evlet_unsaved_cleared', user_id=user_id, model=model_name, record_id=record_id,
+                                 version=version, cleared_at=int(time.time()))
+                       .on_conflict('user_id', 'model', 'record_id')
+                       .do_update(version=qb.col('excluded.version'), cleared_at=qb.col('excluded.cleared_at')))
+        return version
 
     @staticmethod
     def record_deleted(connection, model_name, record_id):
         """Every person's entry for a deleted record, in the delete's transaction."""
         connection.run(qb.delete('evlet_unsaved').where(model=model_name, record_id=record_id))
+        connection.run(qb.delete('evlet_unsaved_cleared').where(model=model_name, record_id=record_id))
 
     @staticmethod
     def record_saved(connection, user, model_name, record_id, *, if_match=None):
         """Clear the saver's acknowledged copy in the save transaction; legacy callers clear any copy."""
         if user is not None and getattr(user, 'id', 0):
-            remove = if_match is None or if_match == Unsaved.etag(connection, user.id, model_name, record_id).encode()
-            # Even a save preserving another tab's draft invalidates older empty-state requests.
-            Unsaved.advance(connection, user.id)
+            remove = if_match is None or Unsaved.matches(connection, user.id, model_name, record_id, if_match)
+            # Even a save preserving another tab's draft invalidates this record's older empty-state requests.
+            Unsaved.cleared(connection, user.id, model_name, record_id)
             if remove:
                 connection.run(qb.delete('evlet_unsaved').where(user_id=user.id, model=model_name, record_id=record_id))
 
     @staticmethod
     def clear_user(connection, user_id):
-        Unsaved.advance(connection, user_id)
+        Unsaved.cleared(connection, user_id, *EVERY)
         connection.run(qb.delete('evlet_unsaved').where(user_id=user_id))
 
     # ---------- HTTP ----------
@@ -237,8 +289,6 @@ class Unsaved:
         return record
 
     def put(self, user, model, name, record_id, body, *, if_match=None):
-        if not self.enabled(user):
-            raise AccessError(403, 'You turned off keeping unsaved changes in Settings.')
         checked_body(body, {'changes', 'base_revision'}, 'Send changes and base_revision', exact=True)
         revision = body['base_revision']
         if not isinstance(revision, str) or not REVISION.fullmatch(revision):
@@ -251,6 +301,7 @@ class Unsaved:
         if size > kb * 1024:
             raise AccessError(413, TOO_LARGE.format(kb=kb))
         with self.database.transaction() as tx:
+            # Read in the write transaction, so turning keeping off in another tab cannot race this write.
             if not self.enabled(user, tx.connection):
                 raise AccessError(403, 'You turned off keeping unsaved changes in Settings.')
             self.access(tx, user, model, record_id)
@@ -277,7 +328,7 @@ class Unsaved:
         if forget:
             with self.database.transaction() as tx:
                 # Permission/expiry cleanup must not delete a newer draft written after the read.
-                if self.etag(tx.connection, user.id, name, record_id) == etag:
+                if self.matches(tx.connection, user.id, name, record_id, etag.encode()):
                     self.record_saved(tx.connection, user, name, record_id)
                     etag = self.etag(tx.connection, user.id, name, record_id)
         if isinstance(answer, AccessError):
