@@ -4,7 +4,17 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.7 (15-11-2026)
+
+### Upgrading to 0.4.7
+
+- **Run `evlet migrate` after upgrading.** Framework steps `0012_session_generations` and
+  `0013_create_requests` add the session generation columns and the create receipts table; an
+  instance with pending steps refuses to serve until they run. `evlet upgrade` runs them for you.
+- **Readonly settings use their default.** A setting or preference declared `read_only=True`
+  ignores any value stored before it became read only; change its default in code instead.
+- **Controls list routes page.** `GET /api/_controls/users` and `GET /api/_controls/keys` return
+  at most 100 entries by default; follow `offset` or `next_before` for the rest.
 
 ### Added
 
@@ -16,6 +26,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **Hidden fields cannot be probed by echoing guesses.** A create or update that sends a field
+  value the caller cannot read is refused whatever was guessed, instead of being dropped as an
+  unchanged echo. Link filters in `Context.list` and measures check row access as HTTP does.
+- **Restoring a release brings back every row.** A document with more rows than one page, and
+  nested rows deleted since the release, restore completely under their original ids.
+- **Discovery describes nested and sectioned documents.** Read and write schemas cover child
+  rows at every depth, section rows and the row-change sets the server accepts
+  ([request-integrity.md](docs/request-integrity.md)).
 - **`evlet upgrade` stages the new release and covers every instance of a project.** pip installs
   into a copy of `.venv`, and the live environment changes only after every affected instance is
   planned, stopped and backed up. `--all-instances` upgrades instances that share the

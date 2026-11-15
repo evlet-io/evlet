@@ -252,6 +252,8 @@ RELEASED_CHECKSUMS = {
     '0009_admin_username': '93214ff2f9ded75e9ade48ef3a41159e9681fb95bd7ef5fe27ac64c270e117af',
     '0010_split_files': '025f9ac009fd65d7b0230fa3fb3694aeae047c50e959ba01b04a795cc1c4f545',
     '0011_state_manager': '3a67380a952a2e5dd2b4a58e1d04878912cdafbfe5096296a823bda12236cf17',
+    '0012_session_generations': 'dcfa74679dc3915157c06181c28dd17c24e40b84ac58be0b50c84773ed47fb2a',
+    '0013_create_requests': 'd019ab663cd010112c3878a1d1e6db3690bed78911281fb466035cfd750440b6',
 }
 
 
