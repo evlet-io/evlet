@@ -33,13 +33,13 @@ Line counts are today's, on the #183 base.
 | `evlet/models.py` | 647 | ~70 | `Meta.revisable` and the `revises` field, `unique_and_required`, `before_close` checks, `closes()`, `Model.validate()`, the `confirmable`/`track_changes` triggers of declaration mode |
 | `evlet/documents.py` | 2106 | ~230 | `Context.confirm/cancel/reopen/revisions/snapshot/diff/record_approval/reference_effect/lifecycle_execution/document/void/revise/unpost/repost/_correct`, `Change` and the `changed()` calls (write, delete), `check_close`/`before_close`, lifecycle branches of `operate`, the `'confirmed'` reason of `keeps_saved_results`, `Model.validate()` calls in `validate_tree` |
 | `evlet/effects.py` | 943 | ~60 | `check_state`'s move-graph search (replaced by "`on` is a release state"), void handling in `has_postings`, unpost wording |
-| `evlet/journal.py` | 842 | ~50 | `voided`, `revised`, `unposted`, `reposted`, `post_confirmation_edit`, `confirmed`/`reconfirmed`/`cancelled`/`reopened` writers, `event_data` calls |
+| `evlet/activity.py` | 842 | ~50 | `voided`, `revised`, `unposted`, `reposted`, `post_confirmation_edit`, `confirmed`/`reconfirmed`/`cancelled`/`reopened` writers, `event_data` calls |
 | `evlet/sequences.py` | 700 | ~15 | `assign_on="confirm"` and lifecycle naming |
 | `evlet/business.py`, `permissions.py`, `routing.py`, `eva.py`, `tools.py`, `mcp.py`, `ui/metadata.py` | | ~150 | routes `/confirm`, `/cancel`, `/reopen`, `/revise`, `/void`, `/unpost`, `/repost`, `/revisions`, `/snapshot`, lifecycle `/diff`; `_void`/`_revise`/`_unpost`/`_repost`/`_lifecycle_actions`/`revised_by`; operations `confirm`, `cancel`, `void`, `revise`, `unpost`, `repost` in permissions; Eva `change_state` arguments |
 | `evlet/__init__.py` | | exports | `Move`, `validate` namespace, `BoundDocument` |
 | frontend `record-page.ts`, `meta.ts`, `api.ts`, `client.ts`, `ui/doc.ts` | 1420 + 368 + … | ~300 | `_lifecycle_actions` path, revise/unpost/repost/void dialogs, Revisions card, `revised_by` banner, the name-regex colour guess |
-| Tests | | ~2,400 | `test_unpost_repost.py` (521), `test_lifecycle.py` (630), most of `test_corrections.py` (595); `before_close`/`changed` parts of `test_derive_close.py`. Ported, not deleted: `test_states.py`, `test_effects.py`, `test_journal.py`, `test_sequences.py`, `test_system_moves_jobs.py`, `test_move_values.py`, `test_status_display.py`, `test_handler_session.py`, `test_testcrm.py`, `test_tools.py` and the other files that use `Move(` incidentally (31 files) |
-| Docs | | rewritten | `states-actions.md` (772), `document-lifecycle.md` (216), `lifecycle-specification.md` (549, deleted), `effects.md`, `journal.md`, `amendment-v2.md`, `tools.md`, API docs, CHANGELOG |
+| Tests | | ~2,400 | `test_unpost_repost.py` (521), `test_lifecycle.py` (630), most of `test_corrections.py` (595); `before_close`/`changed` parts of `test_derive_close.py`. Ported, not deleted: `test_states.py`, `test_effects.py`, `test_activity.py`, `test_sequences.py`, `test_system_moves_jobs.py`, `test_move_values.py`, `test_status_display.py`, `test_handler_session.py`, `test_testcrm.py`, `test_tools.py` and the other files that use `Move(` incidentally (31 files) |
+| Docs | | rewritten | `states-actions.md` (772), `document-lifecycle.md` (216), `lifecycle-specification.md` (549, deleted), `effects.md`, `activity.md`, `amendment-v2.md`, `tools.md`, API docs, CHANGELOG |
 
 Correction to the brief: `tests/test_cli_lifecycle.py` tests the package and instance lifecycle
 (`evlet install`, `setup`, locks), not documents. It stays. There is no document-lifecycle CLI
@@ -53,7 +53,7 @@ command to remove.
 | 2. Hooks | `validate`, `state("a", "b")`, `state.exit("a")`, `release` decorators; collecting them per model in class order with override by name; running one kind with `self.is_new`, `self.before`, `self.context`, `self.release` | 70 |
 | 3. Build | `configure(model)` from the model build step; `compile(registry)`: rule and level guards on the existing guard engine, remark `required_when`, asks (derived from `applies_when`/`required_when`, plus `ask=`), `by` resolved to roles and user fields | 90 |
 | 4. Locks and ordinary writes | state field never written by ordinary writes, lock checks on records and rows, `versioned=False` exceptions, delete and attachment refusals | 110 |
-| 5. Moves | rule choice, the eight-step order (rule check, exit hooks, state change, enter hooks, settle, validate, release, write and log), remark checks, journal entry with rule key, remark and rule-set version | 130 |
+| 5. Moves | rule choice, the eight-step order (rule check, exit hooks, state change, enter hooks, settle, validate, release, write and log), remark checks, activity entry with rule key, remark and rule-set version | 130 |
 | 6. Approvals (PR 2) | levels decided at entry and logged, current level from the log of this stay, one person per level, creator rule, reject rules, `pending`, `awaiting(context, model)` | 110 |
 | 7. Releases, snapshots, versions (PR 3) | content hash (versioned fields and rows), release on entering a release state only when the hash changed, manual release, lazy snapshot with drift check, `_version`, versions list, one version (permission-projected), diff | 150 |
 | 8. Restore (PR 4) | forward-only restore with its conflict cases, `dependents()` moved from corrections | 100 |
@@ -113,7 +113,7 @@ made. Hooks of one kind run in class order; a subclass overrides one by name.
 Order on a move, as the spec: 1 rule check, 2 snapshot if leaving a release state, then
 `@state.exit(old)`, 3 state changes, 4 `@state(new)`, 5 settle, 6 `@validate`, 7 if the new state
 is a release state and the content hash differs from the last release: `@release`, settle,
-`@validate`, insert the release, 8 write, journal, effects. A `ValidationError` (or `ValueError`)
+`@validate`, insert the release, 8 write, activity, effects. A `ValidationError` (or `ValueError`)
 anywhere rolls back the operation's savepoint: the move, the release, the snapshot and every
 record the hooks wrote.
 
@@ -139,9 +139,9 @@ only the trigger changes (about 20 lines), instead of every app rewriting its po
 release is made in `on` (so an unchanged reissue posts nothing) and reversed when a rule leaves
 `on`, before `@state.exit` hooks run. Apps that post by hand use `@release` and `@state.exit`.
 
-## Journal and model changes
+## Activity and model changes
 
-`evlet_journal` gains five nullable scalar columns: `rule` (rule key), `remark`, `level`
+`evlet_activity` gains five nullable scalar columns: `rule` (rule key), `remark`, `level`
 (approval level index), `base` (latest release number when the entry was written) and
 `rules_version` (`evlet_config.version`). Entry kinds added: `approved`, `rejected` (already
 known), `released`, `restored`, `snapshot`; moves keep `moved`. Kinds removed from writers:
@@ -213,7 +213,7 @@ Python: `context.move(model, id, key, *, remark=None, **values)`, `context.relea
 ## Migration step
 
 `FrameworkStep('0011_state_manager', ..., registry=True)`:
-1. Add the five journal columns where missing; create `evlet_releases`.
+1. Add the five activity columns where missing; create `evlet_releases`.
 2. Copy `evlet_document_revisions` rows into `evlet_releases` as release `revision - 1` plus its
    snapshot row (the revision stored the full document), hashed with the new content hash.
 3. Write `evlet_document_lifecycle` states into the model's State column when the model now has a
@@ -249,7 +249,7 @@ New `tests/test_statemanager.py`, real SQLite, no mocks:
 - Eva and MCP moves go through the same checks;
 - field permissions on old versions.
 
-Ported to the new API: locks, guards, postings, journal, sequences on state entry, system
+Ported to the new API: locks, guards, postings, activity, sequences on state entry, system
 moves, move values, status display, handler sessions, testCRM. Deleted: the tests of removed
 features. Every PR runs the full `pytest`, `npm test` and `npm run build`, and checks the
 Playground (sign-in lands on the first list, a record moves and saves, `/docs` reachable).
@@ -259,7 +259,7 @@ Playground (sign-in lands on the first list, a record moves and saves, `/docs` r
 All stacked drafts on `agent/remove-postgres-adapter-seam-2b0e25`, retargeted to `main` when
 #183 merges:
 
-1. **Engine, rules, hooks and removals.** Sections 1–5 and 9; all deletions above; journal
+1. **Engine, rules, hooks and removals.** Sections 1–5 and 9; all deletions above; activity
    columns; `/moves/{key}`; Eva `change_state`; `versioned=False`; effects post on entering and
    reverse on leaving `on`; frontend kept working and its deletions; examples and docs.
 2. **Approval levels.** Section 6 and its tests and docs.
@@ -277,8 +277,8 @@ build step with `statemanager.configure`. Phase 3 should start from the merged r
 
 ## Hidden dependencies the inventory found
 
-- `GET /history` (the journal) is dispatched through `lifecycle.route` (`business.py:808`); it moves
-  to `journal.route` before `lifecycle.py` goes.
+- `GET /history` (the activity) is dispatched through `lifecycle.route` (`business.py:808`); it moves
+  to `activity.route` before `lifecycle.py` goes.
 - `Context.__init__` imports `SOURCES` from `lifecycle.py`; the tuple moves to `documents.py`.
 - `permissions.CORRECTIONS` feeds `controls.OPERATIONS` and the API-scope gate (`app.py:266`);
   `confirm`, `cancel`, `reopen`, `void`, `revise`, `unpost`, `repost` leave it, `release` and

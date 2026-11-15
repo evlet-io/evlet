@@ -264,7 +264,7 @@ def test_admin_reopens_a_won_deal_and_wins_it_again(crm):
     assert admin.write('POST', url + '/moves/reopen', {})[1]['fields'] == {'remark': 'Reopen needs a remark'}
     status, body, _ = admin.write('POST', url + '/moves/reopen', {'remark': 'Signed with the wrong entity'})
     assert status == 200 and (body['stage'], body['number']) == ('negotiation', won['number']), body
-    entry = next(item for item in admin('GET', url + '/journal?limit=5')[1]['items'] if item['kind'] == 'moved')
+    entry = next(item for item in admin('GET', url + '/activity?limit=5')[1]['items'] if item['kind'] == 'moved')
     assert (entry['rule'], entry['remark'], entry['data']['to']) == ('reopen', 'Signed with the wrong entity', 'negotiation')
     status, body, _ = admin.write('POST', url + '/moves/won', {})
     assert status == 200 and (body['stage'], body['number']) == ('won', won['number']), body
@@ -338,14 +338,14 @@ def test_two_sessions_editing_the_same_deal_conflict(crm):
     assert second('PATCH', url, {'title': 'Production planning and costing'}, headers={b'if-match': fresh[2][b'etag']})[1]['next_step'] == 'Book the demo'
 
 
-def test_activity_journal_records_moves_the_win_and_what_people_add(crm):
+def test_activity_records_moves_the_win_and_what_people_add(crm):
     sara = login(crm, 'sara')
     sara_id = sara('GET', '/api/auth/session')[1]['user']['id']
     url = deal_url(sara, 'Production planning')
     title = sara('GET', url)[1]['title']
     assert sara.write('POST', url + '/moves/negotiation', {})[0] == 200
     assert sara.write('POST', url + '/moves/won', {})[0] == 200
-    page = sara('GET', url + '/journal?limit=50&offset=0')[1]
+    page = sara('GET', url + '/activity?limit=50&offset=0')[1]
     entries = page['items']
     assert page['total'] == len(entries) and page['users'][str(sara_id)] == 'sara'
     # Newest first: the Booking posting follows the win in the same operation.
@@ -353,7 +353,7 @@ def test_activity_journal_records_moves_the_win_and_what_people_add(crm):
     assert (effects['kind'], effects['data']['targets']) == ('effects', [{'target': 'booking', 'rows': 1, 'reversal': False}])
     assert (won['kind'], won['data']['from'], won['data']['to'], won['data']['move']) == ('moved', 'negotiation', 'won', 'Mark won')
     assert (negotiated['kind'], negotiated['data']['move']) == ('moved', 'Negotiate')
-    # on_won dated the deal and set the kick-off as the next step; the kick-off task itself is a Task (no journal).
+    # on_won dated the deal and set the kick-off as the next step; the kick-off task itself is a Task (no activity).
     assert won['data']['fields']['next_step']['new'] == 'Kick-off meeting'
     assert won['data']['fields']['won_on']['old'] is None and won['data']['fields']['won_on']['new'] == sara('GET', url)[1]['won_on']
     assert 'stage' not in won['data']['fields'] and {entry['actor'] for entry in entries[:3]} == {sara_id}
@@ -363,28 +363,28 @@ def test_activity_journal_records_moves_the_win_and_what_people_add(crm):
     assert kinds[-2:] == ['number', 'created'] and kinds.count('moved') == 4 and 'changed' in kinds
     assert any(entry['data'].get('fields', {}).get('next_step', {}).get('new') == 'Book the demo' for entry in entries if entry['kind'] == 'changed')
     # People add a note and a follow up, then complete it; entries can be added to the locked deal.
-    note = sara('POST', url + '/journal', {'kind': 'note', 'text': 'Kick-off agreed for next week'})
+    note = sara('POST', url + '/activity', {'kind': 'note', 'text': 'Kick-off agreed for next week'})
     assert note[0] == 201 and note[1]['data'] == {'text': 'Kick-off agreed for next week'}
     due = (date.today() + timedelta(days=7)).isoformat()
-    follow_up = sara('POST', url + '/journal', {'kind': 'follow_up', 'text': 'Send the project plan', 'due': due, 'assignee': sara_id})
+    follow_up = sara('POST', url + '/activity', {'kind': 'follow_up', 'text': 'Send the project plan', 'due': due, 'assignee': sara_id})
     assert follow_up[0] == 201 and follow_up[1]['done'] is None
-    done = sara('POST', url + '/journal', {'kind': 'follow_up_done', 'follow_up': follow_up[1]['id'], 'text': 'Plan sent'})
+    done = sara('POST', url + '/activity', {'kind': 'follow_up_done', 'follow_up': follow_up[1]['id'], 'text': 'Plan sent'})
     assert done[0] == 201
-    assert sara('POST', url + '/journal', {'kind': 'follow_up_done', 'follow_up': follow_up[1]['id']})[0] == 409
-    assert sara('POST', url + '/journal', {'kind': 'follow_up_done', 'follow_up': won['id']})[0] == 422
-    assert sara('POST', url + '/journal', {'kind': 'note', 'text': ' '})[0] == 422
-    latest = sara('GET', url + '/journal?limit=3&offset=0')[1]
+    assert sara('POST', url + '/activity', {'kind': 'follow_up_done', 'follow_up': follow_up[1]['id']})[0] == 409
+    assert sara('POST', url + '/activity', {'kind': 'follow_up_done', 'follow_up': won['id']})[0] == 422
+    assert sara('POST', url + '/activity', {'kind': 'note', 'text': ' '})[0] == 422
+    latest = sara('GET', url + '/activity?limit=3&offset=0')[1]
     assert [entry['kind'] for entry in latest['items']] == ['follow_up_done', 'follow_up', 'note']
     assert latest['items'][1]['done'] == done[1]['id'] and latest['total'] == page['total'] + 3
-    # A viewer reads every entry but not the fields it cannot read, and cannot add to the journal.
+    # A viewer reads every entry but not the fields it cannot read, and cannot add to the activity.
     vera = login(crm, 'vera')
-    seen = vera('GET', url + '/journal?limit=50&offset=0')[1]
+    seen = vera('GET', url + '/activity?limit=50&offset=0')[1]
     assert seen['total'] == latest['total']
     viewer_won = next(entry for entry in seen['items'] if entry['id'] == won['id'])
     assert viewer_won['partial'] is True and 'next_step' not in viewer_won['data']['fields'] and viewer_won['data']['to'] == 'won'
-    assert vera('POST', url + '/journal', {'kind': 'note', 'text': 'Seen'})[0] == 403
+    assert vera('POST', url + '/activity', {'kind': 'note', 'text': 'Seen'})[0] == 403
     # Another sales person cannot read the deal or its history.
-    assert login(crm, 'omar')('GET', url + '/journal?limit=50&offset=0')[0] == 404
+    assert login(crm, 'omar')('GET', url + '/activity?limit=50&offset=0')[0] == 404
 
 
 def test_an_email_from_a_contact_appears_in_its_activity(crm, monkeypatch):
@@ -406,13 +406,13 @@ def test_an_email_from_a_contact_appears_in_its_activity(crm, monkeypatch):
         assert status == 200, payload
         while crm.business.jobs.run_one():
             pass
-        page = sara('GET', f"/api/contact/{contact['id']}/journal")[1]
+        page = sara('GET', f"/api/contact/{contact['id']}/activity")[1]
         found = [item for item in page['items'] if item['kind'] == 'message']
         assert len(found) == 1 and found[0]['data']['subject'] == 'Payment terms for Q3' and found[0]['data']['direction'] == 'in'
         assert page['users'][str(found[0]['actor'])] == 'sara' and found[0]['data']['party'] == contact['email']
         assert 'Not a customer' not in json.dumps(page)
         # Viewers read the record, so they see the message too.
-        assert login(crm, 'vera')('GET', f"/api/contact/{contact['id']}/journal?kind=message")[1]['total'] == 1
+        assert login(crm, 'vera')('GET', f"/api/contact/{contact['id']}/activity?kind=message")[1]['total'] == 1
         sara('DELETE', '/api/_settings/me/mailbox')
     finally:
         for server in (imap, smtp):

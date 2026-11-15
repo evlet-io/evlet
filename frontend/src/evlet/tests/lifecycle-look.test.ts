@@ -52,8 +52,8 @@ function schema(panel = false, recolor?: Record<string, string | null>): Recorde
   for (const [key, color] of Object.entries(recolor ?? {})) model.state.steps.find((item: { key: string }) => item.key === key).color = color;
   return { ...invoice.schema, body };
 }
-// The void invoice's journal: the void move, by sara, with its remark.
-const journal: Recorded = { status: 200, etag: null, body: { items: [{ id: 9, kind: 'moved', actor: 2, at: '2026-11-09T08:00:00.000Z',
+// The void invoice's activity: the void move, by sara, with its remark.
+const activity: Recorded = { status: 200, etag: null, body: { items: [{ id: 9, kind: 'moved', actor: 2, at: '2026-11-09T08:00:00.000Z',
   data: { from: 'issued', to: 'void', move: 'Void' }, rule: 'void', remark: 'Customer cancelled the order' }], total: 1, limit: 50, offset: 0, users: { 2: 'sara' } } };
 const routes = (panel = false, recolor?: Record<string, string | null>): Route[] => [
   ['GET', /\/api\/auth\/session$/, invoice.session],
@@ -63,7 +63,7 @@ const routes = (panel = false, recolor?: Record<string, string | null>): Route[]
   ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
   ['GET', /\/api\/invoice\/\w+\/measures$/, invoice.invoice_record_measures],
   ['GET', /\/api\/invoice\/\w+\/related\//, invoice.invoice_related_payments],
-  ['GET', /\/api\/invoice\/\w+\/journal/, journal],
+  ['GET', /\/api\/invoice\/\w+\/activity/, activity],
   ['GET', /\/api\/invoice\/\w+\/attachments$/, invoice.invoice_attachments],
   ['GET', new RegExp(`/api/invoice/${voided}$`), invoice.invoice_void],
   ['GET', new RegExp(`/api/invoice/${draft}$`), invoice.invoice_draft],

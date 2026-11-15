@@ -4,7 +4,7 @@ from urllib.parse import quote
 
 import pytest
 
-from evlet import (Attachments, Boolean, Child, Database, Hierarchy, Integer, Journal, Link, Model, Policy, Registry, Rule,
+from evlet import (Attachments, Boolean, Child, Database, Hierarchy, Integer, Activity, Link, Model, Policy, Registry, Rule,
                    Table, Text, any_of, action)
 from evlet.auth import AccessError, User
 from evlet.measures import Count, Sum
@@ -30,7 +30,7 @@ class LeaveDay(Child):
 class Leave(Model):
     """Viewers read their own and their team's leave, and every leave marked public; they may update it."""
     class Meta:
-        journal = Journal()
+        activity = Activity()
         attachments = Attachments(max_files=3, max_size=1000)
     permissions = {**ALL, 'viewer': Rule(('read', 'update'), scope=any_of(TEAM.team('employee'), {'public': True}))}
     employee = Link(Employee, index=True)
@@ -115,7 +115,7 @@ def check_team_scopes(app):
     assert status == 200, body
     assert body['items'] == [{'n': 152, 'd': 151 * 2 + 7}]
     assert outsider('GET', '/api/payslip/aggregate?measures=' + quote('n:count'))[1]['items'] == [{'n': 0}]
-    # Detail, writes, actions, attachments and journal reads follow the same scope.
+    # Detail, writes, actions, attachments and activity reads follow the same scope.
     with app.database.transaction() as tx:
         rows = {RecordId(row['employee']): str(RecordId(row['id'])) for row in tx.connection.execute('SELECT id, employee FROM leave WHERE public = ?', (False,))}
     deep, theirs = f"/api/leave/{rows[found['deep']]}", f"/api/leave/{rows[found['outsider']]}"
@@ -130,7 +130,7 @@ def check_team_scopes(app):
     file = admin('POST', deep + '/attachments', {'name': 'a.txt', 'content': 'YQ=='})[1]
     assert manager('GET', deep + f"/attachments/{file['id']}")[0] == 200
     assert outsider('GET', deep + f"/attachments/{file['id']}")[0] == 404
-    assert manager('GET', deep + '/journal')[0] == 200 and outsider('GET', deep + '/journal')[0] == 404
+    assert manager('GET', deep + '/activity')[0] == 200 and outsider('GET', deep + '/activity')[0] == 404
     # The Link filter guard: filtering leave by an employee in the team is allowed, outside it refused.
     assert listed(manager, 'leave', {'employee': found['deep']})['total'] == 1
     status, _, _ = manager('GET', '/api/leave?filters=' + quote(json.dumps({'employee': found['outsider']})))

@@ -1,9 +1,9 @@
 // What the screens read from /api/schema and record details.
 //
 // The keys of later engine phases (State steps and rules, Sequence, measures, key
-// fields, relations, attachments, effects, journal) are optional here: a screen shows a section
+// fields, relations, attachments, effects, activity) are optional here: a screen shows a section
 // only when the schema or the detail carries its key. Shapes follow docs/states-actions.md,
-// docs/sequences.md, docs/measures.md, docs/meaning.md, docs/effects.md and docs/journal.md.
+// docs/sequences.md, docs/measures.md, docs/meaning.md, docs/effects.md and docs/activity.md.
 
 import type { RecordData } from '../api';
 import type { FieldSchema, ModelSchema, SchemaIndex } from '../model/schema';
@@ -60,8 +60,8 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   attachment_limits?: { max_files: number; max_size: number };
   effects?: EffectSchema[];
   effect_target?: boolean;
-  /** The record has a journal (Phase 8): whether entries are hash chained and the kinds this role may post. */
-  journal?: { tamper_evident: boolean; kinds: string[] };
+  /** The record has an activity (Phase 8): whether entries are hash chained and the kinds this role may post. */
+  activity?: { tamper_evident: boolean; kinds: string[] };
   /** The field naming fills (the standard `name`, or an older target field), when, and what it shows until then. */
   naming?: { field: string; assign_on?: string; manual?: boolean; placeholder?: string | null };
 }

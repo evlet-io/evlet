@@ -101,7 +101,7 @@ def test_read_schema_validates_annotated_records_without_loosening_inputs(secure
         'title': 'Annotated project', 'children': {'tasks': [{'title': 'Task'}]},
     })
     assert status == 201, created
-    assert {'_audit', '_moves', '_actions', '_locked', '_journal', '_row_ids'} <= created.keys()
+    assert {'_audit', '_moves', '_actions', '_locked', '_activity', '_row_ids'} <= created.keys()
     assert next(move for move in created['_moves'] if move['key'] == 'start')['primary'] is True
     read.validate(created)
     url = f"/api/project/{created['id']}"
@@ -117,7 +117,7 @@ def test_read_schema_validates_annotated_records_without_loosening_inputs(secure
         (('unknown_business_field',), True),
         (('_moves', 0, 'primary'), 'yes'),
         (('_moves', 0, 'unexpected'), True),
-        (('_journal', 'count'), 'one'),
+        (('_activity', 'count'), 'one'),
         (('_row_ids',), {'temporary-key': 'invalid-id'}),
         (('children_pages',), {'hidden_collection': {'total': 1, 'limit': 100, 'partial': True}}),
         (('children', 'tasks', 0, 'unexpected'), True),

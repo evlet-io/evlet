@@ -18,7 +18,7 @@ it.
 | Tool | Kind |
 | --- | --- |
 | `discover_models`, `describe_model`, `list_records`, `get_record` | Read |
-| `aggregate_records` (the measures API), `record_history` (the journal) | Read |
+| `aggregate_records` (the measures API), `record_history` (the activity) | Read |
 | `list_reports`, `run_report` | Read |
 | `list_files`, `read_file` | Read |
 | `list_services`, `job_status` | Read |
@@ -27,7 +27,7 @@ it.
 | `delete_record` | Destructive |
 
 A tool is listed only when it can apply (an app with reports, actions, documents, files or
-journals), but listing grants nothing: every call is authorized again by the route it uses.
+Activity), but listing grants nothing: every call is authorized again by the route it uses.
 Changes to a saved record read it first and send its revision, so the change, and any
 approval, name the same version. `read_file` returns UTF-8 text only (2 MB at most, 60,000
 characters); other files report their size.
@@ -106,7 +106,7 @@ are and only the names of the fields sent in values and filters, never their val
 replaces `evlet_mcp_calls`. The framework migration `0002_tool_calls` moves its rows over and
 drops it when `evlet migrate` runs after the upgrade, after the backup
 ([app-upgrades.md](app-upgrades.md#upgrade-evlet)). Record changes still go to each
-record's journal, and settings changes and approval answers to the audit log.
+record's activity, and settings changes and approval answers to the audit log.
 
 Oversized redacted inputs are replaced with a small valid JSON summary. Historical truncated
 rows show an unavailable-details marker instead of preventing the log from opening. Eva's

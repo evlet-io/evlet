@@ -256,7 +256,7 @@ describe('side panel shortcuts', () => {
       ['GET', /\/api\/invoice\/aggregate/, invoice.invoice_aggregate_by_status],
       ['GET', /\/api\/invoice\/\w+\/measures$/, invoice.invoice_record_measures],
       ['GET', /\/api\/invoice\/\w+\/related\/payment\.invoice/, invoice.invoice_related_payments],
-      ['GET', /\/api\/invoice\/\w+\/journal/, invoice.invoice_journal],
+      ['GET', /\/api\/invoice\/\w+\/activity/, invoice.invoice_activity],
       ['GET', /\/api\/invoice\/\w+\/attachments$/, invoice.invoice_attachments],
       ['GET', /\/api\/invoice\/\w{13}$/, invoice.invoice_draft],
       ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],

@@ -350,7 +350,7 @@ def test_trusted_session_writes_take_section_rows(app):
         assert tx.connection.execute(f'SELECT count(*) FROM {STORE}').fetchone()[0] == 0
 
 
-def test_journal_records_section_changes(app):
+def test_activity_records_section_changes(app):
     call = client(app)
     data = create(call)
     url = f"/api/quote/{data['id']}"

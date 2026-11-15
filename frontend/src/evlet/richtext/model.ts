@@ -9,7 +9,7 @@ export const MARKS: readonly Mark[] = ['strong', 'em', 'u', 's', 'code'];
 
 export interface TextPiece { kind: 'text'; text: string; marks: readonly Mark[]; href: string | null }
 export interface BreakPiece { kind: 'break' }
-/** A mention of a user (the activity journal): one position wide, stored as `<span data-mention="<id>">`. */
+/** A mention of a user (the Activity): one position wide, stored as `<span data-mention="<id>">`. */
 export interface MentionPiece { kind: 'mention'; id: string; name: string }
 export type Inline = TextPiece | BreakPiece | MentionPiece;
 

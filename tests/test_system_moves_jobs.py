@@ -178,7 +178,7 @@ def test_trusted_python_makes_a_system_move_with_all_its_rules(app):
         with pytest.raises(AccessError):
             context.move(Build, record_id, 'done')
     assert status_of(app, record_id) == 'building'
-    entries = admin('GET', f'/api/build/{record_id}/journal')[1]['items']
+    entries = admin('GET', f'/api/build/{record_id}/activity')[1]['items']
     assert entries[0]['kind'] == 'moved' and entries[0]['data']['to'] == 'building' and entries[0]['actor'] == 1
 
 
@@ -195,14 +195,14 @@ def test_an_action_makes_a_system_move_on_another_record(app):
 
 # A job's business context
 
-def test_a_job_acts_as_the_system_under_a_name_the_journal_records(app):
+def test_a_job_acts_as_the_system_under_a_name_the_activity_records(app):
     admin = client(app)
     record_id = create(admin)
     with app.database.transaction() as tx:
         app.business.jobs.enqueue(tx, 'build', {'build': record_id})
     assert app.business.jobs.run_one()
     assert status_of(app, record_id) == 'done' and SEEN == [('Build worker', 'admin')]
-    entries = admin('GET', f'/api/build/{record_id}/journal')[1]['items']
+    entries = admin('GET', f'/api/build/{record_id}/activity')[1]['items']
     moved = [entry for entry in entries if entry['kind'] == 'moved']
     assert [entry['data']['to'] for entry in moved] == ['done', 'building', 'queued']
     assert all(entry['actor'] is None and entry['via'] == 'Build worker' for entry in moved)
@@ -349,6 +349,6 @@ def test_the_background_playground_builds_a_price_list_in_a_job(tmp_path):
     assert (detail['status'], detail['progress'], detail['requested']) == ('ready', 'Priced 40 items', False)
     assert [move['to'] for move in detail['_moves']] == ['draft']
     assert jobs.status(job_id, User(1, 'admin', 'admin'))['progress']['done'] == STEPS
-    moved = [entry for entry in admin('GET', f'/api/pricelist/{record_id}/journal')[1]['items'] if entry['kind'] == 'moved']
+    moved = [entry for entry in admin('GET', f'/api/pricelist/{record_id}/activity')[1]['items'] if entry['kind'] == 'moved']
     assert [(entry['data']['to'], entry['actor'], entry['via']) for entry in moved] == [
         ('ready', None, 'Price list builder'), ('building', None, 'Price list builder')]

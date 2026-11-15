@@ -1,4 +1,4 @@
-"""Mentions in the activity journal and the per-user inbox (docs/journal.md, docs/internal/rich-text.md).
+"""Mentions in the Activity and the per-user inbox (docs/activity.md, docs/internal/rich-text.md).
 
 A note or message written with the rich text composer may mention people:
 `<span data-mention="<user id>">Name</span>`. Each mentioned active user gets a row in `evlet_inbox`, the

@@ -18,7 +18,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 
-from evlet import Application, Database, Email, Integer, JobQueue, Journal, LocalAuth, Mail, Model, Registry, Rule, Text
+from evlet import Activity, Application, Database, Email, Integer, JobQueue, LocalAuth, Mail, Model, Registry, Rule, Text
 from evlet import connectors as connectors_module
 from evlet import secrets as vault
 from evlet.auth import AccessError, User
@@ -37,7 +37,7 @@ class Customer(Model):
     email = Email()
 
     class Meta:
-        journal = Journal()
+        activity = Activity()
         mail = Mail(match=('email',), kind='customer')
 
 
@@ -48,7 +48,7 @@ class Contact(Model):
     owner = Integer(default=0)
 
     class Meta:
-        journal = Journal()
+        activity = Activity()
         mail = Mail(match=('email',), kind='contact')
 
 
@@ -58,7 +58,7 @@ class Lead(Model):
     email = Email()
 
     class Meta:
-        journal = Journal()
+        activity = Activity()
         mail = Mail(match='email', kind='lead')
 
 
@@ -68,7 +68,7 @@ class Supplier(Model):
     email = Email()
 
     class Meta:
-        journal = Journal()
+        activity = Activity()
         mail = Mail(match=('email',))
 
 
@@ -83,7 +83,7 @@ class Deal(Model):
     title = Text(default='')
 
     class Meta:
-        journal = Journal()  # Emails sent from a deal are kept in its Activity.
+        activity = Activity()  # Emails sent from a deal are kept in its Activity.
 
 
 MODELS = (Customer, Contact, Lead, Supplier, Partner, Deal)
@@ -318,16 +318,16 @@ def drain(app):
 
 
 def links(app):
-    """Messages copied from mailboxes: Journal `message` entries, without their mailbox bookkeeping."""
+    """Messages copied from mailboxes: Activity `message` entries, without their mailbox bookkeeping."""
     with app.database._connection() as connection:
-        rows = connection.execute("SELECT model, record_id, data FROM evlet_journal WHERE kind='message' ORDER BY id").fetchall()
+        rows = connection.execute("SELECT model, record_id, data FROM evlet_activity WHERE kind='message' ORDER BY id").fetchall()
     return [(row['model'], row['record_id'], {key: value for key, value in json.loads(row['data']).items() if key not in ('source', 'field')})
             for row in rows]
 
 
 def messages(c, model, record_id, **kwargs):
     """The message entries of a record's Activity, as a reader sees them."""
-    return c('GET', f'/api/{model}/{record_id}/journal?kind=message', **kwargs)
+    return c('GET', f'/api/{model}/{record_id}/activity?kind=message', **kwargs)
 
 
 def stored(app):
@@ -335,7 +335,7 @@ def stored(app):
     with app.database._connection() as connection:
         return json.dumps([[{key: (bytes(value).hex() if isinstance(value, (bytes, memoryview)) else value) for key, value in dict(row).items()}
                             for row in connection.execute(f'SELECT * FROM {table}')]
-                           for table in ('evlet_mailboxes', 'evlet_mail_states', 'evlet_mail_links', 'evlet_journal', 'evlet_jobs', 'evlet_audit', 'evlet_connectors')])
+                           for table in ('evlet_mailboxes', 'evlet_mail_states', 'evlet_mail_links', 'evlet_activity', 'evlet_jobs', 'evlet_audit', 'evlet_connectors')])
 
 
 # ---------- the switch ----------
@@ -400,11 +400,11 @@ def test_app_password_connect_sync_matching_and_privacy(app, mail):
     assert messages(editor, 'contact', records['mine'])[1]['items'][0]['data']['subject'] == 'From my contact'
     assert messages(viewer, 'contact', records['mine'])[0] == 404
     assert messages(admin, 'contact', records['mine'])[1]['total'] == 1
-    # Messages are the person's Journal entries: the mailbox owner is the actor.
+    # Messages are the person's Activity entries: the mailbox owner is the actor.
     page = messages(viewer, 'customer', records['customer'])[1]
     assert page['users'][str(page['items'][0]['actor'])] == 'editor' and page['items'][0]['data']['source'] == 'mailbox'
     assert 'field' not in page['items'][0]['data']
-    # The old messages route is gone; the Activity tab (the journal) shows them.
+    # The old messages route is gone; the Activity tab (the activity) shows them.
     assert editor('GET', f"/api/customer/{records['customer']}/messages")[0] in (404, 405)
 
     # Admins can't read a personal mailbox: no Controls route shows it, and their own page shows only theirs.
@@ -942,10 +942,10 @@ def test_linking_needs_update_and_keys_follow_their_scope(app, mail):
     admin = client(app)
     token = admin('POST', '/api/_controls/keys', {'name': 'Deals only', 'user': 'editor', 'scope': {'access': 'read', 'models': ['Deal']}})[1]['token']
     headers = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}
-    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/journal?kind=message", headers=headers)[0] in (403, 404)
+    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/activity?kind=message", headers=headers)[0] in (403, 404)
     token = admin('POST', '/api/_controls/keys', {'name': 'All', 'user': 'editor', 'scope': {'access': 'read', 'models': None}})[1]['token']
     headers = {b'authorization': f'Bearer {token}'.encode(), b'x-evlet-request': b''}
-    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/journal?kind=message", headers=headers)[1]['total'] == 1
+    assert http(app, 'GET', f"/api/customer/{app.records['customer']}/activity?kind=message", headers=headers)[1]['total'] == 1
 
 
 def test_matching_splits_long_address_lists(app):
@@ -970,16 +970,16 @@ def test_mail_declarations_are_checked(tmp_path):
         Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
 
 
-def test_mail_needs_the_record_journal(tmp_path):
-    class Unjournaled(Model):
+def test_mail_needs_the_record_activity(tmp_path):
+    class WithoutActivity(Model):
         permissions = {'admin': ALL}
         email = Email()
 
         class Meta:
             mail = Mail(match=('email',), kind='contact')
 
-    database = Database(tmp_path / 'plain.sqlite3', Registry(Unjournaled))
-    with pytest.raises(ValueError, match='Add Meta.journal = Journal()'):
+    database = Database(tmp_path / 'plain.sqlite3', Registry(WithoutActivity))
+    with pytest.raises(ValueError, match='Add Meta.activity = Activity()'):
         Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
 
 
@@ -991,7 +991,7 @@ def test_a_message_is_kept_once_per_record_and_threads_through_the_index(app, ma
     drain(app)
     with app.database._connection() as connection:
         index = [dict(row) for row in connection.execute('SELECT * FROM evlet_mail_links')]
-        entry = connection.execute("SELECT id FROM evlet_journal WHERE kind='message'").fetchone()[0]
+        entry = connection.execute("SELECT id FROM evlet_activity WHERE kind='message'").fetchone()[0]
     assert len(index) == 1 and set(index[0]) == {'model', 'record_id', 'message_key', 'entry_id'} and index[0]['entry_id'] == entry
     (_, _, data), = links(app)
     editor = User(app.ids['editor'], 'editor', 'editor')

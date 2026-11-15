@@ -82,7 +82,7 @@ describe('links', () => {
   });
 });
 
-describe('shared mention cases with evlet/richtext.py (the activity journal)', () => {
+describe('shared mention cases with evlet/richtext.py (the Activity)', () => {
   for (const [source, expected, text] of (cases as any).mention_cases as Array<[string, string, string]>) {
     it(source.slice(0, 60), () => {
       const doc = parseHTML(source, { mentions: true });

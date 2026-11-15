@@ -1,6 +1,6 @@
-# The Journal
+# Activity
 
-The Journal is the history of one record. It lists every change the engine made (created,
+Activity is the history of one record. It lists every change the engine made (created,
 changed, moved, numbered, files, postings and deletion) and the notes, logged
 messages, calls and follow ups people added. Entries are only ever added. Nothing edits or
 deletes them.
@@ -10,7 +10,7 @@ This guide covers Phase 8 of the model handoff.
 ## Turning it on
 
 ```python
-from evlet import Journal, Model, State, Text
+from evlet import Activity, Model, State, Text
 
 
 class Invoice(Model):
@@ -19,28 +19,28 @@ class Invoice(Model):
                    rules=(State.Rule("draft", "issued", "Issue"), State.Rule("issued", "void", "Void", remark="required")))
 
     class Meta:
-        journal = Journal(tamper_evident=True)
+        activity = Activity(tamper_evident=True)
 ```
 
-| `Meta.journal` | Result |
+| `Meta.activity` | Result |
 |---|---|
 | left out | on for a model with a `State` or `Meta.effects`, off otherwise |
-| `Journal()` or `Journal(tamper_evident=True)` | on |
+| `Activity()` or `Activity(tamper_evident=True)` | on |
 | `None` | off, also for a model with a `State` |
 
-There is one way to turn it off: `journal = None`. Any other value is an error when the
-registry is built. `Journal()` on a model without a State makes it a document, so every write
-goes through the document pipeline (like a `Sequence` does). Table rows have no journal of
-their own: their changes are part of their document's entries, and a `Meta.journal` on a row
-model is an error. A model with `Meta.effects` journals by default too (an effect needs a
+There is one way to turn it off: `activity = None`. Any other value is an error when the
+registry is built. `Activity()` on a model without a State makes it a document, so every write
+goes through the document pipeline (like a `Sequence` does). Table rows have no activity of
+their own: their changes are part of their document's entries, and a `Meta.activity` on a row
+model is an error. A model with `Meta.effects` keeps an Activity by default too (an effect needs a
 State, so this changes nothing for valid models today, but the rule names both).
 
 ## Storage
 
-Entries live in one table, created at startup when any model journals:
+Entries live in one table, created at startup when any model keeps an Activity:
 
 ```
-evlet_journal(id, model, record_id, kind, actor, at, data, prev_hash, hash, rule, remark, level, base, rules_version)
+evlet_activity(id, model, record_id, kind, actor, at, data, prev_hash, hash, rule, remark, level, base, rules_version)
 ```
 
 * `model` is the storage name, `record_id` the record's id. An index on
@@ -112,7 +112,7 @@ another section or now sits above another row; rows added or removed around it d
 
 A `created` entry lists every value of every row, so an entry for a large document is large:
 creating a document with 1,000 lines stores an entry of about 400 KB, and a page of 50
-entries can carry several such entries. Read the journal in pages (`limit` and `offset`)
+entries can carry several such entries. Read the activity in pages (`limit` and `offset`)
 and keep the page small for documents with many rows.
 
 `Recompute` changes a record with postings only when an admin migrates with
@@ -146,7 +146,7 @@ Raw `Session.create`, `Session.update` and `Session.delete` (trusted code, migra
 
 ## User entries
 
-People add these through `POST /api/{model}/{id}/journal`, with `kind` and its values:
+People add these through `POST /api/{model}/{id}/activity`, with `kind` and its values:
 
 | Kind | Values |
 |---|---|
@@ -167,7 +167,7 @@ People add these through `POST /api/{model}/{id}/journal`, with `kind` and its v
 * A `note` or `message` may send `html` instead of `text`: formatted text from the activity composer
   (Evlet's rich text editor), at most 40,000 characters. The server sanitises it like a `RichText`
   field and also keeps mentions, `<span data-mention="<user id>">Name</span>`; it stores the
-  sanitised `html` and derives `text` (a mention reads as `@Name`). Reading the journal names
+  sanitised `html` and derives `text` (a mention reads as `@Name`). Reading the activity names
   mentioned people in `users` with their current username, so a renamed person shows correctly.
 
 ### Mentions
@@ -181,7 +181,7 @@ Each active user an entry mentions (other than its author) gets a row in their i
   else, not the note.
 * **While composing** `GET /api/{model}/{id}/mentionable?q=` lists up to 20 active desk users whose
   name or username matches, each with `can_read`, so the composer can warn "Priya can't open this
-  record". It needs the `journal` operation on the record.
+  record". It needs the `activity` operation on the record.
 * **The inbox:** `GET /api/_inbox` (`?limit=&offset=`) answers `{items, total, unread}`, newest
   first; `GET /api/_inbox/count` answers `{unread}`; `POST /api/_inbox/read` takes `{"ids": [...]}`
   or `{"all": true}`. Each person reads and marks only their own rows. A change sends the event
@@ -203,11 +203,11 @@ The answer is `201` with the entry as the caller sees it.
 From trusted Python code:
 
 ```python
-from evlet import journal
+from evlet import activity
 
 with app.business.context(user) as context:
-    journal.post(context, Invoice, 4, "note", text="Called the customer")
-    page = journal.entries(context, Invoice, 4, limit=20)
+    activity.post(context, Invoice, 4, "note", text="Called the customer")
+    page = activity.entries(context, Invoice, 4, limit=20)
 ```
 
 Both apply the same checks as HTTP. `post()` runs in its own savepoint like other document
@@ -218,28 +218,28 @@ change.
 ## Permissions
 
 Reading needs read access to the record within the caller's row scope (otherwise 403 or
-404). Posting also needs the `journal` operation:
+404). Posting also needs the `activity` operation:
 
 ```python
 permissions = {
     "admin": Rule(("read", "create", "update", "delete")),
     "editor": Rule(("read", "create", "update")),
-    "viewer": Rule(("read", "journal")),
+    "viewer": Rule(("read", "activity")),
 }
 ```
 
 * Admin may always post when its Rule reads the model. The editor may post when its Rule
   reads and updates the model (row scopes apply to both). Viewers, and editors that only
   read, may not.
-* A Rule naming `journal` adds that role; naming a role never
+* A Rule naming `activity` adds that role; naming a role never
   removes admin or the editor. So the Rule above lets the viewer post as well.
 * A custom role (Controls, `docs/controls.md`) based on the editor posts like the editor.
-  A Controls override can take `journal` away from a role whose file Rule names it.
-* A Rule naming `journal` on a model without a journal fails at startup.
+  A Controls override can take `activity` away from a role whose file Rule names it.
+* A Rule naming `activity` on a model without an activity fails at startup.
 
 ## Reading the history
 
-`GET /api/{model}/{id}/journal?limit=50&offset=0` returns one page, newest first:
+`GET /api/{model}/{id}/activity?limit=50&offset=0` returns one page, newest first:
 
 ```json
 {"items": [
@@ -293,20 +293,20 @@ already tell readers the same. An action's name is shown only to roles that can 
 
 ## Details, schema and events
 
-* Record details (GET, writes and move answers) of a journaled model carry
-  `_journal`: `{"count": 12, "open_follow_ups": 1}`. It is outside the ETag, so adding a note
+* Record details (GET, writes and move answers) of a model with an Activity carry
+  `_activity`: `{"count": 12, "open_follow_ups": 1}`. It is outside the ETag, so adding a note
   does not change the record's revision. It costs one statement.
-* `/api/schema` entries of journaled models carry
-  `journal: {"tamper_evident": true, "kinds": [...]}`, where `kinds` are the user kinds this
+* `/api/schema` entries of models with an Activity carry
+  `activity: {"tamper_evident": true, "kinds": [...]}`, where `kinds` are the user kinds this
   role may post (empty for viewers by default).
 * The `EventStore` stays the way to learn about live changes; it is not history. Engine
   entries come with the record's usual change event. A user entry publishes an event with
-  `"journal": true` (`{"model": "invoice", "id": "01hc1sd9vc1ye", "deleted": false, "journal": true}`), so
+  `"activity": true` (`{"model": "invoice", "id": "01hc1sd9vc1ye", "deleted": false, "activity": true}`), so
   an open record view can refresh its activity without reloading the record.
 
 ## Tamper evidence
 
-With `Journal(tamper_evident=True)` each entry stores:
+With `Activity(tamper_evident=True)` each entry stores:
 
 * `prev_hash`: the `hash` of the record's previous entry, or `null` for its first entry.
 * `hash`: the SHA-256 of the canonical JSON array
@@ -319,11 +319,11 @@ Writers are serialized, so the chain has no forks.
 Check an instance:
 
 ```sh
-evlet journal verify acme
+evlet activity verify acme
 ```
 
 It opens the instance database read only, reads every entry in one snapshot, and prints
-`Journal verified: N hashed entries, no breaks`, or one line per break and exits with 1:
+`Activity verified: N hashed entries, no breaks`, or one line per break and exits with 1:
 
 ```
 Entry 2 (invoice 1): the hash does not match the entry
@@ -333,13 +333,13 @@ Entry 2 (invoice 1): the hash does not match the entry
 A break is an entry whose content no longer matches its hash, whose `prev_hash` does not match
 the entry before it (an entry was removed or reordered), or an entry without a hash when its
 model is tamper evident (hashes stripped) or follows hashed entries of the same record. The
-models that declared `tamper_evident=True` are recorded in `evlet_journal_hashed` at startup,
+models that declared `tamper_evident=True` are recorded in `evlet_activity_hashed` at startup,
 so the command knows them without loading the apps.
 
 The command reads one instance's SQLite database. If the database uses WAL and its shared
 memory file cannot be created read only, it opens the database normally with
 `PRAGMA query_only`, which still refuses every write. For a tenant
-database of a `TenantRegistry`, call `evlet.journal.verify(database)` from Python with that
+database of a `TenantRegistry`, call `evlet.activity.verify(database)` from Python with that
 database; it returns `(entries checked, breaks)` and also uses the registry's declarations.
 
 What it does not do:
@@ -351,6 +351,27 @@ What it does not do:
   the model is reported, including older ones. Turning it off later keeps the model recorded,
   so `verify` reports the unhashed entries written after.
 
+## Renamed from the Journal
+
+Until 0.4.7 Activity was called the Journal. The behaviour, the entries and their hashes are
+unchanged; only the names moved. There are no aliases: each old name fails and names its replacement.
+
+| Before | Now |
+|---|---|
+| `from evlet import Journal`, `evlet.journal` | `from evlet import Activity`, `evlet.activity` |
+| `Meta.journal = Journal(...)` | `Meta.activity = Activity(...)` |
+| `Rule(("read", "journal"))`, the `journal` operation in Controls | `Rule(("read", "activity"))`, `activity` |
+| `GET` and `POST /api/{model}/{id}/journal` (now 410) | `/api/{model}/{id}/activity` |
+| `_journal` in record details, `journal` in schema entries and events | `_activity`, `activity` |
+| `evlet journal verify` | `evlet activity verify` |
+| `evlet_journal`, `evlet_journal_hashed` | `evlet_activity`, `evlet_activity_hashed` |
+
+Framework step `0016_activity` ([app-upgrades.md](app-upgrades.md)) renames the tables in place with
+every row, makes their index and append-only triggers again under the new names, and renames the
+`journal` operation in stored Controls permission overrides. No hash covers a table name, so chains
+written before the rename verify as they were. `evlet activity verify` refuses an instance that has the
+step pending: run `evlet migrate` first.
+
 ## Limits
 
 * `RenameField` migrations do not rewrite stored entries: older entries keep the old field
@@ -358,7 +379,7 @@ What it does not do:
   model rename migration.
 * A create or update of a large document stores every changed row in one entry; a
   1,000-row document gives an entry of that size. A PATCH of a 1,000-row document costs at
-  most four more statements with a hashed journal than without one (the previous hash, the
-  entry, the SQLite insert guard trigger and the `_journal` summary).
-* The connector and the MCP server do not show the journal yet. The UI shows it in the
+  most four more statements with a hashed activity than without one (the previous hash, the
+  entry, the SQLite insert guard trigger and the `_activity` summary).
+* The connector and the MCP server do not show the activity yet. The UI shows it in the
   record view's Activity, in its side column.

@@ -839,11 +839,11 @@ def _recompute(connection, registry, operations, versions, *, include_posted=Fal
 
     A record with posted effects (voided or not) keeps its saved results, so it is skipped, unless an admin runs the
     migration with `include_posted`: then posted records are recalculated too, and each one that changes gets
-    `"posted": true` in its entry. Records whose results change get a `recomputed` Journal entry. Returns
+    `"posted": true` in its entry. Records whose results change get a `recomputed` Activity entry. Returns
     (records skipped, posted records changed)."""
     from .database import Session
     from .calc import CalcError
-    from .journal import recomputed
+    from .activity import recomputed
     session = Session(connection, registry)
     covered, skipped, changes = {}, set(), {}
     posted = set() if include_posted else None
@@ -1303,6 +1303,9 @@ def migrate(database, migrations, *, recompute_posted=False, allow_destructive=F
             saved = connection.run(qb.select('evlet_schema', 'definition').where(id=1)).one()
             # Amounts move to 6 places before any app step reads or writes them (an explicit migration, after evlet migrate's backup).
             saved = _moved(money_scale(connection, database.registry, saved and saved[0]))
+            # The Activity tables get their names (framework step 0016_activity) before an app step writes an entry.
+            from .activity import rename_legacy
+            rename_legacy(connection)
             if not fresh and not saved:
                 raise SchemaError('Initialize the legacy database with its original models before migrating')
             pending = migrations[len(history):]
@@ -1462,7 +1465,7 @@ def _frozen_class(model, base, fields, storage=None):
         names |= used
         lines.append(f'    {key} = {code}')
     if ledgers.is_ledger(model):
-        # The ledger options shape the table, so the frozen class keeps them; journal and period do not.
+        # The ledger options shape the table, so the frozen class keeps them; activity and period do not.
         lines += ['', '    class Meta:', '        ledger = True']
         if model.__append_only__:
             lines.append('        append_only = True')

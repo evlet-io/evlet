@@ -981,13 +981,13 @@ page in a new browser tab.
 | `copy=False` on a field or `Table`; `Meta.duplicate = False` | What a record's Duplicate leaves out of the new record, or (`Meta.duplicate`) no Duplicate action at all. Duplicate shows only with `permissions.create`; the schema carries `copy` and `duplicate` only when off ([ui.md](ui.md#duplicate)) |
 | `attachments` | The Attachments block of the side column, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
 | `Effects` (Phase 6) | The Postings row: what was posted, reversals and the balance check |
-| Journal (Phase 8) | Activity in the side column: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `journal.kinds` lets the role post a note |
+| Activity (Phase 8) | Activity in the side column: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `activity.kinds` lets the role post a note |
 | Every record (`_audit`) | Created and Modified in the record footer, as relative times with who ([Relative times](#relative-times)), with the record ID and Copy link. More has Copy record ID and Copy link |
 | Title, name and State | Shown in the header, so a saved record's Details form leaves them out: the title is edited in place in the header, the State by its badge or bar. A field the header shows but can't edit (a name typed by hand, a State with `show="none"`) stays in the form. A new record's form keeps them all |
 
 A section appears only when the schema or the detail carries its key. The screen tests replay
 these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,
-measures, key fields, relations, files and a journal (engine and user entries, follow ups, and a
+measures, key fields, relations, files and an activity (engine and user entries, follow ups, and a
 viewer who sees the posting entry only in part). A record that has posted nothing yet still lists each
 effect target with zero rows; the Postings row treats that as nothing posted. The files of a
 locked record cannot change, so the upload control hides while `_locked` is true. Every response

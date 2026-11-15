@@ -49,7 +49,7 @@ interface Context {
   marks: readonly Mark[]; href: string | null; list: ListKind | null; depth: number;
   item: { list: ListKind; indent: number; checked: boolean } | null; quote: boolean; code: boolean; pre: boolean; firstInPre: boolean;
   paste: boolean;
-  /** Keep `<span data-mention>` as mentions (the activity journal); otherwise their text is plain text. */
+  /** Keep `<span data-mention>` as mentions (the Activity); otherwise their text is plain text. */
   mentions: boolean;
   /** Reading the editing surface back: skip widgets and filler breaks. */
   raw: boolean;

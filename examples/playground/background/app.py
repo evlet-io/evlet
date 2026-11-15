@@ -10,7 +10,7 @@ It uses a separate demonstration database. It shows three public APIs (docs/jobs
 * `self.context.enqueue(...)` in an action: Build queues the job in the action's transaction, so it is
   queued only if the action commits, and a worker in the same process is woken at once.
 * `job.business(tx, system=..., role=...)`: the job moves the price list through its normal checks, and its
-  Journal says the Price list builder did it.
+  Activity says the Price list builder did it.
 """
 from pathlib import Path
 

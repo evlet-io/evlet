@@ -3,11 +3,13 @@
 tests/test_database_adapter.py opens it with the current release and checks that nothing in it changes:
 the schema, the stored rows and the migration checksums. Keep this file as it is; it describes what 0.4.3
 wrote. To write the dumps again (only with Evlet 0.4.3 on the path), run make_dumps(folder).
+The models now say Meta.activity = Activity(...) where 0.4.3 said Meta.journal = Journal(...): the same declaration
+under its current name (framework step 0016_activity renames the tables it made).
 """
 
 from datetime import date
 
-from evlet import (AddIndex, AlterField, Application, CreateModel, Currency, Date, Decimal, Journal, Link, LocalAuth, Migration,
+from evlet import (Activity, AddIndex, AlterField, Application, CreateModel, Currency, Date, Decimal, Link, LocalAuth, Migration,
                    Model, Registry, RetireField, Select, Text)
 
 
@@ -16,7 +18,7 @@ class Customer(Model):
     phone = Text(required=True)
 
     class Meta:
-        journal = Journal(tamper_evident=True)
+        activity = Activity(tamper_evident=True)
 
 
 class Invoice(Model):

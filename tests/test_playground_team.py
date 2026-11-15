@@ -32,7 +32,7 @@ def test_team_changes_are_on_record(secured):
     with secured.database._connection() as connection:
         logged = [tuple(row) for row in connection.execute("SELECT actor, area, target, detail FROM evlet_audit WHERE area='Users' ORDER BY id")]
     assert logged[-3:] == [('team-demo', 'Users', name, f'Linked to employee {accounts[name]}') for name in ('manager', 'member', 'outsider')]
-    # Moving the member under the outsider is journaled with the old and new manager.
+    # Moving the member under the outsider is recorded in its Activity with the old and new manager.
     editor = client(secured, 'editor')
     url = f"/api/employee/{accounts['member']}"
     status, _, _ = editor('PATCH', url, {'reports_to': accounts['outsider']}, headers={b'if-match': editor('GET', url)[2][b'etag']})

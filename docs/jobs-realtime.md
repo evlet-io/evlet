@@ -145,7 +145,7 @@ wait. The Background Playground's worker uses them.
 ## A job's business context
 
 A handler gets the job's transaction (`tx`) as a trusted `Session`. Writes through it skip
-permissions, rules and the Journal. To run moves, actions and document writes with every check
+permissions, rules and the Activity. To run moves, actions and document writes with every check
 they have over HTTP, ask the job for a document context in that same transaction:
 
 ```python
@@ -161,7 +161,7 @@ Who it acts as is always explicit:
 | --- | --- | --- | --- |
 | `job.business(tx)` | The account that queued the job, read again when the job started, with its API key or assistant narrowing. A job queued with a system role acts with that role. | That account's role, row scopes and field permissions | That account |
 | `job.business(tx, user=7)` | Account 7 (an id or a `User`), read again now. It must be active; its current role applies. | That account's role, row scopes and field permissions | That account |
-| `job.business(tx, system="Price list builder", role="admin")` | The system, under that name (1 to 60 characters) | The named role's rules. A row scope that names the account matches nothing. | No account (`engine`), with `via: "Price list builder"` in the Journal and the name in Controls audit rows |
+| `job.business(tx, system="Price list builder", role="admin")` | The system, under that name (1 to 60 characters) | The named role's rules. A row scope that names the account matches nothing. | No account (`engine`), with `via: "Price list builder"` in the Activity and the name in Controls audit rows |
 
 * There is no silent bypass. A job queued without a user must pass `user=` or `system=` with
   `role=`; `role` must be one of the application's roles; `user=` and `system=` together are

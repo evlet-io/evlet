@@ -79,7 +79,7 @@ class JobContext:
 
     def business(self, tx, *, user=None, system=None, role=None):
         """A document context (evlet.documents.Context) in this job's transaction, for moves, actions and
-        document writes with every rule, permission check and Journal entry they have over HTTP.
+        document writes with every rule, permission check and Activity entry they have over HTTP.
 
         * `job.business(tx)` acts as the job's own user: the account that queued it, read again when the
           job started (or the role a system job was queued with).
@@ -87,7 +87,7 @@ class JobContext:
           and its current role, row scopes and field permissions apply.
         * `job.business(tx, system="Nightly import", role="admin")` acts as the system under that name.
           The role's permissions apply (a row scope that names the account matches nothing), writes are
-          recorded under no account, and the Journal names the system as `via`.
+          recorded under no account, and the Activity names the system as `via`.
 
         Job handlers are trusted code, so the context may also make system moves (rules with by=()).
         Writes commit or roll back with the job's own transaction (or the step of a resumable task)."""

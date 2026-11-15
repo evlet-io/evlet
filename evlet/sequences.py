@@ -293,10 +293,10 @@ def fixed(sequence, values, saved, shown=True):
 def assigned(context, model, record_id, name, number):
     """Called once per assigned number after the record is saved, in its transaction.
 
-    Writes the Journal's `number` entry; numbers never appear in `created` or `changed` entries.
+    Writes the Activity's `number` entry; numbers never appear in `created` or `changed` entries.
     """
-    from . import journal
-    journal.number(context, model, record_id, name, number)
+    from . import activity
+    activity.number(context, model, record_id, name, number)
 
 
 # Existing rows

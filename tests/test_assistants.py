@@ -525,11 +525,11 @@ def test_other_requests_have_a_light_rate(secured, monkeypatch):
     assert [rpc(secured, tokens['access_token'], 'ping')[0] for _ in range(4)] == [200, 200, 200, 429]
 
 
-def test_assistant_writes_are_journaled_as_the_person_via_the_client(tmp_path):
+def test_assistant_writes_are_recorded_as_the_person_via_the_client(tmp_path):
     from evlet import Database, Registry
-    from tests import test_journal as journal
+    from tests import test_activity as activity
     from tests.test_rules_types import start
-    app = journal.seed(start(Database(tmp_path / 'journal.sqlite3', Registry(*journal.MODELS))))
+    app = activity.seed(start(Database(tmp_path / 'activity.sqlite3', Registry(*activity.MODELS))))
     settings(app, allow_writes=True)
     _, tokens, person = connect(app, 'editor')
     created = tool(app, tokens['access_token'], 'create_record', {'model': 'memo', 'values': {'title': 'From Claude'}})
@@ -538,7 +538,7 @@ def test_assistant_writes_are_journaled_as_the_person_via_the_client(tmp_path):
     # The local connector (evlet mcp) is named too; the browser is not.
     status, _, _ = person('PATCH', f'/api/memo/{record_id}', {'title': 'By hand'}, headers={b'if-match': person('GET', f'/api/memo/{record_id}')[2][b'etag']})
     assert status == 200
-    page = client(app)('GET', f'/api/memo/{record_id}/journal')[1]
+    page = client(app)('GET', f'/api/memo/{record_id}/activity')[1]
     by_hand, by_claude = page['items']
     assert page['users'][str(by_claude['actor'])] == 'editor' and by_claude['actor'] == by_hand['actor']
     assert by_claude['kind'] == 'created' and by_claude['via'] == 'Claude' and 'via' not in by_claude['data']

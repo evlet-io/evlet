@@ -5,7 +5,7 @@
 // Copied: the visible, stored fields this role may write, and the rows of every Table at every depth,
 // without their ids, so they are created new. Left out: the id, the name or number the server assigns
 // (the naming field, Sequence fields), the State, calculated and read-only fields, fields marked
-// unique (named in a note), and a row's link to its parent. Files and the Journal belong to the record.
+// unique (named in a note), and a row's link to its parent. Files and the Activity belong to the record.
 // Meta.duplicate = False (`duplicate: false` on a model) turns Duplicate off, and copy=False (`copy: false`
 // on a field or a Table) leaves it as a new record starts. Every such schema key is read here only, so a rename touches this file.
 

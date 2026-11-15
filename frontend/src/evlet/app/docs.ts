@@ -280,7 +280,7 @@ function StateDisplay(): Child {
         labelled('primary=True', MovesButton(sampleEntries(DEAL, negotiation))),
         labelled('No primary', MovesButton(sampleEntries(DEAL, noPrimary))),
         labelled('Amount is 0', MovesButton(sampleEntries(DEAL, blockedWin)), html`<span class="muted">${blockedWin.find(move => move.key === 'win')!.reason}</span>`)))}
-    ${section('A move that asks', p('remark="required" (or State.Remark with a label) makes the move ask for a remark, which the Journal keeps. ask=("field",) adds model fields to the dialog. The move runs only when the dialog\'s values pass.'),
+    ${section('A move that asks', p('remark="required" (or State.Remark with a label) makes the move ask for a remark, which the Activity keeps. ask=("field",) adds model fields to the dialog. The move runs only when the dialog\'s values pass.'),
       example('dialog', `Mark lost asks: ${loseInputs.map(input => `${input.label}${input.required ? ' (required)' : ''}`).join(', ')}.`,
         html`<div class="ev-doc-example-row">${Button({ label: `Try ${lose.label}`, icon: moveIcon(DEAL, lose.to), onClick: openLose })}</div>`))}
   </article>`;

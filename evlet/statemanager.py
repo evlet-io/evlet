@@ -350,16 +350,16 @@ def checked_move(context, model, draft, before, key, remark):
 
 
 def moved(context, model, record, previous, rule, remark, level, before, after, released=None):
-    """The Journal's `moved` entry, with the rule key, the remark, the level it approved, the levels that apply
+    """The Activity's `moved` entry, with the rule key, the remark, the level it approved, the levels that apply
     in the new state (see entering) and anything else the move changed."""
-    from . import journal
+    from . import activity
     context.__dict__.get('_stays', {}).pop(record.id, None)
-    if journal.journals(context, model):
-        data = journal.tree_changes(context._business, model, before, after, skip=(model.__state__,))
+    if activity.keeps_activity(context, model):
+        data = activity.tree_changes(context._business, model, before, after, skip=(model.__state__,))
         # A move that releases vN builds on v(N-1); it names the release it made in data["release"].
         base = (released - 1 if released else None) if released is not None else \
             changes_base(context._tx.connection, context._business.registry, model, record.id, data)
-        journal.append(context._business, context._tx, context.user, model, record.id, 'moved',
+        activity.append(context._business, context._tx, context.user, model, record.id, 'moved',
                        {**data, 'from': previous, 'to': rule.to, 'move': rule.label, **entering(context, model, record),
                         **({'release': released} if released is not None else {})}, rule=rule.key, remark=remark, level=level, base=base)
 
@@ -401,10 +401,10 @@ def stay(context, model, record):
     import json
     from . import qb
     cache = context.__dict__.setdefault('_stays', {})
-    if model not in context._business.journals:
+    if model not in context._business.activities:
         return [], None
     if record.id not in cache:
-        rows = context._tx.connection.run(qb.select('evlet_journal', 'kind', 'actor', 'level', 'rule', 'data')
+        rows = context._tx.connection.run(qb.select('evlet_activity', 'kind', 'actor', 'level', 'rule', 'data')
                                           .where(qb.in_('kind', ('created', 'moved', 'restored', 'approved', 'changed', 'recomputed')),
                                                  model=context._business.registry.name_for(model), record_id=record.id)
                                           .order_by('-id').limit(STAY)).all()
@@ -439,7 +439,7 @@ def may_approve(context, model, record, rule, index, approvals):
     """Whether the user may approve this level: named by it, approved no other level of this rule in this stay,
     and not the record's creator unless the rule says self_approve=True."""
     from .audit import actor_id
-    from .journal import actor_of
+    from .activity import actor_of
     level, user = rule.levels[index], context.user
     if not allowed(user, level.roles, level.users, record._values) or actor_of(user) in {row['actor'] for row in approvals}:
         return False
@@ -473,14 +473,14 @@ def who_may(context, model, record, rule, guards=None):
 
 def approve(context, model, record, rule, level, remark, values):
     """Record the approval of one level that is not the last: an `approved` entry, and no change to the record."""
-    from . import journal
+    from . import activity
     from .models import ValidationError
     if values:
         raise ValidationError({'_form': f'{rule.label} saves values with its last approval'})
-    if not journal.journals(context, model):
-        raise ValidationError({'_form': 'Approval levels need the journal'})
+    if not activity.keeps_activity(context, model):
+        raise ValidationError({'_form': 'Approval levels need the activity'})
     context.__dict__.get('_stays', {}).pop(record.id, None)
-    journal.append(context._business, context._tx, context.user, model, record.id, 'approved',
+    activity.append(context._business, context._tx, context.user, model, record.id, 'approved',
                    {'from': record._values.get(model.__state__), 'move': rule.label, 'pending': rule.levels[level].pending},
                    rule=rule.key, remark=remark, level=level)
     context._business.changed(context._tx, model, record.id)
@@ -722,7 +722,7 @@ def versioned(model, data, registry):
 
 def digest(model, data, registry):
     import hashlib
-    from .journal import canonical
+    from .activity import canonical
     return hashlib.sha256(canonical(versioned(model, data, registry)).encode()).hexdigest()
 
 
@@ -737,9 +737,9 @@ def latest(connection, name, record_id):
 
 def store(connection, registry, model, record_id, number, *, snapshot, state, data, hash, actor, drifted=False):
     import json
-    from . import journal, qb
+    from . import activity, qb
     connection.run(qb.insert('evlet_releases', model=registry.name_for(model), record_id=record_id, number=number, snapshot=int(snapshot),
-                             at=journal.now(), actor=actor, state=state, hash=hash, drifted=int(drifted),
+                             at=activity.now(), actor=actor, state=state, hash=hash, drifted=int(drifted),
                              data=json.dumps(data, sort_keys=True, separators=(',', ':'), ensure_ascii=False)))
 
 
@@ -747,7 +747,7 @@ def keep(connection, registry, model, record_id, data, actor):
     """Save the snapshot of the latest release, once, before the record first diverges from it. A hash that differs
     from the release's means the row changed outside the engine: the snapshot is kept, marked drifted, and logged."""
     import logging
-    from . import journal
+    from . import activity
     if not releasing(model):
         return
     last = latest(connection, registry.name_for(model), record_id)
@@ -758,14 +758,14 @@ def keep(connection, registry, model, record_id, data, actor):
         logging.getLogger('evlet.statemanager').warning('%s %s changed outside the engine since v%s', registry.name_for(model), record_id, last['number'])
     store(connection, registry, model, record_id, last['number'], snapshot=True, state=last['state'], data=versioned(model, data, registry),
           hash=digest(model, data, registry), actor=actor, drifted=drifted)
-    if model in registry.journals:
-        journal.insert(connection, registry, model, record_id, 'snapshot', actor, {'number': last['number'], 'drifted': drifted},
+    if model in registry.activities:
+        activity.insert(connection, registry, model, record_id, 'snapshot', actor, {'number': last['number'], 'drifted': drifted},
                        base=last['number'])
 
 
 def diverge(context, model, before, draft, leaving=False):
     """Snapshot the latest release before this write when it leaves a release step or changes the content."""
-    from .journal import actor_of
+    from .activity import actor_of
     registry = context._business.registry
     if before is None or not releasing(model):
         return
@@ -796,15 +796,15 @@ def prepare_release(context, model, draft, manual=False):
 
 
 def finish_release(context, model, record, draft, number, rule=None, remark=None):
-    """After the write: store release `number` and its `released` journal entry."""
-    from . import journal
+    """After the write: store release `number` and its `released` activity entry."""
+    from . import activity
     registry = context._business.registry
     approvals = [{'actor': row['actor'], 'level': row['level']} for row in stay(context, model, record)[0]] if rule is not None else []
     store(context._tx.connection, registry, model, record.id, number, snapshot=False, state=record._values.get(model.__state__),
-          data={'approvals': approvals, 'remark': remark}, hash=digest(model, tree(draft), registry), actor=journal.actor_of(context.user))
+          data={'approvals': approvals, 'remark': remark}, hash=digest(model, tree(draft), registry), actor=activity.actor_of(context.user))
     # A move's release is its `moved` entry (with base = the number); the Release button writes its own entry.
-    if rule is None and journal.journals(context, model):
-        journal.append(context._business, context._tx, context.user, model, record.id, 'released', {'number': number},
+    if rule is None and activity.keeps_activity(context, model):
+        activity.append(context._business, context._tx, context.user, model, record.id, 'released', {'number': number},
                        remark=remark, base=number)
 
 
@@ -817,31 +817,31 @@ def saved(context, model, record_id):
 
 def version_of(context, model, record):
     """`_version` for a detail: {number, released, state}; number is None before the first release. Two indexed
-    reads: the latest release and whether the journal changed versioned content since."""
+    reads: the latest release and whether the activity changed versioned content since."""
     from . import qb
     name = context._business.registry.name_for(model)
     last = latest(context._tx.connection, name, record.id)
     if last is None:
         return {'number': None, 'released': False, 'state': None}
-    if model not in context._business.journals:
-        # Without a journal (Meta.journal = None) the content is compared with the release's hash.
+    if model not in context._business.activities:
+        # Without an activity (Meta.activity = None) the content is compared with the release's hash.
         return {'number': last['number'], 'state': last['state'],
                 'released': digest(model, tree(saved(context, model, record.id)), context._business.registry) == last['hash']}
-    # Modified: the journal has an entry that changed versioned content after this release (see changes_base).
-    changed = context._tx.connection.run(qb.select('evlet_journal', 'id').where(
+    # Modified: the activity has an entry that changed versioned content after this release (see changes_base).
+    changed = context._tx.connection.run(qb.select('evlet_activity', 'id').where(
         qb.in_('kind', ('changed', 'moved', 'restored', 'recomputed')), model=name, record_id=record.id, base=last['number']).limit(1)).one()
     return {'number': last['number'], 'released': changed is None, 'state': last['state']}
 
 
 def touches_versioned(model, data):
-    """Whether a journal entry's changes touch versioned content: a field that is not versioned=False, or rows."""
+    """Whether an activity entry's changes touch versioned content: a field that is not versioned=False, or rows."""
     fields = model.__fields__
     return bool(data.get('rows')) or any(name in fields and fields[name].versioned and name != model.__state__
                                          for name in data.get('fields', {}))
 
 
 def changes_base(connection, registry, model, record_id, data):
-    """`base` of a journal entry: the latest release's number when the entry changes versioned content, else None.
+    """`base` of an activity entry: the latest release's number when the entry changes versioned content, else None.
     "Changes after v2" are the entries with base 2."""
     if not releasing(model) or not touches_versioned(model, data):
         return None
@@ -891,7 +891,7 @@ def content_of(context, model, record_id, number):
 def shown_tree(context, model, data):
     """A version as this user may read it: today's field, Link and row permissions, also on rows deleted since."""
     from .identity import RecordId
-    from .journal import Visibility, shown_value
+    from .activity import Visibility, shown_value
     business, policy = context._business, context._business.policy
     visibility = Visibility(business, context._tx, context.user)
 

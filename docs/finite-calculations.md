@@ -506,7 +506,7 @@ of its posted state.`). Its actions and moves may not change what those results 
 naming the field). `Recompute` skips records with live postings, and records that posted and
 are in a final state, and reports how many it kept, so the effect rows a record posted always
 match its saved totals; a locked record that never posted is recalculated. An admin may include posted records for one migration run with
-`evlet migrate <instance> --recompute-posted`; each changed one is journaled with
+`evlet migrate <instance> --recompute-posted`; each changed one is recorded in Activity with
 `"posted": true` ([model-engine.md](model-engine.md#recalculating-stored-values)). A rule out
 of the posting state reverses the rows, after which the record can be corrected and posted
 again ([effects.md](effects.md#leaving-the-posting-state)). Draft previews of a locked or posted record show the values a save keeps.

@@ -17,13 +17,13 @@ describe('doc view blocks', () => {
     const active = cell('activity');
     const host = render(() => {
       const tabs = Tabs({ tabs: [{ id: 'activity', label: 'Activity' }, { id: 'details', label: 'Details' }, { id: 'lines', label: 'Lines', count: 120 }], active, label: 'Record', doc: true });
-      return [tabs, TabPanel(tabs, 'activity', active, () => 'Journal'), TabPanel(tabs, 'lines', active, () => 'Grid')];
+      return [tabs, TabPanel(tabs, 'activity', active, () => 'Activity'), TabPanel(tabs, 'lines', active, () => 'Grid')];
     });
     const tabs = [...host.querySelectorAll<HTMLElement>('[role="tab"]')];
     expect(host.querySelector('[role="tablist"]')!.classList.contains('doc-tabs')).toBe(true);
     expect(tabs[2].textContent).toBe('Lines120');
     expect(tabs.map(tab => tab.getAttribute('aria-selected'))).toEqual(['true', 'false', 'false']);
-    expect(host.querySelector('[role="tabpanel"]')!.textContent).toBe('Journal');
+    expect(host.querySelector('[role="tabpanel"]')!.textContent).toBe('Activity');
     key(tabs[0], 'ArrowLeft');
     expect(active.peek()).toBe('lines');
     expect(document.activeElement).toBe(tabs[2]);

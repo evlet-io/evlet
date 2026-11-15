@@ -2,7 +2,7 @@
 
 An instance keeps four SQLite files in data/:
 
-* database.sqlite3: records, audit, journal, the job queue, accounts, roles and settings. Everything that must
+* database.sqlite3: records, audit, activity, the job queue, accounts, roles and settings. Everything that must
   save in the same transaction as a record stays here.
 * sessions.sqlite3: sign-in sessions, two-step tickets and sign-in attempts.
 * logs.sqlite3: the tool-call log, public rate counts and proxy header notes.

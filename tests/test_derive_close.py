@@ -203,9 +203,9 @@ def places(body):
     return [(row['place'], row['stops'], row['minutes'], row['note']) for row in body['children']['places']]
 
 
-def journal_count(app):
+def activity_count(app):
     with app.database.transaction() as tx:
-        return tx.connection.execute('SELECT count(*) FROM evlet_journal').fetchone()[0]
+        return tx.connection.execute('SELECT count(*) FROM evlet_activity').fetchone()[0]
 
 
 # derive(): order, cleaning and the save response
@@ -397,10 +397,10 @@ def test_a_move_into_a_final_state_is_refused_while_records_depend_on_it(app):
     app, admin = app
     trip = create(admin)['id']
     first = leg(admin, trip)
-    entries = journal_count(app)
+    entries = activity_count(app)
     status, body, _ = move(admin, 'trip', trip, 'cancelled')
     assert status == 422 and body['fields'] == {'_form': 'Cancel the later documents first: L-2'}
-    assert admin('GET', f'/api/trip/{trip}')[1]['status'] == 'open' and journal_count(app) == entries
+    assert admin('GET', f'/api/trip/{trip}')[1]['status'] == 'open' and activity_count(app) == entries
     assert SEEN[-1] == {'close': 'cancelled'}
     # A move into a state that is not final does not ask.
     calls = [item for item in SEEN if 'close' in item]

@@ -29,7 +29,7 @@ from .models import build_step
 # Duration is a different type).
 FIELD_TYPES = ('Text', 'Integer', 'Decimal', 'Currency', 'Percent', 'Boolean', 'Date', 'DateTime', 'Select', 'Link')
 # Meta options a ledger model may set; every other option belongs to records and their screens.
-META = frozenset(('ledger', 'append_only', 'journal', 'timestamps', 'indexes', 'period', 'period_scope', 'api', 'measures',
+META = frozenset(('ledger', 'append_only', 'activity', 'timestamps', 'indexes', 'period', 'period_scope', 'api', 'measures',
                   'label', 'description'))
 # Meta options that only a ledger model may set (Meta.indexes is for every model, evlet/indexes.py).
 LEDGER_ONLY = ('append_only', 'timestamps')
@@ -166,7 +166,7 @@ def now():
 
 def add_triggers(connection, table):
     """Refuse UPDATE and DELETE on a ledger table, so also REPLACE and upsert updates, as the
-    evlet_audit and evlet_journal tables do. Idempotent."""
+    evlet_audit and evlet_activity tables do. Idempotent."""
     connection.make_append_only(table, f'{table} {APPEND_ONLY}')
 
 
@@ -226,25 +226,25 @@ def lock_timeout(value):
 # Review
 
 def describe(database):
-    """One dict per ledger model of a database: `model`, `table`, `rows`, `append_only`, `journal` ("off",
+    """One dict per ledger model of a database: `model`, `table`, `rows`, `append_only`, `activity` ("off",
     "on" or "tamper evident"), `timestamps` and `period` (the field name, with " per <scope>" when scoped).
     Read in one snapshot; `evlet ledger list` prints it."""
     from .models import identifier
     registry = database.registry
     models = [(name, model) for name, model in registry.models.items() if is_ledger(model)]
-    journals, periods = getattr(registry, 'journals', {}), getattr(registry, 'periods', {})
+    activities, periods = getattr(registry, 'activities', {}), getattr(registry, 'periods', {})
     result = []
     with database._connection() as connection:
         connection.snapshot()
         try:
             for name, model in models:
-                journal = journals.get(model)
+                activity = activities.get(model)
                 period = periods.get(model)
                 result.append({
                     'model': model.__name__, 'table': name,
                     'rows': connection.run(qb.select(name, qb.count())).value(),
                     'append_only': model.__append_only__,
-                    'journal': 'off' if journal is None else 'tamper evident' if journal.tamper_evident else 'on',
+                    'activity': 'off' if activity is None else 'tamper evident' if activity.tamper_evident else 'on',
                     'timestamps': model.__timestamps__ or 'off',
                     'period': 'off' if period is None else period.field + (f' per {period.scope}' if period.scope else '')})
         finally:
@@ -256,8 +256,8 @@ def table(rows):
     """The text `evlet ledger list` prints for describe() rows."""
     if not rows:
         return 'No ledger models'
-    header = ('Model', 'Table', 'Rows', 'Append only', 'Journal', 'Timestamps', 'Period')
-    lines = [header] + [(row['model'], row['table'], str(row['rows']), 'yes' if row['append_only'] else 'no', row['journal'],
+    header = ('Model', 'Table', 'Rows', 'Append only', 'Activity', 'Timestamps', 'Period')
+    lines = [header] + [(row['model'], row['table'], str(row['rows']), 'yes' if row['append_only'] else 'no', row['activity'],
                          row['timestamps'], row['period']) for row in rows]
     widths = [max(len(line[index]) for line in lines) for index in range(len(header))]
     return '\n'.join('  '.join(cell.ljust(width) for cell, width in zip(line, widths)).rstrip() for line in lines)

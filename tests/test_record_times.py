@@ -13,11 +13,11 @@ from evlet.identity import RecordId
 from test_business import client
 from test_rules_types import ALL, add_user, start
 import test_effects as books_module
-import test_journal as journal_module
+import test_activity as activity_module
 
 
 class Note(Model):
-    """A plain model: no State, no journal, written by raw Session or the plain record routes."""
+    """A plain model: no State, no activity, written by raw Session or the plain record routes."""
     permissions = {**ALL, 'portal': Rule(('read',))}
     title = Text(default='')
 
@@ -145,23 +145,23 @@ def test_document_writes_actions_moves_effects_and_void_record_the_person(app):
 
 
 def test_contexts_and_actions_in_python_record_their_user(tmp_path, clock):
-    app = journal_module.seed(start(Database(tmp_path / 'db.sqlite3', Registry(*journal_module.MODELS))))
+    app = activity_module.seed(start(Database(tmp_path / 'db.sqlite3', Registry(*activity_module.MODELS))))
     editor = User(2, 'editor', 'editor')
     with app.business.context(editor) as context:
-        memo = context.create(journal_module.Memo, title='From Python')
+        memo = context.create(activity_module.Memo, title='From Python')
     assert stamps(app, 'memo', memo['id'])[1] == 2
     admin = User(1, 'admin', 'admin')
     c = client(app)
-    record, url = journal_module.new_invoice(c)
+    record, url = activity_module.new_invoice(c)
     with app.business.context(editor) as context:
-        context.action(journal_module.Invoice, record['id'], 'rename', title='Renamed')
+        context.action(activity_module.Invoice, record['id'], 'rename', title='Renamed')
     assert stamps(app, 'invoice', record['id'])[3] == 2
     # Two contexts in one transaction: each write is recorded under its own context's user.
     with app.database.transaction() as tx:
         from evlet.documents import Context
-        first = Context(app.business, tx, admin).create(journal_module.Memo, title='a')
-        second = Context(app.business, tx, editor).create(journal_module.Memo, title='b')
-        Context(app.business, tx, admin).update(journal_module.Memo, second['id'], title='c')
+        first = Context(app.business, tx, admin).create(activity_module.Memo, title='a')
+        second = Context(app.business, tx, editor).create(activity_module.Memo, title='b')
+        Context(app.business, tx, admin).update(activity_module.Memo, second['id'], title='c')
     assert stamps(app, 'memo', first['id'])[1] == 1
     assert stamps(app, 'memo', second['id'])[1::2] == (2, 1)
 
@@ -175,7 +175,7 @@ def test_portal_roles_see_times_but_not_who(app):
     assert detail['_audit']['created_at'] and detail['_audit']['created_by'] is None and detail['_audit']['modified_by'] is None
 
 
-def test_upgrade_adds_and_fills_the_columns_from_the_journal_and_the_id(tmp_path):
+def test_upgrade_adds_and_fills_the_columns_from_the_activity_and_the_id(tmp_path):
     path = tmp_path / 'old.sqlite3'
     old = Database(path, Registry(Note))
     old.initialize()
@@ -183,14 +183,14 @@ def test_upgrade_adds_and_fills_the_columns_from_the_journal_and_the_id(tmp_path
     from evlet.identity import new_id
     recent = int(new_id())
     with sqlite3.connect(path) as connection:
-        # A database from before this release: no time columns, a legacy id, a time-ordered id, and one with a journal.
+        # A database from before this release: no time columns, a legacy id, a time-ordered id, and one with an activity.
         for column in audit.COLUMNS:
             connection.execute(f'ALTER TABLE note DROP COLUMN {column}')
         # Roll the framework ledger back to before 0004, so the later steps run again too.
         connection.execute("DELETE FROM evlet_framework_migrations WHERE position >= (SELECT position FROM evlet_framework_migrations WHERE name='0004_record_times')")
         connection.execute("INSERT INTO note (id, title) VALUES (42, 'Legacy')")
         connection.execute("INSERT INTO note (id, title) VALUES (?, 'Recent')", (recent,))
-        connection.execute("INSERT INTO note (id, title) VALUES (?, 'Journaled')", (recent + 1,))
+        connection.execute("INSERT INTO note (id, title) VALUES (?, 'Recorded')", (recent + 1,))
         connection.execute('CREATE TABLE evlet_journal (id INTEGER PRIMARY KEY AUTOINCREMENT, model TEXT NOT NULL, record_id INTEGER NOT NULL, '
                            'kind TEXT NOT NULL, actor TEXT NOT NULL, at TEXT NOT NULL, data TEXT NOT NULL, prev_hash TEXT, hash TEXT)')
         for kind, actor, at in (('created', '3', '2026-10-01T10:00:00.000Z'), ('note', '5', '2026-10-02T10:00:00.000Z'),
@@ -200,7 +200,7 @@ def test_upgrade_adds_and_fills_the_columns_from_the_journal_and_the_id(tmp_path
                                (recent + 1, kind, actor, at))
     database = Database(path, Registry(Note))
     database.initialize()  # A table without the time columns is accepted until the framework step runs.
-    assert upgrade(database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets']
+    assert upgrade(database) == ['0004_record_times', '0005_unsaved_changes', '0006_fixed_ids', '0007_money_scale', '0008_administrator', '0009_admin_username', '0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets', '0016_activity']
     with sqlite3.connect(path) as connection:
         rows = {row[0]: row[1:] for row in connection.execute(f'SELECT id, {", ".join(audit.COLUMNS)} FROM note')}
     assert rows[42] == (None, None, None, None)

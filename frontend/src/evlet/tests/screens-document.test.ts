@@ -1,6 +1,6 @@
 // The record view of a transaction document over responses recorded from the engine as an editor:
 // State steps and rules (void and reopen take a remark), Sequence, effects, measures, meaning metadata, files and the
-// journal.
+// activity.
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, invoice, lastToast, requests, start, stopAll, headText, text, typeInto, typeRich, until, type Route } from './screens-helpers';
 import { copy, type Recorded, type Sent } from './server';
@@ -11,14 +11,14 @@ afterEach(stopAll);
 // The draft that is issued and paid in part, and the invoice that is voided.
 const draft = invoice.invoice_draft.body.id, voided = invoice.invoice_void.body.id;
 const path = (id: number, rest = '$') => new RegExp(`/api/invoice/${id}${rest}`);
-// The draft's journal as it was when the draft was read; every other detail replays the issued invoice's.
-const routes = (detail: Recorded = invoice.invoice_draft, journal = detail === invoice.invoice_draft ? invoice.invoice_draft_journal : invoice.invoice_journal): Route[] => [
+// The draft's activity as it was when the draft was read; every other detail replays the issued invoice's.
+const routes = (detail: Recorded = invoice.invoice_draft, activity = detail === invoice.invoice_draft ? invoice.invoice_draft_activity : invoice.invoice_activity): Route[] => [
   ['GET', /\/api\/auth\/session$/, invoice.session],
   ['GET', /\/api\/schema$/, invoice.schema],
   ['GET', path(detail.body.id), detail],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/measures$/, invoice.invoice_record_measures],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/related\/payment\.invoice/, invoice.invoice_related_payments],
-  ['GET', /\/api\/invoice\/[0-9a-z]{13}\/journal/, journal],
+  ['GET', /\/api\/invoice\/[0-9a-z]{13}\/activity/, activity],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/attachments$/, invoice.invoice_attachments],
   ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ['GET', new RegExp(`/api/payment/${invoice.invoice_payment.body.id}$`), invoice.invoice_payment],
@@ -58,7 +58,7 @@ describe('transaction document (recorded fixtures)', () => {
     expect(document.querySelector('.modal')).toBeNull();
   });
 
-  it('shows a draft: number to come, status flow, the move, key fields, measures, journal and related records', async () => {
+  it('shows a draft: number to come, status flow, the move, key fields, measures, activity and related records', async () => {
     const { host } = start(routes(), `/app/invoice/${draft}`);
     await until(() => expect(text(host.querySelector('.doc-head h1'))).toBe('Draft invoice'));
     expect(host.querySelector('.doc-head h1')!.classList.contains('mono')).toBe(false);
@@ -84,7 +84,7 @@ describe('transaction document (recorded fixtures)', () => {
     expect(text(host.querySelector('.doc-head .doc-sub'))).not.toContain('Al Sahra Trading');
     await until(() => expect([...host.querySelectorAll('.sum-t')].map(item => `${text(item.querySelector('span'))}=${text(item.querySelector('b'))}`))
       .toEqual(['Payments=1', 'Paid=AED 500.00']));
-    // Activity: the journal grouped by day, newest first, actors named from the page's users, field
+    // Activity: the activity grouped by day, newest first, actors named from the page's users, field
     // changes old and new and Table rows counted.
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(3));
     const items = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
@@ -231,19 +231,19 @@ describe('transaction document (recorded fixtures)', () => {
   });
 
   it('shows a changed Link in the history as the linked record title, never as an amount', async () => {
-    const journal = copy(invoice.invoice_draft_journal);
+    const activity = copy(invoice.invoice_draft_activity);
     const customer = invoice.invoice_customer.body.id;
-    journal.body.items[1].data.fields = { customer: { old: null, new: customer }, ...journal.body.items[1].data.fields };
-    const { host } = start(routes(invoice.invoice_draft, journal), `/app/invoice/${draft}`);
+    activity.body.items[1].data.fields = { customer: { old: null, new: customer }, ...activity.body.items[1].data.fields };
+    const { host } = start(routes(invoice.invoice_draft, activity), `/app/invoice/${draft}`);
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(3));
     const changed = host.querySelectorAll('.tl-item')[1];
     await until(() => expect([...changed.querySelectorAll('.ev-diff')].map(text)[0]).toBe('Customer empty Al Sahra Trading'));
     expect(text(changed)).not.toContain('Invalid amount');
   });
 
-  it('shows the issued invoice journal as the engine records it: moves, postings, numbers, actions and people', async () => {
+  it('shows the issued invoice activity as the engine records it: moves, postings, numbers, actions and people', async () => {
     const { host } = start(routes(invoice.invoice_issued_detail), `/app/invoice/${draft}`);
-    await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_journal.body.items.length));
+    await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_activity.body.items.length));
     const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
     expect(heads).toEqual([
       'The system logged a message to the customer',
@@ -272,17 +272,17 @@ describe('transaction document (recorded fixtures)', () => {
     expect(host.querySelector('.ev-partial')).toBeNull();
   });
 
-  it('adds a note through the journal route and reloads the history', async () => {
+  it('adds a note through the activity route and reloads the history', async () => {
     let reloaded = false;
     const { host, sent } = start([...routes(invoice.invoice_issued_detail),
-      ['POST', path(draft, '/journal$'), () => { reloaded = true; return copy(invoice.invoice_journal_note); }]], `/app/invoice/${draft}`);
+      ['POST', path(draft, '/activity$'), () => { reloaded = true; return copy(invoice.invoice_activity_note); }]], `/app/invoice/${draft}`);
     await until(() => expect(host.querySelector('.composer .rt-surface')).not.toBeNull());
     typeRich(host.querySelector<HTMLElement>('.composer .rt-surface')!, 'Customer asked for a copy by email');
     click(byText(host, '.composer button', 'Save note'));
     await until(() => expect(lastToast()).toBe('Note added'));
     expect(reloaded).toBe(true);
-    expect(requests(sent, 'POST', /\/journal$/)[0].body).toEqual({ kind: 'note', html: '<p>Customer asked for a copy by email</p>' });
-    await until(() => expect(requests(sent, 'GET', /\/journal/)).toHaveLength(2));
+    expect(requests(sent, 'POST', /\/activity$/)[0].body).toEqual({ kind: 'note', html: '<p>Customer asked for a copy by email</p>' });
+    await until(() => expect(requests(sent, 'GET', /\/activity/)).toHaveLength(2));
     expect(host.querySelector('.composer .rt-surface')!.textContent).toBe('');
   });
 
@@ -290,10 +290,10 @@ describe('transaction document (recorded fixtures)', () => {
     const viewerRoutes: Route[] = [
       ['GET', /\/api\/auth\/session$/, invoice.invoice_viewer_session],
       ['GET', /\/api\/schema$/, invoice.invoice_viewer_schema],
-      ...routes(invoice.invoice_viewer_detail, invoice.invoice_viewer_journal).slice(2),
+      ...routes(invoice.invoice_viewer_detail, invoice.invoice_viewer_activity).slice(2),
     ];
     const { host, sent } = start(viewerRoutes, `/app/invoice/${draft}`);
-    await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_viewer_journal.body.items.length));
+    await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_viewer_activity.body.items.length));
     expect(host.querySelector('.composer')).toBeNull();
     // The viewer cannot read ledger entries: the posting is a `changed` entry with nothing in it, marked partial.
     const partial = [...host.querySelectorAll('.tl-item')].filter(item => item.querySelector('.ev-partial'));
@@ -301,26 +301,26 @@ describe('transaction document (recorded fixtures)', () => {
     expect(headText(partial[0].querySelector('.hd'))).toBe('sara changed it');
     expect(text(partial[0].querySelector('.ev-partial'))).toBe('Some details are hidden');
     expect(partial[0].querySelector('.note')).toBeNull();
-    expect(requests(sent, 'POST', /\/journal$/)).toHaveLength(0);
+    expect(requests(sent, 'POST', /\/activity$/)).toHaveLength(0);
     expect(invoice.invoice_viewer_note_refused.status).toBe(403);
   });
 
   it('names the AI assistant a change came through, after the person', async () => {
-    const journal = copy(invoice.invoice_draft_journal);
-    journal.body.items[1].via = 'Claude';
-    const { host } = start(routes(invoice.invoice_draft, journal), `/app/invoice/${draft}`);
+    const activity = copy(invoice.invoice_draft_activity);
+    activity.body.items[1].via = 'Claude';
+    const { host } = start(routes(invoice.invoice_draft, activity), `/app/invoice/${draft}`);
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(3));
     const items = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
     expect(items).toEqual(['sara attached signed-copy.pdf', 'sara changed it via Claude', 'sara created this record']);
   });
 
   it('shows emails from a personal mailbox, without an address the reader may not see', async () => {
-    const journal = copy(invoice.invoice_draft_journal);
-    const first = journal.body.items[0];
-    journal.body.items = [{ ...first, id: 900, kind: 'message', data: { text: 'Can you ship Monday?', subject: 'Order', party: 'buyer@acme.test', direction: 'in', source: 'mailbox' } },
+    const activity = copy(invoice.invoice_draft_activity);
+    const first = activity.body.items[0];
+    activity.body.items = [{ ...first, id: 900, kind: 'message', data: { text: 'Can you ship Monday?', subject: 'Order', party: 'buyer@acme.test', direction: 'in', source: 'mailbox' } },
       { ...first, id: 901, kind: 'message', partial: true, data: { text: 'Thanks', subject: 'Re: Order', party: null, direction: 'out', source: 'mailbox' } }];
-    journal.body.total = 2;
-    const { host } = start(routes(invoice.invoice_draft, journal), `/app/invoice/${draft}`);
+    activity.body.total = 2;
+    const { host } = start(routes(invoice.invoice_draft, activity), `/app/invoice/${draft}`);
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(2));
     const items = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
     expect(items).toEqual(['sara received an email from buyer@acme.test', 'sara sent an email to a contact']);

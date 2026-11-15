@@ -101,7 +101,7 @@ evlet migrate acme --trust --allow-destructive
 evlet makemigration people --instance acme --name dependents --trust
 evlet effects check acme
 evlet ids check acme
-evlet journal verify acme
+evlet activity verify acme
 evlet ledger list --instance acme
 evlet jobs list --instance acme
 evlet backup --instance acme
@@ -153,7 +153,7 @@ holds the deleted values. `migrate --allow-maintenance` lets `RunData` steps dec
 `maintenance=True` write confirmed, tracked and posted records; each one is recorded in the Controls
 audit log ([model-engine.md](model-engine.md#data-steps)).
 `migrate --recompute-posted` lets the `Recompute` operations of that run recalculate posted
-records too; it prints how many changed, and each one gets a journal entry
+records too; it prints how many changed, and each one gets an Activity entry
 ([model-engine.md](model-engine.md#recalculating-stored-values)). Without the flag, posted
 records keep their saved results. Normal
 `serve` checks locked source versions and content; run `migrate` to record an
@@ -218,12 +218,13 @@ model tables whose database does not yet refuse id changes (run `evlet migrate`)
 writing, works before `evlet migrate`, and exits with 1 when there is any problem. It never rewrites an
 id; see [model-engine.md](model-engine.md#only-evlet-makes-ids).
 
-`journal verify` checks the hash chains of tamper-evident record journals in an
+`activity verify` checks the hash chains of tamper-evident record [Activity](activity.md) in an
 instance's database, read only and in one snapshot. It prints one line per break and
-exits with 1 when there is any; see the [journal guide](journal.md).
+exits with 1 when there is any. An instance with framework migrations pending is refused: run
+`evlet migrate` first. `evlet journal verify`, its name before, fails with a pointer to it.
 
 `ledger list` prints each [ledger model](ledger.md) with its table, row count and its
-`append_only`, `journal`, `timestamps` and `period` settings, read from one snapshot without writing.
+`append_only`, `activity`, `timestamps` and `period` settings, read from one snapshot without writing.
 
 `jobs list` prints the newest 100 background jobs with their state, attempts and the progress
 they last committed, such as `40 of 100 (40%) Up to customer 40`. It runs while the instance

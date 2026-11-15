@@ -524,7 +524,7 @@ class Prints:
         if tx.connection.run(files).value() >= limits.max_files:
             raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
         file_id = business.storage.add(tx, name, record_id, filename, content)
-        from .journal import file
+        from .activity import file
         file(business, tx, user, model, record_id, 'added', {'id': file_id, 'name': filename, 'size': len(content)})
         business.changed(tx, model, record_id)
         return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []

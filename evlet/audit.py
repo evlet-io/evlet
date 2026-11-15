@@ -22,7 +22,7 @@ from . import qb
 
 COLUMNS = ('evlet_created_at', 'evlet_created_by', 'evlet_modified_at', 'evlet_modified_by')
 MODIFIED = COLUMNS[2:]
-# Journal kinds that change the record itself; notes, messages, files and effects do not.
+# Activity kinds that change the record itself; notes, messages, files and effects do not.
 CHANGES = ('created', 'changed', 'moved', 'voided', 'revised', 'unposted', 'reposted', 'number', 'recomputed')
 ENGINE = 'engine'
 
@@ -95,12 +95,14 @@ def add_columns(connection, table):
 
 
 def backfill(connection, table):
-    """Fill rows that have no times: from the record's Journal where it has one (the first and the last
+    """Fill rows that have no times: from the record's Activity where it has one (the first and the last
     entry that changed the record, with their actors), otherwise from the time in the id with no actor.
     Rows whose id holds no time (made before time-ordered ids) stay empty."""
     found = {}
-    if connection.table_exists('evlet_journal'):
-        entries = qb.select('evlet_journal', 'record_id', 'actor', 'at').where(qb.in_('kind', CHANGES), model=table).order_by('id')
+    # evlet_journal is the Activity table's name before framework step 0016_activity; step 0004 runs before it.
+    stored = next((name for name in ('evlet_journal', 'evlet_activity') if connection.table_exists(name)), None)
+    if stored is not None:
+        entries = qb.select(stored, 'record_id', 'actor', 'at').where(qb.in_('kind', CHANGES), model=table).order_by('id')
         for row in connection.run(entries):
             actor = None if row[1] == ENGINE else int(row[1])
             first = found.get(row[0])

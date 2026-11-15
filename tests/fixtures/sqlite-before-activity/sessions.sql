@@ -1,0 +1,17 @@
+BEGIN TRANSACTION;
+CREATE TABLE evlet_login_limits ("client" TEXT PRIMARY KEY, "attempts" INTEGER NOT NULL, "resets" INTEGER NOT NULL);
+INSERT INTO "evlet_login_limits" VALUES('6cdf31ca1c436520c6f53e1edab197b66413c9a9ad478fefffa5cc3741f1b2a4',5,1794733794);
+CREATE TABLE evlet_oidc_tickets ("token" TEXT PRIMARY KEY, "browser" TEXT NOT NULL, "kind" TEXT NOT NULL, "expires" INTEGER NOT NULL, "configuration" TEXT NOT NULL, "realm" TEXT NOT NULL, "nonce" TEXT, "user_id" INTEGER, "session_generation" INTEGER);
+CREATE TABLE evlet_sessions ("token" TEXT PRIMARY KEY, "user_id" INTEGER NOT NULL, "csrf" TEXT NOT NULL, "expires" INTEGER NOT NULL, "realm" TEXT NOT NULL DEFAULT 'desk', "session_generation" INTEGER NOT NULL DEFAULT 0, "started" INTEGER, "agent" TEXT NOT NULL DEFAULT '', "two_step" INTEGER);
+INSERT INTO "evlet_sessions" VALUES('05696b3fff99fd782c494ca86e3af65d98898f51e55985980b8f3485cc12e9cb',1,'ca5c7978a641703c6680a2c71ccce6d7cf3002b1bffc1e0f12dbe8e551fe1f9c',1794776095,'desk',0,1794732895,'',NULL);
+INSERT INTO "evlet_sessions" VALUES('07d055d23406655e47de3a92009e13e99d80b2d3ac5ee0817de33726d02aafa1',2,'2661dff94bf6b2d90dfdc330944e23cbf757481d4b20f525fb3f973d919fad64',1794776096,'desk',0,1794732896,'',NULL);
+INSERT INTO "evlet_sessions" VALUES('c9ddfdd2839f35a565c34bfb0c5b6bf89ec65f7c7d1b6632e5d43fd41d02a06f',1,'2e4680bb79bb61f8807329c2c50d2e8b20804f72c5e83a10ce5be0c9433e31fc',1794776096,'desk',0,1794732896,'',NULL);
+INSERT INTO "evlet_sessions" VALUES('16735d82b2d6ce5fa21da3b3988b236b341f22772a35adf8f3ca023bd2cd2d36',3,'d02579661666924c2bcde4924a121031df1915eda88091dae072806480facd8a',1794776097,'desk',0,1794732897,'',NULL);
+INSERT INTO "evlet_sessions" VALUES('7a93f46d900288211a0716fa9a34afc6e654c9fc4b6bfa0fbe574b911938e05b',1,'a152f3d1716be696319b523df1f64be87c4d4346a7f84810f7b09c00065151df',1794776097,'desk',0,1794732897,'',NULL);
+CREATE TABLE evlet_turn (id INTEGER PRIMARY KEY);
+CREATE TABLE evlet_two_step_tickets ("token_hash" TEXT PRIMARY KEY, "user_id" INTEGER NOT NULL, "realm" TEXT NOT NULL, "expires" INTEGER NOT NULL, "attempts" INTEGER NOT NULL DEFAULT 0, "secret" BLOB, "session_generation" INTEGER NOT NULL DEFAULT 0);
+CREATE INDEX evlet_oidc_ticket_expiry ON evlet_oidc_tickets("expires");
+CREATE INDEX evlet_session_user ON evlet_sessions("user_id");
+CREATE INDEX evlet_session_expiry ON evlet_sessions("expires");
+CREATE INDEX evlet_login_reset ON evlet_login_limits("resets");
+COMMIT;

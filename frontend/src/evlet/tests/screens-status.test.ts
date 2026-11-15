@@ -39,7 +39,7 @@ const routes = (schemaBody: Recorded, detail: Recorded = invoice.invoice_draft, 
   ['GET', new RegExp(`/api/invoice/${detail.body.id}$`), detail],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/measures$/, invoice.invoice_record_measures],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/related\/payment\.invoice/, invoice.invoice_related_payments],
-  ['GET', /\/api\/invoice\/[0-9a-z]{13}\/journal/, invoice.invoice_draft_journal],
+  ['GET', /\/api\/invoice\/[0-9a-z]{13}\/activity/, invoice.invoice_draft_activity],
   ['GET', /\/api\/invoice\/[0-9a-z]{13}\/attachments$/, invoice.invoice_attachments],
   ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
 ];

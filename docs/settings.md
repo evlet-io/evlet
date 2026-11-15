@@ -78,7 +78,7 @@ Turning it off brings back the "Discard your changes?" prompt and deletes the ed
 server for that person. Portal people don't have it.
 
 **Notifications.** "Someone mentions me" is used: mentions in a record's activity go to the
-Mentions inbox in the top bar ("in Evlet") and by email through the mail connector ([journal.md](journal.md#mentions)).
+Mentions inbox in the top bar ("in Evlet") and by email through the mail connector ([activity.md](activity.md#mentions)).
 The other choices are stored for later. Security emails (a new device, a changed password) can't be turned off.
 
 **What the person may open.** `GET /api/_settings/me` carries two booleans for the signed-in

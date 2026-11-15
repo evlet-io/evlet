@@ -91,7 +91,7 @@ def parser():
     migrate.add_argument('instance')
     migrate.add_argument('--trust', action='store_true', help='Trust changed app source without prompting')
     migrate.add_argument('--recompute-posted', action='store_true',
-                         help='Let Recompute operations recalculate posted records too; each changed one gets a journal entry')
+                         help='Let Recompute operations recalculate posted records too; each changed one gets an Activity entry')
     migrate.add_argument('--allow-destructive', action='store_true',
                          help='Let DropField delete the columns and values of retired fields; a backup is written first')
     migrate.add_argument('--allow-maintenance', action='store_true',
@@ -199,9 +199,9 @@ def parser():
     ids_check = ids_commands.add_parser('check', help='Report rows with an impossible id and tables that allow id changes')
     ids_check.add_argument('instance')
     ids_check.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
-    journal = commands.add_parser('journal', help='Check record journals')
-    journal_commands = journal.add_subparsers(dest='journal_command', required=True)
-    verify = journal_commands.add_parser('verify', help='Report breaks in the hash chains of tamper-evident journals')
+    activity = commands.add_parser('activity', help="Check records' Activity")
+    activity_commands = activity.add_subparsers(dest='activity_command', required=True)
+    verify = activity_commands.add_parser('verify', help='Report breaks in the hash chains of tamper-evident Activity')
     verify.add_argument('instance')
     verify.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     ledger = commands.add_parser('ledger', help='Review ledger models')
@@ -238,9 +238,22 @@ def parser():
     return result
 
 
+def command_name(values):
+    """The command word of an argument list: the first value that is not an option (or --project's path)."""
+    values = iter(values)
+    for value in values:
+        if value == '--project':
+            next(values, None)
+        elif not value.startswith('-'):
+            return value
+    return None
+
+
 def main(argv=None):
     values = list(sys.argv[1:] if argv is None else argv)
     command_parser = parser()
+    if command_name(values) == 'journal':
+        command_parser.error("'evlet journal' was renamed: use 'evlet activity verify INSTANCE'")
     args = command_parser.parse_args(values)
     if args.command in ('login', 'logout', 'describe', 'mcp'):
         from .connector import run
@@ -521,15 +534,15 @@ def main(argv=None):
                 print(f'{len(differences)} difference' + ('' if len(differences) == 1 else 's'), file=sys.stderr)
                 raise SystemExit(1)
             print('No differences')
-        elif args.command == 'journal':
-            from .journal import verify_instance
+        elif args.command == 'activity':
+            from .activity import verify_instance
             checked, breaks = verify_instance(root, args.instance)
             for entry, model, record_id, message in breaks:
                 print(f'Entry {entry} ({model} {text_id(record_id)}): {message}')
             if breaks:
                 print(f'{len(breaks)} break{"s" if len(breaks) > 1 else ""} in {checked} hashed entries', file=sys.stderr)
                 raise SystemExit(1)
-            print(f'Journal verified: {checked} hashed entries, no breaks')
+            print(f'Activity verified: {checked} hashed entries, no breaks')
         elif args.command == 'ledger':
             from .ledger import list_instance
             from ..ledger import table

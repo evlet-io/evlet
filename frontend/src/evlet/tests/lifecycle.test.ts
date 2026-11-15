@@ -8,7 +8,7 @@ import { byText, click, requests, start, stopAll, text, typeInto, until, type Ro
 afterEach(stopAll);
 const routes = (record: Recorded = f.draft): Route[] => [
   ['GET', /\/api\/auth\/session$/, f.session], ['GET', /\/api\/schema$/, f.schema],
-  ['GET', /\/api\/order\/0000000000001$/, record], ['GET', /\/api\/order\/0000000000001\/journal/, f.history],
+  ['GET', /\/api\/order\/0000000000001$/, record], ['GET', /\/api\/order\/0000000000001\/activity/, f.history],
 ];
 const banner = (host: Element) => text(host.querySelector('.inv-banner > div'));
 

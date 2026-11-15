@@ -93,7 +93,7 @@ parents, not as independent catalog entries. Unknown or unavailable models retur
 Descriptions expose only readable fields and allowed write fields. Create schemas
 identify required values without defaults; update schemas accept partial changes.
 Read schemas also describe framework response annotations, such as state moves, action
-availability, row IDs and journal summaries. These annotations do not become writable
+availability, row IDs and activity summaries. These annotations do not become writable
 business fields or expand discovery's create/update schemas. Existing calculation-control
 inputs retain their separate contract.
 Read-only callers receive no write schemas. Static Link default IDs are omitted,
@@ -142,7 +142,7 @@ so the application decides what this person may call and logs every call.
 | `list_records` | Bounded search, filters, sorting, and pagination |
 | `get_record` | Read one record with accessible children |
 | `aggregate_records` | Totals, counts, minimums and maximums, grouped, through the measures API |
-| `record_history` | A record's journal, when the model keeps one |
+| `record_history` | A record's activity, when the model keeps one |
 | `list_reports`, `run_report` | Permitted reports and one page of their rows |
 | `list_files`, `read_file` | Files on a record, and the text of one |
 | `list_services`, `call_service` | Business services an app offers to assistants (`@api(..., tool=True)`) |

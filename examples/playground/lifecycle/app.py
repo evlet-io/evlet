@@ -30,7 +30,7 @@ class Order(Model):
         rate = Currency(default='0')
     lines = Table(Line, required=True)
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
-                   'editor': Rule(('read', 'create', 'update', 'journal')),
+                   'editor': Rule(('read', 'create', 'update', 'activity')),
                    'viewer': Rule(('read',))}
 
     @validate

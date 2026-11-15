@@ -169,7 +169,7 @@ class User:
     # When this session last gave a two-step code (sign-in or a later check), as a Unix time.
     verified: int | None = None
     # Set when trusted code acts as the system (JobContext.business(tx, system=...)): the name the
-    # Journal and Controls audit record for its writes. Such a user is no account; its id is 0.
+    # Activity and Controls audit record for its writes. Such a user is no account; its id is 0.
     system: str | None = None
 
     def public(self):

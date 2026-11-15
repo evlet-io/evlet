@@ -291,7 +291,7 @@ never sends it. The record page shows the title as its heading and the name next
 monospaced font.
 
 **Edits and reopening.** Once a record has a name, anyone who may write the `name`
-field can change it through the normal edit; the change is journaled like any field and a taken name
+field can change it through the normal edit; the change is recorded in Activity like any field and a taken name
 is refused. Links point to the id, so nothing else changes. A document keeps its name
 through confirm, reopen and confirm again; Evlet does not add `-1`, `-2` suffixes.
 
@@ -320,5 +320,5 @@ a migration like the Playground's: `RetireField` the old field and a `RunData` s
 ## For later phases
 
 * `evlet.sequences.assigned(context, model, record_id, field, number)` is called once per
-  assigned number after the record is saved, in its transaction. It writes the Journal's
-  `number` entry ([journal.md](journal.md)).
+  assigned number after the record is saved, in its transaction. It writes the Activity's
+  `number` entry ([activity.md](activity.md)).

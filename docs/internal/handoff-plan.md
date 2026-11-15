@@ -43,7 +43,7 @@ records the owner's decision and wins.
 | Void and revise | none | Voiding only through `void()` with a reason; a declared `Move` into `void` is rejected. Admin always keeps void and revise; Rules add roles. `revises` is an indexed `Link` to the same model, not `Ref()` |
 | Savepoints | none | Each document operation runs in a savepoint, so a failure caught by trusted code leaves no partial writes |
 | `ChildTable` on finite models | legacy child rows skip finite rules | A `ChildTable` whose child uses finite features is rejected; use `Table(Child)` |
-| Void, revise, Effects, Sequence, Journal, Measures, meaning metadata | none | New |
+| Void, revise, Effects, Sequence, Activity, Measures, meaning metadata | none | New |
 | Posted records | none | Frozen calculated values; actions and moves may not change what they read (409); corrections by void or revise, or an admin's Unpost and Repost; Recompute never recalculates posted records unless an admin asks (`evlet migrate --recompute-posted`); previews show kept values |
 
 ## Phases and branches
@@ -59,12 +59,12 @@ Each phase is a branch stacked on the previous one and a draft PR against it.
 | 5 | `model/05-void-revise` | `void`, `revise`, operations in `Rule` | Done, #39 |
 | 6 | `model/06-effects` | `Effect`, `Swap`, `Negate`, balance check, read-only effect rows, check command | Done, #43 |
 | 7 | `model/07-sequences` | `Sequence` field, counter table, period reset, scopes | Done, #40 |
-| 8 | `model/08-journal` | Journal table, engine and user entries, permissions, hash chain, verify command | Done, #44 |
+| 8 | `model/08-journal` | Activity table, engine and user entries, permissions, hash chain, verify command | Done, #44 |
 | 9 | `model/09-measures` | Aggregate API, `Meta.measures`, HTTP endpoints | Done, #41 |
 | 10 | `model/10-meaning` | `key_fields`, `relations`, `Meta.attachments`, `view_for` keys | Done, #42 |
 | 11 | `ui-final/01-core` | Reactive core, DOM and templates, router, API client, model runtime over the finite engine | Done, #45 |
 | 12 | `ui-final/02-components` | Component library in the README build order, Library page | Done, #46 |
-| 13 | `ui-final/03-screens` | Shell, login, Docs, lists and boards, doc view, child table, command palette, actions, journal | Done, #47 |
+| 13 | `ui-final/03-screens` | Shell, login, Docs, lists and boards, doc view, child table, command palette, actions, activity | Done, #47 |
 | 14 | `ui-final/04-testcrm` | `examples/testcrm/models.py`, launcher, browser end-to-end tests, performance budgets | Done, #48 |
 | 15 | `ui-final/05-remove-solid` | Remove SolidJS, the Vue harness, the Projects demo and the page renderer; docs | Done, #49 |
 | 16 | `ui-final/06-testcrm-findings` | Fixes from the testCRM findings review | Done, #50 |
@@ -114,7 +114,7 @@ open as draft PRs #52 to #60, and a tenth PR closes the findings of a review acr
 | 8 | #59 | `h2/08-remote-mcp` | Remote MCP for AI assistants with OAuth | [connector.md](../connector.md#remote-mcp-with-oauth) |
 | 9 | #60 | `h2/09-mailboxes` | Personal mailboxes | [controls.md](../controls.md#personal-mailboxes) |
 | 10 | #61 | `h2/10-cross-review-fixes` | One revocation function, export grouped by setting prefix, instance fields grantable, every PostgreSQL variant in CI, the mailbox page with the switch off, a dropped IMAP connection during sign-in kept apart from a rejected password | this section |
-| 11 | #62 | `h2/11-unpost-repost` | Unpost and Repost of posted documents, `--recompute-posted` for Recompute, `unposted` and `reposted` journal entries and audit rows, record screen actions | [states-actions.md](../states-actions.md#unpost-and-repost) |
+| 11 | #62 | `h2/11-unpost-repost` | Unpost and Repost of posted documents, `--recompute-posted` for Recompute, `unposted` and `reposted` activity entries and audit rows, record screen actions | [states-actions.md](../states-actions.md#unpost-and-repost) |
 | 12 | #63 | `h2/12-security-review` | The owner's security decisions of 02-11-2026: untrusted proxy warning, 12-hour sessions and 5 failed sign-ins, when the two-step code is asked, code-only sensitive settings, the choice to revoke API keys, instance fields for every role | this section |
 
 Decisions taken while building them (the owner's where marked):
@@ -169,7 +169,7 @@ Decisions taken while building them (the owner's where marked):
 - **Posted records (owner's decision).** Posted records are never recalculated by
   `Recompute` unless an admin asks, for one migration run, with `evlet migrate <instance>
   --recompute-posted` (or `migrate(..., recompute_posted=True)`). Each posted record that
-  changes gets a `recomputed` journal entry with `"posted": true`, and the run writes one audit
+  changes gets a `recomputed` activity entry with `"posted": true`, and the run writes one audit
   row. Browser requests never migrate, so Controls has no switch for it.
 - **Unpost and Repost (owner's decision).** Unpost takes a posted document back to the state it
   posted from, with a required reason, keeping its id and number (no number is taken or given
@@ -177,7 +177,7 @@ Decisions taken while building them (the owner's where marked):
   while a live record (not void, and locked or posted) links to it, directly, through its
   Table rows or through effect rows, and the refusal names those records. Repost runs the
   posting move again through the normal move path, which re-validates and posts fresh rows.
-  Both write `unposted` / `reposted` journal entries and a Controls audit row (area
+  Both write `unposted` / `reposted` activity entries and a Controls audit row (area
   `Records`), through `corrections.unposted` and `corrections.reposted`.
 - **A record that ever posted is never deleted.** Its effect rows, reversed or not, name it as
   their source and its number stays used, so delete answers 409 and details carry
@@ -189,7 +189,7 @@ Decisions taken while building them (the owner's where marked):
 - **What "posted" means.** A record is posted when it has live effect rows: the latest row of
   some effect is an original, not a reversal. Unposting makes it a draft for this purpose, so
   edits recalculate and `Recompute` includes it. The state it returns to is the start of its
-  posting move; when moves from several states post, the latest `moved` journal entry decides.
+  posting move; when moves from several states post, the latest `moved` activity entry decides.
 - **Instance fields for every staff role** (owner's decision, 02-11-2026). An instance field
   follows the record for desk roles: every one that reads the model reads it and every one that
   creates or updates it writes it, also when its app rule lists `read_fields` or `write_fields`.
@@ -201,7 +201,7 @@ Fitting them onto the first program:
 
 - testCRM needs no `routes.py`: with no routes file the instance gets the default table, so
   `scripts/testcrm.sh` and its HTTP tests run unchanged.
-- The `journal` operation from Phase 8 is a Rule operation like `void` and `revise`: a public
+- The `activity` operation from Phase 8 is a Rule operation like `void` and `revise`: a public
   or custom role may name it, Controls keeps it on save and can take it away, and a custom
   role based on the editor posts like the editor.
 - The PostgreSQL CI job runs every test file that uses the `pg_dsn` fixture, so the variants

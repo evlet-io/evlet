@@ -17,7 +17,7 @@ export const TOOLS: Array<[string, string, boolean]> = [
   ['list_records', 'Query permitted records with filters and sort.', false],
   ['get_record', 'Read one record and its child collections.', false],
   ['aggregate_records', 'Totals, counts and group-by over permitted records.', false],
-  ['record_history', "Read a record's journal.", false],
+  ['record_history', "Read a record's activity.", false],
   ['list_reports', 'List the reports this person can run.', false],
   ['run_report', 'Run a permitted report.', false],
   ['list_files', 'List the files on a record.', false],

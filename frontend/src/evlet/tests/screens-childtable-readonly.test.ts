@@ -17,7 +17,7 @@ async function openLines({ detail = invoice.invoice_draft, schema = invoice.sche
     ['GET', /\/api\/auth\/session$/, invoice.session],
     ['GET', /\/api\/schema$/, schema],
     ['GET', detailPath, detail],
-    ['GET', /\/api\/invoice\/[0-9a-z]{13}\/(measures|related|journal|attachments)/, { status: 200, etag: null, body: { items: [], total: 0, limit: 50, offset: 0 } }],
+    ['GET', /\/api\/invoice\/[0-9a-z]{13}\/(measures|related|activity|attachments)/, { status: 200, etag: null, body: { items: [], total: 0, limit: 50, offset: 0 } }],
     ['GET', new RegExp(`/api/customer/${invoice.invoice_customer.body.id}$`), invoice.invoice_customer],
   ], `/app/invoice/${id}`);
   // The Lines table is in the record's primary area.

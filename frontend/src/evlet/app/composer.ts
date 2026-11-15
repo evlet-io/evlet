@@ -1,5 +1,5 @@
 // The activity composer: notes on a record written with Evlet's rich text editor, with @mentions of
-// people (docs/journal.md). A person who cannot open the record is flagged while composing; the server
+// people (docs/activity.md). A person who cannot open the record is flagged while composing; the server
 // tells them only that they were mentioned.
 
 import { html } from '../dom';

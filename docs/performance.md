@@ -143,7 +143,7 @@ SQLite, which retries at random rather than in order, so a long job could keep r
 for seconds and then fail them with "database is locked". From 0.4.3 an instance keeps four
 SQLite files and its writers take turns.
 
-**Four files.** `data/database.sqlite3` keeps records, the audit trail, the journal, the job
+**Four files.** `data/database.sqlite3` keeps records, the audit trail, the activity, the job
 queue (with job progress and checkpoints), accounts, roles and settings: everything that must
 save in the same transaction as a record. `data/sessions.sqlite3` keeps sign-in sessions,
 two-step tickets and sign-in attempts. `data/logs.sqlite3` keeps the tool-call log, public rate

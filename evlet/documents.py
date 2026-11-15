@@ -286,7 +286,7 @@ class Context:
         return scoped_measures(self._business, self._tx, self.user, self._model(model), None if record_id is None else known_id(record_id), filters)
 
     def history(self, model, record_id, **page):
-        from .journal import entries
+        from .activity import entries
         return entries(self, model, known_id(record_id), **page)
 
     def create(self, model, **values):
@@ -348,8 +348,8 @@ class Context:
         tx.connection.run(qb.delete('evlet_attachments').where(model=business.registry.name_for(model), record_id=record_id))
         from .unsaved import Unsaved
         Unsaved.record_deleted(tx.connection, business.registry.name_for(model), record_id)
-        from . import journal
-        journal.deleted(self, model, record.id)
+        from . import activity
+        activity.deleted(self, model, record.id)
         business.changed(tx, model, record_id, deleted=True)
 
     def release(self, model, record_id, *, remark=None):
@@ -1656,7 +1656,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     change a record in a locked state but still obey each field's locked_when and every other rule.
     A record with posted effects keeps its stored calculated values on every write, and its actions and
     moves may not change what those values read. A move runs in the state manager's order: the rule,
-    @state.exit, the new state, @state, settle (with @validate), then the write and its journal entry.
+    @state.exit, the new state, @state, settle (with @validate), then the write and its activity entry.
     """
     from . import guards, statemanager
     business, tx, user = context._business, context._tx, context.user
@@ -1785,17 +1785,17 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     persist_rows(context, model, draft, before, record.id, keys)
     if released is not None:
         statemanager.finish_release(context, model, record, draft, released, rule, remark)
-    # The Journal entry of this write: `moved` for a move, otherwise `created` or `changed`.
-    from . import journal
+    # The Activity entry of this write: `moved` for a move, otherwise `created` or `changed`.
+    from . import activity
     if rule is not None:
         from .effects import post
         posted_rows = post(context, model, record.id, rule.to)
         statemanager.moved(context, model, record, before._values.get(model.__state__), rule, remark, level, before, draft, released=released)
-        journal.effects_posted(context, model, record.id, reversed_rows + posted_rows)
+        activity.effects_posted(context, model, record.id, reversed_rows + posted_rows)
     elif release:
         pass
     else:
-        journal.written(context, model, record.id, before, draft, action=action, restored=restored,
+        activity.written(context, model, record.id, before, draft, action=action, restored=restored,
                         entering=statemanager.entering(context, model, record) if before is None else None)
     for name, number in numbers:
         sequences.assigned(context, model, record.id, name, number)

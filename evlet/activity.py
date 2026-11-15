@@ -1,17 +1,17 @@
-"""The Journal: one append-only history per record.
+"""Activity: one append-only history per record.
 
     class Meta:
-        journal = Journal(tamper_evident=True)
+        activity = Activity(tamper_evident=True)
 
-A model with a State journals by default; `Journal()` turns it on for any root model and
-`journal = None` turns it off. Entries live in `evlet_journal(id, model, record_id, kind, actor,
+A model with a State keeps its Activity by default; `Activity()` turns it on for any root model and
+`activity = None` turns it off. Entries live in `evlet_activity(id, model, record_id, kind, actor,
 at, data, prev_hash, hash)`. The engine writes its entries in the transaction and savepoint of the
 change they describe, so a failed operation leaves none. People add notes, logged messages, calls
-and follow ups through `POST /api/{model}/{id}/journal`. Nothing is ever edited or deleted: no
+and follow ups through `POST /api/{model}/{id}/activity`. Nothing is ever edited or deleted: no
 route or function changes an entry, and database triggers refuse UPDATE and DELETE on the table.
 
 With `tamper_evident=True` each entry stores the SHA-256 hash of its canonical JSON and the hash of
-the record's previous entry, and `evlet journal verify <instance>` reports breaks in those chains.
+the record's previous entry, and `evlet activity verify <instance>` reports breaks in those chains.
 """
 
 from dataclasses import dataclass
@@ -32,7 +32,7 @@ from .adapter import Column, TableDefinition
 SCALARS = ('rule', 'remark', 'level', 'base', 'rules_version')
 SCALAR_COLUMNS = (Column('rule', 'TEXT'), Column('remark', 'TEXT'), Column('level', 'INTEGER'), Column('base', 'INTEGER'),
                   Column('rules_version', 'INTEGER'))
-TABLE = TableDefinition('evlet_journal', (
+TABLE = TableDefinition('evlet_activity', (
     Column('model', 'TEXT', required=True), Column('record_id', 'INTEGER', required=True), Column('kind', 'TEXT', required=True),
     Column('actor', 'TEXT', required=True), Column('at', 'TEXT', required=True), Column('data', 'TEXT', required=True),
     Column('prev_hash', 'TEXT'), Column('hash', 'TEXT'),
@@ -40,8 +40,11 @@ TABLE = TableDefinition('evlet_journal', (
     # release the entry builds on and the rule set version. Columns, so lists can filter on them.
     *SCALAR_COLUMNS), numbered=True)
 # Models that have declared tamper_evident=True; verify() treats their unhashed entries as breaks.
-HASHED = TableDefinition('evlet_journal_hashed', (Column('model', 'TEXT', primary=True),))
-APPEND_ONLY = 'The journal is append only'
+HASHED = TableDefinition('evlet_activity_hashed', (Column('model', 'TEXT', primary=True),))
+APPEND_ONLY = 'Activity is append only'
+# Names before framework step 0016_activity renamed them (evlet/framework.py). Only the steps before it, which
+# run on a database that still has them, and step 0016 itself read these.
+LEGACY_TABLE, LEGACY_HASHED, LEGACY_INDEX = 'evlet_journal', 'evlet_journal_hashed', 'evlet_journal_record'
 # Kinds the engine writes; `effects` is written by effects_posted() after a move posts or reverses effect rows,
 # and `recomputed` by a Recompute migration that changed a record's stored results. Entries of kinds earlier
 # releases wrote (voided, revised, unposted, reposted, confirmed, cancelled, reopened) stay readable.
@@ -49,7 +52,7 @@ ENGINE_KINDS = ('created', 'changed', 'moved', 'approved', 'rejected', 'released
                 'deleted', 'effects', 'recomputed')
 # Kinds about the State: shown as `changed` to a reader who cannot read it.
 STATE_KINDS = ('released', 'restored', 'snapshot', 'voided', 'revised', 'unposted', 'reposted', 'effects')
-# Kinds people write through HTTP (or journal.post), and the values each takes.
+# Kinds people write through HTTP (or activity.post), and the values each takes.
 USER_KINDS = ('note', 'message', 'call', 'follow_up', 'follow_up_done')
 HTML_LENGTH = 40000
 VALUES = {'note': ('text', 'html'), 'message': ('text', 'html', 'subject', 'party', 'direction'),
@@ -63,41 +66,41 @@ PAGE, MAX_PAGE = 50, 100
 
 
 @dataclass(frozen=True)
-class Journal:
-    """Meta.journal = Journal(tamper_evident=False). `journal = None` turns the journal off."""
+class Activity:
+    """Meta.activity = Activity(tamper_evident=False). `activity = None` turns it off."""
     tamper_evident: bool = False
 
     def __post_init__(self):
         if type(self.tamper_evident) is not bool:
-            raise ValueError('Journal(tamper_evident=...) is True or False')
+            raise ValueError('Activity(tamper_evident=...) is True or False')
 
 
-@build_step('journaled')
-def journaled(value):
-    """Whether Meta.journal turns the journal on, which makes the model a document."""
-    return isinstance(value, Journal)
+@build_step('activity_declared')
+def declares_activity(value):
+    """Whether Meta.activity turns the activity on, which makes the model a document."""
+    return isinstance(value, Activity)
 
 
-@build_step('journals')
-def compile_journals(models, child_models, effects=()):
-    """{model: Journal} for root models that journal: declared with Meta.journal, or by default those
+@build_step('activities')
+def compile_activities(models, child_models, effects=()):
+    """{model: Activity} for root models that keep one: declared with Meta.activity, or by default those
     with a State or Effects (`effects` holds the models that declare Meta.effects).
 
-    Table rows are journaled with their document, so a Meta.journal on a row model is an error.
+    Table rows are recorded in their document's Activity, so a Meta.activity on a row model is an error.
     """
     result = {}
     for model in models:
         meta = getattr(model, 'Meta', None)
-        declared = hasattr(meta, 'journal')
-        value = getattr(meta, 'journal', None)
-        if value is not None and not isinstance(value, Journal):
-            raise ValueError(f'{model.__name__}: Meta.journal is Journal(...) or None')
+        declared = hasattr(meta, 'activity')
+        value = getattr(meta, 'activity', None)
+        if value is not None and not isinstance(value, Activity):
+            raise ValueError(f'{model.__name__}: Meta.activity is Activity(...) or None')
         if model in child_models:
-            if declared and value is not None and 'journal' in vars(meta):
-                raise ValueError(f'{model.__name__}: Meta.journal is for root documents; Table rows are journaled with their document')
+            if declared and value is not None and 'activity' in vars(meta):
+                raise ValueError(f'{model.__name__}: Meta.activity is for root documents; Table rows are recorded in their document\'s Activity')
             continue
         if not declared:
-            value = Journal() if model.__state__ is not None or model in effects else None
+            value = Activity() if model.__state__ is not None or model in effects else None
         if value is not None:
             result[model] = value
     return MappingProxyType(result)
@@ -110,11 +113,46 @@ def ensure_table(connection, *, hashed=()):
     Every statement is idempotent, so a database created by an earlier release gets new guards on start.
     """
     connection.ensure_table(TABLE)
-    connection.ensure_index('evlet_journal_record', 'evlet_journal', ('model', 'record_id', 'id'))
+    connection.ensure_index('evlet_activity_record', 'evlet_activity', ('model', 'record_id', 'id'))
     connection.ensure_table(HASHED)
     for name in hashed:
-        connection.run(qb.insert('evlet_journal_hashed', model=name).on_conflict('model').do_nothing())
-    connection.make_append_only('evlet_journal', APPEND_ONLY)
+        connection.run(qb.insert('evlet_activity_hashed', model=name).on_conflict('model').do_nothing())
+    connection.make_append_only('evlet_activity', APPEND_ONLY)
+
+
+def stored_table(connection):
+    """The table that holds the entries: evlet_activity, or evlet_journal on a database that framework step
+    0016_activity has not renamed yet (only the framework steps before it run on such a database)."""
+    return LEGACY_TABLE if connection.table_exists(LEGACY_TABLE) else TABLE.name
+
+
+def rename_legacy(connection):
+    """Rename evlet_journal and evlet_journal_hashed to evlet_activity and evlet_activity_hashed, keeping every row,
+    and make the index and the append-only triggers again under the new names. Idempotent.
+
+    Framework step 0016_activity runs it, and migrate() too before any app migration, since app migrations
+    (Recompute, ledger rows written in RunData) can write entries and run before the framework steps."""
+    from .migrations import SchemaError
+    if connection.table_exists(LEGACY_TABLE):
+        if connection.table_exists(TABLE.name):
+            # Only an empty table can be in the way: one made before the rename ran.
+            if connection.run(qb.select(TABLE.name, qb.count())).value():
+                raise SchemaError(f'Both {LEGACY_TABLE} and {TABLE.name} hold entries; restore the backup taken before the upgrade')
+            connection.drop_table(TABLE.name)
+        # The triggers and the index keep their names through a rename, so they are made again under the new ones.
+        connection.drop_append_only(LEGACY_TABLE)
+        if any(index.name == LEGACY_INDEX for index in connection.inspect(LEGACY_TABLE).indexes):
+            connection.drop_index(LEGACY_INDEX)
+        connection.rename_table(LEGACY_TABLE, TABLE.name)
+        connection.ensure_index('evlet_activity_record', TABLE.name, ('model', 'record_id', 'id'))
+        connection.make_append_only(TABLE.name, APPEND_ONLY)
+    if connection.table_exists(LEGACY_HASHED):
+        if connection.table_exists(HASHED.name):
+            for (model,) in connection.run(qb.select(LEGACY_HASHED, 'model')).all():
+                connection.run(qb.insert(HASHED.name, model=model).on_conflict('model').do_nothing())
+            connection.drop_table(LEGACY_HASHED)
+        else:
+            connection.rename_table(LEGACY_HASHED, HASHED.name)
 
 
 # Writing
@@ -197,18 +235,18 @@ def tracking_values(registry, model, data):
 
 def insert(connection, registry, model, record_id, kind, actor, data, **scalars):
     if set(scalars) - set(SCALARS):
-        raise ValueError('Unknown journal column')
+        raise ValueError('Unknown activity column')
     data = tracking_values(registry, model, data)
     name = registry.name_for(model)
     at, text = now(), canonical(data)
     prev_hash = digest = None
-    if registry.journals[model].tamper_evident:
+    if registry.activities[model].tamper_evident:
         # Writers are serialized (one write transaction at a time), so the
         # previous entry cannot change before this one commits.
-        row = connection.run(qb.select('evlet_journal', 'hash').where(model=name, record_id=record_id).order_by('-id').limit(1)).one()
+        row = connection.run(qb.select('evlet_activity', 'hash').where(model=name, record_id=record_id).order_by('-id').limit(1)).one()
         prev_hash = None if row is None else row[0]
         digest = entry_hash(name, record_id, kind, actor, at, text, prev_hash, scalars)
-    entry = qb.insert('evlet_journal', model=name, record_id=record_id, kind=kind, actor=actor, at=at, data=text, prev_hash=prev_hash,
+    entry = qb.insert('evlet_activity', model=name, record_id=record_id, kind=kind, actor=actor, at=at, data=text, prev_hash=prev_hash,
                       hash=digest, **{key: value for key, value in scalars.items() if value is not None})
     return connection.run(entry.returning_id()).id
 
@@ -216,11 +254,11 @@ def insert(connection, registry, model, record_id, kind, actor, data, **scalars)
 def recomputed(connection, registry, changes):
     """`recomputed` entries, as the engine, for the records a Recompute migration changed:
     {(model, record_id): {"fields": ..., "rows": ...}} in the shape of a `changed` entry."""
-    changes = {key: data for key, data in changes.items() if key[0] in registry.journals}
+    changes = {key: data for key, data in changes.items() if key[0] in registry.activities}
     if not changes:
         return
     ensure_table(connection,
-                 hashed=[registry.name_for(model) for model, journal in registry.journals.items() if journal.tamper_evident])
+                 hashed=[registry.name_for(model) for model, activity in registry.activities.items() if activity.tamper_evident])
     for (model, record_id), data in sorted(changes.items(), key=lambda item: (registry.name_for(item[0][0]), item[0][1])):
         from .statemanager import changes_base
         insert(connection, registry, model, record_id, 'recomputed', ENGINE, data, base=changes_base(connection, registry, model, record_id, data))
@@ -283,13 +321,13 @@ def tree_changes(business, model, before, after, skip=()):
     return {**({'fields': fields} if fields else {}), **({'rows': rows} if rows else {})}
 
 
-def journals(context, model):
-    return model in context._business.journals
+def keeps_activity(context, model):
+    return model in context._business.activities
 
 
 def written(context, model, record_id, before, after, *, action=None, entering=None, restored=None):
     """`created` or `changed` after a document write (create, update, action, revision copy)."""
-    if not journals(context, model):
+    if not keeps_activity(context, model):
         return
     data = tree_changes(context._business, model, before, after)
     if action is not None:
@@ -307,19 +345,19 @@ def written(context, model, record_id, before, after, *, action=None, entering=N
 
 
 def number(context, model, record_id, name, value):
-    if journals(context, model):
+    if keeps_activity(context, model):
         append(context._business, context._tx, context.user, model, record_id, 'number', {'field': name, 'number': value})
 
 
 def deleted(context, model, record_id):
     """`deleted`: the record is gone, its history stays (ids are never reused)."""
-    if journals(context, model):
+    if keeps_activity(context, model):
         append(context._business, context._tx, context.user, model, record_id, 'deleted', {})
 
 
 def file(business, tx, user, model, record_id, action, attachment):
     """`file` when an attachment is added or removed through the attachment routes."""
-    if model in business.journals:
+    if model in business.activities:
         append(business, tx, user, model, record_id, 'file', {'action': action, **attachment})
 
 
@@ -327,9 +365,9 @@ def effects_posted(context, model, record_id, targets):
     """`effects` after a move posted effect rows or wrote their mirror rows, in the same transaction.
 
     `targets` lists, per target model that received rows, {"target", "rows", "reversal"} and, for a
-    balanced effect, "balanced" (see `evlet.effects.journal_item`). Nothing is written without rows.
+    balanced effect, "balanced" (see `evlet.effects.activity_item`). Nothing is written without rows.
     Readers see the targets they read fully and only when they can read the State (see `present`)."""
-    if targets and journals(context, model):
+    if targets and keeps_activity(context, model):
         append(context._business, context._tx, context.user, model, record_id, 'effects', {'targets': list(targets)})
 
 
@@ -399,7 +437,7 @@ def clean_entry(business, tx, model, record_id, kind, values):
         target = values.get('follow_up')
         name = business.registry.name_for(model)
         if type(target) is not int or tx.connection.run(
-                qb.select('evlet_journal', 'id').where(id=target, model=name, record_id=record_id, kind='follow_up')).one() is None:
+                qb.select('evlet_activity', 'id').where(id=target, model=name, record_id=record_id, kind='follow_up')).one() is None:
             raise ValidationError({'follow_up': 'Name a follow up of this record'})
         if target in completed(tx, name, record_id):
             raise AccessError(409, 'This follow up is already done')
@@ -424,15 +462,15 @@ def assignee(business, tx, model, record_id, value):
 
 def completed(tx, name, record_id):
     """{follow up id: id of the entry that completed it} for one record."""
-    rows = tx.connection.run(qb.select('evlet_journal', 'id', 'data').where(model=name, record_id=record_id, kind='follow_up_done')).all()
+    rows = tx.connection.run(qb.select('evlet_activity', 'id', 'data').where(model=name, record_id=record_id, kind='follow_up_done')).all()
     return {json.loads(row['data'])['follow_up']: row['id'] for row in rows}
 
 
 def post(context, model, record_id, kind, **values):
-    """Add a user entry with the checks of POST /api/{model}/{id}/journal; returns it as the caller sees it.
+    """Add a user entry with the checks of POST /api/{model}/{id}/activity; returns it as the caller sees it.
 
-    The model must journal (404), the caller must read the record within its row scope (403 or 404)
-    and hold the `journal` operation (403). A follow up is completed once (409)."""
+    The model must keep an Activity (404), the caller must read the record within its row scope (403 or 404)
+    and hold the `activity` operation (403). A follow up is completed once (409)."""
     if context.readonly:
         raise AccessError(403, 'This context is read only')
     model = context._model(model)
@@ -454,19 +492,19 @@ def post(context, model, record_id, kind, **values):
 def add(context, model, record_id, kind, values):
     from .documents import known_id
     business, tx, user, record_id = context._business, context._tx, context.user, known_id(record_id)
-    if model not in business.journals:
-        raise AccessError(404, 'This record has no journal')
+    if model not in business.activities:
+        raise AccessError(404, 'This record has no activity')
     business.policy.record(tx, user, model, record_id)
-    if not business.policy.allows(user, model, 'journal'):
-        raise AccessError(403, 'Your role cannot write to this journal')
+    if not business.policy.allows(user, model, 'activity'):
+        raise AccessError(403, 'Your role cannot write to this activity')
     data = clean_entry(business, tx, model, record_id, kind, values)
     entry_id = append(business, tx, user, model, record_id, kind, data)
     if data.get('html'):
         # Mentions: inbox rows now, emails once the entry is committed (route() sends them).
         from .mentions import record as mentioned
         context.__dict__.setdefault('_mention_emails', []).extend(mentioned(business, tx, user, model, record_id, entry_id, data['html']))
-    business.changed(tx, model, record_id, journal=True)
-    row = tx.connection.run(qb.select('evlet_journal', 'id', 'kind', 'actor', 'at', 'data').where(id=entry_id)).one()
+    business.changed(tx, model, record_id, activity=True)
+    row = tx.connection.run(qb.select('evlet_activity', 'id', 'kind', 'actor', 'at', 'data').where(id=entry_id)).one()
     return shown(business, tx, user, model, record_id, [row])[0]
 
 
@@ -668,21 +706,21 @@ def shown(business, tx, user, model, record_id, rows):
 
 
 def entries(context, model, record_id, *, limit=PAGE, offset=0, kind=None):
-    """One page of a record's journal, newest first, as GET /api/{model}/{id}/journal returns it.
+    """One page of a record's activity, newest first, as GET /api/{model}/{id}/activity returns it.
     kind keeps entries of one stored kind, such as message."""
     business, tx, user = context._business, context._tx, context.user
     model = context._model(model)
-    if model not in business.journals:
-        raise AccessError(404, 'This record has no journal')
+    if model not in business.activities:
+        raise AccessError(404, 'This record has no activity')
     business.policy.record(tx, user, model, record_id)
     if type(limit) is not int or not 1 <= limit <= MAX_PAGE or type(offset) is not int or not 0 <= offset <= 2**63 - 1:
         raise ValidationError({'query': f'Use a limit of 1 to {MAX_PAGE} entries and a nonnegative offset'})
     name = business.registry.name_for(model)
     only = qb.TRUE if kind is None else qb.eq('kind', kind)
-    rows = tx.connection.run(qb.select('evlet_journal', 'id', 'kind', 'actor', 'at', 'data', 'rule', 'remark', 'level', 'base')
+    rows = tx.connection.run(qb.select('evlet_activity', 'id', 'kind', 'actor', 'at', 'data', 'rule', 'remark', 'level', 'base')
                              .where(only, model=name, record_id=record_id)
                              .order_by('-id').limit(limit).offset(offset)).all()
-    total = tx.connection.run(qb.select('evlet_journal', qb.count()).where(only, model=name, record_id=record_id)).value()
+    total = tx.connection.run(qb.select('evlet_activity', qb.count()).where(only, model=name, record_id=record_id)).value()
     items = shown(business, tx, user, model, record_id, rows)
     ids = {item['actor'] for item in items if item['actor'] is not None}
     ids |= {item['data']['assignee'] for item in items if item['kind'] == 'follow_up' and item['data'].get('assignee')}
@@ -698,25 +736,25 @@ def entries(context, model, record_id, *, limit=PAGE, offset=0, kind=None):
 
 
 def summary(business, tx, model, record_id):
-    """`_journal` for a detail response: the number of entries and of follow ups not done yet."""
-    if model not in business.journals:
+    """`_activity` for a detail response: the number of entries and of follow ups not done yet."""
+    if model not in business.activities:
         return {}
-    kinds = dict(tx.connection.run(qb.select('evlet_journal', 'kind', qb.count())
+    kinds = dict(tx.connection.run(qb.select('evlet_activity', 'kind', qb.count())
                                    .where(model=business.registry.name_for(model), record_id=record_id).group_by('kind')).all())
-    return {'_journal': {'count': sum(kinds.values()), 'open_follow_ups': kinds.get('follow_up', 0) - kinds.get('follow_up_done', 0)}}
+    return {'_activity': {'count': sum(kinds.values()), 'open_follow_ups': kinds.get('follow_up', 0) - kinds.get('follow_up_done', 0)}}
 
 
 def schema(business, user, model):
-    """The schema entry's `journal` key: whether entries are hashed and the kinds this role may post."""
-    journal = business.journals.get(model)
-    if journal is None:
+    """The schema entry's `activity` key: whether entries are hashed and the kinds this role may post."""
+    activity = business.activities.get(model)
+    if activity is None:
         return {}
-    kinds = list(USER_KINDS) if business.policy.allows(user, model, 'journal') else []
-    return {'journal': {'tamper_evident': journal.tamper_evident, 'kinds': kinds}}
+    kinds = list(USER_KINDS) if business.policy.allows(user, model, 'activity') else []
+    return {'activity': {'tamper_evident': activity.tamper_evident, 'kinds': kinds}}
 
 
 def route(business, scope, body, user, model, record_id):
-    """GET (?limit=&offset=&kind=) and POST /api/{model}/{id}/journal."""
+    """GET (?limit=&offset=&kind=) and POST /api/{model}/{id}/activity."""
     from .database import Session
     method = scope['method']
     if method == 'POST':
@@ -753,7 +791,7 @@ def route(business, scope, body, user, model, record_id):
 
 
 def history_route(business, scope, user, model, parts):
-    """GET /api/{model}/{id}/history?limit=&offset=: the journal page Context.history returns."""
+    """GET /api/{model}/{id}/history?limit=&offset=: the activity page Context.history returns."""
     from .identity import path_id
     if len(parts) != 5 or path_id(parts[3]) is None:
         raise AccessError(404, 'Record not found')
@@ -774,9 +812,9 @@ def history_route(business, scope, user, model, parts):
 
 def hashed_models(connection):
     """Names of the models that have declared tamper_evident=True, as recorded at startup."""
-    if 'model' not in connection.columns('evlet_journal_hashed'):
+    if 'model' not in connection.columns('evlet_activity_hashed'):
         return set()
-    return {row[0] for row in connection.run(qb.select('evlet_journal_hashed', 'model')).all()}
+    return {row[0] for row in connection.run(qb.select('evlet_activity_hashed', 'model')).all()}
 
 
 def verify_connection(connection, *, hashed=(), batch=1000):
@@ -790,7 +828,7 @@ def verify_connection(connection, *, hashed=(), batch=1000):
     hashed = set(hashed)
     last, breaks, checked, after = {}, [], 0, 0
     while True:
-        rows = connection.run(qb.select('evlet_journal', 'id', 'model', 'record_id', 'kind', 'actor', 'at', 'data', 'prev_hash', 'hash', *SCALARS)
+        rows = connection.run(qb.select('evlet_activity', 'id', 'model', 'record_id', 'kind', 'actor', 'at', 'data', 'prev_hash', 'hash', *SCALARS)
                               .where(qb.gt('id', after)).order_by('id').limit(batch)).all()
         if not rows:
             return checked, breaks
@@ -817,10 +855,10 @@ def verify_connection(connection, *, hashed=(), batch=1000):
 def verify(database):
     """verify_connection() over a database in one read snapshot. Tamper-evident
     models are those its registry declares plus those recorded in the database."""
-    declared = {database.registry.name_for(model) for model, journal in getattr(database.registry, 'journals', {}).items()
-                if journal.tamper_evident}
+    declared = {database.registry.name_for(model) for model, activity in getattr(database.registry, 'activities', {}).items()
+                if activity.tamper_evident}
     with database._connection() as connection:
-        if 'id' not in connection.columns('evlet_journal'):
+        if 'id' not in connection.columns('evlet_activity'):
             return 0, []
         connection.snapshot()
         return verify_connection(connection, hashed=declared | hashed_models(connection))

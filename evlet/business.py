@@ -212,8 +212,8 @@ class Business:
             self.relations[model] = tuple(item for item in meaning.relations if item.source not in self.child_models)
         if any('children' in model.__fields__ for model in self.registry.models.values()):
             raise ValueError('children is reserved for owned collections')
-        # Rows of a ChildTable are journaled with their parent, like Table rows.
-        self.journals = {model: journal for model, journal in self.registry.journals.items() if model not in self.child_models}
+        # Rows of a ChildTable are recorded in their parent's Activity, like Table rows.
+        self.activities = {model: activity for model, activity in self.registry.activities.items() if model not in self.child_models}
         self.mailboxes = Mailboxes(self)
         from .unsaved import Unsaved
         self.unsaved = Unsaved(self)
@@ -258,11 +258,11 @@ class Business:
         if any(releasing(model) for model in self.registry.models.values()):
             with self.database.transaction() as tx:
                 ensure_releases(tx.connection)
-        if self.journals:
-            from .journal import ensure_table
+        if self.activities:
+            from .activity import ensure_table
             with self.database.transaction() as tx:
                 ensure_table(tx.connection,
-                             hashed=[self.registry.name_for(model) for model, journal in self.journals.items() if journal.tamper_evident])
+                             hashed=[self.registry.name_for(model) for model, activity in self.activities.items() if activity.tamper_evident])
         if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
             self.forms.initialize()
         if getattr(self, 'slips', None) and self.slips.slips:
@@ -282,9 +282,9 @@ class Business:
                     namespace = connection.run(qb.select('evlet_job_namespace', 'namespace').where(id=1)).value()
                 self.application['id'] = hashlib.sha256(namespace.encode()).hexdigest()
 
-    def changed(self, tx, model, record_id, *, deleted=False, journal=False):
+    def changed(self, tx, model, record_id, *, deleted=False, activity=False):
         if self.events:
-            self.events.publish(tx, model, record_id, deleted=deleted, journal=journal)
+            self.events.publish(tx, model, record_id, deleted=deleted, activity=activity)
 
     @property
     def timezone(self):
@@ -514,8 +514,8 @@ class Business:
                 entry['measures'] = measure_schema(self, user, model)
             if entry['attachments']:
                 entry['attachment_limits'] = self.attachment_limits[model].public()
-            from .journal import schema as journal_schema
-            entry.update(journal_schema(self, user, model))
+            from .activity import schema as activity_schema
+            entry.update(activity_schema(self, user, model))
             meaning = self.registry.meaning[model]
             if meaning.key_fields:
                 entry['key_fields'] = [name for name in meaning.key_fields if name in readable]
@@ -810,23 +810,26 @@ class Business:
             from .statemanager import route
             return route(self, scope, body, user, model, parts)
         if len(parts) == 5 and parts[4] == 'history':
-            from .journal import history_route
+            from .activity import history_route
             return history_route(self, scope, user, model, parts)
         if len(parts) == 5 and parts[4] == 'mentionable':
-            # People to mention in this record's journal, with whether each can open the record.
+            # People to mention in this record's activity, with whether each can open the record.
             if path_id(parts[3]) is None or method != 'GET': raise AccessError(404, 'Route not found')
-            if model not in self.journals: raise AccessError(404, 'This record has no journal')
+            if model not in self.activities: raise AccessError(404, 'This record has no activity')
             from urllib.parse import parse_qs
             from .mentions import mentionable
             query = parse_qs(scope.get('query_string', b'').decode('latin-1'))
             with self.database.transaction() as tx:
                 self.policy.record(tx, user, model, path_id(parts[3]))
-                if not self.policy.allows(user, model, 'journal'):
-                    raise AccessError(403, 'Your role cannot write to this journal')
+                if not self.policy.allows(user, model, 'activity'):
+                    raise AccessError(403, 'Your role cannot write to this activity')
                 return 200, {'items': mentionable(self, tx, user, model, path_id(parts[3]), query.get('q', [''])[0])}, []
         if len(parts) == 5 and parts[4] == 'journal':
+            # Renamed after 0.4.7 (docs/activity.md); the old path says where to go.
+            raise AccessError(410, f'/api/{parts[2]}/{{id}}/journal was renamed: use /api/{parts[2]}/{{id}}/activity')
+        if len(parts) == 5 and parts[4] == 'activity':
             if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
-            from .journal import route
+            from .activity import route
             return route(self, scope, body, user, model, path_id(parts[3]))
         if getattr(model, '__declaration_mode__', False) and method == 'DELETE' and len(parts) == 4:
             if path_id(parts[3]) is None: raise AccessError(404, 'Record not found')
@@ -1110,8 +1113,8 @@ class Business:
 
         `loaded` holds the owned rows a detail of the record just read (see `detail`), for guards that read rows.
         """
-        from .journal import summary as journal_summary
-        result = journal_summary(self, context._tx, model, record.id)
+        from .activity import summary as activity_summary
+        result = activity_summary(self, context._tx, model, record.id)
         if model in self.registry.effects:
             from .effects import ever_posted
             if ever_posted(context._tx.connection, self.registry, model, record.id):
@@ -1664,7 +1667,7 @@ class Business:
                 if tx.connection.run(qb.select('evlet_attachments', qb.count()).where(FILES, model=name, record_id=record_id)).value() >= limits.max_files:
                     raise ValidationError({'attachment': f'Use at most {limits.max_files} attachment{"s" if limits.max_files > 1 else ""} per record'})
                 file_id = self.storage.add(tx, *args, filename, content)
-                from .journal import file
+                from .activity import file
                 file(self, tx, user, model, record_id, 'added', {'id': file_id, 'name': filename, 'size': len(content)})
                 self.changed(tx, model, record_id)
                 return 201, {'id': file_id, 'name': filename, 'size': len(content)}, []
@@ -1682,7 +1685,7 @@ class Business:
                 return 200, Download(self.storage.read(row)), [(b'content-type', b'application/octet-stream'), (b'content-disposition', ("attachment; filename*=UTF-8''" + quote(row['name'], safe='')).encode()), (b'content-security-policy', b"default-src 'none'; sandbox")]
             if method == 'DELETE':
                 tx.connection.run(qb.delete('evlet_attachments').where(id=file_id))
-                from .journal import file
+                from .activity import file
                 file(self, tx, user, model, record_id, 'removed', {'id': file_id, 'name': row['name']})
                 self.changed(tx, model, record_id)
                 return 204, None, []

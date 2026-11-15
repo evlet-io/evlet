@@ -122,7 +122,7 @@ number is used, until Create, which sends a create (POST) like any new record.
   are copied too: duplicating a Done project gives a new Draft project with its fields.
 - **Left out:** the id, the name or number the server assigns (the naming field, Sequence fields),
   the State (the copy starts in the default state), calculated and read-only fields (they
-  recalculate), fields the role cannot write, files and the Journal. Fields marked `unique` are
+  recalculate), fields the role cannot write, files and the Activity. Fields marked `unique` are
   left empty, and the banner names them: "Unique fields were left empty: Code." When the server
   provides it, `"copy": false` on a field or on a Table entry leaves it out too; without the key it
   is copied. A field left out starts as on any new record (empty, or its default), and a table left
@@ -168,7 +168,7 @@ The State in the schema decides how a record's state is drawn, never the state's
   first cell is struck through in grey after a ban icon and the row is muted a little; its status badge keeps its
   colour. On the record the title is struck through in grey, the State reads as red "Cancelled" text with a ban
   icon (no pill), and a soft red strip says "Cancelled on 09-11-2026 by sara. Reason: ...", from the newest move
-  into that state in the journal (its remark, or a text value the move asked for). Without a journal the strip
+  into that state in the activity (its remark, or a text value the move asked for). Without an activity the strip
   says only the state.
 - **Locked**: any other `lock=True` or `final` step, such as Confirmed or Done: a lock and the state's name in grey.
   A separate `Meta.status` badge after it stays a soft pill ("Paid").
@@ -964,7 +964,7 @@ header (page and side panel) shows left of the title: a round avatar for a perso
 thumbnail, served by the attachments route. The Playground's items have a Photo.
 A record's Activity, in the side column, writes notes with the same editor; typing `@` mentions a person, with a
 warning when they can't open the record. The bell in the top bar opens the notification centre,
-with the unread count kept live by the event stream ([journal.md](journal.md#mentions)). It is a
+with the unread count kept live by the event stream ([activity.md](activity.md#mentions)). It is a
 panel along the right edge under the top bar, grouped into Today and Earlier; a click anywhere else,
 Esc or the bell closes it. A click on an item marks it read. Go to shows only when the person can
 open the item's record, and opens it. While the panel is closed, new items slide in as popups at the

@@ -395,7 +395,7 @@
             ]
           },
           "attachments": false,
-          "journal": {
+          "activity": {
             "tamper_evident": false,
             "kinds": [
               "note",
@@ -670,7 +670,7 @@
       ],
       "_locked": false,
       "_actions": [],
-      "_journal": {
+      "_activity": {
         "count": 1,
         "open_follow_ups": 0
       },
@@ -746,7 +746,7 @@
       ],
       "_locked": true,
       "_actions": [],
-      "_journal": {
+      "_activity": {
         "count": 2,
         "open_follow_ups": 0
       },
@@ -818,7 +818,7 @@
       ],
       "_locked": false,
       "_actions": [],
-      "_journal": {
+      "_activity": {
         "count": 4,
         "open_follow_ups": 0
       },
@@ -899,7 +899,7 @@
       ],
       "_locked": false,
       "_actions": [],
-      "_journal": {
+      "_activity": {
         "count": 5,
         "open_follow_ups": 0
       },
@@ -981,7 +981,7 @@
       ],
       "_locked": true,
       "_actions": [],
-      "_journal": {
+      "_activity": {
         "count": 6,
         "open_follow_ups": 0
       },
@@ -1040,7 +1040,7 @@
       "_moves": [],
       "_locked": true,
       "_actions": [],
-      "_journal": {
+      "_activity": {
         "count": 8,
         "open_follow_ups": 0
       },

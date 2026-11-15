@@ -8,8 +8,17 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Upgrading
 
-- **Run `evlet migrate` after upgrading.** Framework steps `0014_unsaved_versions` (draft versions)
-  and `0015_oidc_tickets` (company sign-in state) change the database; `evlet upgrade` runs them.
+- **Run `evlet migrate` after upgrading.** Framework steps `0014_unsaved_versions` (draft versions),
+  `0015_oidc_tickets` (company sign-in state) and `0016_activity` (the Journal tables renamed to
+  Activity) change the database; `evlet upgrade` runs them.
+- **The Journal is now Activity; rename it in your apps.** Replace `from evlet import Journal` with
+  `Activity`, `Meta.journal = Journal(...)` with `Meta.activity = Activity(...)` (or `None`), and the
+  `journal` operation in `Rule(...)` with `activity`. HTTP clients use `/api/{model}/{id}/activity`
+  and read `_activity` in record details and `activity` in schema entries and events; scripts run
+  `evlet activity verify`. There are no aliases: each old name fails with a message naming its
+  replacement. Step `0016_activity` renames `evlet_journal` and `evlet_journal_hashed` in place,
+  with every entry and hash, and the `journal` operation in stored Controls overrides
+  ([docs/activity.md](docs/activity.md#renamed-from-the-journal)).
 
 ### Added
 
@@ -27,6 +36,22 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   unavailable.
 - **The browser retries creates safely.** New-record forms send an `Idempotency-Key`, so a
   create whose answer was lost is retried without making a second record.
+
+### Changed
+
+- **The record history is called Activity everywhere, as the UI already labels it.** `Activity`,
+  `Meta.activity`, `evlet.activity`, the `activity` permission operation, `/api/{model}/{id}/activity`,
+  `_activity`, the schema and event key `activity`, `evlet activity verify` and the `evlet_activity`
+  and `evlet_activity_hashed` tables replace their Journal names. `Registry.activities`,
+  `Policy.activity_writers`, `Business.changed(..., activity=True)`, `EventStore.publish(..., activity=True)`
+  and `evlet.effects.activity_item` follow. Existing hash chains verify unchanged.
+
+### Removed
+
+- **The Journal names.** `evlet.Journal`, `evlet.journal`, `Meta.journal`, the `journal` operation
+  (in `Rule`, `Policy` and Controls), `/api/{model}/{id}/journal` (answers 410) and `evlet journal
+  verify` were removed without a deprecation release, by owner decision; each fails with a message
+  naming its Activity replacement.
 
 ### Fixed
 

@@ -20,7 +20,7 @@ production ready, but the rules below hold from 0.3 on.
   color=, lock=, release=, final=)` and `State.Rule(from_, to, label, key=, by=, when=, remark=,
   ask=, primary=, reject=)` with rule keys, `POST /api/{model}/{id}/moves/{key}` with its body,
   checks and answers, `context.move(model, id, key, *, remark=None, **values)`, `_moves`,
-  `_locked`, the schema's `state` entry, the Journal's `rule` and `remark`, `versioned=False`,
+  `_locked`, the schema's `state` entry, the Activity's `rule` and `remark`, `versioned=False`,
   and `by=()` for rules only the application makes, with its 403 `<label> is made by the
   application only` ([states-actions.md](states-actions.md)). `State.Level` and `self_approve=`
   are declared but not public until approval levels land (0.4.6, PR 2). 0.4.6 removed `Move`,
@@ -28,6 +28,12 @@ production ready, but the rules below hold from 0.3 on.
   `before_close`, `changed`, `Model.validate()` and the lifecycle decorators without a
   deprecation release, by owner decision ([CHANGELOG.md](../CHANGELOG.md)).
 - **Records.** `Model.to_dict`.
+- **Activity.** `Activity(tamper_evident=)` as `Meta.activity`, the `activity` Rule operation,
+  `GET` and `POST /api/{model}/{id}/activity`, `_activity` and the schema's `activity` entry, and
+  `evlet activity verify` ([activity.md](activity.md)). They replaced the Journal names (`Journal`,
+  `Meta.journal`, `journal`, `/journal`, `_journal`, `evlet journal verify`) without a deprecation
+  release, by owner decision; each old name fails with a message naming its replacement
+  ([CHANGELOG.md](../CHANGELOG.md)).
 - **No `evlet.ui` page names.** The Python page API was removed in 0.4 without a
   deprecation release, by owner decision, since the browser never rendered it
   ([CHANGELOG.md](../CHANGELOG.md)). `evlet.ui.metadata` stays internal.
@@ -47,7 +53,7 @@ production ready, but the rules below hold from 0.3 on.
   form the server writes, are public, so other clients and stored records keep working. Adding a
   node type (images, then mentions) widens the subset; nothing is removed without a deprecation.
   Images are `<figure class="rt-sm|rt-md|rt-full"><img data-attachment="<id>" alt="...">` with an
-  optional `<figcaption>`. Journal notes and messages also keep mentions, `<span data-mention="<user id>">`. The
+  optional `<figcaption>`. Activity notes and messages also keep mentions, `<span data-mention="<user id>">`. The
   `<name>_text` column is internal.
 
 - **Model `Meta` options.** `tests/test_public_api.py` pins the option names, among them `api`
@@ -133,7 +139,7 @@ production ready, but the rules below hold from 0.3 on.
   `(label, rows)` pairs with a leading `None` group; iteration yielding real rows only; section
   rows written as `{"section": label}` or `{"id", "section"}` from Python, `children=` and HTTP
   change sets and full lists; the `{"id", "section"}` entries in a record's `children` and in
-  `lines/` pages; `sections` and `section_sums` on a schema `children` entry; the Journal's
+  `lines/` pages; `sections` and `section_sums` on a schema `children` entry; the Activity's
   `sections` change; and the `sections` template variable on print designs
   ([model-engine.md](model-engine.md#section-rows)). The `evlet_sections` table is internal.
 
@@ -150,7 +156,7 @@ production ready, but the rules below hold from 0.3 on.
   ([jobs-realtime.md](jobs-realtime.md#progress-and-long-jobs)).
 
 - **Jobs that act.** `JobContext.business(tx, *, user=None, system=None, role=None)` with the identities and checks
-  in [jobs-realtime.md](jobs-realtime.md#a-jobs-business-context), `User.system`, the Journal's
+  in [jobs-realtime.md](jobs-realtime.md#a-jobs-business-context), `User.system`, the Activity's
   `via` for a system name, `Context.enqueue(task, payload, *, key=None, target=None)` queuing after
   commit, `_job` on an action's detail, and `JobQueue.wake()` and `JobQueue.wait(timeout)`
   ([jobs-realtime.md](jobs-realtime.md#queue-a-job-from-an-action)).

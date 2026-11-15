@@ -737,7 +737,7 @@ class Session:
 
         Each row is a dict of field values, validated like a create. A row may also give an `id` that
         tx.reserve_ids returned in this transaction, so rows of one batch can link to each other. Timestamps
-        are filled, closed periods are checked, and a journaled model gets one `created` entry per row."""
+        are filled, closed periods are checked, and a model with an Activity gets one `created` entry per row."""
         model = self._ledger(model, 'insert_many')
         if isinstance(rows, (str, bytes, dict)):
             raise ValidationError({'rows': 'Use a list of rows, each a dict of field values'})
@@ -783,9 +783,9 @@ class Session:
             reserved.difference_update(given)
         else:
             ids = self.connection.insert_many(table, columns, stored)
-        if model in getattr(self.registry, 'journals', {}):
+        if model in getattr(self.registry, 'activities', {}):
             for record_id, record in zip(ids, records):
-                self._ledger_journal(model, record_id, 'created', None, record)
+                self._ledger_activity(model, record_id, 'created', None, record)
         return ids
 
     def reserve_ids(self, model, count):
@@ -821,8 +821,8 @@ class Session:
         check_amounts(self, model, record._values)
         names, stored = storage_columns(model, record._values, list(changes))
         self.connection.run(qb.update(self.registry.name_for(model), **dict(zip(names, stored))).where(id=current.id))
-        if model in getattr(self.registry, 'journals', {}):
-            self._ledger_journal(model, current.id, 'changed', current, record)
+        if model in getattr(self.registry, 'activities', {}):
+            self._ledger_activity(model, current.id, 'changed', current, record)
         return self.get(model, current.id)
 
     def _ledger_delete(self, model, record_id):
@@ -831,22 +831,22 @@ class Session:
         current = self.get(model, record_id)
         periods.check(self, model, before=current._values)
         self.connection.run(qb.delete(self.registry.name_for(model)).where(id=current.id))
-        if model in getattr(self.registry, 'journals', {}):
-            self._ledger_journal(model, current.id, 'deleted', current, None)
+        if model in getattr(self.registry, 'activities', {}):
+            self._ledger_activity(model, current.id, 'deleted', current, None)
 
-    def _ledger_journal(self, model, record_id, kind, before, after):
-        """A Journal entry for a ledger row, as the engine or `session.actor`, in this transaction."""
-        from . import journal
-        if not getattr(self, '_journal_ready', False):
-            journal.ensure_table(self.connection, hashed=[self.registry.name_for(item) for item, value in self.registry.journals.items() if value.tamper_evident])
-            self._journal_ready = True
+    def _ledger_activity(self, model, record_id, kind, before, after):
+        """An Activity entry for a ledger row, as the engine or `session.actor`, in this transaction."""
+        from . import activity
+        if not getattr(self, '_activity_ready', False):
+            activity.ensure_table(self.connection, hashed=[self.registry.name_for(item) for item, value in self.registry.activities.items() if value.tamper_evident])
+            self._activity_ready = True
         old = {} if before is None else before._values
         new = {} if after is None else after._values
         fields = {name: {'old': field.serialize(old.get(name)), 'new': field.serialize(new.get(name))}
                   for name, field in model.__fields__.items() if old.get(name) != new.get(name)}
         data = {'fields': fields} if fields else {}
-        actor = journal.ENGINE if self.actor is None else str(self.actor)
-        journal.insert(self.connection, self.registry, model, record_id, kind, actor, data)
+        actor = activity.ENGINE if self.actor is None else str(self.actor)
+        activity.insert(self.connection, self.registry, model, record_id, kind, actor, data)
 
     def lock(self, *keys, timeout=None):
         """Hold named locks until this transaction commits or rolls back, such as

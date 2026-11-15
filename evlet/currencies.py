@@ -322,7 +322,7 @@ def round_stored_money(application, code, decimals, *, actor='cli'):
     how many amounts changed. Safe to repeat: rounded amounts already fit, so a second run changes nothing. Rows of append-only ledgers are never changed, so one that would change refuses the step.
 
     Rounding changes stored totals: a document total no longer equals the sum of its rounded lines until it is
-    recalculated. Revisions and the Journal keep the values they recorded."""
+    recalculated. Revisions and the Activity keep the values they recorded."""
     from .auth import User
     if type(decimals) is not int or not 0 <= decimals <= MAX_DECIMALS:
         raise ValueError(f'decimals is a whole number from 0 to {MAX_DECIMALS}')

@@ -13,9 +13,9 @@ from .audit import COLUMNS as AUDIT
 # Steps of building a model class (the first four) and a Registry (the rest) that higher layers own,
 # in the order they run. Each module registers its own with @build_step when it is imported, and
 # evlet/__init__.py imports them all, so they are in place before any app model is defined.
-BUILD_ORDER = ('ledger_declared', 'ledger_class', 'statemanager', 'journaled',
+BUILD_ORDER = ('ledger_declared', 'ledger_class', 'statemanager', 'activity_declared',
                'meaning', 'guards', 'kept_plan', 'sequences', 'namings', 'measures', 'cards', 'effects', 'posted_reads',
-               'journals', 'api', 'ledger_schema')
+               'activities', 'api', 'ledger_schema')
 BUILD_STEPS = {}
 
 
@@ -256,13 +256,13 @@ class ModelType(type):
             cls.__indexes__ = normalize(name, getattr(meta, 'indexes', ()) if meta is not None else (), fields)
         cls.__derives__ = declared_hooks(cls, name, meta, fields, tables, is_row_table(namespace, bases, fields))
         steps('statemanager')(cls)
-        # Meta.journal = Journal(...) makes a document, so every write goes through the journaled pipeline.
-        journaled = False
-        if hasattr(meta, 'journal'):
-            journaled = steps('journaled')(meta.journal)
+        # Meta.activity = Activity(...) makes a document, so every write goes through the pipeline that records it.
+        recorded = False
+        if hasattr(meta, 'activity'):
+            recorded = steps('activity_declared')(meta.activity)
         if ledger:
             pass  # Trusted code writes ledger rows through the session; nothing is declarative.
-        elif journaled or states or sources or tables or 'permissions' in namespace or cls.__derives__ or cls.__hooks__ or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
+        elif recorded or states or sources or tables or 'permissions' in namespace or cls.__derives__ or cls.__hooks__ or any(field.kind == 'sequence' for field in fields.values()) or any(hasattr(value, '__action__') for value in namespace.values()) or any(field.compute is not None or not field.stored or getattr(field, 'initial', None) is not None
                 or any(getattr(field, key, None) is not None for key in RULES) for field in fields.values()):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values', 'before', 'is_new', 'release'}
@@ -521,12 +521,12 @@ class Registry:
         # What a posted record's stored results read, which its actions and moves may no longer change.
         posted_reads = step('posted_reads')
         self.posted_reads = MappingProxyType({model: posted_reads(self, model, plans.get(model)) for model in self.effects})
-        # Record histories: {model: Journal} (evlet/journal.py).
-        compile_journals = step('journals')
-        self.journals = compile_journals(models, child_models, self.effects)
+        # Record histories: {model: Activity} (evlet/activity.py).
+        compile_activities = step('activities')
+        self.activities = compile_activities(models, child_models, self.effects)
         for model in models:
-            if model.__state__ and model not in self.journals and any(rule.levels for rule in model.__declared_fields__[model.__state__].rules):
-                raise ValueError(f'{model.__name__}: approval levels are kept in the journal, so Meta.journal cannot be None')
+            if model.__state__ and model not in self.activities and any(rule.levels for rule in model.__declared_fields__[model.__state__].rules):
+                raise ValueError(f'{model.__name__}: approval levels are kept in its Activity, so Meta.activity cannot be None')
         # What callers reach of each model ({model: Meta.api}, evlet/permissions.py) and which stored date
         # places a record in a period that a lock can close ({model: Period}, evlet/periods.py).
         compile_api = step('api')
