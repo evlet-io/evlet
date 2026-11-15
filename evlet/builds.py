@@ -64,6 +64,8 @@ def discover(package, modules=None):
             from .services import collect_service
             collected = collect_service(package, module)
             endpoints.extend(collected[0]); tasks.extend(collected[1]); schedules.extend(collected[2])
+            declared = background(package, module)
+            tasks.extend(declared[0]); schedules.extend(declared[1])
         for key, value in sorted(vars(module).items()):
             if isinstance(value, type) and issubclass(value, Model) and value is not Model and value.__module__ == name:
                 if issubclass(value, Report) and value is not Report:
@@ -78,6 +80,12 @@ def discover(package, modules=None):
             if isinstance(value, Migration) and name.startswith(package.name + '.migrations') and id(value) not in seen:
                 seen.add(id(value))
                 migrations.append(value)
+    from .instances import AppSchedule
+    own = {task.name for task in tasks}
+    for schedule in schedules:
+        if isinstance(schedule, AppSchedule) and schedule.task not in own:
+            raise ValueError(f'Schedule {schedule.name} in app {package.name} runs task {schedule.task!r}, '
+                             f'which is not a Task declared in {package.name}/services')
     rules = {}
     for model in models:
         declarations = getattr(model, 'permissions', {})
@@ -89,6 +97,94 @@ def discover(package, modules=None):
             raise ValueError(f'Unknown permission role in {model.__resource_id__}')
     return AppDefinition(models=models, reports=reports, apis=endpoints, tasks=tasks, schedules=schedules,
                          permissions=rules, migrations=sorted(migrations, key=lambda migration: migration.name), workspaces=workspaces)
+
+
+def qualified(package, kind, value):
+    """A declared task or schedule name: it starts with the app's name, so names from different apps never meet."""
+    if not value.startswith(package.name + '_'):
+        raise ValueError(f'{kind} {value!r} in app {package.name} must be named after its app, such as {package.name}_{value}')
+    if value.startswith('eva_task_'):
+        raise ValueError(f'{kind} names starting with eva_task_ belong to Eva: rename {value!r}')
+    return value
+
+
+def background(package, module):
+    """Module-level Task and Schedule objects of a services module: trusted background work with full database access.
+
+    A value imported from another module registers where it is assigned, so each object registers once."""
+    from .instances import AppSchedule, Schedule
+    from .jobs import Task
+    tasks, schedules = [], []
+    for value in vars(module).values():
+        if isinstance(value, Task) and _defined_here(module, value) and all(value is not other for other in tasks):
+            qualified(package, 'Task', value.name)
+            tasks.append(value)
+        elif isinstance(value, Schedule) and not isinstance(value, AppSchedule) and _defined_here(module, value) \
+                and all(value.name != other.name for other in schedules):
+            qualified(package, 'Schedule', value.name)
+            schedules.append(AppSchedule(value.name, value.task, value.every, dict(value.payload), app=package.name))
+    return tasks, schedules
+
+
+def _defined_here(module, value):
+    """Whether a module-level value is assigned in this module's own source rather than imported into it."""
+    import ast
+    from pathlib import Path
+    names = {key for key, item in vars(module).items() if item is value}
+    tree = ast.parse(Path(module.__file__).read_text(encoding='utf-8'))
+    assigned = {target.id for node in tree.body if isinstance(node, (ast.Assign, ast.AnnAssign))
+                for target in (node.targets if isinstance(node, ast.Assign) else [node.target]) if isinstance(target, ast.Name)}
+    return bool(names & assigned)
+
+
+def background_work(package):
+    """Task and Schedule names a flat app assigns at module level in services/, read from source without importing it.
+
+    The install trust prompt shows them, since their handlers run with full database access."""
+    import ast
+    if package.layout != 'flat':
+        return []
+    found = []
+    for path in package.source_files():
+        relative = path.relative_to(package.source_root) if path.is_relative_to(package.source_root) else None
+        if path.suffix != '.py' or relative is None or relative.parts[0] not in ('services', 'services.py'):
+            continue
+        try:
+            tree = ast.parse(path.read_text(encoding='utf-8'))
+        except (SyntaxError, UnicodeError):
+            continue
+        for node in tree.body:
+            value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+            if not isinstance(value, ast.Call):
+                continue
+            callee = value.func.id if isinstance(value.func, ast.Name) else value.func.attr if isinstance(value.func, ast.Attribute) else ''
+            if callee not in ('Task', 'Schedule'):
+                continue
+            label = next((keyword.value for keyword in value.keywords if keyword.arg == 'name'), value.args[0] if value.args else None)
+            found.append(f'{callee.lower()} ' + (label.value if isinstance(label, ast.Constant) and isinstance(label.value, str) else '(name not literal)'))
+    return found
+
+
+def trust_question(packages, changed):
+    """The install trust prompt: the apps whose code runs, and the background work that runs with full database access."""
+    question = 'Trust and execute these local Python apps: ' + ', '.join(changed) + '?'
+    work = [f"{package.name} ({', '.join(names)})" for package in packages if package.name in changed for names in [background_work(package)] if names]
+    if work:
+        question += (' Their background tasks and schedules run as trusted code with full database access, '
+                     'outside any user\'s permissions: ' + '; '.join(work) + '.')
+    return question
+
+
+def clash(definitions, attribute, kind):
+    """Refuse two registrations with one name, naming both apps, before anything is activated."""
+    owners = {}
+    for app, definition in definitions:
+        for item in getattr(definition, attribute):
+            if item.name in owners:
+                first = owners[item.name]
+                where = f'app {first}' if first == app else f'apps {first} and {app}'
+                raise ValueError(f'{kind} name {item.name!r} is declared twice, in {where}; give each a unique name')
+            owners[item.name] = app
 
 
 def imported_names(package, module):
@@ -127,7 +223,8 @@ def describe(packages):
     endpoints = [endpoint for _, definition in definitions for endpoint in definition.apis]
     schedules = [schedule for _, definition in definitions for schedule in definition.schedules]
     if len({endpoint.name for endpoint in endpoints}) != len(endpoints): raise ValueError('Duplicate endpoint identity')
-    if len({schedule.name for schedule in schedules}) != len(schedules): raise ValueError('Duplicate schedule identity')
+    clash(definitions, 'tasks', 'Task')
+    clash(definitions, 'schedules', 'Schedule')
     for endpoint in endpoints:
         registry.resolve(endpoint.permission[0])
         if endpoint.permission[1] not in ('read', 'create', 'update', 'delete'): raise ValueError('Unknown API permission')

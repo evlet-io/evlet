@@ -11,6 +11,7 @@ import tempfile
 from .. import qb
 from ..instances import (INSTALLED_APPS, read_instance, require_consistent, database_state,
                          build_instance, register_schedules)
+from ..builds import trust_question
 from ..packages import resolve_packages, portable_lock_entry
 from ..writes import files, file_digest, release_idle, require_space, settle, snapshot_set
 from .project import child, instance_guard, atomic_json, json_text, sync_directory
@@ -141,7 +142,7 @@ def install(root, name, *, app_name=None, app_names=(), trust=False, confirm=Non
         after = {'apps': {package.name: package.locked() for package in packages}, 'evlet': state()}
         changed = [package.name for package in packages if package.name not in before['apps'] or portable_lock_entry(package.name, before['apps'][package.name]) != after['apps'][package.name]]
         if changed and not trust:
-            if confirm is None or not confirm('Trust and execute these local Python apps: ' + ', '.join(changed) + '?'):
+            if confirm is None or not confirm(trust_question(packages, changed)):
                 raise ValueError('Installation requires explicit trust. Review the apps, then use --trust for non-interactive installation')
         from .app import prepare_dependencies
         packages = prepare_dependencies(root, names)
@@ -225,7 +226,7 @@ def plan(root, name, *, trust=False, confirm=None, label='changes'):
         changed = [package.name for package in packages
                    if portable_lock_entry(package.name, before['apps'][package.name]) != package.locked()]
         if changed and not trust:
-            if confirm is None or not confirm('Trust and execute these local Python apps: ' + ', '.join(changed) + '?'):
+            if confirm is None or not confirm(trust_question(packages, changed)):
                 raise ValueError('Planning imports the apps and requires explicit trust. Review the apps, then use --trust')
         from .app import prepare_dependencies
         packages = prepare_dependencies(root, names)

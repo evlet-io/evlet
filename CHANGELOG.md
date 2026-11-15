@@ -13,6 +13,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Added
 
+- **Background work in flat apps.** A flat app can declare module-level `Task` and `Schedule`
+  objects in `services/`. Their handlers get the job context and database session that
+  `JobQueue` tasks get, including resumable steps. Names are app-qualified (`finance_drain`) and a
+  clash fails the build. Install and reload register them like `@cron`, keeping next runs and
+  operator-disabled schedules; a removed schedule is disabled, not deleted. The install trust
+  question lists them and says they run with full database access
+  ([jobs-realtime.md](docs/jobs-realtime.md#background-work-in-a-flat-app)).
 - **Optional company sign-in.** `OIDC` and `LocalAuth(oidc=...)` support an explicitly
   configured provider and immutable subject mappings to existing users. Install the `oidc`
   extra (joserfc) to enable it; local login, roles, realms and MFA remain enforced. Callback

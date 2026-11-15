@@ -70,6 +70,12 @@ class Schedule:
 
 
 @dataclass(frozen=True)
+class AppSchedule(Schedule):
+    """A Schedule a flat app declares in services/: reloads reconcile it and a removed one is disabled."""
+    app: str = ''
+
+
+@dataclass(frozen=True)
 class AppDefinition:
     """Trusted Python registrations, composed using the existing framework APIs."""
 
@@ -383,9 +389,10 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
         schedules.extend(definition.schedules)
     policy = Policy(registry, rules=rules, roles=roles)
     events = EventStore(database)
+    from .builds import clash
+    clash(definitions, 'tasks', 'Task')
+    clash(definitions, 'schedules', 'Schedule')
     jobs = JobQueue(database, [task for _, definition in definitions for task in definition.tasks], tenant=config.name.replace('_', '-'), events=events, policy=policy)
-    if len({schedule.name for schedule in schedules}) != len(schedules):
-        raise ValueError('Duplicate schedule names across apps')
     storage = LocalFileStorage(storage_path or path / 'files/private')
     services = SimpleNamespace(database=database, auth=auth, policy=policy, jobs=jobs, events=events, storage=storage, settings=None, preferences=None)
     actions = []
@@ -418,10 +425,60 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     return app, tuple(schedules)
 
 
+# Interval schedules that flat apps declare in services/. Written only while an app is installed or reloaded, never at
+# startup: retired=1 marks one disabled because its declaration was removed, not by an operator.
+APP_SCHEDULES = TableDefinition('evlet_app_schedules', (
+    Column('name', 'TEXT', primary=True), Column('app', 'TEXT', required=True),
+    Column('retired', 'INTEGER', required=True, default=0),
+))
+
+
+def declared(app, schedule):
+    """Register or reconcile an app's interval schedule, keeping its next run and an operator's disabled state."""
+    import time
+    with app.database.transaction() as tx:
+        row = tx.connection.run(qb.select('evlet_schedules', 'task', 'payload', 'interval').where(name=schedule.name)).one()
+        mine = tx.connection.run(qb.select('evlet_app_schedules', 'app', 'retired').where(name=schedule.name)).one()
+    if row is None:
+        app.business.jobs.schedule(schedule.name, schedule.task, schedule.payload, every=schedule.every)
+        with app.database.transaction() as tx:
+            tx.connection.run(qb.insert('evlet_app_schedules', name=schedule.name, app=schedule.app, retired=0)
+                              .on_conflict('name').do_update(app=qb.col('excluded.app'), retired=0))
+        return
+    if mine is None:
+        raise ValueError(f'Schedule {schedule.name} declared by app {schedule.app} already exists as an operator schedule; rename one of them')
+    # The same checks as a new schedule: the task exists and the payload is valid JSON for it.
+    payload = app.business.jobs._check_schedule(schedule.task, schedule.payload, every=schedule.every)
+    with app.database.transaction() as tx:
+        changes = {}
+        if row['task'] != schedule.task:
+            changes['task'] = schedule.task
+        if row['payload'] != payload:
+            changes['payload'] = payload
+        if row['interval'] != schedule.every:
+            changes.update(interval=schedule.every, next_run=int(time.time()) + schedule.every)
+        if mine['retired']:
+            # Declared again after removal: enabled with a fresh due time. An operator-disabled one was never retired.
+            changes.update(enabled=1, next_run=int(time.time()) + schedule.every)
+        if changes:
+            tx.connection.run(qb.update('evlet_schedules', **changes).where(name=schedule.name))
+        tx.connection.run(qb.update('evlet_app_schedules', app=schedule.app, retired=0).where(name=schedule.name))
+
+
 def register_schedules(app, schedules):
     from .services import Calendar, CalendarSchedule
     import time
     calendar_names = {schedule.name for schedule in schedules if isinstance(schedule, CalendarSchedule)}
+    app_names = {schedule.name for schedule in schedules if isinstance(schedule, AppSchedule)}
+    with app.database.transaction() as tx:
+        tx.connection.ensure_table(APP_SCHEDULES)
+        for row in tx.connection.run(qb.select('evlet_app_schedules', 'name').where(retired=0)).all():
+            if row['name'] not in app_names:
+                # Removed from the app: disabled and kept with its history. Only an active one is marked retired,
+                # so one an operator disabled stays disabled if the app declares it again.
+                tx.connection.run(qb.update('evlet_app_schedules', retired=1).where(
+                    qb.eq('name', row['name']), qb.exists(qb.select('evlet_schedules', qb.value(1)).where(name=row['name'], enabled=1))))
+                tx.connection.run(qb.update('evlet_schedules', enabled=0).where(name=row['name']))
     with app.database.transaction() as tx:
         for row in tx.connection.run(qb.select('evlet_calendar_schedules', 'name')).all():
             # Eva's scheduled tasks belong to people, not to an app release (evlet.eva).
@@ -452,6 +509,9 @@ def register_schedules(app, schedules):
                                       .where(name=schedule.name))
                     tx.connection.run(qb.update('evlet_schedules', next_run=calendar.next(int(time.time()))).where(name=schedule.name))
                 tx.connection.run(qb.update('evlet_schedules', task=schedule.task).where(qb.eq('name', schedule.name), qb.ne('task', schedule.task)))
+            continue
+        if isinstance(schedule, AppSchedule):
+            declared(app, schedule)
             continue
         if not isinstance(schedule, Schedule):
             raise ValueError('Register Schedule definitions')
