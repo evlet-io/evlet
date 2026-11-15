@@ -110,7 +110,11 @@ def test_generation_upgrade_preserves_existing_sessions_and_then_revokes_them(tm
     # Schema retirement helpers target app tables in main; construct the old side-file fixture directly.
     with sqlite3.connect(database.files()[1]) as connection:
         connection.execute('ALTER TABLE evlet_sessions DROP COLUMN session_generation')
-    auth.initialize()
+    # Framework step 0012 adds them back; opening the database alone leaves its schema unchanged.
+    from evlet.framework import STEPS
+    step = next(item for item in STEPS if item.name == '0012_session_generations')
+    with database.transaction() as tx:
+        step.run(tx.connection)
     assert auth.session(scope)[0].id == user
     with database.transaction() as tx:
         auth.end_sessions(tx.connection, user)
