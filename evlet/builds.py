@@ -52,6 +52,7 @@ def discover(package, modules=None):
     from .forms import Report
     from .workspaces import Workspace
     models, migrations, seen, reports, endpoints, tasks, schedules, workspaces = [], [], set(), [], [], [], [], []
+    collected_ids = set()
     for name in modules if modules is not None else module_names(package):
         module = import_module(name)
         if name == package.name + '.workspaces' or name.startswith(package.name + '.workspaces.'):
@@ -64,7 +65,7 @@ def discover(package, modules=None):
             from .services import collect_service
             collected = collect_service(package, module)
             endpoints.extend(collected[0]); tasks.extend(collected[1]); schedules.extend(collected[2])
-            declared = background(package, module)
+            declared = background(package, module, collected_ids)
             tasks.extend(declared[0]); schedules.extend(declared[1])
         for key, value in sorted(vars(module).items()):
             if isinstance(value, type) and issubclass(value, Model) and value is not Model and value.__module__ == name:
@@ -100,51 +101,47 @@ def discover(package, modules=None):
 
 
 def qualified(package, kind, value):
-    """A declared task or schedule name: it starts with the app's name, so names from different apps never meet."""
+    """A declared task or schedule name, which starts with the app's name and an underscore.
+
+    The prefix shows which app owns a name; clash() still checks uniqueness, since app fin may name fin_ops_sync."""
     if not value.startswith(package.name + '_'):
         raise ValueError(f'{kind} {value!r} in app {package.name} must be named after its app, such as {package.name}_{value}')
-    if value.startswith('eva_task_'):
-        raise ValueError(f'{kind} names starting with eva_task_ belong to Eva: rename {value!r}')
+    if value.startswith('eva_task'):
+        raise ValueError(f'{kind} names starting with eva_task belong to Eva: rename {value!r}')
     return value
 
 
-def background(package, module):
+def background(package, module, seen):
     """Module-level Task and Schedule objects of a services module: trusted background work with full database access.
 
-    A value imported from another module registers where it is assigned, so each object registers once."""
+    seen holds the ids already collected for this app, so an object imported into another services module, or
+    bound to two names, registers once. Two different objects with one name reach clash(), which refuses them."""
     from .instances import AppSchedule, Schedule
     from .jobs import Task
     tasks, schedules = [], []
     for value in vars(module).values():
-        if isinstance(value, Task) and _defined_here(module, value) and all(value is not other for other in tasks):
+        if id(value) in seen or not isinstance(value, (Task, Schedule)) or isinstance(value, AppSchedule):
+            continue
+        seen.add(id(value))
+        if isinstance(value, Task):
             qualified(package, 'Task', value.name)
             tasks.append(value)
-        elif isinstance(value, Schedule) and not isinstance(value, AppSchedule) and _defined_here(module, value) \
-                and all(value.name != other.name for other in schedules):
+        else:
             qualified(package, 'Schedule', value.name)
             schedules.append(AppSchedule(value.name, value.task, value.every, dict(value.payload), app=package.name))
     return tasks, schedules
 
 
-def _defined_here(module, value):
-    """Whether a module-level value is assigned in this module's own source rather than imported into it."""
-    import ast
-    from pathlib import Path
-    names = {key for key, item in vars(module).items() if item is value}
-    tree = ast.parse(Path(module.__file__).read_text(encoding='utf-8'))
-    assigned = {target.id for node in tree.body if isinstance(node, (ast.Assign, ast.AnnAssign))
-                for target in (node.targets if isinstance(node, ast.Assign) else [node.target]) if isinstance(target, ast.Name)}
-    return bool(names & assigned)
-
-
 def background_work(package):
-    """Task and Schedule names a flat app assigns at module level in services/, read from source without importing it.
+    """What a flat app's services/ declares as background work, read from source without importing it.
 
-    The install trust prompt shows them, since their handlers run with full database access."""
+    Returns (names, uses): the literal names of Task(...) and Schedule(...) calls, and whether the source uses Task or
+    Schedule at all (an alias, a factory or a name that is not a string literal counts too). The install trust prompt
+    shows them, since their handlers run with full database access."""
     import ast
+    names, uses = [], False
     if package.layout != 'flat':
-        return []
-    found = []
+        return names, uses
     for path in package.source_files():
         relative = path.relative_to(package.source_root) if path.is_relative_to(package.source_root) else None
         if path.suffix != '.py' or relative is None or relative.parts[0] not in ('services', 'services.py'):
@@ -153,25 +150,36 @@ def background_work(package):
             tree = ast.parse(path.read_text(encoding='utf-8'))
         except (SyntaxError, UnicodeError):
             continue
-        for node in tree.body:
-            value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
-            if not isinstance(value, ast.Call):
-                continue
-            callee = value.func.id if isinstance(value.func, ast.Name) else value.func.attr if isinstance(value.func, ast.Attribute) else ''
-            if callee not in ('Task', 'Schedule'):
-                continue
-            label = next((keyword.value for keyword in value.keywords if keyword.arg == 'name'), value.args[0] if value.args else None)
-            found.append(f'{callee.lower()} ' + (label.value if isinstance(label, ast.Constant) and isinstance(label.value, str) else '(name not literal)'))
-    return found
+        kinds = {'Task': 'task', 'Schedule': 'schedule'}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.ImportFrom):
+                for alias in node.names:
+                    if alias.name in ('Task', 'Schedule'):
+                        uses = True
+                        kinds[alias.asname or alias.name] = alias.name.lower()
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.Name, ast.Attribute)) and (getattr(node, 'id', None) or getattr(node, 'attr', None)) in ('Task', 'Schedule'):
+                uses = True
+            if isinstance(node, ast.Call):
+                callee = node.func.id if isinstance(node.func, ast.Name) else node.func.attr if isinstance(node.func, ast.Attribute) else ''
+                label = next((keyword.value for keyword in node.keywords if keyword.arg == 'name'), node.args[0] if node.args else None)
+                if callee in kinds and isinstance(label, ast.Constant) and isinstance(label.value, str):
+                    names.append(f'{kinds[callee]} {label.value}')
+    return names, uses
 
 
 def trust_question(packages, changed):
     """The install trust prompt: the apps whose code runs, and the background work that runs with full database access."""
     question = 'Trust and execute these local Python apps: ' + ', '.join(changed) + '?'
-    work = [f"{package.name} ({', '.join(names)})" for package in packages if package.name in changed for names in [background_work(package)] if names]
+    work = []
+    for package in packages:
+        if package.name in changed:
+            names, uses = background_work(package)
+            if uses:
+                work.append(f"{package.name} ({', '.join(names)})" if names else f'{package.name} (names set in code)')
     if work:
-        question += (' Their background tasks and schedules run as trusted code with full database access, '
-                     'outside any user\'s permissions: ' + '; '.join(work) + '.')
+        question += (' Their background tasks and schedules in services/ run as trusted code with full database access, '
+                     "outside any user's permissions: " + '; '.join(work) + '. Names built in code are not listed.')
     return question
 
 

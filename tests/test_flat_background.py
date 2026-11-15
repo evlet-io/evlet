@@ -189,3 +189,71 @@ def test_apps_without_background_work_keep_their_trust_prompt_and_cron(project):
         names = [row[0] for row in connection.execute("SELECT name FROM evlet_schedules WHERE name LIKE 'cron_%'")]
         assert len(names) == 1
         assert connection.execute('SELECT count(*) FROM evlet_app_schedules').fetchone()[0] == 0
+
+
+SHAPES = '''from evlet import Schedule, Task
+from evlet import Task as T
+
+
+def handle(tx, job, payload):
+    return None
+
+
+def make(name):
+    return Task(name, handle)
+
+
+pair_a, pair_b = Task('finance_a', handle), Task('finance_b', handle)
+if True:
+    guarded = Task('finance_guarded', handle)
+made = make('finance_made')
+aliased = T('finance_aliased', handle)
+also = aliased
+'''
+
+
+def test_every_module_level_shape_registers_once_and_the_prompt_says_so(project):
+    path = finance(project, SHAPES)
+    (path / 'services/more.py').write_text('from finance.services.background import aliased as again\n')
+    create_instance(project, 'acme')
+    questions = []
+    install(project, 'acme', app_name='finance', confirm=lambda question: questions.append(question) or True)
+    # Literal names are listed; the factory call is still covered by the full-database-access sentence.
+    assert 'full database access' in questions[0] and 'task finance_a' in questions[0] and 'task finance_aliased' in questions[0]
+    app = load_runtime(project, 'acme')
+    try:
+        names = {name for name in app.business.jobs.tasks if name.startswith('finance_')}
+        assert names == {'finance_a', 'finance_b', 'finance_guarded', 'finance_made', 'finance_aliased'}
+    finally:
+        app.database.close()
+
+
+def test_two_schedule_objects_with_one_name_are_refused(project):
+    finance(project, BACKGROUND + "\nagain = Schedule('finance_nightly', 'finance_nightly', every=120)\n")
+    create_instance(project, 'acme')
+    with pytest.raises(ValueError, match="Schedule name 'finance_nightly' is declared twice, in app finance"):
+        install(project, 'acme', app_name='finance', trust=True)
+
+
+def test_reserved_and_foreign_schedule_names_are_refused(project):
+    from types import SimpleNamespace
+    from evlet.builds import qualified
+    from evlet import Database, JobQueue, Registry, Task
+    from evlet.instances import AppSchedule, register_schedules
+    with pytest.raises(ValueError, match='belong to Eva'):
+        qualified(SimpleNamespace(name='eva'), 'Task', 'eva_task')
+    database = Database(project / 'own.sqlite3', Registry())
+    database.initialize()
+    queue = JobQueue(database, [Task('fin_ops_sync', lambda tx, job, payload: None)])
+    queue.initialize()
+    app = SimpleNamespace(database=database, business=SimpleNamespace(jobs=queue, timezone='UTC'))
+    register_schedules(app, [AppSchedule('fin_ops_sync', 'fin_ops_sync', 3600, {}, app='fin_ops')])
+    register_schedules(app, [])
+    # Another app may not take over a name an earlier app declared, even once retired.
+    with pytest.raises(ValueError, match='belongs to app fin_ops'):
+        register_schedules(app, [AppSchedule('fin_ops_sync', 'fin_ops_sync', 3600, {}, app='fin')])
+    # A schedule that was not declared in services/ is never adopted.
+    queue.schedule('fin_manual', 'fin_ops_sync', {}, every=3600)
+    with pytest.raises(ValueError, match='was not declared there'):
+        register_schedules(app, [AppSchedule('fin_manual', 'fin_ops_sync', 3600, {}, app='fin')])
+    database.close()

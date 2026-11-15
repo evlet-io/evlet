@@ -439,14 +439,18 @@ def declared(app, schedule):
     with app.database.transaction() as tx:
         row = tx.connection.run(qb.select('evlet_schedules', 'task', 'payload', 'interval').where(name=schedule.name)).one()
         mine = tx.connection.run(qb.select('evlet_app_schedules', 'app', 'retired').where(name=schedule.name)).one()
+    if mine is not None and mine['app'] != schedule.app:
+        raise ValueError(f'Schedule {schedule.name} belongs to app {mine["app"]}, which declared it before; '
+                         f'give the schedule in {schedule.app} another name')
     if row is None:
         app.business.jobs.schedule(schedule.name, schedule.task, schedule.payload, every=schedule.every)
         with app.database.transaction() as tx:
             tx.connection.run(qb.insert('evlet_app_schedules', name=schedule.name, app=schedule.app, retired=0)
-                              .on_conflict('name').do_update(app=qb.col('excluded.app'), retired=0))
+                              .on_conflict('name').do_update(retired=0))
         return
     if mine is None:
-        raise ValueError(f'Schedule {schedule.name} declared by app {schedule.app} already exists as an operator schedule; rename one of them')
+        raise ValueError(f'Schedule {schedule.name} declared in {schedule.app}/services already exists and was not declared there '
+                         '(an operator schedule, or one an AppDefinition registered); give the declared schedule another name')
     # The same checks as a new schedule: the task exists and the payload is valid JSON for it.
     payload = app.business.jobs._check_schedule(schedule.task, schedule.payload, every=schedule.every)
     with app.database.transaction() as tx:
@@ -462,7 +466,7 @@ def declared(app, schedule):
             changes.update(enabled=1, next_run=int(time.time()) + schedule.every)
         if changes:
             tx.connection.run(qb.update('evlet_schedules', **changes).where(name=schedule.name))
-        tx.connection.run(qb.update('evlet_app_schedules', app=schedule.app, retired=0).where(name=schedule.name))
+        tx.connection.run(qb.update('evlet_app_schedules', retired=0).where(name=schedule.name))
 
 
 def register_schedules(app, schedules):

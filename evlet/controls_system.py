@@ -194,6 +194,10 @@ class System:
             rows = connection.run(qb.select(qb.table('evlet_schedules', 's'), 's.name', 's.task', 's.interval', 's.next_run', 's.enabled', 'c.expression', 'c.timezone')
                                   .join('evlet_calendar_schedules', qb.eq('c.name', qb.col('s.name')), alias='c', left=True)
                                   .where(qb.or_(qb.is_null('c.retired'), qb.eq('c.retired', 0))).order_by('s.name')).all()
+            # Interval schedules an app stopped declaring are retired too; the table exists once an install wrote it.
+            retired = {row[0] for row in connection.run(qb.select('evlet_app_schedules', 'name').where(retired=1)).all()} \
+                if connection.table_exists('evlet_app_schedules') else set()
+        rows = [row for row in rows if row['name'] not in retired]
         settings = self.controls.settings
         schedules = [{'name': row['name'], 'task': row['task'], 'every': None if row['expression'] else row['interval'],
                       'expression': row['expression'], 'timezone': row['timezone'], 'next_run': row['next_run'], 'active': bool(row['enabled']),

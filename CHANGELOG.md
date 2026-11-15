@@ -8,6 +8,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Upgrading
 
+- **Module-level `Task` and `Schedule` objects in a flat app's `services/` now register.** One
+  that was there unused before must be named after its app (`finance_...`) or the build refuses
+  it. Moving an `AppDefinition` schedule into `services/` needs a new name: a declared schedule
+  never takes over an existing one.
 - **Run `evlet migrate` after upgrading.** Framework steps `0014_unsaved_versions` (draft versions)
   and `0015_oidc_tickets` (company sign-in state) change the database; `evlet upgrade` runs them.
 
