@@ -2,6 +2,8 @@
 
 from datetime import datetime, timezone
 from pathlib import Path
+import shutil
+import sqlite3
 import tempfile
 
 from ..writes import STORE_OF, backup_members, check_file, copy_file, copy_set, data_files, files, require_space
@@ -37,6 +39,23 @@ def backup(root, name, directory=None):
         return copy_set(main, target)
 
 
+def _safety_copy(main, backups):
+    """Back up the live set before a restore replaces it. A damaged or incomplete live set, which is often why
+    someone restores, cannot pass the backup checks, so its files are kept as they are instead."""
+    backups.mkdir(mode=0o700, exist_ok=True)
+    stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
+    try:
+        return copy_set(main, backups / (stamp + '-before-restore.sqlite3'))[0]
+    except (ValueError, sqlite3.DatabaseError):
+        raw = backups / (stamp + '-before-restore-files')
+        raw.mkdir(mode=0o700)
+        for member in files(main):
+            for item in (member, member.with_name(member.name + '-wal')):
+                if item.is_file() and not item.is_symlink():
+                    shutil.copy2(item, raw / item.name)
+        return raw
+
+
 def restore(root, name, source):
     """Replace the instance's SQLite files with a backup set, with the server stopped.
 
@@ -55,9 +74,7 @@ def restore(root, name, source):
         current = sum(item.stat().st_size for item in files(main) if item.exists())
         require_space(data, 2 * size + current + 16 * 2**20, 'restore this backup')
         if main.exists():
-            backups = data / 'backups'
-            backups.mkdir(mode=0o700, exist_ok=True)
-            safety = copy_set(main, backups / (datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ') + '-before-restore.sqlite3'))[0]
+            safety = _safety_copy(main, data / 'backups')
         with tempfile.TemporaryDirectory(prefix='.restore-', dir=data) as directory:
             stage = Path(directory) / 'database.sqlite3'
             pairs = list(zip(members, files(stage)))

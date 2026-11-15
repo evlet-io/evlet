@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import sqlite3
 import tempfile
 
 from .. import qb
@@ -88,10 +89,17 @@ def _finish_publish(path, value):
         raise ValueError('Staged database state differs from the recovery record')
     release_idle()
     live = files(data / 'database.sqlite3')
+    names = {item['name'] for item in members}
     for target in live:
         if target.exists():
-            settle(target)
-    names = {item['name'] for item in members}
+            try:
+                settle(target)
+            except sqlite3.DatabaseError:
+                if target.name not in names:
+                    raise
+                # A damaged file that this generation replaces: its log means nothing for the new file.
+                for log in (target.with_name(target.name + '-wal'), target.with_name(target.name + '-shm')):
+                    log.unlink(missing_ok=True)
     for target in (*live[1:], live[0]):
         if target.name in names:
             # Do not consume the retained copy: another crash, including during recovery itself, is replayable.

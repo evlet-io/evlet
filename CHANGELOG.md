@@ -8,6 +8,13 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Fixed
 
+- **SQLite backups and restores cover the whole database set.** `evlet backup`, Controls
+  backups and installation backups copy all four SQLite files from one snapshot with a
+  checksummed manifest; a restore no longer deletes the live sessions, logs and Eva files.
+  Interrupted installations and restores are journaled and replayed by `evlet migrate`.
+  Restoring over a damaged or incomplete set keeps its files and goes ahead. Idle
+  connections and the log retry backlog are bounded, and key rotation takes an
+  interprocess lock ([persistence-recovery.md](docs/persistence-recovery.md)).
 - **Browser record and link caches are bounded.** Recent cells use approximate JSON budgets;
   active views retain their cell identity and receive updates after cache eviction. Renamed
   links refresh held labels, and disposed link controls release listeners and timers.
