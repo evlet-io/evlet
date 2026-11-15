@@ -19,7 +19,11 @@ This does not make ordinary multi-file WAL transactions crash-atomic.
 
 Back up `secret.key`, configuration, app sources and any external object/file storage separately.
 The database set is not a substitute for those operator backups. A restore validates all members
-before changing live data and preserves a safety backup of the current database set.
+before changing live data and preserves a safety backup of the current database set. When the
+current set is itself damaged or incomplete, which is often why you restore, its files are copied
+as they are into `data/backups/<time>-before-restore-files/` instead, and the restore goes ahead.
+A main-only backup that Controls made of an instance whose sessions, logs and Eva had already
+moved into side files before this release is refused as incomplete; restore a complete set.
 
 ## Interrupted installation or restore
 
@@ -54,7 +58,9 @@ warning. Business records and their audit entries use synchronous transactions a
 
 Key rotations hold an interprocess lock from keyring read through commit and pruning. The new
 key is published only after all database writer locks are held, and old keys remain available
-until the re-encrypted values commit. A competing rotation fails clearly and can be retried.
+until the re-encrypted values commit. A competing rotation fails clearly and can be retried. Rotation also refuses while an
+interrupted installation awaits `evlet migrate`, since the retained files are sealed with the
+current keys.
 The CLI also holds the instance's shared lifecycle lease, so restoration cannot replace its
 files during rotation. Key-file replacement and its directory are fsynced.
 
