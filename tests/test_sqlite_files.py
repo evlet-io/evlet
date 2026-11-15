@@ -361,7 +361,7 @@ def as_release_0_4_2(database):
                 if counter is not None:
                     connection.execute('UPDATE main.sqlite_sequence SET seq=? WHERE name=?', (counter[0], table))
                 connection.execute(f'DROP TABLE {store}.{table}')
-        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions')")
+        connection.execute("DELETE FROM evlet_framework_migrations WHERE name IN ('0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets')")
         connection.execute('COMMIT')
     for side in database.files()[1:]:
         for path in (side, side.with_name(side.name + '-wal'), side.with_name(side.name + '-shm')):
@@ -404,11 +404,10 @@ def test_migrating_a_0_4_2_database_moves_every_table_and_survives_a_crash_halfw
     database = full.database
     fill_every_moved_table(database)
     before = counts(database)
-    # Optional integrations (for example OIDC) need not have created their registered side tables.
-    moved_tables = [table for table in writes.STORE_OF if table in before]
+    assert set(before) == set(writes.STORE_OF)
     assert all(before[table] for table in ('evlet_sessions', 'evlet_tool_calls', 'evlet_eva_files', 'evlet_eva_task_runs'))
     as_release_0_4_2(database)
-    assert set(moved_tables) <= set(schema(database.path))
+    assert set(writes.STORE_OF) <= set(schema(database.path))
     assert counts(database) == before
     # The app's SQL still finds every table in the old single file, before the move.
     with database._connection() as connection:
@@ -422,14 +421,14 @@ def test_migrating_a_0_4_2_database_moves_every_table_and_survives_a_crash_halfw
         if len(copied) == 4:
             raise RuntimeError('power cut')
 
-    with pytest.raises(SplitError, match=f'Could not move {moved_tables[3]}'):
+    with pytest.raises(SplitError, match=f'Could not move {list(writes.STORE_OF)[3]}'):
         split_files(database, after_copy=crash)
     halfway = schema(database.path)
     assert not set(copied[:3]) & set(halfway) and copied[3] in halfway  # three moved, the fourth still in the main file
     assert counts(database) == before
 
     # The re-run copies the fourth table again from the main file and finishes; the step is recorded.
-    assert framework.upgrade(database) == ['0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions']
+    assert framework.upgrade(database) == ['0010_split_files', '0011_state_manager', '0012_session_generations', '0013_create_requests', '0014_unsaved_versions', '0015_oidc_tickets']
     assert not {table for tables in STORES.values() for table in tables} & set(schema(database.path))
     assert counts(database) == before
     with database._connection() as connection:

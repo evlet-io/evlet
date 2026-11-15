@@ -48,9 +48,13 @@ control, protect instance configuration, and restart after changing mappings or 
 ## Provider and session boundaries
 
 The provider must publish OIDC discovery, authorization-code response support, S256 PKCE,
-and an RSA/EC signing JWKS. Authlib and its maintained JOSE dependency validate the signed
-ID token with only RS256/ES256 permitted, issuer, audience/authorized party, expiry, issue
-time and nonce. Tokens, authorization codes and client secrets are never sent to the UI or
+and an RSA/EC signing JWKS. Evlet builds the authorization request (S256 PKCE challenge,
+state, nonce, `response_mode=query`) and the token request with the standard library, and
+authenticates confidential clients with `client_secret_basic`, or `client_secret_post` when
+the provider advertises only that. joserfc verifies the ID token signature with only RS256/ES256
+permitted and checks issuer, audience, expiry and issue time (30 seconds of clock leeway) and
+nonce; Evlet checks the authorized party (required when there are several audiences) and the
+optional access-token hash. A callback `iss` parameter (RFC 9207), when sent, must equal the issuer. Tokens, authorization codes and client secrets are never sent to the UI or
 written to application logs/database. The access token is used only to validate an optional
 ID-token hash, then discarded; there is no refresh token storage or UserInfo request.
 
@@ -81,8 +85,11 @@ the host operating system's resolver timeout. Four exchanges per instance/proces
 once; further callers get 503. Discovery/JWKS caches last five minutes; key-refresh retries
 are bounded to once per thirty seconds. One hundred starts per client network per fifteen
 minutes and 5,000 unexpired attempts per instance bound storage and repeated discovery.
-No optional OIDC tables or imports are created by disabled instances. Existing local sign-in
-continues during provider failure.
+Disabled instances import nothing optional. Framework step `0015_oidc_tickets` creates the
+empty `evlet_oidc_tickets` table in the sessions file for every database, so enabling OIDC later
+never changes the schema at startup ([app-upgrades.md](app-upgrades.md)). Existing local sign-in
+continues during provider failure. Discovery and JWKS fetches run outside the cache lock, so a
+slow provider does not hold up sign-ins that use cached metadata.
 
 Provider URLs come only from the operator-configured issuer and its discovery metadata;
 no user-supplied URL is fetched. Treat that issuer as trusted infrastructure. Discovery
@@ -92,7 +99,9 @@ private `/_/` routes to enable sign-in. Evlet removes callback query strings bef
 access logging and generated nginx proxies suppress callback access logs. Configure any
 other reverse proxy or tracing service to omit callback query strings as well.
 
-The extra adds Authlib (OAuth, PKCE, OIDC claims) and its JOSE implementation. The default
+The extra adds joserfc (JWS/JWK/JWT) and its `cryptography` dependency only; OAuth, PKCE and
+the OIDC-specific claim checks are Evlet's own standard-library code. Install it hash-pinned with
+`python -m pip install --require-hashes -r requirements-oidc.lock`. The default
 Evlet install and browser bundle gain no required authentication dependency. Upgrade the
 extra with normal dependency/advisory checks; tests use a local signed-token IdP without
 external credentials.

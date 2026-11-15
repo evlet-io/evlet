@@ -1,9 +1,6 @@
 # Optional OIDC extra from pyproject.toml, resolved universally for Python 3.12+.
 # Shared packages constrained by requirements-dev.lock; all published distributions hash-pinned.
 # Install with python -m pip install --require-hashes -r requirements-oidc.lock.
-authlib==1.9.5 \
-    --hash=sha256:3f031d5e9b6486089e91e8f7f1b68f36275f3151c66460d650fc90d420545fd7 \
-    --hash=sha256:e32a63e3d869196b61816b2602231862179a2ffc29358c009d1f022c8b86a8b2
 cffi==2.1.1 ; platform_python_implementation != 'PyPy' \
     --hash=sha256:046bfc24911b37851ee1b51aab8bffe713d89c68c6a057b09484ce9fd5f69b4e \
     --hash=sha256:06c72bb76605a4b0cd0aad6930b69d4baf7dd5d806cfc409b824191099700e66 \

@@ -1,5 +1,6 @@
-"""Optional OpenID Connect sign-in; Authlib validates tokens, Evlet keeps local authority."""
+"""Optional OpenID Connect sign-in; joserfc verifies ID tokens, Evlet keeps local authority."""
 
+import base64
 import hashlib
 import hmac
 import http.client
@@ -13,7 +14,7 @@ import socket
 import ssl
 from threading import BoundedSemaphore, Lock, Timer
 import time
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from . import qb
 from .adapter import Column, TableDefinition
@@ -30,6 +31,12 @@ TIMEOUT, CACHE_SECONDS, TICKET_SECONDS, MAX_RESPONSE = 10, 300, 300, 128 * 1024
 FAILED = 'Company sign-in could not be completed. Start again or use your local password.'
 
 
+def ensure_tickets(connection):
+    """Framework step 0015_oidc_tickets; also run at startup for databases that skip the steps (a no-op once present)."""
+    connection.ensure_table(TICKETS)
+    connection.ensure_index('evlet_oidc_ticket_expiry', 'evlet_oidc_tickets', ('expires',))
+
+
 class ProviderError(Exception):
     """Carries no provider response, URL query, code, secret or token."""
 
@@ -38,20 +45,38 @@ def digest(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 
+def encoded(raw):
+    return base64.urlsafe_b64encode(raw).rstrip(b'=').decode('ascii')
+
+
+def s256(verifier):
+    """RFC 7636 S256 code challenge: base64url SHA-256 of the ASCII verifier, unpadded."""
+    return encoded(hashlib.sha256(verifier.encode('ascii')).digest())
+
+
+def at_hash(access_token):
+    """OIDC Core 3.1.3.6 at_hash for RS256/ES256: base64url of the left half of SHA-256."""
+    return encoded(hashlib.sha256(access_token.encode('ascii')).digest()[:16])
+
+
+def auth_method(metadata, secret):
+    """client_secret_basic is the discovery default; client_secret_post only when advertised instead."""
+    if not secret:
+        return 'none'
+    methods = metadata.get('token_endpoint_auth_methods_supported', ['client_secret_basic'])
+    return next((method for method in ('client_secret_basic', 'client_secret_post') if method in methods), None)
+
+
 class OIDCFlow:
     def __init__(self, business):
         try:
             from joserfc import jwt
             from joserfc.jwk import KeySet
-            from authlib.oauth2.client import OAuth2Client
-            from authlib.oidc.core import CodeIDToken
         except ImportError:
             raise ValueError('OIDC sign-in requires the optional package: pip install "evlet[oidc]"') from None
         self.business, self.auth, self.database = business, business.auth, business.database
         self.config = self.auth.oidc
-        self.jwt, self.key_set, self.claims = jwt, KeySet, CodeIDToken
-        self.client = OAuth2Client(None, client_id=self.config.client_id, client_secret=self.config.client_secret,
-                                  redirect_uri=self.config.redirect_uri, scope='openid', code_challenge_method='S256')
+        self.jwt, self.key_set = jwt, KeySet
         callback = urlsplit(self.config.redirect_uri)
         self.origin, self.host = f'{callback.scheme}://{callback.netloc}', callback.netloc.encode()
         self.cookie_name = '__Host-evlet_oidc' if self.auth.secure_cookies else 'evlet_oidc'
@@ -62,8 +87,7 @@ class OIDCFlow:
 
     def initialize(self):
         with self.database.transaction(store='sessions') as tx:
-            tx.connection.ensure_table(TICKETS)
-            tx.connection.ensure_index('evlet_oidc_ticket_expiry', 'evlet_oidc_tickets', ('expires',))
+            ensure_tickets(tx.connection)
             tx.connection.run(qb.delete('evlet_oidc_tickets').where(qb.le('expires', int(time.time()))))
 
     def options(self, scope):
@@ -140,8 +164,12 @@ class OIDCFlow:
                               .on_conflict('client').do_update(attempts=qb.col('evlet_login_limits.attempts') + 1))
         metadata = self.metadata()
         token, proof, nonce = (secrets.token_urlsafe(32) for _ in range(3))
-        url, _ = self.client.create_authorization_url(metadata['authorization_endpoint'], state=token, code_verifier=proof,
-                                                       nonce=nonce, response_mode='query')
+        # The browser proof is also the PKCE verifier: 43 unreserved characters, sent only to the token endpoint.
+        endpoint = metadata['authorization_endpoint']
+        url = endpoint + ('&' if urlsplit(endpoint).query else '?') + urlencode({
+            'response_type': 'code', 'client_id': self.config.client_id, 'redirect_uri': self.config.redirect_uri,
+            'scope': 'openid', 'state': token, 'code_challenge': s256(proof), 'code_challenge_method': 'S256',
+            'nonce': nonce, 'response_mode': 'query'})
         with self.database.transaction(store='sessions') as tx:
             tx.connection.run(qb.delete('evlet_oidc_tickets').where(qb.le('expires', now)))
             if tx.connection.run(qb.select('evlet_oidc_tickets', qb.count())).value() >= 5000:
@@ -182,13 +210,18 @@ class OIDCFlow:
         if 'error' in values or not code or len(code) > 4096:
             raise AccessError(401, FAILED)
         metadata = self.metadata()
-        from authlib.oauth2.rfc6749.parameters import prepare_token_request
-        from authlib.oauth2.auth import ClientAuth
-        body = prepare_token_request('authorization_code', code=code, redirect_uri=self.config.redirect_uri, code_verifier=verifier)
-        auth = ClientAuth(self.config.client_id, self.config.client_secret,
-                          'client_secret_basic' if self.config.client_secret else 'none')
-        uri, headers, body = auth.prepare('POST', metadata['token_endpoint'], {'Content-Type': 'application/x-www-form-urlencoded'}, body)
-        result = self.request(uri, body=body.encode(), headers=headers)
+        # RFC 6749 4.1.3 with client authentication from 2.3.1 (Basic credentials are form-encoded first).
+        form = {'grant_type': 'authorization_code', 'code': code, 'redirect_uri': self.config.redirect_uri, 'code_verifier': verifier}
+        headers = {'Content-Type': 'application/x-www-form-urlencoded'}
+        method = auth_method(metadata, self.config.client_secret)
+        if method == 'client_secret_basic':
+            pair = quote(self.config.client_id) + ':' + quote(self.config.client_secret)
+            headers['Authorization'] = 'Basic ' + base64.b64encode(pair.encode()).decode('ascii')
+        else:
+            form['client_id'] = self.config.client_id
+            if method == 'client_secret_post':
+                form['client_secret'] = self.config.client_secret
+        result = self.request(metadata['token_endpoint'], body=urlencode(form).encode('ascii'), headers=headers)
         claims = self.validate(result, pending['nonce'], metadata)
         username = self.config.subjects.get(claims['sub'])
         if username is None:
@@ -280,61 +313,86 @@ class OIDCFlow:
             connection.close()
 
     def metadata(self):
+        # Network fetches run outside cache_lock so a slow provider never stalls cached sign-ins.
         with self.cache_lock:
             if self.metadata_cache is not None and self.metadata_cache[0] > time.monotonic():
                 return self.metadata_cache[1]
-            result = self.request(self.config.issuer.rstrip('/') + '/.well-known/openid-configuration')
-            # PKCE metadata is optional in OIDC discovery. Always send S256; reject providers
-            # that explicitly advertise an incompatible or malformed method list.
-            methods = result.get('code_challenge_methods_supported', ['S256'])
-            if result.get('issuer') != self.config.issuer or not isinstance(methods, list) or 'S256' not in methods \
-                    or not isinstance(result.get('response_types_supported'), list) or 'code' not in result['response_types_supported']:
-                raise ProviderError()
-            for name in ('authorization_endpoint', 'token_endpoint', 'jwks_uri'):
-                self.endpoint(result.get(name))
-            method = 'client_secret_basic' if self.config.client_secret else 'none'
-            methods = result.get('token_endpoint_auth_methods_supported', ['client_secret_basic'])
-            if not isinstance(methods, list) or method not in methods:
-                raise ProviderError()
+        result = self.request(self.config.issuer.rstrip('/') + '/.well-known/openid-configuration')
+        # PKCE metadata is optional in OIDC discovery. Always send S256; reject providers
+        # that explicitly advertise an incompatible or malformed method list.
+        methods = result.get('code_challenge_methods_supported', ['S256'])
+        if result.get('issuer') != self.config.issuer or not isinstance(methods, list) or 'S256' not in methods \
+                or not isinstance(result.get('response_types_supported'), list) or 'code' not in result['response_types_supported']:
+            raise ProviderError()
+        for name in ('authorization_endpoint', 'token_endpoint', 'jwks_uri'):
+            self.endpoint(result.get(name))
+        methods = result.get('token_endpoint_auth_methods_supported', ['client_secret_basic'])
+        method = auth_method(result, self.config.client_secret) if isinstance(methods, list) else None
+        if method is None or method not in methods:
+            raise ProviderError()
+        with self.cache_lock:
             self.metadata_cache = time.monotonic() + CACHE_SECONDS, result
-            return result
+        return result
 
     def keys(self, metadata, *, refresh=False):
         with self.cache_lock:
             now = time.monotonic()
             if self.keys_cache is not None and self.keys_cache[0] > now and (not refresh or now - self.keys_cache[2] < 30):
                 return self.keys_cache[1]
-            result = self.request(metadata['jwks_uri'])
-            keys = result.get('keys')
-            if not isinstance(keys, list) or not 1 <= len(keys) <= 50 or any(not isinstance(key, dict) for key in keys):
-                raise ProviderError()
-            result = {'keys': [key for key in keys if key.get('kty') in ('RSA', 'EC') and key.get('use', 'sig') == 'sig'
-                              and isinstance(key.get('key_ops', ['verify']), list) and 'verify' in key.get('key_ops', ['verify'])
-                              and key.get('alg', 'RS256') in ('RS256', 'ES256')]}
-            if not result['keys']:
-                raise ProviderError()
+        result = self.request(metadata['jwks_uri'])
+        keys = result.get('keys')
+        if not isinstance(keys, list) or not 1 <= len(keys) <= 50 or any(not isinstance(key, dict) for key in keys):
+            raise ProviderError()
+        result = {'keys': [key for key in keys if key.get('kty') in ('RSA', 'EC') and key.get('use', 'sig') == 'sig'
+                          and isinstance(key.get('key_ops', ['verify']), list) and 'verify' in key.get('key_ops', ['verify'])
+                          and key.get('alg', 'RS256') in ('RS256', 'ES256')]}
+        if not result['keys']:
+            raise ProviderError()
+        with self.cache_lock:
+            now = time.monotonic()
             self.keys_cache = now + CACHE_SECONDS, result, now
-            return result
+        return result
 
     def validate(self, result, nonce, metadata):
+        """OIDC Core 3.1.3.7: signature and RS256/ES256 pin, iss, aud, azp, exp, iat (30 s leeway), nonce, at_hash."""
         from joserfc.errors import JoseError
+        from joserfc.jwt import JWTClaimsRegistry
         token = result.get('id_token')
         if not isinstance(token, str) or len(token) > 32768 or 'error' in result:
             raise ProviderError()
-        options = {'iss': {'essential': True, 'value': self.config.issuer}, 'aud': {'essential': True, 'value': self.config.client_id}}
-        params = {'nonce': nonce, 'client_id': self.config.client_id, 'access_token': result.get('access_token')}
+        registry = JWTClaimsRegistry(leeway=30, iss={'essential': True, 'value': self.config.issuer},
+                                     aud={'essential': True, 'value': self.config.client_id}, sub={'essential': True},
+                                     exp={'essential': True}, iat={'essential': True}, nonce={'essential': True, 'value': nonce})
+        decoded = None
         for refresh in (False, True):
+            # An unknown kid or bad signature refetches the JWKS once (rate-limited by keys()).
             try:
                 decoded = self.jwt.decode(token, self.key_set.import_key_set(self.keys(metadata, refresh=refresh)), algorithms=['RS256', 'ES256'])
-                claims = self.claims(decoded.claims, decoded.header, options, params)
-                claims.validate(leeway=30)
-                if not isinstance(claims['sub'], str) or not 1 <= len(claims['sub']) <= 255:
-                    raise ProviderError()
-                if any(type(claims[name]) not in (int, float) or not math.isfinite(claims[name]) for name in ('iat', 'exp')):
-                    raise ProviderError()
-                if claims.get('at_hash') is not None and not isinstance(result.get('access_token'), str):
-                    raise ProviderError()
-                return claims
+                break
             except (JoseError, ValueError, TypeError, KeyError, OverflowError):
                 if refresh:
                     raise ProviderError() from None
+        claims = decoded.claims
+        try:
+            if decoded.header.get('alg') not in ('RS256', 'ES256') or not isinstance(claims, dict):
+                raise ProviderError()
+            if any(type(claims.get(name)) not in (int, float) or not math.isfinite(claims[name]) for name in ('iat', 'exp')):
+                raise ProviderError()
+            registry.validate(claims)
+        except (JoseError, ValueError, TypeError, OverflowError):
+            raise ProviderError() from None
+        # The registry also accepts a list containing the expected value; nonce and sub must be plain strings.
+        if not isinstance(claims['nonce'], str) or not hmac.compare_digest(claims['nonce'].encode(), nonce.encode()) \
+                or not isinstance(claims['sub'], str) or not 1 <= len(claims['sub']) <= 255:
+            raise ProviderError()
+        # The registry accepts a list audience containing client_id; several audiences need azp = client_id.
+        audience = claims['aud']
+        if (isinstance(audience, list) and len(audience) != 1 or 'azp' in claims) and claims.get('azp') != self.config.client_id:
+            raise ProviderError()
+        if 'at_hash' in claims:
+            access = result.get('access_token')
+            expected = claims['at_hash']
+            if not isinstance(access, str) or not isinstance(expected, str) or not access.isascii() \
+                    or not expected.isascii() or not hmac.compare_digest(at_hash(access), expected):
+                raise ProviderError()
+        return claims

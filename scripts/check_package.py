@@ -32,6 +32,8 @@ def check_pwa_package(sdist):
         elif name.endswith('.js'):
             assert dict(headers)[b'service-worker-allowed'] == b'/'
             assert dict(headers)[b'cache-control'] == b'no-cache'
+            # vite build lists its fingerprinted files in the worker (frontend/vite.config.js).
+            assert b'evlet:build-assets' not in content.content and b'"/assets/index-' in content.content
         else:
             assert b'evlet-config' not in content.content and b'must-not-cache' not in content.content
             assert b'data-theme' not in content.content
@@ -59,7 +61,7 @@ def main():
     args = parser.parse_args()
     if Path(evlet.__file__).resolve().is_relative_to(checkout / "evlet"):
         raise RuntimeError("Package check imported the checkout instead of the installed wheel")
-    for optional in ('authlib', 'joserfc', 'boto3', 'weasyprint', 'jinja2'):
+    for optional in ('joserfc', 'boto3', 'weasyprint', 'jinja2'):
         assert util.find_spec(optional) is None, f'Clean wheel check unexpectedly has optional dependency {optional}'
     check_pwa_package(args.sdist)
 

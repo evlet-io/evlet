@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit
 
 import pytest
 
-pytest.importorskip('authlib', reason='Optional OIDC extra is not installed')
+pytest.importorskip('joserfc', reason='Optional OIDC extra is not installed')
 from joserfc.jwk import RSAKey, OctKey
 from joserfc import jwt
 from evlet import Application, Database, LocalAuth, Registry, Security, qb
@@ -246,7 +246,7 @@ def test_provider_mfa_claims_never_bypass_local_mfa_and_code_replay(configured, 
         assert connection.run(qb.select('evlet_sessions', 'two_step')).value() is not None
 
 
-def test_confidential_client_uses_library_basic_auth_and_cached_keys(configured, provider):
+def test_confidential_client_uses_basic_auth_and_cached_keys(configured, provider):
     from evlet.oidc import OIDCFlow
     configured.business.auth.oidc = replace(configured.business.auth.oidc, client_secret='client secret:with punctuation')
     configured.business.oidc = OIDCFlow(configured.business)
@@ -448,3 +448,77 @@ def test_browser_fixture_matches_real_oidc_session_login_and_mfa(configured, pro
     challenge.update(ticket='fixture-ticket', secret='fixture-secret', uri=uri)
     path = Path(__file__).resolve().parents[1] / 'frontend/src/evlet/tests/oidc-fixture.json'
     assert json.loads(path.read_text()) == {'session': session, 'finish': login, 'challenge': challenge}
+
+
+def test_client_secret_post_is_used_only_when_basic_is_not_advertised(configured, provider):
+    from evlet.oidc import OIDCFlow
+    provider.metadata_changes = {'token_endpoint_auth_methods_supported': ['client_secret_post']}
+    configured.business.auth.oidc = replace(configured.business.auth.oidc, client_secret='post-secret')
+    configured.business.oidc = OIDCFlow(configured.business)
+    assert callback(configured)[0][2][b'location'] == b'/login?oidc=finish'
+    assert provider.last_authorization is None
+    assert provider.last_token_request['client_id'] == 'evlet-test'
+    assert provider.last_token_request['client_secret'] == 'post-secret'
+
+
+def test_authorization_url_carries_pkce_nonce_and_keeps_endpoint_query(configured, provider):
+    provider.metadata_changes = {'authorization_endpoint': provider.issuer + '/authorize?tenant=acme'}
+    url, _ = begin(configured)
+    query = {key: items for key, items in parse_qs(urlsplit(url).query).items()}
+    assert all(len(items) == 1 for items in query.values())
+    assert query['tenant'] == ['acme'] and query['response_mode'] == ['query']
+    assert query['code_challenge_method'] == ['S256'] and len(query['code_challenge'][0]) == 43
+    assert query['redirect_uri'] == ['http://127.0.0.1:8000/_/oidc/callback'] and len(query['nonce'][0]) == 43
+
+
+@pytest.mark.parametrize('kind', ['valid', 'wrong'])
+def test_access_token_hash_is_checked_when_present(configured, provider, kind):
+    valid = base64.urlsafe_b64encode(hashlib.sha256(b'provider-access-token').digest()[:16]).rstrip(b'=').decode()
+    provider.claims = {'at_hash': valid if kind == 'valid' else 'A' * 22}
+    expected = b'/login?oidc=finish' if kind == 'valid' else b'/login?oidc=error'
+    assert callback(configured)[0][2][b'location'] == expected
+
+
+def test_nonce_list_containing_the_pending_nonce_is_rejected(configured, provider):
+    url, cookie = begin(configured)
+    provider.claims = {'nonce': ['other', parse_qs(urlsplit(url).query)['nonce'][0]]}
+    assert http(configured, 'GET', authorize(url), cookie=cookie)[2][b'location'] == b'/login?oidc=error'
+
+
+def test_discovery_fetch_does_not_hold_the_cache_lock(configured, provider):
+    flow = configured.business.oidc
+    provider.delay = 0.5
+    worker = Thread(target=flow.metadata)
+    worker.start()
+    try:
+        time.sleep(0.1)
+        assert flow.cache_lock.acquire(timeout=0.1)
+        flow.cache_lock.release()
+    finally:
+        worker.join(5)
+    assert flow.metadata_cache is not None
+
+
+def test_enabling_oidc_later_changes_no_schema_at_startup(tmp_path, provider):
+    import sqlite3
+    from contextlib import closing
+    path = tmp_path / 'later.sqlite3'
+    database = Database(path, Registry())
+    Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False),
+                secret_key=tmp_path / 'secret.key').initialize()
+    database.close()
+
+    def schema():
+        result = {}
+        for file in sorted(tmp_path.glob('later*.sqlite3')):
+            with closing(sqlite3.connect(file)) as connection:
+                result[file.name] = sorted(connection.execute('SELECT type, name, sql FROM sqlite_master').fetchall(), key=repr)
+        return result
+    before = schema()
+    assert any(name == 'evlet_oidc_tickets' for _, name, _ in before['later-sessions.sqlite3'])
+    database = Database(path, Registry())
+    config = OIDC(provider.issuer, 'evlet-test', 'http://127.0.0.1:8000/_/oidc/callback', {'staff-opaque-id': 'editor'})
+    Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, oidc=config),
+                secret_key=tmp_path / 'secret.key').initialize()
+    database.close()
+    assert schema() == before

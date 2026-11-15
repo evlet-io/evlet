@@ -41,6 +41,9 @@ async function setStaticCache(on: boolean): Promise<void> {
       await (await caches.open(CONTROL)).put(STATE, new Response('enabled'));
       const registration = await navigator.serviceWorker.register(WORKER, { scope: '/', updateViaCache: 'none' });
       await installed(registration);
+      // A worker still running since the setting was turned off reads the marker again (it is never trusted from the message).
+      for (const worker of [registration.active, registration.waiting, registration.installing])
+        worker?.postMessage({ type: 'EVLET_ENABLE_STATIC_CACHE' });
     } else {
       await (await caches.open(CONTROL)).put(STATE, new Response('disabled'));
       try { safeStorage()?.removeItem(OPT_IN); } catch { /* The durable disabled marker still prevents startup opt-in. */ }

@@ -72,6 +72,7 @@ describe('optional device settings', () => {
     expect(made.serviceWorker.getRegistrations).not.toHaveBeenCalled();
     finish(made.registration);
     await vi.waitFor(() => expect(made.toggle().getAttribute('aria-checked')).toBe('true'));
+    expect(made.registration.active.postMessage).toHaveBeenCalledExactlyOnceWith({ type: 'EVLET_ENABLE_STATIC_CACHE' });
     made.toggle().click();
     await vi.waitFor(() => expect(made.toggle().getAttribute('aria-checked')).toBe('false'));
     expect(await made.marker.get('/assets/evlet-cache-state')!.text()).toBe('disabled');

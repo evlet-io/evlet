@@ -10,12 +10,12 @@ import tomllib
 def test_oidc_dependencies_are_optional_and_loaded_only_for_enabled_flow(tmp_path):
     metadata = tomllib.loads((Path(__file__).resolve().parents[1] / 'pyproject.toml').read_text())['project']
     assert not any('authlib' in item.lower() or 'joserfc' in item.lower() for item in metadata['dependencies'])
-    assert metadata['optional-dependencies']['oidc'] == ['Authlib>=1.9.5,<2', 'joserfc>=1.8,<2']
+    assert metadata['optional-dependencies']['oidc'] == ['joserfc>=1.8,<2']
     source = '''
 import importlib.abc, sys
 class NoOIDC(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        if fullname.split('.')[0] in ('authlib', 'joserfc'):
+        if fullname.split('.')[0] in ('authlib', 'joserfc', 'cryptography'):
             raise ModuleNotFoundError(fullname)
 sys.meta_path.insert(0, NoOIDC())
 from evlet import Application, Database, LocalAuth, Registry
@@ -24,7 +24,7 @@ from pathlib import Path
 db = Database(Path(sys.argv[1])/'optional.sqlite3', Registry())
 auth = LocalAuth(db, origins=('https://desk.example',))
 app = Application(db, auth=auth)
-assert not any(name.startswith(('authlib', 'joserfc')) for name in sys.modules)
+assert not any(name.startswith(('authlib', 'joserfc', 'cryptography')) for name in sys.modules)
 auth.oidc = OIDC('https://company.example', 'test', 'https://desk.example/_/oidc/callback', {'subject':'editor'})
 try:
     Application(db, auth=auth)
@@ -56,7 +56,7 @@ def test_oidc_lock_is_hash_pinned_and_matches_optional_and_shared_requirements()
         specs = list(requirement.specifier)
         assert len(specs) == 1 and specs[0].operator == '=='
         pins[canonicalize_name(requirement.name)] = specs[0].version
-    assert set(pins) == {'authlib', 'joserfc', 'cryptography', 'cffi', 'pycparser'}
+    assert set(pins) == {'joserfc', 'cryptography', 'cffi', 'pycparser'}
     for text in project['optional-dependencies']['oidc']:
         requirement = Requirement(text)
         assert requirement.specifier.contains(pins[canonicalize_name(requirement.name)])

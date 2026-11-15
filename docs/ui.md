@@ -1113,15 +1113,19 @@ frontends and portal Settings are not claimed as installable by this manifest.
 
 **Offline notice and static assets** is an explicit device preference, off by default. It
 registers `/assets/evlet-sw.js` only after opt-in. The worker keeps a fixed public offline
-notice, the public icon and up to 64 fingerprinted JavaScript, CSS or font assets. Requests
-for these assets omit credentials. Successful navigation HTML, sessions, API responses,
+notice, the public icon and up to 64 of the fingerprinted JavaScript, CSS or font files of the
+Evlet build it ships with; `vite build` writes their names into the worker. Only those files are
+served cache-first. The icon is fetched from the network each time and its copy used only offline;
+any other `/assets/` file, such as an app's own script, is never cached. A new build's worker drops
+the files of earlier builds when it activates. Requests for these assets omit credentials. Successful navigation HTML, sessions, API responses,
 records and mutations are never cached, queued or replayed. An offline navigation shows only
 `/assets/evlet-offline.html`, without injected configuration or user data.
 
 Updates wait for existing tabs to close; there is no automatic activation, reload or takeover
 of editors. Finish or keep work before closing tabs. Turning the feature off unregisters its
 worker and deletes its asset cache; a non-sensitive disabled marker prevents a restarted
-worker from recreating it. Browser storage failures do not block ordinary online assets.
+worker from recreating it. The worker reads that marker again when it is turned back on, so a
+worker still running since it was turned off resumes without a browser restart. Browser storage failures do not block ordinary online assets.
 Installation itself does not enable offline business workflows.
 
 ### Keyboard shortcuts

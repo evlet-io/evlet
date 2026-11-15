@@ -113,6 +113,9 @@ at 0, so people stay signed in); ending a person's sessions moves it on, so an o
 cannot be used again. `0013_create_requests` adds `evlet_create_requests`, the retry receipts of creates
 sent with an `Idempotency-Key` header. `0014_unsaved_versions` adds a `version` to `evlet_unsaved` and the
 per-account `evlet_unsaved_versions` clock, so a newer draft is never replaced by an older one.
+`0015_oidc_tickets` adds the small `evlet_oidc_tickets` table of company sign-in state and finish receipts
+to the sessions file, whether or not OIDC is configured, so enabling [company sign-in](oidc.md) later never
+changes the schema when the instance starts.
 Steps never run while an instance is served.
 `evlet migrate acme --plan` lists the pending ones without writing anything. If a step fails, the staged copy is
 discarded and the database and lock stay as they were; restore the earlier Evlet
