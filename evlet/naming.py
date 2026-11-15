@@ -198,11 +198,12 @@ def fill_titles(connection, table, model):
             connection.run(qb.update(table, title=title_of(model, record._values, record.id)).where(id=record.id))
 
 
-def drop_echoes(model, values, current=None):
+def drop_echoes(model, values, current=None, *, readable=None):
     """Leave out a standard name or title a client sent back as it read it (a full row returned for
-    saving): unchanged, or empty on a new record. Any other value stays and is checked as a write."""
+    saving): unchanged, or empty on a new record. Unreadable fields stay for uniform write rejection,
+    without comparing a hidden value. readable=None is for trusted callers without a field policy."""
     for key in ('name', 'title'):
-        if key in values and standard(model.__fields__.get(key)):
+        if key in values and standard(model.__fields__.get(key)) and (readable is None or key in readable):
             before = None if current is None else current.get(key)
             if values[key] == before or values[key] in (None, '') and before in (None, ''):
                 del values[key]

@@ -800,7 +800,7 @@ def list_tabs(business, tx, user, model, filters=None, search=''):
     name, link = tabs['field'], tabs['kind'] == 'link'
     field = model.__declared_fields__[name]
     children = getattr(business, 'children', {}).values()
-    policy.query_fields(user, model, filters, (), children=children)
+    policy.query_fields(user, model, filters, (), database=tx.connection, children=children)
     text, fields = searched(business, user, model, search)
     where = combine(SqlQuery(registry, model, children=children).where(filters, text, search_fields=fields), policy.scope(user, model))
     table, column = qb.table(registry.name_for(model), 'record'), qb.col(f'record.{name}')
@@ -827,7 +827,7 @@ def scoped_measures(business, tx, user, model, record_id=None, filters=None, sea
     policy.require(user, model, 'read')
     items = available(business, user, model, record_id is not None)
     if record_id is None:
-        policy.query_fields(user, model, filters, (), children=getattr(business, 'children', {}).values())
+        policy.query_fields(user, model, filters, (), database=tx.connection, children=getattr(business, 'children', {}).values())
     else:
         policy.record(tx, user, model, record_id)
     return values_for(tx, model, items, record_id, filters, lambda target: policy.scope(user, target),
