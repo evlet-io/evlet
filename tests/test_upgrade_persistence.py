@@ -58,11 +58,24 @@ def test_shared_environment_plans_and_migrates_every_instance_before_restart(rea
 def test_every_service_is_validated_before_staging_pip(ready):
     root, units = ready
     sibling(root, units)
-    (units / 'evlet-shop.service').unlink()
+    (units / 'evlet-shop.service').write_text('[Service]\nExecStart=/usr/bin/true\n')
     server = Server(root)
     with pytest.raises(ValueError, match='Service shop'):
         call(root, units, server=server, all_instances=True)
     assert not server.ran
+
+
+def test_a_sibling_without_a_service_is_migrated_but_not_restarted(ready):
+    root, units = ready
+    sibling(root, units)
+    (units / 'evlet-shop.service').unlink()
+    result, out, server = call(root, units, all_instances=True)
+    assert result
+    assert [Server.kind(args) for args in server.ran] == [
+        'pip', 'plan', 'plan', 'stop', 'backup', 'backup', 'migrate', 'migrate', 'restart']
+    assert [args[-1] for args in server.ran if Server.kind(args) == 'migrate'] == ['acme', 'shop']
+    assert environment_version(root) == '0.4.4'
+    assert any('No service runs shop, so it was migrated but not started' in line for line in out)
 
 
 def test_second_migration_failure_preserves_all_backups_and_restarts_nobody(ready):
