@@ -114,7 +114,7 @@
     "State.Level": "class(by, *, when=None, pending=None)",
     "State.Remark": "class(mode='optional', *, label=None, required_when=None)",
     "State.Rule": "class(from_, to, /, label=None, *, key=None, by=None, when=None, levels=(), self_approve=False, remark=None, ask=(), primary=False, reject=False)",
-    "State.Step": "class(key, label=None, *, color=None, lock=False, release=False, final=False)",
+    "State.Step": "class(key, label=None, *, color=None, lock=None, release=False, final=False)",
     "StorageError": "exception",
     "Sum": "class(field, *, where=None, model=None, link=None, trend=None, color=None)",
     "Swap": "class(first, second)",

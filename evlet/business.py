@@ -806,7 +806,7 @@ class Business:
     def model_dispatch(self, scope, body, user, model, parts):
         method = scope['method']
         retry = self.create_request(scope, body, user, model) if len(parts) == 3 and method == 'POST' else None
-        if len(parts) >= 5 and parts[4] in ('release', 'restore', 'versions'):
+        if len(parts) >= 5 and parts[4] in ('restore', 'versions'):
             from .statemanager import route
             return route(self, scope, body, user, model, parts)
         if len(parts) == 5 and parts[4] == 'history':

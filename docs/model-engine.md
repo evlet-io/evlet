@@ -107,7 +107,7 @@ class Visit(Model):
 * **When it runs.** On every write of the document (create, update, move, action) and every
   preview (`POST /api/_draft/{model}`), after the caller's
   values are checked and fetched and before calculations. Formulas may read what it set; it
-  cannot read their results. A locked or posted record keeps its derived values on the writes
+  cannot read their results. A locked or released record keeps its derived values on the writes
   that keep its saved results, so `derive()` does not run there
   ([finite-calculations.md](finite-calculations.md#server-writes)).
 * **Like caller input.** What it sets is cleaned like a value a caller sent (a string becomes
@@ -199,7 +199,7 @@ class Visit(Model):
   * A document with calculations is a finite-v1 document, which the session already refuses to
     write: app code writes it through `Context.create`/`update` (or an action or move), and
     `derive()` runs there.
-  * A record with posted effects keeps its stored values, as on every other write, and refuses
+  * A record in its released set keeps its stored values, as on every other write, and refuses
     `children=`.
   * `children=` is only for a document that declares `derive()` (`ValueError` otherwise). A model
     with a field named `children` takes it as that field.
@@ -1297,19 +1297,17 @@ fields whose `applies_when` is false are stored as null, matching the results. S
 models without tables or query sources. Like other operations, Recompute is not replayed
 when a database adopts its baseline (a fresh database, or one initialized without history).
 
-Recompute skips records whose document has live posted effects, and records that posted and are
-in a final state (void): they keep their saved results and their recorded formula version, so the
-effect rows they posted, and their reversals, still match. A locked record that never posted, or
-left the posting state for a step that is not final, is recalculated and moves to the active
-formula version. `database.migrate()` returns the applied migration names as a list whose
+Recompute skips records in their released set (a `release=True` step): they keep their saved
+results and their recorded formula version, so what their `@release` posted still matches. Every
+other record is recalculated and moves to the active formula version. `database.migrate()` returns the applied migration names as a list whose
 `skipped` attribute counts the records kept, and the `evlet.migrations` logger reports the
 count. Each record Recompute changes gets a `recomputed` [Activity](activity.md) entry when its
 model keeps an Activity.
 
-Posted records are recalculated only when an admin asks for it, for one migration run:
+Released records are recalculated only when an admin asks for it, for one migration run:
 `evlet migrate <instance> --recompute-posted`, or `database.migrate(migrations,
 recompute_posted=True)` from Python. The default stays off. Every Recompute operation of that
-run then includes posted records; each one that changes gets a `recomputed` entry with
+run then includes released records; each one that changes gets a `recomputed` entry with
 `"posted": true`, the run writes one Controls audit row (actor `cli`, area `Records`) and logs
 a warning with the count, and `posted` on the returned list counts them. Their effect rows are
 not rewritten, so `evlet effects check` reports them as `changed` until each leaves the posting

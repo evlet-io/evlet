@@ -917,8 +917,8 @@ class Applied(list):
 def _recompute(connection, registry, operations, versions, *, include_posted=False):
     """Run Recompute operations in order. versions(connection) tells whether formula versions are recorded.
 
-    A record with posted effects (voided or not) keeps its saved results, so it is skipped, unless an admin runs the
-    migration with `include_posted`: then posted records are recalculated too, and each one that changes gets
+    A record in its released set keeps its saved results, so it is skipped, unless an admin runs the migration
+    with `include_posted`: then released records are recalculated too, and each one that changes gets
     `"posted": true` in its entry. Records whose results change get a `recomputed` Activity entry. Returns
     (records skipped, posted records changed)."""
     from .database import Session
@@ -989,12 +989,9 @@ def _skip(session, model, record, skipped, posted):
 
 
 def _kept(session, model, record):
-    """Whether Recompute leaves a root record alone: it has live posted effects, or it posted and is in a final
-    state (such as void), so its rows and their reversal keep matching it."""
-    from .effects import ever_posted, has_postings
-    final = model.__state__ is not None and record._values.get(model.__state__) in model.__declared_fields__[model.__state__].final
-    return has_postings(session.connection, session.registry, model, record) or \
-        final and ever_posted(session.connection, session.registry, model, record.id)
+    """Whether Recompute leaves a root record alone: it is in its released set (a release=True step), so what
+    its @release posted keeps matching it."""
+    return model.__state__ is not None and record._values.get(model.__state__) in model.__declared_fields__[model.__state__].releases
 
 
 def _changed(changes, item, record, values):

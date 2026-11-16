@@ -495,21 +495,22 @@ route first. Formula changes never backfill stored totals on their own; use the 
 migration operation ([model-engine.md](model-engine.md#recalculating-stored-values)) to
 recalculate them explicitly.
 
-Locked records and records with posted [effects](effects.md) are the exception. A record in
-a locked step keeps its saved results on ordinary writes. The draft preview and the record's
-detail follow the same rule, so they show the values a save would keep. A trusted Session write
-to a `derive()` model is the one difference: only postings keep its results, because hooks and
-app code write to a locked document and its derived values must follow. A record with postings
-keeps them on every write, moves and actions included, and needs no recalculation request;
-asking for one is refused with 409 (`This record has postings. To change its totals, move it out
-of its posted state.`). Its actions and moves may not change what those results read (409,
-naming the field). `Recompute` skips records with live postings, and records that posted and
-are in a final state, and reports how many it kept, so the effect rows a record posted always
-match its saved totals; a locked record that never posted is recalculated. An admin may include posted records for one migration run with
-`evlet migrate <instance> --recompute-posted`; each changed one is recorded in Activity with
-`"posted": true` ([model-engine.md](model-engine.md#recalculating-stored-values)). A rule out
-of the posting state reverses the rows, after which the record can be corrected and posted
-again ([effects.md](effects.md#leaving-the-posting-state)). Draft previews of a locked or posted record show the values a save keeps.
+Locked records and records in their released set (a `release=True` step) are the exception. A
+record in a locked step keeps its saved results on ordinary writes. The draft preview and the
+record's detail follow the same rule, so they show the values a save would keep. A trusted Session
+write to a `derive()` model is the one difference: only the released set keeps its results, because
+hooks and app code write to a locked document and its derived values must follow. A record in its
+released set keeps them on every write, moves and actions included, and needs no recalculation
+request; asking for one is refused with 409 (`This record is released, so it keeps its saved
+results. To change its totals, move it out of the released set.`). Inside the set only
+`versioned=False` fields change ([states-actions.md](states-actions.md#releases-and-versions)).
+`Recompute` skips records in their released set and reports how many it kept, so what their
+`@release` posted always matches their saved totals; every other record is recalculated. An admin
+may include released records for one migration run with `evlet migrate <instance>
+--recompute-posted`; each changed one is recorded in Activity with `"posted": true`
+([model-engine.md](model-engine.md#recalculating-stored-values)). A rule out of the released set
+runs `@release.exit`, after which the record can be corrected and released again. Draft previews of
+a locked or released record show the values a save keeps.
 
 ## Permissions and the browser plan
 

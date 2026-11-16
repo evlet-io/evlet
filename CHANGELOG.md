@@ -6,6 +6,28 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Upgrading
+
+- **`@release` runs on every move into the released set** (the steps declared `release=True`), and
+  `@release.exit` on every move out of it, whether or not the content changed: they are the posting
+  hooks, like `on_submit` and `on_cancel`. A new version number is still recorded only when the
+  versioned content changed; an unchanged re-entry gets the same number again. Moves within the set
+  run neither hook ([docs/states-actions.md](docs/states-actions.md#releases-and-versions)).
+- **Declare `@release.exit` with `@release`.** A model with `@release` and no `@release.exit` fails
+  when the class is created, unless no rule leaves the released set.
+- **Versioned content does not change inside the released set.** A move within the set, an action
+  or a hook there that changes a versioned field is refused with 409 (`due_date is part of the
+  issued document; reopen it to change it`). Mark process fields `versioned=False`, or reopen first.
+- **`release=True` and `final=True` imply `lock=True`.** `lock=False` with them fails at
+  declaration; `lock=True` may stay.
+- **The manual Release is removed:** `POST /api/{model}/{id}/release`, `Context.release()` and the
+  `release` permission operation (drop it from `Rule(...)` operations; `restore` stays). Versions come
+  only from moves by rules. There is no compatibility path, by owner decision.
+- **Protections follow the released set, not effect rows.** A record in a `release=True` step keeps
+  its saved results for every writer, refuses `"_calculation": {"recalculate": true}` (409 `This
+  record is released, ...`), and `Recompute` skips it unless `--recompute-posted`. Records that left
+  the set (voided ones too) are recalculated.
+
 ### Fixed
 
 - **No `/api/_eva` 404 on every page load.** `GET /api/_settings/me` now carries `eva`: true exactly

@@ -17,7 +17,7 @@ from .query import Condition, SqlQuery, child_tables, conditions
 # IDs per batched permission or row statement; well under SQLite's bound-parameter limit.
 CHUNK = 500
 # State manager operations beyond moves: admin has them by default and a Rule may grant them to other roles.
-CORRECTIONS = ('release', 'restore')
+CORRECTIONS = ('restore',)
 # Operations that change a record or what is kept with it; Meta.api = "read" refuses them to callers.
 WRITES = frozenset(('create', 'update', 'delete', 'activity', *CORRECTIONS))
 # Meta.api values: what callers (HTTP routes, MCP, Eva, connectors) reach of a model.
@@ -331,7 +331,7 @@ class Policy:
                 raise ValueError('Row scope must be a callable returning query filters')
             for team in getattr(rule.scope, 'teams', ()):
                 team_target(registry, model, team)
-        # Release and restore: admin, when its Rule allows reading and updating the model, plus every role
+        # Restore: admin, when its Rule allows reading and updating the model, plus every role
         # whose Rule names the operation. The rules table is not changed.
         corrections = {}
         for model in registry.models.values():
@@ -346,7 +346,7 @@ class Policy:
         self.corrections = MappingProxyType(corrections)
         # Activity entries (notes, messages, calls, follow ups): admin when its Rule reads the model, the
         # editor and roles based on it when their Rule reads and updates it, and every role whose Rule
-        # names 'activity'. Naming a role only adds it, like release and restore.
+        # names 'activity'. Naming a role only adds it, like restore.
         activity_writers = {}
         for model in registry.activities:
             operations = {role: self.rules.get((role, model), default_rule(base)).operations for role, base in self.roles.items()}

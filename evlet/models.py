@@ -529,9 +529,10 @@ class Registry:
         # Rows documents post to other models (Meta.effects); the targets' rows are read only.
         compile_effects = step('effects')
         self.effects, self.effect_targets = compile_effects(self, models, child_models)
-        # What a posted record's stored results read, which its actions and moves may no longer change.
+        # What a released record's stored results read, which a move out of the released set may not change.
         posted_reads = step('posted_reads')
-        self.posted_reads = MappingProxyType({model: posted_reads(self, model, plans.get(model)) for model in self.effects})
+        self.posted_reads = MappingProxyType({model: posted_reads(self, model, plans.get(model)) for model in models
+                                              if model.__state__ and model.__declared_fields__[model.__state__].releases})
         # Record histories: {model: Activity} (evlet/activity.py).
         compile_activities = step('activities')
         self.activities = compile_activities(models, child_models, self.effects)

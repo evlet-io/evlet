@@ -259,7 +259,7 @@ function StateDisplay(): Child {
       example('colours', 'Every step of the deal, then the invoice\'s steps.',
         labelled('Deal', DEAL.state!.steps.map(step => badge(DEAL, () => step.key))),
         labelled('Invoice', INVOICE.state!.steps.map(step => badge(INVOICE, () => step.key)))))}
-    ${section('Locked and released steps', p('lock=True makes the record read only to ordinary writes, except fields declared versioned=False. release=True marks a step whose content counts as released: entering it with changed content makes the next version, v0, v1, v2. A banner over the record says what can still change.'),
+    ${section('Locked and released steps', p('lock=True makes the record read only to ordinary writes, except fields declared versioned=False. release=True puts a step in the released set, and release=True or final=True implies lock=True. Every move into the set runs @release; when the content changed since, it records the next version, v0, v1, v2. A banner over the record says what can still change.'),
       code(STATE_CODE.invoice),
       example('locked', 'The invoice\'s banner in each state, as the record shows it.',
         LockBanner(INVOICE, 'draft', false, cancelled), LockBanner(INVOICE, 'issued', true, cancelled), LockBanner(INVOICE, 'void', true, cancelled)),

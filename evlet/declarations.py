@@ -223,15 +223,19 @@ class Step:
     """One state: State.Step("issued", "Issued", color="green", lock=True, release=True, final=False).
 
     `lock` makes the document read only in this state, except fields declared `versioned=False`. `release`
-    makes entering it a release. `final` means no rule leaves it. Only `label` and `color` may change on
-    an instance; the behaviour is the model's."""
-    def __init__(self, key, label=None, *, color=None, lock=False, release=False, final=False):
+    puts the step in the released set: entering the set runs @release, leaving it @release.exit. `final` means
+    no rule leaves it. `release` and `final` imply `lock`. Only `label` and `color` may change on an instance;
+    the behaviour is the model's."""
+    def __init__(self, key, label=None, *, color=None, lock=None, release=False, final=False):
         self.key = _key(key, 'A step key')
         self.label = _text(label, 'A step label') or key.replace('_', ' ').capitalize()
         if color is not None and color not in COLORS:
             raise ValueError(f'Step {key!r}: color is one of ' + ', '.join(COLORS))
         self.color = color
-        self.lock, self.release, self.final = _flag(lock, 'lock'), _flag(release, 'release'), _flag(final, 'final')
+        self.release, self.final = _flag(release, 'release'), _flag(final, 'final')
+        if lock is False and (self.release or self.final):
+            raise ValueError(f'Step {key!r}: a release or final step is locked; leave out lock=False')
+        self.lock = self.release or self.final if lock is None else _flag(lock, 'lock')
 
     def public(self):
         return {'key': self.key, 'label': self.label, 'color': self.color, 'lock': self.lock, 'release': self.release, 'final': self.final}

@@ -143,7 +143,7 @@ def test_state_and_rule_declarations_are_checked():
     rule = R('a', 'b')
     assert State(*steps).default == 'a' and rule.label == 'B' and rule.key == 'a_to_b' and rule.roles == ('admin', 'editor')
     assert R(('a', 'c'), 'b').key == 'a_c_to_b' and R('a', 'b', by=()).system and R('a', 'b', by=('manager', F('approver'))).users == ('approver',)
-    assert State(*steps, rules=(R('a', 'b'), R('a', 'b', key='other'))).locked == ('b',)
+    assert State(*steps, rules=(R('a', 'b'), R('a', 'b', key='other'))).locked == ('b', 'c')  # final implies lock
     with pytest.raises(ValueError, match='more than one State'):
         type('Twice', (Model,), {'one': State(Step('a'), Step('b')), 'two': State(Step('a'), Step('b'))})
     with pytest.raises(ValueError, match='root document'):

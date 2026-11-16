@@ -169,7 +169,7 @@ def stored_reads(registry, model, plan):
 
 @build_step('posted_reads')
 def posted_reads(registry, model, plan):
-    """({(model, field)}, {(owner model, table name)}) a posted record may not change: the source fields
+    """({(model, field)}, {(owner model, table name)}) a released record may not change: the source fields
     its stored results read, and the tables whose rows hold or feed a stored result."""
     fields, read = set(), set()
     for (member, _), (inputs, tables) in stored_reads(registry, model, plan).items():
@@ -190,7 +190,7 @@ def posted_reads(registry, model, plan):
 
 
 def check_posted(context, draft, before):
-    """Refuse a change by an action or move to anything a posted record's stored results read."""
+    """Refuse a change by a move out of the released set to anything the record's kept stored results read."""
     from .documents import prior_versions, walk
     registry = context._business.registry
     fields, tables = registry.posted_reads[draft._definition]
@@ -203,10 +203,10 @@ def check_posted(context, draft, before):
         for name, field in definition.__declared_fields__.items():
             if (definition, name) in fields and item._values.get(name) != old._values.get(name):
                 label = field.label or name.replace('_', ' ').capitalize()
-                raise AccessError(409, f'{label} feeds posted totals. To change it, move the record out of its posted state.')
+                raise AccessError(409, f'{label} feeds released totals. To change it, move the record out of the released set first.')
         for name in definition.__tables__:
             if (definition, name) in tables and [row.id for row in item._rows.get(name, [])] != [row.id for row in old._rows.get(name, [])]:
-                raise AccessError(409, f'{labels[definition, name]} feed posted totals. To change them, move the record out of its posted state.')
+                raise AccessError(409, f'{labels[definition, name]} feed released totals. To change them, move the record out of the released set first.')
 
 
 # Guard evaluation
