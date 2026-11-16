@@ -88,7 +88,7 @@ because it changes after the number is assigned. Two companies can both have
   is assigned`) and the date field cannot move to another period (`This stays in the period
   of the assigned number`). It may change within the same period. A role that cannot read
   the number gets `This cannot change now` instead, so the message does not reveal that a
-  number exists. Raw `Session.update` (and legacy `Action` handlers) get the same check
+  number exists. Raw `Session.update` gets the same check
   unless they run inside `tx.maintenance()`.
 * The number is assigned after the `@state` hooks, calculations, rules and validation, and
   before the record is written. Calculations, `initial` values and field rules of the same
@@ -104,7 +104,7 @@ because it changes after the number is assigned. Two companies can both have
   create, or the saved value on update, is not a change and is accepted. A role that cannot
   read the field gets 403 for any value, so it cannot test guesses.
 * Python code in actions and hooks cannot assign it on the draft (the same error).
-* Raw `Session.create` and `Session.update` (including legacy `Action` handlers) raise an
+* Raw `Session.create` and `Session.update` raise an
   error unless they send the saved value or run inside `tx.maintenance()` for an audited
   repair.
 * A raw `Session.create` numbers a Sequence that is due on create, like `Context.create`.

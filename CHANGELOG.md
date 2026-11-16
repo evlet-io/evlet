@@ -61,6 +61,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **Trusted Python writes read-only fields** through `context.update` and bound records (HTTP callers still
   cannot), and calling an `@action` on a record built by hand raises `Get the record through a context`.
 - **Prompts and report filters run finite expressions.** The refusal of `F(...)` on transient forms is gone.
+- **`Action(...)` is removed**, with `Application(actions=...)`, `AppDefinition(actions=...)` (and
+  its `actions(services)` factory) and the legacy `POST /api/{model}/{id}/actions/{name}` route for
+  registered handlers. Declare actions as `@action` methods on the model: change the record through
+  `self`, write other rows through `self.context.session`, queue jobs with `self.context.enqueue(...)`
+  ([docs/business-capabilities.md](docs/business-capabilities.md#model-actions)). A model with an
+  `@action` is a document, so its writes go through the document pipeline (updates need `If-Match`).
+  New app scaffolds no longer have `actions/__init__.py`. There is no compatibility path, by owner
+  decision.
 
 ### Fixed
 

@@ -5,7 +5,7 @@ import re
 import pytest
 
 from evlet import (AddField, Migration, Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Text, Integer, Rule,
-                   Policy, Action, ValidationError, action, validate)
+                   Policy, ValidationError, action, validate)
 from evlet.calc import round, parent
 from evlet.business import Business
 from evlet.identity import RecordId, sequential_ids
@@ -142,12 +142,8 @@ def test_actions_previews_and_revision_rules(tmp_path):
     assert c('POST', '/api/_draft/plan', {**preview, 'calculation': {'model_schema_hash': 'sha256:x'}})[0] == 409
 
 
-def test_legacy_actions_and_raw_writes_cannot_bypass_settlement(tmp_path):
-    def bump(tx, user, record):
-        tx.update(type(record), record.id, title='raw')
-    with pytest.raises(ValueError, match='bypass finite-v1 settlement'):
-        application(tmp_path, Plan, actions=(Action(Plan, 'bump', 'Bump', bump),))
-    app = application(tmp_path / 'second', Plan) if (tmp_path / 'second').mkdir() is None else None
+def test_raw_writes_cannot_bypass_settlement(tmp_path):
+    app = application(tmp_path, Plan)
     with pytest.raises(ValueError, match='finite-v1 document'):
         app.database.create(Plan, title='raw')
     with app.database.transaction() as tx:

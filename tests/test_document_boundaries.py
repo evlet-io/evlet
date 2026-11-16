@@ -316,27 +316,30 @@ def test_mixin_permissions_are_kept():
     assert 'secret' not in policy.fields(editor, Ledger)
 
 
-def test_legacy_action_still_runs_on_model_with_declared_actions(tmp_path):
-    from evlet import action, Action
+def test_legacy_actions_are_removed(tmp_path):
+    import evlet
+    from evlet import action
+    assert not hasattr(evlet, 'Action')
+
     class Ticket(Model):
         title = Text()
+
         @action
         def close(self):
             self.title = 'closed'
-    def reopen(tx, user, record):
-        tx.update(Ticket, record.id, title='open')
     db = Database(tmp_path / 'db.sqlite3', Registry(Ticket))
-    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
-                      actions=(Action(Ticket, 'reopen', 'Reopen', reopen),))
+    auth = LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    with pytest.raises(TypeError):
+        Application(db, auth=auth, actions=())
+    app = Application(db, auth=auth)
     app.initialize()
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
     c = client(app)
-    _, ticket, _ = c('POST', '/api/ticket', {'title': 'closed'})
-    assert c('POST', f"/api/ticket/{ticket['id']}/actions/reopen")[0] == 428
-    _, _, headers = c('GET', f"/api/ticket/{ticket['id']}")
+    _, ticket, headers = c('POST', '/api/ticket', {'title': 'open'})
     status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/reopen", headers={b'if-match': headers[b'etag']})
-    assert status == 200, result
-    assert result['title'] == 'open'
+    assert (status, result) == (403, {'error': 'Action is unavailable'})
+    status, result, _ = c('POST', f"/api/ticket/{ticket['id']}/actions/close", headers={b'if-match': headers[b'etag']})
+    assert status == 200 and result['title'] == 'closed'
 
 
 def test_float_action_arguments_accept_whole_json_numbers():

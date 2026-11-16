@@ -2,7 +2,7 @@
 
 import pytest
 
-from evlet import (Action, Application, Column, Count, Currency, Database, Link, Report, Model, Policy, Reference,
+from evlet import (Application, Column, Count, Currency, Database, Link, Report, Model, Policy, Reference,
                    Registry, Rule, State, Text, ValidationError, action)
 from evlet.auth import LocalAuth, User
 from evlet.permissions import calling
@@ -20,6 +20,10 @@ class Entry(Model):
     permissions = FULL
     memo = Text(default='')
     amount = Currency(default=0)
+
+    @action
+    def touch(self):
+        self.memo = 'touched'
 
 
 class Book(Model):
@@ -56,6 +60,11 @@ class Sale(Model):
     secret = Link(Secret, hidden=True)
     other = Reference()
 
+    @action
+    def post(self):
+        # Trusted code: an action handler writes the read-only model through its session.
+        self.context.session.create(Entry, memo=self.memo, amount='12.50')
+
 
 class Order(Model):
     Meta = FiniteMeta
@@ -66,11 +75,6 @@ class Order(Model):
     def post(self):
         # Trusted code: an action handler writes the read-only document through its context.
         self.context.create(Book, memo=self.memo)
-
-
-def post_sale(tx, user, sale):
-    # Trusted code: a legacy action handler writes the read-only model through its session.
-    tx.create(Entry, memo=sale.memo, amount='12.50')
 
 
 MODELS = (Entry, Book, Secret, Sale, Order)
@@ -92,7 +96,7 @@ class Codes(Report):
 
 def build(database):
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
-                      actions=(Action(Sale, 'post', 'Post', post_sale), Action(Entry, 'touch', 'Touch', post_sale)), attachments=(Entry, Book), reports=(Codes,))
+                      attachments=(Entry, Book), reports=(Codes,))
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     admin = client(app)
@@ -180,7 +184,7 @@ def test_every_write_route_family_is_refused_for_every_role(shop):
 def test_trusted_python_writes_a_read_model(shop):
     app, admin = shop
     sale = admin('POST', '/api/sale', {'memo': 'counter'})
-    # A legacy action handler (tx) and a declared action (context) are trusted, even inside a request.
+    # Declared actions are trusted, through their session or their context, even inside a request.
     assert admin('POST', f"/api/sale/{sale[1]['id']}/actions/post", {}, headers={b'if-match': sale[2][b'etag']})[0] == 200
     order = admin('POST', '/api/order', {'memo': 'from order'})
     status, done, _ = admin('POST', f"/api/order/{order[1]['id']}/actions/post", {}, headers={b'if-match': order[2][b'etag']})

@@ -72,6 +72,11 @@
         "name": "plan",
         "label": "Plan project",
         "allowed": true
+      },
+      {
+        "name": "refresh_progress",
+        "label": "Recalculate progress",
+        "allowed": true
       }
     ],
     "_activity": {

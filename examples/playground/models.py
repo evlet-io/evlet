@@ -30,6 +30,25 @@ class Customer(Model):
     currency = Select(CURRENCIES, required=True, default='AED', help_text='Invoices for this customer show amounts in it.')
     notes = LongText()
 
+    @action('Award 10 points')
+    def award_points(self):
+        """One movement in the points ledger and the customer's total in the balance cache, in the action's
+        transaction. The lock keeps two awards for one customer from reading the same total."""
+        from datetime import date
+        tx = self.context.session
+        tx.lock(('points', self.id))
+        tx.create(PointMove, customer=self.id, on_date=date.today(), reason='Awarded from the customer page', points=10)
+        [balance] = tx.list(PointBalance, filters={'customer': self.id}) or [None]
+        if balance is None:
+            tx.create(PointBalance, customer=self.id, points=10)
+        else:
+            tx.update(PointBalance, balance.id, points=balance.points + 10)
+
+    @action('Rebuild all points balances', roles=('admin',))
+    def rebuild_points(self):
+        """Rebuilds every customer's balance in a resumable job; Controls > Jobs shows its progress."""
+        return self.context.enqueue('rebuild_points', {})
+
 
 class Invoice(Model):
     class Meta:
@@ -75,6 +94,19 @@ class Invoice(Model):
     payment_status = Select(['unpaid', 'partly_paid', 'paid'], label='Payment status',
                             colors={'unpaid': 'rose', 'partly_paid': 'amber', 'paid': 'green'},
                             compute="'paid' if amount_paid >= total else ('partly_paid' if amount_paid > 0 else 'unpaid')")
+
+    @action('Post to ledger')
+    def post(self):
+        """The only writer of ledger entries, since LedgerEntry has Meta.api = "read". An invoice or entry
+        dated in a closed period (Controls, Periods) is refused with the lock date."""
+        if self.posting_date is None:
+            raise ValidationError({'posting_date': 'Set the posting date before posting'})
+        tx = self.context.session
+        if tx.count(LedgerEntry, filters={'invoice': self.id}):
+            raise ValidationError({'_form': 'This invoice is posted already'})
+        tx.create(LedgerEntry, invoice=self.id, customer=self.customer, posting_date=self.posting_date,
+                  amount=self.total, memo=self.reference)
+        self.status = 'sent'
 
 
 class Payment(Model):
@@ -168,6 +200,11 @@ class Project(Model):
         """Opens Plan a project (examples/playground/prompts.py); the prompt's submit() writes."""
         from .prompts import PlanProject
         return PlanProject
+
+    @action('Recalculate progress')
+    def refresh_progress(self):
+        """Queues the progress job; the action answers 202 with it and the job runs after the commit."""
+        return self.context.enqueue('project_progress', {'project_id': self.id}, target=(Project, self.id))
 
     @state('done')
     def complete(self):

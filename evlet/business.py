@@ -22,10 +22,9 @@ from .database import ROW_LIMIT, Session, using
 from .fields import Link
 from .ui.metadata import view_for
 from .models import ChildTable, ValidationError, identifier
-from .permissions import CORRECTIONS, Policy, calling, read_only, trusted
+from .permissions import CORRECTIONS, Policy, calling, read_only
 from .query import SqlQuery, operators_for
 from .storage import SQLiteStorage
-from .jobs import JobReceipt
 from .discovery import Discovery
 
 logger = logging.getLogger(__name__)
@@ -50,6 +49,7 @@ FILES = qb.or_(qb.is_null('purpose'), qb.ne('purpose', 'image'))
 
 @dataclass(frozen=True)
 class Action:
+    """A model's @action method as the schema and routes list it (internal; legacy Action(...) was removed)."""
     model: type
     name: str
     label: str
@@ -116,7 +116,7 @@ class Gate:
 
 
 class Business:
-    def __init__(self, database, auth, *, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None):
+    def __init__(self, database, auth, *, policy=None, children=(), attachments=(), storage=None, jobs=None, events=None):
         self.database, self.registry, self.auth = database, database.registry, auth
         # Sessions of this database settle writes to models that declare derive() (Session.create/update).
         database.business = self
@@ -158,15 +158,12 @@ class Business:
                 declaration = getattr(method, '__action__', None)
                 if declaration is not None:
                     declared_actions.append(Action(model, name, declaration['label'], method, declaration['roles']))
-        actions = (*actions, *declared_actions)
+        actions = declared_actions
         from .ledger import is_ledger
         for model in self.attachments:
             self.registry.name_for(model)
             if is_ledger(model):
                 raise ValueError(f'{model.__name__} is a ledger model: it has no attachments (docs/ledger.md)')
-        for action in actions:
-            if is_ledger(getattr(action, 'model', None)):
-                raise ValueError(f'{action.model.__name__} is a ledger model: it has no actions; trusted code writes its rows (docs/ledger.md)')
         # Application(attachments=...) enables the default limits; Meta.attachments enables its own and wins.
         from .meaning import Attachments
         self.attachment_limits = {model: Attachments() for model in self.attachments}
@@ -195,10 +192,6 @@ class Business:
             if child not in registered and self.registry.plan_for(child.model) is not None:
                 raise ValueError(f'Rows of {child.parent.__name__}.{child.name} use finite calculations, initial values or field rules, '
                                  'which ChildTable rows do not run; declare the rows with Table(Child) on the parent instead')
-        for action in self.actions.values():
-            if self.registry.plan_for(action.model) is not None and not hasattr(getattr(action.model, action.name, None), '__action__'):
-                raise ValueError(f'Legacy Action {action.name!r} would bypass finite-v1 settlement on '
-                                 f'{action.model.__name__}; declare it with @action on the model instead')
         auth.owners = {**{child.model: child.parent for child in self.registry.children}, **{child.model: child.parent for child in self.children.values()}}
         # Rows of a ChildTable are listed as children of their parent, not as related records.
         self.relations = {}
@@ -828,11 +821,9 @@ class Business:
                 self.check_revision(scope, context._tx, user, record)
                 context.delete(model, record.id)
             return 204, None, []
-        # Legacy Action registrations keep their own route on document models.
-        legacy_action = len(parts) == 6 and parts[4] == 'actions' and not hasattr(getattr(model, parts[5], None), '__action__')
         # Attachments and line pages have their own routes on every model.
         own_route = len(parts) >= 5 and parts[4] in ('attachments', 'lines', 'related', 'prints')
-        if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not legacy_action and not own_route:
+        if getattr(model, '__declaration_mode__', False) and method in ('POST', 'PATCH') and not own_route:
             record_id = None
             if len(parts) >= 4:
                 if path_id(parts[3]) is None:
@@ -915,26 +906,6 @@ class Business:
             return self.files(user, model, record_id, parts[5:], method, body)
         if len(parts) >= 6 and parts[4] == 'prints' and getattr(self, 'prints', None) is not None:
             return self.prints.record_pdf(scope, user, model, record_id, parts[5:], method)
-        if len(parts) == 6 and parts[4] == 'actions' and method == 'POST':
-            action = self.actions.get((model, parts[5]))
-            if action is None or not has_role(user, action.roles):
-                raise AccessError(403, 'Action is unavailable')
-            if body:
-                raise ValidationError({'_form': 'This action takes no arguments'})
-            with self.database.transaction() as tx:
-                tx.actor = actor_id(user)
-                record = self.policy.record(tx, user, model, record_id, 'update')
-                if getattr(model, '__declaration_mode__', False) and b'if-match' not in dict(scope.get('headers', [])):
-                    raise AccessError(428, 'A current If-Match revision is required')
-                self.check_revision(scope, tx, user, record)
-                with trusted():
-                    outcome = action.handler(tx, user, record)
-                self.changed(tx, model, record_id)
-                record = self.policy.record(tx, user, model, record_id)
-                result = self.detail(tx, user, record)
-            if isinstance(outcome, JobReceipt):
-                return 202, {'job': outcome.public(), 'record': result}, []
-            return 200, result, []
         if len(parts) != 4 or method not in ('GET', 'PATCH', 'DELETE'):
             raise AccessError(405, 'Method not allowed')
         from .documents import Context

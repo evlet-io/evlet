@@ -9,7 +9,7 @@ import sys
 
 import pytest
 
-from evlet import User
+from evlet import AppDefinition, User
 from evlet.cli.app import create_app as scaffold_app, fetch_app
 from evlet.cli.instance import create_instance
 from evlet.cli.install import install
@@ -250,27 +250,22 @@ def test_lock_database_mismatch_fails_closed(project):
         runtime(project)
 
 
-def test_action_and_permission_registration(project):
+def test_permission_registration(project):
     package = project / 'apps/notes/notes'
-    (package / 'hooks.py').write_text('''from evlet import AppDefinition, Action, Rule
+    (package / 'hooks.py').write_text('''from evlet import AppDefinition, Rule
 from .models import models, NotesItem
 from .migrations import migrations
 
-def rename(tx, user, record):
-    tx.update(NotesItem, record.id, title='Changed by action')
-
 app = AppDefinition(models=models, migrations=migrations,
-    actions=(Action(NotesItem, 'rename', 'Rename', rename),),
     permissions={('viewer', NotesItem): Rule(operations=())})
 ''')
     install(project, 'acme', app_name='notes', trust=True)
     app = runtime(project)
     model = app.registry.models['notesitem']
     assert not app.business.policy.allows(User(1, 'read', 'viewer'), model, 'read')
-    item = app.database.create(model, title='Before')
-    with app.database.transaction() as tx:
-        app.business.actions[model, 'rename'].handler(tx, User(1, 'owner', 'admin'), item)
-    assert app.database.get(model, item.id).title == 'Changed by action'
+    # AppDefinition(actions=...) was removed with Action(...): declare @action on the model.
+    with pytest.raises(TypeError):
+        AppDefinition(actions=())
 
 
 def test_schedule_registered_without_running_jobs(project):
@@ -401,22 +396,16 @@ def test_docs_are_available_without_project_or_database(tmp_path, monkeypatch):
     assert '<pre><code>x = 1' in html
 
 
-def test_bound_actions_use_the_selected_instance_queue(project):
+def test_jobs_use_the_selected_instance_queue(project):
     path = project / 'apps/notes/notes/hooks.py'
-    path.write_text('''from evlet import AppDefinition, Action, Task
+    path.write_text('''from evlet import AppDefinition, Task
 from .models import models, NotesItem
 from .migrations import migrations
 
 def rename(tx, context, payload):
     tx.update(NotesItem, payload['id'], title='Completed job')
 
-def actions(services):
-    def queue(tx, user, record):
-        return services.jobs.enqueue(tx, 'notes_rename', {'id': record.id}, target=(NotesItem, record.id))
-    return (Action(NotesItem, 'queue', 'Queue rename', queue),)
-
-app = AppDefinition(models=models, migrations=migrations, actions=actions,
-                    tasks=(Task('notes_rename', rename),))
+app = AppDefinition(models=models, migrations=migrations, tasks=(Task('notes_rename', rename),))
 ''')
     install(project, 'acme', app_name='notes', trust=True)
     create_instance(project, 'beta')
@@ -425,7 +414,7 @@ app = AppDefinition(models=models, migrations=migrations, actions=actions,
     model = first.registry.models['notesitem']
     record = first.database.create(model, title='Before queue')
     with first.database.transaction() as tx:
-        receipt = first.business.actions[model, 'queue'].handler(tx, None, record)
+        receipt = first.business.jobs.enqueue(tx, 'notes_rename', {'id': record.id}, target=(model, record.id))
     assert receipt.state == 'queued'
     assert first.business.jobs.run_one()
     assert first.database.get(model, record.id).title == 'Completed job'
@@ -451,10 +440,9 @@ def test_install_and_backup_close_connections_without_garbage_collection(project
         gc.collect()
 
 
-@pytest.mark.parametrize('consumer', ['action', 'job'])
 @pytest.mark.parametrize('helper_kind', ['stale_cache', 'sourceless'])
 @pytest.mark.parametrize('layout', ['module', 'package', 'namespace'])
-def test_lazy_app_imports_keep_source_policy(project, consumer, helper_kind, layout):
+def test_lazy_app_imports_keep_source_policy(project, helper_kind, layout):
     import py_compile
 
     package = project / 'apps/notes/notes'
@@ -464,20 +452,15 @@ def test_lazy_app_imports_keep_source_policy(project, consumer, helper_kind, lay
         (folder / '__init__.py').write_text('')
     helper = folder / 'helper.py'
     module = 'helper' if layout == 'module' else 'nested.helper'
-    (package / 'hooks.py').write_text('''from evlet import AppDefinition, Action, Task
+    (package / 'hooks.py').write_text('''from evlet import AppDefinition, Task
 from .models import models, NotesItem
 from .migrations import migrations
-
-def update(tx, user, record):
-    from .helper import title
-    tx.update(NotesItem, record.id, title=title())
 
 def work(tx, context, payload):
     from .helper import title
     tx.update(NotesItem, payload['id'], title=title())
 
 app = AppDefinition(models=models, migrations=migrations,
-    actions=(Action(NotesItem, 'update_title', 'Update title', update),),
     tasks=(Task('notes_title', work, max_attempts=1),))
 '''.replace('.helper import', '.' + module + ' import'))
     if helper_kind == 'stale_cache':
@@ -497,24 +480,14 @@ app = AppDefinition(models=models, migrations=migrations,
         helper.unlink()
         assert read_package(project / 'apps/notes').locked() == locked
     assert 'notes.' + module not in sys.modules
-    if consumer == 'action':
-        def invoke():
-            with app.database.transaction() as tx:
-                app.business.actions[model, 'update_title'].handler(tx, User(1, 'owner', 'admin'), record)
-        if helper_kind == 'sourceless':
-            with pytest.raises(ImportError, match='source files'):
-                invoke()
-        else:
-            invoke()
-    else:
-        with app.database.transaction() as tx:
-            receipt = app.business.jobs.enqueue(tx, 'notes_title', {'id': record.id}, target=(model, record.id))
-        assert app.business.jobs.run_one()
-        with app.database.transaction() as tx:
-            state = tx.connection.execute('SELECT state,error FROM evlet_jobs WHERE id=?', (receipt.id,)).fetchone()
-        assert state['state'] == ('failed' if helper_kind == 'sourceless' else 'succeeded')
-        if helper_kind == 'sourceless':
-            assert state['error'] == 'ModuleNotFoundError'
+    with app.database.transaction() as tx:
+        receipt = app.business.jobs.enqueue(tx, 'notes_title', {'id': record.id}, target=(model, record.id))
+    assert app.business.jobs.run_one()
+    with app.database.transaction() as tx:
+        state = tx.connection.execute('SELECT state,error FROM evlet_jobs WHERE id=?', (receipt.id,)).fetchone()
+    assert state['state'] == ('failed' if helper_kind == 'sourceless' else 'succeeded')
+    if helper_kind == 'sourceless':
+        assert state['error'] == 'ModuleNotFoundError'
     assert app.database.get(model, record.id).title == ('Original' if helper_kind == 'sourceless' else 'After!')
 
 

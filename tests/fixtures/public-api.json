@@ -1,7 +1,6 @@
 {
   "evlet": {
     "AI": "class(enabled: bool = False, provider: object = 'openai', models: dict = <factory>, base_url: str = 'https://api.openai.com/v1', max_output_tokens: int = 4000, max_concurrent_runs: int | None = None, max_runs_per_user: int | None = None) -> None",
-    "Action": "class(model: type, name: str, label: str, handler: object, roles: tuple = ('admin', 'editor')) -> None",
     "Activity": "class(tamper_evident: bool = False) -> None",
     "AddField": "class(table: str, name: str, field: evlet.fields.Field, backfill: object = <object object>) -> None",
     "AddIndex": "class(table: str, field: str | tuple, unique: bool = False) -> None",
@@ -9,9 +8,9 @@
     "AlterField": "class(table: str, name: str, field: evlet.fields.Field, fill: object = None) -> None",
     "ApiScope": "class(name: str, models: tuple = (), actions: tuple = (), endpoints: tuple = (), extras: tuple = ()) -> None",
     "App": "class(name, *, models=(), database=None, auth=None, **options)",
-    "AppDefinition": "class(models: tuple = (), views: tuple = (), actions: object = (), children: tuple = (), attachments: tuple = (), permissions: dict = <factory>, migrations: tuple = (), tasks: tuple = (), schedules: tuple = (), ui: object = None, reports: tuple = (), apis: tuple = (), frontends: tuple = (), api_scopes: tuple = (), roles: dict = <factory>, scopes: dict = <factory>, settings: type | None = None, preferences: type | None = None, connectors: tuple = (), workspaces: tuple = ()) -> None",
+    "AppDefinition": "class(models: tuple = (), views: tuple = (), children: tuple = (), attachments: tuple = (), permissions: dict = <factory>, migrations: tuple = (), tasks: tuple = (), schedules: tuple = (), ui: object = None, reports: tuple = (), apis: tuple = (), frontends: tuple = (), api_scopes: tuple = (), roles: dict = <factory>, scopes: dict = <factory>, settings: type | None = None, preferences: type | None = None, connectors: tuple = (), workspaces: tuple = ()) -> None",
     "AppSettings": "class()",
-    "Application": "class(database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, name='Evlet', hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, ai=None, prints=(), workspaces=())",
+    "Application": "class(database, *, auth=None, policy=None, children=(), attachments=(), storage=None, jobs=None, events=None, name='Evlet', hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, ai=None, prints=(), workspaces=())",
     "Attachments": "class(max_files: int = 10, max_size: int = 1048576) -> None",
     "Boolean": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True)",
     "Chart": "class(type: str, x: str = None, y: tuple = (), label: str | None = None, model: object = None, link: str = None, filters: object = None) -> None",
