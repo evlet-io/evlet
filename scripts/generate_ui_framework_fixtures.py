@@ -14,9 +14,9 @@ from urllib.parse import quote
 from tempfile import TemporaryDirectory
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
-                   Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count, Effect,
-                   MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, Swap, AppSettings, UserPreferences, Slip, Outcome,
-                   Report, Column, Chart, Count, Html, Main, Ref, Section, TableSection, state, validate)
+                   Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count,
+                   MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, AppSettings, UserPreferences, Slip, Outcome,
+                   Report, Column, Chart, Count, Html, Main, Ref, Section, TableSection, release, state, validate)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
 from evlet.audit import fixed_times
@@ -99,13 +99,13 @@ class Contact(Model):
 
 
 class LedgerEntry(Model):
-    """The target of the invoice's effects: editors read it, only the engine writes it."""
+    """What an invoice posts in @release: editors read it, only the invoice's hooks write it."""
     permissions = {'admin': FULL, 'editor': Rule(('read',)), 'viewer': Rule(())}
     customer = Link(Customer)
     debit = Currency(default=0)
     credit = Currency(default=0)
     memo = Text(default='')
-    source = Reference()
+    source = Reference(index=True)
     reversal = Boolean(default=False)
 
     class Meta:
@@ -121,7 +121,6 @@ class InvoiceLine(Child):
 
 class InvoiceMeta(FiniteMeta):
     board = 'docstate'
-    effects = (Effect(LedgerEntry, rows='ledger_rows', on='issued', reverse=Swap('debit', 'credit'), balanced=('debit', 'credit')),)
     measures = {'outstanding': Sum('outstanding', where=F('docstate') == 'issued'), 'count': Count(),
                 'payments': Count('payment', link='invoice'), 'paid': Sum('amount', model='payment', link='invoice')}
     key_fields = ('customer', 'total', 'due_on')
@@ -135,7 +134,7 @@ class InvoiceMeta(FiniteMeta):
 
 
 class Invoice(Model):
-    """A transaction document: a State with rules (void and reopen take a remark), a Sequence, effects, measures and meaning."""
+    """A transaction document: a State with rules (void and reopen take a remark), a Sequence, release postings, measures and meaning."""
     Meta = InvoiceMeta
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')),
                    'editor': Rule(('read', 'create', 'update')), 'viewer': Rule(('read',))}
@@ -170,7 +169,17 @@ class Invoice(Model):
 
     def ledger_rows(self):
         rows = [{'customer': self.customer, 'debit': line.amount, 'memo': line.item} for line in self.lines]
-        return rows + [{'customer': self.customer, 'credit': self.total, 'memo': 'Sales'}]
+        return [{**row, 'source': ('invoice', self.id)} for row in [*rows, {'customer': self.customer, 'credit': self.total, 'memo': 'Sales'}]]
+
+    @release
+    def post_ledger(self):
+        for row in self.ledger_rows():
+            self.context.session.create(LedgerEntry, **row)
+
+    @release.exit
+    def reverse_ledger(self):
+        for row in self.ledger_rows():
+            self.context.session.create(LedgerEntry, **{**row, 'debit': row.get('credit', 0), 'credit': row.get('debit', 0), 'reversal': True})
 
 
 class Payment(Model):
@@ -261,7 +270,7 @@ def record_api(folder):
 def documents(out, folder):
     """Responses of the document routes, recorded as an editor: a move refused by its condition, a move,
     an action, a void move with its remark, an admin's reopen, per-record and model measures, related records,
-    line pages and details carrying _moves, _actions, _effects and _activity, with the schema's state, key_fields,
+    line pages and details carrying _moves, _actions and _activity, with the schema's state, key_fields,
     relations and activity, and the activity itself: engine and user entries, follow ups, and a viewer's partial view."""
     database = Database(folder / 'documents.sqlite3', Registry(Customer, LedgerEntry, Invoice, Payment))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)

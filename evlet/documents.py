@@ -8,13 +8,13 @@ import json
 import re
 
 from . import qb
-from .auth import AccessError, has_role
+from .auth import AccessError, User, has_role
 from .database import ConflictError, ROW_LIMIT, conflict
 from .declarations import Ref
 from .fields import CurrentUser, MISSING, Link
 from .identity import RecordId
 from .naming import drop_echoes
-from .permissions import trusted
+from .permissions import CHUNK, Policy, Rule, trusted
 from .models import ASSIGNED_ID, ValidationError, refuse_id
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
@@ -191,7 +191,7 @@ class Context:
         if not readonly:
             from .audit import actor_id
             tx._change_source, tx._change_correlation = source, correlation_id
-            # Writes are recorded under this user; the engine's own contexts (effects) keep the person's.
+            # Writes are recorded under this user; the engine's own contexts keep the person's.
             if actor_id(user) is not None:
                 tx.actor = actor_id(user)
         self.source, self.correlation_id = source, correlation_id
@@ -1697,16 +1697,12 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             statemanager.check_recalculate(context, model, before)
     plan = business.registry.plan_for(model)
     version = business.registry.formula_hashes.get(business.registry.root_of(model))
-    outcome, reversed_rows = None, []
+    outcome = None
     if rule is not None:
         previous = before._values.get(model.__state__)
         if previous in releases and not within:
             # Leaving the released set keeps the release's content first (the snapshot is taken once, lazily).
             statemanager.diverge(context, model, before, draft, leaving=True)
-        if any(bound.on == previous for bound in business.registry.effects.get(model, ())):
-            # Leaving a posting state reverses what it posted, before any hook runs.
-            from .effects import reverse
-            reversed_rows = reverse(context, model, record_id)
         statemanager.run_hooks(context, draft, 'exit', previous)
         if previous in releases and not within:
             statemanager.run_hooks(context, draft, 'release_exit')
@@ -1791,10 +1787,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     # The Activity entry of this write: `moved` for a move, otherwise `created` or `changed`.
     from . import activity
     if rule is not None:
-        from .effects import post
-        posted_rows = post(context, model, record.id, rule.to)
         statemanager.moved(context, model, record, before._values.get(model.__state__), rule, remark, level, before, draft, released=released)
-        activity.effects_posted(context, model, record.id, reversed_rows + posted_rows)
     else:
         activity.written(context, model, record.id, before, draft, action=action, restored=restored,
                         entering=statemanager.entering(context, model, record) if before is None else None)
@@ -1840,6 +1833,66 @@ def owner_of(tx, model, record_id):
     return record_id
 
 
+# The engine settles a document after a trusted Session write as this user, without roles or row scopes.
+ENGINE = User(0, 'evlet-engine', 'admin')
+
+
+class SessionPolicy(Policy):
+    """Full access without roles or row scopes, for settling a document after a trusted Session write.
+
+    Linked records are read as they are stored, in batches, and kept for the rest of the operation, so Link
+    existence and Link filters are decided on the raw records whatever any role may read."""
+    def __init__(self, policy):
+        self.registry, self.rules, self.governed, self.corrections = policy.registry, policy.rules, policy.governed, policy.corrections
+        self.cache = {}
+
+    def rule(self, user, model):
+        return Rule(('read',))
+
+    def allows(self, user, model, operation):
+        return operation in ('read', 'create', 'update', 'delete')
+
+    def presented(self, user, model):
+        return set(model.__declared_fields__)
+
+    def fields(self, user, model, *, write=False):
+        return set(model.__declared_fields__)
+
+    def scope(self, user, model):
+        return qb.TRUE
+
+    def load(self, tx, model, record_ids):
+        """Read the records not read yet, one statement per model and chunk; absent ids are remembered too."""
+        wanted = [record_id for record_id in dict.fromkeys(record_ids) if (model, record_id) not in self.cache]
+        table = self.registry.name_for(model)
+        for start in range(0, len(wanted), CHUNK):
+            part = wanted[start:start + CHUNK]
+            self.cache.update(((model, record_id), None) for record_id in part)
+            for row in tx.connection.run(qb.select(table).where(qb.in_('id', part))):
+                self.cache[model, row['id']] = model._from_row(row)
+
+    def _scoped(self, tx, user, model, record_ids, operation, columns):
+        ids = [record_id for record_id in dict.fromkeys(record_ids) if isinstance(record_id, int) and not isinstance(record_id, bool)]
+        self.load(tx, model, ids)
+        found = {record_id: self.cache[model, record_id] for record_id in ids if self.cache[model, record_id] is not None}
+        return dict.fromkeys(found) if columns == 'record.id' else found
+
+    def record(self, tx, user, model, record_id, operation='read'):
+        found = self._scoped(tx, user, model, [record_id], operation, 'record.*')
+        if record_id not in found:
+            raise AccessError(404, 'Record not found')
+        return found[record_id]
+
+
+class EngineBusiness:
+    """The application's business with the engine policy, for the engine's own Context."""
+    def __init__(self, business):
+        self._business, self.policy = business, SessionPolicy(business.policy)
+
+    def __getattr__(self, name):
+        return getattr(self._business, name)
+
+
 def settle_saved(tx, model, record_id, children=None):
     """Settle a saved document after a trusted Session write to it or to one of its rows (evlet/database.py), for a
     model that declares derive(): derive, clean, calculate and validate, as on any write, then store what changed.
@@ -1848,10 +1901,7 @@ def settle_saved(tx, model, record_id, children=None):
     released set keeps its stored results, as on every other write. derive() reads through a read-only session, so it
     cannot write and start another settlement. `children` are the document's Table rows the write sends with it,
     merged like the rows of an HTTP write."""
-    from .effects import EngineBusiness, ENGINE, SessionPolicy
-    business = EngineBusiness(tx._business)
-    business.policy = SessionPolicy(tx._business.policy)
-    context = Context(business, tx, ENGINE)
+    context = Context(EngineBusiness(tx._business), tx, ENGINE)
     current = tx.get(model, record_id)
     # The shared rule, read for trusted code: only the released set keeps the saved results here. A locked State does
     # not, because hooks and app code write to a document while it is locked and its derived values must follow.

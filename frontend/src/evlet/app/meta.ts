@@ -1,9 +1,9 @@
 // What the screens read from /api/schema and record details.
 //
 // The keys of later engine phases (State steps and rules, Sequence, measures, key
-// fields, relations, attachments, effects, activity) are optional here: a screen shows a section
+// fields, relations, attachments, activity) are optional here: a screen shows a section
 // only when the schema or the detail carries its key. Shapes follow docs/states-actions.md,
-// docs/sequences.md, docs/measures.md, docs/meaning.md, docs/effects.md and docs/activity.md.
+// docs/sequences.md, docs/measures.md, docs/meaning.md and docs/activity.md.
 
 import type { RecordData } from '../api';
 import type { FieldSchema, ModelSchema, SchemaIndex } from '../model/schema';
@@ -29,7 +29,6 @@ export interface MeasureSchema {
   trend?: MeasureTrend; color?: 'blue' | 'green' | 'amber' | 'rose' | 'violet' | 'teal' | 'slate';
 }
 export interface RelationSchema { name: string; label: string; model: string; link: string; limit: number; order?: string[] }
-export interface EffectSchema { target: string; on: string | null; balanced: string[] | null; reverse: unknown }
 export interface ActionMeta {
   name: string; label: string; roles?: string[]; guarded?: boolean; available_when?: unknown;
   /** Field schemas of declared inputs (Phase 4). */
@@ -58,7 +57,6 @@ export interface ScreenModel extends Omit<ModelSchema, 'state' | 'actions'> {
   relations?: RelationSchema[];
   attachments?: boolean;
   attachment_limits?: { max_files: number; max_size: number };
-  effects?: EffectSchema[];
   effect_target?: boolean;
   /** The record has an activity (Phase 8): whether entries are hash chained and the kinds this role may post. */
   activity?: { tamper_evident: boolean; kinds: string[] };
@@ -75,7 +73,6 @@ export interface DetailExtras {
   _actions?: Array<{ name: string; label: string; allowed: boolean; reason?: string }>;
   /** false for a record that ever posted: it is kept, so delete is refused. */
   _deletable?: false;
-  _effects?: Array<{ target: string; rows: number; reversals: number; balanced?: boolean }>;
   /** When and by whom the record was created and last changed (UTC). Who is null for the engine and for portal roles. */
   _audit?: RecordAudit;
 }
@@ -329,7 +326,7 @@ export interface PanelView {
   hides: boolean;
   section(label: string): boolean;
   field(name: string): boolean;
-  /** A part of the record (the schema's panel "tabs"): activity, details, related, postings or a Table field. */
+  /** A part of the record (the schema's panel "tabs"): activity, details, related or a Table field. */
   tab(name: string): boolean;
   /** summary, key_fields, related, files or info. */
   block(name: string): boolean;

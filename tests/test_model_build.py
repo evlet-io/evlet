@@ -7,10 +7,10 @@ import textwrap
 import pytest
 
 from evlet import Activity, Integer, Model, Registry, Text, models
-from test_effects import Account, Invoice, LedgerEntry, StockMove
+from test_release_postings import Account, Invoice, LedgerEntry, StockMove
 
 ORDER = ('ledger_declared', 'ledger_class', 'statemanager', 'activity_declared',
-         'meaning', 'guards', 'kept_plan', 'sequences', 'namings', 'measures', 'cards', 'effects', 'posted_reads',
+         'meaning', 'guards', 'kept_plan', 'sequences', 'namings', 'measures', 'cards', 'posted_reads',
          'activities', 'api', 'ledger_schema')
 
 
@@ -59,7 +59,7 @@ def test_registry_steps_run_in_order(calls):
     registry.schema()
     # Generated Table row classes run the class steps too; the Registry's own steps follow ORDER.
     assert [name for name in first_calls(calls) if name in ORDER[4:]] == list(ORDER[4:])
-    assert registry.effects and registry.posted_reads and registry.kept_plans and registry.activities is not None
+    assert registry.posted_reads and registry.kept_plans and registry.activities is not None
 
 
 def test_an_unregistered_step_says_what_to_do(monkeypatch):
@@ -92,7 +92,7 @@ def test_a_model_defined_straight_after_import_evlet_gets_every_step():
                                  rules=(evlet.State.Rule('draft', 'done', 'Done'),))
 
         evlet.Registry(Entry, Note).schema()
-        missing = set(models.BUILD_ORDER) - set(seen) - {'kept_plan', 'posted_reads'}  # need a plan or effects
+        missing = set(models.BUILD_ORDER) - set(seen) - {'kept_plan', 'posted_reads'}  # need a plan or a release step
         assert not missing, missing
         print('ok')
     ''')

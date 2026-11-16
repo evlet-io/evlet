@@ -680,8 +680,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // Nothing is asked for until a Related row shows (related-data.ts).
   const related = relatedPages(relations, (relation, page) => ctx.api.related(model.name, store.id!, relation, page), store.etag,
     error => error instanceof ApiError ? error.message : 'Not loaded.');
-  // A record that has posted nothing yet still lists each target, with zero rows.
-  const postings = !isNew && model.effects?.length ? derive(() => extras.get()._effects?.some(item => item.rows || item.reversals) ? extras.get()._effects! : null) : null;
 
   // What a block reads of this record: saved values for filters, shown values for Html, and the etag to reload on.
   const blockRecord: BlockRecord = {
@@ -875,7 +873,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
           break;
       }
     }
-    // Related records the layout does not list, and postings.
+    // Related records the layout does not list.
     if (relations.length && relatedShown && tabShown('related')) {
       const row = MoreRow({ title: 'Related', folds, start: false, none: 'Loading…',
         summary: () => relations.map(relation => { const count = related(relation.name).total.get(); return count === null ? '' : `${relation.label}: ${count}`; }).filter(Boolean).join(' · '),
@@ -883,8 +881,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       whenVisible(row, () => relations.forEach(relation => related(relation.name).ensure()));
       rows.push(row);
     }
-    if (postings && tabShown('postings')) rows.push(MoreRow({ title: 'Postings', folds, start: false, none: 'Nothing posted yet',
-      summary: () => (postings.get() ?? []).map(item => `${targetPlural(ctx, item.target)}: ${item.rows + item.reversals}`).join(' · '), body: () => Postings(ctx, postings) }));
     // The stage bar and the key cards above one white card: the state banner strip, the primary area, then more
     // information.
     return [flow, summary, html`<div class="ev-cmp-card">${lifecycle ? live(lifecycle) : null}
@@ -1281,30 +1277,14 @@ function Related(ctx: AppContext, model: ScreenModel, id: string, relations: Non
   });
 }
 
-// ---------- postings ----------
-
-/** A posting target's name in the plural ("Ledger entries"), or its name when this role has no schema for it. */
-function targetPlural(ctx: AppContext, target: string): string {
-  try { return ctx.schema.model(target).plural; } catch { return humanize(target); }
-}
-
-function Postings(ctx: AppContext, effects: Readable<DetailExtras['_effects'] | null>): Child {
-  const label = (target: string) => targetPlural(ctx, target);
-  return live(() => !effects.get()?.length ? EmptyState({ icon: 'layers', tint: 'teal', title: 'Nothing posted yet', text: 'Rows this record posts to other records show up here once it is posted.' }) : [
-    InfoNote('Rows this record posted to other records. They are read only. Voiding writes mirror rows that cancel them.'),
-    html`<div class="panel"><table class="dt"><thead><tr><th scope="col">Posted to</th><th scope="col" class="r">Rows</th><th scope="col" class="r">Reversals</th><th scope="col">Check</th></tr></thead>
-      <tbody>${() => (effects.get() ?? []).map(item => html`<tr><td>${label(item.target)}</td><td class="r num">${String(item.rows)}</td><td class="r num">${String(item.reversals)}</td>
-        <td>${item.balanced === undefined ? html`<span class="muted">Not checked</span>` : item.balanced ? Chip({ label: 'Balanced', tone: 'green', icon: 'check' }) : Chip({ label: 'Not balanced', tone: 'rose', icon: 'info' })}</td></tr>`)}</tbody></table></div>`]);
-}
-
 // ---------- activity ----------
 
 // Icon, tint and verb per entry kind (docs/activity.md). `changed` also stands for entries the
-// reader may only partly see (a move, void or posting about a State or target it cannot read).
+// reader may only partly see (a move or void about a State it cannot read).
 const KINDS: Record<string, [string, any, string]> = {
   created: ['plus', 'green', 'created this record'], changed: ['pencil', 'blue', 'changed it'], moved: ['arrow-right', 'violet', 'moved it'],
   voided: ['circle-x', 'rose', 'voided it'], revised: ['copy', 'blue', 'revised it'], number: ['hash', 'slate', 'assigned the number'],
-  effects: ['layers', 'teal', 'posted rows'], recomputed: ['rotate-ccw', 'slate', 'recalculated it after an upgrade'], file: ['paperclip', 'slate', 'attached a file'], deleted: ['trash-2', 'rose', 'deleted it'],
+  recomputed: ['rotate-ccw', 'slate', 'recalculated it after an upgrade'], file: ['paperclip', 'slate', 'attached a file'], deleted: ['trash-2', 'rose', 'deleted it'],
   note: ['sticky-note', 'amber', 'added a note'], message: ['mail', 'blue', 'logged a message'], call: ['phone', 'green', 'logged a call'],
   follow_up: ['clock', 'amber', 'planned a follow-up'], follow_up_done: ['circle-check', 'green', 'completed a follow-up'],
 };
@@ -1328,7 +1308,6 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolb
     return meta ? formatOf(meta, raw) : String(raw);
   };
   const table = (name: string) => model.children?.find(child => child.name === name)?.label ?? humanize(name);
-  const target = (name: string) => { try { return ctx.schema.model(name).plural; } catch { return humanize(name); } };
   const action = (name: string) => model.actions?.find(item => item.name === name)?.label ?? humanize(name);
   const state = (name: unknown) => humanize(String(name ?? ''));
   const person = (id: unknown) => id === null || id === undefined ? null : page.peek()?.users[String(id)] ?? `User ${id}`;
@@ -1355,8 +1334,6 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolb
       case 'number': return `assigned the number ${data.number}`;
       case 'revised': return data.copy ? `revised it into #${data.copy}` : 'revised it';
       case 'file': return `${data.action === 'removed' ? 'removed' : 'attached'} ${data.name}`;
-      case 'effects': return (data.targets ?? []).map((posted: any) =>
-        `${posted.reversal ? 'reversed' : 'posted'} ${posted.rows} ${posted.rows === 1 ? 'row' : 'rows'} ${posted.reversal ? 'in' : 'to'} ${target(posted.target)}`).join(' and ');
       case 'call': return `logged ${data.direction === 'in' ? 'an incoming' : 'an outgoing'} call${data.party ? ` with ${data.party}` : ''}${data.minutes ? ` (${data.minutes} min)` : ''}`;
       case 'message': return data.source === 'mailbox'
         ? (data.direction === 'in' ? `received an email from ${data.party ?? 'a contact'}` : `sent an email to ${data.party ?? 'a contact'}`)
@@ -1370,9 +1347,6 @@ function Activity(ctx: AppContext, model: ScreenModel, store: RecordStore, toolb
       case 'created': return null;
       case 'confirmed': case 'reconfirmed': case 'cancelled': case 'reopened': case 'post_confirmation_edit':
       case 'changed': case 'moved': case 'recomputed': { const list = changes(data); return list.length ? html`<div class="note">${list}</div>` : null; }
-      case 'effects': return (data.targets ?? []).some((posted: any) => posted.balanced !== undefined)
-        ? html`<div class="note">${(data.targets ?? []).filter((posted: any) => posted.balanced !== undefined).map((posted: any) =>
-          Chip({ label: `${target(posted.target)} ${posted.balanced ? 'balanced' : 'not balanced'}`, tone: posted.balanced ? 'green' : 'rose', icon: posted.balanced ? 'check' : 'info' }))}</div>` : null;
       case 'message': return html`<div class="note mail">${data.subject ? html`<div class="subj">${String(data.subject)}</div>` : null}${typeof data.html === 'string' ? richNote(data.html) : String(data.text ?? '')}</div>`;
       case 'note': return typeof data.html === 'string' ? html`<div class="note">${richNote(data.html)}</div>` : data.text ? html`<div class="note">${String(data.text)}</div>` : null;
       case 'follow_up': {

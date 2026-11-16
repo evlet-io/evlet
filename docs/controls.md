@@ -310,8 +310,8 @@ Record pages have no tabs (0.4): a layout is saved as the plain list of sections
 order is dropped, and sending one now is refused. For a model whose `Meta.layout` declares `Main` or blocks
 ([record layouts](ui.md#record-layouts)), Controls moves fields and sections; the layout's blocks stay as the app
 declares them, a section keeps its place by title, and a section Controls adds goes last. Each model in
-`GET /api/_controls/state` lists its record parts in `tabs` (Activity, Details, its child tables, Related,
-Postings), the names the side panel can hide.
+`GET /api/_controls/state` lists its record parts in `tabs` (Activity, Details, its child tables and
+Related), the names the side panel can hide.
 **Side panel**: what a record shows when a list opens it in a side panel. Each section, field and record part (Details aside) has
 a panel button, pressed while it shows there; the Side panel card has the summary strip, Files and Record info (the record footer). A layout
 that sets this is saved as `{"sections": [...], "panel": {"sections": [...], "fields": [...], "tabs": [...], "blocks": [...]}}`,
@@ -359,9 +359,9 @@ readable field loses access) and naming series that use it. Removal needs SQLite
 an older SQLite the page says so and only adding works. Each tenant has its own instance fields.
 
 Instance fields are plain values. No formula reads them, so finite calculation plans leave them
-out, and `Recompute` neither names nor changes them; it still skips records with posted effects (unless an
+out, and `Recompute` neither names nor changes them; it still skips records in their released set (unless an
 admin migrates with `--recompute-posted`). A
-posted or locked record follows the same write rules for an instance field as for any other field.
+released or locked record follows the same write rules for an instance field as for any other field.
 
 ### When an override no longer applies
 

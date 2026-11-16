@@ -1,11 +1,11 @@
 """Period locks (Meta.period): closed periods refuse every writer, mirror rows move to the first open date, on real SQLite."""
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, timezone
 
 import pytest
 
-from evlet import (Application, Boolean, Currency, Database, Date, DateTime, Effect, Link, Model, Negate, Reference,
-                   Registry, Rule, State, Text, ValidationError)
+from evlet import (Application, Boolean, Currency, Database, Date, DateTime, Link, Model, Reference,
+                   Registry, Rule, State, Text, ValidationError, release)
 from evlet.auth import AccessError, LocalAuth, User
 from evlet.periods import set_lock
 from finite_fixtures import FiniteMeta
@@ -46,12 +46,24 @@ class Posting(Model):
     permissions = {'admin': Rule(('read',))}
     posted_on = Date(required=True)
     amount = Currency(default=0)
-    source = Reference()
+    source = Reference(index=True)
     reversal = Boolean(default=False)
 
 
 def voucher_meta(**extra):
-    return type('Meta', (FiniteMeta,), {'effects': (Effect(Posting, rows='rows', on='posted', reverse=Negate('amount')),), **extra})
+    return type('Meta', (FiniteMeta,), extra)
+
+
+class Posts:
+    """Post one row dated by the document when it is posted, and its reversal when it leaves."""
+    @release
+    def post(self):
+        self.context.session.create(Posting, posted_on=self.dated, amount=self.amount, source=(self.NAME, self.id))
+
+    @release.exit
+    def unpost(self):
+        self.context.session.create(Posting, posted_on=self.dated, amount=-self.amount, source=(self.NAME, self.id),
+                                    reversal=True)
 
 
 def status():
@@ -63,28 +75,24 @@ def status():
 CORRECTING = {'admin': Rule(('read', 'create', 'update', 'delete'))}
 
 
-class Voucher(Model):
+class Voucher(Posts, Model):
     """Posts rows dated by its own date, without a period of its own."""
+    NAME = 'voucher'
     Meta = voucher_meta()
     permissions = CORRECTING
     dated = Date()
     amount = Currency(default=0)
     docstate = status()
 
-    def rows(self):
-        return [{'posted_on': self.dated, 'amount': self.amount}]
 
-
-class Receipt(Model):
+class Receipt(Posts, Model):
     """A posting document with its own period."""
+    NAME = 'receipt'
     Meta = voucher_meta(period='dated')
     permissions = CORRECTING
     dated = Date()
     amount = Currency(default=0)
     docstate = status()
-
-    def rows(self):
-        return [{'posted_on': self.dated, 'amount': self.amount}]
 
 
 MODELS = (Company, Booking, Stamp, Posting, Voucher, Receipt)
@@ -203,7 +211,7 @@ def test_python_sessions_and_contexts_are_refused_too(books):
                           ('python', 'Periods', 'Locks bypassed: Repair through the document pipeline')]
 
 
-# Effects
+# Postings in release hooks
 
 def voucher(c, model, day, amount='10.00'):
     status, record, _ = c('POST', f'/api/{model}', {'dated': day, 'amount': amount})
@@ -221,31 +229,7 @@ def postings(app):
                 tx.connection.execute('SELECT posted_on, amount, reversal FROM posting ORDER BY id').fetchall()]
 
 
-def test_mirror_rows_keep_an_open_date_and_move_out_of_a_closed_one(books):
-    app, c = books
-    today = datetime.now(timezone.utc).date()
-    # Open period: the mirror keeps the original date.
-    url = voucher(c, 'voucher', '2026-02-10')
-    assert c('POST', f'{url}/moves/void', {'remark': 'Wrong amount'}, headers=etag(c, url))[0] == 200
-    assert postings(app) == [('2026-02-10', 1000, False), ('2026-02-10', -1000, True)]
-    # Closed, with the lock after today: the mirror takes the day after the lock.
-    url = voucher(c, 'voucher', '2026-02-11')
-    ahead = today + timedelta(days=10)
-    lock(app, ahead)
-    assert c('POST', f'{url}/moves/reopen', {'remark': 'Recheck'}, headers=etag(c, url))[0] == 200
-    assert postings(app)[-1] == ((ahead + timedelta(days=1)).isoformat(), -1000, True)
-    # Posting again writes fresh originals with the record's own date, which is closed.
-    status, payload, _ = c('POST', f'{url}/moves/posted', {}, headers=etag(c, url))
-    assert status == 422 and payload['fields'] == {'_effects': 'Posting rows: ' + CLOSED.format(f'{ahead:%d-%m-%Y}')}
-    # Closed, with the lock before today: the mirror is dated today.
-    lock(app, None)
-    url = voucher(c, 'voucher', '2026-02-12')
-    lock(app, date(2026, 2, 28))
-    assert c('POST', f'{url}/moves/void', {'remark': 'Duplicate'}, headers=etag(c, url))[0] == 200
-    assert postings(app)[-1] == (today.isoformat(), -1000, True)
-
-
-def test_effect_rows_into_a_closed_period_and_closed_documents_are_refused(books):
+def test_postings_into_a_closed_period_and_closed_documents_are_refused(books):
     app, c = books
     open_receipt = voucher(c, 'receipt', '2026-03-05')
     lock(app, date(2026, 3, 31))
@@ -254,11 +238,11 @@ def test_effect_rows_into_a_closed_period_and_closed_documents_are_refused(books
     status, record, _ = c('POST', '/api/voucher', {'dated': '2026-03-20', 'amount': '1.00'})
     url = f"/api/voucher/{record['id']}"
     status, payload, _ = c('POST', f'{url}/moves/posted', {}, headers=etag(c, url))
-    assert status == 422 and payload['fields'] == {'_effects': 'Posting rows: ' + CLOSED.format('31-03-2026')}
-    # A document with its own period in a closed one is neither voided nor reopened.
+    assert status == 422 and payload['fields'] == {'posted_on': CLOSED.format('31-03-2026')}, payload  # The posting's own write refuses it.
+    # A document dated in a closed period is neither voided nor reopened: its reversal, dated like it, is refused first.
     for operation in ('void', 'reopen'):
         status, payload, _ = c('POST', f'{open_receipt}/moves/{operation}', {'remark': 'Late fix'}, headers=etag(c, open_receipt))
-        assert status == 422 and payload['fields'] == {'dated': CLOSED.format('31-03-2026')}, operation
+        assert status == 422 and payload['fields'] == {'posted_on': CLOSED.format('31-03-2026')}, operation
     assert c('GET', open_receipt)[1]['docstate'] == 'posted'
     assert [row for row in postings(app) if row[2]] == []
 

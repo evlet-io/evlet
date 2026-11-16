@@ -14,7 +14,7 @@ from .audit import COLUMNS as AUDIT
 # in the order they run. Each module registers its own with @build_step when it is imported, and
 # evlet/__init__.py imports them all, so they are in place before any app model is defined.
 BUILD_ORDER = ('ledger_declared', 'ledger_class', 'statemanager', 'activity_declared',
-               'meaning', 'guards', 'kept_plan', 'sequences', 'namings', 'measures', 'cards', 'effects', 'posted_reads',
+               'meaning', 'guards', 'kept_plan', 'sequences', 'namings', 'measures', 'cards', 'posted_reads',
                'activities', 'api', 'ledger_schema')
 BUILD_STEPS = {}
 
@@ -276,7 +276,7 @@ class ModelType(type):
             cls.__declaration_mode__ = True
         reserved = {'context', 'parent', 'source', 'key', 'read', 'values', 'stored_values', 'before', 'is_new', 'release'}
         if isinstance(fields.get('source'), Reference) and not tables:
-            # Effect targets declare source = Reference(); a flat record has no dialog source to shadow.
+            # A flat record may name a Reference field source; it has no dialog source to shadow.
             reserved.discard('source')
         clashes = sorted((set(fields) | set(tables) | set(sources)) & reserved) if getattr(cls, '__declaration_mode__', False) else ()
         if clashes:
@@ -526,16 +526,13 @@ class Registry:
         from .ui.metadata import compile_layouts
         layouts, self.layout_warnings = compile_layouts(self)
         self.layouts = MappingProxyType(layouts)
-        # Rows documents post to other models (Meta.effects); the targets' rows are read only.
-        compile_effects = step('effects')
-        self.effects, self.effect_targets = compile_effects(self, models, child_models)
         # What a released record's stored results read, which a move out of the released set may not change.
         posted_reads = step('posted_reads')
         self.posted_reads = MappingProxyType({model: posted_reads(self, model, plans.get(model)) for model in models
                                               if model.__state__ and model.__declared_fields__[model.__state__].releases})
         # Record histories: {model: Activity} (evlet/activity.py).
         compile_activities = step('activities')
-        self.activities = compile_activities(models, child_models, self.effects)
+        self.activities = compile_activities(models, child_models)
         for model in models:
             if model.__state__ and model not in self.activities and any(rule.levels for rule in model.__declared_fields__[model.__state__].rules):
                 raise ValueError(f'{model.__name__}: approval levels are kept in its Activity, so Meta.activity cannot be None')

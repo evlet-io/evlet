@@ -9,9 +9,9 @@ the deals they own and never see a deal's internal notes. Viewers read, without 
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Effect, Email,
-                   Integer, Activity, Link, LongText, Mail, Model, Negate, Percent, Phone, Reference, Related, Rule,
-                   Select, Sequence, State, Sum, Table, Tags, Text, Time, URL, action, state)
+from evlet import (Attachments, Boolean, Child, Count, Currency, CurrentUser, Date, Decimal, Duration, Email,
+                   Integer, Activity, Link, LongText, Mail, Model, Percent, Phone, Reference, Related, Rule,
+                   Select, Sequence, State, Sum, Table, Tags, Text, Time, URL, action, release, state)
 from evlet.calc import D, F, choose, coalesce, days, has_value, is_empty, month_start, parent, round, today, when
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
@@ -90,18 +90,19 @@ class Product(Model):
 
 
 class Booking(Model):
-    """Won business: one row per won deal, written only by the deal when it is won. Voiding the deal
-    writes a reversing row, so the bookings always add up to the business we still have."""
+    """Won business: one row per won deal, posted by the deal's @release hook when it is won. Reopening or
+    voiding the deal posts a reversing row (@release.exit), so the bookings add up to the business we still have."""
     permissions = {'admin': READ, 'editor': READ, 'viewer': READ}
     organization = Link(Organization)
     owner = Text(default='')
     amount = Currency(required=True)
     booked_on = Date()
     memo = Text(default='')
-    source = Reference()
+    source = Reference(index=True)
     reversal = Boolean(default=False)
 
     class Meta:
+        api = 'read'
         list_fields = ('booked_on', 'organization', 'owner', 'amount', 'memo', 'reversal')
         measures = {'booked': Sum('amount')}
 
@@ -213,7 +214,6 @@ class Deal(Model):
             'deals': Count(),
             'open_tasks': Count('task', link='deal', where=F('done') == False),  # noqa: E712
         }
-        effects = (Effect(Booking, rows='booking_rows', on='won', reverse=Negate('amount')),)
         attachments = Attachments(max_files=10, max_size=1_048_576)
 
     @state('won')
@@ -237,9 +237,20 @@ class Deal(Model):
         self.context.create(Task, title=note, kind='call', deal=self.id, contact=self.contact, assignee=self.owner,
                             due_on=due_on)
 
-    def booking_rows(self):
-        return [{'organization': self.organization, 'owner': self.owner, 'amount': self.total,
-                 'booked_on': self.won_on, 'memo': f'{self.number} {self.title}'}]
+    def booking(self):
+        return {'organization': self.organization, 'owner': self.owner, 'amount': self.total, 'booked_on': self.won_on,
+                'memo': f'{self.number} {self.title}', 'source': ('deal', self.id)}
+
+    @release
+    def book(self):
+        """Winning the deal books it, in the move's transaction."""
+        self.context.session.create(Booking, **self.booking())
+
+    @release.exit
+    def unbook(self):
+        """Reopening or voiding a won deal books the reversal."""
+        booking = self.booking()
+        self.context.session.create(Booking, **{**booking, 'amount': -booking['amount'], 'reversal': True})
 
 
 class Task(Model):

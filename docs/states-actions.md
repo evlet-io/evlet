@@ -7,7 +7,8 @@ leaves one. Model actions are declared methods that may take validated inputs an
 available only in some states.
 
 The state manager is `evlet/statemanager.py`; its declarations (`State` and its steps, rules, levels and remarks) are in `evlet/declarations.py`. Rows a document posts to other models when it
-enters a state, and their reversal when it leaves, are described in [effects.md](effects.md).
+enters its released set, and their reversal when it leaves, are written by its `@release` and
+`@release.exit` hooks ([Hooks](#hooks)).
 Each move is recorded in the record's [Activity](activity.md). Confirm, cancel, reopen and void
 are modelled as steps and rules ([document-lifecycle.md](document-lifecycle.md)).
 
@@ -86,7 +87,7 @@ class Invoice(Model):
   declared `versioned=False` ([below](#ordinary-writes-and-locks)).
 * `release=True` puts the step in the **released set**: entering the set runs `@release`, leaving it
   runs `@release.exit`, and inside it the document's versioned content does not change
-  ([Releases and versions](#releases-and-versions)). An [effect](effects.md)'s `on` must be such a step.
+  ([Releases and versions](#releases-and-versions)).
 * `final=True` means no rule leaves the step.
 * `release=True` and `final=True` imply `lock=True`. Writing `lock=True` with them is allowed;
   `lock=False` with them fails at declaration.
@@ -292,6 +293,30 @@ replaces a base's hook by defining a method of the same name. Each is a method t
   ledger, stock or other documents in `@release` through `self.context.session`, and reverse them in
   `@release.exit`. A model that declares `@release` without `@release.exit` fails when the class is
   created, unless no rule leaves the released set. `@state` and `@state.exit` need no pair.
+  `Effect`, `Swap`, `Negate` and `Meta.effects` were removed in 0.4.11; this is how a document posts:
+
+  ```python
+  class Booking(Model):  # an ordinary model; people only read it
+      class Meta:
+          api = "read"
+      amount = Currency(required=True)
+      source = Reference(index=True)
+      reversal = Boolean(default=False)
+
+  class Deal(Model):
+      ...
+      @release
+      def book(self):
+          self.context.session.create(Booking, amount=self.total, source=("deal", self.id))
+
+      @release.exit
+      def unbook(self):
+          self.context.session.create(Booking, amount=-self.total, source=("deal", self.id), reversal=True)
+  ```
+
+  A posted row is validated like any `Session` write and refused in a closed period of its own
+  model (the error is keyed by its period field). Use `Meta.api = "read"` or `Meta.ledger = True`
+  for posting tables, and `Reference(index=True)` where you look rows up by source.
 * A model that still declares `before_close`, `changed`, `check_lifecycle` or an undecorated
   `validate()`, or sets `confirmable` or `track_changes`, fails when the class is created with a
   message pointing here.
@@ -304,19 +329,18 @@ The order of a move:
 
 1. The rule is checked on the saved record (below).
 2. On a release exit, the latest release is kept as a snapshot if it has none yet.
-3. When the record leaves an effect's `on` state, its posted rows are reversed.
-4. `@state.exit(old)` hooks run.
-5. On a release exit, `@release.exit` hooks run.
-6. The state changes.
-7. `@state(new)` hooks run.
-8. The document settles: calculations, then `@validate`. A move within the release keeps its
+3. `@state.exit(old)` hooks run.
+4. On a release exit, `@release.exit` hooks run.
+5. The state changes.
+6. `@state(new)` hooks run.
+7. The document settles: calculations, then `@validate`. A move within the release keeps its
    saved results instead, and is refused if it changed versioned content
    ([Moves within the release](#moves-within-the-release)).
-9. Document numbers due in the new state are assigned.
-10. On entering the released set: `@release` runs, then calculations and `@validate` again. A
+8. Document numbers due in the new state are assigned.
+9. On entering the released set: `@release` runs, then calculations and `@validate` again. A
     new version is stored when the versioned content changed since the last one.
-11. A closed period is checked, unless the move stays within the release.
-12. The record is written, effects on the new state post, and the Activity gets its `moved`
+10. A closed period is checked, unless the move stays within the release.
+11. The record is written, and the Activity gets its `moved`
     entry with the rule key and the remark; a move that made a new version names it in
     `data.release`.
 

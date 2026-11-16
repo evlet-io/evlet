@@ -69,10 +69,10 @@ describe('records in a side panel beside the list', () => {
     expect(row(host, three)!.getAttribute('aria-current')).toBe('true');
     expect(row(host, three)!.classList.contains('cur')).toBe(true);
     // The full page's record view, without tabs: the Lines grid in the primary area, then more information (Amounts,
-    // Related, Postings), and its side column (Attachments, Activity) behind the drawer button on the title row.
+    // Related), and its side column (Attachments, Activity) behind the drawer button on the title row.
     expect(panel(host)!.querySelector('[role="tablist"]')).toBeNull();
     await until(() => expect(text(panel(host)!.querySelector('.ev-cmp-main .ev-cmp-th h3'))).toBe('Lines'));
-    expect([...panel(host)!.querySelectorAll('.ev-more-row')].map(item => text(item.querySelector('.ev-more-toggle')))).toEqual(['Amounts', 'Related', 'Postings']);
+    expect([...panel(host)!.querySelectorAll('.ev-more-row')].map(item => text(item.querySelector('.ev-more-toggle')))).toEqual(['Amounts', 'Related']);
     const aside = panel(host)!.querySelector('.doc > .doc-side')!;
     expect(panel(host)!.querySelector('.doc-tools .ev-side-toggle button')!.getAttribute('aria-controls')).toBe(aside.id);
     await until(() => expect([...aside.querySelectorAll('.side-sec h4')].map(text)).toEqual(['Attachments', 'Activity']));

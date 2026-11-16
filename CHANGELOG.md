@@ -23,6 +23,16 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **The manual Release is removed:** `POST /api/{model}/{id}/release`, `Context.release()` and the
   `release` permission operation (drop it from `Rule(...)` operations; `restore` stays). Versions come
   only from moves by rules. There is no compatibility path, by owner decision.
+- **`Effect`, `Swap`, `Negate` and `Meta.effects` are removed**, with the `evlet effects check`
+  command, the record page's Postings row, `_effects` in details, `effects` in the schema and new
+  `effects` Activity entries (old ones stay, without their targets). Post in `@release` through
+  `self.context.session` and reverse in `@release.exit`
+  ([docs/states-actions.md](docs/states-actions.md#hooks)). Former effect targets are ordinary models:
+  make them read only with `Meta.api = "read"` (or `Meta.ledger = True`) and declare
+  `source = Reference(index=True)` where you look rows up by source. A posting row dated in a closed
+  period is refused by that row's own period, keyed by its period field; reversals are no longer
+  re-dated to the first open day. Rows effects wrote stay as ordinary data; there is no framework
+  migration. `Meta.effects` fails with a message pointing to the hooks.
 - **Protections follow the released set, not effect rows.** A record in a `release=True` step keeps
   its saved results for every writer, refuses `"_calculation": {"recalculate": true}` (409 `This
   record is released, ...`), and `Recompute` skips it unless `--recompute-posted`. Records that left

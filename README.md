@@ -52,8 +52,6 @@ locks and actions with validated inputs. [Document numbers](docs/sequences.md) d
 measures and their HTTP routes.
 [Model meaning](docs/meaning.md) describes key fields, related records and
 attachment limits.
-[Effects](docs/effects.md) describe the rows a
-document posts to other models when it enters a state.
 [Activity](docs/activity.md) describes each record's append-only
 history, notes and follow ups, and its tamper-evident hash chain.
 

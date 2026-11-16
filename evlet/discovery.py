@@ -51,8 +51,6 @@ READ_ANNOTATIONS = {
     '_calculation': object_schema({'language': _TEXT, 'model_schema_hash': _TEXT}, ('language', 'model_schema_hash')),
     '_job': object_schema({'id': {'type': 'integer', 'minimum': 1}, 'state': _TEXT}, ('id', 'state')),
     '_outcome': {'description': 'Application-defined JSON value returned by an action.'},
-    '_effects': {'type': 'array', 'items': object_schema({'target': _TEXT, 'rows': _COUNT, 'reversals': _COUNT, 'balanced': _BOOL},
-                                                        ('target', 'rows', 'reversals'))},
     '_deletable': _BOOL,
     '_version': object_schema({'number': {'type': ['integer', 'null'], 'minimum': 0}, 'released': _BOOL,
                                'state': {'type': ['string', 'null']}}, ('number', 'released', 'state')),

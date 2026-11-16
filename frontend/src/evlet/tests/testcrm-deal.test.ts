@@ -91,7 +91,7 @@ describe('testCRM: a deal and its lines', () => {
     expect(run.misses).toEqual([]);
   });
 
-  it('wins through its moves: the lock, the posting and the kick-off task the win created', async () => {
+  it('wins through its moves: the lock and the kick-off task the win created', async () => {
     const run = scenario('sara_win');
     const id = idOf('sara_win', 'deal', 'Production planning module');
     // Start after the line save the first test makes.
@@ -111,8 +111,6 @@ describe('testCRM: a deal and its lines', () => {
     await until(() => expect(text(host.querySelector('.ev-more-row[data-section="Related"] .ev-more-sum'))).toContain('Tasks: 2'));
     expect(text(host.querySelector('.ev-cmp-main .g-lock'))).toBe('Locked. Lines can’t change while it is won.');
     expect(host.querySelector('.doc-main [aria-label="Add row"], .doc-main .g-add')).toBeNull();
-    openRow(host, 'Postings');
-    await until(() => expect(text(host.querySelector('.ev-more-row[data-section="Postings"] .ev-more-body'))).toContain('Bookings'));
     openRow(host, 'Related');
     await until(() => expect(text(host.querySelector('.ev-related'))).toContain('Kick-off: Production planning module'));
     // Schedule follow up is listed but not available on a won deal.
@@ -295,7 +293,7 @@ describe('testCRM: 150 lines, conflicts and roles', () => {
 });
 
 describe('testCRM: activity', () => {
-  it('shows Activity in the side column with the moves, the win, its Booking posting and the follow up', async () => {
+  it('shows Activity in the side column with the moves, the win and the follow up', async () => {
     const run = scenario('sara_win');
     const id = idOf('sara_win', 'deal', 'Production planning module');
     // After the line save, Negotiate and Mark won.
@@ -307,15 +305,15 @@ describe('testCRM: activity', () => {
     expect(heads.slice(0, 5)).toEqual([
       'sara completed a follow-up',
       'sara planned a follow-up',
-      'sara posted 1 row to Bookings',
       'sara moved it from Negotiation to Won',
       'sara moved it from Proposal to Negotiation',
+      'sara changed it',
     ]);
     expect(heads.slice(-2)).toEqual([expect.stringMatching(/^sara assigned the number DL-\d{4}-\d{4}$/), 'sara created this record']);
     expect(heads.filter(head => head.startsWith('sara moved it'))).toHaveLength(4);
     const items = [...host.querySelectorAll('.tl-item')];
     // The win set the kick-off as the next step and dated the deal.
-    const won = [...items[3].querySelectorAll('.ev-diff')].map(text);
+    const won = [...items[2].querySelectorAll('.ev-diff')].map(text);
     expect(won).toContain('Next step empty Kick-off meeting');
     expect(won.some(line => line.startsWith('Won on empty '))).toBe(true);
     expect(text(items[1].querySelector('.ev-fu'))).toBe('Due 20-11-2026 for sara · Done');

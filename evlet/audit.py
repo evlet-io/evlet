@@ -22,7 +22,7 @@ from . import qb
 
 COLUMNS = ('evlet_created_at', 'evlet_created_by', 'evlet_modified_at', 'evlet_modified_by')
 MODIFIED = COLUMNS[2:]
-# Activity kinds that change the record itself; notes, messages, files and effects do not.
+# Activity kinds that change the record itself; notes, messages and files do not.
 CHANGES = ('created', 'changed', 'moved', 'voided', 'revised', 'unposted', 'reposted', 'number', 'recomputed')
 ENGINE = 'engine'
 

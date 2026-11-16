@@ -1,5 +1,5 @@
 // The record view of a transaction document over responses recorded from the engine as an editor:
-// State steps and rules (void and reopen take a remark), Sequence, effects, measures, meaning metadata, files and the
+// State steps and rules (void and reopen take a remark), Sequence, measures, meaning metadata, files and the
 // activity.
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, invoice, lastToast, requests, start, stopAll, headText, text, typeInto, typeRich, until, type Route } from './screens-helpers';
@@ -74,7 +74,7 @@ describe('transaction document (recorded fixtures)', () => {
     // No tabs: the Lines grid is in the primary area, the rest is more information, Activity is in the side column.
     expect(host.querySelector('[role="tablist"]')).toBeNull();
     expect(text(host.querySelector('.ev-cmp-main .ev-cmp-th'))).toMatch(/^Lines2/);
-    expect(rows(host)).toEqual(['Amounts', 'Related', 'Postings']);
+    expect(rows(host)).toEqual(['Amounts', 'Related']);
     // E3: the header's stage bar shows and moves the State, so the read form leaves it out.
     await until(() => expect(host.querySelector('.ev-cmp-card .ff')).not.toBeNull());
     expect(host.querySelector('.ev-cmp-card .ff[data-field="status"]')).toBeNull();
@@ -115,7 +115,7 @@ describe('transaction document (recorded fixtures)', () => {
     expect(requests(sent, 'POST', /moves/)).toHaveLength(0);
   });
 
-  it('issues through the move route, then shows the number, the lock and the postings', async () => {
+  it('issues through the move route, then shows the number and the lock', async () => {
     const { host, sent } = start([...routes(), ['POST', path(draft, '/moves/issue$'), invoice.invoice_issued]], `/app/invoice/${draft}`);
     await until(() => expect(byText(host, '.doc-head button', 'Issue')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Issue'));
@@ -134,9 +134,7 @@ describe('transaction document (recorded fixtures)', () => {
     // The banner says it is locked once; the fields carry no lock of their own.
     expect(host.querySelector('.ff[data-field="customer"] .ff-hint')).toBeNull();
     expect(host.querySelectorAll('.ev-cmp-card .ff-hint:not(.calc):not(.init)')).toHaveLength(0);
-    expect(text(host.querySelector('.ev-more-row[data-section="Postings"] .ev-more-sum'))).toBe('Ledger entries: 3');
-    openRow(host, 'Postings');
-    await until(() => expect([...host.querySelectorAll('.doc-main .ev-more-row[data-section="Postings"] .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '0', 'Balanced']));
+    expect(host.querySelector('.ev-more-row[data-section="Postings"]')).toBeNull();
     expect(text(host.querySelector('.ev-cmp-main .g-lock'))).toContain('Locked.');
   });
 
@@ -182,11 +180,9 @@ describe('transaction document (recorded fixtures)', () => {
     expect(host.querySelector('.stepper .step.cur')!.classList.contains('lost')).toBe(true);
     expect(lastToast()).toBe('Moved to Void');
     // The reversal rows show beside the posted ones.
-    openRow(host, 'Postings');
-    await until(() => expect([...host.querySelectorAll('.ev-more-row[data-section="Postings"] .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '3', 'Balanced']));
   });
 
-  it('reopens an issued invoice as admin with a required remark, which reverses its postings', async () => {
+  it('reopens an issued invoice as admin with a required remark', async () => {
     const before = invoice.invoice_reopen_before, reopened = invoice.invoice_reopen, id = before.body.id;
     const admin: Route[] = routes(before).map(route => route[1].source.includes('session') ? ['GET', route[1], invoice.invoice_admin_session] : route);
     const { host, sent } = start([...admin, ['POST', path(id, '/moves/reopen$'), reopened]], `/app/invoice/${id}`);
@@ -211,8 +207,6 @@ describe('transaction document (recorded fixtures)', () => {
     (document.activeElement as HTMLElement | null)?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     // The number stays; the reversal rows show beside the posted ones.
     expect(reopened.body.number).toBe(before.body.number);
-    openRow(host, 'Postings');
-    await until(() => expect([...host.querySelectorAll('.ev-more-row[data-section="Postings"] .dt tbody td')].map(text)).toEqual(['Ledger entries', '3', '3', 'Balanced']));
   });
 
   it('offers no reopen to a role the rule does not name', async () => {
@@ -241,7 +235,7 @@ describe('transaction document (recorded fixtures)', () => {
     expect(text(changed)).not.toContain('Invalid amount');
   });
 
-  it('shows the issued invoice activity as the engine records it: moves, postings, numbers, actions and people', async () => {
+  it('shows the issued invoice activity as the engine records it: moves, numbers, actions and people', async () => {
     const { host } = start(routes(invoice.invoice_issued_detail), `/app/invoice/${draft}`);
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_activity.body.items.length));
     const heads = [...host.querySelectorAll('.tl-item .hd')].map(item => headText(item));
@@ -253,7 +247,6 @@ describe('transaction document (recorded fixtures)', () => {
       'sara added a note',
       'sara ran Record payment',
       `sara assigned the number ${invoice.invoice_issued.body.number}`,
-      'sara posted 3 rows to Ledger entries',
       'sara moved it from Draft to Issued',
       'sara attached signed-copy.pdf',
       'sara changed it',
@@ -266,9 +259,8 @@ describe('transaction document (recorded fixtures)', () => {
     expect(text(items[3].querySelector('.ev-fu'))).toBe('Due 15-11-2026 for sara · Done');
     expect(text(items[2].querySelector('.note'))).toBe('Balance due by the end of the month');
     expect(text(items[5].querySelector('.ev-diff'))).toBe('Remarks empty Paid 500.00 on 2026-11-10');
-    // The posting and its balance check; the move lists what else it changed.
-    expect(text(items[7].querySelector('.note'))).toBe('Ledger entries balanced');
-    expect(text(items[8].querySelector('.ev-diff'))).toBe('Outstanding AED 0.00 AED 2,680.00');
+    // The move lists what else it changed.
+    expect(text(items[7].querySelector('.ev-diff'))).toBe('Outstanding AED 0.00 AED 2,680.00');
     expect(host.querySelector('.ev-partial')).toBeNull();
   });
 
@@ -286,7 +278,7 @@ describe('transaction document (recorded fixtures)', () => {
     expect(host.querySelector('.composer .rt-surface')!.textContent).toBe('');
   });
 
-  it('shows a viewer the entries it may only partly see, with no note box', async () => {
+  it('shows a viewer the activity, with no note box', async () => {
     const viewerRoutes: Route[] = [
       ['GET', /\/api\/auth\/session$/, invoice.invoice_viewer_session],
       ['GET', /\/api\/schema$/, invoice.invoice_viewer_schema],
@@ -295,12 +287,8 @@ describe('transaction document (recorded fixtures)', () => {
     const { host, sent } = start(viewerRoutes, `/app/invoice/${draft}`);
     await until(() => expect(host.querySelectorAll('.tl-item')).toHaveLength(invoice.invoice_viewer_activity.body.items.length));
     expect(host.querySelector('.composer')).toBeNull();
-    // The viewer cannot read ledger entries: the posting is a `changed` entry with nothing in it, marked partial.
-    const partial = [...host.querySelectorAll('.tl-item')].filter(item => item.querySelector('.ev-partial'));
-    expect(partial).toHaveLength(1);
-    expect(headText(partial[0].querySelector('.hd'))).toBe('sara changed it');
-    expect(text(partial[0].querySelector('.ev-partial'))).toBe('Some details are hidden');
-    expect(partial[0].querySelector('.note')).toBeNull();
+    // The viewer reads every field these entries name, so none is marked partial.
+    expect([...host.querySelectorAll('.tl-item')].filter(item => item.querySelector('.ev-partial'))).toHaveLength(0);
     expect(requests(sent, 'POST', /\/activity$/)).toHaveLength(0);
     expect(invoice.invoice_viewer_note_refused.status).toBe(403);
   });

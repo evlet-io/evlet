@@ -353,7 +353,7 @@ class Employee(Model):
   `Tab` and `Meta.tabs` still fail with their message.
 - **No tabs.** `Tab`, `Meta.tabs` and `Meta.default_tab` were removed in 0.4. Using them fails when the
   model is defined, with a message pointing to `Main` and `Section`. Activity is in the side column;
-  Related and Postings are rows of more information.
+  Related is a row of more information.
 - **`link`** is the other model's Link field to this one. Leave it out when there is exactly one.
 - **Filters** use the list filter syntax on the other model's own fields, as a dict
   (`{'status__ne': 'done'}`) or a list of conditions. `Ref('field')` compares with a field of this
@@ -464,7 +464,7 @@ The record page draws it on a record's full page and in a list's side panel (the
   left, the content on the right. Closed, a Section shows its values on one line ("Label: value · Label: Not set · ...",
   cut with an ellipsis), a Table its row count and a Related block its record count. Sections and TableSections start
   as `collapsed` says, the other rows closed, and the person's choice is kept, as for any Section. Related records the layout does not list
-  and Postings are rows here too.
+  are a row here too.
 - **The side column** has Attachments and Activity. Its note box has a slim toolbar: bold, italic, bulleted
   list, link and Mention. In a narrow window or a side panel it is a drawer behind a button, so the record's
   content always comes first. The record footer sits under the card.

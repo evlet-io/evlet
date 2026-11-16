@@ -12,7 +12,7 @@ Python may write a closed period, inside `session.unlocked_periods(reason)`, whi
 
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, timezone
 import logging
 from types import MappingProxyType
 from zoneinfo import ZoneInfo
@@ -114,23 +114,6 @@ def check(session, model, before=None, after=None):
         lock = closed(session, model, values)
         if lock is not None:
             raise ValidationError({period.field: message(lock)})
-
-
-def reopened(session, model, values):
-    """Mirror rows keep the original date while its period is open. In a closed period they take the first
-    open date: the day after the lock that applies, or today (instance timezone) when that is later."""
-    period = session.registry.periods.get(model)
-    lock = None if getattr(session, '_periods_unlocked', False) else closed(session, model, values)
-    if lock is None:
-        return values
-    zone = timezone.utc if session.timezone == 'UTC' else ZoneInfo(session.timezone)
-    now = datetime.now(timezone.utc)
-    first = max(lock + timedelta(days=1), now.astimezone(zone).date())
-    if period.kind == 'date':
-        value = first
-    else:
-        value = now if first == now.astimezone(zone).date() else datetime.combine(first, time(0), zone).astimezone(timezone.utc)
-    return {**values, period.field: value}
 
 
 @contextmanager

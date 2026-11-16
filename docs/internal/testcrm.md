@@ -48,8 +48,8 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 | Organization | `Select`, `URL`, `Phone`, `Tags`, bounds, `Meta.layout`, `key_fields`, `relations` with order and labels, per-record measures over deals (`Count`, `Sum` with `where`), a model measure, `Attachments` |
 | Contact | `Link` with an index, `Email`, a stored calculation through a Link path (`F("organization.emirate")`), `Meta.activity = Activity()` and `Meta.mail = Mail(match=("email",), kind="contact")`, so emails with the person from a salesperson's own mailbox show in its Activity |
 | Product | `unique` field, `Boolean`, read only for sales |
-| Booking | Effect target (`source = Reference()`, `reversal`), read only for every role, a measure |
-| Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with steps and guarded rules (`when=`), admin-only rules (Reopen, Void with a required remark), locked, release and final steps, a `@state("won")` hook, `@action` with `inputs` and `available_when`, `applies_when` and `versioned=False`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, an `Effect` with `Negate`, model and per-record measures (won this month through `month_start()`), `key_fields`, `relations`, `Attachments`, a row scope with `default=CurrentUser` on the owner, and field lists per role |
+| Booking | Posted by the deal's `@release` / `@release.exit` hooks (`source = Reference(index=True)`, `reversal`), `Meta.api = "read"`, a measure |
+| Deal | `Sequence` (`DL-{year}-{n:04}`), `State` with steps and guarded rules (`when=`), admin-only rules (Reopen, Void with a required remark), locked, release and final steps, a `@state("won")` hook, `@action` with `inputs` and `available_when`, `applies_when` and `versioned=False`, `initial=` through a Link, a calculated `Percent` through nested `when()`, `round()`, `days()`, `coalesce()`, `today()` in a virtual result, a `Table` of up to 1,000 lines, `sum`, `count` and `where(row.recurring == True)` aggregates, `@release` and `@release.exit` posting and reversing a booking, model and per-record measures (won this month through `month_start()`), `key_fields`, `relations`, `Attachments`, a row scope with `default=CurrentUser` on the owner, and field lists per role |
 | Deal line | `initial=` from the product (description, rate, taxable), a discount `Percent`, an auto-rounded amount, VAT through `when()` and `parent.vat_rate` |
 | Task | `Time`, `Duration` with `applies_when`, a virtual `Boolean` from `today()`, Links to Deal and Contact |
 | Lead | `State` with a guard on the score, `applies_when` with `required_when` on a reason that Mark lost asks for, an action that creates other records, `Meta.mail = Mail(match=("email",), kind="lead")` |
@@ -67,7 +67,7 @@ phase only a `models/` package was discovered; a single `models.py` module now c
 
 - **Winning a deal** (the `won` rule and `@state("won")` on `on_won`) sets `won_on` and the next step, makes the
   organization a customer through `context.update`, creates a kick-off task through
-  `context.create`, and posts one booking through the effect, all in the move's transaction.
+  `context.create`, and posts one booking in `@release`, all in the move's transaction.
   Reopening or voiding a won deal writes the reversing booking.
 - **Schedule follow up** (an action with a date and a note) sets the next step and creates a call
   task for the owner.
@@ -94,7 +94,7 @@ conversion, board drag and keyboard, palette, 150 lines, scope, viewer, conflict
 
 The activity is checked on both sides. `test_activity_activity_records_moves_the_win_and_what_people_add`
 reads a won deal's history over HTTP: the moves, the win with the kick-off next step and its date,
-the Booking posting (`effects`), the earlier edits, the number and the create, then a note, a
+the earlier edits, the number and the create, then a note, a
 follow up and its completion, a viewer's partial view and another sales person's refusal. The
 screen test opens the same deal on its Activity tab and adds a note through the activity route.
 

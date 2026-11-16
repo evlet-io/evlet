@@ -269,10 +269,6 @@ def check_delete(context, model, record):
     locked_message(context, model, record, ' and cannot be deleted')
     if releasing(model) and latest(context._tx.connection, context._business.registry.name_for(model), record.id) is not None:
         raise AccessError(409, 'This record has a release, so it cannot be deleted. Move it to a final state instead.')
-    from .effects import ever_posted
-    if ever_posted(context._tx.connection, context._business.registry, model, record.id):
-        # Its effect rows, reversed or not, name it as their source, and its number stays used.
-        raise AccessError(409, 'This record has posted before, so it cannot be deleted. Move it to a final state instead.')
 
 
 def check_attachments(context, model, record):

@@ -117,8 +117,7 @@ permissions require read access. Omitted field sets mean all fields; empty tuple
 mean no fields. `read_only` fields also reject HTTP writes.
 
 Before any Rule, one framework rule decides what a model allows at all, so no Rule or
-Controls override can widen it. Effect targets take no create, update or delete
-([effects.md](effects.md#effect-rows-are-read-only)). While a request is served, a model with
+Controls override can widen it. While a request is served, a model with
 `Meta.api = "read"` takes no write of any kind and a model with `Meta.api = None` takes nothing
 ([model-engine.md](model-engine.md#how-much-of-a-model-callers-reach)). The app code the request
 runs (actions, moves, reactions, dialogs, services, jobs) is trusted and writes as usual, so a

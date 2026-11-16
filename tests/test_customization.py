@@ -952,7 +952,7 @@ def test_unplaced_fields_go_to_other_in_a_file_layout_and_an_override(tmp_path, 
 
 def test_recompute_keeps_instance_fields_and_skips_posted_records(tmp_path, hashed):
     from evlet import AddIndex, Migration, Recompute
-    from test_effects import etag, move, new_bill, posting_models
+    from test_release_postings import etag, move, new_bill, posting_models
     path, base = tmp_path / 'db.sqlite3', Migration('0000_base', AddIndex('bill', 'memo'))
     database = Database(path, Registry(*posting_models(1)), migrations=[base])
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
