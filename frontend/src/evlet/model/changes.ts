@@ -8,7 +8,7 @@
 // to create, {id, section} to rename and ids to delete, and `order` (rows and sections) whenever a section changed.
 // A table whose schema says row_changes: false (a ChildTable on a plain model) takes only a full
 // list: saved rows as {id, ...changed values}, new rows without _key, rows left out are deleted.
-// A read-only Table (one the record fills itself, Meta.derives) is never sent.
+// A read-only Table (one the record fills itself, derived=True) is never sent.
 
 import type { Field, Row, Table } from './record';
 

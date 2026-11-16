@@ -102,7 +102,7 @@ class Field:
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
                  initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking="value",
-                 panel=True, copy=True, column=True):
+                 panel=True, copy=True, column=True, derived=False):
         if tracking not in ("value", "mask", "exclude"):
             raise ValueError("tracking is value, mask or exclude")
         self.tracking = tracking
@@ -138,6 +138,10 @@ class Field:
         if type(column) is not bool:
             raise ValueError("column must be True or False")
         self.column = column
+        # Set by the document's derive() on every write and preview (docs/model-engine.md#derived-values).
+        if type(derived) is not bool:
+            raise ValueError("derived must be True or False")
+        self.derived = derived
         self.compute, self.stored, self.query, self.fetch = compute, stored, query, fetch
         self.filters = dict(filters or {})
         self.visible_if, self.required_if, self.read_only_if = visible_if, required_if, read_only_if

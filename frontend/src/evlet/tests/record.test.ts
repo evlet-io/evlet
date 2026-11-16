@@ -209,7 +209,7 @@ describe('editing', () => {
 });
 
 describe('saving', () => {
-  it('never sends a read-only Table, one the record fills itself (Meta.derives)', async () => {
+  it('never sends a read-only Table, one the record fills itself (derived=True)', async () => {
     const derived = structuredClone(schema);
     const order = derived.models.find(model => model.name === 'order')!;
     order.children = order.children!.map(child => child.name === 'lines' ? { ...child, read_only: true } : child);
@@ -446,7 +446,7 @@ describe('values', () => {
   });
 });
 
-describe('values the server derives (Meta.derives)', () => {
+describe('values the server derives (derived=True)', () => {
   // The recorded order schema, as if derive() filled the remark and each line's rate.
   const derivedSchema = (derives: string[]) => ({ ...schema, models: schema.models.map(model => model.name === 'order' ? { ...model, derives } : model) });
   function deriving(derives: string[], reply: (sent: Sent) => any) {

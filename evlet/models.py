@@ -76,30 +76,13 @@ def checked_body(body, allowed, message, *, exact=False, nonempty=False, field='
 
 
 def declared_hooks(cls, name, meta, fields, tables, row):
-    """Check derive() with Meta.derives; returns the names derive() writes.
+    """Check derive() with what is declared derived=True; returns the names derive() writes: "field",
+    "table" (it builds the rows) and "table.field" (it fills a field on the rows of a Table callers edit).
 
-    derive(self) builds stored values that formulas cannot express. It runs on every write and preview
-    of the document, before calculations, and may assign only the fields, Tables and "table.field" row
-    fields Meta.derives names;
-    callers cannot write those (docs/model-engine.md#derived-values)."""
+    derive(self) builds stored values that formulas cannot express. It runs on every write and preview of
+    the document, after the formulas that do not read its values and before those that do; callers cannot
+    write what it sets (docs/model-engine.md#derived-values)."""
     import inspect
-    derive = getattr(cls, 'derive', None)
-    derives = getattr(meta, 'derives', ()) if meta is not None else ()
-    if isinstance(derives, str) or not isinstance(derives, (tuple, list)):
-        raise ValueError(f'{name}: Meta.derives is a tuple of field and Table names')
-    derives = tuple(derives)
-    if not inspect.isfunction(derive):
-        if derives:
-            raise ValueError(f'{name}: Meta.derives needs a derive(self) method that sets them')
-        derive = None
-    elif not derives:
-        raise ValueError(f'{name}.derive: name the fields and Tables it sets in Meta.derives')
-    if derive is not None and len(inspect.signature(derive).parameters) != 1:
-        raise ValueError(f'{name}.derive takes only self')
-    if derive is not None and row:
-        raise ValueError(f'{name}: derive() belongs to the document; a Table row cannot declare it')
-    if len(set(derives)) != len(derives):
-        raise ValueError(f'{name}: Meta.derives names each field or Table once')
     from .calc import is_finite
     from .declarations import State
 
@@ -107,40 +90,51 @@ def declared_hooks(cls, name, meta, fields, tables, row):
         if not field.stored or field.compute is not None or field.query is not None or is_finite(field) or \
                 isinstance(field, State) or field.kind == 'sequence' or standard(field):
             raise ValueError(f'{owner}.{key}: derive() sets stored source fields; calculated, State, Sequence and '
-                             'standard fields have their own writers')
-    for key in derives:
-        if not isinstance(key, str):
-            raise ValueError(f'{name}: Meta.derives is a tuple of field and Table names')
-        if key.count('.') == 1:
-            # "table.field": a field on every row of a Table that callers edit.
-            table_name, row_field = key.split('.')
-            table = tables.get(table_name)
-            if table is None or not isinstance(table.child, type):
-                raise ValueError(f'{name}: Meta.derives names {key!r}, but {table_name!r} is not a Table of the model')
-            if table_name in derives:
-                raise ValueError(f'{name}: Meta.derives names the Table {table_name!r}, so it sets its rows whole; '
-                                 f'leave out {key!r}')
-            field = table.child.__app_fields__.get(row_field)
-            if field is None:
-                raise ValueError(f'{name}: Meta.derives names {key!r}, which is not a field of {table.child.__name__}')
-            source(table.child.__name__, row_field, field)
-            continue
-        field = fields.get(key)
-        if key in tables:
-            if getattr(tables[key], 'sections', False):
+                             'standard fields have their own writers, so they cannot be derived=True')
+
+    def row_fields(child):
+        return [key for key, field in child.__app_fields__.items() if field.derived] if isinstance(child, type) else []
+    derives = []
+    for key, field in fields.items():
+        if field.derived:
+            source(name, key, field)
+            derives.append(key)
+    for key, table in tables.items():
+        derived_rows = row_fields(table.child)
+        if row and (table.derived or derived_rows):
+            raise ValueError(f'{name}.{key}: derive() reaches one level of Table, so a row\'s own Table and its '
+                             'fields cannot be derived=True')
+        if table.derived:
+            if derived_rows:
+                raise ValueError(f'{name}.{key} is derived=True, so derive() builds its rows whole; '
+                                 f'{table.child.__name__}.{derived_rows[0]} cannot also be derived=True')
+            if table.sections:
                 raise ValueError(f'{name}: {key} has sections=True, so derive() cannot build it; '
                                  'section rows belong to Tables people edit')
-            continue
-        if field is None:
-            raise ValueError(f'{name}: Meta.derives names {key!r}, which is not a field or Table of the model')
-        source(name, key, field)
+            derives.append(key)
+        for field_name in derived_rows:
+            source(table.child.__name__, field_name, table.child.__app_fields__[field_name])
+            derives.append(key + '.' + field_name)
+    derive = getattr(cls, 'derive', None)
+    if row:
+        # A row's derived fields are filled by its document's derive().
+        if inspect.isfunction(derive):
+            raise ValueError(f'{name}: derive() belongs to the document; a Table row cannot declare it')
+        derives = []
+    elif not inspect.isfunction(derive):
+        if derives:
+            raise ValueError(f'{name}.{derives[0]} is derived=True: declare a derive(self) method on {name} that sets it')
+    elif not derives:
+        raise ValueError(f'{name}.derive: declare the fields and Tables it sets with derived=True')
+    elif len(inspect.signature(derive).parameters) != 1:
+        raise ValueError(f'{name}.derive takes only self')
     for removed in ('before_close', 'changed', 'check_lifecycle'):
         if inspect.isfunction(getattr(cls, removed, None)):
             raise ValueError(f'{name}.{removed}() was removed in 0.4.6; use @validate, @state(...), @state.exit(...) or '
                              '@release (docs/states-actions.md#hooks)')
     if inspect.isfunction(vars(cls).get('validate')) and not hasattr(vars(cls)['validate'], '__evlet_hook__'):
         raise ValueError(f'{name}.validate() was removed in 0.4.6; decorate a check with @validate instead')
-    return derives
+    return tuple(derives)
 
 
 def refuse_finite_expressions(name, fields, tables, prefix=''):
@@ -436,7 +430,7 @@ class Registry:
                 'evlet_position': Integer(required=True, default=0, hidden=True, read_only=True),
                 '__internal_fields__': (table.owner_field, 'evlet_position'),
             })
-            # Row fields the document's derive() sets ("table.field" in Meta.derives) are refused to callers.
+            # Row fields the document's derive() sets (derived=True on an edited Table's rows) are refused to callers.
             child.__derives__ = tuple(key.split('.')[1] for key in getattr(model, '__derives__', ()) if key.startswith(name + '.'))
             expanded.append(child)
             self.children.append(ChildTable(model, name, child, table.owner_field, table.label or name.replace('_', ' ').title()))
@@ -571,6 +565,22 @@ class Registry:
     def plan_for(self, model):
         """The finite plan governing a model's document, or None for legacy calculation."""
         return self.plans.get(self.root_of(model))
+
+    def derive_split(self, model):
+        """(the formulas that run before derive(): a finite plan, or legacy keys in order; {value: derived name it
+        reads}) for a document that declares derive(), cached per model (docs/model-engine.md#derived-values)."""
+        cache = self.__dict__.setdefault('_derive_splits', {})
+        if model not in cache:
+            from .calc import derive_split, derived_after
+            plan = self.plan_for(model)
+            if plan is not None:
+                cache[model] = derive_split(plan, model.__derives__)
+            else:
+                from .reactivity import template
+                _, order, inputs, _ = template(self, model)
+                after = derived_after(model.__derives__, [(key, inputs[key]) for key in order])
+                cache[model] = [key for key in order if key not in after], after
+        return cache[model]
 
     def name_for(self, model):
         name = storage_name(model)
