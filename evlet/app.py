@@ -83,7 +83,7 @@ class Application:
         self.name = name
         self.database = database
         self.registry = database.registry
-        if auth is None and (policy is not None or actions or children or attachments or storage is not None or jobs is not None or events is not None):
+        if auth is None and (policy is not None or children or attachments or storage is not None or jobs is not None or events is not None):
             raise ValueError("Business features require authentication")
         self.business = None if auth is None else Business(database, auth, policy=policy, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
