@@ -899,8 +899,7 @@
           "Schedule"
         ],
         "tabs": [
-          "activity",
-          "postings"
+          "activity"
         ],
         "blocks": [
           "files",

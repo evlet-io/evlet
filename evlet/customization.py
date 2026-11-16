@@ -318,9 +318,9 @@ class Customization:
 
     def tab_names(self, model):
         """The record's parts the side panel can hide, as the schema's panel "tabs" names them: Activity, Details,
-        its child tables, Related and Postings. Record pages have no tabs."""
+        its child tables and Related. Record pages have no tabs."""
         tables = [child.name for child in self.registry.children if child.parent is model]
-        return ['activity', 'details', *tables, 'related', 'postings']
+        return ['activity', 'details', *tables, 'related']
 
     def check_layout(self, model, _, value, saved=False, ignored=None):
         panel = None

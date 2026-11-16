@@ -273,7 +273,7 @@ def test_a_layout_sets_section_flow(app):
     state = admin('GET', '/api/_controls/state')[1]
     lead = next(model for model in state['models'] if model['name'] == 'Lead')
     # The record's parts the side panel can hide.
-    assert [tab['name'] for tab in lead['tabs']] == ['activity', 'details', 'related', 'postings']
+    assert [tab['name'] for tab in lead['tabs']] == ['activity', 'details', 'related']
     # Sections alone are saved as the plain list they always were; rows is not stored.
     assert save(admin, ('layout', 'Lead', [{**sections[0], 'flow': 'rows'}, sections[1]]))[0] == 200
     saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')['value']
