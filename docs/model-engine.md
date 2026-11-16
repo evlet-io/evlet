@@ -908,7 +908,7 @@ the tool schemas never read it ([ui.md](ui.md#record-layouts)).
 
 `Meta.api` says which surfaces a model gets. Callers are every HTTP route, MCP clients, Eva
 and the connector. Trusted Python is everything else: database sessions, `Context` in
-scripts, model actions and moves, legacy `Action` handlers, `changed` reactions, dialogs,
+scripts, model actions and moves, `changed` reactions, dialogs,
 `@api` services, jobs and migrations.
 
 | `Meta.api` | Callers | Trusted Python |
@@ -936,9 +936,13 @@ class Receipt(Model):
     amount = Currency(required=True)
 
 
-def post_invoice(tx, user, invoice):           # Action(Invoice, "post", "Post to ledger", post_invoice)
-    tx.create(LedgerEntry, invoice=invoice.id, posting_date=invoice.posting_date, amount=invoice.total)
-    tx.create(Receipt, invoice=invoice.id, amount=invoice.total)
+class Invoice(Model):
+    ...
+    @action("Post to ledger")
+    def post(self):
+        tx = self.context.session
+        tx.create(LedgerEntry, invoice=self.id, posting_date=self.posting_date, amount=self.total)
+        tx.create(Receipt, invoice=self.id, amount=self.total)
 ```
 
 A table that only trusted code writes, at high volume, is usually a [ledger model](ledger.md):

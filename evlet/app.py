@@ -66,7 +66,7 @@ class Application:
     # build_instance sets this: an instance's framework steps run only inside evlet migrate.
     managed_framework = False
 
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None, prints=(), workspaces=()):
+    def __init__(self, database, *, auth=None, policy=None, children=(), attachments=(), storage=None, jobs=None, events=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None, prints=(), workspaces=()):
         from .routing import RouteTable, resolve_routes
         from .naming import check_declarations
         check_declarations(database.registry, {child.model for child in database.registry.children})
@@ -85,7 +85,7 @@ class Application:
         self.registry = database.registry
         if auth is None and (policy is not None or actions or children or attachments or storage is not None or jobs is not None or events is not None):
             raise ValueError("Business features require authentication")
-        self.business = None if auth is None else Business(database, auth, policy=policy, actions=actions, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
+        self.business = None if auth is None else Business(database, auth, policy=policy, children=children, attachments=attachments, storage=storage, jobs=jobs, events=events)
         if self.business:
             from .routing import authority
             if auth.realms != {authority(origin).encode(): realm for origin, realm in self.routes.realms().items()}:

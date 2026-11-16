@@ -25,9 +25,9 @@ __all__ = [
 
 from .auth import LocalAuth, OIDC, User
 from .permissions import Hierarchy, Policy, Rule, any_of, own_customer
-from .business import Action, ChildTable
+from .business import ChildTable
 
-__all__ += ["Action", "ChildTable", "Hierarchy", "LocalAuth", "OIDC", "Policy", "Rule", "User", "any_of", "own_customer"]
+__all__ += ["ChildTable", "Hierarchy", "LocalAuth", "OIDC", "Policy", "Rule", "User", "any_of", "own_customer"]
 
 from .storage import LocalFileStorage, SQLiteStorage, StorageError
 

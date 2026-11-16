@@ -327,13 +327,11 @@ Keep customer data and secrets in instances, outside the app repository.
 ```python
 from evlet import AppDefinition
 from .models import models
-from .actions import actions
 from .permissions import rules
 from .migrations import migrations
 
 app = AppDefinition(
     models=models,
-    actions=actions,
     permissions=rules,
     migrations=migrations,
 )
@@ -342,7 +340,7 @@ app = AppDefinition(
 The contract composes the existing APIs. It also accepts `children`, `attachments`,
 `tasks` and `schedules`. Apps scaffolded before 0.4 pass `views=views` with an empty
 `views`; that still works, but Python pages were removed in 0.4. App directories and
-Python source stay private. Hooks, helpers and action handlers are trusted code.
+Python source stay private. Hooks, helpers and `@action` methods are trusted code.
 
 Models, actions, routes, permission rules and task names must not conflict across
 apps. The generated starter preserves the complete app name, including underscores,
@@ -352,13 +350,9 @@ installation rather than silently replacing another app's rules. HTTP clients an
 cross-app user workflows must continue through permission-checked interfaces.
 Direct Python sessions and handlers are trusted administrator code.
 
-When an action needs the instance's queue or event store, `actions` may be a
-factory: `def actions(services): return (Action(...),)`. It receives the selected
-instance's existing `database`, `auth`, `policy`, `jobs`, `events` and `storage`
-objects. Capture `services.jobs` in a handler and call its existing
-`enqueue(tx, ...)` API inside the action transaction. The factory runs during
-registration; it must return definitions and must not perform external effects.
-Ordinary action tuples need no factory.
+Actions are `@action` methods on the models; one that needs the instance's queue calls
+`self.context.enqueue(task, payload)` inside its transaction. `AppDefinition(actions=...)` was
+removed in 0.4.11 with `Action(...)`.
 
 ## Dependencies and Git
 

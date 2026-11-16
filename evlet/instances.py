@@ -81,7 +81,6 @@ class AppDefinition:
 
     models: tuple = ()
     views: tuple = ()
-    actions: object = ()
     children: tuple = ()
     attachments: tuple = ()
     permissions: dict = field(default_factory=dict)
@@ -106,8 +105,6 @@ class AppDefinition:
             raise ValueError('Python pages (views and ui) were removed in Evlet 0.4: delete them from AppDefinition')
         for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes', 'connectors', 'workspaces'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
-        if not callable(self.actions):
-            object.__setattr__(self, 'actions', tuple(self.actions))
         object.__setattr__(self, 'permissions', dict(self.permissions))
         from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES
         object.__setattr__(self, 'roles', dict(self.roles))
@@ -395,14 +392,11 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     jobs = JobQueue(database, [task for _, definition in definitions for task in definition.tasks], tenant=config.name.replace('_', '-'), events=events, policy=policy)
     storage = LocalFileStorage(storage_path or path / 'files/private')
     services = SimpleNamespace(database=database, auth=auth, policy=policy, jobs=jobs, events=events, storage=storage, settings=None, preferences=None)
-    actions = []
-    for _, definition in definitions:
-        actions.extend(definition.actions(services) if callable(definition.actions) else definition.actions)
     options = {key: tuple(item for _, definition in definitions for item in getattr(definition, key)) for key in ('children', 'attachments')}
     app = Application(database, auth=auth, policy=policy, events=events, jobs=jobs,
                       reports=tuple(report for _, definition in definitions for report in definition.reports),
                       apis=tuple(endpoint for _, definition in definitions for endpoint in definition.apis),
-                      storage=storage, name=config.name.replace('_', ' ').title(), actions=actions, routes=routes, ai=config.ai, **options)
+                      storage=storage, name=config.name.replace('_', ' ').title(), routes=routes, ai=config.ai, **options)
     app.managed_framework = True
     app.business.timezone = config.timezone
     # One key for connector secrets, two-step secrets and backup codes (evlet.secrets).

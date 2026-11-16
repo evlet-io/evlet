@@ -2,7 +2,7 @@
 
 import pytest
 
-from evlet import (Action, Boolean, Child, Currency, Database, Date, Decimal, Integer, Link, Model, Registry, Rule,
+from evlet import (Boolean, Child, Currency, Database, Date, Decimal, Integer, Link, Model, Registry, Rule,
                    State, Table, Text, ValidationError, action, state, validate)
 from evlet.auth import AccessError, User
 from evlet.calc import F
@@ -433,7 +433,7 @@ def test_schema_describes_states_and_actions_per_role(invoices):
     assert entry(viewer)['actions'] == [] and entry(viewer)['state']['rules'][1]['when'] is None
 
 
-# Legacy roots and legacy actions
+# Legacy roots
 
 class Ticket(Model):
     title = Text(default='')
@@ -445,19 +445,23 @@ class Ticket(Model):
             State.Rule('closed', 'open', 'Reopen', key='open', when=F('title') != ''),
         ))
 
+    @action
+    def force(self):
+        self.title = self.title + ' (forced)'
 
-def force_open(tx, user, ticket):
-    tx.update(Ticket, ticket.id, title=ticket.title + ' (forced)')
+    @action
+    def close(self):
+        # A session may not change the State outside maintenance(): this fails as an internal error.
+        self.context.session.update(Ticket, self.id, docstate='closed')
 
 
-def test_states_and_legacy_actions_work_on_roots_without_calculations(tmp_path):
+def test_states_and_actions_work_on_roots_without_calculations(tmp_path):
     from evlet import Application, LocalAuth
     from test_business import http, PASSWORD
     registry = Registry(Ticket)
     assert Ticket not in registry.plans and Ticket in registry.guard_plans
     db = Database(tmp_path / 'tickets.sqlite3', registry)
-    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
-                      actions=(Action(Ticket, 'force', 'Force', force_open),))
+    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
     c = client(app)
@@ -466,12 +470,13 @@ def test_states_and_legacy_actions_work_on_roots_without_calculations(tmp_path):
     assert move(c, url, 'closed')[1]['docstate'] == 'closed'
     assert c('PATCH', url, {'title': 'x'}, headers=etag(c, url))[0] == 422
     assert move(c, url, 'open')[0] == 409
-    # A legacy Action is trusted code: it writes through the transaction, also on a locked record.
+    # An action is declared, checked code: it may change a locked record.
     status, forced, _ = c('POST', url + '/actions/force', {}, headers=etag(c, url))
     assert status == 200 and forced['title'] == ' (forced)'
     assert move(c, url, 'open')[1]['docstate'] == 'open'
     schema = next(model for model in c('GET', '/api/schema')[1]['models'] if model['name'] == 'ticket')
-    assert schema['actions'] == [{'name': 'force', 'label': 'Force'}] and schema['state']['rules'][1]['guarded'] is True
+    assert [(item['name'], item['label']) for item in schema['actions']] == [('close', 'Close'), ('force', 'Force')]
+    assert schema['state']['rules'][1]['guarded'] is True
 
 
 # Review fixes
@@ -670,10 +675,7 @@ def test_sessions_change_a_state_only_inside_maintenance(tmp_path):
         with tx.maintenance():
             assert tx.update(Ticket, ticket.id, docstate='closed').docstate == 'closed'
 
-    def close(tx, user, record):
-        tx.update(Ticket, record.id, docstate='closed')
-    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True),
-                      actions=(Action(Ticket, 'close', 'Close', close),))
+    app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True))
     app.initialize()
     http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})
     c = client(app)

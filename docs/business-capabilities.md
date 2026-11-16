@@ -289,33 +289,30 @@ row. Ordinary Links outside the collection still restrict deletion. Concurrent
 collection replacements use the last successful write; there is no optimistic
 version conflict UI in this milestone.
 
-## Registered actions
+## Model actions
 
 ```python
-from evlet import Action, ValidationError
+from evlet import Model, ValidationError, action
 
-def start(tx, user, project):
-    if project.status != 'planned':
-        raise ValidationError({'_form': 'Only a planned project can be started'})
-    tx.update(Project, project.id, status='active')
-
-app = Application(database, auth=auth, actions=(
-    Action(Project, 'start', 'Start project', start),
-))
+class Project(Model):
+    ...
+    @action("Start project")
+    def start(self):
+        if self.status != "planned":
+            raise ValidationError({"_form": "Only a planned project can be started"})
+        self.status = "active"
 ```
 
-`POST /api/project/{id}/actions/start` accepts an empty JSON object. Only registered
-actions are callable. Action roles default to Admin and Editor; the caller also
-needs update access to the parent within its row scope. The handler receives the
-transaction, authenticated user, and current parent record. All its writes commit
-together or roll back. The response is a fresh, permission-filtered parent detail.
+`POST /api/project/{id}/actions/start` runs it, with `If-Match`. Roles default to Admin
+and Editor; the caller also needs update access to the record within its row scope. The
+method changes the record through `self` and may write other rows through
+`self.context.session`; all of it commits together or rolls back. The response is a fresh,
+permission-filtered detail. Actions are trusted application code: they must implement the
+business rules and any additional permissions for other records they touch, and must not call
+external services inside the transaction (queue a job with `self.context.enqueue(...)`).
+`Action(...)` registrations and `Application(actions=...)` were removed in 0.4.11.
 
-Handlers are trusted application code and can write fields that normal forms cannot.
-They must implement the business rules and any additional permissions for other
-records they touch. They must not call external services inside the transaction.
-Do not expose an arbitrary method dispatcher.
-
-Model actions declared with `@action` on a document may also take validated `inputs`
+Model actions may also take validated `inputs`
 and declare `available_when`. A `State` field with steps and rules changes a
 document's state through `POST /api/{model}/{id}/moves/{key}` and can lock it against
 ordinary writes. See [states-actions.md](states-actions.md). The record page shows the
