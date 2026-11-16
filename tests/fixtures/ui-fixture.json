@@ -324,13 +324,6 @@
             "-id"
           ]
         }
-      ],
-      "slips": [
-        {
-          "name": "plan_project",
-          "label": "Plan a project",
-          "hand_in_label": "Create project"
-        }
       ]
     },
     {
@@ -1915,6 +1908,32 @@
         {
           "name": "refresh_progress",
           "label": "Recalculate progress"
+        },
+        {
+          "name": "plan",
+          "label": "Plan project",
+          "roles": [
+            "admin",
+            "editor"
+          ],
+          "guarded": true,
+          "available_when": {
+            "$expr": "eq",
+            "args": [
+              {
+                "$expr": "ref",
+                "scope": "self",
+                "field": "docstate"
+              },
+              {
+                "$expr": "literal",
+                "type": "text",
+                "value": "planned"
+              }
+            ]
+          },
+          "arguments": [],
+          "inputs": []
         }
       ],
       "state": {
