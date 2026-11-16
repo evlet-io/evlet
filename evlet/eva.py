@@ -706,6 +706,14 @@ class Eva:
         except AccessError:
             raise AccessError(404, NOT_FOUND) from None
 
+    def available(self, scope, user):
+        """Whether /api/_eva answers this session: the same check as gate(), as a yes or no."""
+        try:
+            self.gate(scope, user)
+        except AccessError:
+            return False
+        return True
+
     def zone(self):
         name = getattr(self.business, 'timezone', None) or 'UTC'
         return ZoneInfo(name)

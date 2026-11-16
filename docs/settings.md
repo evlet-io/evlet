@@ -81,8 +81,11 @@ server for that person. Portal people don't have it.
 Mentions inbox in the top bar ("in Evlet") and by email through the mail connector ([activity.md](activity.md#mentions)).
 The other choices are stored for later. Security emails (a new device, a changed password) can't be turned off.
 
-**What the person may open.** `GET /api/_settings/me` carries two booleans for the signed-in
-person, side by side at the top level. `controls` is true when they open Controls (it shows the
+**What the person may open.** `GET /api/_settings/me` carries three booleans for the signed-in
+person, side by side at the top level. `eva` is true when Eva's routes (`/api/_eva`) answer this
+session, the same check they make ([eva.md](eva.md#evas-routes)): false when Eva is not configured,
+is off in Controls, or the person lacks Allow Eva, and always for portal people. The browser asks
+for Eva's status only when it is true. `controls` is true when they open Controls (it shows the
 Controls entry in the account menu). `customize_workspaces` is true when they may use the
 workspace override routes, `/api/_controls/workspaces` ([controls.md](controls.md#workspaces)): it
 calls the same check as those routes, so admin always, desk roles with Customize workspaces on,

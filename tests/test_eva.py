@@ -84,18 +84,23 @@ def test_eva_does_not_exist_until_config_controls_and_the_person_allow_it(tmp_pa
     plain = make(tmp_path / 'a', monkeypatch, hashed, ai=False)
     person = client(plain, 'editor')
     assert person('GET', '/api/_eva')[0] == 404
+    # /api/_settings/me says so, and the browser never asks /api/_eva (no failing request, no console error).
+    assert person('GET', '/api/_settings/me')[1]['eva'] is False
     with plain.database._connection() as connection:
         assert not connection.columns('evlet_eva_conversations')
     assert client(plain)('GET', '/api/_controls/eva')[1]['configured'] is False
     # Turned on in config.py but not yet in Controls.
     app = make(tmp_path / 'b', monkeypatch, hashed, enabled=False)
     assert client(app, 'editor')('GET', '/api/_eva')[0] == 404
+    assert client(app, 'editor')('GET', '/api/_settings/me')[1]['eva'] is False
     setting(app, 'eva.enabled', True)
     editor = client(app, 'editor')
     assert editor('GET', '/api/_eva')[0] == 200
+    assert editor('GET', '/api/_settings/me')[1]['eva'] is True
     with app.database.transaction() as tx:
         tx.connection.execute("UPDATE evlet_users SET allow_eva=0 WHERE username='editor'")
     assert editor('GET', '/api/_eva')[0] == 404
+    assert editor('GET', '/api/_settings/me')[1]['eva'] is False
     assert editor('POST', '/api/_eva/conversations', {})[0] == 404
 
 

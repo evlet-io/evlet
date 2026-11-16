@@ -6257,6 +6257,7 @@
    "controls": true,
    "customize_workspaces": true,
    "development": true,
+   "eva": false,
    "last_page": "profile",
    "notifications": {
     "events": [

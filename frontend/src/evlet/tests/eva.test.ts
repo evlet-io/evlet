@@ -1,7 +1,8 @@
 // Eva's screens against a stub of /api/_eva: hidden without Eva, a chat that streams activity rows and an
 // answer, approvals, the allowance-used state, scheduled tasks and the Controls usage page.
-import { afterEach, describe, expect, it } from 'vitest';
-import { adminRoutes, byText, click, requests, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { adminRoutes, byText, click, requests, screen, start, stopAll, text, typeInto, until, type Route } from './screens-helpers';
+import { copy } from './server';
 import { Markdown } from '../eva/chat';
 
 const reply = (body: unknown, status = 200) => ({ status, body, etag: null });
@@ -29,6 +30,29 @@ describe('Eva', () => {
     const { host } = start(adminRoutes(), '/docs');
     await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
     expect(byText(host, '.nav-item', 'Eva')).toBeNull();
+  });
+
+  it('never asks /api/_eva when /api/_settings/me says Eva does not answer, so nothing fails or logs', async () => {
+    const errors = vi.spyOn(console, 'error');
+    const settings = copy(screen.settings_me);
+    (settings.body as any).eva = false;
+    const eva = vi.fn(() => reply({ error: 'Route not found' }, 404));
+    const { host, sent } = start([...adminRoutes(), ['GET', /\/api\/_settings\/me$/, settings], ['GET', /\/api\/_eva(\/.*)?$/, eva]], '/settings/ai');
+    await until(() => expect(host.querySelector('.sidebar')).not.toBeNull());
+    await until(() => expect(requests(sent, 'GET', /\/api\/_settings\/me\/ai$/).length).toBeGreaterThan(0));
+    expect(requests(sent, 'GET', /\/api\/_eva/)).toHaveLength(0);
+    expect(eva).not.toHaveBeenCalled();
+    expect(byText(host, '.nav-item', 'Eva')).toBeNull();
+    expect(errors).not.toHaveBeenCalled();
+    errors.mockRestore();
+  });
+
+  it('asks /api/_eva when /api/_settings/me says Eva answers', async () => {
+    const settings = copy(screen.settings_me);
+    (settings.body as any).eva = true;
+    const { host, sent } = start([...evaRoutes(), ['GET', /\/api\/_settings\/me$/, settings]], '/docs');
+    await until(() => expect(byText(host, '.nav-item', 'Eva')).not.toBeNull());
+    expect(requests(sent, 'GET', /\/api\/_eva$/)).toHaveLength(1);
   });
 
   it('rebuilds a stored chat: activity rows open for details, the answer renders as a table', async () => {

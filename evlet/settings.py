@@ -436,6 +436,9 @@ class Settings:
             # The workspace override routes (/api/_controls/workspaces): the same check they use. A session that
             # still has to give a two-step code reports true; the routes ask for the code.
             'customize_workspaces': not portal and controls.customizes(scope, user),
+            # Eva answers this session (/api/_eva): the browser asks for its status only then, so a workspace
+            # without Eva makes no failing request.
+            'eva': not portal and getattr(self.business, 'eva', None) is not None and self.business.eva.available(scope, user),
             'development': getattr(getattr(self.business, 'routes', None), 'primary', None) is None,
             # The built-in Administrator: only its email address can change in its profile.
             'builtin': is_administrator(user),

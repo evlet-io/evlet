@@ -69,7 +69,9 @@ export function App(options: AppOptions): Node {
   onCleanup(() => { alive = false; context.peek()?.prefs.dispose(); });
 
   const enter = async (current: Session) => {
-    const [schemaData, settings, eva] = await Promise.all([api.schema<AppSchema>(), loadMe(api), evaStatus(api).catch(() => null)]);
+    // Eva's status only when /api/_settings/me says Eva answers this person: no failing request without it.
+    const [schemaData, settings] = await Promise.all([api.schema<AppSchema>(), loadMe(api)]);
+    const eva = settings?.eva === false ? null : await evaStatus(api).catch(() => null);
     const schema = new SchemaIndex(schemaData);
     if (!alive) return;
     // How this site shows each currency code (Controls, Currencies), before anything formats money.

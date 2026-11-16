@@ -225,3 +225,92 @@ def test_upgrade_needs_an_instance_and_checks_to(ready, capsys):
     with pytest.raises(SystemExit):
         main(['upgrade', 'acme', '--to', 'soon', '--project', str(root)])
     assert '--to takes a version' in capsys.readouterr().err
+
+
+def from_source(root, editable=True, place=None):
+    """Record a source install the way pip does: direct_url.json in the dist-info."""
+    place = place or root.parent / 'evlet-clone'
+    info = next((root / '.venv/lib/python3.12/site-packages').glob('evlet-*.dist-info'))
+    (info / 'direct_url.json').write_text(json.dumps({'url': place.as_uri(), 'dir_info': {'editable': True} if editable else {}}))
+    return place
+
+
+def test_the_source_of_an_editable_or_git_install_is_read_from_direct_url(ready):
+    root, _ = ready
+    assert setting.environment_source(root) is None
+    place = from_source(root)
+    assert setting.environment_source(root) == (str(place), True)
+    from_source(root, editable=False)
+    assert setting.environment_source(root) == (str(place), False)
+    info = next((root / '.venv/lib/python3.12/site-packages').glob('evlet-*.dist-info'))
+    (info / 'direct_url.json').write_text(json.dumps({'url': 'git+https://github.com/evlet-io/evlet', 'vcs_info': {'vcs': 'git', 'commit_id': 'abc'}}))
+    assert setting.environment_source(root) == ('git+https://github.com/evlet-io/evlet', False)
+    # A release pip downloaded as an archive is not source.
+    (info / 'direct_url.json').write_text(json.dumps({'url': 'https://files.example/evlet-0.4.3.tar.gz', 'archive_info': {}}))
+    assert setting.environment_source(root) is None
+
+
+def test_an_editable_install_skips_pip_and_still_stops_backs_up_migrates_and_restarts(ready):
+    root, units = ready
+    place = from_source(root)
+    result, lines, server = call(root, units)
+    evlet = [str(setting.python_in(root)), '-P', '-m', 'evlet', '--project', str(root)]
+    assert result is True
+    assert server.ran == [
+        ['sudo', 'systemctl', 'stop', 'evlet-acme'],
+        [*evlet, 'backup', '--instance', 'acme'],
+        [*evlet, 'migrate', 'acme'],
+        [*evlet, 'restart', 'acme', '--yes'],
+    ]
+    assert lines[0] == (f'Evlet is installed from source at {place}, so evlet upgrade does not change the framework. '
+                        'Update that code with git. Backing up and migrating the instances on the code that is there now.')
+    assert 'Stop, back up, migrate and restart acme? [y/N] ' in lines
+    assert setting.environment_version(root) == '0.4.3' and not list(root.glob('.evlet-upgrade-*'))
+    assert lines[-1] == f'acme migrated on Evlet from {place}. Backups: acme: /srv/b/20261113.sqlite3.'
+
+
+def test_a_source_install_refuses_to_and_names_git_and_a_failed_migration_names_restore(ready):
+    root, units = ready
+    place = from_source(root, editable=False)
+    with pytest.raises(ValueError, match=f'installed from source at {place}, so --to does not apply'):
+        call(root, units, to='0.4.4')
+    result, lines, server = call(root, units, server=Server(root, fail='migrate'), yes=True)
+    assert result is False and 'reinstall it with pip install' in lines[0]
+    assert [Server.kind(args) for args in server.ran] == ['stop', 'backup', 'migrate']
+    assert lines[-1] == ('The migration for acme failed. The upgrade stopped here with the services stopped. '
+                         'To go back, restore the backups: evlet restore /srv/b/20261113.sqlite3 --instance acme.')
+    result, lines, _ = call(root, units, answer='n')
+    assert result is False and lines[-1] == 'Upgrade cancelled. Nothing was changed.'
+
+
+def test_an_editable_development_project_backs_up_and_migrates_a_real_database(ready):
+    """No systemd unit (a dev machine): no service steps; the real backup and migrate run on SQLite."""
+    from evlet.cli.install import install
+    from test_cli_lifecycle import runtime
+    root, units = ready
+    (units / 'evlet-acme.service').unlink()
+    installed(root, framework.version())
+    from_source(root)
+    install(root, 'acme', app_name='notes', trust=True)
+    app = runtime(root)
+    app.database.create(app.registry.models['notesitem'], title='Original')
+    app.database.close()
+    # A real project interpreter: a venv that sees this Evlet and its dependencies, like an editable install.
+    import site, venv
+    venv.EnvBuilder(with_pip=False).create(root / '.venv')
+    (root / '.venv/lib/python3.12/site-packages/evlet-source.pth').write_text(
+        '\n'.join([str(Path(upgrading.__file__).parents[2]), *site.getsitepackages()]) + '\n')
+    ran = []
+
+    def real(args, **values):
+        ran.append(args)
+        return subprocess.run(args, **values)
+
+    lines = []
+    result = upgrading.upgrade(root, 'acme', yes=True, unit_dir=units, run=real, which=lambda name: None, out=lines.append)
+    assert result is True, lines
+    assert [args[6] for args in ran] == ['backup', 'migrate']
+    backup = lines[-1].removeprefix('acme migrated on Evlet from ').split('Backups: acme: ')[1].rstrip('.')
+    assert Path(backup).is_file() and Path(backup).parent == root / 'instances/acme/data/backups'
+    app = runtime(root)
+    assert [record.title for record in app.database.list(app.registry.models['notesitem'])] == ['Original']

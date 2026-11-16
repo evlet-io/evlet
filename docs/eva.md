@@ -185,7 +185,9 @@ follow Eva's confirmation settings above.
 ## Eva's routes
 
 All under `/api/_eva`, signed-in desk sessions only, 404 when Eva is not available to the
-person.
+person. `GET /api/_settings/me` carries `eva`, true exactly when these routes answer the person
+(the same check, [settings.md](settings.md)). The browser asks `GET /api/_eva` only then, so a
+workspace without Eva, or a person without Allow Eva, sees no failing request and no console error.
 
 | Route | Purpose |
 | --- | --- |

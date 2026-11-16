@@ -14,7 +14,7 @@ from packaging.version import InvalidVersion, Version
 from .project import child, atomic_json, instance_guard, sync_directory
 from ..writes import file_lock, require_space, sync_file
 from .restart import Failed, check_service, service_name
-from .setup import environment_version, python_in
+from .setup import environment_source, environment_version, python_in
 from . import site
 
 
@@ -74,6 +74,13 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
     before = environment_version(root)
     if before is None:
         raise ValueError('Evlet is not installed in the project .venv. Restore .venv before upgrading')
+    source = environment_source(root)
+    if source is not None:
+        if to is not None:
+            raise ValueError(f'Evlet is installed from source at {source[0]}, so --to does not apply. '
+                             f'Check out the version you want with git, then run evlet upgrade {name} again')
+        return _from_source(root, name, names, source, service=service, yes=yes, unit_dir=unit_dir, run=run,
+                            which=which, interactive=interactive, ask=ask, out=out)
     requirement = allowed(before, to)
     units = Path(unit_dir or site.SYSTEMD_DIR)
     for item in names:
@@ -95,18 +102,7 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
             return False
     python = str(python_in(root))
     evlet = [python, '-P', '-m', 'evlet', '--project', str(root)]
-
-    def step(command, *, capture=False):
-        out('$ ' + shlex.join(command))
-        try:
-            result = run(command, capture_output=capture, text=True)
-        except (OSError, subprocess.SubprocessError) as exc:
-            out(f'{shlex.join(command)} failed: {exc}')
-            return None
-        for stream in (result.stdout, result.stderr) if capture else ():
-            if stream:
-                out(stream.rstrip())
-        return result if result.returncode == 0 else None
+    step = _stepper(run, out)
 
     live = root / '.venv'
     if live.is_symlink():
@@ -146,8 +142,7 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
             stopped.append(item)
         backups = {}
         for item in names:
-            saved = step([*evlet, 'backup', '--instance', item], capture=True)
-            backup = next((line[len('Backup: '):].strip() for line in saved.stdout.splitlines() if line.startswith('Backup: ')), None) if saved else None
+            backup = _backup_line(step([*evlet, 'backup', '--instance', item], capture=True))
             if not backup:
                 for previous_name in stopped:
                     step(['sudo', 'systemctl', 'start', services[previous_name]])
@@ -214,6 +209,93 @@ def _upgrade(root, name, *, to, service, yes, all_instances, unit_dir, run, whic
         if unserved:
             out(f'No service runs {", ".join(unserved)}, so ' + ('it was' if len(unserved) == 1 else 'they were') + ' migrated but not started.')
         return True
+
+
+def _stepper(run, out):
+    """Run one command, print it, and answer its result, or None when it failed."""
+    def step(command, *, capture=False):
+        out('$ ' + shlex.join(command))
+        try:
+            result = run(command, capture_output=capture, text=True)
+        except (OSError, subprocess.SubprocessError) as exc:
+            out(f'{shlex.join(command)} failed: {exc}')
+            return None
+        for stream in (result.stdout, result.stderr) if capture else ():
+            if stream:
+                out(stream.rstrip())
+        return result if result.returncode == 0 else None
+    return step
+
+
+def _backup_line(saved):
+    return next((line[len('Backup: '):].strip() for line in saved.stdout.splitlines() if line.startswith('Backup: ')), None) if saved else None
+
+
+def _from_source(root, name, names, source, *, service, yes, unit_dir, run, which, interactive, ask, out):
+    """Evlet runs from source (an editable install of a git clone, say): pip must not replace it, so the
+    framework is left to git and only the instance steps run: stop, back up, migrate and restart."""
+    place, editable = source
+    how = 'Update that code with git' + ('' if editable else f', then reinstall it with pip install {place}')
+    out(f'Evlet is installed from source at {place}, so evlet upgrade does not change the framework. {how}. '
+        'Backing up and migrating the instances on the code that is there now.')
+    units = Path(unit_dir or site.SYSTEMD_DIR)
+    services = {}
+    for item in names:
+        unit = service_name(item, service if item == name else None)
+        # A development project usually has no unit: there is nothing to stop or restart.
+        if not (item == name and service) and not (units / f'{unit}.service').exists():
+            services[item] = None
+            continue
+        try:
+            check_service(root, item, {}, service=unit, unit_dir=units, which=which or shutil.which)
+        except Failed as exc:
+            raise ValueError(f'Service {item}: {exc}') from None
+        services[item] = unit
+    served = [item for item in names if services[item] is not None]
+    if not yes:
+        interactive = sys.stdin.isatty() if interactive is None else interactive
+        if not interactive:
+            out(f'No terminal to confirm the upgrade. Run evlet upgrade {name} --yes to upgrade without asking.')
+            return False
+        verbs = 'Stop, back up, migrate and restart' if served else 'Back up and migrate'
+        if (ask or input)(f'{verbs} {", ".join(names)}? [y/N] ').strip().lower() not in ('y', 'yes'):
+            out('Upgrade cancelled. Nothing was changed.')
+            return False
+    step = _stepper(run or subprocess.run, out)
+    evlet = [str(python_in(root)), '-P', '-m', 'evlet', '--project', str(root)]
+    stopped = []
+
+    def start_again():
+        for item in stopped:
+            step(['sudo', 'systemctl', 'start', services[item]])
+
+    for item in served:
+        if step(['sudo', 'systemctl', 'stop', services[item]]) is None:
+            start_again()
+            out('Stopping the services failed. Nothing was changed.')
+            return False
+        stopped.append(item)
+    backups = {}
+    for item in names:
+        backups[item] = _backup_line(step([*evlet, 'backup', '--instance', item], capture=True))
+        if not backups[item]:
+            start_again()
+            out(f'The backup for {item} failed. No database was migrated.')
+            return False
+    for item in names:
+        if step([*evlet, 'migrate', item]) is None:
+            out(f'The migration for {item} failed. The upgrade stopped here' + (' with the services stopped' if stopped else '') + '. '
+                'To go back, restore the backups: ' + '; '.join(f'evlet restore {backups[each]} --instance {each}' for each in names) + '.')
+            return False
+    for item in served:
+        restart = [*evlet, 'restart', item, '--yes']
+        if services[item] != f'evlet-{item}':
+            restart += ['--service', services[item]]
+        if step(restart) is None:
+            out(f'The restart for {item} failed. Every database is migrated; start {services[item]} by hand.')
+            return False
+    out(f'{", ".join(names)} migrated on Evlet from {place}. Backups: ' + ', '.join(f'{item}: {backups[item]}' for item in names) + '.')
+    return True
 
 
 def relocate_scripts(staged, live):
