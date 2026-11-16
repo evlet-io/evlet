@@ -94,11 +94,11 @@ def configure(model):
         actions = [name for name in dir(model) if not name.startswith('_') and hasattr(getattr(model, name, None), '__action__')]
         for kind, names in (('field', [*model.__declared_fields__, *model.__tables__]), ('action', actions),
                             ('rule', [rule.key for rule in field.rules] if field is not None else []),
-                            ('record method', ('save', 'delete', 'move', 'reload'))):
+                            ('record method', ('save', 'delete', 'move', 'reload', 'get'))):
             for name in names:
                 if name in owners and owners[name] != kind:
                     raise ValueError(f'{model.__name__}: the {owners[name]} {name!r} and the {kind} {name!r} share a name; '
-                                     'fields, actions, rule keys and save, delete, move and reload must be distinct')
+                                     'fields, actions, rule keys and save, delete, move, reload and get must be distinct')
                 owners[name] = kind
     if field is not None:
         for rule in field.rules:

@@ -202,8 +202,10 @@ def template(registry, model):
                 deps = set()
                 for path in paths:
                     path = path.replace('.*.', '.')
-                    if path.startswith('source.') and getattr(model, '__source__', None) is not None:
-                        if path[7:] not in model.__source__.__declared_fields__: raise ValueError('Unknown source field: ' + path)
+                    # A prompt's source is the record of whichever action returns it, read as the prompt runs.
+                    if path.startswith('source.') and (getattr(model, '__source__', None) is not None or getattr(model, '__transient__', False)):
+                        if getattr(model, '__source__', None) is not None and path[7:] not in model.__source__.__declared_fields__:
+                            raise ValueError('Unknown source field: ' + path)
                         continue
                     if not prefix and path in model.__tables__:
                         continue

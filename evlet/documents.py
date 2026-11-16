@@ -40,7 +40,6 @@ def freeze(value):
     return value
 
 
-RESERVED_METHODS = ('save', 'delete', 'move', 'reload')
 UNBOUND = 'Get the record through a context to run its actions'
 
 
@@ -70,7 +69,11 @@ class Record:
         return self._context
 
     def __getitem__(self, name):
-        return self._data[name]
+        """The value as the record's JSON detail carries it, like the rows of a report."""
+        return self._detail[name]
+
+    def get(self, name, default=None):
+        return self._detail.get(name, default)
 
     def __getattr__(self, name):
         if name in self._changes:

@@ -8,7 +8,8 @@ import sys
 import pytest
 
 from evlet import (Application, Child, Column, Database, Date, Decimal, Link, LocalAuth, Model, NavGroup, Registry,
-                   Report, Rule, Select, Shortcut, Slip, State, Table, Text, Workspace)
+                   Prompt, Report, Rule, Select, Shortcut, State, Table, Text, Workspace)
+from evlet.services import Endpoint
 from test_business import PASSWORD, client, http
 
 EVERYTHING = Rule(('read', 'create', 'update', 'delete'))
@@ -96,24 +97,20 @@ class Overview(Report):
         return {'rows': [], 'total': 0}
 
 
-class QuickDeal(Slip):
-    title = 'Quick deal'
-    menu = True
-    becomes = Deal
+class QuickDeal(Prompt):
     title_text = Text(required=True)
 
-
-class DealNote(Slip):
-    source = Deal
-    note = Text()
-
-    def hand_in(self):
+    def submit(self):
         return None
+
+
+def quick_deal(context):
+    return QuickDeal
 
 
 MODELS = (Client, Deal, Payroll, Secret, PointMove)
 REPORTS = (ClientList, PointTotals, Overview)
-SLIPS = (QuickDeal, DealNote)
+APIS = (Endpoint('test.quick_deal', quick_deal, 'POST', (Deal, 'create')),)
 
 SALES = Workspace('Sales', icon='receipt', groups=(
     NavGroup('Clients', icon='users', items=(
@@ -125,7 +122,7 @@ SALES = Workspace('Sales', icon='receipt', groups=(
         'deal',
         Shortcut('deal', view='board'),
         Shortcut('deal', filters=[['amount', 'gt', '1000']], label='Large deals'),
-        Shortcut(slip=QuickDeal),
+        Shortcut(api='test.quick_deal', label='Quick deal'),
     )),
     NavGroup('Reports', items=(Shortcut(report=ClientList), Shortcut(report='PointTotals'), Shortcut(url='https://example.com/help', label='Help'))),
 ))
@@ -134,7 +131,7 @@ PEOPLE = Workspace('People', key='hr', groups=(NavGroup('Payroll', items=('payro
 
 def build(database, workspaces=(SALES, PEOPLE)):
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
-    app = Application(database, auth=auth, reports=REPORTS, slips=SLIPS, workspaces=workspaces)
+    app = Application(database, auth=auth, reports=REPORTS, apis=APIS, workspaces=workspaces)
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     admin = client(app)
@@ -165,7 +162,7 @@ def test_admin_sees_every_declared_item_with_labels_and_list_filters(app):
     found = workspaces(app, 'admin')
     assert shape(found) == {
         'sales': {'clients': ['model:client', 'model:client:north_clients', 'model:client:vip_clients'],
-                  'deals': ['model:deal', 'model:deal:board', 'model:deal:large_deals', 'slip:quick_deal'],
+                  'deals': ['model:deal', 'model:deal:board', 'model:deal:large_deals', 'api:test.quick_deal'],
                   'reports': ['report:ClientList', 'report:PointTotals', 'url:help']},
         'hr': {'payroll': ['model:payroll']}}
     sales = found[0]
@@ -180,7 +177,7 @@ def test_admin_sees_every_declared_item_with_labels_and_list_filters(app):
          'filters': [['notes', 'icontains', 'vip']]}]}
     assert deals['icon'] is None
     assert deals['items'][1] == {'key': 'model:deal:board', 'kind': 'model', 'label': 'Deals', 'model': 'deal', 'view': 'board', 'filters': None}
-    assert deals['items'][3] == {'key': 'slip:quick_deal', 'kind': 'slip', 'label': 'Quick deal', 'slip': 'quick_deal'}
+    assert deals['items'][3] == {'key': 'api:test.quick_deal', 'kind': 'api', 'label': 'Quick deal', 'api': 'test.quick_deal'}
     assert reports['items'] == [{'key': 'report:ClientList', 'kind': 'report', 'label': 'Client list', 'report': 'ClientList'},
                                 {'key': 'report:PointTotals', 'kind': 'report', 'label': 'Point totals', 'report': 'PointTotals'},
                                 {'key': 'url:help', 'kind': 'url', 'label': 'Help', 'url': 'https://example.com/help'}]
@@ -191,10 +188,10 @@ def test_editor_and_viewer_see_only_what_they_can_open(app):
     # workspace's only group holds payroll, so the group and then the workspace are hidden.
     assert shape(workspaces(app, 'editor')) == {
         'sales': {'clients': ['model:client', 'model:client:north_clients', 'model:client:vip_clients'],
-                  'deals': ['model:deal', 'model:deal:board', 'model:deal:large_deals', 'slip:quick_deal'],
+                  'deals': ['model:deal', 'model:deal:board', 'model:deal:large_deals', 'api:test.quick_deal'],
                   'reports': ['report:ClientList', 'url:help']}}
-    # The viewer can't filter on notes (unreadable), can't read the State the board follows, can't hand in the
-    # slip (roles) and can't run the point report.
+    # The viewer can't filter on notes (unreadable), can't read the State the board follows, can't open the
+    # prompt (it needs create on Deal) and can't run the point report.
     assert shape(workspaces(app, 'viewer')) == {
         'sales': {'clients': ['model:client', 'model:client:north_clients'],
                   'deals': ['model:deal', 'model:deal:large_deals'],
@@ -245,7 +242,7 @@ def test_ledger_and_hidden_models_are_not_in_the_schema(app):
 def registered(*groups, key=None, workspaces=None, tmp_path=None):
     database = Database(tmp_path / 'checks.sqlite3', Registry(*MODELS))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
-    return Application(database, auth=auth, reports=REPORTS, slips=SLIPS,
+    return Application(database, auth=auth, reports=REPORTS, apis=APIS,
                        workspaces=workspaces if workspaces is not None else (Workspace('Desk', key=key, groups=groups),))
 
 
@@ -261,8 +258,8 @@ def registered(*groups, key=None, workspaces=None, tmp_path=None):
     (Shortcut('deal', filters={'client__title': 'Acme'}, label='X'), 'name fields of Deal itself'),
     (Shortcut('client', filters=[['title', 'like', 'x']], label='X'), 'Unknown operator: like'),
     (Shortcut(report='Missing'), "unknown report 'Missing'"),
-    (Shortcut(slip='missing'), "unknown slip 'missing'"),
-    (Shortcut(slip=DealNote), 'only a slip without a source can be a workspace item'),
+    (Shortcut(api='missing', label='X'), "unknown endpoint 'missing'"),
+    (Shortcut(api='test.quick_deal'), 'needs a label'),
 ])
 def test_items_are_checked_against_the_application(tmp_path, item, message):
     with pytest.raises(ValueError, match=message):
@@ -296,7 +293,7 @@ def test_good_urls_are_kept():
     (lambda: Workspace('Desk', groups=(NavGroup('A'),)), r"group 'A': items takes one or more"),
     (lambda: Workspace('Desk', groups=(NavGroup('A', items=('client',)), NavGroup('a', items=('deal',)))), "two groups share the key 'a'"),
     (lambda: Workspace('Desk', groups=(NavGroup('A', items=(Client,)),)), 'item Client: an item is a model name or a Shortcut'),
-    (lambda: Workspace('Desk', groups=(NavGroup('A', items=(Shortcut(),)),)), 'name exactly one of model, report, slip or url'),
+    (lambda: Workspace('Desk', groups=(NavGroup('A', items=(Shortcut(),)),)), 'name exactly one of model, report, api or url'),
     (lambda: Workspace('Desk', groups=(NavGroup('A', items=(Shortcut('client', report='x'),)),)), 'name exactly one'),
     (lambda: Workspace('Desk', groups=(NavGroup('A', items=(Shortcut('client', view='table'),)),)), "view is \"list\" or \"board\", not 'table'"),
     (lambda: Workspace('Desk', groups=(NavGroup('A', items=(Shortcut(report='x', view='list'),)),)), 'view and filters go with a model'),

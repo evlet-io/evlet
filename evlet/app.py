@@ -94,14 +94,14 @@ class Application:
             self.business.application = {"name": name, "playground": bool(playground), "docs": self.routes.docs_path if self.routes.docs else None}
             from .forms import Forms
             self.business.forms = Forms(self.business, reports)
-            # Named sidebars, checked against the models and reports above (evlet.workspaces).
+            self.business.apis = tuple(apis)
+            # Named sidebars, checked against the models, reports and endpoints above (evlet.workspaces).
             from .workspaces import Workspaces
             if isinstance(workspaces, (str, bytes)) or not isinstance(workspaces, (list, tuple)):
                 raise ValueError('Pass workspaces as a list or tuple of Workspace definitions')
             self.business.workspaces = Workspaces(self.business, workspaces, name='Playground' if playground else name or 'Evlet')
             from .printing import Prints
             self.business.prints = Prints(self.business, prints)
-            self.business.apis = tuple(apis)
             self.business.controls.routes = self.routes
             for connector in connectors:
                 self.business.connectors.register('app', connector)

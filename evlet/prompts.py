@@ -202,6 +202,7 @@ class PromptDraft(Draft):
 def build(context, prompt, source, starting=None, values=None, *, wire=False):
     """The prompt's draft: load(source), the starting values, then `values` (the person's input over HTTP when
     `wire`, otherwise trusted Python values that replace whole tables)."""
+    check(prompt)
     draft = PromptDraft(prompt, context=context.read_context(), source=source)
     with trusted():
         draft.load(source)
@@ -276,15 +277,25 @@ def outcome_of(business, context, value, *, origin=None, model=None, record_id=N
     return json.loads(encoded)
 
 
-def schema(registry, prompt, name):
-    """The prompt as the browser's record engine reads a model: fields, layout, Tables, rules and the finite plan."""
-    from .reactivity import plans, serialized as rule
-    from .ui.metadata import field_schema, layout_blocks
+def check(prompt):
+    """Meta.layout and Meta.focus of a prompt (or its rows), checked when it is first shown; returns the layout blocks."""
+    from .ui.metadata import check_focus, layout_blocks
     title = option(prompt, 'title') or prompt.__name__
     visible = {key: field for key, field in prompt.__app_fields__.items() if not field.hidden}
     blocks, warnings = layout_blocks(prompt, option(prompt, 'layout'), visible, title)
     if warnings:
         raise ValueError(warnings[0])
+    if option(prompt, 'focus') is not None:
+        check_focus(f'{prompt.__name__}.Meta.focus', prompt, option(prompt, 'focus'))
+    return blocks
+
+
+def schema(registry, prompt, name):
+    """The prompt as the browser's record engine reads a model: fields, layout, Tables, rules and the finite plan."""
+    from .reactivity import plans, serialized as rule
+    from .ui.metadata import field_schema
+    title = option(prompt, 'title') or prompt.__name__
+    blocks = check(prompt)
     entries = [{
         'name': name, 'label': title, 'plural': title, 'title_field': 'id', 'list_fields': [], 'search_fields': [],
         'fields': [{**field_schema(field), 'stored': True} for field in prompt.__app_fields__.values()],

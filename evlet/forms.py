@@ -6,7 +6,7 @@ import re
 
 from .auth import AccessError, has_role
 from .models import Model, ValidationError
-from .documents import settle, walk
+from .documents import Record, settle, walk
 from .permissions import trusted
 from .prompts import draft_values, form_draft
 from .ui.metadata import field_schema, source_schema
@@ -244,6 +244,8 @@ class Forms:
             raise ValueError('Reports return a bounded rows/total result from context.list')
         if type(result.get('total')) is not int or result['total'] < len(result['rows']): raise ValueError('Report total must be a nonnegative row count')
         allowed = {column.name for column in report.columns}
+        # Records from context.list give the values their detail carries.
+        result['rows'] = [row._detail if isinstance(row, Record) else row for row in result['rows']]
         if any(not isinstance(row, dict) for row in result['rows']): raise ValueError('Report rows must match declared columns')
         # Rows from context.list carry the standard name and title; a report shows them only as columns.
         result['rows'] = [{key: value for key, value in row.items() if key in allowed or key not in ('name', 'title')} for row in result['rows']]

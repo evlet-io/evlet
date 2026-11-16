@@ -3,7 +3,7 @@ import json
 
 import pytest
 
-from evlet import (Model, Text, Integer, Rule, Dialog, Report, Column, Chart, Count, Sum, Registry, Database,
+from evlet import (Model, Text, Integer, Rule, Report, Column, Chart, Count, Sum, Registry, Database,
                    Application, LocalAuth, api, cron, ValidationError)
 from evlet.forms import Forms
 from evlet.services import Calendar, Endpoint
@@ -14,16 +14,6 @@ class Ticket(Model):
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete'))}
     title = Text(required=True)
     copies = Integer(default=0)
-    class Copy(Dialog):
-        title = 'Create copies'
-        action = 'copy'
-        count = Integer(required=True, minimum=1, maximum=3, default=1)
-        def submit(self, source):
-            rows = []
-            for index in range(self.count):
-                rows.append(self.context.create(Ticket, title=source.title + ' copy')['id'])
-            self.context.update(Ticket, source.id, copies=source.copies + self.count)
-            return {'created': rows}
 
 
 class Tickets(Report):
@@ -48,29 +38,6 @@ def app(tmp_path):
     app.initialize()
     assert http(app, 'POST', '/api/auth/setup', {'username': 'admin', 'password': PASSWORD})[0] == 201
     return app
-
-
-def test_dialog_load_submit_retry_and_source_revision(app):
-    c = client(app)
-    status, created, _ = c('POST', '/api/ticket', {'title': 'Original'})
-    assert status == 201
-    ticket = created['id']
-    source = c('GET', f'/api/ticket/{ticket}')
-    headers = {b'if-match': source[2][b'etag']}
-    status, loaded, _ = c('POST', f'/api/_dialogs/ticket/{ticket}/copy/load', {}, headers=headers)
-    assert status == 200, loaded
-    assert loaded['values']['count'] == 1
-    assert app.database.count(Ticket) == 1
-    data = {'key': 'test-operation-1', 'values': {'count': 2}}
-    first = c('POST', f'/api/_dialogs/ticket/{ticket}/copy/submit', data, headers=headers)
-    assert first[0] == 200, first
-    assert app.database.count(Ticket) == 3
-    retry = c('POST', f'/api/_dialogs/ticket/{ticket}/copy/submit', data, headers=headers)
-    assert retry[:2] == first[:2]
-    assert app.database.count(Ticket) == 3
-    assert c('POST', f'/api/_dialogs/ticket/{ticket}/copy/submit', {**data, 'key': 'test-operation-2'}, headers=headers)[0] == 409
-    with app.database._connection() as connection:
-        assert not connection.execute("SELECT name FROM sqlite_master WHERE name IN ('copy','tickets')").fetchall()
 
 
 def test_report_evaluation_does_not_run_and_results_are_bounded(app, monkeypatch):
