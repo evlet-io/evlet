@@ -861,6 +861,37 @@ def template_reads(field):
     return result
 
 
+def derive_split(plan, derives):
+    """Split a finite plan around derive(): (a plan of the formulas that read nothing derive() sets, {value: the
+    derived name it reads, directly or through another formula}). Keys are "field" or "table.field"; a derived
+    name may also be "table", a derived Table (docs/model-engine.md#derived-values)."""
+    def keys(field):
+        path = list(field['path'])
+        for scope, table, name in field['reads']:
+            if scope == 'self': yield '.'.join(path + [name])
+            elif scope == 'parent': yield '.'.join(path[:-1] + [name])
+            elif scope == 'member': yield '.'.join(path + [table, name])
+            elif scope == 'membership': yield '.'.join(path + [table])
+    entries = [('.'.join(list(field['path']) + [field['field']]), keys(field), field) for field in plan['fields']
+               if field.get('kind') in (None, 'initial', 'applies_when')]
+    after = derived_after(derives, entries)
+    before = [field for key, _, field in entries if not field.get('kind') and key not in after]
+    return {**plan, 'fields': before}, after
+
+
+def derived_after(derives, entries):
+    """{value: derived name} of the (value, keys it reads, ...) entries, in dependency order, that read what
+    derive() sets (the names in `derives`), directly or through another entry."""
+    after = {}
+    for key, reads, *_ in entries:
+        for read in sorted(reads):
+            found = read if read in derives else read.split('.')[0] if read.split('.')[0] in derives else after.get(read)
+            if found:
+                after.setdefault(key, found)
+                break
+    return after
+
+
 def template_order(fields):
     """Deterministic topological order; any value cycle fails with a closed path.
 
