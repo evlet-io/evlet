@@ -64,13 +64,9 @@ class Quote(Model):
 class Ledger(Model):
     """derive() rounds with the public helper; an amount it leaves with too many places is refused."""
     permissions = FULL
-
-    class Meta:
-        derives = ('vat',)
-
     currency = Select(['AED', 'KWD'], default='AED')
     net = Currency(currency='currency', default='0')
-    vat = Currency(currency='currency')
+    vat = Currency(currency='currency', derived=True)
     exact = Text(default='yes')
 
     def derive(self):

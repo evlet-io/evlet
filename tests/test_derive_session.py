@@ -24,14 +24,11 @@ class Order(Model):
     """People and app code edit the lines; derive() sets each line's net, a summary per unit and the header count."""
     permissions = FULL
 
-    class Meta:
-        derives = ('line_count', 'total', 'units', 'lines.net')
-
     class Line(Child):
         unit = Text(max_length=10, default='box')
         qty = Decimal(scale=2, default=1)
         price = Decimal(scale=2, default=0)
-        net = Decimal(scale=2)
+        net = Decimal(scale=2, derived=True)
 
     class Unit(Child):
         unit = Text(max_length=10)
@@ -40,11 +37,11 @@ class Order(Model):
     label = Text(max_length=40, default='order')
     discount = Decimal(scale=2, default=0, minimum=0, maximum=1)
     lines = Table(Line)
-    units = Table(Unit)
-    line_count = Integer()
+    units = Table(Unit, derived=True)
+    line_count = Integer(derived=True)
     # Set by derive() from the derived row field. A document with calculations is a finite-v1 document, which the
     # session refuses to write: app code writes it through Context.create/update.
-    total = Decimal(scale=2)
+    total = Decimal(scale=2, derived=True)
 
     def derive(self):
         SEEN.append((self.model, [line.model for line in self.lines]))
@@ -68,17 +65,14 @@ class Batch(Model):
     """A document that needs at least one line: trusted code creates it with its rows in one call."""
     permissions = FULL
 
-    class Meta:
-        derives = ('line_count', 'lines.net')
-
     class Line(Child):
         qty = Decimal(scale=2, default=1)
         price = Decimal(scale=2, default=0)
-        net = Decimal(scale=2)
+        net = Decimal(scale=2, derived=True)
 
     label = Text(max_length=40, default='batch')
     lines = Table(Line, min_rows=1)
-    line_count = Integer()
+    line_count = Integer(derived=True)
 
     def derive(self):
         SEEN.append((self.model, [line.model for line in self.lines]))
@@ -140,11 +134,8 @@ def test_trusted_create_stores_derived_header_values(app):
 def test_documents_with_calculations_stay_context_only(app):
     class Priced(Model):
         permissions = FULL
-
-        class Meta:
-            derives = ('base',)
         price = Decimal(scale=2, default=0)
-        base = Decimal(scale=2)
+        base = Decimal(scale=2, derived=True)
         doubled = Decimal(scale=2, compute=F('base') * 2)
 
         def derive(self):
@@ -242,11 +233,8 @@ def test_models_without_derive_keep_the_raw_session_write(app, tmp_path):
 def test_the_draft_names_its_model_and_a_field_named_model_wins():
     class Car(Model):
         permissions = FULL
-
-        class Meta:
-            derives = ('code',)
         model = Text(max_length=20, default='')
-        code = Text(max_length=20)
+        code = Text(max_length=20, derived=True)
 
         def derive(self):
             self.code = self.model.upper()
@@ -257,13 +245,12 @@ def test_the_draft_names_its_model_and_a_field_named_model_wins():
 
 
 def test_ledger_models_cannot_declare_derive():
-    with pytest.raises(ValueError, match='Meta.derives is not available'):
+    with pytest.raises(ValueError, match=r'Entry.double: a ledger model has no derive\(\) \(derived=\)'):
         class Entry(Model):
             class Meta:
                 ledger = True
-                derives = ('double',)
             amount = Decimal(scale=2)
-            double = Decimal(scale=2)
+            double = Decimal(scale=2, derived=True)
 
             def derive(self):
                 self.double = self.amount * 2
