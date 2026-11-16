@@ -26,6 +26,8 @@ export interface Me {
   /** May use the workspace override routes (/api/_controls/workspaces): the same check those routes make. */
   customize_workspaces: boolean;
   development: boolean;
+  /** Eva answers this person (/api/_eva). False: Eva is not configured, off, or not allowed; the UI never asks. */
+  eva?: boolean;
   /** The built-in System Administrator: only its email address can change in its profile. */
   builtin?: boolean;
   profile: { full_name: string; short_name: string; title: string; phone: string; email: string; signature: string; photo: boolean };
@@ -686,7 +688,7 @@ function AiPage(ctx: SettingsContext): Node {
         try { await ctx.api.request('DELETE', `/api/_settings/me/sessions/${item.id}`); toast('Disconnected'); ctx.me.set({ ...ctx.me.peek(), security: { ...ctx.me.peek().security, sessions: ctx.me.peek().security.sessions.filter(each => each.id !== item.id) } }); }
         catch (failure) { fail(failure); }
       } }))) : html`<div class="set-empty">No command line session is signed in.</div>`}`;
-  return later(() => import('../settings/ai').then(module => () => module.MyAIPage({ api: ctx.api, local })));
+  return later(() => import('../settings/ai').then(module => () => module.MyAIPage({ api: ctx.api, local, eva: ctx.me.peek()?.eva })));
 }
 
 // ---------- app settings ----------

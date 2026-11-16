@@ -629,6 +629,22 @@ copy of `.venv`. The first upgrade to 0.4.4 runs by hand, since 0.4.3 has no `ev
 install 0.4.4 with `.venv/bin/python -m pip install 'evlet==0.4.4'`, then follow
 [app-upgrades.md](app-upgrades.md#upgrade-evlet).
 
+**Evlet installed from source.** When the project's `.venv` has Evlet from source, such as
+`pip install -e ~/src/evlet` from a git clone (pip records it in the dist-info's
+`direct_url.json`), `evlet upgrade` leaves the framework alone: pip would replace the clone
+with a release. It says so and names the place:
+
+```text
+Evlet is installed from source at /home/me/src/evlet, so evlet upgrade does not change the framework. Update that code with git. Backing up and migrating the instances on the code that is there now.
+```
+
+Update the clone with git first (for a non-editable source install, also reinstall it with
+`pip install PATH`), then run `evlet upgrade acme`. After one question it stops the instance's
+service if it has one, backs up and migrates every affected instance, then restarts the service.
+A development project with no `evlet-NAME.service` simply backs up and migrates. `--to` is
+refused, since git picks the version. A failed migration stops there and prints the
+`evlet restore` command for each backup.
+
 ### Serve a website on its own host
 
 A static or server frontend can have its own host, such as a public website on

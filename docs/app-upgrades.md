@@ -86,6 +86,12 @@ On a server set up with `evlet setup --host --apply`, `evlet upgrade acme` runs 
 for you after one question, and prints the rollback commands when one fails
 ([cli.md](cli.md#upgrade-evlet-on-a-server)).
 
+When Evlet is installed from source, such as an editable install of a git clone in a development
+project, update that code with git yourself. `evlet upgrade acme` then skips the package step,
+says the framework is installed from source and where, and still backs up and migrates the
+instances (stopping and restarting any `evlet-NAME.service`). `evlet migrate acme` stays
+available for one instance at a time.
+
 Framework migrations are ordered, checksummed steps recorded in the
 `evlet_framework_migrations` table with the Evlet version that applied them. The
 first step, `0001_startup_tables`, adopts the tables that Evlet 0.2.0 and earlier

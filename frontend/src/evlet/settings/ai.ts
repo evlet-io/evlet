@@ -2,7 +2,7 @@
 // person; only this person sees their requests and answers their approvals. The Eva section shows when
 // Eva is on for them. The Settings shell passes its client and its local (evlet mcp) steps:
 //
-//   MyAIPage({ api: ctx.api, local: () => stdioSteps });
+//   MyAIPage({ api: ctx.api, local: () => stdioSteps, eva: ctx.me.peek()?.eva });
 
 import { html, when, type Child } from '../dom';
 import { ApiClient, type ClientOptions } from '../api';
@@ -33,8 +33,9 @@ export class MyAIClient extends ApiClient {
 
 const OUTCOMES: Record<MyRequest['outcome'], [string, 'green' | 'rose' | 'slate' | 'amber']> = { ok: ['Done', 'green'], denied: ['Not allowed', 'rose'], failed: ['Failed', 'slate'], approval: ['Asked you', 'amber'] };
 
-/** api: a MyAIClient, or any client (the Settings shell's); local: the "On this computer" section's content. */
-export function MyAIPage(options: { api?: ApiClient; local?: () => Child }): HTMLElement {
+/** api: a MyAIClient, or any client (the Settings shell's); local: the "On this computer" section's content;
+ * eva: false when /api/_settings/me says Eva does not answer this person, so the page never asks for it. */
+export function MyAIPage(options: { api?: ApiClient; local?: () => Child; eva?: boolean }): HTMLElement {
   const client = options.api ?? new MyAIClient();
   const api = client instanceof MyAIClient ? client : {
     load: async () => (await client.request<MyAI>('GET', '/api/_settings/me/ai')).data,
@@ -48,7 +49,7 @@ export function MyAIPage(options: { api?: ApiClient; local?: () => Child }): HTM
   };
   void run(() => api.load());
   // Eva (404 when it is off for this person) and the changes waiting for this person's approval.
-  void evaStatus(client).then(status => eva.set(status), () => {});
+  if (options.eva !== false) void evaStatus(client).then(status => eva.set(status), () => {});
   const loadApprovals = async () => {
     try { approvals.set((await client.request<{ items: Approval[] }>('GET', '/api/_tools/approvals')).data.items.filter(item => item.status === 'pending')); } catch { approvals.set([]); }
   };

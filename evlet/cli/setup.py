@@ -52,6 +52,34 @@ def environment_version(root):
         return found[0]
 
 
+def environment_source(root):
+    """Where the project's .venv installed Evlet from, when it is source rather than a release: (place, editable).
+
+    pip records a source install in the dist-info's direct_url.json: a local directory (editable or not) or a
+    version-control URL. A release from an index has no such record, or one for an archive; both give None.
+    """
+    infos = []
+    for pattern in ('lib/python*/site-packages/evlet-*.dist-info', 'Lib/site-packages/evlet-*.dist-info'):
+        infos.extend((Path(root) / '.venv').glob(pattern))
+    version = environment_version(root)
+    for info in infos:
+        if info.name != f'evlet-{version}.dist-info':
+            continue
+        try:
+            direct = json.loads((info / 'direct_url.json').read_text(encoding='utf-8'))
+        except (OSError, UnicodeError, ValueError):
+            return None
+        if not isinstance(direct, dict) or not isinstance(direct.get('url'), str):
+            return None
+        if isinstance(direct.get('vcs_info'), dict):
+            return direct['url'], False
+        if isinstance(direct.get('dir_info'), dict):
+            url = urlsplit(direct['url'])
+            place = url2pathname(url.path) if url.scheme == 'file' and url.netloc in ('', 'localhost') else direct['url']
+            return place, bool(direct['dir_info'].get('editable'))
+    return None
+
+
 def version_note(root):
     """A warning when this evlet and the project's .venv differ, else None."""
     from ..framework import version

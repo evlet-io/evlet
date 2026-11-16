@@ -77,12 +77,14 @@ as labels and `Meta.list_fields` live beside its fields. Use:
 evlet dev --instance acme
 ```
 
-Python changes reload while you work. At startup it prints a one-time sign-in link
-for your account; open it to skip the sign-in form. On an instance with no accounts, it first
-creates an admin named `admin` (`--user NAME` picks another name) with a random password
-that nobody sees, so you never type a password or a two-step code in development. To sign in
-without a link later, run `evlet users set-password acme admin`. Run `evlet dev-link` for a
-fresh link ([details](cli.md#development-sign-in-links)). A database field change also needs an
+Python changes reload while you work. At startup it prints a one-time sign-in link for the
+built-in Administrator (`admin`; `--user NAME` signs in someone else). The Administrator has no
+password at first, so the first link opens a "Set your password" screen. When admins need
+two-step sign-in (`Security(admin_two_step=True)`, the default), you then set up your
+authenticator app, as at a normal sign-in, and the app opens. After that, each link signs you
+straight in with no password or code. Run `evlet dev-link` for a fresh link once one is used or
+expired, and `evlet users set-password acme admin` to change the password from the shell
+([details](cli.md#development-sign-in-links)). A database field change also needs an
 explicit migration. Follow [What you can customize](customizing.md) for a complete
 example, then stop the server and run `evlet migrate acme` before restarting.
 

@@ -4,6 +4,23 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **No `/api/_eva` 404 on every page load.** `GET /api/_settings/me` now carries `eva`: true exactly
+  when Eva's routes answer the person (the same check as `/api/_eva`). The browser asks for Eva's
+  status only then, so a workspace without Eva configured, or a person without Allow Eva, makes no
+  failing request and logs no console error. Backend checks are unchanged ([docs/eva.md](docs/eva.md#evas-routes)).
+- **Getting started describes the development sign-in as it is.** The first `evlet dev` link leads to
+  "Set your password" and then two-step set-up when admins need it; later links sign straight in
+  ([docs/getting-started.md](docs/getting-started.md), [docs/cli.md](docs/cli.md#development-sign-in-links)).
+- **`evlet upgrade` works when Evlet is installed from source.** With an editable or other source
+  install in the project's `.venv` (from pip's `direct_url.json`), it skips the package step, says the
+  framework is installed from source and where, and asks you to update that code with git. It still
+  stops any served instance, backs up, migrates and restarts. `--to` is refused there
+  ([docs/cli.md](docs/cli.md#upgrade-evlet-on-a-server), [docs/app-upgrades.md](docs/app-upgrades.md)).
+
 ## 0.4.10 (15-11-2026)
 
 ### Upgrading to 0.4.10
