@@ -216,7 +216,7 @@ def test_model_field_row_rules_apply_to_list_count_search_detail_writes_and_link
     assert c('POST', '/api/invoice', {'customer': str(hidden.id), 'reference': 'Forbidden', 'total': '1.00'})[0] == 404
     etag = {b'if-match': c('GET', f'/api/customer/{visible.id}')[2][b'etag']}
     assert c('PATCH', f'/api/customer/{visible.id}', {'notes': 'override'}, headers=etag)[0] == 403
-    assert c('PATCH', f'/api/customer/{visible.id}', {'active': False})[0] == 404
+    assert c('PATCH', f'/api/customer/{visible.id}', {'active': False}, headers=etag)[0] == 404
     assert db.get(Customer, visible.id).active is True
     assert c('POST', '/api/customer', {'customer_name': 'Outside scope', 'active': False})[0] == 404
     assert db.count(Customer) == 2

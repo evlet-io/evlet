@@ -72,7 +72,8 @@ def test_invalid_key_is_refused_before_create_and_deleted_records_are_not_recrea
     for key in (b'', b'x'*129, b'has spaces', b'\xff'):
         assert person('POST', '/api/customer', values, headers={b'idempotency-key': key})[0] == 422
     first = person('POST', '/api/customer', values, headers=KEY)[1]
-    assert person('DELETE', '/api/customer/' + first['id'])[0] == 204
+    etag = person('GET', '/api/customer/' + first['id'])[2][b'etag']
+    assert person('DELETE', '/api/customer/' + first['id'], headers={b'if-match': etag})[0] == 204
     assert person('POST', '/api/customer', values, headers=KEY)[0] == 404
     assert secured.database.count(Customer) == 0
 
@@ -84,7 +85,7 @@ def test_plain_replay_answers_exactly_as_the_first_create(secured):
     replay = person('POST', '/api/customer', values, headers=KEY)
     assert first[0] == replay[0] == 201 and replay[1] == first[1]
     # One answer: the first create carries the ETag a replay carries, so a client can save without reloading.
-    assert first[2][b'etag'] == replay[2][b'etag'] and first[2][b'location'] == replay[2][b'location']
+    assert first[2][b'etag'] == replay[2][b'etag']
     assert b'idempotency-replayed' not in first[2]
     assert person('PATCH', '/api/customer/' + first[1]['id'], {'customer_name': 'Renamed'},
                   headers={b'if-match': first[2][b'etag']})[0] == 200

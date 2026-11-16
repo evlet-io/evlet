@@ -95,8 +95,10 @@ def test_key_requests_keep_row_scopes_and_field_rules(secured):
     assert page['total'] == 1 and page['items'] == [{'id': str(visible.id), 'customer_name': 'Visible', 'active': True}]
     assert with_key(secured, token, 'GET', f'/api/customer/{hidden.id}')[0] == 404
     assert with_key(secured, token, 'GET', '/api/customer?' + urlencode({'filters': json.dumps({'notes': 'secretphrase'})}))[0] == 403
-    assert with_key(secured, token, 'PATCH', f'/api/customer/{visible.id}', {'notes': 'changed'})[0] == 403
-    assert with_key(secured, token, 'DELETE', f'/api/customer/{visible.id}')[0] == 403
+    # Customer is a document (it has actions): writes name the revision, and the field and delete rules still refuse.
+    etag = with_key(secured, token, 'GET', f'/api/customer/{visible.id}')[2][b'etag']
+    assert with_key(secured, token, 'PATCH', f'/api/customer/{visible.id}', {'notes': 'changed'}, etag=etag)[0] == 403
+    assert with_key(secured, token, 'DELETE', f'/api/customer/{visible.id}', etag=etag)[0] == 403
 
 
 def test_a_personal_key_cannot_exceed_the_users_own_access(secured):
@@ -176,12 +178,12 @@ def test_jobs_queued_with_a_key_keep_its_scope_and_stop_when_it_is_revoked(secur
     created = create(admin, 'Worker', {'access': 'write', 'models': ['Project']})[1]
     token = created['token']
     assert with_key(secured, token, 'POST', f"/api/project/{project['id']}/actions/refresh_progress",
-                    etag=with_key(secured, token, 'GET', f"/api/project/{project['id']}")[2][b'etag'])[0] == 202
+                    etag=with_key(secured, token, 'GET', f"/api/project/{project['id']}")[2][b'etag'])[1]['_job']
     assert jobs.run_one()
     assert seen[0].access is not None and seen[0].access.write and {model.__name__ for model in seen[0].access.models} >= {'Project'}
     assert not secured.business.policy.allows(seen[0], Customer, 'read')
     assert with_key(secured, token, 'POST', f"/api/project/{project['id']}/actions/refresh_progress",
-                    etag=with_key(secured, token, 'GET', f"/api/project/{project['id']}")[2][b'etag'])[0] == 202
+                    etag=with_key(secured, token, 'GET', f"/api/project/{project['id']}")[2][b'etag'])[1]['_job']
     assert admin('DELETE', f"/api/_controls/keys/{created['key']['id']}")[0] == 200
     assert jobs.run_one() and len(seen) == 1
     with secured.database._connection() as connection:

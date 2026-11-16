@@ -114,7 +114,7 @@ def test_live_tools_use_tenant_authentication_permissions_actions_and_validation
     invalid = invoke(server, 'create_record', {'model': 'project', 'values': {'title': ''}})['result']
     assert invalid['isError'] and 'title' in invalid['structuredContent']['fields']
     assert approved(live_connector, server, 'change_state', {'model': 'project', 'id': record_id, 'rule': 'start'})['result']['structuredContent']['docstate'] == 'active'
-    job = approved(live_connector, server, 'run_action', {'model': 'project', 'id': record_id, 'action': 'refresh_progress'})['result']['structuredContent']['job']
+    job = approved(live_connector, server, 'run_action', {'model': 'project', 'id': record_id, 'action': 'refresh_progress'})['result']['structuredContent']['_job']
     assert invoke(server, 'job_status', {'id': job['id']})['result']['structuredContent']['state'] == 'queued'
     live_connector[1]['alpha'].business.jobs.run_one()
     assert invoke(server, 'job_status', {'id': job['id']})['result']['structuredContent']['state'] == 'succeeded'

@@ -701,7 +701,8 @@ def test_the_playground_awards_points_into_a_ledger_and_its_balance_cache(tmp_pa
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Acme'})
     assert status == 201, customer
     for _ in range(2):
-        status, payload, _ = admin('POST', f"/api/customer/{customer['id']}/actions/award_points", {})
+        etag = admin('GET', f"/api/customer/{customer['id']}")[2][b'etag']
+        status, payload, _ = admin('POST', f"/api/customer/{customer['id']}/actions/award_points", {}, headers={b'if-match': etag})
         assert status == 200, payload
     assert [(row.points, row.reason) for row in app.database.list(Movement)] == [(10, 'Awarded from the customer page')] * 2
     assert [row.points for row in app.database.list(Balance)] == [20]

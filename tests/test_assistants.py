@@ -402,7 +402,7 @@ def test_jobs_of_a_disconnected_assistant_fail_plainly(secured, monkeypatch):
     tool(secured, tokens['access_token'], 'run_action', {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'})
     approve(person)
     result = tool(secured, tokens['access_token'], 'run_action', {'model': 'project', 'id': project['id'], 'action': 'refresh_progress'})
-    job = result['structuredContent']['job']['id']
+    job = result['structuredContent']['_job']['id']
     person('DELETE', f"/api/_settings/me/ai/{person('GET', '/api/_settings/me/ai')[1]['clients'][0]['id']}")
     secured.business.jobs.run_one()
     assert seen == []
