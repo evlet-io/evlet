@@ -485,7 +485,7 @@ class BillLine(Child):
 
 
 class Bill(Model):
-    permissions = {'admin': Rule(('read', 'create', 'update', 'delete', 'release')), 'editor': Rule(('read', 'create', 'update')),
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update')),
                    'viewer': Rule(('read',), read_fields=('title', 'docstate'))}
     title = Text(default='')
     secret = Text(default='')
@@ -500,6 +500,10 @@ class Bill(Model):
     def stamp(self):
         RELEASED.append((self.release.number, self.release.previous))
         self.note = f'released v{self.release.number}'
+
+    @release.exit
+    def unstamp(self):
+        RELEASED.append(('exit', self.docstate))
 
 
 @pytest.fixture
@@ -531,8 +535,10 @@ def test_entering_a_release_step_releases_and_snapshots_only_on_leaving(bills):
     body = move(c, url, 'reopen', {'remark': 'Price'})[1]
     assert [row[:2] for row in rows(app, url)] == [(0, 0), (0, 1)] and body['_version']['released'] is True
     assert [item['kind'] for item in c('GET', url + '/activity')[1]['items'][:2]] == ['moved', 'snapshot']
-    # Issued again unchanged: no new release, no @release.
-    assert move(c, url, 'issue')[1]['_version'] == {'number': 0, 'released': True, 'state': 'issued'} and RELEASED == [(0, None)]
+    # Issued again unchanged: no new version, but @release runs again with the same number.
+    assert RELEASED == [(0, None), ('exit', 'issued')]
+    assert move(c, url, 'issue')[1]['_version'] == {'number': 0, 'released': True, 'state': 'issued'}
+    assert RELEASED[-1] == (0, None) and 'release' not in c('GET', url + '/activity')[1]['items'][0]['data']
     move(c, url, 'reopen', {'remark': 'Again'})
     assert len(rows(app, url, snapshot=1)) == 1
     # An unversioned change does not make the document modified; a versioned one does.
@@ -546,22 +552,79 @@ def test_entering_a_release_step_releases_and_snapshots_only_on_leaving(bills):
     assert c('DELETE', url, headers=etag(c, url))[0] == 409
 
 
-def test_a_manual_release_and_the_first_edit_after_it(bills):
+def test_versions_come_only_from_moves(bills):
     app, c, url = bills
-    editor = add_user(app, 'editor')
-    assert editor('POST', url + '/release', {}, headers=etag(editor, url))[0] == 403
-    status, body, _ = c('POST', url + '/release', {'remark': 'Quote sent'}, headers=etag(c, url))
-    assert status == 200 and body['_version'] == {'number': 0, 'released': True, 'state': 'draft'} and body['docstate'] == 'draft'
-    entry = c('GET', url + '/activity')[1]['items'][0]
-    assert (entry['kind'], entry['base'], entry['remark']) == ('released', 0, 'Quote sent')
-    assert c('POST', url + '/release', {}, headers=etag(c, url))[:2] == (409, {'error': 'Nothing changed since the last release'})
-    # The first versioned edit keeps v0 first; later edits add nothing.
-    c('PATCH', url, {'note': 'n'}, headers=etag(c, url))
-    assert rows(app, url, snapshot=1) == []
-    c('PATCH', url, {'title': 'Chair'}, headers=etag(c, url))
-    c('PATCH', url, {'title': 'Sofa'}, headers=etag(c, url))
-    snapshots = rows(app, url, snapshot=1)
-    assert len(snapshots) == 1 and json.loads(snapshots[0][3])['title'] == 'Desk'
+    # The manual Release is gone: no route, no Context.release(), no release permission.
+    assert c('POST', url + '/release', {}, headers=etag(c, url))[:2] == (405, {'error': 'Method not allowed'})  # As any unknown route.
+    from evlet.documents import Context
+    assert not hasattr(Context, 'release')
+    from evlet.permissions import CORRECTIONS
+    assert CORRECTIONS == ('restore',)
+    assert rows(app, url) == []
+
+
+def test_release_hooks_run_on_every_entry_and_exit_only(tmp_path):
+    calls = []
+
+    class Order(Model):
+        title = Text(default='')
+        note = Text(versioned=False)
+        docstate = State(
+            State.Step('draft'), State.Step('quote'), State.Step('issued', release=True), State.Step('overdue', release=True),
+            State.Step('paid', release=True, final=True), State.Step('void', final=True),
+            rules=(State.Rule(('draft', 'quote'), 'issued', 'Issue', key='issue'), State.Rule('draft', 'quote', 'Quote', key='quote'),
+                   State.Rule('issued', 'overdue', 'Overdue', key='overdue', ask=('note', 'title')),
+                   State.Rule(('issued', 'overdue'), 'paid', 'Pay', key='pay'),
+                   State.Rule(('issued', 'overdue'), 'draft', 'Reopen', key='reopen'), State.Rule('draft', 'void', 'Void', key='void')))
+
+        @release
+        def post(self):
+            calls.append(('release', self.release.number))
+
+        @release.exit
+        def unpost(self):
+            calls.append(('exit', self.docstate))
+
+    app = start(Database(tmp_path / 'orders.sqlite3', Registry(Order)))
+    c = client(app)
+    for start_move in ((), ('quote',)):
+        url = '/api/order/' + c('POST', '/api/order', {'title': 'Desk'})[1]['id']
+        calls.clear()
+        for key in (*start_move, 'issue'):
+            move(c, url, key)
+        assert calls == [('release', 0)]  # Entry from draft and from quote runs @release once.
+    # Moves within the released set run neither hook; they may change versioned=False fields only.
+    assert move(c, url, 'overdue', {'note': 'late'})[0] == 200 and calls == [('release', 0)]
+    move(c, url, 'reopen')
+    move(c, url, 'issue')
+    assert calls == [('release', 0), ('exit', 'overdue'), ('release', 0)]  # Unchanged re-entry runs it again.
+    assert move(c, url, 'overdue', {'title': 'Chair'})[:2] == (409, {'error': 'title is part of the issued document; reopen it to change it'})
+    move(c, url, 'pay')
+    assert calls[-1] == ('release', 0) and len(calls) == 3
+
+
+def test_release_pairing_and_implied_locks():
+    with pytest.raises(ValueError, match='@release without @release.exit'):
+        class Unpaired(Model):
+            docstate = State(State.Step('draft'), State.Step('issued', release=True),
+                             rules=(State.Rule('draft', 'issued', key='issue'), State.Rule('issued', 'draft', key='reopen')))
+
+            @release
+            def post(self): ...
+
+    class Forever(Model):  # No rule leaves the released set, so @release needs no exit.
+        docstate = State(State.Step('draft'), State.Step('issued', release=True), State.Step('closed', release=True, final=True),
+                         rules=(State.Rule('draft', 'issued', key='issue'), State.Rule('issued', 'closed', key='close')))
+
+        @release
+        def post(self): ...
+
+    assert Forever.__declared_fields__['docstate'].locked == ('issued', 'closed')
+    assert State.Step('done', final=True, lock=True).lock and not State.Step('draft').lock
+    with pytest.raises(ValueError, match='a release or final step is locked'):
+        State.Step('issued', release=True, lock=False)
+    with pytest.raises(ValueError, match='a release or final step is locked'):
+        State.Step('void', final=True, lock=False)
 
 
 def test_drift_is_marked_and_logged(bills, caplog):

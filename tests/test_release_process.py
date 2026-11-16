@@ -136,21 +136,17 @@ def test_moves_within_the_release_survive_a_formula_change_without_recalculating
     assert status == 409 and 'keeps its saved results' in body['error']
 
 
-def test_a_move_within_the_release_that_changes_content_is_a_real_release(bills):
+def test_a_move_within_the_release_may_not_change_versioned_content(bills):
     app, c, url, record_id = bills
     assert move(c, url, 'overdue')[0] == 200
     CALLS.clear()
-    status, detail, _ = move(c, url, 'adjust', {'qty': '5'})
-    assert status == 200 and (detail['docstate'], detail['double'], detail['_version']['number']) == ('unpaid', '10.0000', 1), detail
-    # The previous release is kept as a snapshot before the new one; @release runs; @release.exit does not.
-    assert releases(app, record_id) == [(0, 0), (0, 1), (1, 0)]
-    assert ('release', 1) in CALLS and not any(call[0] == 'release_exit' for call in CALLS)
-    # In a closed period such a move is refused: it changes content.
-    with app.database.transaction() as tx:
-        set_lock(tx.connection, '', date(2026, 1, 31), ADMIN)
-    assert move(c, url, 'overdue')[0] == 200
-    status, body, _ = move(c, url, 'adjust', {'qty': '6'})
-    assert status == 422 and 'closed period' in body['fields']['billed_on']
+    status, body, _ = move(c, url, 'adjust', {'qty': '5'})
+    # Posted entries keep matching the document: reopen it to change what it says.
+    assert (status, body) == (409, {'error': 'qty is part of the overdue document; reopen it to change it'})
+    assert releases(app, record_id) == [(0, 0)] and c('GET', url)[1]['docstate'] == 'overdue'
+    # A Restore there is refused too: the step is locked.
+    status, body, _ = c('POST', url + '/restore', {'version': 0, 'remark': 'x'}, headers=etag(c, url))
+    assert status == 409 and 'editable state' in body['error']
 
 
 @pytest.mark.parametrize('key, to', [('reopen', 'draft'), ('cancel', 'cancelled')])
@@ -178,3 +174,22 @@ def test_release_exit_needs_a_state():
             @release.exit
             def gone(self):
                 pass
+
+
+def test_recompute_keeps_released_records_without_any_effect(tmp_path):
+    from evlet import AddIndex, Migration, Recompute
+    path, base = tmp_path / 'r.sqlite3', Migration('0000_base', AddIndex('bill', 'paid_note'))
+    app = start(Database(path, Registry(Bill), migrations=[base]))
+    c = client(app)
+    released, draft = (c('POST', '/api/bill', {'qty': '2'})[1]['id'] for _ in range(2))
+    assert move(c, f'/api/bill/{released}', 'post')[0] == 200
+    for target in (released, draft):
+        store_double(app, target, 990000)
+    app.database.close()
+    steps = [base, Migration('0001_recompute', Recompute('bill', ('double',)))]
+    db = Database(path, Registry(Bill), migrations=steps)
+    applied = db.migrate(db.migrations)
+    # The released bill keeps its saved result, without any effect; the draft one is recalculated.
+    assert applied == ['0001_recompute'] and applied.skipped == 1
+    with db._connection() as connection:
+        assert [row[0] for row in connection.execute('SELECT double FROM bill ORDER BY id')] == [990000, 40000]

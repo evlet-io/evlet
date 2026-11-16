@@ -17,8 +17,8 @@ class Order(Model):
     remarks = Text(versioned=False)
     docstate = State(
         State.Step("draft", "Draft"),
-        State.Step("confirmed", "Confirmed", color="green", lock=True, release=True),
-        State.Step("cancelled", "Cancelled", color="rose", lock=True, final=True),
+        State.Step("confirmed", "Confirmed", color="green", release=True),
+        State.Step("cancelled", "Cancelled", color="rose", final=True),
         rules=(
             State.Rule("draft", "confirmed", "Confirm", primary=True),
             State.Rule("confirmed", "draft", "Reopen", remark="required"),
@@ -44,19 +44,21 @@ class Order(Model):
         self.remarks = "Confirmed by " + (self.context.user.username if self.context.user else "the engine")
 ```
 
-* **Confirm** is a rule into a `lock=True` step. While confirmed, ordinary writes change only
-  `versioned=False` fields, and the record keeps its saved results.
+* **Confirm** is a rule into a `release=True` step, which is locked by implication (so is a
+  `final=True` step). While confirmed, every write changes only `versioned=False` fields, and
+  the record keeps its saved results.
 * **Checks before confirming** are `@validate` methods that read the target state
   (`self.docstate`) and, when needed, the saved one (`self.before.docstate`).
-* **Work on confirming** (posting rows, queueing a job) goes in `@state("confirmed")`, with
-  `self.context.session` for other rows in the same transaction. Work on leaving goes in
-  `@state.exit("confirmed")`. Rows declared as [effects](effects.md) with `on="confirmed"` are
-  posted and reversed by the engine.
+* **Postings on confirming** (ledger, stock, other documents) go in `@release`, with
+  `self.context.session` for other rows in the same transaction, and their reversal in
+  `@release.exit`. Both run on every move into and out of the released set, so a reopen and
+  re-confirm reverses and posts again even when nothing changed. Other work on a state goes in
+  `@state("confirmed")` and `@state.exit("confirmed")`.
 * **Reopen** is a rule back, here with a required remark. The record keeps its id and its
   numbers.
 * **Cancel** and **void** are final steps reached by a rule, usually with `remark="required"`.
-  A final step coloured `rose` reads as cancelled in lists and headers. A record that ever
-  posted effect rows is never deleted; move it to a final step instead.
+  A final step coloured `rose` reads as cancelled in lists and headers. A record that was ever
+  released (has a version) is never deleted; move it to a final step instead.
 * **Who may** is each rule's `by` (default admin and editor) plus update permission on the
   record. There are no separate `confirm`, `cancel`, `reopen` or `void` permissions.
 

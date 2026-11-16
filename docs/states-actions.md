@@ -84,10 +84,12 @@ class Invoice(Model):
   without one is neutral; the UI never guesses a colour from the name.
 * `lock=True` makes the document read only to ordinary writes in this step, except fields
   declared `versioned=False` ([below](#ordinary-writes-and-locks)).
-* `release=True` marks a step whose content counts as released. An [effect](effects.md)'s `on`
-  must be such a step. Release records, versions and the `@release` hook arrive in later 0.4.6
-  pull requests.
+* `release=True` puts the step in the **released set**: entering the set runs `@release`, leaving it
+  runs `@release.exit`, and inside it the document's versioned content does not change
+  ([Releases and versions](#releases-and-versions)). An [effect](effects.md)'s `on` must be such a step.
 * `final=True` means no rule leaves the step.
+* `release=True` and `final=True` imply `lock=True`. Writing `lock=True` with them is allowed;
+  `lock=False` with them fails at declaration.
 
 `State.Rule(from_, to, label=None, *, key=None, by=None, when=None, remark=None, ask=(), primary=False, reject=False)`:
 
@@ -272,8 +274,8 @@ replaces a base's hook by defining a method of the same name. Each is a method t
 | `@validate` | every save (create, update, move) and every draft preview, on documents, `Table` rows and forms (Dialog, Slip, Report filters) | read only; assigning raises |
 | `@state("a", "b")` | when a move enters one of the states | the draft; `self.context.session` is open |
 | `@state.exit("a")` | when a move leaves one of the states | the draft; `self.context.session` is open |
-| `@release` | when a release is made ([Releases](#releases-and-versions)) | the draft, with `self.release.number` and `self.release.previous`; the session is open |
-| `@release.exit` | when a move leaves the released set: from a `release=True` step to one that is not | the draft; the session is open |
+| `@release` | on every move into the released set: from a step that is not `release=True` to one that is ([Releases](#releases-and-versions)) | the draft, with `self.release.number` and `self.release.previous`; the session is open |
+| `@release.exit` | on every move out of the released set: from a `release=True` step to one that is not | the draft; the session is open |
 
 * Inside a hook, `self.is_new` is true on create, and `self.before` is the document as last
   saved, read only (`None` on create). `self.context` is the operation's context.
@@ -286,6 +288,10 @@ replaces a base's hook by defining a method of the same name. Each is a method t
   ([below](#the-transaction-session-in-hooks-and-actions)). A `ValidationError` or `ValueError`
   refuses the move with 422 and rolls everything back. A new record starting in the default
   state runs no `@state` hook.
+* `@release` and `@release.exit` are the posting hooks, like `on_submit` and `on_cancel`: post
+  ledger, stock or other documents in `@release` through `self.context.session`, and reverse them in
+  `@release.exit`. A model that declares `@release` without `@release.exit` fails when the class is
+  created, unless no rule leaves the released set. `@state` and `@state.exit` need no pair.
 * A model that still declares `before_close`, `changed`, `check_lifecycle` or an undecorated
   `validate()`, or sets `confirmable` or `track_changes`, fails when the class is created with a
   message pointing here.
@@ -303,19 +309,19 @@ The order of a move:
 5. On a release exit, `@release.exit` hooks run.
 6. The state changes.
 7. `@state(new)` hooks run.
-8. The document settles: calculations, then `@validate`. A move within the release that
-   changed no versioned content keeps its saved results instead
+8. The document settles: calculations, then `@validate`. A move within the release keeps its
+   saved results instead, and is refused if it changed versioned content
    ([Moves within the release](#moves-within-the-release)).
 9. Document numbers due in the new state are assigned.
-10. Entering a `release=True` step whose content changed since the last release: `@release`
-    runs, then calculations and `@validate` again, and the release is stored.
-11. A closed period is checked, unless the move stays within the release and changes no
-    versioned content.
+10. On entering the released set: `@release` runs, then calculations and `@validate` again. A
+    new version is stored when the versioned content changed since the last one.
+11. A closed period is checked, unless the move stays within the release.
 12. The record is written, effects on the new state post, and the Activity gets its `moved`
-    entry with the rule key and the remark; a move that released names it in `data.release`.
+    entry with the rule key and the remark; a move that made a new version names it in
+    `data.release`.
 
-`@state` and `@state.exit` run on every move, moves within the release included;
-`@release.exit` runs only on a release exit.
+`@state` and `@state.exit` run on every move, moves within the release included; `@release`
+runs only on an entry into the released set and `@release.exit` only on a release exit.
 
 Everything commits in one transaction. A failure anywhere rolls all of it back, and no
 Sequence number is used up.
@@ -331,38 +337,43 @@ Sequence number is used up.
 
 ## Releases and versions
 
-A release is a numbered version of a document: v0, v1, v2. It happens when a move enters a
-`release=True` step, or from `POST /api/{model}/{id}/release` (`{"remark": ...}`, If-Match,
-`context.release(model, id, remark=...)`), which needs the `release` permission (admin by
-default; a Rule may grant it). A release changes no number of the document and is never edited
-or deleted.
+A version is a numbered state of a document's content: v0, v1, v2. Versions come only from moves by
+rules: every move into the released set may record one. There is no manual Release. A version
+changes no number of the document and is never edited or deleted.
 
-* **Nothing changed, nothing released.** A release stores a SHA-256 hash of the document's
-  versioned content: every stored field and row except the State, `versioned=False` fields and
-  `tracking="exclude"` fields. Entering the step again with the same content makes no release and
-  runs no `@release`. A Release with nothing changed answers 409.
-* **Lazy snapshots.** A release keeps its number, state, hash, actor, time, approvals and remark,
-  not a copy of the document: while nothing changes, the record is the release. The copy (a
+* **`@release` runs on every entry.** Every move from a step outside the released set into it runs
+  `@release`, whether or not the content changed since the last version, so an unchanged reopen and
+  re-issue posts again what its `@release.exit` reversed.
+* **Nothing changed, no new version.** A version stores a SHA-256 hash of the document's versioned
+  content: every stored field and row except the State, `versioned=False` fields and
+  `tracking="exclude"` fields. Entering the set again with the same content records no new version;
+  `@release` still runs, with the same number again.
+* **Inside the released set the content stays.** A move within the released set, an action or a
+  hook there may change only `versioned=False` fields; any other change is refused with 409, for
+  example `due_date is part of the issued document; reopen it to change it`. Ordinary writes are
+  refused by the step's lock, and Restore needs an unlocked step. So what `@release` posted always
+  matches the document.
+* **Lazy snapshots.** A version keeps its number, state, hash, actor, time, approvals and remark,
+  not a copy of the document: while nothing changes, the record is the version. The copy (a
   snapshot) is saved once, in the same transaction, just before the record first diverges: when
-  a rule leaves the release step, at the first versioned edit after a Release, and before a
-  Recompute migration changes the stored values of a released record. A record released and
-  never reopened has no snapshot.
-* **Drift.** On taking a snapshot, its hash is compared with the release's. A mismatch means the
+  a rule leaves the released set, and before a Recompute migration changes the stored values of a
+  released record. A record released and never reopened has no snapshot.
+* **Drift.** On taking a snapshot, its hash is compared with the version's. A mismatch means the
   row changed outside the engine; the snapshot is kept, marked `drifted`, logged, and its
   `snapshot` activity entry says so.
 * `@release` gets `self.release.number` and `self.release.previous` (the previous version's
-  content, or `None` for v0). It usually sets `versioned=False` fields, such as a posting
-  reference.
-* A document with a release cannot be deleted; move it to a final state such as void.
+  content, or `None` for v0). It posts what the document releases and may set `versioned=False`
+  fields, such as a posting reference.
+* A document with a version cannot be deleted; move it to a final state such as void.
 * The detail carries `_version: {"number": 2, "released": false, "state": "issued"}`. `number`
   is `null` before v0. `released` is false once the activity has an entry that changed versioned
   content since v2: every such entry carries `base` 2 ("changes after v2"), so this is one indexed
   read, and the content is hashed only to release, snapshot and check for drift.
-* `GET /api/{model}/{id}/versions` lists the releases, newest first; `.../versions/{n}` returns
+* `GET /api/{model}/{id}/versions` lists the versions, newest first; `.../versions/{n}` returns
   one version's document, and `.../versions/{a}/diff/{b}` (or `/diff/current`) compares two.
   Today's field, Link and row permissions apply to old versions too. An API key needs the
   `versions` extra.
-* Releases live in `evlet_releases`, append only. Framework step `0011_state_manager` turns
+* Versions live in `evlet_releases`, append only. Framework step `0011_state_manager` turns
   confirmable revisions into releases with their snapshots and gives every record already in a
   release step a v0 release.
 
@@ -389,26 +400,20 @@ entry (`data.number`, the remark), and the next release takes the next number.
 
 ### Moves within the release
 
-A move within the release changes the process, not the document. Unless its values or hooks
-change versioned content:
+A move within the release changes the process, not the document:
 
-* It makes no release and takes no snapshot, so `@release` and `@release.exit` do not run.
+* It runs neither `@release` nor `@release.exit`, records no version and takes no snapshot.
+  `@state` and `@state.exit` run as on every move.
+* Its values and hooks may change only `versioned=False` fields; a change to versioned content is
+  refused with 409 naming the field. Reopen the document to change what it says.
 * It keeps the saved results: nothing recalculates and the formula version is not checked,
   exactly as an ordinary write on a locked record. `"_calculation": {"recalculate": true}` sent
   with it is refused with 409.
 * A closed period does not refuse it: a closed period protects content, not process. Every other
   write to a record in a closed period is refused as before.
 
-Versioned content is what a release hashes: every stored field and row except the State,
+Versioned content is what a version hashes: every stored field and row except the State,
 `versioned=False` fields and `tracking="exclude"` fields.
-
-When its values or hooks do change versioned content, it is a real release as before: the latest
-release is snapshotted, the document recalculates (and needs the active formula version),
-`@release` runs, a new release is stored and the period is checked.
-
-Effects are not tied to releases: rows post when the record enters the effect's `on` step and are
-reversed when a rule leaves it, so an unchanged reissue posts again after its reversal and the
-rows always match the record. A `@release` hook runs only for a real release.
 
 ## Ordinary writes and locks
 
@@ -430,7 +435,7 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
 * A locked record keeps its saved results. An ordinary write changes only the `versioned=False`
   fields; every calculated value, at every depth, keeps the value it had when the record was
   locked, even if a linked record or today's date changed since. Moves and actions settle
-  normally and recalculate, unless the record has postings (below). So that this stays
+  normally and recalculate, unless the record is in its released set (below). So that this stays
   consistent, a stored result (at any depth) may not read a `versioned=False` field;
   registration fails with a message naming the field. This covers finite formulas, legacy
   string formulas, reads through virtual results, Query fields and `fetch="customer.name"`
@@ -443,20 +448,21 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   formula version. A move or action on such a record recalculates, so it answers 409
   `SCHEMA_VERSION_MISMATCH`; send `{"_calculation": {"model_schema_hash": "<active hash>",
   "recalculate": true}}` with the move (or the action) to recalculate with the active formulas.
-* A record with live [effect](effects.md) rows keeps its stored calculated values for every
-  writer, moves and actions included, even after a linked record or a formula changed.
-  `"recalculate": true` on it is refused with 409 `This record has postings. To change its
-  totals, move it out of its posted state.` Actions, hooks and move values on it may not change
-  anything a stored result reads (a source field, or the rows of a Table that feeds a stored
-  result); such a change is refused with 409, for example `Quantity feeds posted totals. To
-  change it, move the record out of its posted state.` Fields no stored result reads still
-  change.
-* The `Recompute` migration operation keeps the saved results of records with live postings,
-  and of records that posted and are in a final state, unless an admin migrates with
-  `evlet migrate <instance> --recompute-posted` ([finite-calculations.md](finite-calculations.md)).
-* Deleting a record in a locked state is refused with 409, and so is deleting a record that
-  ever posted: `This record has posted before, so it cannot be deleted. Move it to a final
-  state instead.`
+* A record in its released set keeps its stored calculated values for every writer, moves and
+  actions included, even after a linked record or a formula changed. `"recalculate": true` on it
+  is refused with 409 `This record is released, so it keeps its saved results. To change its
+  totals, move it out of the released set.` Actions, hooks and moves within the set may change
+  only `versioned=False` fields ([Releases and versions](#releases-and-versions)). The values and
+  hooks of a move out of the set may not change anything a stored result reads (a source field,
+  or the rows of a Table that feeds a stored result); such a change is refused with 409, for
+  example `Quantity feeds released totals. To change it, move the record out of the released set
+  first.`
+* The `Recompute` migration operation keeps the saved results of records in their released set,
+  unless an admin migrates with `evlet migrate <instance> --recompute-posted`
+  ([finite-calculations.md](finite-calculations.md)).
+* Deleting a record in a locked state is refused with 409, and so is deleting a record that has
+  a version: `This record has a release, so it cannot be deleted. Move it to a final state
+  instead.`
 * Uploading or removing an attachment is an ordinary write: on a locked record it is refused
   with 409. Downloads still work.
 * A role that cannot read the State field gets `This record is locked` (and `This record is

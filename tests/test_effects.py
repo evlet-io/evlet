@@ -148,8 +148,6 @@ def source(effect, state=None, **methods):
     (lambda T: source(Effect(T, rows='rows', on='done', reverse=Negate('amount'), balanced=('amount', 'label'))), 'balanced names'),
     (lambda T: source(Effect(T, rows='rows', on='done', reverse=Negate('amount')),
                       state=State(State.Step('draft'), State.Step('done', lock=True))), 'must be a locked release step'),
-    (lambda T: source(Effect(T, rows='rows', on='done'), state=State(State.Step('draft'), State.Step('done', release=True))),
-     'must be a locked release step'),
 ])
 def test_effect_declarations_are_checked(make, message):
     model = target(label=Text())
@@ -1074,7 +1072,7 @@ def posting_models(factor):
         qty = Decimal(default=1, label='Quantity')
         rate = Currency(default=0)
         amount = Currency(compute=F('qty') * F('rate') * factor)
-        note = Text(default='')
+        note = Text(default='', versioned=False)
 
     class BillMeta(FiniteMeta):
         effects = (Effect('posting', rows='posting_rows', on='issued', reverse=Negate('amount')),)
@@ -1155,7 +1153,7 @@ def test_posted_records_keep_their_calculated_values_on_moves_and_actions(tmp_pa
     recalculate = {'_calculation': {'model_schema_hash': plan['model_schema_hash'], 'recalculate': True}}
     for status, body, _ in (c('POST', url + '/actions/note', {'memo': 'again', **recalculate}, headers=etag(c, url)),
                             c('PATCH', url, {'memo': 'again', **recalculate}, headers=etag(c, url))):
-        assert status == 409 and body['error'] == 'This record has postings. To change its totals, move it out of its posted state.'
+        assert status == 409 and body['error'] == 'This record is released, so it keeps its saved results. To change its totals, move it out of the released set.'
     status, body, _ = c('POST', url + '/actions/note', {'memo': 'later'}, headers=etag(c, url))
     assert status == 200 and body['total'] == '4.00', body
     status, body, _ = move(c, url, 'paid')
@@ -1179,13 +1177,13 @@ def test_recompute_skips_posted_records_and_records_activity_for_the_rest(tmp_pa
     with caplog.at_level('INFO', logger='evlet.migrations'):
         db = Database(path, Registry(*posting_models(2)), migrations=list(steps))
         applied = db.migrate(db.migrations)
-    assert applied == ['0001_recompute'] and applied.skipped == 2
-    assert 'kept the saved results of 2 posted records' in caplog.text
+    assert applied == ['0001_recompute'] and applied.skipped == 1
+    assert 'kept the saved results of 1 posted records' in caplog.text
     app = Application(db, auth=LocalAuth(db, origins=('http://127.0.0.1:8000',), secure_cookies=False))
     app.initialize()
     c = client(app)
-    # A locked record that never posted is recalculated; posted ones, voided or not, keep their results.
-    assert [c('GET', url)[1]['total'] for url in (draft, approved, issued, voided)] == ['6.00', '6.00', '3.00', '3.00']
+    # Records outside the released set are recalculated (a voided one too); released ones keep their results.
+    assert [c('GET', url)[1]['total'] for url in (draft, approved, issued, voided)] == ['6.00', '6.00', '3.00', '6.00']
     assert effects.check(app) == []
     for url in (draft, approved):
         latest = c('GET', url + '/activity')[1]['items'][0]
@@ -1212,16 +1210,16 @@ def test_posted_records_refuse_changes_to_what_their_results_read(tmp_path):
     status, body, _ = c('POST', url + '/actions/bump', {}, headers=etag(c, url))
     assert status == 200 and body['total'] == '20.00', body
     assert move(c, url, 'issued')[0] == 200
-    refused = {'bump': 'Quantity feeds posted totals. To change it, move the record out of its posted state.',
-               'add_line': 'Lines feed posted totals. To change them, move the record out of its posted state.'}
+    refused = {'bump': 'lines is part of the issued document; reopen it to change it',
+               'add_line': 'lines is part of the issued document; reopen it to change it'}
     for name, message in refused.items():
         status, body, _ = c('POST', f'{url}/actions/{name}', {}, headers=etag(c, url))
         assert (status, body['error']) == (409, message), body
-    # Fields no stored result reads may still change.
+    # versioned=False fields may still change.
     status, body, _ = c('POST', url + '/actions/label_line', {}, headers=etag(c, url))
     assert status == 200 and body['children']['lines'][0]['note'] == 'checked', body
     status, body, _ = c('POST', f'{url}/moves/paid', {'charge': '5'}, headers=etag(c, url))
-    assert (status, body['error']) == (409, 'Charge feeds posted totals. To change it, move the record out of its posted state.'), body
+    assert (status, body['error']) == (409, 'Charge feeds released totals. To change it, move the record out of the released set first.'), body
     status, body, _ = move(c, url, 'paid')
     assert status == 200 and (body['docstate'], body['total']) == ('paid', '20.00'), body
     assert effects.check(app) == []

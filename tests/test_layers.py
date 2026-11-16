@@ -46,7 +46,6 @@ ALLOWED_UPWARD = {
     ('migrations', 'controls'),
     ('migrations', 'controls_export'),
     ('migrations', 'documents'),
-    ('migrations', 'effects'),
     ('migrations', 'framework'),
     ('migrations', 'statemanager'),
     ('sequences', 'activity'),

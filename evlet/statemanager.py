@@ -11,9 +11,10 @@
 permission rule).
 
 Nothing moves without a rule. A rule is checked on the saved record, in the move's transaction: who may
-use it (`by`), when it is offered (`when`) and the remark it takes. Four hooks run code on a document:
-`@validate` on every save, `@state(...)` on entering a state, `@state.exit(...)` on leaving one and
-`@release` when a release is made. See docs/states-actions.md.
+use it (`by`), when it is offered (`when`) and the remark it takes. Five hooks run code on a document:
+`@validate` on every save, `@state(...)` on entering a state, `@state.exit(...)` on leaving one, and
+`@release` / `@release.exit` on every move into / out of the released set (the release=True steps), where
+apps post and reverse. See docs/states-actions.md.
 """
 
 import inspect
@@ -48,13 +49,14 @@ def validate(method):
 
 
 def release(method):
-    """@release: runs when a release is made, with self.release.number and self.release.previous."""
+    """@release: runs on every move into the released set (from a step that is not release=True to one that is),
+    with self.release.number and self.release.previous. Pair it with @release.exit."""
     return _hook('release', ())(method)
 
 
 release.exit = lambda method: _hook('release_exit', ())(method)
-release.exit.__doc__ = ('@release.exit: runs when a move leaves the released set (from a release=True step to one that is not), '
-                        'after the snapshot and @state.exit, before the state changes.')
+release.exit.__doc__ = ('@release.exit: runs on every move out of the released set (from a release=True step to one that is not), '
+                        'after the snapshot and @state.exit, before the state changes; it reverses what @release posted.')
 
 
 def state(*states):
@@ -81,6 +83,11 @@ def configure(model):
         if unknown:
             raise ValueError(f'{model.__name__}.{name} names an unknown state: ' + ', '.join(sorted(unknown)))
     model.__hooks__ = tuple(hooks)
+    kinds = {kind for kind, _, _ in hooks}
+    if 'release' in kinds and 'release_exit' not in kinds and field is not None and \
+            any(set(rule.sources) & set(field.releases) and rule.to not in field.releases for rule in field.rules):
+        raise ValueError(f'{model.__name__} declares @release without @release.exit; a rule leaves the released set, '
+                         'so declare @release.exit to reverse what @release does')
     if field is not None:
         for rule in field.rules:
             for name in rule.ask:
@@ -786,38 +793,50 @@ def diverge(context, model, before, draft, leaving=False):
         keep(context._tx.connection, registry, model, before.id, tree(before), actor_of(context.user))
 
 
-def prepare_release(context, model, draft, manual=False):
-    """Before the write: when the content changed since the last release (or there is none), run @release with
-    self.release.number and .previous and return the number; otherwise None."""
+def prepare_release(context, model, draft):
+    """Before the write of a move into the released set: run @release with self.release.number and .previous.
+    The number is a new one when the versioned content changed since the last version (or there is none), and the
+    last version's again when it did not. Returns the last version ({number, hash, ...}) or None."""
     import json
     from types import SimpleNamespace
     from . import qb
     registry = context._business.registry
     name = registry.name_for(model)
     last = latest(context._tx.connection, name, draft.id) if draft.id else None
-    if last is not None and digest(model, tree(draft), registry) == last['hash']:
-        return None
+    same = last is not None and digest(model, tree(draft), registry) == last['hash']
+    number = 0 if last is None else last['number'] + (0 if same else 1)
     previous = None
-    if last is not None:
-        row = context._tx.connection.run(qb.select('evlet_releases', 'data').where(model=name, record_id=draft.id, number=last['number'], snapshot=1)).one()
+    if number:
+        row = context._tx.connection.run(qb.select('evlet_releases', 'data').where(model=name, record_id=draft.id, number=number - 1,
+                                                                                 snapshot=1)).one()
         previous = json.loads(row[0]) if row else None
-    number = 0 if last is None else last['number'] + 1
     object.__setattr__(draft, 'release', SimpleNamespace(number=number, previous=previous))
     run_hooks(context, draft, 'release')
-    return number
+    return last
 
 
-def finish_release(context, model, record, draft, number, rule=None, remark=None):
-    """After the write: store release `number` and its `released` activity entry."""
+def changed_versioned(model, before, draft, registry):
+    """The first versioned field (or Table) whose content differs between the saved record and the draft, or None."""
+    old, new = versioned(model, tree(before), registry), versioned(model, tree(draft, clean=True), registry)
+    old, new = {**old.pop('children'), **old}, {**new.pop('children'), **new}
+    return next((name for name in {**old, **new} if old.get(name) != new.get(name)), None)
+
+
+def check_released(context, model, before, draft):
+    """Inside the released set versioned content cannot change: posted entries keep matching the document."""
+    name = changed_versioned(model, before, draft, context._business.registry)
+    if name is not None:
+        step = model.__declared_fields__[model.__state__].steps[before._values[model.__state__]]
+        raise AccessError(409, f'{name} is part of the {step.label.lower()} document; reopen it to change it')
+
+
+def finish_release(context, model, record, draft, number, rule, remark=None):
+    """After the write: store version `number`. The move's `moved` entry names it (with base = the number)."""
     from . import activity
     registry = context._business.registry
-    approvals = [{'actor': row['actor'], 'level': row['level']} for row in stay(context, model, record)[0]] if rule is not None else []
+    approvals = [{'actor': row['actor'], 'level': row['level']} for row in stay(context, model, record)[0]]
     store(context._tx.connection, registry, model, record.id, number, snapshot=False, state=record._values.get(model.__state__),
           data={'approvals': approvals, 'remark': remark}, hash=digest(model, tree(draft), registry), actor=activity.actor_of(context.user))
-    # A move's release is its `moved` entry (with base = the number); the Release button writes its own entry.
-    if rule is None and activity.keeps_activity(context, model):
-        activity.append(context._business, context._tx, context.user, model, record.id, 'released', {'number': number},
-                       remark=remark, base=number)
 
 
 # Versions: the release list, one version (field permissions applied) and a comparison
@@ -955,23 +974,22 @@ def version_diff(context, model, record_id, first, second):
 
 
 def route(business, scope, body, user, model, parts):
-    """POST /api/{model}/{id}/release and .../restore ({version, remark}), GET .../versions, .../versions/{n} and .../versions/{a}/diff/{b or current}."""
+    """POST /api/{model}/{id}/restore ({version, remark}), GET .../versions, .../versions/{n} and .../versions/{a}/diff/{b or current}."""
     from .identity import path_id
     from .models import ValidationError, checked_body
     record_id = path_id(parts[3]) if len(parts) > 3 else None
     if record_id is None:
         raise AccessError(404, 'Record not found')
-    if parts[4] in ('release', 'restore'):
+    if parts[4] == 'restore':
         if len(parts) != 5 or scope['method'] != 'POST':
             raise AccessError(405, 'Method not allowed')
-        checked_body(body, {'remark', 'version'} if parts[4] == 'restore' else {'remark'}, 'Send only a remark and, to restore, a version')
+        checked_body(body, {'remark', 'version'}, 'Send only a version and a remark')
         with business.context(user) as context:
             record = business.policy.record(context._tx, user, model, record_id, 'update')
             if b'if-match' not in dict(scope.get('headers', [])):
                 raise AccessError(428, 'A current If-Match revision is required')
             business.check_revision(scope, context._tx, user, record)
-            result = context.release(model, record_id, remark=body.get('remark')) if parts[4] == 'release' else \
-                context.restore(model, record_id, version=body.get('version'), remark=body.get('remark'))
+            result = context.restore(model, record_id, version=body.get('version'), remark=body.get('remark'))
             extra = business.availability(context, model, context._tx.get(model, record_id))
         return 200, {**business.embedded(result), **extra}, [(b'etag', business.revision(result))]
     if scope['method'] != 'GET':

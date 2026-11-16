@@ -356,10 +356,6 @@ class Context:
         activity.deleted(self, model, record.id)
         business.changed(tx, model, record_id, deleted=True)
 
-    def release(self, model, record_id, *, remark=None):
-        """Release the record as it is (the Release button): @release runs; the same checks as POST .../release."""
-        return self._write(model, record_id, {}, release=True, remark=remark)
-
     def versions(self, model, record_id):
         from .statemanager import versions
         return versions(self, self._model(model), known_id(record_id))
@@ -382,7 +378,7 @@ class Context:
         with self._savepoint():
             return restore(self, self._model(model), known_id(record_id), version, remark)
 
-    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, release=False, restored=None):
+    def _write(self, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, restored=None):
         if self.readonly:
             raise AccessError(403, 'This context is read only')
         model = self._model(model)
@@ -396,8 +392,7 @@ class Context:
         self._active.append(key)
         try:
             with self._savepoint():
-                return operate(self, model, record_id, values, action=action, arguments=arguments, move=move, remark=remark, release=release,
-                               restored=restored)
+                return operate(self, model, record_id, values, action=action, arguments=arguments, move=move, remark=remark, restored=restored)
         except ValidationError as exc:
             raise ValidationError(self._business.visible_errors(self.user, model, exc.errors, tx=self._tx)) from None
         finally:
@@ -1663,14 +1658,14 @@ def write_snapshot(tx, draft, before=None, *, reload=True):
     return tx.get(model, draft.id) if reload else None
 
 
-def operate(context, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, release=False, restored=None):
+def operate(context, model, record_id, values, *, action=None, arguments=None, move=None, remark=None, restored=None):
     """Create, update, run an action or make a move through the document pipeline, in one transaction.
 
     Ordinary writes respect a locked State. Actions and moves are declared, role-checked code: they may
     change a record in a locked state but still obey each field's locked_when and every other rule.
-    A record with posted effects keeps its stored calculated values on every write, and its actions and
-    moves may not change what those values read. A move runs in the state manager's order: the rule,
-    @state.exit, the new state, @state, settle (with @validate), then the write and its activity entry.
+    A record in the released set keeps its stored calculated values on every write, and its versioned content
+    does not change until a rule moves it out. A move runs in the state manager's order: the rule, @state.exit,
+    @release.exit, the new state, @state, settle (with @validate), @release, then the write and its activity entry.
     """
     from . import guards, statemanager
     business, tx, user = context._business, context._tx, context.user
@@ -1680,10 +1675,8 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         tx.actor = actor_id(user)
     # Required fields and retired options set in Controls apply to what people send, not to app code.
     person, context._person = context._person == (model, record_id) and action is None and move is None, None
-    if (action is not None or move is not None or release) and not record_id:
+    if (action is not None or move is not None) and not record_id:
         raise AccessError(404, 'Record not found')
-    if release and not (statemanager.releasing(model) and business.policy.allows(user, model, 'release')):
-        raise AccessError(403, 'Your role cannot release this record')
     rule = level = None
     if move is not None:
         # The rule is checked on the saved record before its values, so values never reveal which rules exist.
@@ -1702,18 +1695,18 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     statemanager.bind(draft, before)
     ordinary = action is None and move is None
     releases = model.__declared_fields__[model.__state__].releases if model.__state__ else ()
-    # A move between two release steps (unpaid, overdue, paid) changes the process, not the document: unless its
-    # values or hooks change versioned content, it keeps the release and its saved results (states-actions.md).
-    within = rule is not None and before._values.get(model.__state__) in releases and rule.to in releases
+    # A move between two release steps (unpaid, overdue, paid) changes the process, not the document; a move into
+    # the released set runs @release, and a move out of it @release.exit (states-actions.md).
+    inside = before is not None and before._values.get(model.__state__) in releases
+    within = rule is not None and inside and rule.to in releases
+    entering = rule is not None and not inside and rule.to in releases
     kept_by = keeps_saved_results(context, model, before, ordinary=ordinary)
     kept = bool(kept_by)
-    # A record with postings keeps its stored calculated values for every writer.
-    posted = 'posted' in kept_by
     # An ordinary write on a locked record changes only versioned=False fields and keeps saved results.
     locked_write = ordinary and 'locked' in kept_by
-    if context._recalculate == (model, record_id) and before is not None and not within:
-        if posted:
-            raise AccessError(409, 'This record has postings. To change its totals, move it out of its posted state.')
+    if context._recalculate == (model, record_id) and before is not None:
+        if inside:
+            raise AccessError(409, 'This record is released, so it keeps its saved results. To change its totals, move it out of the released set.')
         if locked_write:
             statemanager.check_recalculate(context, model, before)
     plan = business.registry.plan_for(model)
@@ -1743,13 +1736,11 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
             outcome = method(draft, **arguments)
     elif before is not None:
         statemanager.check_state_lock(context, draft, before)
-    # Known only after the hooks: a move within the release that changed versioned content is a real release.
-    process = within and statemanager.digest(model, statemanager.tree(before), business.registry) == \
-        statemanager.digest(model, statemanager.tree(draft, clean=True), business.registry)
-    if process and context._recalculate == (model, record_id):
-        raise AccessError(409, 'A move within the release keeps its saved results, so it cannot recalculate them')
+    # Inside the released set versioned content cannot change: a move within it or an action changes only
+    # versioned=False fields (posted entries keep matching the document).
+    if inside and (within or action is not None):
+        statemanager.check_released(context, model, before, draft)
     # A write that keeps saved results does not recalculate, so it neither checks nor updates the recorded formula version.
-    kept = kept or process
     if kept:
         plan = None
     if plan is not None and record_id:
@@ -1761,7 +1752,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
                                    'resubmit with "_calculation": {"model_schema_hash": <active>, "recalculate": true} to recalculate it')
     # Settling runs @validate on the document and each row (validate_tree), after every value is final.
     settle(context, draft, complete=True, previous=before, kept=kept)
-    if posted and not locked_write:
+    if inside and not locked_write:
         guards.check_posted(context, draft, before)
     if locked_write:
         statemanager.keep_saved(draft, before)
@@ -1778,20 +1769,19 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
     if sequences.name_due(rules, draft._values, created=before is None, move=rule):
         draft._values[rules.field] = sequences.issue(tx.connection, business.registry, model, rules, draft._values, host_today(business),
                                                      user.username, record=draft, context=context, record_id=draft.id)
-    # Entering a release step (or a Release) whose content changed since the last release releases it: @release,
-    # then calculations and @validate again. The write that changes a released content snapshots that release first.
+    # Every move into the released set runs @release, then calculations and @validate again. It records a new
+    # version only when the versioned content changed since the last one.
     released = None
-    if release or rule is not None and rule.to in releases and not process:
-        released = statemanager.prepare_release(context, model, draft)
-        if released is not None:
-            settle(context, draft, complete=True, previous=before, kept=kept)
-        elif release:
-            raise AccessError(409, 'Nothing changed since the last release')
-    if rule is None or rule.sources and before._values.get(model.__state__) not in releases or within and not process:
+    if entering:
+        last = statemanager.prepare_release(context, model, draft)
+        settle(context, draft, complete=True, previous=before, kept=kept)
+        if last is None or statemanager.digest(model, statemanager.tree(draft), business.registry) != last['hash']:
+            released = 0 if last is None else last['number'] + 1
+    if not inside:
         statemanager.diverge(context, model, before, draft)
     prior = before.stored_values() if before else None
     after = draft.stored_values()
-    if prior == after and rule is None and released is None and (before is None or sections.signature(before) == sections.signature(draft)):
+    if prior == after and rule is None and (before is None or sections.signature(before) == sections.signature(draft)):
         if plan is not None:
             record_plan(tx, business.registry.name_for(model), record_id, version)
         # Every readable row: the HTTP route derives its ETag from this and embeds the first page.
@@ -1800,7 +1790,7 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         return result
     # A closed period (Meta.period) refuses the write whether the saved or the new date is in it.
     from . import periods
-    if not process:  # A closed period protects content, not process.
+    if not within:  # A closed period protects content, not process.
         periods.check(tx, model, before=before._values if before is not None else None, after=draft._values)
     record = write_snapshot(tx, draft, before)
     if plan is not None:
@@ -1819,8 +1809,6 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         posted_rows = post(context, model, record.id, rule.to)
         statemanager.moved(context, model, record, before._values.get(model.__state__), rule, remark, level, before, draft, released=released)
         activity.effects_posted(context, model, record.id, reversed_rows + posted_rows)
-    elif release:
-        pass
     else:
         activity.written(context, model, record.id, before, draft, action=action, restored=restored,
                         entering=statemanager.entering(context, model, record) if before is None else None)
@@ -1838,18 +1826,17 @@ def keeps_saved_results(context, model, before, *, ordinary=True):
 
     This is the one rule for the save, the draft preview, a record's detail and a trusted settle. It returns
     the reasons that apply, and an empty set when the write recalculates:
-    - 'posted': the record has posted effects. Every writer keeps its results.
+    - 'released': the record is in its released set (a release=True step). Every writer keeps its results.
     - 'locked': the record is in a locked State. Only an `ordinary` write keeps them; a move or an
       action settles normally.
     A new record (`before` is None) keeps nothing.
     """
     if before is None or before.id is None:
         return frozenset()
-    from .effects import has_postings
     from .statemanager import locked_state
     reasons = set()
-    if has_postings(context._tx.connection, context._business.registry, model, before):
-        reasons.add('posted')
+    if model.__state__ is not None and before._values.get(model.__state__) in model.__declared_fields__[model.__state__].releases:
+        reasons.add('released')
     if ordinary and locked_state(model, before._values) is not None:
         reasons.add('locked')
     return frozenset(reasons)
@@ -1871,8 +1858,8 @@ def settle_saved(tx, model, record_id, children=None):
     """Settle a saved document after a trusted Session write to it or to one of its rows (evlet/database.py), for a
     model that declares derive(): derive, clean, calculate and validate, as on any write, then store what changed.
 
-    It runs as the engine, without roles or row scopes, like the trusted write that called it. A record with posted
-    effects keeps its stored results, as on every other write. derive() reads through a read-only session, so it
+    It runs as the engine, without roles or row scopes, like the trusted write that called it. A record in its
+    released set keeps its stored results, as on every other write. derive() reads through a read-only session, so it
     cannot write and start another settlement. `children` are the document's Table rows the write sends with it,
     merged like the rows of an HTTP write."""
     from .effects import EngineBusiness, ENGINE, SessionPolicy
@@ -1880,13 +1867,13 @@ def settle_saved(tx, model, record_id, children=None):
     business.policy = SessionPolicy(tx._business.policy)
     context = Context(business, tx, ENGINE)
     current = tx.get(model, record_id)
-    # The shared rule, read for trusted code: only postings keep the saved results here. A locked State does
+    # The shared rule, read for trusted code: only the released set keeps the saved results here. A locked State does
     # not, because hooks and app code write to a document while it is locked and its derived values must follow.
     kept_by = keeps_saved_results(context, model, Draft(model, dict(current._values), context=context, record_id=current.id),
                                   ordinary=False)
-    if 'posted' in kept_by:
+    if 'released' in kept_by:
         if children:
-            raise ValidationError({'children': 'This record has postings. To change its rows, move it out of its posted state.'})
+            raise ValidationError({'children': 'This record is released. To change its rows, move it out of the released set.'})
         return
     derived_write(model, {}, children or {}, '')
     draft = Draft(model, dict(current._values), context=context, record_id=current.id)

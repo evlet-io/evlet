@@ -91,7 +91,7 @@ def parser():
     migrate.add_argument('instance')
     migrate.add_argument('--trust', action='store_true', help='Trust changed app source without prompting')
     migrate.add_argument('--recompute-posted', action='store_true',
-                         help='Let Recompute operations recalculate posted records too; each changed one gets an Activity entry')
+                         help='Let Recompute operations recalculate released records (in a release=True step) too; each changed one gets an Activity entry')
     migrate.add_argument('--allow-destructive', action='store_true',
                          help='Let DropField delete the columns and values of retired fields; a backup is written first')
     migrate.add_argument('--allow-maintenance', action='store_true',
