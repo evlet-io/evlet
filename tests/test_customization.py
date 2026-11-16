@@ -273,7 +273,7 @@ def test_a_layout_sets_section_flow(app):
     state = admin('GET', '/api/_controls/state')[1]
     lead = next(model for model in state['models'] if model['name'] == 'Lead')
     # The record's parts the side panel can hide.
-    assert [tab['name'] for tab in lead['tabs']] == ['activity', 'details', 'related', 'postings']
+    assert [tab['name'] for tab in lead['tabs']] == ['activity', 'details', 'related']
     # Sections alone are saved as the plain list they always were; rows is not stored.
     assert save(admin, ('layout', 'Lead', [{**sections[0], 'flow': 'rows'}, sections[1]]))[0] == 200
     saved = next(item for item in admin('GET', '/api/_controls/overrides')[1]['items'] if item['kind'] == 'layout' and item['key'] == 'Lead')['value']
@@ -952,7 +952,7 @@ def test_unplaced_fields_go_to_other_in_a_file_layout_and_an_override(tmp_path, 
 
 def test_recompute_keeps_instance_fields_and_skips_posted_records(tmp_path, hashed):
     from evlet import AddIndex, Migration, Recompute
-    from test_effects import etag, move, new_bill, posting_models
+    from test_release_postings import etag, move, new_bill, posting_models
     path, base = tmp_path / 'db.sqlite3', Migration('0000_base', AddIndex('bill', 'memo'))
     database = Database(path, Registry(*posting_models(1)), migrations=[base])
     app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))

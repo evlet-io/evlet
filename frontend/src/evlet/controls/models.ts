@@ -463,7 +463,7 @@ function PanelCard(toggle: (kind: PanelKind, name: string, what: string) => HTML
 }
 
 type PanelToggle = (kind: PanelKind, name: string, what: string) => HTMLElement;
-/** The record's parts besides its sections (Activity, Revisions, child tables, Related, Postings), each with its side
+/** The record's parts besides its sections (Activity, Revisions, child tables, Related), each with its side
  * panel button. Record pages have no tabs, so there is no order to set. */
 function PartsCard(model: ModelInfo, toggle: PanelToggle): HTMLElement | null {
   const known = (model.tabs ?? []).filter(part => part.name !== 'details');

@@ -189,11 +189,6 @@ def parser():
     keys_rotate = keys_commands.add_parser('rotate', help='Re-encrypt saved secrets under a new secret.key')
     keys_rotate.add_argument('instance')
     keys_rotate.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
-    effects = commands.add_parser('effects', help='Check the rows records post to other models')
-    effects_commands = effects.add_subparsers(dest='effects_command', required=True)
-    effects_check = effects_commands.add_parser('check', help='Recompute effect rows and report differences without writing')
-    effects_check.add_argument('instance')
-    effects_check.add_argument('--project', default=argparse.SUPPRESS, help='Explicit project path')
     ids = commands.add_parser('ids', help='Check record ids')
     ids_commands = ids.add_subparsers(dest='ids_command', required=True)
     ids_check = ids_commands.add_parser('check', help='Report rows with an impossible id and tables that allow id changes')
@@ -524,16 +519,6 @@ def main(argv=None):
                 print(f'{len(problems)} problem' + ('' if len(problems) == 1 else 's'), file=sys.stderr)
                 raise SystemExit(1)
             print('Every model row has a record id, and the database refuses id changes')
-        elif args.command == 'effects':
-            from .effects import check_instance
-            from ..effects import describe
-            differences = check_instance(root, args.instance)
-            for item in differences:
-                print(describe(item))
-            if differences:
-                print(f'{len(differences)} difference' + ('' if len(differences) == 1 else 's'), file=sys.stderr)
-                raise SystemExit(1)
-            print('No differences')
         elif args.command == 'activity':
             from .activity import verify_instance
             checked, breaks = verify_instance(root, args.instance)

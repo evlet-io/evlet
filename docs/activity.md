@@ -24,7 +24,7 @@ class Invoice(Model):
 
 | `Meta.activity` | Result |
 |---|---|
-| left out | on for a model with a `State` or `Meta.effects`, off otherwise |
+| left out | on for a model with a `State`, off otherwise |
 | `Activity()` or `Activity(tamper_evident=True)` | on |
 | `None` | off, also for a model with a `State` |
 
@@ -32,8 +32,7 @@ There is one way to turn it off: `activity = None`. Any other value is an error 
 registry is built. `Activity()` on a model without a State makes it a document, so every write
 goes through the document pipeline (like a `Sequence` does). Table rows have no activity of
 their own: their changes are part of their document's entries, and a `Meta.activity` on a row
-model is an error. A model with `Meta.effects` keeps an Activity by default too (an effect needs a
-State, so this changes nothing for valid models today, but the rule names both).
+model is an error.
 
 ## Storage
 
@@ -82,7 +81,6 @@ commits, no entry is left behind.
 | `number` | a Sequence number is assigned | `field` and `number` |
 | `file` | an attachment is added or removed | `action` (`added` or `removed`), `id`, `name`, and `size` when added |
 | `deleted` | the record is deleted | `{}` |
-| `effects` | a move posted [effect](effects.md) rows, or left the posting state and wrote their mirror rows | `targets` |
 | `recomputed` | a `Recompute` migration changed stored results (actor: the engine) | `fields` and `rows` (`updated` only), and `posted: true` for a posted record an admin included |
 
 `fields` maps each changed stored field to its old and new values in their HTTP form:
@@ -115,27 +113,15 @@ creating a document with 1,000 lines stores an entry of about 400 KB, and a page
 entries can carry several such entries. Read the activity in pages (`limit` and `offset`)
 and keep the page small for documents with many rows.
 
-`Recompute` changes a record with postings only when an admin migrates with
+`Recompute` changes a released record only when an admin migrates with
 `--recompute-posted` (see [finite-calculations.md](finite-calculations.md)); its entry then
 has `"posted": true`, shown to readers of the State. Otherwise `recomputed` entries appear only
-on records without live postings, locked or not.
+on records outside their released set, locked or not.
 
 The engine also knows the kinds `approved`, `rejected`, `released`, `restored` and `snapshot`,
 written by later 0.4.6 pull requests. Entries of kinds earlier releases wrote (`voided`,
 `revised`, `unposted`, `reposted`, `confirmed`, `reconfirmed`, `cancelled`, `reopened`,
 `post_confirmation_edit`) stay readable.
-
-An `effects` entry follows the `moved` entry of the same operation and lists
-each target model that received rows:
-
-```json
-{"targets": [{"target": "ledgerentry", "rows": 3, "reversal": false, "balanced": true},
-             {"target": "stockmove", "rows": 2, "reversal": false}]}
-```
-
-`rows` counts the rows written, `reversal` is true for mirror rows, and
-`balanced` is present for an effect that declares a balanced pair. Targets that received no
-rows are left out, and no entry is written when no rows were written.
 
 Not in `fields`: the row link to the parent, row positions, and Sequence numbers (each
 assignment is its own `number` entry). A move's `fields` leave out the State, since `from`
@@ -274,14 +260,12 @@ cannot read is removed, and the entry is marked `"partial": true`:
 * Rows of a collection the caller cannot read are left out. Under a row scope on the rows,
   rows the caller cannot see are left out, and so are all removed rows, because they can no
   longer be checked against the scope. Updated rows with nothing readable left are dropped.
-* For a caller who cannot read the State, `moved` and `effects` entries (and entries of the
+* For a caller who cannot read the State, `moved` entries (and entries of the
   older state kinds) are shown as `changed` with only the readable field and row changes. A `number`
   entry for a field the caller cannot read is shown as `changed` with no data. This keeps
   states and numbers private, as the rest of the API does.
-* In an `effects` entry, targets the caller does not read fully (read permission and no row
-  scope, as for `_effects` in details) are left out, and so is `balanced` when the caller
-  cannot read both balanced fields. When no target is left, the entry is shown as `changed`
-  with no data.
+* `effects` entries, written by `Effect` before 0.4.11, stay in the activity with their targets
+  left out.
 
 Row and Link checks run in batches: one statement per model and chunk of ids for the page.
 

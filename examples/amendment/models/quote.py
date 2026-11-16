@@ -1,19 +1,21 @@
 """A finite-v1 document: one formula definition for browser previews and server saves."""
 from evlet import (Model, Child, Table, Decimal, Currency, Boolean, Text, Rule, Link, Date, Integer, Percent, Tags,
-                   State, Sequence, Reference, Effect, action, Count, Sum, Activity)
+                   State, Sequence, Reference, action, release, Count, Sum, Activity)
 from evlet.calc import F, days, parent, round, when
 from amendment.models.masters import Company
 
 
 class SalesLedger(Model):
-    """Won business, one row per won quote. Rows are written only by the Quote's effect and are read only."""
+    """Won business, one row per won quote, posted by the Quote's @release hook. People only read it."""
+    class Meta:
+        api = 'read'
+
     permissions = {'admin': Rule(('read',)), 'editor': Rule(('read',)), 'viewer': Rule(())}
     company = Link(Company)
     amount = Currency(required=True)
     memo = Text(default='')
-    # Filled by the engine: the quote that posted the row, and whether the row reverses another one.
-    source = Reference()
-    reversal = Boolean(default=False)
+    # The quote that posted the row, indexed to find a quote's rows.
+    source = Reference(index=True)
 
 
 class Quote(Model):
@@ -28,9 +30,6 @@ class Quote(Model):
         }
         # Shown beside the quote.
         key_fields = ('company', 'docstate', 'payable', 'valid_until')
-        # Winning a quote posts one row to the sales ledger in the same transaction. A won quote is final,
-        # so it is never voided and the effect needs no reverse.
-        effects = (Effect(SalesLedger, rows='ledger_rows', on='won'),)
         # A quote has a State, so it keeps an activity anyway; tamper_evident also chains each entry's hash
         # (GET or POST /api/quote/{id}/activity; evlet activity verify <instance> checks the chains).
         activity = Activity(tamper_evident=True)
@@ -99,6 +98,8 @@ class Quote(Model):
     def extend_validity(self, extra_days):
         self.payment_days = (self.payment_days or 0) + extra_days
 
-    # Effect rows are a pure function of the saved quote.
-    def ledger_rows(self):
-        return [{'company': self.company, 'amount': self.payable, 'memo': self.title}]
+    # Winning a quote posts one row to the sales ledger in the same transaction. A won quote is final (no rule
+    # leaves the released set), so nothing reverses it and @release needs no @release.exit.
+    @release
+    def post_to_ledger(self):
+        self.context.session.create(SalesLedger, company=self.company, amount=self.payable, memo=self.title, source=('quote', self.id))

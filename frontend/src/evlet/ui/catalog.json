@@ -3009,29 +3009,6 @@
   },
   {
    "cat": "sections",
-   "id": "postings",
-   "name": "PostingsTable",
-   "level": "Section",
-   "desc": "Rows the record wrote to other models, with reversals and a balance check. Read only.",
-   "props": [
-    [
-     "effects",
-     "Effects",
-     ""
-    ]
-   ],
-   "from": [
-    "info-note",
-    "data-table",
-    "chip"
-   ],
-   "used": [
-    "Transaction records"
-   ],
-   "variants": []
-  },
-  {
-   "cat": "sections",
    "id": "board",
    "name": "Board",
    "level": "Section",

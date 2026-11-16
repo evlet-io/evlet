@@ -391,17 +391,6 @@ def test_print_groups_rows_under_their_sections_with_sums(app):
         ('Later', [], {'qty': D('0'), 'amount': D('0')})]
 
 
-def test_postings_read_sections(app):
-    from evlet.effects import load_document
-    call = client(app)
-    data = create(call)
-    with app.database.transaction() as tx:
-        document = load_document(app.business, tx, Quote, data['id'])
-        assert [(label, [row.item for row in rows]) for label, rows in document.lines.sections()] == [
-            ('Goods', ['Shelf']), ('Services', ['Install', 'Deliver']), ('Later', [])]
-        assert [row.item for row in document.lines] == ['Shelf', 'Install', 'Deliver']
-
-
 def test_turning_sections_on_and_off_needs_no_migration(tmp_path):
     path = tmp_path / 'toggle.sqlite3'
 

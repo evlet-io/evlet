@@ -13,7 +13,7 @@ const props = (label: string, extra: Record<string, unknown> = {}) =>
 const info = (name: string, type: string, extra: Record<string, unknown> = {}) =>
   ({ name, type, custom: false, editable: true, stored: true, unique: false, target: null, width: type === 'longtext' ? 12 : 6, ...extra });
 const lead = { name: 'Lead', label: 'Lead', app: 'crm', scopes: [null], table: 'lead', records: 3, naming: null,
-  tabs: [['activity', 'Activity'], ['details', 'Details'], ['revisions', 'Revisions'], ['lines', 'Lines'], ['related', 'Related'], ['postings', 'Postings']].map(([name, label]) => ({ name, label })),
+  tabs: [['activity', 'Activity'], ['details', 'Details'], ['revisions', 'Revisions'], ['lines', 'Lines'], ['related', 'Related']].map(([name, label]) => ({ name, label })),
   fields: [], fields_detail: [info('title', 'text'), info('source', 'select'), info('value', 'decimal'), info('notes', 'longtext')] };
 const invoice = { name: 'Invoice', label: 'Invoice', app: 'billing', scopes: [null], table: 'invoice', records: 2, naming: { field: 'reference', date_field: null },
   fields: [], fields_detail: [info('reference', 'text', { editable: false, unique: true }), info('total', 'decimal'), info('status', 'select')] };
@@ -215,7 +215,7 @@ describe('order in the layout editor', () => {
     await until(() => expect([...host.querySelectorAll<HTMLInputElement>('.ctl-lsec-head input')].map(input => input.value)).toEqual(['Section 2', 'Details']));
 
     // Record pages have no tabs: the parts are listed for the side panel only, with nothing to order.
-    expect([...host.querySelectorAll('.ctl-tabrow')].map(text)).toEqual(['Activity', 'Revisions', 'Lines', 'Related', 'Postings']);
+    expect([...host.querySelectorAll('.ctl-tabrow')].map(text)).toEqual(['Activity', 'Revisions', 'Lines', 'Related']);
     expect(host.querySelector('#ctl-tabs-home')).toBeNull();
     expect(host.querySelector('.ctl-tabrow [data-drag-handle]')).toBeNull();
 

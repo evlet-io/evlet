@@ -65,7 +65,7 @@ def test_meta_panel_keeps_what_it_names_in_order_and_wins_over_flags():
     view = view_for(listed())
     # notes has panel=False and is not named; owner is named, so Ticket shows with only owner (subject is
     # hidden here, and the record page still shows a required field while it is empty on a new record).
-    assert view['panel'] == {'fields': ['notes', 'subject'], 'tabs': ['lines', 'postings', 'related'],
+    assert view['panel'] == {'fields': ['notes', 'subject'], 'tabs': ['lines', 'related'],
                              'blocks': ['info', 'key_fields', 'summary'], 'order': ['details', 'activity', 'files']}
 
 
@@ -76,7 +76,7 @@ def test_meta_panel_details_keeps_every_section():
 
         class Meta:
             panel = ('details',)
-    assert view_for(Ticket)['panel'] == {'tabs': ['activity', 'postings', 'related'],
+    assert view_for(Ticket)['panel'] == {'tabs': ['activity', 'related'],
                                          'blocks': ['files', 'info', 'key_fields', 'summary'], 'order': ['details']}
 
 
@@ -204,8 +204,8 @@ def test_controls_panel_overrides_the_app_and_keeps_its_order(tmp_path, hashed):
     # The toggles start from what the app hides.
     assert file['file']['panel']['fields'] == ['notes', 'subject']
     sections = file['file']['sections']
-    assert save(admin, ('layout', 'Ticket', {'sections': sections, 'panel': {'tabs': ['postings']}}))[0] == 200
-    assert schema_of(admin, 'ticket')['panel'] == {'tabs': ['postings'], 'order': ['details', 'activity', 'files']}
+    assert save(admin, ('layout', 'Ticket', {'sections': sections, 'panel': {'tabs': ['related']}}))[0] == 200
+    assert schema_of(admin, 'ticket')['panel'] == {'tabs': ['related'], 'order': ['details', 'activity', 'files']}
 
 
 @pytest.mark.parametrize('panel, message', [

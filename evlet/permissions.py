@@ -43,10 +43,8 @@ def trusted():
 
 def surface(registry, model, operation):
     """The one rule over what may be done to a model before any role is asked, so no Rule or Controls
-    override can grant it back. Effect rows are written only by the engine, so nobody changes them. While a
-    caller is served, Meta.api = "read" refuses every write and Meta.api = None refuses everything."""
-    if operation in ('create', 'update', 'delete') and model in getattr(registry, 'effect_targets', ()):
-        return False
+    override can grant it back. While a caller is served, Meta.api = "read" refuses every write and
+    Meta.api = None refuses everything."""
     if not CALLER.get():
         return True
     api = getattr(registry, 'api', {}).get(model, 'full')
@@ -79,12 +77,6 @@ def compile_api(registry):
             if isinstance(field, Link) and result.get(field.target) is None and not field.hidden and not field.ledger_target:
                 raise ValueError(f'{model.__name__}.{name} links to {field.target.__name__}, which has Meta.api = None. '
                                  'Declare the Link hidden=True so its ids and titles stay private')
-    for source, bounds in getattr(registry, 'effects', {}).items():
-        for bound in bounds:
-            field = bound.target.__declared_fields__.get('source')
-            if result.get(source) is None and result.get(bound.target) is not None and field is not None and not field.hidden:
-                raise ValueError(f'{bound.target.__name__}.source names {source.__name__} records, which has Meta.api = None. '
-                                 'Declare it source = Reference(hidden=True)')
     return MappingProxyType(result)
 
 

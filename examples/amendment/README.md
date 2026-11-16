@@ -30,8 +30,8 @@ administrator may void a sent quote with a remark, or reopen it to draft: it kee
 its id and quote number, and the next Send keeps the number. Companies
 have a phone number and quotes have free tags. The quote list declares measures:
 the total of open (sent) quotes, the total of won quotes and the number of quotes.
-Marking a quote won posts one row to the Sales Ledger through an effect;
-ledger rows are read only for every role.
+Marking a quote won posts one row to the Sales Ledger in the quote's `@release` hook;
+the Sales Ledger is `Meta.api = "read"`, so people only read it.
 
 Sales Register is manual. Live Sales Register runs after valid filter changes.
 The nested warehouse service demonstrates a read-only custom API and daily

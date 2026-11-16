@@ -26,7 +26,7 @@ OPEN_IN = ('page', 'panel')
 # The options a model's Meta may declare; each is public (docs/api-stability.md).
 META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
                           'calculation_language', 'numeric_profile', 'measures', 'key_fields', 'relations', 'attachments',
-                          'effects', 'activity', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
+                          'activity', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'panel_summary', 'ledger', 'append_only', 'timestamps', 'indexes',
                           'focus', 'cards', 'duplicate', 'image'))
 
@@ -35,9 +35,9 @@ COLLAPSED = (False, True, 'empty')
 # How a section orders its fields, on screen and for the Tab key: across then down, or down the left column then the right.
 FLOWS = ('rows', 'columns')
 # The record page's own parts besides its sections, as Meta.panel and the schema's "panel" name them: Activity (the
-# side column), Details (every section), and the Related and Postings rows of "more information". A Table
-# field is named by its own name. Record pages have no tabs (removed in 0.4).
-TABS = ('activity', 'details', 'related', 'postings')
+# side column), Details (every section), and the Related row of "more information". A Table field is named by
+# its own name. Record pages have no tabs (removed in 0.4).
+TABS = ('activity', 'details', 'related')
 # The record page's side column blocks, for Meta.side_blocks: Key fields, Related, Files and Record info.
 SIDE_BLOCKS = ('key_fields', 'related', 'files', 'info')
 # What a list's side panel can leave out besides sections and fields: the summary strip and the side blocks.
@@ -347,8 +347,11 @@ def check_focus(where, definition, name):
 
 
 def refuse_removed(name, meta):
-    """Raise ValueError for a removed Meta option (Meta.tabs and Meta.default_tab in 0.4, Meta.journal after 0.4.7),
-    saying what to use."""
+    """Raise ValueError for a removed Meta option (Meta.tabs and Meta.default_tab in 0.4, Meta.journal after 0.4.7,
+    Meta.effects in 0.4.11), saying what to use."""
+    if isinstance(meta, type) and 'effects' in vars(meta):
+        raise ValueError(f'{name}.Meta.effects was removed: post rows in a @release hook through self.context.session '
+                         'and reverse them in @release.exit (docs/states-actions.md#hooks)')
     if isinstance(meta, type) and hasattr(meta, 'journal'):
         raise ValueError(f'{name}.Meta.journal was renamed: use Meta.activity = Activity(...), or Meta.activity = None '
                          'to turn it off (docs/activity.md)')

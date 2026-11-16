@@ -96,7 +96,7 @@ points upward; every module must be in the map.
 | 1 | `core` | Pure definitions | adapter, qb, identity, fields, models, declarations, expressions, calc, reactivity, currencies, richtext, naming, indexes, query, audit, sections, periods |
 | 2 | `access` | Who may do what | auth, permissions |
 | 3 | `data` | SQL, files, migrations | database, sqlite, migrations, ledger, writes, storage, object_storage, secrets, sequences, images |
-| 4 | `engine` | Document behaviour | documents, statemanager, guards, effects, activity, measures, unsaved, mentions, meaning |
+| 4 | `engine` | Document behaviour | documents, statemanager, guards, activity, measures, unsaved, mentions, meaning |
 | 5 | `web` | HTTP application and routes | app, runtime, routing, business, forms, slips, workspaces, services, events, jobs, framework, devlink, discovery |
 | 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing |
 | 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
@@ -113,7 +113,7 @@ when an entry no longer occurs. Remove an upward import by moving the code to th
 its data, passing a value in, or letting the higher module register itself with the lower one.
 
 Building a model class or a `Registry` runs steps that belong to higher layers (ledger options,
-state manager hooks, rule guards, sequences, measures, effects, activities, API access). `evlet/models.py`
+state manager hooks, rule guards, sequences, measures, activities, API access). `evlet/models.py`
 lists them in `BUILD_ORDER`, the order they run in; each owning module registers its function with
 `@build_step(name)`, and `evlet/__init__.py` imports those modules before any model class exists. Optional
 subsystems without build-step registration load on first public-export access; `__all__`,

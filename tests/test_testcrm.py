@@ -348,15 +348,15 @@ def test_activity_records_moves_the_win_and_what_people_add(crm):
     page = sara('GET', url + '/activity?limit=50&offset=0')[1]
     entries = page['items']
     assert page['total'] == len(entries) and page['users'][str(sara_id)] == 'sara'
-    # Newest first: the Booking posting follows the win in the same operation.
-    effects, won, negotiated = entries[:3]
-    assert (effects['kind'], effects['data']['targets']) == ('effects', [{'target': 'booking', 'rows': 1, 'reversal': False}])
+    # Newest first; the win's @release booked it in the same operation.
+    won, negotiated = entries[:2]
+    assert sara('GET', url)[1]['total'] in [row['amount'] for row in sara('GET', '/api/booking?limit=100')[1]['items']]
     assert (won['kind'], won['data']['from'], won['data']['to'], won['data']['move']) == ('moved', 'negotiation', 'won', 'Mark won')
     assert (negotiated['kind'], negotiated['data']['move']) == ('moved', 'Negotiate')
     # on_won dated the deal and set the kick-off as the next step; the kick-off task itself is a Task (no activity).
     assert won['data']['fields']['next_step']['new'] == 'Kick-off meeting'
     assert won['data']['fields']['won_on']['old'] is None and won['data']['fields']['won_on']['new'] == sara('GET', url)[1]['won_on']
-    assert 'docstate' not in won['data']['fields'] and {entry['actor'] for entry in entries[:3]} == {sara_id}
+    assert 'docstate' not in won['data']['fields'] and {entry['actor'] for entry in entries[:2]} == {sara_id}
     assert f'Kick-off: {title}' in [task['title'] for task in sara('GET', url + '/related/task.deal?limit=10&offset=0')[1]['items']]
     # The earlier edits, the moves made when seeding, the number and the create, oldest last.
     kinds = [entry['kind'] for entry in entries]

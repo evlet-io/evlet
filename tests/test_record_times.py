@@ -12,7 +12,7 @@ from evlet.framework import upgrade
 from evlet.identity import RecordId
 from test_business import client
 from test_rules_types import ALL, add_user, start
-import test_effects as books_module
+import test_release_postings as books_module
 import test_activity as activity_module
 
 

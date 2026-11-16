@@ -139,19 +139,6 @@ def test_a_visible_link_to_a_model_without_surface_is_refused_at_startup():
     Registry(hidden, type('Inner', (Model,), {'Meta': type('Meta', (), {'api': None}), 'hidden': Link(hidden)}))
 
 
-def test_effect_rows_of_a_document_without_surface_hide_their_source():
-    from evlet import Boolean, Effect, Negate
-    def models(hidden):
-        target = type('Tally', (Model,), {'source': Reference(hidden=hidden), 'reversal': Boolean(default=False), 'amount': Currency(default=0)})
-        meta = type('Meta', (), {'api': None, 'effects': (Effect(target, rows='rows', on='done', reverse=Negate('amount')),)})
-        state = State(State.Step('draft'), State.Step('done', lock=True, release=True), State.Step('void', lock=True, final=True),
-                      rules=(State.Rule('draft', 'done', 'Done'), State.Rule('done', 'void', 'Void', remark='required')))
-        return type('Source', (Model,), {'Meta': meta, 'docstate': state, 'rows': lambda self: []}), target
-    with pytest.raises(ValueError, match=r'Tally.source names Source records, which has Meta.api = None'):
-        Registry(*models(False))
-    Registry(*models(True))
-
-
 # Meta.api = "read"
 
 WRITES = [

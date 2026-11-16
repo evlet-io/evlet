@@ -650,7 +650,7 @@ URLs all point to it.
 ### Only Evlet makes ids
 
 Evlet draws the id of every new record itself, on every create path: HTTP, `context.create`,
-`tx.create`, `database.create`, table rows, copies, effect rows, data migrations,
+`tx.create`, `database.create`, table rows, copies, data migrations,
 seeds and fixtures, Eva, tools, MCP and the Connector (which all write through the HTTP routes),
 and `self.context.session` in handlers. An `id` given by the caller is **refused**, never silently
 dropped, with `ValidationError({'id': 'The id is assigned by Evlet when the record is created and
@@ -740,7 +740,7 @@ not declare a field with one of these names.
 
 - the record routes and the document pipeline (create, update, actions and moves),
   under the person who sent them, an API key's user included;
-- the rows an [effect](effects.md) posts, under the person whose move posted them;
+- the rows a `@release` hook posts through `self.context.session`, under the person whose move posted them;
 - trusted Python: `business.context(user)` writes under that user. A raw `Session` writes as the
   engine unless code sets `session.actor` to a user id first;
 - imports and data migrations, which write through `Session`.
@@ -751,7 +751,7 @@ it does not move "Last modified". `sequences.backfill()` and `Recompute` migrati
 leave the times alone.
 
 **Why columns and not the Activity.** The [Activity](activity.md) records who and when, but only for
-models that activity (a State, effects or `Meta.activity`), and raw `Session` writes, data migrations
+models that activity (a State or `Meta.activity`), and raw `Session` writes, data migrations
 and `sequences.backfill()` write no entries. Columns are right for every write path and cost nothing
 to read: they come with the row the detail already loads.
 
@@ -947,8 +947,8 @@ A table that only trusted code writes, at high volume, is usually a [ledger mode
 application changes them.": create, update, delete, drafts, actions, moves, activity entries, attachments and filing a print. So
 do the MCP and Eva write tools, which call the same routes. The schema carries `"api": "read"`
 and every write permission as false, so screens show no New, Edit, Delete, actions or moves.
-Controls overrides cannot grant a write back: the rule is checked before any `Rule`. It is the
-same rule that keeps effect rows read only ([effects.md](effects.md#effect-rows-are-read-only)).
+Controls overrides cannot grant a write back: the rule is checked before any `Rule`. Use it for
+rows that documents post in `@release` hooks, such as a ledger.
 
 **`api = None`.** `/api/<model>` and every route under it answer 404, as for a model that does
 not exist. The model is left out of the schema, the sidebar, generated screens, Discovery,
@@ -990,14 +990,14 @@ DateTime is read in the instance timezone.
 
 Every writer is refused, trusted Python included, when the saved date or the new date is on or
 before the lock: creating a record dated in a closed period, changing or deleting one in it,
-moving a date into or out of it, moves and corrections on such a document, and effect rows
-dated in it. The error is on the period field: `"This date is in a closed period (locked up to
+moving a date into or out of it, moves and corrections on such a document, and rows a
+`@release` or `@release.exit` hook posts dated in it (the error is then on that row's period field). The error is on the period field: `"This date is in a closed period (locked up to
 31-03-2026)"`, a 422 over HTTP and a `ValidationError` in Python. A record with no date is in
 no period.
 
 One move passes: a move within the release (from one `release=True` step to another, such as
-unpaid to paid) that changes no versioned content, only the State, `versioned=False` fields and
-`tracking="exclude"` fields. A closed period
+unpaid to paid), which changes only the State, `versioned=False` fields and `tracking="exclude"`
+fields. A closed period
 protects content, not process ([states-actions.md](states-actions.md#moves-within-the-release)).
 Such a move also keeps the record's saved results, so it does not recalculate.
 
@@ -1012,9 +1012,6 @@ with database.transaction() as tx, tx.unlocked_periods("Load March from the old 
 with business.context(user) as context, context.unlocked_periods("Fix a mistyped date"):
     context.update(Invoice, invoice_id, posting_date="2026-03-11")
 ```
-
-How a rule leaving the posting state dates its mirror rows in a closed period is in
-[effects.md](effects.md#closed-periods).
 
 ## Explicit migrations
 
@@ -1308,9 +1305,8 @@ Released records are recalculated only when an admin asks for it, for one migrat
 recompute_posted=True)` from Python. The default stays off. Every Recompute operation of that
 run then includes released records; each one that changes gets a `recomputed` entry with
 `"posted": true`, the run writes one Controls audit row (actor `cli`, area `Records`) and logs
-a warning with the count, and `posted` on the returned list counts them. Their effect rows are
-not rewritten, so `evlet effects check` reports them as `changed` until each leaves the posting
-state and enters it again. Browser requests never run migrations, so Controls has no such switch.
+a warning with the count, and `posted` on the returned list counts them. What their `@release`
+posted is not rewritten; reopen and release a record again to post its new totals. Browser requests never run migrations, so Controls has no such switch.
 
 Back up existing databases before migrating. A backup is not a rollback command:
 restoring it after later writes would discard those newer writes.

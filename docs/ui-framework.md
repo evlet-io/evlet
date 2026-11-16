@@ -178,7 +178,7 @@ await api.update('order', 1, { children: { lines: { update: [{ id: 2, qty: '3' }
   `draft` (`POST /api/_draft/{model}`), `action` and `move`
   (`POST /api/{model}/{id}/moves/{key}`).
 - `move()` sends the rule key, the record's ETag and the remark and asked values, if any.
-  It answers with the record, its new `_moves`, `_actions` and `_effects`, and a new ETag. A move the record does not allow now is a 409
+  It answers with the record, its new `_moves` and `_actions`, and a new ETag. A move the record does not allow now is a 409
   `ConflictError` whose message gives the reason. Its tests replay responses recorded from
   the real routes, including moves, measures, related records and line pages
   (`scripts/generate_ui_framework_fixtures.py`).
@@ -980,16 +980,14 @@ page in a new browser tab.
 | `panel=False` on a field, `Section` or `Table`; `Meta.panel_summary = False`; `Meta.panel` | What a record opened in a list's side panel leaves out, or (`Meta.panel`) the only parts it keeps, in order. The schema carries `panel` only when something is hidden; the full page ignores it ([Side panel](#side-panel)) |
 | `copy=False` on a field or `Table`; `Meta.duplicate = False` | What a record's Duplicate leaves out of the new record, or (`Meta.duplicate`) no Duplicate action at all. Duplicate shows only with `permissions.create`; the schema carries `copy` and `duplicate` only when off ([ui.md](ui.md#duplicate)) |
 | `attachments` | The Attachments block of the side column, with upload and a remove button on each file (asks first) for roles that can update while the record is not locked |
-| `Effects` (Phase 6) | The Postings row: what was posted, reversals and the balance check |
-| Activity (Phase 8) | Activity in the side column: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, postings and their balance, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `activity.kinds` lets the role post a note |
+| Activity (Phase 8) | Activity in the side column: entries by day with actors named from the page's `users` (the engine as "The system") and a RelativeTime each, field changes old and new, Table rows counted, moves, numbers, files, messages, calls and follow ups with their due date, assignee and done state; entries marked `partial` say some details are hidden. The note box shows only when the schema's `activity.kinds` lets the role post a note |
 | Every record (`_audit`) | Created and Modified in the record footer, as relative times with who ([Relative times](#relative-times)), with the record ID and Copy link. More has Copy record ID and Copy link |
 | Title, name and State | Shown in the header, so a saved record's Details form leaves them out: the title is edited in place in the header, the State by its badge or bar. A field the header shows but can't edit (a name typed by hand, a State with `show="none"`) stays in the form. A new record's form keeps them all |
 
 A section appears only when the schema or the detail carries its key. The screen tests replay
-these keys as the engine sends them, recorded from an invoice with a State, a Sequence, effects,
+these keys as the engine sends them, recorded from an invoice with a State, a Sequence, release postings,
 measures, key fields, relations, files and an activity (engine and user entries, follow ups, and a
-viewer who sees the posting entry only in part). A record that has posted nothing yet still lists each
-effect target with zero rows; the Postings row treats that as nothing posted. The files of a
+viewer's view of them). The files of a
 locked record cannot change, so the upload control hides while `_locked` is true. Every response
 is recorded by `scripts/generate_ui_framework_fixtures.py`; none is written by hand.
 
@@ -1039,8 +1037,6 @@ record store replay the shared finite-v1 scenarios (`finite-fixtures.json`).
 - The board loads the first 100 records of the filter. Column counts and totals come from the
   server; the aggregate route has no search, so while searching columns count the loaded cards
   and show no totals.
-- Postings show what each target received (rows, reversals, balance); listing the posted rows
-  waits for a filter by source on the target's list route.
 - Reference fields are read only until the schema lists the models they may point to.
 - State metadata (`record.state`) is read when the schema sends it.
 - Lookups that a role cannot read stay pending; their saved results keep showing.

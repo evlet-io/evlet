@@ -173,7 +173,6 @@ describe('records', () => {
     expect(moved.data._moves).toEqual([{ key: 'mark_paid', to: 'paid', label: 'Mark paid', allowed: false, reason: 'Your role cannot use this move' },
       { key: 'reopen', to: 'draft', label: 'Reopen', allowed: false, reason: 'Your role cannot use this move', remark: { mode: 'required', label: null, required: true } },
       { key: 'void', to: 'void', label: 'Void', allowed: true, remark: { mode: 'required', label: 'Reason', required: true } }]);
-    expect(moved.data._effects).toEqual([{ target: 'ledgerentry', rows: 3, reversals: 0, balanced: true }]);
     await expect(api.move('invoice', id, '../x', null)).rejects.toThrow('Unknown move');
   });
 
@@ -192,10 +191,9 @@ describe('records', () => {
     expect(page.items.map(item => item.item)).toEqual(['Licence']);
     const { data } = await api.get('invoice', id(1));
     expect(data).toMatchObject({ docstate: 'void', _moves: [], _locked: true });
-    expect(data._effects).toEqual([{ target: 'ledgerentry', rows: 3, reversals: 3, balanced: true }]);
   });
 
-  it('reads the document schema: state, effects, measures, key fields and relations', () => {
+  it('reads the document schema: state, measures, key fields and relations', () => {
     const invoice = responses.invoice_schema.body.models.find((model: any) => model.name === 'invoice');
     expect(invoice.state).toMatchObject({ field: 'docstate', default: 'draft', show: 'bar' });
     expect(invoice.state.steps.map((step: any) => [step.key, step.label, step.color, step.lock, step.final])).toEqual([
@@ -205,7 +203,7 @@ describe('records', () => {
     expect(invoice).toMatchObject({ key_fields: ['customer', 'total', 'due_on'], permissions: { create: true, update: true, delete: false } });
     expect(invoice.relations.map((relation: any) => relation.name)).toEqual(['payment.invoice']);
     expect(invoice.measures.map((measure: any) => [measure.name, measure.per_record])).toEqual([['outstanding', false], ['count', false], ['payments', true], ['paid', true]]);
-    expect(invoice.effects).toEqual([{ target: 'ledgerentry', on: 'issued', reverse: { swap: ['debit', 'credit'] }, balanced: ['debit', 'credit'] }]);
+    expect(invoice.effects).toBeUndefined();
     expect(invoice.fields.find((field: any) => field.name === 'number').sequence).toMatchObject({ assign_on: 'issued', format: 'INV-{year}-{n:05}' });
   });
 

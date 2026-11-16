@@ -101,7 +101,6 @@ evlet migrate acme --trust
 evlet migrate acme --plan --trust
 evlet migrate acme --trust --allow-destructive
 evlet makemigration people --instance acme --name dependents --trust
-evlet effects check acme
 evlet ids check acme
 evlet activity verify acme
 evlet ledger list --instance acme
@@ -237,9 +236,6 @@ serves. Payloads, checkpoints and exception messages are not shown; see
 data on exit. It runs the existing framework examples with their generated screens.
 It does not read `EVLET_DATABASE`, create an app or touch customer instances.
 `docs` serves this installed version's guides locally without a login or database.
-`effects check` recomputes the rows records post to other models and reports differences.
-It reads one snapshot without writing or taking the write lock, so it may run beside a server;
-it exits with status 1 when there is any difference. See [effects.md](effects.md).
 `routes` loads the installed apps and the optional `routes.py` the same way `serve`
 does, then prints the resolved hosts and paths, marking locked rows and where each
 row came from. See [routing.md](routing.md).

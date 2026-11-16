@@ -506,8 +506,6 @@ class Business:
             state = state_schema(self, user, model)
             if state is not None:
                 entry['state'] = state
-            from .effects import model_schema as effect_schema
-            entry.update(effect_schema(self, user, model))
             entry['attachments'] = model in self.attachments
             from .measures import schema as measure_schema
             if self.registry.measures.get(model):
@@ -1127,20 +1125,17 @@ class Business:
         """
         from .activity import summary as activity_summary
         result = activity_summary(self, context._tx, model, record.id)
-        if model in self.registry.effects:
-            from .effects import ever_posted
-            if ever_posted(context._tx.connection, self.registry, model, record.id):
-                # A record that ever posted is kept: delete answers 409, so screens do not offer it.
-                result['_deletable'] = False
         if model.__state__ is None and model not in self.registry.guards:
             return result
         from .guards import availability
         reader = context.read_context()
-        from .effects import summary
         from .statemanager import releasing, state_shown, version_of
         if releasing(model) and state_shown(reader, model):
             result['_version'] = version_of(reader, model, record)
-        return {**availability(self, reader, model, record, loaded), **summary(self, reader, model, record), **result}
+            if result['_version']['number'] is not None:
+                # A record with a version is kept: delete answers 409, so screens do not offer it.
+                result['_deletable'] = False
+        return {**availability(self, reader, model, record, loaded), **result}
 
     def field_expressions(self, user, model):
         """Serialized finite expressions per readable field: compute, initial and the three rules.

@@ -84,7 +84,7 @@ Run the Lifecycle Playground, which declares the model above, with:
 | `track_changes = True` | `Meta.activity = Activity(tamper_evident=True)`; a State keeps an Activity by default |
 | `Meta.revisable`, `revises`, `revised_by`, `/revise` | a rule back to draft (Reopen) with a remark |
 | `/void` | a rule into a final `void` step with `remark="required"` |
-| `/unpost`, `/repost` | a rule out of the effect's `on` step (it reverses the rows) and the rule back into it |
+| `/unpost`, `/repost` | a rule out of the released set (`@release.exit` reverses the rows) and the rule back into it (`@release` posts them) |
 | `/confirm`, `/cancel`, `/reopen` | rules, `POST /api/{model}/{id}/moves/{key}` |
 | `/revisions`, `/snapshot`, lifecycle `/diff` | `GET /api/{model}/{id}/history`; versions come in 0.4.6, PR 3 |
 | `@validate.confirm`, `@validate.cancel`, `check_lifecycle` | `@validate` |

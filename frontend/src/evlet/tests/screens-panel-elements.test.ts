@@ -50,14 +50,14 @@ describe('what a record shows in a side panel', () => {
   it('shows everything without model.panel, and no full page note', async () => {
     const host = await openDraft();
     await until(() => expect(mainTables(panel(host))).toEqual(['Lines']));
-    expect(rows(panel(host))).toEqual(['Amounts', 'Related', 'Postings']);
+    expect(rows(panel(host))).toEqual(['Amounts', 'Related']);
     expect(sections(panel(host))).toEqual(['Invoice', 'Amounts']);
     await until(() => expect(blocks(panel(host))).toEqual(['Attachments', 'Activity']));
     expect(panel(host).querySelector('.ev-panel-more')).toBeNull();
   });
 
   it('leaves out hidden sections, fields, parts, blocks and the summary, and offers the full page', async () => {
-    const host = await openDraft({ sections: ['Amounts'], fields: ['due_on'], tabs: ['activity', 'lines', 'postings'], blocks: ['info', 'summary'] });
+    const host = await openDraft({ sections: ['Amounts'], fields: ['due_on'], tabs: ['activity', 'lines'], blocks: ['info', 'summary'] });
     await until(() => expect(rows(panel(host))).toEqual(['Related']));
     expect(mainTables(panel(host))).toEqual([]);
     expect(panel(host).querySelector('.sum')).toBeNull();
@@ -72,7 +72,7 @@ describe('what a record shows in a side panel', () => {
     // The full page ignores model.panel.
     click(byText(note, 'button', 'Open full page'));
     await until(() => expect(location.pathname).toBe(`/app/invoice/${three}`));
-    await until(() => expect(rows(host)).toEqual(['Amounts', 'Related', 'Postings']));
+    await until(() => expect(rows(host)).toEqual(['Amounts', 'Related']));
     expect(mainTables(host)).toEqual(['Lines']);
     expect(sections(host)).toEqual(['Invoice', 'Amounts']);
     expect(field(host, 'due_on')).not.toBeNull();
@@ -80,7 +80,7 @@ describe('what a record shows in a side panel', () => {
 
   it('keeps only what Meta.panel names', async () => {
     // As view_for writes Meta.panel = ("lines", "customer", "related").
-    const host = await openDraft({ fields: ['due_on', 'number', 'posting_date', 'status'], sections: ['Amounts'], tabs: ['activity', 'postings', 'revisions'],
+    const host = await openDraft({ fields: ['due_on', 'number', 'posting_date', 'status'], sections: ['Amounts'], tabs: ['activity', 'revisions'],
       blocks: ['files', 'info', 'key_fields', 'summary'], order: ['lines', 'details', 'related'] });
     await until(() => expect(mainTables(panel(host))).toEqual(['Lines']));
     expect(rows(panel(host))).toEqual(['Related']);
