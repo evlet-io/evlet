@@ -40,6 +40,141 @@ def freeze(value):
     return value
 
 
+RESERVED_METHODS = ('save', 'delete', 'move', 'reload')
+UNBOUND = 'Get the record through a context to run its actions'
+
+
+class Record:
+    """A record read through a Context (get, create, list): field values as attributes, Table rows as lists of
+    read-only rows, and its @action methods and state rules (by key) as methods, run with every check of
+    context.action and context.move. Bound to the context that read it and to that revision."""
+    def __init__(self, context, model, detail):
+        # What only the write reports (row ids, an action's outcome, a queued job) is not part of the record.
+        detail = {key: value for key, value in detail.items() if key not in ('_row_ids', '_outcome', '_job')}
+        children = detail.get('children') if isinstance(detail.get('children'), dict) else {}
+        object.__setattr__(self, '_context', context)
+        object.__setattr__(self, '_model', model)
+        owned = context._business.children
+        object.__setattr__(self, '_data', {**python_values(model, {key: value for key, value in detail.items()
+                                                                    if not key.startswith('_') and key != 'children'}),
+                                           **{name: tuple(Snapshot(python_values(owned[model, name].model, row)) for row in rows)
+                                              if (model, name) in owned else freeze(rows) for name, rows in children.items()}})
+        object.__setattr__(self, '_detail', detail)
+        object.__setattr__(self, '_changes', {})
+
+    def __repr__(self):
+        return f'<{self._model.__name__} {self.id}>'
+
+    @property
+    def context(self):
+        return self._context
+
+    def __getitem__(self, name):
+        return self._data[name]
+
+    def __getattr__(self, name):
+        if name in self._changes:
+            return self._changes[name]
+        if name in self._data:
+            return self._data[name]
+        method = getattr(self._model, name, None)
+        if hasattr(method, '__action__'):
+            return lambda values=None, **more: self._action(name, {**(values or {}), **more})
+        if name in rule_keys(self._model):
+            return lambda remark=None, **asked: self.move(name, remark=remark, **asked)
+        if inspect.isfunction(method):
+            return MethodType(method, self)
+        if name in self._model.__declared_fields__:
+            return None
+        raise AttributeError(name)
+
+    def __setattr__(self, name, value):
+        if name not in self._model.__declared_fields__ and name not in self._model.__tables__:
+            raise AttributeError(f'{self._model.__name__} has no field {name}')
+        self._changes[name] = value
+
+    def _check(self):
+        if self._context.readonly:
+            raise AccessError(403, 'This context is read only')
+
+    def _action(self, name, values):
+        """Run the action. Values fill its inputs, or, when it returns a Prompt, that prompt: then the prompt is
+        validated and submitted here, with no ticket. Without values such a prompt comes back loaded."""
+        from .prompts import build, is_prompt, submit_draft
+        self._check()
+        method = getattr(self._model, name)
+        takes = method.__action__['inputs'] is not None or len(inspect.signature(method).parameters) > 1
+        result = self._context.action(self._model, self.id, name, **(values if takes else {}))
+        outcome = result.get('_outcome')
+        self._refresh(result)
+        if not is_prompt(outcome):
+            return result.get('_job', outcome)
+        prompt, starting = (type(outcome), outcome.starting) if not isinstance(outcome, type) else (outcome, {})
+        draft = build(self._context, prompt, self, starting, None if takes else values)
+        if takes or not values:
+            return draft
+        value = submit_draft(self._context, draft)
+        self.reload()
+        return value
+
+    def move(self, key, remark=None, **asked):
+        """Move the record by its rule `key`, with the checks, hooks and approvals of context.move."""
+        self._check()
+        self._refresh(self._context.move(self._model, self.id, key, remark=remark, **asked))
+        return self
+
+    def save(self):
+        """Write the attributes changed since the read in one update; a record changed since then is a conflict."""
+        self._check()
+        if not self._changes:
+            return self
+        self._current()
+        tables = {name: self._changes.pop(name) for name in list(self._changes) if name in self._model.__tables__}
+        values = {**self._changes, **({'children': tables} if tables else {})}
+        self._refresh(self._context.update(self._model, self.id, **values))
+        return self
+
+    def delete(self):
+        self._check()
+        self._current()
+        self._context.delete(self._model, self.id)
+
+    def reload(self):
+        context = self._context
+        record = context._business.policy.record(context._tx, context.user, self._model, self.id)
+        self._refresh(context._business.detail(context._tx, context.user, record, row_limit=None))
+        return self
+
+    def _current(self):
+        context = self._context
+        record = context._business.policy.record(context._tx, context.user, self._model, self.id)
+        revision = context._business.revision
+        if revision(context._business.detail(context._tx, context.user, record, row_limit=None)) != revision(self._detail):
+            raise ConflictError('This record changed since it was read. Reload it before saving.')
+
+    def _refresh(self, detail):
+        fresh = Record(self._context, self._model, detail)
+        for name in ('_data', '_detail'):
+            object.__setattr__(self, name, getattr(fresh, name))
+        self._changes.clear()
+
+
+def python_values(model, values):
+    """Values as an HTTP detail carries them, back to the fields' Python values (Decimal, date, RecordId)."""
+    fields, result = model.__declared_fields__, {}
+    for name, value in values.items():
+        try:
+            result[name] = from_wire(fields[name], value) if name in fields else value
+        except (ValueError, TypeError, ArithmeticError):
+            result[name] = value
+    return result
+
+
+def rule_keys(model):
+    field = model.__declared_fields__.get(model.__state__) if getattr(model, '__state__', None) else None
+    return {rule.key for rule in field.rules} if field is not None else set()
+
+
 class Draft:
     def __init__(self, definition, values=None, *, context=None, parent=None, source=None, record_id=None):
         object.__setattr__(self, '_definition', definition)
@@ -82,6 +217,9 @@ class Draft:
         if name in self._definition.__sources__:
             return self._sources.get(name)
         value = getattr(self._definition, name)
+        if hasattr(value, '__action__') and self.id is not None and self.context is not None:
+            # Another action on the record being written runs its checks, then its body on this same draft.
+            return lambda **arguments: nested_action(self, name, value, arguments)
         return MethodType(value, self) if inspect.isfunction(value) else value
 
     def __setattr__(self, name, value):
@@ -173,6 +311,15 @@ class Draft:
                 **{name: [row.stored_values() for row in rows] for name, rows in self._rows.items()}}
 
 
+def nested_action(draft, name, method, arguments):
+    from .guards import action_arguments
+    context, model, declaration = draft.context, draft._definition, method.__action__
+    if not has_role(context.user, declaration['roles']):
+        raise AccessError(403, 'Action is unavailable')
+    with trusted():
+        return method(draft, **action_arguments(context, model, method, declaration, arguments, draft))
+
+
 # Where a change came from, recorded with it.
 SOURCES = ('User', 'API', 'Automation', 'Scheduler', 'System', 'Integration')
 
@@ -237,12 +384,11 @@ class Context:
         return model
 
     def get(self, model, record_id):
+        """The record as a bound Record: its values, and its actions and rules as methods (docs/prompts.md)."""
         model = self._model(model)
         record = self._business.policy.record(self._tx, self.user, model, record_id)
         # Python code sees every readable row, not the first page an HTTP detail embeds.
-        value = self._business.detail(self._tx, self.user, record, row_limit=None)
-        children = value.pop('children', {})
-        return Snapshot({**value, **children})
+        return Record(self, model, self._business.detail(self._tx, self.user, record, row_limit=None))
 
     def print(self, design, record_id):
         """PDF bytes of a record printed with a PrintDesign, with this context's user and permissions."""
@@ -269,7 +415,7 @@ class Context:
         page = qb.select(source).where(where).order_by(*query.ordering(order_by)).limit(limit).offset(offset)
         rows = tx.connection.run(page).all()
         total = tx.connection.run(qb.select(source, qb.count()).where(where)).value()
-        return {'rows': business.policy.serialize_many(tx, self.user, [model._from_row(row) for row in rows]),
+        return {'rows': [Record(self, model, row) for row in business.policy.serialize_many(tx, self.user, [model._from_row(row) for row in rows])],
                 'total': total, 'limit': limit, 'offset': offset}
 
     def count(self, model, *, filters=None):
@@ -290,7 +436,8 @@ class Context:
         return entries(self, model, known_id(record_id), **page)
 
     def create(self, model, **values):
-        return self._write(model, None, values)
+        """Create a record through the document pipeline; returns it as a bound Record."""
+        return Record(self, self._model(model), self._write(model, None, values))
 
     def unlocked_periods(self, reason):
         """For migrations and data repairs in trusted code only: write records dated in closed periods inside
@@ -1559,8 +1706,8 @@ def handler_context(context, draft):
 
 
 def add_outcome(result, outcome):
-    """What a run method or action returned, on its detail: a queued job as `_job` ({id, state}), a
-    presented slip as `_outcome`."""
+    """What a run method or action returned, on its detail: a queued job as `_job` ({id, state}), anything
+    else (an Outcome, a Prompt) as `_outcome`."""
     from .jobs import JobReceipt
     if isinstance(outcome, JobReceipt):
         result['_job'] = outcome.public()
@@ -1716,6 +1863,12 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         arguments = guards.action_arguments(context, model, method, declaration, arguments, before)
         with trusted(), handler_context(context, draft):
             outcome = method(draft, **arguments)
+        from .prompts import is_prompt
+        if is_prompt(outcome):
+            # An action that returns a prompt is checked and writes nothing: the prompt's submit() writes.
+            result = business.detail(tx, user, tx.get(model, record_id), row_limit=None)
+            add_outcome(result, outcome)
+            return result
     elif before is not None:
         statemanager.check_state_lock(context, draft, before)
     # Inside the released set versioned content cannot change: a move within it or an action changes only

@@ -263,10 +263,9 @@ class Business:
             with self.database.transaction() as tx:
                 ensure_table(tx.connection,
                              hashed=[self.registry.name_for(model) for model, activity in self.activities.items() if activity.tamper_evident])
-        if getattr(self, 'forms', None) and (self.forms.dialogs or self.forms.reports):
-            self.forms.initialize()
-        if getattr(self, 'slips', None) and self.slips.slips:
-            self.slips.initialize()
+        from .prompts import ensure_tickets
+        with self.database.transaction() as tx:
+            ensure_tickets(tx.connection)
         if getattr(self, 'prints', None) is not None:
             self.prints.initialize()
         if self.events:
@@ -362,8 +361,6 @@ class Business:
         if getattr(self, 'prints', None) is not None and self.prints.designs:
             from .printing import available
             result['printing'] = {'available': available()}
-        if getattr(self, 'slips', None) and self.slips.slips:
-            result['slips'] = self.slips.schema(user)
         if self.events or self.jobs:
             result['capabilities'] = {'events': self.events is not None, 'jobs': self.jobs is not None}
         # How the currency codes an admin changed are shown (evlet.currencies); every other code keeps the default.
@@ -538,13 +535,6 @@ class Business:
             plan = self.registry.plans.get(model)
             if plan is not None:
                 entry['calculation'] = self.calculation_projection(user, model, plan)
-            if getattr(self, 'forms', None):
-                for (owner, name), definition in self.forms.dialogs.items():
-                    if owner is model and self.policy.allows(user, model, 'update'):
-                        entry['actions'].append({'name': name, 'label': definition.title or name, 'dialog': True})
-            slips = self.slips.schema(user, model) if getattr(self, 'slips', None) and self.slips.slips else []
-            if slips:
-                entry['slips'] = slips
         # Named sidebars, after the models and reports above are filtered for this role (evlet.workspaces).
         if getattr(self, 'workspaces', None) is not None:
             result['workspaces'] = self.workspaces.schema(user, result)
@@ -646,8 +636,9 @@ class Business:
         if path.startswith('/api/_services/'):
             from .services import dispatch
             return dispatch(self, scope, body, user)
-        if getattr(self, 'slips', None) and path.startswith('/api/_slips/'):
-            return self.slips.dispatch(scope, body, user)
+        if path.startswith('/api/_prompts/'):
+            from .prompts import dispatch
+            return dispatch(self, scope, body, user)
         prints = getattr(self, 'prints', None)
         if prints is not None and path == '/api/_prints':
             if method != 'GET': raise AccessError(405, 'Method not allowed')
@@ -656,7 +647,7 @@ class Business:
             if method != 'POST': raise AccessError(405, 'Method not allowed')
             _, _, _, report, _, design = path.split('/')
             return prints.report_pdf(report, design, body, user)
-        if getattr(self, 'forms', None) and (path == '/api/_reports' or path.startswith(('/api/_reports/', '/api/_dialogs/'))):
+        if getattr(self, 'forms', None) and (path == '/api/_reports' or path.startswith('/api/_reports/')):
             return self.forms.dispatch(scope, body, user)
         if path.startswith('/api/_draft/') and method == 'POST':
             from .documents import load_draft, settle, source_values, walk
@@ -881,6 +872,11 @@ class Business:
                     remark = values.pop('remark', None)
                 result = context._write(model, record_id, values, action=action, arguments=body if action else None,
                                         move=move, remark=remark)
+                if '_outcome' in result:
+                    # An action's Outcome, or the prompt it returned, with a single-use ticket (evlet/prompts.py).
+                    from .prompts import outcome_of
+                    result['_outcome'] = outcome_of(self, context, result['_outcome'], origin=f'action:{action}',
+                                                    model=model, record_id=record_id)
                 if record_id and not (action or move):
                     # A save replaces the saver's unsaved changes (docs/internal/unsaved-changes.md).
                     self.unsaved.record_saved(context._tx.connection, user, parts[2], record_id,

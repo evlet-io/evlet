@@ -323,8 +323,7 @@ class Tools:
         writes = writes and (access is None or access.write)
         schema = self.business.schema(user)
         operations = {name for entry in schema['models'] for name, allowed in entry['permissions'].items() if allowed}
-        # Dialogs are listed with actions in the schema, but they are forms, not tool calls.
-        actions = any(not action.get('dialog') for entry in schema['models'] for action in entry.get('actions') or ())
+        actions = any(entry.get('actions') for entry in schema['models'])
         # A State with rules, on a model this role may change.
         states = any((entry.get('state') or {}).get('rules') and entry['permissions'].get('update') for entry in schema['models'])
         files = any(entry.get('attachments') for entry in schema['models'])
@@ -692,7 +691,7 @@ class Tools:
             return
         entry = self.model_entry(user, values['model'])
         if tool.name == 'run_action':
-            allowed = any(action['name'] == values['action'] and not action.get('dialog') for action in entry.get('actions') or ())
+            allowed = any(action['name'] == values['action'] for action in entry.get('actions') or ())
         elif tool.name == 'change_state':
             # The record's _moves say which moves this role has now, and why one is blocked.
             move = next((item for item in (record or {}).get('_moves') or () if item['key'] == values['rule']), None)

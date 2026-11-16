@@ -61,12 +61,12 @@ __all__ += ["AppDefinition", "Instance", "Schedule", "Security"]
 from .routing import ApiScope, ControlsAccess, Docs, Frontend, Host, Request, Response
 __all__ += ["ApiScope", "ControlsAccess", "Docs", "Frontend", "Host", "Request", "Response"]
 __all__ += ["Child", "Table", "Ref", "Query", "action", "validate", "depends", "release", "state"]
-from .forms import Chart, Dialog, Report, Column
-__all__ += ["Chart", "Dialog", "Report", "Column"]
+from .forms import Chart, Report, Column
+__all__ += ["Chart", "Report", "Column"]
 
-from .slips import Outcome, Slip, present
+from .prompts import Outcome, Prompt
 
-__all__ += ["Outcome", "Slip", "present"]
+__all__ += ["Outcome", "Prompt"]
 from .services import api, cron
 __all__ += ["api", "cron"]
 from .measures import Count, CountDistinct, Day, Max, Min, Month, Sum, Year

@@ -1,5 +1,5 @@
 from datetime import date
-from evlet import (Model, Child, Table, Dialog, Link, Text, Decimal, Currency,
+from evlet import (Model, Child, Table, Prompt, Link, Text, Decimal, Currency,
                    Boolean, Date, Rule, Ref, depends, action, ValidationError, Select, Related, validate)
 from amendment.models.masters import Company, Warehouse, ItemMaster, BOM, WorkOrder
 from amendment.services.stock import available
@@ -47,25 +47,33 @@ class SalesOrder(Model):
         if self.status != 'Draft': raise ValidationError({'status': 'Only drafts can be confirmed'})
         self.status = 'Confirmed'
 
-    class CreateWorkOrders(Dialog):
+    @action('Create Work Orders')
+    def create_work_orders(self):
+        return CreateWorkOrders
+
+
+class CreateWorkOrders(Prompt):
+    """The form Create Work Orders opens on a sales order: its pending items, each with a quantity and a BOM."""
+    class Meta:
         title = 'Create Work Orders'
-        action = 'create_work_orders'
-        production_date = Date(default=date.today, required=True)
+        primary = 'Create work orders'
 
-        class Item(Child):
-            selected = Boolean(default=True, required=True)
-            source_row_id = Text(read_only=True)
-            item = Link(ItemMaster, read_only=True)
-            pending_qty = Decimal(read_only=True)
-            qty = Decimal(default='0', minimum='0')
-            selected_qty = Decimal(compute='qty if selected else 0', stored=False, hidden=True)
-            bom = Link(BOM, filters={'item': Ref('item'), 'company': Ref('source.company'), 'is_active': True}, required_if='selected')
+    production_date = Date(default=date.today, required=True)
 
-        items = Table(Item, required=True)
-        total_qty = Decimal(compute='sum(items.selected_qty)', stored=False)
+    class Item(Child):
+        selected = Boolean(default=True, required=True)
+        source_row_id = Text(read_only=True)
+        item = Link(ItemMaster, read_only=True)
+        pending_qty = Decimal(read_only=True)
+        qty = Decimal(default='0', minimum='0')
+        selected_qty = Decimal(compute='qty if selected else 0', stored=False, hidden=True)
+        bom = Link(BOM, filters={'item': Ref('item'), 'company': Ref('source.company'), 'is_active': True}, required_if='selected')
 
-        def load(self, source):
-            self.items = selection_rows(self.context, source)
+    items = Table(Item, required=True)
+    total_qty = Decimal(compute='sum(items.selected_qty)', stored=False)
 
-        def submit(self, source):
-            return create_selected(self.context, source, self.items, production_date=self.production_date)
+    def load(self, source):
+        self.items = selection_rows(self.context, source)
+
+    def submit(self):
+        return create_selected(self.context, self.source, self.items, production_date=self.production_date)

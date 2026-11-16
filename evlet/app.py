@@ -66,7 +66,7 @@ class Application:
     # build_instance sets this: an instance's framework steps run only inside evlet migrate.
     managed_framework = False
 
-    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, slips=(), ai=None, prints=(), workspaces=()):
+    def __init__(self, database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, name="Evlet", hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, ai=None, prints=(), workspaces=()):
         from .routing import RouteTable, resolve_routes
         from .naming import check_declarations
         check_declarations(database.registry, {child.model for child in database.registry.children})
@@ -94,9 +94,7 @@ class Application:
             self.business.application = {"name": name, "playground": bool(playground), "docs": self.routes.docs_path if self.routes.docs else None}
             from .forms import Forms
             self.business.forms = Forms(self.business, reports)
-            from .slips import Slips
-            self.business.slips = Slips(self.business, slips)
-            # Named sidebars, checked against the models, reports and slips above (evlet.workspaces).
+            # Named sidebars, checked against the models and reports above (evlet.workspaces).
             from .workspaces import Workspaces
             if isinstance(workspaces, (str, bytes)) or not isinstance(workspaces, (list, tuple)):
                 raise ValueError('Pass workspaces as a list or tuple of Workspace definitions')
@@ -124,8 +122,8 @@ class Application:
                     raise ValueError('Pass ai=AI(...)')
                 if ai.enabled:
                     self.business.eva = Eva(self.business, ai)
-        elif reports or apis or connectors or slips or prints or workspaces or ai is not None:
-            raise ValueError('Reports, slips, print designs, workspaces, APIs, connectors and AI require authentication')
+        elif reports or apis or connectors or prints or workspaces or ai is not None:
+            raise ValueError('Reports, print designs, workspaces, APIs, connectors and AI require authentication')
 
     @staticmethod
     def _redact_oidc_query(scope):

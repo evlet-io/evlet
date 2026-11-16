@@ -591,7 +591,15 @@ class Policy:
 
     def check_values(self, tx, user, model, values, *, targets=None):
         refuse_id(values)
-        if set(values) - self.fields(user, model, write=True):
+        writable = self.fields(user, model, write=True)
+        if not CALLER.get():
+            # Trusted Python (an action, hook, prompt submit(), service or script) also writes read_only fields the
+            # role may otherwise write, such as a quotation line's confirmed quantity. Callers never do.
+            rule = self.rule(user, model)
+            writable |= {name for name in values if name in model.__declared_fields__ and model.__declared_fields__[name].read_only
+                         and name in self.presented(user, model) and (rule.write_fields is None or name in rule.write_fields)
+                         and model.__declared_fields__[name].compute is None and name not in getattr(model, '__derives__', ())}
+        if set(values) - writable:
             raise AccessError(403, 'One or more fields cannot be written')
         for name, value in values.items():
             field = model.__declared_fields__[name]

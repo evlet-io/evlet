@@ -1,41 +1,16 @@
-"""Transient Python forms for source-bound operations and bounded reports."""
+"""Reports: bounded, filtered result pages built by trusted Python."""
 
 from dataclasses import dataclass
-import hashlib
 import json
 import re
 
-from . import qb
-from .adapter import Column, TableDefinition
 from .auth import AccessError, has_role
-from .identity import jsonable, path_id
 from .models import Model, ValidationError
-from .documents import Draft, Snapshot, settle
+from .documents import settle, walk
 from .permissions import trusted
+from .prompts import draft_values, form_draft
 from .ui.metadata import field_schema, source_schema
-from .reactivity import plans, serialized
-
-
-# Dialog submits and slip hand-ins by idempotency key, so a retried request returns the first result.
-OPERATIONS = TableDefinition('evlet_operations', (
-    Column('key', 'TEXT', primary=True),
-    Column('actor', 'INTEGER', required=True),
-    Column('request', 'TEXT', required=True),
-    Column('result', 'TEXT', required=True),
-))
-
-
-class Dialog(Model):
-    title = ''
-    action = ''
-    permission = None
-    __transient__ = True
-
-    def load(self, source):
-        pass
-
-    def submit(self, source):
-        raise NotImplementedError('Define the dialog submit operation')
+from .reactivity import evaluate, plans, serialized
 
 
 @dataclass(frozen=True)
@@ -146,59 +121,27 @@ def metadata(definition, name, source=None):
     return result
 
 
-def shown(field, value):
-    """A value as the browser gets it; an input that failed its check comes back as typed."""
-    try:
-        return field.serialize(value)
-    except (ValueError, TypeError, ArithmeticError):
-        return value if isinstance(value, str) else None
-
-
-def draft_values(draft):
-    from .documents import source_values
-    return {**{name: shown(field, draft._values.get(name)) for name, field in draft._definition.__declared_fields__.items()},
-            '_sources': source_values(draft, set(draft._definition.__declared_fields__),
-                                      ('compute', 'visible_if', 'required_if', 'read_only_if', 'default_ref', 'filters')),
-            '_source': {} if draft.source is None else {key: value for key, value in draft.source._data.items() if not isinstance(value, (Snapshot, tuple))},
-            'children': {name: [{'_key': row.key, **draft_values(row)} for row in rows] for name, rows in draft._rows.items()}}
-
-
-def form_draft(definition, context, values, *, source=None, loaded=None):
-    if not isinstance(values, dict): raise ValidationError({'_form': 'Use a field object'})
-    scalars, collections = context._business.split_body(values)
-    if set(scalars) - set(definition.__declared_fields__) or set(collections) - set(definition.__tables__):
-        raise ValidationError({'_form': 'Unknown input field'})
-    if any(definition.__declared_fields__[name].read_only for name in scalars):
-        raise AccessError(403, 'A protected input cannot be supplied')
-    draft = loaded or Draft(definition, context=context, source=source)
-    object.__setattr__(draft, '_submitted', frozenset(scalars))
-    draft._values.update(scalars)
-    for name, rows in collections.items():
-        if not isinstance(rows, list) or len(rows) > 100: raise ValidationError({name: 'Use at most 100 rows'})
-        table = definition.__tables__[name]
-        originals = {row.key: row for row in draft._rows.get(name, [])}
-        result, seen = [], set()
-        for value in rows:
-            if not isinstance(value, dict): raise ValidationError({name: 'Each row must be an object'})
-            value = dict(value)
-            key = value.pop('_key', None)
-            if key is not None and (not isinstance(key, str) or key in seen or len(key) > 64):
-                raise ValidationError({name: 'Invalid or repeated row identity'})
-            seen.add(key)
-            row = originals.get(key)
-            if row is None and originals: raise ValidationError({name: 'A selected row is no longer available'})
-            row = form_draft(table.child, context, value, source=source, loaded=row)
-            object.__setattr__(row, 'parent', draft)
-            if key: object.__setattr__(row, 'key', key)
-            result.append(row)
-        draft._rows[name] = result
-    return draft
+def rules(draft):
+    """Visible, required and read-only states of every filter with a string condition, by path."""
+    result = {}
+    for prefix, item in walk(draft):
+        entries = plans(item._definition)
+        for name in item._definition.__declared_fields__:
+            entry = entries.get(name, {})
+            state = {}
+            for key, label in (('visible_if', 'visible'), ('required_if', 'required'), ('read_only_if', 'read_only')):
+                if key in entry:
+                    try: state[label] = bool(evaluate(entry[key], item.read))
+                    except (ValueError, TypeError, ArithmeticError): state[label] = key == 'visible_if'
+            if state:
+                result[prefix + name] = state
+    return result
 
 
 class Forms:
     def __init__(self, business, reports=()):
         self.business = business
-        self.reports, self.dialogs = {}, {}
+        self.reports = {}
         for report in reports:
             if not isinstance(report, type) or not issubclass(report, Report): raise ValueError('Register Report classes')
             name = getattr(report, '__resource_id__', report.__name__)
@@ -210,22 +153,11 @@ class Forms:
             if len({column.name for column in report.columns}) != len(report.columns): raise ValueError('Duplicate report column')
             self.check(report)
             self.reports[name] = report
-        for model in business.registry.models.values():
-            for value in vars(model).values():
-                if isinstance(value, type) and issubclass(value, Dialog) and value is not Dialog:
-                    name = value.action or value.__name__
-                    if (model, name) in self.dialogs or (model, name) in business.actions: raise ValueError('Duplicate dialog action')
-                    value.__source__ = model
-                    self.dialogs[model, name] = value
         from .models import resolve_sources
         from .reactivity import graph
-        for definition in [*self.reports.values(), *self.dialogs.values()]:
+        for definition in self.reports.values():
             resolve_sources(business.registry, definition)
             graph(business.registry, definition)
-
-    def initialize(self):
-        with self.business.database.transaction() as tx:
-            tx.connection.ensure_table(OPERATIONS)
 
     def check(self, report):
         registry, columns = self.business.registry, {column.name: column for column in report.columns}
@@ -395,14 +327,6 @@ class Forms:
             raise ValidationError({'sort': 'This report cannot be sorted by that column'})
         return value
 
-    def permission(self, context, definition, owner, record_id):
-        permission = definition.permission or (owner, 'update')
-        model, operation = permission
-        model = self.business.registry.resolve(model)
-        self.business.policy.require(context.user, model, operation)
-        # The source itself always requires the owning operation, even when another capability is declared.
-        return self.business.policy.record(context._tx, context.user, owner, record_id, 'update')
-
     def dispatch(self, scope, body, user):
         path, method = scope['path'], scope['method']
         if path == '/api/_reports':
@@ -427,64 +351,10 @@ class Forms:
                 errors, states = settle(context, draft, complete=operation == 'run')
                 filters = draft_values(draft)
                 if operation == 'evaluate':
-                    from .slips import rules
                     return 200, {'values': filters, 'errors': errors, 'states': states, 'rules': rules(draft), 'revision': body.get('revision')}, []
                 object.__setattr__(draft, '_readonly', True)
                 result = self.page(context, report, draft, limit, offset, sort)
                 return 200, {**result, 'filters': filters, 'revision': body.get('revision'), 'limit': limit, 'offset': offset, 'sort': sort}, []
-        if path.startswith('/api/_dialogs/'):
-            parts = path.removeprefix('/api/_dialogs/').split('/')
-            if len(parts) != 4 or method != 'POST' or parts[3] not in ('load', 'submit', 'evaluate'):
-                raise AccessError(404, 'Dialog operation is unavailable')
-            model = self.business.registry.resolve(parts[0])
-            record_id = path_id(parts[1])
-            if record_id is None: raise AccessError(404, 'Record not found')
-            definition = self.dialogs.get((model, parts[2]))
-            if definition is None: raise AccessError(404, 'Dialog is unavailable')
-            submit = parts[3] == 'submit'
-            with self.business.context(user, readonly=not submit) as context:
-                record = self.permission(context, definition, model, record_id)
-                source = context.get(model, record_id)
-                signature = json.dumps({'path': path, 'body': body}, sort_keys=True, separators=(',', ':'))
-                key = body.get('key')
-                if submit:
-                    if not isinstance(key, str) or not 8 <= len(key) <= 128: raise ValidationError({'key': 'Supply an idempotency key of 8 to 128 characters'})
-                    key = f'{user.id}:{model.__name__}:{record_id}:{parts[2]}:{key}'
-                    old = context._tx.connection.run(qb.select('evlet_operations').where(key=key)).one()
-                    if old:
-                        if old['request'] != signature or old['actor'] != user.id: raise AccessError(409, 'Idempotency key has different input')
-                        return 200, json.loads(old['result']), []
-                if b'if-match' not in dict(scope.get('headers', [])): raise AccessError(428, 'A source revision is required')
-                self.business.check_revision(scope, context._tx, user, record)
-                context.source_revision = self.business.record_revision(context._tx, user, record).decode()
-                context.idempotency_key = key
-                draft = Draft(definition, context=context.read_context(), source=source)
-                with trusted():
-                    draft.load(source)
-                for name, rows in draft._rows.items():
-                    for index, row in enumerate(rows):
-                        protected = {key: str(value) for key, value in row._values.items() if row._definition.__declared_fields__[key].read_only}
-                        identity = hashlib.sha256(json.dumps([name, index, protected], sort_keys=True).encode()).hexdigest()
-                        object.__setattr__(row, 'key', identity)
-                object.__setattr__(draft, 'context', context)
-                if parts[3] != 'load': draft = form_draft(definition, context, body.get('values', {}), source=source, loaded=draft)
-                errors, states = settle(context, draft, complete=submit)
-                if not submit:
-                    descriptor = metadata(definition, parts[2])
-                    readable_source = self.business.policy.fields(user, model)
-                    def project_source(item):
-                        item['source_fields'] = [field for field in item['source_fields'] if field['name'] in readable_source]
-                        for table in item['children']: project_source(table['definition'])
-                    project_source(descriptor)
-                    for table in descriptor['children']: table['allow_add'] = not bool(draft._rows.get(table['name']))
-                    return 200, {'definition': descriptor, 'values': draft_values(draft), 'errors': errors, 'states': states, 'revision': body.get('revision')}, []
-                with trusted():
-                    outcome = draft.submit(source)
-                outcome = jsonable(outcome)
-                encoded = json.dumps(outcome, allow_nan=False)
-                if len(encoded) > 65536: raise ValueError('Dialog result exceeds 64 KiB')
-                context._tx.connection.run(qb.insert('evlet_operations', key=key, actor=user.id, request=signature, result=encoded))
-                return 200, outcome, []
         return None
 
     def export(self, report, body, user):
