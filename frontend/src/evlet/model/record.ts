@@ -31,10 +31,10 @@ const KEY = /^[A-Za-z0-9_-]{1,64}$/;
 const NUMERIC = new Set(['decimal', 'currency', 'integer', 'percent', 'duration']);
 const sameRules = (a: Rules, b: Rules) => a.applies === b.applies && a.required === b.required && a.locked === b.locked;
 const sameOutcome = (a: Outcome, b: Outcome) => a.state === b.state && (a as any).code === (b as any).code;
-/** How long the person must pause before the form asks the server for Meta.derives values. */
+/** How long the person must pause before the form asks the server for derived values. */
 export const PREVIEW_PAUSE_MS = 600;
 
-/** Whether derive() fills this field: "name" on the record, "table.name" on a Table's rows (Meta.derives). */
+/** Whether derive() fills this field: "name" on the record, "table.name" on a Table's rows (derived=True). */
 export function derivedField(model: ModelSchema, path: string[], name: string): boolean {
   const key = path.length ? `${path[path.length - 1]}.${name}` : name;
   return path.length <= 1 && (model.derives ?? []).includes(key);
@@ -75,7 +75,7 @@ export class Field {
   /** For calculated fields: ready, or pending/error with a code such as COMPUTE_INPUT_MISSING. */
   readonly result: Cell<Outcome>;
   readonly calculated: boolean;
-  /** Filled by the server's derive() (Meta.derives): shown, never edited, and not an unsaved change. */
+  /** Filled by the server's derive() (derived=True): shown, never edited, and not an unsaved change. */
   readonly derived: boolean;
   /** Set by the user in this draft, so an empty value is sent rather than left out. */
   touched = false;
@@ -462,7 +462,7 @@ export class Table {
   }
 
   /**
-   * Rows the server's derive() filled in a preview (a read-only Table in Meta.derives). They replace the shown rows
+   * Rows the server's derive() filled in a preview (a read-only Table declared derived=True). They replace the shown rows
    * as saved ones, so they are not an unsaved change and are never sent; the next save brings the stored rows.
    */
   showDerived(items: Array<Record<string, any>>) {
@@ -576,7 +576,7 @@ export class RecordStore {
   // Link filter checks in flight: the latest ticket per field, and their promises for idle().
   private checks = new WeakMap<Field, number>();
   private checking = new Set<Promise<void>>();
-  // The server preview of Meta.derives values: the pending timer and the latest request's ticket.
+  // The server preview of derived values: the pending timer and the latest request's ticket.
   private previewTimer: ReturnType<typeof setTimeout> | null = null;
   private previewTicket = 0;
   private readonly stop: () => void;
@@ -923,9 +923,9 @@ export class RecordStore {
   }
 
   /**
-   * The draft changed. A model whose derive() fills values the browser cannot work out (Meta.derives, such as the
+   * The draft changed. A model whose derive() fills values the browser cannot work out (derived=True, such as the
    * day's exchange rate or a tax table) asks the server for a preview once the person pauses, so they show before
-   * the save. Formulas the browser runs need no server call; a model without Meta.derives never asks.
+   * the save. Formulas the browser runs need no server call; a model without derived values never asks.
    */
   noteChange() {
     this.editVersion.update(version => version + 1);

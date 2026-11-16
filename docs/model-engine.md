@@ -62,93 +62,92 @@ class Contact(Model):
 
 Some stored values come from the rest of the document in ways a formula cannot express: one
 row per distinct value used in another Table, or rows built from a linked record, with a
-remainder row. A document builds them in `derive(self)` and names what it sets in
-`Meta.derives`.
+remainder row. A document builds them in `derive(self)` and marks each field or Table it sets
+`derived=True`.
 
 ```python
-class Visit(Model):
+class Invoice(Model):
     class Meta:
-        derives = ("places", "place_count", "parts")
+        calculation_language = "finite-v1"
 
-    class Stop(Child):
-        place = Text(required=True)
-        minutes = Integer(default=0)
+    class Line(Child):
+        qty = Decimal(scale=2, default=1)
+        rate = Decimal(scale=2, default=0)
+        vat = Decimal(scale=2, default="0.05")
+        amount = Decimal(scale=2, compute=qty * rate)
 
-    class PlaceTotal(Child):
-        place = Text()
-        minutes = Decimal(scale=2)
+    class TaxLine(Child):
+        vat = Decimal(scale=2)
+        base = Decimal(scale=2)
+        tax = Decimal(scale=2)
 
-    class Part(Child):
-        amount = Decimal(scale=2)
-        remainder = Boolean(default=False)
-
-    plan = Link("plan")
-    amount = Decimal(scale=2, default=0)
-    stops = Table(Stop)
-    places = Table(PlaceTotal)
-    place_count = Integer()
-    parts = Table(Part)
+    lines = Table(Line)
+    tax_lines = Table(TaxLine, derived=True)
+    discount = Decimal(scale=2, derived=True)
+    subtotal = Decimal(scale=2, compute=lines.sum("amount"))
+    tax_total = Decimal(scale=2, compute=tax_lines.sum("tax"))
+    total = Decimal(scale=2, compute=subtotal + tax_total - discount)
 
     def derive(self):
-        totals = {}
-        for stop in self.stops:
-            totals[stop.place] = totals.get(stop.place, 0) + (stop.minutes or 0)
-        self.places = [{"place": place, "minutes": minutes} for place, minutes in sorted(totals.items())]
-        self.place_count = len(totals)
-        parts = []
-        if self.plan is not None:
-            count = self.context.session.get(Plan, self.plan).parts
-            share = (self.amount / count).quantize(D("0.01"), rounding="ROUND_DOWN")  # D is decimal.Decimal
-            parts = [{"amount": share} for _ in range(count - 1)]
-            parts.append({"amount": self.amount - share * (count - 1), "remainder": True})
-        self.parts = parts
+        # One tax line per VAT rate, from the formula amounts of this write.
+        bases = {}
+        for line in self.lines:
+            bases[line.vat] = bases.get(line.vat, D(0)) + line.amount  # D is decimal.Decimal
+        self.tax_lines = [{"vat": vat, "base": base, "tax": (base * vat).quantize(D("0.01"))}
+                          for vat, base in sorted(bases.items())]
+        self.discount = D(10) if self.subtotal > 100 else D(0)
 ```
 
 * **When it runs.** On every write of the document (create, update, move, action) and every
-  preview (`POST /api/_draft/{model}`), after the caller's
-  values are checked and fetched and before calculations. Formulas may read what it set; it
-  cannot read their results. A locked or released record keeps its derived values on the writes
+  preview (`POST /api/_draft/{model}`), after the caller's values are checked and fetched. The
+  calculations run in dependency order around it:
+
+  ```
+  formulas that read nothing derive() sets → derive() → formulas that do → @validate
+  ```
+
+  A formula reads a derived value when it reads a derived field, a derived Table or a derived
+  row field, directly or through another formula. So above, `derive()` sees each line's
+  `amount` and the `subtotal` of this write, and `tax_total` and `total` read what it built. A
+  model without `derive()` calculates in one pass. Both the finite-v1 plan and legacy string
+  formulas run this way. A locked or released record keeps its derived values on the writes
   that keep its saved results, so `derive()` does not run there
   ([finite-calculations.md](finite-calculations.md#server-writes)).
+* **A circle is an error.** Reading, inside `derive()`, a formula that depends on a derived
+  value raises `AttributeError`, naming both: `derive() read total, which depends on discount
+  that derive() sets` (`lines.amount_aed` and `lines.rate_aed` on a row). Compute such a value
+  in `derive()` itself, or move the formula's part that `derive()` needs into its own formula.
 * **Like caller input.** What it sets is cleaned like a value a caller sent (a string becomes
   a Decimal, defaults fill the fields a row it builds leaves out, fetches run on those rows),
   then calculated, validated and stored, and the save or preview response returns it. A
   `ValidationError` it raises is reported like a field error, and the save writes nothing.
-* **What it may set.** Only the fields and Tables in `Meta.derives`, and the rows of those
+* **What it may set.** Only the fields and Tables declared `derived=True`, and the rows of those
   Tables. Assigning anything else raises `AttributeError`. Rows are dictionaries of the row's
   fields. A derived Table's row keeps the id of the saved row in the same place, so a Table
   that comes out the same is not rewritten and its row ids stay. Its rows' own Tables are not
   filled by `derive()`.
-* **Fields on rows people edit.** `Meta.derives` may also name a field on the rows of a Table
-  that callers edit, as `"table.field"`. `derive()` sets it on each row. It keeps those rows: adding,
-  removing or reordering them raises `AttributeError` (name the Table itself to build its rows).
-  The values are cleaned, calculated, validated and returned like the others, and the save and
-  preview responses carry them on each row. A Table and one of its fields cannot both be named.
+* **Fields on rows people edit.** A field of a `Child` row may be `derived=True` when the
+  document's Table of those rows is not: `derive()` sets it on each row. It keeps those rows:
+  adding, removing or reordering them raises `AttributeError` (declare the Table `derived=True`
+  to build its rows). The values are cleaned, calculated, validated and returned like the
+  others, and the save and preview responses carry them on each row.
 
   ```python
-  class Sheet(Model):
-      class Meta:
-          derives = ("lines.net", "lines.converted")
-
+  class Exchange(Model):
       class Line(Child):
           qty = Decimal(scale=2, default=1)
-          price = Decimal(scale=2, default=0)
-          discount = Decimal(scale=4, default=0)
-          unit = Text(default="a")
-          net = Decimal(scale=4)
-          converted = Decimal(scale=4)
+          rate = Decimal(scale=2, default=0)
+          amount = Decimal(scale=2, compute=qty * rate)
+          rate_aed = Decimal(scale=6, derived=True)
+          amount_aed = Decimal(scale=2, compute=amount * rate_aed)
 
-      decimals = Integer(default=2)
-      target = Text(default="b")
       lines = Table(Line)
+      total_aed = Decimal(scale=2, compute=lines.sum("amount_aed"))
 
       def derive(self):
-          step = D(10) ** -self.decimals  # D is decimal.Decimal
           for line in self.lines:
-              net = (line.qty * line.price * (1 - line.discount)).quantize(step)
-              line.net = net
-              found = self.context.session.list(Factor, filters={"origin": line.unit, "target": self.target}, limit=1)
-              line.converted = net * found[0].factor if found else None
+              # A volume rate: no formula here can look it up. line.amount_aed is not calculated yet.
+              line.rate_aed = D("3.6725") if line.amount < 1000 else D("3.68")
   ```
 * **Callers cannot write them.** Every caller, HTTP, `Context`, actions' callers, tools, MCP
   and the connector, is refused a derived field or Table with `DERIVED_FIELD_WRITE: this value
@@ -210,10 +209,10 @@ class Visit(Model):
     `maintenance()` there.
   * Ledger models cannot declare `derive()`, so `insert_many` and the other ledger writes do not
     run it.
-* `Meta.derives` without `derive()`, `derive()` without `Meta.derives`, a name that is not a
-  field or Table of the model (or `"table.field"` of one of its Tables, one level deep), a Table
-  named with one of its fields, or a calculated, State, Sequence or standard field is a
-  `ValueError` when the class is defined. A Table row (`Child`) cannot declare `derive()`.
+* A `derived=True` field or Table without `derive()`, `derive()` without one, `derived=True` on a
+  calculated, State, Sequence or standard field, on both a Table and one of its row fields, or
+  deeper than the rows of the document's own Tables, is a `ValueError` when the class is defined.
+  A Table row (`Child`) cannot declare `derive()`, and a ledger model takes no `derived=`.
 * Adding a derived field or Table to a saved model needs its migration, like any field. Saved
   records get the values on their next save.
 
@@ -567,7 +566,7 @@ class Quotation(Model):
   section rows of the Tables it owns.
 - **Limits.** At most 100 section rows per collection, apart from `max_rows`. A label is text of 1
   to 200 characters. The row model cannot declare a field named `section` (`ValueError`), and a
-  Table that `derive()` builds (named in `Meta.derives`) cannot have sections (`ValueError`), nor can
+  Table that `derive()` builds (`derived=True`) cannot have sections (`ValueError`), nor can
   a Table of a dialog, report or slip.
 
 ### Section rows over HTTP

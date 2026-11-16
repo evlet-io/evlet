@@ -447,7 +447,7 @@ class Policy:
             return readable
         writable = readable & set(model.__declared_fields__ if rule.write_fields is None else rule.write_fields)
         locked = self.read_only.get(model, ())
-        # Fields derive() sets (Meta.derives) have one writer, like calculated ones.
+        # Fields derive() sets (derived=True) have one writer, like calculated ones.
         derived = getattr(model, '__derives__', ())
         return {name for name in writable if not model.__declared_fields__[name].read_only and not name.startswith('evlet_') and name not in locked
                 and name not in derived

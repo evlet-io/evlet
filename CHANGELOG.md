@@ -27,6 +27,23 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   its saved results for every writer, refuses `"_calculation": {"recalculate": true}` (409 `This
   record is released, ...`), and `Recompute` skips it unless `--recompute-posted`. Records that left
   the set (voided ones too) are recalculated.
+- **Declare derived values on the field; `Meta.derives` is removed.** Mark each field or Table that
+  `derive()` sets with `derived=True`: `line_count = Integer(derived=True)`, `tax_lines =
+  Table(TaxLine, derived=True)`, and `rate_aed = Decimal(scale=6, derived=True)` on a `Child` row for
+  what was `"lines.rate_aed"`. Then delete `derives` from `Meta`; a model that keeps it fails when
+  defined (`Meta supports ...`). The same checks apply, now on the field
+  ([docs/model-engine.md](docs/model-engine.md#derived-values)).
+- **`derive()` may no longer read a formula that depends on what it sets.** Doing so raises
+  `AttributeError` (`derive() read total, which depends on tax_lines that derive() sets`); before, it
+  read the previous value. Compute that value in `derive()` instead.
+
+### Changed
+
+- **`derive()` sees formula results.** Formulas that read nothing `derive()` sets now run before it,
+  and those that read a derived value after it, on both the finite-v1 and legacy formula paths. A VAT
+  summary built in `derive()` from `line.amount` (`qty * rate`) now sees this write's amounts on a new
+  or edited line, and `tax_total` / `total` formulas read the summary
+  ([docs/model-engine.md](docs/model-engine.md#derived-values)).
 
 ### Fixed
 

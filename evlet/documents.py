@@ -67,9 +67,13 @@ class Draft:
         object.__setattr__(self, '_caller', {})
         # While derive() runs: the names it may assign on this draft (None is no limit).
         object.__setattr__(self, '_derives', None)
+        # While derive() runs: (this draft's key prefix, {formula: derived value it reads}), which it may not read yet.
+        object.__setattr__(self, '_stale', None)
 
     def __getattr__(self, name):
         if name in self._definition.__declared_fields__:
+            if self._stale and (key := self._stale[0] + name) in self._stale[1]:
+                raise AttributeError(f'derive() read {key}, which depends on {self._stale[1][key]} that derive() sets')
             return self._values.get(name)
         if name in self._definition.__tables__:
             rows = self._rows.get(name, [])
@@ -90,7 +94,7 @@ class Draft:
         if name == 'id':
             raise ValidationError({'id': ASSIGNED_ID})
         if self._derives is not None and name not in self._derives:
-            raise AttributeError(f'derive() sets only what Meta.derives names, and the rows of those Tables; '
+            raise AttributeError(f'derive() sets only what is declared derived=True, and the rows of those Tables; '
                                  f'{self._definition.__name__}.{name} is not one of them')
         if name in self._definition.__declared_fields__:
             if is_finite(self._definition.__declared_fields__[name]):
@@ -484,7 +488,7 @@ DERIVED = 'DERIVED_FIELD_WRITE: this value is set by the record'
 
 
 def derived_write(model, scalars, collections, prefix):
-    """Fields, Tables and row fields that derive() sets (Meta.derives) have one writer: callers cannot send them."""
+    """Fields, Tables and row fields that derive() sets (derived=True) have one writer: callers cannot send them."""
     derives = getattr(model, '__derives__', ())
     written = [name for name in (*scalars, *collections) if name in derives]
     if written:
@@ -1048,9 +1052,15 @@ def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
         apply_inputs(item, prefix, internal(item), errors)
         object.__setattr__(item, '_caller', dict(item._values))
         apply_fetches(context, item, prefix, prior(item), errors, targets, virtual_only=kept)
-    # derive() sets its values before calculations; a locked or posted record keeps them, like its results.
+    # derive() runs after the formulas that read nothing it sets, and before the full calculation below, which
+    # gives the same results for those; a locked or posted record keeps its values, like its results.
     if getattr(draft._definition, '__derives__', ()) and draft.parent is None and not kept:
-        all_drafts = derive(context, draft, internal, errors, targets)
+        before, after = registry.derive_split(draft._definition)
+        if isinstance(before, dict):
+            finite_settle(context, before, draft, {}, {}, False)
+        else:
+            compute_legacy(context, draft, all_drafts, {}, {}, False, only=before)
+        all_drafts = derive(context, draft, internal, errors, targets, after)
     plan = registry.plan_for(draft._definition)
     if plan is not None:
         if kept:
@@ -1069,13 +1079,14 @@ def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
     return errors, states
 
 
-def derive(context, draft, internal, errors, targets):
+def derive(context, draft, internal, errors, targets, after):
     """Run the document's derive() and treat what it set like caller input: cleaned, with defaults and
     fetches on the rows it built. Returns the document's drafts again, since it may replace rows.
 
     Rows it builds for a Table take the ids of the saved rows they replace, in order, so a derived
     Table that comes out the same is not rewritten. A ValidationError it raises is reported like a
-    field error."""
+    field error. Reading a formula in `after` ({formula: derived value it reads}) is an error: it is not
+    calculated yet."""
     model = draft._definition
     names = model.__derives__
     tables = {name for name in names if name in model.__tables__}
@@ -1094,6 +1105,7 @@ def derive(context, draft, internal, errors, targets):
         allowed = frozenset(names) if item is draft else None if top in tables else \
             frozenset(row_fields.get(top, ())) if item.parent is draft else frozenset()
         object.__setattr__(item, '_derives', allowed)
+        object.__setattr__(item, '_stale', ('' if item is draft else top + '.', after) if item is draft or item.parent is draft else None)
     try:
         with trusted(), hook_context(context, draft):
             draft.derive()
@@ -1102,10 +1114,11 @@ def derive(context, draft, internal, errors, targets):
     finally:
         for _, item in [*before, *walk(draft)]:
             object.__setattr__(item, '_derives', None)
+            object.__setattr__(item, '_stale', None)
     for name, rows in edited.items():
         if [id(row) for row in draft._rows.get(name, [])] != [id(row) for row in rows]:
             raise AttributeError(f'derive() cannot add, remove or reorder the rows of {model.__name__}.{name}, which '
-                                 'callers edit; name the Table itself in Meta.derives to build its rows')
+                                 'callers edit; declare the Table derived=True to build its rows')
     all_drafts = list(walk(draft))
     targets.prefetch(link_values([item for _, item in all_drafts if item.id is None], fetches_only=True))
     for prefix, item in all_drafts:
@@ -1217,14 +1230,15 @@ def apply_fetches(context, item, prefix, old, errors, targets=None, *, virtual_o
             item._values[name] = None  # A virtual copy of a record this user cannot read stays empty.
 
 
-def compute_legacy(context, draft, all_drafts, errors, states, complete, kept=False):
+def compute_legacy(context, draft, all_drafts, errors, states, complete, kept=False, only=None):
     """String-formula computes, Query sources and query fields, in dependency order.
 
     With `kept`, stored results keep their saved values and only virtual results are calculated.
+    `only` lists the keys to calculate (those that run before derive()).
     """
     nodes, order = graph(context._business.registry, draft._definition)
     source_cache = {}
-    for key in order:
+    for key in only if only is not None else order:
         parts = key.split('.')
         items = [(draft, '')] if len(parts) == 1 else [(row, parts[0] + '.' + row.key + '.') for row in draft._rows.get(parts[0], [])]
         name = parts[-1]
