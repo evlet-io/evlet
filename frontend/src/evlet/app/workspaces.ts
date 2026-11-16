@@ -3,7 +3,7 @@
 //
 // workspaceNav(schema, links) is the one place the sidebar's structure comes from. It maps the
 // workspaces /api/schema declares (docs/ui.md, Workspaces): a model item opens its list (with its
-// board view and filters in the list address), a report its page, a slip opens over the page, and a URL
+// board view and filters in the list address), a report its page, an endpoint opens its prompt over the page, and a URL
 // item its address. An older server without `workspaces` gets the fallback: one workspace per installed
 // app, with Documents, Records and Reports sections. The shell only reads the returned shape.
 
@@ -20,8 +20,8 @@ export interface NavShortcut {
   kind: ShortcutKind; icon: string;
   /** The model whose plain list this is: its record count can show beside it. */
   model?: string;
-  /** A menu slip: the shortcut presents it over the page instead of opening an address. */
-  slip?: string;
+  /** An @api endpoint: the shortcut opens the prompt it returns over the page instead of opening an address. */
+  api?: string;
   /** An http(s) address: it opens in a new tab. */
   external?: boolean;
 }
@@ -80,7 +80,7 @@ export function shortcutOf(schema: AppSchema, item: WorkspaceItem, links: NavLin
       return { ...base, href: links.list(item.model, query), model: plain(query) ? item.model : undefined };
     }
     case 'report': return { ...base, href: links.report(item.report) };
-    case 'slip': return { ...base, href: '', slip: item.slip };
+    case 'api': return { ...base, href: '', api: item.api };
     default: return { ...base, href: item.url, external: /^https?:/i.test(item.url) };
   }
 }
@@ -156,7 +156,7 @@ function sameQuery(a: URLSearchParams, b: URLSearchParams): boolean {
  * the view, tab and filters must be exactly the shortcut's, none more and none fewer (search, sort and page don't
  * count): "Tasks" at /m/task and "Open tasks" at /m/task?f=[...] each mark only their own address, and another
  * filter, or the list's default tab reached without ?tab=, marks neither. A record marks none: a page under a
- * list (a record, a new record) or a record open in the list's side panel (?open=). Slips never match. On a tie, a shortcut of `prefer` (the workspace
+ * list (a record, a new record) or a record open in the list's side panel (?open=). Endpoint shortcuts never match. On a tie, a shortcut of `prefer` (the workspace
  * shown) wins, so a page two workspaces share keeps the sidebar as it is.
  * A link (a URL item) matches only its own address, every query part included: "All reports" at /?explorer=reports
  * is not marked on /?explorer=data or on any other page of the root path.
@@ -165,7 +165,7 @@ export function activeShortcut(nav: WorkspaceNav, path: string, prefer?: string)
   let best: { workspace: Workspace; section: NavSection; item: NavShortcut } | null = null, score = -Infinity;
   const bare = pathOf(path), query = queryOf(path);
   for (const workspace of nav.workspaces) for (const section of workspace.sections) for (const item of section.items) {
-    if (item.slip || item.external || !item.href) continue;
+    if (item.api || item.external || !item.href) continue;
     const target = pathOf(item.href), own = queryOf(item.href);
     if (bare !== target) continue;
     if (item.kind === 'link' ? !sameQuery(own, query) : query.has('open') || !MATCHED.every(key => same(key, own.get(key), query.get(key)))) continue;
@@ -183,7 +183,7 @@ export function activeShortcut(nav: WorkspaceNav, path: string, prefer?: string)
 export function homeWorkspace(nav: WorkspaceNav, path: string): Workspace | null {
   const bare = pathOf(path), query = queryOf(path);
   return nav.workspaces.find(workspace => workspace.sections.some(section => section.items.some(item => {
-    if (item.slip || item.external || !item.href) return false;
+    if (item.api || item.external || !item.href) return false;
     const target = pathOf(item.href);
     if (item.kind === 'link') return bare === target && sameQuery(queryOf(item.href), query);
     return bare === target || bare.startsWith(target + '/');

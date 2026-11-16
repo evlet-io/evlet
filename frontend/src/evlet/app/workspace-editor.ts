@@ -18,7 +18,7 @@ import { replaceWorkspaces } from './workspaces';
 import { KIND_ICONS, SHELL_ICONS, kindOf, type ShortcutKind } from './nav-icons';
 
 /** A shortcut as the override sends it: the arguments of evlet.Shortcut. */
-export interface ShortcutSpec { model?: string; view?: 'list' | 'board'; filters?: unknown; label?: string; report?: string; slip?: string; url?: string }
+export interface ShortcutSpec { model?: string; view?: 'list' | 'board'; filters?: unknown; label?: string; report?: string; api?: string; url?: string }
 /** An item of a saved override. */
 export interface OverrideItem { key?: string; shortcut?: ShortcutSpec; label?: string; hidden?: boolean }
 export interface OverrideGroup { key: string; label?: string; icon?: string; hidden?: boolean; items?: OverrideItem[] }
@@ -59,7 +59,7 @@ export function shortcutLabel(spec: ShortcutSpec, schema?: AppSchema): string {
   if (spec.label) return spec.label;
   if (spec.model) return schema?.models.find(model => model.name === spec.model)?.plural ?? spec.model;
   if (spec.report) return schema?.reports?.find(report => report.name === spec.report)?.label ?? spec.report;
-  if (spec.slip) return schema?.slips?.find(slip => slip.name === spec.slip)?.label ?? spec.slip;
+  if (spec.api) return spec.api;
   return spec.url ?? 'Shortcut';
 }
 
@@ -339,13 +339,12 @@ export function WorkspaceEditor(ctx: AppContext, start: Listing, key: string | n
   return closeEditor;
 }
 
-/** The small form that adds a shortcut: a model (list or board, optional filters), a report, a slip or an address. The server checks it on Save. */
+/** The small form that adds a shortcut: a model (list or board, optional filters), a report or an address. The server checks it on Save. */
 function AddShortcut(schema: AppSchema, ctx: AppContext, add: (spec: ShortcutSpec) => void, cancel: () => void): HTMLElement {
-  const kind = cell<'model' | 'report' | 'slip' | 'url'>('model');
+  const kind = cell<'model' | 'report' | 'url'>('model');
   const target = cell(''), label = cell(''), view = cell<'list' | 'board'>('list'), filters = cell(''), error = cell('');
-  const models = rootModels(ctx.schema), reports = schema.reports ?? [], slips = schema.slips ?? [];
-  const choices = () => kind.get() === 'model' ? models.map(model => [model.name, model.plural]) : kind.get() === 'report' ? reports.map(report => [report.name, report.label])
-    : kind.get() === 'slip' ? slips.map(slip => [slip.name, slip.label]) : [];
+  const models = rootModels(ctx.schema), reports = schema.reports ?? [];
+  const choices = () => kind.get() === 'model' ? models.map(model => [model.name, model.plural]) : kind.get() === 'report' ? reports.map(report => [report.name, report.label]) : [];
   const submit = () => {
     const spec: ShortcutSpec = {};
     const value = target.peek().trim();
@@ -363,7 +362,7 @@ function AddShortcut(schema: AppSchema, ctx: AppContext, add: (spec: ShortcutSpe
   return html`<div class="wse-new" role="group" aria-label="New shortcut">
     <div class="wse-new-row">
       <select class="input" aria-label="Opens" on:change=${(event: Event) => { kind.set((event.target as HTMLSelectElement).value as never); target.set(''); error.set(''); }}>
-        <option value="model">List</option><option value="report">Report</option><option value="slip">Slip</option><option value="url">Address</option></select>
+        <option value="model">List</option><option value="report">Report</option><option value="url">Address</option></select>
       ${() => kind.get() === 'url' ? input(target, 'Address', '/reports or https://…')
         : html`<select class="input" aria-label="Target" on:change=${(event: Event) => { target.set((event.target as HTMLSelectElement).value); error.set(''); }}>
           <option value="">Choose…</option>${choices().map(([value, text]) => html`<option value=${value}>${text}</option>`)}</select>`}

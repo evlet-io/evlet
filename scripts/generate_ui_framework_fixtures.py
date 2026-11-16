@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count,
-                   MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, AppSettings, UserPreferences, Slip, Outcome,
+                   MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, AppSettings, UserPreferences, Prompt, Outcome,
                    Report, Column, Chart, Count, Html, Main, Ref, Section, TableSection, release, state, validate)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
@@ -488,43 +488,40 @@ class Stop(Child):
     hours = Decimal(minimum='0', default='0')
 
 
-class PlanVisit(Slip):
-    title = 'Plan a visit'
-    hand_in_label = 'Plan visit'
-    source = Customer
-    layout = (('Visit', ('customer', 'visit_on', 'kind', 'rate')), ('Stops', ('stops',)))
-    customer = Link(Customer, read_only=True)
+class Account(Model):
+    """A record whose action opens a prompt."""
+    permissions = ALL
+    title = Text(default='account', label='Account name')
+
+    @action('Plan a visit')
+    def plan_visit(self):
+        return PlanVisit
+
+
+class PlanVisit(Prompt):
+    class Meta:
+        title = 'Plan a visit'
+        primary = 'Plan visit'
+        layout = (Main(('account', 'visit_on', 'kind', 'rate', 'hours')), Main('stops'))
+    account = Link(Account, read_only=True)
     visit_on = Date(required=True)
     kind = Select(['survey', 'install'], default='survey')
-    rate = Currency(visible_if="kind == 'install'", required_if="kind == 'install'")
+    rate = Currency(applies_when=F('kind') == 'install', required_when=F('kind') == 'install')
     stops = Table(Stop, required=True)
-    hours = Decimal(compute='sum(stops.hours)', stored=False)
+    hours = Decimal(compute=stops.sum('hours'))
 
     def load(self, source):
-        self.customer = source.id
+        self.account = source.id
 
-    def hand_in(self):
+    def submit(self):
         return Outcome(f'Visit planned for {self.visit_on.isoformat()}', data={'hours': str(self.hours)})
 
 
-class QuickCustomer(Slip):
-    title = 'Quick customer'
-    menu = True
-    becomes = Customer
-    customer_name = Text(required=True)
-    credit_days = Integer(default=30)
-
-    def document(self, source):
-        # A slip's own `title` is its heading, so the slip names the customer in customer_name.
-        return {'title': self.customer_name, 'credit_days': self.credit_days}
-
-
-def record_slips(folder):
-    """Slips: a schema that lists them, then present, check and hand-in of a slip from a record and of a
-    New menu slip that becomes a record for review."""
-    database = Database(folder / 'slips.sqlite3', Registry(Customer, Product))
+def record_prompts(folder):
+    """Prompts: an action that answers a prompt with its ticket, then submits of it, refused and done."""
+    database = Database(folder / 'prompts.sqlite3', Registry(Account))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
-    app = Application(database, auth=auth, slips=(PlanVisit, QuickCustomer))
+    app = Application(database, auth=auth)
     app.initialize()
     out = {}
 
@@ -539,21 +536,19 @@ def record_slips(folder):
     status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
     cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
     admin = lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)
-    keep('slip_session', admin('GET', '/api/auth/session'))
-    keep('slip_schema', admin('GET', '/api/schema'))
-    assert admin('POST', '/api/customer', {'title': 'Corniche Foods', 'rate': '12.50', 'credit_days': 30})[0] == 201
-    customer = keep('slip_customer', admin('GET', '/api/customer/0000000000001'))
-    source = {'model': 'customer', 'id': customer['id']}
-    keep('slip_present', admin('POST', '/api/_slips/plan_visit/present', {'source': source, 'values': {}}))
-    keep('slip_check', admin('POST', '/api/_slips/plan_visit/check', {'source': source, 'revision': 1, 'values': {
-        'visit_on': None, 'kind': 'install', 'rate': None, 'children': {'stops': [{'_key': 'row-1', 'place': 'Warehouse', 'hours': '2.5'}]}}}))
-    revision = {b'if-match': out['slip_customer']['etag'].encode()}
-    keep('slip_hand_in_invalid', admin('POST', '/api/_slips/plan_visit/hand-in', {'source': source, 'key': 'fixture-visit-1', 'values': {
-        'visit_on': None, 'kind': 'install', 'rate': None, 'children': {'stops': [{'_key': 'row-1', 'place': None, 'hours': '2.5'}]}}}, headers=revision))
-    keep('slip_hand_in', admin('POST', '/api/_slips/plan_visit/hand-in', {'source': source, 'key': 'fixture-visit-2', 'values': {
-        'visit_on': '2026-11-16', 'kind': 'install', 'rate': '350.00', 'children': {'stops': [{'_key': 'row-1', 'place': 'Warehouse', 'hours': '2.5'}]}}}, headers=revision))
-    keep('slip_quick_present', admin('POST', '/api/_slips/quick_customer/present', {'source': None, 'values': {}}))
-    keep('slip_quick_hand_in', admin('POST', '/api/_slips/quick_customer/hand-in', {'source': None, 'key': 'fixture-quick-1', 'values': {'customer_name': 'Oasis Water', 'credit_days': 45}}))
+    keep('prompt_session', admin('GET', '/api/auth/session'))
+    keep('prompt_schema', admin('GET', '/api/schema'))
+    assert admin('POST', '/api/account', {'title': 'Corniche Foods'})[0] == 201
+    keep('prompt_record', admin('GET', '/api/account/0000000000001'))
+    revision = {b'if-match': out['prompt_record']['etag'].encode()}
+    opened = keep('prompt_open', admin('POST', '/api/account/0000000000001/actions/plan_visit', {}, headers=revision))
+    # The ticket is random; the fixture names it, and the browser sends it back as given.
+    ticket = opened['_outcome']['prompt']['ticket']
+    opened['_outcome']['prompt']['ticket'] = 'fixture-prompt-ticket'
+    keep('prompt_submit_invalid', admin('POST', f'/api/_prompts/{ticket}/submit', {'values': {
+        'visit_on': None, 'kind': 'install', 'rate': None, 'children': {'stops': [{'_key': 'row-1', 'place': None, 'hours': '2.5'}]}}}))
+    keep('prompt_submit', admin('POST', f'/api/_prompts/{ticket}/submit', {'values': {
+        'visit_on': '2026-11-16', 'kind': 'install', 'rate': '350.00', 'children': {'stops': [{'_key': 'row-1', 'place': 'Warehouse', 'hours': '2.5'}]}}}))
     database.close()
     return out
 
@@ -835,7 +830,7 @@ def record_zones(folder):
 def generate():
     """Both fixtures, recorded from fresh databases. Ids count up per table so the recording is stable."""
     with TemporaryDirectory() as directory, sequential_ids(), fixed_times():
-        return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_slips(Path(directory)), **record_reports(Path(directory)),
+        return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_prompts(Path(directory)), **record_reports(Path(directory)),
                                                                           **record_layouts(Path(directory)), **record_compact(Path(directory)),
                                                                           **record_zones(Path(directory))}}
 

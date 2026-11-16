@@ -275,13 +275,16 @@ export class ApiClient {
     return (await this.request<DraftResult>('POST', `/api/_draft/${model}`, { body })).data;
   }
 
-  /**
-   * A step of a slip (POST /api/_slips/{name}/{step}): present and check answer its surface, hand-in its
-   * outcome. A slip presented from a record hands in with that record's revision as If-Match.
-   */
-  async slip<T>(name: string, step: 'present' | 'check' | 'hand-in', body: Record<string, unknown>, ifMatch: string | null = null): Promise<T> {
-    if (!NAME.test(name)) throw new ApiError(`Unknown slip ${name}`, 0, 'response');
-    return (await this.request<T>('POST', `/api/_slips/${name}/${step}`, { body, ifMatch })).data;
+  /** A step of a prompt opened through its ticket (POST /api/_prompts/{ticket}/check or /submit). */
+  async prompt<T>(ticket: string, step: 'check' | 'submit', values: Record<string, unknown>): Promise<T> {
+    if (!/^[A-Za-z0-9_-]{8,64}$/.test(ticket)) throw new ApiError('Unknown prompt', 0, 'response');
+    return (await this.request<T>('POST', `/api/_prompts/${ticket}/${step}`, { body: { values } })).data;
+  }
+
+  /** Call an @api endpoint (POST /api/_services/{name}); one that returns a prompt answers {prompt}. */
+  async service<T>(name: string, body: Record<string, unknown> = {}): Promise<T> {
+    if (!/^[A-Za-z0-9_.-]{1,200}$/.test(name)) throw new ApiError(`Unknown endpoint ${name}`, 0, 'response');
+    return (await this.request<T>('POST', `/api/_services/${name}`, { body })).data;
   }
 
   /** Run a model action. A long action answers 202 with {job, record}. */

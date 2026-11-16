@@ -1,4 +1,4 @@
-// Autofocus on forms that start empty (docs/ui.md, New records): a new record and a slip focus their first
+// Autofocus on forms that start empty (docs/ui.md, New records): a new record and a prompt focus their first
 // editable field; an existing record, a touch device and a focus moved elsewhere are left alone.
 import { afterEach, describe, expect, it } from 'vitest';
 import { autofocusForm, initialFocusField, layoutFocusOrder } from '../ui/autofocus';
@@ -172,40 +172,29 @@ describe('new record forms', () => {
   });
 });
 
-describe('slips', () => {
-  it('focus the first field that can be filled in, past the read-only source field', async () => {
-    const routes: Route[] = [
-      ['GET', /\/api\/auth\/session$/, screen.slip_session],
-      ['GET', /\/api\/schema$/, screen.slip_schema],
-      ['GET', /\/api\/customer\/0000000000001$/, screen.slip_customer],
-      ['POST', /\/api\/_slips\/plan_visit\/present$/, screen.slip_present],
-      ['POST', /\/api\/_slips\/plan_visit\/check$/, screen.slip_check],
-    ];
-    const { host } = start(routes, '/app/customer/0000000000001');
+describe('prompts', () => {
+  const routes: Route[] = [
+    ['GET', /\/api\/auth\/session$/, screen.prompt_session],
+    ['GET', /\/api\/schema$/, screen.prompt_schema],
+    ['GET', /\/api\/account\/0000000000001$/, screen.prompt_record],
+  ];
+  const open = async (opened = screen.prompt_open) => {
+    const { host } = start([...routes, ['POST', /\/actions\/plan_visit$/, opened]], '/app/account/0000000000001');
     await until(() => expect(byText(host, '.doc-head button', 'Plan a visit')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Plan a visit'));
-    await until(() => expect(document.querySelector('.modal.slip')).not.toBeNull());
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
+  };
+
+  it('focus the first field that can be filled in, past the read-only source field', async () => {
+    await open();
     await until(() => expect(focusedField()).not.toBeNull());
-    expect(focusedField()).not.toBe('customer');
-    const sheet = document.querySelector('.modal.slip')!;
-    const first = [...sheet.querySelectorAll<HTMLElement>('[data-field]')].find(block => !block.hidden
-      && block.querySelector('input:not(:disabled), button.in-select:not(:disabled), button.in-link:not(:disabled), textarea:not(:disabled)'));
-    expect(focusedField()).toBe(first?.getAttribute('data-field'));
+    expect(focusedField()).toBe('visit_on');
   });
 
-  it('focuses the field a slip names in focus', async () => {
-    const present = copy(screen.slip_present);
-    present.body.focus = 'kind';
-    const routes: Route[] = [
-      ['GET', /\/api\/auth\/session$/, screen.slip_session],
-      ['GET', /\/api\/schema$/, screen.slip_schema],
-      ['GET', /\/api\/customer\/0000000000001$/, screen.slip_customer],
-      ['POST', /\/api\/_slips\/plan_visit\/present$/, present],
-      ['POST', /\/api\/_slips\/plan_visit\/check$/, screen.slip_check],
-    ];
-    const { host } = start(routes, '/app/customer/0000000000001');
-    await until(() => expect(byText(host, '.doc-head button', 'Plan a visit')).not.toBeNull());
-    click(byText(host, '.doc-head button', 'Plan a visit'));
+  it('focuses the field Meta.focus names', async () => {
+    const opened = copy(screen.prompt_open);
+    opened.body._outcome.prompt.models[0].focus = 'kind';
+    await open(opened);
     await until(() => expect(focusedField()).toBe('kind'));
   });
 });

@@ -6,20 +6,20 @@ import type { WorkspaceItem } from '../model/schema';
 import type { Tint } from '../ui/core';
 
 /** What a shortcut opens. A filtered list is a list. */
-export type ShortcutKind = 'list' | 'board' | 'report' | 'dashboard' | 'slip' | 'link';
+export type ShortcutKind = 'list' | 'board' | 'report' | 'dashboard' | 'prompt' | 'link';
 
 export const KIND_ICONS: Readonly<Record<ShortcutKind, string>> = {
   list: 'list',
   board: 'square-kanban',
   report: 'chart-column',
   dashboard: 'activity',
-  slip: 'sticky-note',
+  prompt: 'sticky-note',
   link: 'link',
 };
 
 /** The tile colour of each kind, where a kind shows as a tile (Explorer cards, palette rows). */
 export const KIND_TINTS: Readonly<Record<ShortcutKind, Tint>> = {
-  list: 'blue', board: 'violet', report: 'rose', dashboard: 'amber', slip: 'teal', link: 'slate',
+  list: 'blue', board: 'violet', report: 'rose', dashboard: 'amber', prompt: 'teal', link: 'slate',
 };
 
 /** The shell's main elements. */
@@ -48,9 +48,9 @@ export const EXPLORER_ICONS = {
 } as const;
 
 /** The kind of a declared item, or of a shortcut the workspace editor adds. */
-export function kindOf(item: { kind?: WorkspaceItem['kind']; model?: string; view?: string; report?: string; slip?: string; url?: string }): ShortcutKind {
+export function kindOf(item: { kind?: WorkspaceItem['kind']; model?: string; view?: string; report?: string; api?: string; url?: string }): ShortcutKind {
   if (item.kind === 'report' || item.report) return 'report';
-  if (item.kind === 'slip' || item.slip) return 'slip';
+  if (item.kind === 'api' || item.api) return 'prompt';
   if (item.kind === 'url' || item.url) return 'link';
   return item.view === 'board' ? 'board' : 'list';
 }

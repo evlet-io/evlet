@@ -541,7 +541,7 @@ export class RecordStore {
   readonly saving = cell(false, { name: 'record.saving' });
   /** Revision of local edits, including changes after dirty first becomes true. */
   readonly editVersion = cell(0, { name: 'record.edits' });
-  /** What the last action returned (`_outcome`), such as a slip to present next. */
+  /** What the last action returned (`_outcome`), such as a prompt to open next. */
   outcome: unknown = null;
   /** Last acknowledged save, retained even if its view closed before the answer arrived. */
   lastSavedId: string | null = null;
