@@ -568,7 +568,7 @@ class Quotation(Model):
 - **Limits.** At most 100 section rows per collection, apart from `max_rows`. A label is text of 1
   to 200 characters. The row model cannot declare a field named `section` (`ValueError`), and a
   Table that `derive()` builds (named in `Meta.derives`) cannot have sections (`ValueError`), nor can
-  a Table of a dialog, report or slip.
+  a Table of a prompt or report.
 
 ### Section rows over HTTP
 
@@ -908,7 +908,7 @@ the tool schemas never read it ([ui.md](ui.md#record-layouts)).
 
 `Meta.api` says which surfaces a model gets. Callers are every HTTP route, MCP clients, Eva
 and the connector. Trusted Python is everything else: database sessions, `Context` in
-scripts, model actions and moves, legacy `Action` handlers, `changed` reactions, dialogs,
+scripts, model actions and moves, legacy `Action` handlers, `changed` reactions, prompts,
 `@api` services, jobs and migrations.
 
 | `Meta.api` | Callers | Trusted Python |

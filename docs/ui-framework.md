@@ -754,14 +754,14 @@ mount(document.querySelector('#app')!, () => DocFrame({
 - **enterMovesToNextField(root, on)** makes Enter and Shift+Enter move between the `[data-field]` blocks
   under `root` while `on()` is true.
 - **initialFocusField(model, layout)** names the field a new form focuses first: `model.focus`
-  (`Meta.focus`, or a slip's `focus`) when that field is in an open section of `layout` and can be
+  (`Meta.focus` on a model or a prompt) when that field is in an open section of `layout` and can be
   edited, else the first field of an open section that shows and can be edited (not read only,
   calculated, hidden or locked). **autofocusForm(root, choose,
   before)** focuses that field's control once `root` is on the page, except on a touch device
   (`keyboardFirst()` in `core.ts`) or when the focus moved away from `before` while the form loaded.
   **layoutFocusOrder(sections, shown)** puts a form's sections in the order the record page shows them
   (`shown` is their labels, the primary area first).
-  The record page uses all three for new records and slips use the first two on open ([focus on new forms](ui.md#focus-on-new-forms)).
+  The record page uses all three for new records and prompts use the first two on open ([focus on new forms](ui.md#focus-on-new-forms)).
 - Popovers anchor to their button and close on Esc or an outside click. `openPopover(anchor, render,
   { align: 'side' })` places the panel beside the anchor on its right, top edges level (the Workspace
   card), and below it when there is no room; `'left'` lines up the left edges and `'auto'` (the
@@ -878,7 +878,7 @@ not part of the build.
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
 | `record-page.ts` | Record (doc) view, new records, action and move dialogs |
-| `slips.ts` | Slips ([slips.md](slips.md)): `presentSlip()`, the slip modal and what follows a hand-in |
+| `prompts.ts` | Prompts ([prompts.md](prompts.md)): the prompt modal on the record engine, `openService()` and `follow()` for outcomes |
 | `report-page.ts` | Reports ([reports.md](reports.md)): the index, one report's filters, rows, totals, chart, Export and Print |
 | `palette.ts` | Command palette (Cmd or Ctrl K), with the Explorer button at the end of its field |
 | `client.ts` | The API client plus the routes the screens use, and the last detail per record |
@@ -936,7 +936,7 @@ page in a new browser tab.
   (`confirmLeave` with `stays`). Expand opens the record page with the same record store, so unsaved
   edits come along without a prompt.
 - New opens `?open=new`; values in the link fill the new record as on `/app/:model/new`. Create
-  shows the new record in the panel and its row in the list. Slips, moves and actions work as on
+  shows the new record in the panel and its row in the list. Prompts, moves and actions work as on
   the page; a saved or moved record updates its row.
 - When the content area is narrower than 900 px the panel covers the list with a back link
   (`Invoices`), and on phones it takes the screen.
@@ -964,8 +964,8 @@ page in a new browser tab.
 | `Meta.autosave` | `True` (default): leaving a record with unsaved edits keeps them for later instead of asking to discard them; `False` keeps the leave prompt ([ui.md](ui.md#unsaved-changes)) |
 | `Table(...)` | Its own block, never a field: in the main zone (`Main('lines')`, or every Table of a model without `Meta.layout`) or as a row of more information (`TableSection`), always with its title bar, total line and totals (ChildTable, paging in over 100 rows) |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
-| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns `present(...)` opens that slip next. The older record-bound form actions (`dialog: true`) are not shown |
-| `Slip` with `source` or `menu` ([slips.md](slips.md)) | A header button on the source model's records; `?slip=name` on a record opens it. A `menu` slip is listed at the top level of the schema; the shell shows no entry for it, so browser code presents it with `presentSlip()`. A slip that becomes a record for review opens New filled in, with a note |
+| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns a Prompt opens it; an `Outcome` is followed (a toast, a record, a new record to review) |
+| `Prompt` ([prompts.md](prompts.md)) | A modal built from the record engine when an action or an `@api` shortcut returns it; it calculates in the browser and submits through its ticket. `Outcome(new=...)` opens New filled in, with a note |
 | `State` with rules | List tabs per state unless `Meta.list_tabs` names another field (counts from `GET /api/{model}/list_tabs`), a board when `Meta.board` names the State, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column; tabs by another field narrow the cards and keep every column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked steps, `versioned=False` | Lock banner; only the declared fields stay editable; lines lock |
 | A rule with `remark` | The move dialog asks for the remark, required when `_moves` says so |

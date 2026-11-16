@@ -396,3 +396,23 @@ def test_names_are_one_namespace():
             @action
             def submit(self):
                 pass
+
+
+def test_tools_get_the_prompt_and_answer_it_by_ticket(app):
+    quotation_id = quotation(app, '2')
+    c = client(app)
+    tools = {tool['name'] for tool in c('GET', '/api/_tools')[1]['tools']}
+    assert {'run_action', 'answer_prompt'} <= tools
+    status, ran, _ = c('POST', '/api/_tools/execute', {'tool': 'run_action', 'arguments': {
+        'model': 'quotation', 'id': str(quotation_id), 'action': 'confirm'}})
+    assert status == 200, ran
+    prompt = ran['result']['_outcome']['prompt']
+    assert prompt['models'][0]['name'] == '_prompt.confirm_quotation'
+    row = prompt['values']['children']['lines'][0]['_key']
+    values = {'order_date': '2026-11-20', 'children': {'lines': [{'_key': row, 'confirm_qty': '1'}]}}
+    status, checked, _ = c('POST', '/api/_tools/execute', {'tool': 'answer_prompt', 'arguments': {'ticket': prompt['ticket'], 'values': values, 'step': 'check'}})
+    assert status == 200, checked
+    assert checked['result']['values']['total'] == '10.00' and app.database.count(CustomerOrder) == 0
+    status, done, _ = c('POST', '/api/_tools/execute', {'tool': 'answer_prompt', 'arguments': {'ticket': prompt['ticket'], 'values': values}})
+    assert status == 200 and done['result']['open']['model'] == 'customerorder'
+    assert read(app, Quotation, quotation_id).docstate == 'partial'

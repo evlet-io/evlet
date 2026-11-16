@@ -120,7 +120,7 @@ Before any Rule, one framework rule decides what a model allows at all, so no Ru
 Controls override can widen it. While a request is served, a model with
 `Meta.api = "read"` takes no write of any kind and a model with `Meta.api = None` takes nothing
 ([model-engine.md](model-engine.md#how-much-of-a-model-callers-reach)). The app code the request
-runs (actions, moves, reactions, dialogs, services, jobs) is trusted and writes as usual, so a
+runs (actions, moves, reactions, prompts, services, jobs) is trusted and writes as usual, so a
 posting action can be the only way into a ledger. A period lock (`Meta.period`) applies to
 every writer, trusted code included ([model-engine.md](model-engine.md#closed-periods)).
 

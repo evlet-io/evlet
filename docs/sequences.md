@@ -99,7 +99,7 @@ because it changes after the number is assigned. Two companies can both have
 
 ### Only the engine writes it
 
-* HTTP create and update, `Context.create` and `Context.update`, dialogs and services:
+* HTTP create and update, `Context.create` and `Context.update`, prompts and services:
   sending a value is a field error, `This number is assigned by the system`. Sending null on
   create, or the saved value on update, is not a change and is accepted. A role that cannot
   read the field gets 403 for any value, so it cannot test guesses.

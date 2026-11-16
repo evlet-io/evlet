@@ -38,6 +38,30 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   record is released, ...`), and `Recompute` skips it unless `--recompute-posted`. Records that left
   the set (voided ones too) are recalculated.
 
+- **`Prompt` replaces `Slip` and `Dialog`** ([docs/prompts.md](docs/prompts.md)). An action is the button, a
+  Prompt the form it opens, its `submit()` the callback. Removed, with no compatibility path (owner decision):
+  `Slip`, `present()`, `Application(slips=...)`, `/api/_slips/*`, slip `source`, `menu`, `roles`, `permission`,
+  `becomes`, `review`, `hand_in`, `hand_in_label` and tuple `layout`, slip buttons and `slips` in the schema,
+  `?slip=` record links; `Dialog`, `/api/_dialogs/*` and `dialog: true` actions; `evlet_operations` (framework
+  step `0017_prompt_tickets` drops it and adds `evlet_prompt_tickets`). To upgrade a slip with a source or a
+  dialog: declare `class X(Prompt)` with `Meta.title`, `Meta.primary` and `Meta.layout` (`Main`, `Section`),
+  move `hand_in(self)` / `submit(self, source)` to `submit(self)` (the source is `self.source`), and add an
+  `@action` on the source model that returns it. A menu slip becomes an `@api` function that returns the prompt,
+  shown by `Shortcut(api='app.name', label=...)` (`Shortcut(slip=...)` is removed). `becomes` with `review`
+  becomes `return Outcome(new=(Model, values))`; without review, create the record in `submit()`.
+  `Outcome(present=...)` is removed: return the next Prompt.
+- **Actions answer their outcome under `_outcome`**: an `Outcome` as `{message, open, new, data}`, a prompt as
+  `{"prompt": {...}}` with a single-use ticket for `POST /api/_prompts/{ticket}/check` and `/submit`. An action
+  that returns a prompt writes nothing.
+- **`context.get`, `context.create` and `context.list` rows are bound records**, not `Snapshot`s or dicts:
+  values as attributes (Python values), actions and state rules as methods, `save()`, `delete()`, `move()`,
+  `reload()`, and `record['field']` / `record.get('field')` for the JSON value. `context.create(...)['id']`
+  still works. A model whose field, action or rule key shares a name with another, or with `save`, `delete`,
+  `move`, `reload` or `get`, fails when the class is created: rename one.
+- **Trusted Python writes read-only fields** through `context.update` and bound records (HTTP callers still
+  cannot), and calling an `@action` on a record built by hand raises `Get the record through a context`.
+- **Prompts and report filters run finite expressions.** The refusal of `F(...)` on transient forms is gone.
+
 ### Fixed
 
 - **No `/api/_eva` 404 on every page load.** `GET /api/_settings/me` now carries `eva`: true exactly
