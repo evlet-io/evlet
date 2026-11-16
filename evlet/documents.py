@@ -2,6 +2,7 @@
 
 from types import MappingProxyType, MethodType
 from uuid import uuid4
+from weakref import WeakKeyDictionary
 from contextlib import contextmanager
 import inspect
 import json
@@ -65,11 +66,15 @@ class Draft:
         # Field rule states from the last settlement, and source values as the caller left them (lock checks).
         object.__setattr__(self, '_rules', {})
         object.__setattr__(self, '_caller', {})
-        # While derive() runs: the names it may assign on this draft (None is no limit).
+        # While derive() runs: the names it may assign on this draft (None is no limit), and the results it may
+        # not read because they read what it sets ({field: derived name}).
         object.__setattr__(self, '_derives', None)
+        object.__setattr__(self, '_blocked', None)
 
     def __getattr__(self, name):
         if name in self._definition.__declared_fields__:
+            if self._blocked and name in self._blocked:
+                raise ValueError(f'derive() read {name}, which depends on {self._blocked[name]} that derive() sets')
             return self._values.get(name)
         if name in self._definition.__tables__:
             rows = self._rows.get(name, [])
@@ -90,7 +95,7 @@ class Draft:
         if name == 'id':
             raise ValidationError({'id': ASSIGNED_ID})
         if self._derives is not None and name not in self._derives:
-            raise AttributeError(f'derive() sets only what Meta.derives names, and the rows of those Tables; '
+            raise AttributeError(f'derive() sets only what is declared derived=True, and the rows of those Tables; '
                                  f'{self._definition.__name__}.{name} is not one of them')
         if name in self._definition.__declared_fields__:
             if is_finite(self._definition.__declared_fields__[name]):
@@ -489,7 +494,7 @@ DERIVED = 'DERIVED_FIELD_WRITE: this value is set by the record'
 
 
 def derived_write(model, scalars, collections, prefix):
-    """Fields, Tables and row fields that derive() sets (Meta.derives) have one writer: callers cannot send them."""
+    """Fields, Tables and row fields that derive() sets (derived=True) have one writer: callers cannot send them."""
     derives = getattr(model, '__derives__', ())
     written = [name for name in (*scalars, *collections) if name in derives]
     if written:
@@ -1053,16 +1058,22 @@ def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
         apply_inputs(item, prefix, internal(item), errors)
         object.__setattr__(item, '_caller', dict(item._values))
         apply_fetches(context, item, prefix, prior(item), errors, targets, virtual_only=kept)
-    # derive() sets its values before calculations; a locked or posted record keeps them, like its results.
-    if getattr(draft._definition, '__derives__', ()) and draft.parent is None and not kept:
-        all_drafts = derive(context, draft, internal, errors, targets)
     plan = registry.plan_for(draft._definition)
-    if plan is not None:
-        if kept:
-            plan = registry.kept_plans[registry.root_of(draft._definition)]
-        finite_settle(context, plan, draft, errors, states, complete, previous, kept)
-    else:
-        compute_legacy(context, draft, all_drafts, errors, states, complete, kept)
+    if plan is not None and kept:
+        plan = registry.kept_plans[registry.root_of(draft._definition)]
+
+    def calculate(errors, states):
+        if plan is not None:
+            finite_settle(context, plan, draft, errors, states, complete, previous, kept)
+        else:
+            compute_legacy(context, draft, all_drafts, errors, states, complete, kept)
+    # derive() runs between the formulas it may read and the formulas that read what it sets: the first pass
+    # gives it the former, the second calculates everything on its values. A locked or posted record keeps
+    # its derived values, like its results.
+    if getattr(draft._definition, '__derives__', ()) and draft.parent is None and not kept:
+        calculate({}, {})
+        all_drafts = derive(context, draft, internal, errors, targets)
+    calculate(errors, states)
     if not checks:
         return errors, states
     # Every Link target is read once, in batches, before the per-field checks.
@@ -1072,6 +1083,18 @@ def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
     else:
         check_preview(context, all_drafts, internal, errors, states, targets)
     return errors, states
+
+
+_AFTER_DERIVE = WeakKeyDictionary()
+
+
+def after_derive(registry, model):
+    """guards.after_derive, kept per registry."""
+    found = _AFTER_DERIVE.setdefault(registry, {})
+    if model not in found:
+        from .guards import after_derive as compute
+        found[model] = compute(registry, model)
+    return found[model]
 
 
 def derive(context, draft, internal, errors, targets):
@@ -1094,11 +1117,16 @@ def derive(context, draft, internal, errors, targets):
     saved = {name: [row for row in draft._rows.get(name, []) if row.id] for name in tables}
     edited = {name: list(rows) for name, rows in draft._rows.items() if name not in tables}
     before = list(walk(draft))
+    # The results calculated after derive(), which it cannot read: {model: {field: derived name}}.
+    blocked = {}
+    for (member, name), source in after_derive(context._business.registry, model).items():
+        blocked.setdefault(member, {})[name] = source
     for prefix, item in before:
         top = prefix.split('.')[0]
         allowed = frozenset(names) if item is draft else None if top in tables else \
             frozenset(row_fields.get(top, ())) if item.parent is draft else frozenset()
         object.__setattr__(item, '_derives', allowed)
+        object.__setattr__(item, '_blocked', blocked.get(item._definition))
     try:
         with trusted(), hook_context(context, draft):
             draft.derive()
@@ -1107,10 +1135,11 @@ def derive(context, draft, internal, errors, targets):
     finally:
         for _, item in [*before, *walk(draft)]:
             object.__setattr__(item, '_derives', None)
+            object.__setattr__(item, '_blocked', None)
     for name, rows in edited.items():
         if [id(row) for row in draft._rows.get(name, [])] != [id(row) for row in rows]:
             raise AttributeError(f'derive() cannot add, remove or reorder the rows of {model.__name__}.{name}, which '
-                                 'callers edit; name the Table itself in Meta.derives to build its rows')
+                                 'callers edit; declare the Table itself derived=True to build its rows')
     all_drafts = list(walk(draft))
     targets.prefetch(link_values([item for _, item in all_drafts if item.id is None], fetches_only=True))
     for prefix, item in all_drafts:

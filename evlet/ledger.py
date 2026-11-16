@@ -133,6 +133,8 @@ def check_class(name, namespace, bases, fields, tables, sources):
             value = getattr(field, attribute, None)
             if value not in (None, ''):
                 raise ValueError(f'{name}.{key}: a ledger model has no {what} ({attribute}=)')
+        if field.derived:
+            raise ValueError(f'{name}.{key}: a ledger model has no derive(); trusted code writes its rows')
         if field.hidden or field.read_only or not field.versioned:
             raise ValueError(f'{name}.{key}: hidden, read_only and versioned=False are screen options; a ledger '
                              'model has no screens')

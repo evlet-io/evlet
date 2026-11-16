@@ -102,7 +102,7 @@ class Field:
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
                  initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking="value",
-                 panel=True, copy=True, column=True):
+                 panel=True, copy=True, column=True, derived=False):
         if tracking not in ("value", "mask", "exclude"):
             raise ValueError("tracking is value, mask or exclude")
         self.tracking = tracking
@@ -167,6 +167,10 @@ class Field:
         # versioned=False: where the document is in its process, not what it says. Editable in a locked
         # state, outside releases and their hash, and kept by a restore.
         self.versioned = versioned
+        # derived=True: the document's derive() sets it on every write (docs/model-engine.md#derived-values).
+        if type(derived) is not bool:
+            raise ValueError("derived must be a boolean")
+        self.derived = derived
         if compute is not None or query is not None:
             self.read_only = True
 

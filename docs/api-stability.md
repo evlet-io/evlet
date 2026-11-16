@@ -119,8 +119,8 @@ production ready, but the rules below hold from 0.3 on.
   method runs and refused (`AccessError`, 403) on every other context
   ([states-actions.md](states-actions.md#the-transaction-session-in-hooks-and-actions)).
 
-- **Derived values.** `Meta.derives` with `derive(self)` (field, Table and
-  `"table.field"` row field names): when it runs, the read-only
+- **Derived values.** `derived=True` on fields, Tables and row fields with `derive(self)`: when
+  it runs (between the formulas it reads and those that read what it sets), the read-only
   `self.context.session` it gets (`get`, `list`, `count`, `related`, `aggregate`), the
   `DERIVED_FIELD_WRITE` refusal (keyed `table.field` for a row field), the `read_only` flag on
   a derived field, a derived row field and a derived `children` entry in `/api/schema`, `self.model`

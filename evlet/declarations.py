@@ -29,7 +29,7 @@ class Table:
     `max_rows` (default 100, at most 1,000) bounds the collection in both runtimes. `sections=True` lets
     the Table hold section rows: headings that group the rows below them (evlet/sections.py)."""
     def __init__(self, child, *, required=False, min_rows=None, max_rows=DEFAULT_TABLE_ROWS, label=None,
-                 storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False):
+                 storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False, derived=False):
         for name, value in (('min_rows', min_rows), ('max_rows', max_rows)):
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f'Table {name} must be a nonnegative integer')
@@ -56,6 +56,10 @@ class Table:
         # Section rows live in evlet_sections, so turning this on or off needs no migration.
         if type(sections) is not bool:
             raise ValueError('Table sections must be True or False')
+        # derived=True: the document's derive() builds its rows on every write.
+        if type(derived) is not bool:
+            raise ValueError('Table derived must be True or False')
+        self.derived = derived
         self.sections = sections
         if sections and 'section' in {*getattr(child, '__declared_fields__', {}), *getattr(child, '__tables__', {})}:
             # {"section": label} marks a section row, so the rows cannot have a field of that name.

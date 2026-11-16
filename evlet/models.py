@@ -76,71 +76,61 @@ def checked_body(body, allowed, message, *, exact=False, nonempty=False, field='
 
 
 def declared_hooks(cls, name, meta, fields, tables, row):
-    """Check derive() with Meta.derives; returns the names derive() writes.
+    """Check derive() with the fields and Tables declared derived=True; returns the names derive() writes:
+    "field", "table" or "table.field" (a derived field on the rows of a Table callers edit).
 
     derive(self) builds stored values that formulas cannot express. It runs on every write and preview
-    of the document, before calculations, and may assign only the fields, Tables and "table.field" row
-    fields Meta.derives names;
-    callers cannot write those (docs/model-engine.md#derived-values)."""
+    of the document and may assign only what is declared derived; callers cannot write those
+    (docs/model-engine.md#derived-values)."""
     import inspect
+    if getattr(meta, 'derives', None) is not None:
+        raise ValueError(f'{name}: Meta.derives was removed; declare derived=True on each field or Table derive() sets')
     derive = getattr(cls, 'derive', None)
-    derives = getattr(meta, 'derives', ()) if meta is not None else ()
-    if isinstance(derives, str) or not isinstance(derives, (tuple, list)):
-        raise ValueError(f'{name}: Meta.derives is a tuple of field and Table names')
-    derives = tuple(derives)
-    if not inspect.isfunction(derive):
-        if derives:
-            raise ValueError(f'{name}: Meta.derives needs a derive(self) method that sets them')
-        derive = None
-    elif not derives:
-        raise ValueError(f'{name}.derive: name the fields and Tables it sets in Meta.derives')
-    if derive is not None and len(inspect.signature(derive).parameters) != 1:
-        raise ValueError(f'{name}.derive takes only self')
-    if derive is not None and row:
-        raise ValueError(f'{name}: derive() belongs to the document; a Table row cannot declare it')
-    if len(set(derives)) != len(derives):
-        raise ValueError(f'{name}: Meta.derives names each field or Table once')
+    derive = derive if inspect.isfunction(derive) else None
     from .calc import is_finite
     from .declarations import State
 
     def source(owner, key, field):
-        if not field.stored or field.compute is not None or field.query is not None or is_finite(field) or \
+        if not field.stored or field.compute is not None or field.query is not None or field.fetch or is_finite(field) or \
                 isinstance(field, State) or field.kind == 'sequence' or standard(field):
             raise ValueError(f'{owner}.{key}: derive() sets stored source fields; calculated, State, Sequence and '
                              'standard fields have their own writers')
-    for key in derives:
-        if not isinstance(key, str):
-            raise ValueError(f'{name}: Meta.derives is a tuple of field and Table names')
-        if key.count('.') == 1:
-            # "table.field": a field on every row of a Table that callers edit.
-            table_name, row_field = key.split('.')
-            table = tables.get(table_name)
-            if table is None or not isinstance(table.child, type):
-                raise ValueError(f'{name}: Meta.derives names {key!r}, but {table_name!r} is not a Table of the model')
-            if table_name in derives:
-                raise ValueError(f'{name}: Meta.derives names the Table {table_name!r}, so it sets its rows whole; '
-                                 f'leave out {key!r}')
-            field = table.child.__app_fields__.get(row_field)
-            if field is None:
-                raise ValueError(f'{name}: Meta.derives names {key!r}, which is not a field of {table.child.__name__}')
-            source(table.child.__name__, row_field, field)
-            continue
-        field = fields.get(key)
-        if key in tables:
-            if getattr(tables[key], 'sections', False):
+    derives = []
+    for key, field in fields.items():
+        if field.derived:
+            source(name, key, field)
+            derives.append(key)
+    for key, table in tables.items():
+        child = table.child if isinstance(table.child, type) else None
+        row_fields = [field_name for field_name, field in getattr(child, '__app_fields__', {}).items() if field.derived]
+        if table.derived:
+            if row_fields:
+                raise ValueError(f'{name}: {key} is derived, so derive() sets its rows whole; '
+                                 f'leave out derived=True on {child.__name__}.{row_fields[0]}')
+            if table.sections:
                 raise ValueError(f'{name}: {key} has sections=True, so derive() cannot build it; '
                                  'section rows belong to Tables people edit')
-            continue
-        if field is None:
-            raise ValueError(f'{name}: Meta.derives names {key!r}, which is not a field or Table of the model')
-        source(name, key, field)
+            derives.append(key)
+        for field_name in row_fields:
+            source(child.__name__, field_name, child.__app_fields__[field_name])
+            derives.append(f'{key}.{field_name}')
+    if row:
+        if derive is not None:
+            raise ValueError(f'{name}: derive() belongs to the document; a Table row cannot declare it')
+        return ()
+    if derive is None and derives:
+        raise ValueError(f'{name}: {derives[0]} is derived=True, so the model needs a derive(self) method that sets it')
+    if derive is not None and not derives:
+        raise ValueError(f'{name}.derive: declare derived=True on the fields and Tables it sets')
+    if derive is not None and len(inspect.signature(derive).parameters) != 1:
+        raise ValueError(f'{name}.derive takes only self')
     for removed in ('before_close', 'changed', 'check_lifecycle'):
         if inspect.isfunction(getattr(cls, removed, None)):
             raise ValueError(f'{name}.{removed}() was removed in 0.4.6; use @validate, @state(...), @state.exit(...) or '
                              '@release (docs/states-actions.md#hooks)')
     if inspect.isfunction(vars(cls).get('validate')) and not hasattr(vars(cls)['validate'], '__evlet_hook__'):
         raise ValueError(f'{name}.validate() was removed in 0.4.6; decorate a check with @validate instead')
-    return derives
+    return tuple(derives)
 
 
 def refuse_finite_expressions(name, fields, tables, prefix=''):
@@ -436,7 +426,7 @@ class Registry:
                 'evlet_position': Integer(required=True, default=0, hidden=True, read_only=True),
                 '__internal_fields__': (table.owner_field, 'evlet_position'),
             })
-            # Row fields the document's derive() sets ("table.field" in Meta.derives) are refused to callers.
+            # Row fields the document's derive() sets (derived=True on a row field) are refused to callers.
             child.__derives__ = tuple(key.split('.')[1] for key in getattr(model, '__derives__', ()) if key.startswith(name + '.'))
             expanded.append(child)
             self.children.append(ChildTable(model, name, child, table.owner_field, table.label or name.replace('_', ' ').title()))

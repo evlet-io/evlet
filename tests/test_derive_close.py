@@ -14,6 +14,7 @@ import pytest
 from evlet import (Application, Boolean, Child, Database, Decimal, Integer, Link, Model, Registry, Rule, State, Table,
                    Text, ValidationError, state)
 from evlet.auth import AccessError, KeyAccess, LocalAuth, User
+from evlet.calc import F
 from evlet.connector import ConnectorError
 from evlet.tools import ApprovalNeeded
 from test_business import PASSWORD, client, http
@@ -37,7 +38,6 @@ class Trip(Model):
 
     class Meta:
         calculation_language = 'finite-v1'
-        derives = ('places', 'place_count', 'longest', 'shares')
 
     class Stop(Child):
         place = Text(max_length=40, required=True)
@@ -58,10 +58,10 @@ class Trip(Model):
     plan = Link(Plan)
     amount = Decimal(scale=2, default=0)
     stops = Table(Stop)
-    places = Table(PlaceTotal)
-    place_count = Integer()
-    longest = Decimal(scale=2)
-    shares = Table(Share)
+    places = Table(PlaceTotal, derived=True)
+    place_count = Integer(derived=True)
+    longest = Decimal(scale=2, derived=True)
+    shares = Table(Share, derived=True)
     # A calculation over rows derive() built: it runs after derive().
     total_minutes = Decimal(scale=2, compute=places.sum('minutes'))
     docstate = State(
@@ -139,15 +139,14 @@ class Sheet(Model):
 
     class Meta:
         calculation_language = 'finite-v1'
-        derives = ('lines.net', 'lines.converted')
 
     class Line(Child):
         qty = Decimal(scale=2, default=1)
         price = Decimal(scale=2, default=0)
         discount = Decimal(scale=4, default=0)
         unit = Text(max_length=10, default='a')
-        net = Decimal(scale=4)
-        converted = Decimal(scale=4)
+        net = Decimal(scale=4, derived=True)
+        converted = Decimal(scale=4, derived=True)
 
     decimals = Integer(default=2, minimum=0, maximum=4)
     target = Text(max_length=10, default='b')
@@ -314,10 +313,10 @@ def test_a_validation_error_from_derive_refuses_the_save_and_writes_nothing(app)
     assert admin('GET', f"/api/trip/{body['id']}")[1]['title_text'] == 'trip'
 
 
-def test_derive_sets_only_what_meta_derives_names(app):
+def test_derive_sets_only_what_is_declared_derived(app):
     app, _ = app
     MISBEHAVE.append('field')
-    with app.business.context(ADMIN) as context, pytest.raises(AttributeError, match='Meta.derives'):
+    with app.business.context(ADMIN) as context, pytest.raises(AttributeError, match='declared derived=True'):
         context.create(Trip)
     with app.database.transaction() as tx:
         assert tx.count(Trip) == 0
@@ -351,33 +350,32 @@ def test_the_schema_marks_derived_fields_and_tables_read_only(app):
     assert fields['place_count']['read_only'] is True and fields['longest']['read_only'] is True
     assert fields['amount']['read_only'] is False
     # The form previews these on the server when the person pauses, so they show before the save.
-    assert trip['derives'] == ['places', 'place_count', 'longest', 'shares']
+    assert trip['derives'] == ['place_count', 'longest', 'places', 'shares']
     assert all('derives' not in model for model in schema['models'] if model['name'] in ('stop',))
 
 
 def test_declarations_are_checked_when_the_model_is_defined():
     with pytest.raises(ValueError, match='needs a derive'):
         class NoMethod(Model):
-            class Meta:
-                derives = ('count',)
-            count = Integer()
-    with pytest.raises(ValueError, match='name the fields and Tables'):
+            count = Integer(derived=True)
+    with pytest.raises(ValueError, match='declare derived=True on the fields and Tables it sets'):
         class NoNames(Model):
             count = Integer()
             def derive(self): pass
-    with pytest.raises(ValueError, match='not a field or Table'):
-        class Unknown(Model):
+    with pytest.raises(ValueError, match='Meta.derives was removed; declare derived=True'):
+        class Old(Model):
             class Meta:
-                derives = ('missing',)
+                derives = ('count',)
+            count = Integer()
             def derive(self): pass
-    with pytest.raises(ValueError, match='calculated, State, Sequence'):
-        class Calculated(Model):
-            class Meta:
-                calculation_language = 'finite-v1'
-                derives = ('total',)
-            amount = Decimal(scale=2)
-            total = Decimal(scale=2, compute=amount * 2)
-            def derive(self): pass
+    for field in (lambda: Decimal(scale=2, compute=F('amount') * 2, derived=True), lambda: Text(fetch='plan.label', derived=True),
+                  lambda: Decimal(scale=2, stored=False, derived=True)):
+        with pytest.raises(ValueError, match='calculated, State, Sequence'):
+            type('Calculated', (Model,), {'Meta': type('Meta', (), {'calculation_language': 'finite-v1'}), 'plan': Link(Plan),
+                                          'amount': Decimal(scale=2), 'total': field(), 'derive': lambda self: None,
+                                          '__module__': __name__})
+    with pytest.raises(ValueError, match='derived must be'):
+        Integer(derived=1)
 
     with pytest.raises(ValueError, match='was removed'):
         class OldClose(Model):
@@ -529,24 +527,112 @@ def test_derive_keeps_the_rows_of_a_table_callers_edit(app, misbehave):
 
 
 def test_row_field_declarations_are_checked():
-    with pytest.raises(ValueError, match='not a Table'):
-        class NoTable(Model):
-            class Meta:
-                derives = ('lines.net',)
-            def derive(self): pass
-    with pytest.raises(ValueError, match='not a field of'):
-        class NoField(Model):
-            class Meta:
-                derives = ('lines.missing',)
+    with pytest.raises(ValueError, match='needs a derive'):
+        class NoMethod(Model):
             class Line(Child):
-                qty = Integer()
+                net = Integer(derived=True)
             lines = Table(Line)
-            def derive(self): pass
     with pytest.raises(ValueError, match='sets its rows whole'):
         class Both(Model):
-            class Meta:
-                derives = ('lines', 'lines.qty')
             class Line(Child):
-                qty = Integer()
-            lines = Table(Line)
+                qty = Integer(derived=True)
+            lines = Table(Line, derived=True)
             def derive(self): pass
+    with pytest.raises(ValueError, match='derive\\(\\) belongs to the document'):
+        class Row(Child):
+            net = Integer(derived=True)
+            def derive(self): pass
+
+
+# derive() between the formulas it reads and the formulas that read what it sets
+
+class Vat(Model):
+    """A VAT summary per rate, built from the lines' formula amounts; tax_total and total read the summary."""
+    permissions = FULL
+
+    class Meta:
+        calculation_language = 'finite-v1'
+
+    class Line(Child):
+        qty = Decimal(scale=2, default=1)
+        rate = Decimal(scale=2, default=0)
+        vat_rate = Decimal(scale=2, default=5)
+        amount = Decimal(scale=2, compute=F('qty') * F('rate'))
+        # Read by no formula and set by derive() on each row people edit.
+        band = Text(max_length=10, derived=True)
+
+    class Tax(Child):
+        vat_rate = Decimal(scale=2)
+        taxable = Decimal(scale=2)
+        tax = Decimal(scale=2)
+
+    lines = Table(Line)
+    tax_lines = Table(Tax, derived=True)
+    rates = Integer(derived=True)
+    net = Decimal(scale=2, compute=lines.sum('amount'))
+    tax_total = Decimal(scale=2, compute=tax_lines.sum('tax'))
+    total = Decimal(scale=2, compute=F('net') + F('tax_total'))
+
+    def derive(self):
+        taxable = {}
+        for line in self.lines:
+            taxable[line.vat_rate] = taxable.get(line.vat_rate, 0) + line.amount  # a formula result, already current
+            line.band = 'zero' if not line.vat_rate else 'standard'
+        self.tax_lines = [{'vat_rate': rate, 'taxable': amount, 'tax': (amount * rate / 100).quantize(D('0.01'))}
+                          for rate, amount in sorted(taxable.items())]
+        self.rates = len(taxable)
+        SEEN.append(self.net)  # net reads no derived value, so derive() sees it calculated
+        if 'circle' in MISBEHAVE:
+            SEEN.append(self.total)
+
+
+def test_derive_reads_formula_results_and_formulas_read_what_it_sets(tmp_path):
+    SEEN.clear()
+    MISBEHAVE.clear()
+    database = Database(tmp_path / 'vat.sqlite3', Registry(Vat))
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    app.initialize()
+    lines = [{'qty': '2', 'rate': '50', 'vat_rate': '5'}, {'qty': '1', 'rate': '100', 'vat_rate': '0'}, {'qty': '3', 'rate': '10', 'vat_rate': '5'}]
+    with app.business.context(ADMIN) as context:
+        record = context.create(Vat, children={'lines': lines})
+        assert [(row['vat_rate'], row['taxable'], row['tax']) for row in record['children']['tax_lines']] == [
+            ('0.00', '100.00', '0.00'), ('5.00', '130.00', '6.50')]
+        assert (record['rates'], record['net'], record['tax_total'], record['total']) == (2, '230.00', '6.50', '236.50')
+        assert [row['band'] for row in record['children']['lines']] == ['standard', 'zero', 'standard'] and SEEN == [D('230.00')]
+        # A change to a line's quantity reaches the summary and the totals in the same write.
+        first = record['children']['lines'][0]['id']
+        record = context.update(Vat, record['id'], children={'lines': {'update': [{'id': first, 'qty': '4'}]}})
+        assert (record['tax_total'], record['total']) == ('11.50', '341.50')
+    # Reading a result that depends on what derive() sets is a circle, named.
+    MISBEHAVE.append('circle')
+    with app.business.context(ADMIN) as context, pytest.raises(ValueError, match='derive\\(\\) read total, which depends on tax_lines that derive\\(\\) sets'):
+        context.create(Vat, children={'lines': lines})
+    from evlet.guards import after_derive
+    assert after_derive(database.registry, Vat) == {(Vat, 'tax_total'): 'tax_lines', (Vat, 'total'): 'tax_lines'}
+
+
+class Doubled(Model):
+    """The same order on the legacy string-formula path."""
+    permissions = FULL
+    price = Decimal(scale=2, default=0)
+    double = Decimal(scale=2, compute='price * 2')
+    base = Decimal(scale=2, derived=True)
+    total = Decimal(scale=2, compute='base + 1')
+
+    def derive(self):
+        self.base = self.double
+        if 'circle' in MISBEHAVE:
+            self.total
+
+
+def test_the_legacy_formula_path_orders_derive_the_same_way(tmp_path):
+    MISBEHAVE.clear()
+    database = Database(tmp_path / 'legacy.sqlite3', Registry(Doubled))
+    app = Application(database, auth=LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False))
+    app.initialize()
+    with app.business.context(ADMIN) as context:
+        record = context.create(Doubled, price='3')
+        assert (record['double'], record['base'], record['total']) == ('6.00', '6.00', '7.00')
+    MISBEHAVE.append('circle')
+    with app.business.context(ADMIN) as context, pytest.raises(ValueError, match='derive\\(\\) read total, which depends on base'):
+        context.create(Doubled, price='3')

@@ -38,7 +38,6 @@ class Quote(Model):
 
     class Meta:
         calculation_language = 'finite-v1'
-        derives = ('line_count',)
 
     title_text = Text(max_length=40, default='quote')
     docstate = State(
@@ -48,7 +47,7 @@ class Quote(Model):
             State.Rule('draft', 'sent', 'Send', key='sent'),
         ), default='draft')
     lines = Table(Line, sections=True)
-    line_count = Integer()
+    line_count = Integer(derived=True)
     total_qty = Decimal(scale=2, compute=lines.sum('qty'))
     total_amount = Decimal(scale=2, compute=lines.sum('amount'))
 
@@ -71,14 +70,12 @@ class Order(Model):
     """A document without calculations, so trusted session writes settle it (derive() runs)."""
     permissions = FULL
 
-    class Meta:
-        derives = ('line_count',)
 
     class Row(Child):
         item = Text(max_length=40, required=True)
 
     lines = Table(Row, sections=True)
-    line_count = Integer()
+    line_count = Integer(derived=True)
 
     def derive(self):
         SEEN.append(('order', [line.item for line in self.lines], [(label, [line.item for line in rows]) for label, rows in self.lines.sections()]))
@@ -259,12 +256,9 @@ def test_forms_cannot_hold_sections():
 def test_derived_tables_cannot_hold_sections():
     with pytest.raises(ValueError, match='derive\\(\\) cannot build it'):
         class Built(Model):
-            class Meta:
-                derives = ('lines',)
-
             class Row(Child):
                 note = Text()
-            lines = Table(Row, sections=True)
+            lines = Table(Row, sections=True, derived=True)
 
             def derive(self):
                 self.lines = []

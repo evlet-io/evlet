@@ -112,8 +112,9 @@ def check_kept_results(registry, model, plan):
                              'or the result virtual (stored=False)')
 
 
-def stored_reads(registry, model, plan):
-    """What each stored result of a root document reads: {(model, result): ({(model, field)}, {row model})}.
+def stored_reads(registry, model, plan, virtual=False):
+    """What each stored result (and, with `virtual`, each virtual result) of a root document reads:
+    {(model, result): ({(model, field)}, {row model})}.
 
     Reads are followed through virtual results and fetched copies: finite results by their plan reads,
     legacy string formulas, Query fields and fetches by the value inputs of the legacy template graph.
@@ -160,10 +161,32 @@ def stored_reads(registry, model, plan):
     result = {}
     for member in members:
         for name, field in member.__declared_fields__.items():
-            if field.stored and derived(field):
+            if (field.stored or virtual) and derived(field):
                 fields, tables = set(), set()
                 visit(member, name, fields, tables, set())
                 result[member, name] = (fields, tables)
+    return result
+
+
+def after_derive(registry, model):
+    """{(model, result): derived name} of the results of a root document that read a value its derive() sets,
+    directly or through other results. They are calculated after derive(); derive() cannot read them."""
+    rows = {child.name: child.model for child in registry.children if child.parent is model}
+    fields, tables = {}, {}
+    for name in model.__derives__:
+        table, _, field = name.rpartition('.')
+        if table:
+            fields[rows[table], field] = name
+        elif name in rows:
+            tables[rows[name]] = name
+        else:
+            fields[model, name] = name
+    result = {}
+    for key, (reads, members) in stored_reads(registry, model, registry.plan_for(model), virtual=True).items():
+        found = next((fields[read] for read in reads if read in fields), None) or \
+            next((tables[read[0]] for read in reads if read[0] in tables), None) or next((tables[row] for row in members if row in tables), None)
+        if found is not None:
+            result[key] = found
     return result
 
 

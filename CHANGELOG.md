@@ -6,6 +6,19 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Upgrading
+
+- **Declare derived values on the field: `derived=True` replaces `Meta.derives`.** Write
+  `rates = Integer(derived=True)`, `tax_lines = Table(TaxLine, derived=True)`, and
+  `rate_aed = Decimal(derived=True)` on a row field of a Table people edit (was `"lines.rate_aed"`).
+  `Meta.derives` fails with a message saying so. The same declaration checks apply
+  ([docs/model-engine.md](docs/model-engine.md#derived-values)).
+- **`derive()` sees formula results.** It now runs after the formulas that read no derived value
+  and before those that do, on the finite-v1 and the legacy string-formula paths, so a VAT summary
+  built from `line.amount = qty * rate` reads current amounts and `tax_total` reads the new
+  summary. Reading, inside `derive()`, a formula that depends on a derived value raises
+  `ValueError` naming it.
+
 ### Fixed
 
 - **No `/api/_eva` 404 on every page load.** `GET /api/_settings/me` now carries `eva`: true exactly
