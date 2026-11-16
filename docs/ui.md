@@ -40,12 +40,12 @@ A field declared `column=False` (a currency source, say) starts hidden in a chil
 Columns menu and is left out of a list's default columns; the form still shows it
 ([model-engine.md](model-engine.md#more-field-types)).
 
-Values the record fills itself (`Meta.derives`) show while the person edits: once they pause
+Values the record fills itself (`derived=True`) show while the person edits: once they pause
 for 600 ms the form asks the server for a preview (`POST /api/_draft/{model}`) and shows what
 `derive()` set, without making it an unsaved change. Formulas (`compute=`) show at once without
 a request.
 
-A Table the record fills itself (`Meta.derives`, [model-engine.md](model-engine.md#derived-values))
+A Table the record fills itself (`derived=True`, [model-engine.md](model-engine.md#derived-values))
 is read only on the record page, in focus view and in the row editor, whatever the state: it reads
 "Filled in by the record when it is saved." and a save never sends its rows. Its fields show read
 only too, and it has no editing controls: no selection checkboxes, drag handles or Edit, only the row
@@ -413,7 +413,7 @@ class Shipment(Model):
 ```
 
 - **`Meta.cards`** names zero to five derived values: fields with `compute=`, `fetch=` or `query=`
-  (stored or `stored=False`), fields `derive()` sets (named in `Meta.derives`), and per-record
+  (stored or `stored=False`), fields `derive()` sets (`derived=True`), and per-record
   measures (`Meta.measures` with `model=` and `link=`). A card shows a field the same way whichever
   of these fills it: money with its currency's places and symbol, other values as the form shows them. A
   count reads as a plain number, never money. A sum of money whose code each record takes from its own

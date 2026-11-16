@@ -60,7 +60,7 @@ export interface ChildSchema { name: string; model: string; label: string; link:
   filterable?: boolean
   /** Table(copy=False): Duplicate leaves these rows out of the new record. Absent means they are copied. */
   copy?: boolean
-  /** The record fills these rows itself on every save (Meta.derives): read only, and never sent. */
+  /** The record fills these rows itself on every save (derived=True): read only, and never sent. */
   read_only?: boolean
   /** Table(sections=True): the rows may include section rows {id, section}, headings that group the rows below them. */
   sections?: boolean
@@ -125,7 +125,7 @@ export interface ModelSchema {
   board?: string;
   /** Meta.autosave: false keeps the "Discard your changes?" prompt instead of keeping unsaved changes. */
   autosave?: boolean;
-  /** Meta.derives: what the server's derive() fills ("field", "table" or "table.field"). The form previews them on the
+  /** Fields and Tables declared derived=True: what the server's derive() fills ("field", "table" or "table.field"). The form previews them on the
    * server when the person pauses. Absent when the model derives nothing. */
   derives?: string[];
   /** Meta.summary: false leaves the record page's summary strip out. Absent means shown when it has values. */

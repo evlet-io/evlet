@@ -236,9 +236,6 @@ class Employee(Model):
         )
         # People counted by the charts above; the list shows the count too.
         measures = {'people': Count()}
-        # derive() below sets these on every save and preview; nobody writes them, and the Skill levels
-        # table is read only on the form (docs/model-engine.md#derived-values).
-        derives = ('skill_count', 'skill_levels')
         # A key card may show a value derive() sets, like a formula's result.
         cards = ('skill_count',)
         # Each save keeps who changed what, in a hash-chained activity.
@@ -256,8 +253,10 @@ class Employee(Model):
     # They are stored apart from the rows, so turning this on needed no migration, and derive() below still
     # counts real skills only.
     skills = Table(Skill, sections=True)
-    skill_count = Integer(label='Skills')
-    skill_levels = Table(SkillLevel, label='Skill levels')
+    # derive() below sets these on every save and preview; nobody writes them, and the Skill levels
+    # table is read only on the form (docs/model-engine.md#derived-values).
+    skill_count = Integer(label='Skills', derived=True)
+    skill_levels = Table(SkillLevel, label='Skill levels', derived=True)
 
     def derive(self):
         """How many skills, and one row per level they use: values a formula cannot build."""

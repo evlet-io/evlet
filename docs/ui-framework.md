@@ -237,14 +237,14 @@ await record.save();                       // the server's answer replaces the d
   `_key`, at any depth) and the rest in `formError`. `revert()` and `reload()` discard the
   draft. `runAction()` and `move()` require a clean record. `preview()` asks the server to
   evaluate the draft for plans it does not ship.
-- A model with `Meta.derives` lists them in its schema as `derives` (only names the role can read).
+- A model with `derived=True` fields or Tables lists them in its schema as `derives` (only names the role can read).
   Each change to the draft (a field set, a row added, removed or moved) restarts a 600 ms timer
   (`PREVIEW_PAUSE_MS`); when the person pauses, `refreshDerived()` sends the draft to
   `POST /api/_draft/{model}`, the same route and permission checks as any preview, and shows what
   `derive()` set: derived fields, `"table.field"` values on rows (matched by id or `_key`) and the
   rows of a derived Table. Derived fields are never editable, never an unsaved change and never sent.
   An answer that a later change overtook is dropped, and only one answer per pause is shown. A model
-  without `Meta.derives` never asks, and formulas the browser runs need no request.
+  without derived values never asks, and formulas the browser runs need no request.
 - `formatMoney('25200')` is `AED 25,200.00` (exact, half up). Money and numbers take decimal
   strings or safe integers only; a JavaScript fraction or text that is not a plain decimal
   shows `Invalid amount`. `formatDate('2026-11-01')` is `01-11-2026`; impossible dates show

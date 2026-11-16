@@ -754,7 +754,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     };
   };
   const tableControls = new Map<string, ChildTableControls>();
-  // A Table the record fills itself (Meta.derives) is read only here, whatever the state.
+  // A Table the record fills itself (derived=True) is read only here, whatever the state.
   const derivedText = () => 'Filled in by the record when it is saved.';
   const tableLocked = (child: { read_only?: boolean }) => () => Boolean(child.read_only) || locked.get() || !canWrite;
   const tableText = (child: { read_only?: boolean }) => child.read_only ? derivedText : lockedText;

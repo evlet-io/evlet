@@ -1,4 +1,4 @@
-"""derive() with Meta.derives, and a state hook that refuses to close: real SQLite, through the ASGI routes and Context.
+"""derive() with derived=True fields and Tables, and a state hook that refuses to close: real SQLite, through the ASGI routes and Context.
 
 derive() builds stored values formulas cannot express (one row per distinct value of another Table, rows
 built from a linked record with a remainder row). It runs before calculations on every write and preview;
@@ -37,7 +37,6 @@ class Trip(Model):
 
     class Meta:
         calculation_language = 'finite-v1'
-        derives = ('places', 'place_count', 'longest', 'shares')
 
     class Stop(Child):
         place = Text(max_length=40, required=True)
@@ -58,10 +57,10 @@ class Trip(Model):
     plan = Link(Plan)
     amount = Decimal(scale=2, default=0)
     stops = Table(Stop)
-    places = Table(PlaceTotal)
-    place_count = Integer()
-    longest = Decimal(scale=2)
-    shares = Table(Share)
+    places = Table(PlaceTotal, derived=True)
+    place_count = Integer(derived=True)
+    longest = Decimal(scale=2, derived=True)
+    shares = Table(Share, derived=True)
     # A calculation over rows derive() built: it runs after derive().
     total_minutes = Decimal(scale=2, compute=places.sum('minutes'))
     docstate = State(
@@ -139,15 +138,14 @@ class Sheet(Model):
 
     class Meta:
         calculation_language = 'finite-v1'
-        derives = ('lines.net', 'lines.converted')
 
     class Line(Child):
         qty = Decimal(scale=2, default=1)
         price = Decimal(scale=2, default=0)
         discount = Decimal(scale=4, default=0)
         unit = Text(max_length=10, default='a')
-        net = Decimal(scale=4)
-        converted = Decimal(scale=4)
+        net = Decimal(scale=4, derived=True)
+        converted = Decimal(scale=4, derived=True)
 
     decimals = Integer(default=2, minimum=0, maximum=4)
     target = Text(max_length=10, default='b')
@@ -314,10 +312,10 @@ def test_a_validation_error_from_derive_refuses_the_save_and_writes_nothing(app)
     assert admin('GET', f"/api/trip/{body['id']}")[1]['title_text'] == 'trip'
 
 
-def test_derive_sets_only_what_meta_derives_names(app):
+def test_derive_sets_only_what_is_declared_derived(app):
     app, _ = app
     MISBEHAVE.append('field')
-    with app.business.context(ADMIN) as context, pytest.raises(AttributeError, match='Meta.derives'):
+    with app.business.context(ADMIN) as context, pytest.raises(AttributeError, match='derived=True'):
         context.create(Trip)
     with app.database.transaction() as tx:
         assert tx.count(Trip) == 0
@@ -351,33 +349,43 @@ def test_the_schema_marks_derived_fields_and_tables_read_only(app):
     assert fields['place_count']['read_only'] is True and fields['longest']['read_only'] is True
     assert fields['amount']['read_only'] is False
     # The form previews these on the server when the person pauses, so they show before the save.
-    assert trip['derives'] == ['places', 'place_count', 'longest', 'shares']
+    assert trip['derives'] == ['place_count', 'longest', 'places', 'shares']
     assert all('derives' not in model for model in schema['models'] if model['name'] in ('stop',))
 
 
 def test_declarations_are_checked_when_the_model_is_defined():
-    with pytest.raises(ValueError, match='needs a derive'):
+    with pytest.raises(ValueError, match=r'NoMethod.count is derived=True: declare a derive\(self\) method'):
         class NoMethod(Model):
-            class Meta:
-                derives = ('count',)
-            count = Integer()
-    with pytest.raises(ValueError, match='name the fields and Tables'):
+            count = Integer(derived=True)
+    with pytest.raises(ValueError, match='NoTable.rows is derived=True'):
+        class NoTable(Model):
+            class Row(Child):
+                qty = Integer()
+            rows = Table(Row, derived=True)
+    with pytest.raises(ValueError, match='declare the fields and Tables it sets with derived=True'):
         class NoNames(Model):
             count = Integer()
             def derive(self): pass
-    with pytest.raises(ValueError, match='not a field or Table'):
-        class Unknown(Model):
-            class Meta:
-                derives = ('missing',)
-            def derive(self): pass
+    with pytest.raises(ValueError, match='derived must be True or False'):
+        Integer(derived='yes')
     with pytest.raises(ValueError, match='calculated, State, Sequence'):
         class Calculated(Model):
             class Meta:
                 calculation_language = 'finite-v1'
-                derives = ('total',)
             amount = Decimal(scale=2)
-            total = Decimal(scale=2, compute=amount * 2)
+            total = Decimal(scale=2, compute=amount * 2, derived=True)
             def derive(self): pass
+    with pytest.raises(ValueError, match='calculated, State, Sequence'):
+        class Virtual(Model):
+            total = Decimal(scale=2, stored=False, derived=True)
+            def derive(self): pass
+    # Meta.derives was removed: an unknown Meta option.
+    with pytest.raises(ValueError, match='Meta supports'):
+        class Old(Model):
+            class Meta:
+                derives = ('count',)
+            count = Integer()
+        Registry(Old).ui_schema()
 
     with pytest.raises(ValueError, match='was removed'):
         class OldClose(Model):
@@ -446,7 +454,7 @@ def test_python_and_tool_callers_are_refused_the_same_way(app):
         assert tx.get(Trip, trip).docstate == 'open'
 
 
-# Derived fields on the rows of a Table callers edit ("table.field" in Meta.derives)
+# Derived fields on the rows of a Table callers edit (derived=True on a row field)
 
 LINES = [{'_key': 'a', 'qty': '3', 'price': '10.00', 'discount': '0.1', 'unit': 'a'},
          {'_key': 'b', 'qty': '1', 'price': '2.50', 'unit': 'c'}]
@@ -529,24 +537,31 @@ def test_derive_keeps_the_rows_of_a_table_callers_edit(app, misbehave):
 
 
 def test_row_field_declarations_are_checked():
-    with pytest.raises(ValueError, match='not a Table'):
-        class NoTable(Model):
-            class Meta:
-                derives = ('lines.net',)
-            def derive(self): pass
-    with pytest.raises(ValueError, match='not a field of'):
-        class NoField(Model):
-            class Meta:
-                derives = ('lines.missing',)
+    with pytest.raises(ValueError, match=r'NoMethod.lines.net is derived=True: declare a derive\(self\)'):
+        class NoMethod(Model):
+            class Line(Child):
+                net = Integer(derived=True)
+            lines = Table(Line)
+    with pytest.raises(ValueError, match='Line.net: derive.. sets stored source fields'):
+        class Calculated(Model):
             class Line(Child):
                 qty = Integer()
+                net = Integer(stored=False, derived=True)
             lines = Table(Line)
             def derive(self): pass
-    with pytest.raises(ValueError, match='sets its rows whole'):
+    with pytest.raises(ValueError, match='builds its rows whole; Line.qty cannot also be derived=True'):
         class Both(Model):
-            class Meta:
-                derives = ('lines', 'lines.qty')
             class Line(Child):
-                qty = Integer()
-            lines = Table(Line)
+                qty = Integer(derived=True)
+            lines = Table(Line, derived=True)
             def derive(self): pass
+    with pytest.raises(ValueError, match='derive.. reaches one level of Table'):
+        class Outer(Child):
+            class Inner(Child):
+                qty = Integer(derived=True)
+            inner = Table(Inner)
+    with pytest.raises(ValueError, match='derive.. reaches one level of Table'):
+        class Nested(Child):
+            class Inner(Child):
+                qty = Integer()
+            inner = Table(Inner, derived=True)

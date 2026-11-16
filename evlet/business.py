@@ -478,10 +478,10 @@ class Business:
                                   # of its rows for the fields the total line sums (computed by the client, never stored).
                                   **({'sections': True, 'section_sums': list(total_fields(model, child.name))}
                                      if sections_enabled(model, child.name) else {}),
-                                  # A Table that derive() fills (Meta.derives) is read only on the form; the save sends none of its rows.
+                                  # A Table that derive() fills (derived=True) is read only on the form; the save sends none of its rows.
                                   **({'read_only': True} if child.name in getattr(model, '__derives__', ()) else {})}
                                  for child in self.children.values() if child.parent is model and self.policy.allows(user, child.model, 'read')]
-            # What derive() fills on every save and preview (Meta.derives): "field", "table" or "table.field". The form asks
+            # What derive() fills on every save and preview (derived=True): "field", "table" or "table.field". The form asks
             # the server for a preview when the person pauses, so these show before the save. Only readable names are listed.
             derives = [name for name in getattr(model, '__derives__', ())
                        if name.split('.')[0] in readable or any(child['name'] == name.split('.')[0] for child in entry['children'])]

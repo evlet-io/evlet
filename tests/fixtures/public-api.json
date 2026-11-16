@@ -13,7 +13,7 @@
     "AppSettings": "class()",
     "Application": "class(database, *, auth=None, policy=None, actions=(), children=(), attachments=(), storage=None, jobs=None, events=None, name='Evlet', hosts=None, reports=(), apis=(), playground=False, routes=None, connectors=(), secret_key=None, ai=None, prints=(), workspaces=())",
     "Attachments": "class(max_files: int = 10, max_size: int = 1048576) -> None",
-    "Boolean": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True)",
+    "Boolean": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True, derived=False)",
     "Chart": "class(type: str, x: str = None, y: tuple = (), label: str | None = None, model: object = None, link: str = None, filters: object = None) -> None",
     "Child": "class(**values)",
     "Child.to_dict": "def(self)",
@@ -31,8 +31,8 @@
     "Currency": "class(*, currency=None, **kwargs)",
     "CurrentUser": "def()",
     "Database": "class(path, registry, *, migrations=None, must_exist=False)",
-    "Date": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True)",
-    "DateTime": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True)",
+    "Date": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True, derived=False)",
+    "DateTime": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True, derived=False)",
     "Day": "class(field)",
     "Decimal": "class(*, scale=4, minimum=None, maximum=None, rounding=None, **kwargs)",
     "DevSignIn": "class(app, *, announce=False, user=None, create_admin=None)",
@@ -66,7 +66,7 @@
     "MigrationPlan": "class(state: str, pending: tuple, differences: tuple, suggestion: str, planned: dict = None) -> None",
     "Min": "class(field, *, where=None, model=None, link=None, trend=None, color=None)",
     "Model": "class(**values)",
-    "Model.Meta": "options['activity', 'api', 'append_only', 'attachments', 'autosave', 'board', 'calculation_language', 'cards', 'derives', 'description', 'duplicate', 'focus', 'image', 'indexes', 'key_fields', 'label', 'layout', 'ledger', 'list_fields', 'list_tab', 'list_tabs', 'mail', 'measures', 'naming', 'numeric_profile', 'open_in', 'panel', 'panel_summary', 'period', 'period_scope', 'plural', 'relations', 'search_fields', 'side_blocks', 'status', 'summary', 'timestamps', 'title', 'title_field']",
+    "Model.Meta": "options['activity', 'api', 'append_only', 'attachments', 'autosave', 'board', 'calculation_language', 'cards', 'description', 'duplicate', 'focus', 'image', 'indexes', 'key_fields', 'label', 'layout', 'ledger', 'list_fields', 'list_tab', 'list_tabs', 'mail', 'measures', 'naming', 'numeric_profile', 'open_in', 'panel', 'panel_summary', 'period', 'period_scope', 'plural', 'relations', 'search_fields', 'side_blocks', 'status', 'summary', 'timestamps', 'title', 'title_field']",
     "Model.to_dict": "def(self)",
     "Month": "class(field)",
     "MultiSelect": "class(choices, **kwargs)",
@@ -116,15 +116,15 @@
     "State.Step": "class(key, label=None, *, color=None, lock=None, release=False, final=False)",
     "StorageError": "exception",
     "Sum": "class(field, *, where=None, model=None, link=None, trend=None, color=None)",
-    "Table": "class(child, *, required=False, min_rows=None, max_rows=100, label=None, storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False)",
+    "Table": "class(child, *, required=False, min_rows=None, max_rows=100, label=None, storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False, derived=False)",
     "TableSection": "class(name, *, collapsible=True, collapsed=True, panel=True, **unknown)",
-    "Tags": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True)",
+    "Tags": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True, derived=False)",
     "Task": "class(name: str, handler: object, max_attempts: int = 3, retry_delay: int = 30, external: bool = False, resumable: bool = False) -> None",
     "Tenant": "class(slug: str, label: str, database_path: pathlib.Path, files_path: pathlib.Path, hosts: tuple, development: bool, ports: tuple) -> None",
     "TenantApplication": "class(catalog, factory)",
     "TenantRegistry": "class(root)",
     "Text": "class(*, max_length=255, **kwargs)",
-    "Time": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True)",
+    "Time": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True, derived=False)",
     "URL": "class(**kwargs)",
     "User": "class(id: int, username: str, role: str, links: tuple = (), two_step: bool = False, access: evlet.auth.KeyAccess | None = None, verified: int | None = None, system: str | None = None) -> None",
     "UserPreferences": "class()",
@@ -166,6 +166,6 @@
     "update": "def(self, model, record_id, /, **changes)"
   },
   "evlet.fields": {
-    "Field": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True)"
+    "Field": "class(*, required=False, default=<object object>, unique=False, index=False, validator=None, label=None, help_text='', tooltip='', placeholder='', suffix='', hidden=False, read_only=False, compute=None, stored=True, query=None, fetch=None, filters=None, visible_if=None, required_if=None, read_only_if=None, initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking='value', panel=True, copy=True, column=True, derived=False)"
   }
 }
