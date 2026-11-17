@@ -11254,7 +11254,7 @@
     }
   ],
   "printing": {
-    "available": false
+    "available": true
   },
   "capabilities": {
     "events": true,

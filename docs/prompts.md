@@ -104,7 +104,7 @@ Outcome(data={'estimate': '1200.00'})                  # data for browser code
 return NextStep                                        # another Prompt: a wizard
 ```
 
-The JSON answer is at most 64 KiB. `submit()` may also return `None` (the screen says it is done) or a dict.
+The JSON answer is at most 64 KiB. `submit()` may also return `None` (the screen says it is done) or any other JSON value (a dict, a list, a number or a string), which the screen receives as data.
 
 ## Over HTTP
 
