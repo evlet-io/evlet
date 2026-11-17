@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
@@ -298,7 +299,7 @@ def test_an_editable_development_project_backs_up_and_migrates_a_real_database(r
     # A real project interpreter: a venv that sees this Evlet and its dependencies, like an editable install.
     import site, venv
     venv.EnvBuilder(with_pip=False).create(root / '.venv')
-    (root / '.venv/lib/python3.12/site-packages/evlet-source.pth').write_text(
+    (root / f'.venv/lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages/evlet-source.pth').write_text(
         '\n'.join([str(Path(upgrading.__file__).parents[2]), *site.getsitepackages()]) + '\n')
     ran = []
 
