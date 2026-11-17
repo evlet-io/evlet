@@ -288,13 +288,11 @@ def issue(business, context, value, *, origin, model=None, record_id=None):
 
 
 def outcome_of(business, context, value, *, origin=None, model=None, record_id=None):
-    """What an action or a submit() returned, as the JSON answer: an Outcome, data, or the next prompt's surface."""
+    """What an action or a submit() returned, as the JSON answer: an Outcome, any JSON value, or the next prompt's surface."""
     if is_prompt(value):
         return {'prompt': issue(business, context, value, origin=origin, model=model, record_id=record_id)}
     if value is None:
         return {}
-    if not isinstance(value, dict):
-        raise ValueError('Return an Outcome, a Prompt, a dict or None')
     encoded = json.dumps(jsonable(value), allow_nan=False)
     if len(encoded) > RESULT_LIMIT:
         raise ValueError('An outcome exceeds 64 KiB')
