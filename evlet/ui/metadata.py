@@ -28,7 +28,7 @@ META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list
                           'calculation_language', 'numeric_profile', 'measures', 'key_fields', 'relations', 'attachments',
                           'activity', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'panel_summary', 'ledger', 'append_only', 'timestamps', 'indexes',
-                          'focus', 'cards', 'duplicate', 'image'))
+                          'focus', 'cards', 'duplicate', 'image', 'script', 'on_open'))
 
 # How a collapsible section starts: open, closed, or closed when every field in it is empty.
 COLLAPSED = (False, True, 'empty')
@@ -61,16 +61,18 @@ class Section:
     the full page still shows it. `description` is an optional line of text under the title. A wrong option is
     ignored with a warning when the app loads."""
 
-    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow', 'panel', 'description', 'unknown')
+    __slots__ = ('title', 'fields', 'collapsible', 'collapsed', 'flow', 'panel', 'description', 'custom', 'unknown')
 
-    def __init__(self, title, fields, *, collapsible=True, collapsed=True, flow='rows', panel=True, description=None, **unknown):
+    def __init__(self, title, fields=(), *, collapsible=True, collapsed=True, flow='rows', panel=True, description=None, custom=None, **unknown):
         self.title, self.fields, self.collapsible, self.collapsed, self.flow = title, fields, collapsible, collapsed, flow
-        self.panel, self.description, self.unknown = panel, description, unknown
+        # custom="method": the model script draws the section's content instead of fields (docs/model-scripts.md).
+        self.panel, self.description, self.custom, self.unknown = panel, description, custom, unknown
 
     def __repr__(self):
         return (f'Section({self.title!r}, {self.fields!r}, collapsible={self.collapsible!r}, collapsed={self.collapsed!r}'
                 + (f', flow={self.flow!r}' if self.flow != 'rows' else '')
                 + (f', description={self.description!r}' if self.description is not None else '')
+                + (f', custom={self.custom!r}' if self.custom is not None else '')
                 + (', panel=False)' if self.panel is False else ')'))
 
     def options(self, warn):
@@ -120,14 +122,16 @@ class Main:
     and its number ("Invoice 2"). Main("lines") is one Table. The form Main(fields, "lines", ...) of 0.4.9 and before
     reads as Main(fields) followed by Main("lines") for each Table named."""
 
-    __slots__ = ('fields', 'tables', 'title', 'unknown')
+    __slots__ = ('fields', 'tables', 'title', 'custom', 'unknown')
 
-    def __init__(self, fields, *tables, title=None, **unknown):
-        self.fields, self.tables, self.title, self.unknown = fields, tables, title, unknown
+    def __init__(self, fields=(), *tables, title=None, custom=None, **unknown):
+        # Main(custom="method"): a block the model script draws (docs/model-scripts.md).
+        self.fields, self.tables, self.title, self.custom, self.unknown = fields, tables, title, custom, unknown
 
     def __repr__(self):
         return (f'Main({self.fields!r}' + ''.join(f', {name!r}' for name in self.tables)
-                + (f', title={self.title!r}' if self.title is not None else '') + ')')
+                + (f', title={self.title!r}' if self.title is not None else '')
+                + (f', custom={self.custom!r}' if self.custom is not None else '') + ')')
 
 
 # At most this many blocks in a layout.
@@ -249,6 +253,15 @@ def layout_blocks(model, layout, visible, label):
             placed.add(name)
             blocks.append({'kind': 'table', 'name': name, 'main': main, 'block': item, **(options or {})})
 
+    def custom(item, name, method, main, options):
+        from ..fields import script_method
+        try:
+            script_method(method, 'custom=')
+        except ValueError as error:
+            return warn(item, str(error))
+        if name is not None:
+            blocks.append({'kind': 'custom', 'name': name, 'main': main, 'block': item, 'custom': method, **options})
+
     if layout is not None and not isinstance(layout, (tuple, list)):
         warn(layout, 'is not a tuple of blocks, such as (Main(...), Section(...), Related(...))')
         layout = ()
@@ -266,6 +279,9 @@ def layout_blocks(model, layout, visible, label):
             title = block.title
             if title is not None and (type(title) is not str or not title.strip()):
                 title = say(f'title must be nonempty text, not {title!r}')
+            if block.custom is not None:
+                custom(block, named(block, title) if title else numbered(label), block.custom, True, {})
+                continue
             if isinstance(block.fields, str):
                 table(block, block.fields, True)
             elif block.fields or not block.tables:
@@ -277,6 +293,8 @@ def layout_blocks(model, layout, visible, label):
             item = block if isinstance(block, Section) else Section(*block, collapsible=False)
             if type(item.title) is not str or not item.title.strip():
                 say('needs a title')
+            elif item.custom is not None:
+                custom(block, named(block, item.title), item.custom, False, fold_options(item, say))
             else:
                 section(block, named(block, item.title), item.fields, item.options(say))
         elif isinstance(block, (TableSection, str)):
@@ -675,13 +693,14 @@ def record_layout(registry, model):
     meta = getattr(model, 'Meta', None)
     blocks, warnings = layout_blocks(model, getattr(meta, 'layout', None), form_fields(model, meta), view_for(model)['label'])
     where = f'{model.__name__}.Meta.layout'
-    names = {block['name'] for block in blocks if block['kind'] == 'section'}
+    names = {block['name'] for block in blocks if block['kind'] in ('section', 'custom')}
     result = []
     for block in blocks:
         if block['kind'] == 'section':
             result.append({'kind': 'section', 'name': block['name'], 'label': block['name'], 'main': block['main']})
-        elif block['kind'] == 'table':
-            result.append({'kind': 'table', 'name': block['name'], 'main': block['main'],
+        elif block['kind'] in ('table', 'custom'):
+            result.append({'kind': block['kind'], 'name': block['name'], 'main': block['main'],
+                           **({'label': block['name'], 'custom': block['custom']} if block['kind'] == 'custom' else {}),
                            **{key: block[key] for key in ('collapsible', 'collapsed') if key in block}})
         else:
             try:
@@ -779,6 +798,9 @@ def field_schema(field):
               # Left out of the default list and Table columns (display only).
               **({'column': False} if getattr(field, 'column', True) is False else {}),
               **({'sequence': field.schema()} if field.kind == 'sequence' else {}),
+              # The model script's hooks on this field and its fixed look (docs/model-scripts.md).
+              **({'script': dict(field.hooks)} if getattr(field, 'hooks', None) else {}),
+              **({'look': field.look} if getattr(field, 'look', None) else {}),
               # The form paths a Link's Option reads (Ref in where=): the dropdown sends their values (evlet/search.py).
               **({'inputs': list(field.option.refs())} if getattr(field, 'option', None) is not None and field.option.refs() else {}),
               'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'user' if field.default is CurrentUser
@@ -799,6 +821,7 @@ def ui_schema(registry):
     api = getattr(registry, 'api', {})
     return {'version': 1, 'ui_version': 1, 'models': [
         {'name': name, **view_for(model), **({'record_layout': registry.layouts[model]} if model in getattr(registry, 'layouts', {}) else {}),
+         **({'script': registry.scripts[model]} if model in getattr(registry, 'scripts', {}) else {}),
          'fields': [field_schema(field) for field in model.__app_fields__.values()],
          **({'api': 'read'} if api.get(model) == 'read' else {}), **behavior(model, registry)}
         for name, model in registry.models.items() if api.get(model, 'full') is not None

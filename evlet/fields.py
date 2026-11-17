@@ -115,6 +115,32 @@ def check_help_references(model, field, fields, parent=None):
                              + (' (parent. names a field of the record that owns the Table)' if owner is parent else ''))
 
 
+# A model script method name: an identifier, not one of the names evlet.Model gives every script.
+SCRIPT_METHOD = re.compile(r'[A-Za-z_$][A-Za-z0-9_$]{0,63}')
+SCRIPT_RESERVED = frozenset(('constructor', 'model', 'id', 'is_new', 'state', 'field', 'table', 'call', 'move', 'save', 'reload', 'api', 'ui'))
+# The fixed looks a field may declare (look="muted"); look=Js("method") chooses one from the record.
+LOOKS = ('strong', 'muted', 'success', 'warning', 'danger')
+
+
+def script_method(value, where):
+    """A method name of the model's script (docs/model-scripts.md), checked; raises ValueError naming `where`."""
+    if type(value) is not str or not SCRIPT_METHOD.fullmatch(value) or value in SCRIPT_RESERVED:
+        raise ValueError(f'{where} names a method of the model script, such as "customer_changed", not {value!r}')
+    return value
+
+
+class Js:
+    """A value the model script works out in the browser: tooltip=Js("method") or look=Js("method")."""
+
+    __slots__ = ('method',)
+
+    def __init__(self, method):
+        self.method = script_method(method, 'Js')
+
+    def __repr__(self):
+        return f'Js({self.method!r})'
+
+
 def _finite_option(value, name):
     """initial= and rule options take a finite expression or a field, never text or a callable."""
     from .calc import Expr
@@ -138,7 +164,7 @@ class Field:
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
                  initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking="value",
-                 panel=True, copy=True, column=True, derived=False):
+                 panel=True, copy=True, column=True, derived=False, on_change=None, look=None, control=None):
         if tracking not in ("value", "mask", "exclude"):
             raise ValueError("tracking is value, mask or exclude")
         self.tracking = tracking
@@ -152,6 +178,15 @@ class Field:
         self.name = ""
         if label is not None and (not isinstance(label, str) or not label):
             raise ValueError("label must be nonempty text")
+        # The model script's hooks on this field ({hook: method}); the browser calls them (docs/model-scripts.md).
+        self.hooks = {hook: script_method(value, f'{hook}=') for hook, value in (('on_change', on_change), ('control', control)) if value is not None}
+        if isinstance(tooltip, Js):
+            self.hooks['tooltip'], tooltip = tooltip.method, ""
+        if isinstance(look, Js):
+            self.hooks['look'], look = look.method, None
+        if look is not None and look not in LOOKS:
+            raise ValueError(f"look is one of {', '.join(LOOKS)}, or Js(\"method\")")
+        self.look = look
         if not isinstance(help_text, str) or not isinstance(tooltip, str) or not isinstance(placeholder, str) or not isinstance(suffix, str) or len(suffix) > 20:
             raise ValueError("Field help, tooltip, placeholder and suffix must be text; a suffix has at most 20 characters")
         if type(hidden) is not bool or type(read_only) is not bool:

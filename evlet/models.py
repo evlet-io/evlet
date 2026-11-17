@@ -540,6 +540,10 @@ class Registry:
         from .ui.metadata import compile_layouts
         layouts, self.layout_warnings = compile_layouts(self)
         self.layouts = MappingProxyType(layouts)
+        # Model scripts (Meta.script and the hooks that name its methods, evlet/ui/scripts.py), checked at start-up.
+        from .ui.scripts import compile_scripts
+        scripts, self.script_roots = compile_scripts(self)
+        self.scripts = MappingProxyType(scripts)
         # What a released record's stored results read, which a move out of the released set may not change.
         posted_reads = step('posted_reads')
         self.posted_reads = MappingProxyType({model: posted_reads(self, model, plans.get(model)) for model in models

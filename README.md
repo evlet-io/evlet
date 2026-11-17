@@ -39,8 +39,8 @@ then open **http://127.0.0.1:8000** and sign in. There is no default password. T
 An **app** contains reusable Python code. An **instance** is a site with its own
 database, accounts and files. You can install the same app on several instances.
 The package includes the browser UI, Playground and offline guides. Node is not
-needed to create or serve Python-only apps. App-owned native TS/JS extensions
-need Node 24 when building their assets.
+needed to create, build or serve apps: browser behaviour an app adds is a
+[model script](docs/model-scripts.md), one plain JavaScript file served as it is.
 
 The [declarative app guide](docs/amendment-v2.md) covers flat app packages,
 owned child tables, reactive fields, prompts, reports, services and native additions.
@@ -71,6 +71,7 @@ For virtual environment setup and each step explained, read
 - [UI guide](docs/ui.md): the browser interface and its routes.
 - [Reports](docs/reports.md): filters, typed rows, totals, a chart, CSV export and print, in the browser and for Eva.
 - [Prompts](docs/prompts.md): the form an action opens, and bound records in Python.
+- [Model scripts](docs/model-scripts.md): browser behaviour a model cannot declare, in one JavaScript file.
 - [Routing](docs/routing.md): frontends, reserved paths, `routes.py` and `evlet routes`.
 - [API stability](docs/api-stability.md): the names apps can rely on, deprecations and what is internal.
 - [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.
