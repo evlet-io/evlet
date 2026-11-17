@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Main, Model, Naming,
+from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Js, Link, LongText, Main, Model, Naming,
                    Activity, Option, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, TableSection, Text,
                    ValidationError, action, state)
 from evlet.calc import F
@@ -245,7 +245,8 @@ TEAM = Hierarchy('employee', parent='reports_to')
 
 class Skill(Child):
     skill = Text(required=True, max_length=80)
-    level = Select(['learning', 'practised', 'expert'], required=True, default='practised')
+    # The Employee script (employee.js) colours the level and draws it as three buttons in the Skills table.
+    level = Select(['learning', 'practised', 'expert'], required=True, default='practised', look=Js('level_look'), control='level_picker')
 
 
 class SkillLevel(Child):
@@ -279,7 +280,12 @@ class Employee(Model):
             Related('employee', 'reports_to', label='Direct reports', fields=('full_name', 'email', 'department'), order='full_name'),
             Related('employee', 'reports_to', label='Reports in the same department', filters={'department': Ref('department')},
                     fields=('full_name', 'email')),
+            Section('Profile', custom='profile'),
         )
+        # Browser behaviour the model cannot declare, in one JavaScript file next to this one (docs/model-scripts.md):
+        # the methods below are named on fields and in the layout; the server never runs it.
+        script = 'employee.js'
+        on_open = 'opened'
         # People counted by the charts above; the list shows the count too.
         measures = {'people': Count()}
         # A key card may show a value derive() sets, like a formula's result.
@@ -291,8 +297,8 @@ class Employee(Model):
     # Deleting someone who still has reports is refused by the reports_to Link.
     permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
                    'viewer': Rule(('read',), scope=TEAM.team())}
-    full_name = Text(required=True, max_length=120, label='Full name')
-    email = Text(max_length=254)
+    full_name = Text(required=True, max_length=120, label='Full name', tooltip=Js('name_tip'))
+    email = Text(max_length=254, on_change='email_changed')
     department = Select(DEPARTMENTS)
     reports_to = Link('employee', index=True, label='Reports to')
     # Section rows group skills under headings such as "Languages" or "Tools" (docs/model-engine.md#section-rows).

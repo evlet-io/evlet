@@ -12,6 +12,7 @@ import { cell, derive, effect, onCleanup, untrack, type Cell, type Readable } fr
 import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
 import { linkContext, linkScope } from '../model/links';
+import { lookOf, scriptControl, scriptTip } from '../model/script';
 import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
 import { tintFor, TINTS, uid, type Prop, type Tint } from './core';
@@ -960,21 +961,23 @@ export function BaseField(props: FieldProps): HTMLElement {
   const note = () => field.error.get() ? '' : field.note?.get() ?? '';
   const help = meta.help_text ? helpTextOf(field, props.links) : null;
   const describedBy = [errorId, field.note ? noteId : '', meta.help_text ? helpId : ''].filter(Boolean).join(' ');
-  const control = FieldControl(field, { id, describedBy, links: props.links, onCommit: props.onCommit });
+  // A model script may draw the input (control=), work out the tooltip (tooltip=Js) and the look (model/script.ts).
+  const drawn = scriptControl(field), tip = scriptTip(field), look = lookOf(field);
+  const control = drawn ? { element: drawn } : FieldControl(field, { id, describedBy, links: props.links, onCommit: props.onCommit });
   const star = html`<span class="req" aria-hidden="true">*</span>` as HTMLElement;
   if (meta.required_when) tooltip(star, `Required when ${phrase(meta.required_when, labelsOf(field))}`);
   const labelled = ['switch', 'link', 'select'].includes(kindOf(meta.type).control ?? '') || control.element.tagName !== 'DIV' || control.element.classList.contains('in-affix') || control.element.classList.contains('in-tags');
   return html`<div class="fld" class:full=${Boolean(props.full) || meta.type === 'longtext' || meta.type === 'richtext'} class:invalid=${() => Boolean(field.error.get())}
-    hidden=${() => !field.rules.get().applies} data-field=${meta.name}>
+    hidden=${() => !field.rules.get().applies} data-field=${meta.name} data-look=${look}>
     <label for=${labelled ? id : null} id=${`${id}-label`}>${label}${when(() => field.rules.get().required && !field.calculated, () => star)}${FieldHints(field)}${props.hint ?? null}</label>
-    ${meta.tooltip ? withTip(control.element, meta.tooltip, meta.label) : control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span>${field.note
+    ${meta.tooltip || tip ? withTip(control.element, tip ? () => tip() || meta.tooltip || '' : meta.tooltip!, meta.label) : control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span>${field.note
       ? html`<span class="fld-note" id=${noteId} role="status" hidden=${() => !note()}>${note}</span>` : null}${help
       ? html`<span class="fld-help" id=${helpId} hidden=${() => Boolean(field.error.get()) || !help()}>${help}</span>` : null}</div>` as HTMLElement;
 }
 
 // The ? icon at the right end of a control: inside an input's box, before a select's or link's
 // chevron, before a unit box. Hover or focus shows the text.
-function withTip(control: HTMLElement, text: string, label: string): HTMLElement {
+function withTip(control: HTMLElement, text: Prop<string>, label: string): HTMLElement {
   const tip = html`<button type="button" class="fld-tip" aria-label=${`About ${label.toLowerCase()}`}>${Icon('circle-help', { size: 'sm' })}</button>` as HTMLElement;
   tooltip(tip, text);
   // A unit box or picker: the icon is one more part of the box, right after the input.

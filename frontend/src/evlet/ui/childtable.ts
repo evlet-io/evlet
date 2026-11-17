@@ -16,6 +16,7 @@ import { Button, Checkbox, Icon, IconButton, IconTile, Key } from './base';
 import { read, textOf, uid, type Prop, type Tint } from './core';
 import { BaseField, currencyFor, currencyPlaces, displayValue, FieldControl, fieldFor, helpTextOf, LinkGo, moneyMeta, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
 import { moneyChild } from './money';
+import { lookOf, scriptControl, scriptTip } from '../model/script';
 import { kindOf } from './kinds';
 import { openPopover, toast } from './layers';
 import { dragList } from './draglist';
@@ -621,7 +622,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
 
   const cellView = (row: Row, column: () => ChildColumn, rowEdit: () => string | null, rowActive: () => string | null, rowSpot: () => string | null) => {
     const key = column().key, field = row.field(key), meta = field.meta, kind = kindOf(meta.type);
-    const canEdit = () => !column().calculated && !readOnly.get() && field.editable.get();
+    // A model script may draw the cell's input (control=), its tooltip and its look (model/script.ts).
+    const drawn = scriptControl(field), tip = scriptTip(field), look = lookOf(field);
+    const canEdit = () => !drawn && !column().calculated && !readOnly.get() && field.editable.get();
     // A read-only Link cell opens its record; an editable one edits on click and, as a Link field does,
     // shows the ↗ arrow over the record's mark while hovered (and while editing).
     const linkAt = () => {
@@ -641,7 +644,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const td = html`<td role="gridcell" data-col=${key} class=${`num${column().align === 'right' ? ' r' : ''}`} class:ed=${canEdit} class:calc=${() => !canEdit()}
       class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)} class:editing=${() => rowEdit() === key} class:active=${() => rowSpot() === key}
       class:invalid=${() => Boolean(field.error.get())} class:noted=${() => !field.error.get() && Boolean(field.note.get())} aria-invalid=${() => field.error.get() ? 'true' : null} aria-readonly=${() => canEdit() ? null : 'true'}
-      tabindex=${() => rowActive() === key ? '0' : '-1'}>${when(() => rowEdit() === key, () => {
+      tabindex=${() => rowActive() === key ? '0' : '-1'} data-look=${look}>${drawn ?? when(() => rowEdit() === key, () => {
         control = FieldControl(field, {
           commitOn: 'manual', links: props.links, label: `${meta.label}, row ${indexOf(row.key) + 1}`,
           // A choice commits the cell and returns the focus to it, ready for Tab or Enter.
@@ -649,7 +652,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
         });
         return control.element;
       }, display)}</td>` as HTMLElement;
-    tooltip(td, () => field.error.get() ?? field.note.get());
+    tooltip(td, () => field.error.get() ?? field.note.get() ?? tip?.() ?? null);
     return td;
   };
 

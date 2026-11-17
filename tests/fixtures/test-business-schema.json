@@ -9797,8 +9797,21 @@
             ],
             "name": "Reports in the same department",
             "main": false
+          },
+          {
+            "kind": "custom",
+            "name": "Profile",
+            "main": false,
+            "label": "Profile",
+            "custom": "profile",
+            "collapsible": true,
+            "collapsed": true
           }
         ]
+      },
+      "script": {
+        "url": "/assets/scripts/8b9e896d4688e527/employee.js",
+        "on_open": "opened"
       },
       "fields": [
         {
@@ -9813,6 +9826,9 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "script": {
+            "tooltip": "name_tip"
+          },
           "default_kind": "none",
           "stored": true,
           "operators": [
@@ -9844,6 +9860,9 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "script": {
+            "on_change": "email_changed"
+          },
           "default_kind": "none",
           "stored": true,
           "operators": [
@@ -10637,6 +10656,10 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "script": {
+            "control": "level_picker",
+            "look": "level_look"
+          },
           "default_kind": "static",
           "default": "practised",
           "stored": true,

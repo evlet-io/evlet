@@ -41,7 +41,7 @@ REFUSED_OPTIONS = {
     'applies_when': 'field rules', 'required_when': 'field rules', 'locked_when': 'field rules',
     'visible_if': 'screen rules', 'required_if': 'screen rules', 'read_only_if': 'screen rules',
     'help_text': 'screen text', 'tooltip': 'screen text', 'placeholder': 'screen text', 'suffix': 'screen text',
-    'derived': 'derive()',
+    'derived': 'derive()', 'hooks': 'model script hooks', 'look': 'screen looks',
 }
 APPEND_ONLY = 'is append only'
 LOCK_PART_LENGTH = 200
@@ -132,7 +132,7 @@ def check_class(name, namespace, bases, fields, tables, sources):
             raise ValueError(f'{name}.{key}: a ledger model stores every field; virtual fields are not available')
         for attribute, what in REFUSED_OPTIONS.items():
             value = getattr(field, attribute, None)
-            if value not in (None, '', False):
+            if value not in (None, '', False, {}):
                 raise ValueError(f'{name}.{key}: a ledger model has no {what} ({attribute}=)')
         if field.hidden or field.read_only or not field.versioned:
             raise ValueError(f'{name}.{key}: hidden, read_only and versioned=False are screen options; a ledger '

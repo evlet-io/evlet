@@ -14,6 +14,7 @@ import { kindOf } from './kinds';
 import { toast } from './layers';
 import { commitWithin } from './shortcuts';
 import { tooltip } from './tooltip';
+import { lookOf, scriptControl, scriptTip } from '../model/script';
 
 export type Save = () => Promise<boolean> | boolean;
 
@@ -214,9 +215,13 @@ export function FieldGrid(fields: FieldLike[], options: { save?: Save; links?: L
   const wide = (field: FieldLike) => Boolean(field.meta.wide ?? field.meta.type === 'longtext');
   const cells = fields.map(field => {
     const id = uid('ff');
-    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}>
-      <label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
-      <div class="ff-v">${InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</div></div>` as Node;
+    // A model script may draw the value (control=), work out its tooltip and its look (model/script.ts).
+    const drawn = scriptControl(field), tip = scriptTip(field);
+    const value = html`<div class="ff-v">${drawn ?? InlineValue({ field, save: options.save, labelledBy: id, links: options.links })}</div>` as HTMLElement;
+    if (tip) tooltip(value, tip);
+    return html`<div class="ff" class:full=${field.meta.wide ?? (field.meta.type === 'longtext' || field.meta.type === 'richtext')} hidden=${() => !field.rules.get().applies} data-field=${field.meta.name}
+      data-look=${lookOf(field)}><label id=${id}>${field.meta.label}${when(() => field.rules.get().required && !field.calculated, () => html`<span class="req" aria-hidden="true">*</span>`)}${FieldHints(field)}</label>
+      ${value}</div>` as Node;
   });
   return flowGrid(cells.map((node, index) => ({ node, wide: wide(fields[index]) })), options.flow);
 }

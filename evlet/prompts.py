@@ -62,6 +62,13 @@ class Prompt(Model):
         for key, value in vars(cls).items():
             if isinstance(value, Table):
                 value.child.__form_name__ = f'{cls.__form_name__}.{key}'
+        # Model scripts belong to documents (docs/model-scripts.md); a prompt has none.
+        from .fields import Field
+        rows = [value.child for value in vars(cls).values() if isinstance(value, Table)]
+        hooked = [f'{owner.__name__}.{name}' for owner, fields in ((cls, vars(cls)), *((row, getattr(row, '__app_fields__', {})) for row in rows))
+                  for name, field in fields.items() if isinstance(field, Field) and field.hooks]
+        if hooked:
+            raise ValueError(f'{hooked[0]}: a Prompt has no model script, so its fields take no on_change, Js, look=Js or control')
 
     def __init__(self, **values):
         """Starting values, applied after load(); trusted like load()."""
@@ -307,6 +314,8 @@ def check(prompt):
     blocks, warnings = layout_blocks(prompt, option(prompt, 'layout'), visible, title)
     if warnings:
         raise ValueError(warnings[0])
+    if any(block['kind'] == 'custom' for block in blocks):
+        raise ValueError(f'{prompt.__name__}.Meta.layout: a Prompt has no model script, so it has no custom blocks')
     if option(prompt, 'focus') is not None:
         check_focus(f'{prompt.__name__}.Meta.focus', prompt, option(prompt, 'focus'))
     return blocks
