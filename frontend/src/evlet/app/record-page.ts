@@ -791,11 +791,14 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const focusButton = controls ? (() => {
       const button = IconButton({ icon: 'maximize-2', tip: () => controls.focused.get() ? 'Leave focus (Esc)' : 'Focus', size: 'small', active: controls.focused, onClick: () => controls.toggleFocus() });
       effect(() => { const icon = Icon(controls.focused.get() ? 'minimize-2' : 'maximize-2', { size: 'sm' }); untrack(() => button.replaceChildren(icon)); });
+      button.tabIndex = -1;
       return button;
     })() : null;
     const tools = controls ? html`<span class="ev-cmp-tools">${focusButton}${(() => {
       const button = IconButton({ icon: 'columns-3', tip: 'Columns', size: 'small', onClick: () => controls.columns(button) });
       button.setAttribute('aria-haspopup', 'dialog');
+      // Tab goes from the field before the table straight to its first cell; these two are for the mouse.
+      button.tabIndex = -1;
       return button;
     })()}</span>` : null;
     return html`<div class="ev-cmp-table" class:is-empty=${empty} data-table-block=${child.name}>

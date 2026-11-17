@@ -4,6 +4,17 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Changed
+
+- Two-line options in a Link dropdown get room between their title and subtext.
+- Search results in a Link dropdown and ⌘K mark the part the typed text matches with a light tint.
+- Tab from the field before a child table goes straight to its first cell. The ↗ arrow on a Link
+  field and the Focus and Columns buttons by a table's title take no Tab stop.
+- With rows selected, Enter in a child table deletes them. Deleting selected rows, by key or button,
+  now asks first; Undo stays in the toast.
+
 ## 0.4.12 (17-11-2026)
 
 ### Upgrading to 0.4.12

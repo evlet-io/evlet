@@ -145,9 +145,14 @@ describe('a compact record page', () => {
     // Title, count, "1 selected", Duplicate, then Delete (red, outlined).
     expect([...title.querySelectorAll('button')].slice(0, 2).map(text)).toEqual(['Duplicate', 'Delete']);
     expect(title.querySelector('.btn.ev-cmp-del.danger-soft')).not.toBeNull();
+    // Focus and Columns are for the mouse: Tab goes from the field before the table to its first cell.
+    expect([...title.querySelectorAll<HTMLButtonElement>('.ev-cmp-tools button')].map(button => button.tabIndex)).toEqual([-1, -1]);
     byText(title, 'button', 'Duplicate')!.click();
     await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('2'));
     byText(title, 'button', 'Delete')!.click();
+    // Delete asks first.
+    expect(document.querySelector('.modal-wrap h2')?.textContent).toBe('Delete 1 row?');
+    document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
     await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('1'));
     expect(title.querySelector('.ev-cmp-sel')).toBeNull();
   });
@@ -159,6 +164,7 @@ describe('a compact record page', () => {
     (block.querySelector('tbody tr[data-key] [role="checkbox"]') as HTMLElement).click();
     await until(() => expect(byText(title, 'button', 'Delete')).not.toBeNull());
     byText(title, 'button', 'Delete')!.click();
+    document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
     await until(() => expect(text(title.querySelector('.ev-cmp-count'))).toBe('0'));
     // No "No stops yet" box: the table stays, with its header and the placeholder row, and no total line or totals.
     expect(block.querySelector('.ev-cmp-empty')).toBeNull();

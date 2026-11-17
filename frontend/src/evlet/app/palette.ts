@@ -8,7 +8,7 @@
 import { html } from '../dom';
 import { cell, derive, effect, untrack } from '../reactive';
 import { Icon, SegmentedControl, Button } from '../ui/base';
-import { tint as safeTint, type Tint } from '../ui/core';
+import { highlighted, tint as safeTint, type Tint } from '../ui/core';
 import { openModal } from '../ui/layers';
 import { tooltip } from '../ui/tooltip';
 import { resolveTheme } from '../ui/theme';
@@ -133,7 +133,7 @@ function paletteBody(ctx: AppContext, close: () => void) {
   const row = (item: Item, at: number) => html`<div class="pal-it" class:on=${() => selected.get() === at} role="option" id=${`pal-${at}`}
     aria-selected=${() => String(selected.get() === at)} on:click=${() => runItem(item)} on:mousemove=${() => { if (selected.peek() !== at) selected.set(at); }}>
     <span class=${item.tint === 'ghost' ? 'ic ghost' : `ic b-${safeTint(item.tint)}`}>${Icon(item.icon, { size: 'sm' })}</span>
-    <span class="lbl">${item.label}${item.sub ? html`<span class="sub">${item.sub}</span>` : null}</span>${item.hint && !item.tile ? html`<span class="hint">${item.hint}</span>` : null}
+    <span class="lbl">${item.record ? highlighted(item.label, query.peek()) : item.label}${item.sub ? html`<span class="sub">${item.record ? highlighted(item.sub, query.peek()) : item.sub}</span>` : null}</span>${item.hint && !item.tile ? html`<span class="hint">${item.hint}</span>` : null}
     ${item.recent !== undefined ? html`<button type="button" class="pal-rm" aria-label=${`Remove ${item.label}`} on:click=${(event: MouseEvent) => {
       event.stopPropagation(); prefs.recentSearches.set(prefs.recentSearches.peek().filter(entry => entry !== item.recent));
     }}>${Icon('x', { size: 'xs' })}</button>` : null}</div>`;

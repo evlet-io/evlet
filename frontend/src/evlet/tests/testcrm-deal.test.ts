@@ -85,6 +85,7 @@ describe('testCRM: a deal and its lines', () => {
     // Remove a line with its checkbox; Undo is offered.
     rows(host)[0].querySelector<HTMLElement>('[role="checkbox"]')!.click();
     click(byText(host, '.doc-main button', 'Delete'));
+    document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
     expect(rows(host)).toHaveLength(2);
     expect(lastToast()).toContain('Deleted 1 row');
     expect(sums(host)).toBe('TotalAED 97,650.00');

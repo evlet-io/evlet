@@ -1042,7 +1042,16 @@ empty table lands on Add row, where Enter adds a row. Inside, Tab and Shift+Tab 
 editable cells, Tab past the last cell reaches Add row, and Shift+Tab before the first leaves the
 table. The other controls stay reachable from the cells: ← from a row's first cell focuses its
 checkbox (Tab then reaches its move and Edit buttons, → comes back), and ↑ from the first row
-focuses Select all, from where Shift+Tab reaches Focus and Columns (↓ comes back).
+focuses Select all, from where Shift+Tab reaches the table bar's Focus and Columns (↓ comes back). On a
+record page the Focus and Columns buttons by the table's title are for the mouse and take no Tab stop,
+as does a Link field's ↗ arrow; Tab goes from field to field.
+
+With rows selected, Enter in the table (not while a cell is being edited) is Delete. Delete, by key or
+by the button, asks first: the dialog's Delete has the focus, so a second Enter confirms, and the
+toast that follows has Undo.
+
+Search results (a Link's dropdown and the records in ⌘K search) mark the part the typed text matches
+with a light accent tint: the text itself, or else its characters in order, as the search ranks them.
 
 ### Focus on new forms
 

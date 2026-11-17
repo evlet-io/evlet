@@ -14,7 +14,7 @@ import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '..
 import { linkContext, linkScope } from '../model/links';
 import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
-import { tintFor, TINTS, uid, type Prop, type Tint } from './core';
+import { highlighted, tintFor, TINTS, uid, type Prop, type Tint } from './core';
 import { formula, labeller, phrase, source } from './explain';
 import { checkTag, currencyOf, durationText, humanize, InputError, kindOf } from './kinds';
 import { copyText, openPopover } from './layers';
@@ -723,7 +723,8 @@ function LinkControl(field: FieldLike, id: string, options: ControlOptions): Con
   });
   const control: Control = { element: button, commit: () => true, focus: () => button.focus(), type: text => { if (field.editable.peek()) open(text); },
     open: () => { if (field.editable.peek()) open(); } };
-  const go = options.goto === false ? null : LinkGo(field, links);
+  // The ↗ arrow is for the mouse: Tab goes from field to field and never stops on it.
+  const go = options.goto === false ? null : LinkGo(field, links, { tabbable: false });
   if (!go) return control;
   // Read only with a value it can open: the value is a link. Editable: hovering shows the arrow over the record's mark.
   const reading = () => html`<div class="in-link input ro" id=${id} role="group" aria-label=${options.label ?? null}
@@ -806,8 +807,8 @@ function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option:
   });
   const list = html`<div class="link-list" role="listbox" id=${listId} aria-label=${meta.label}>${() => results.get().map((option, index) => html`<button type="button" tabindex="-1"
     class="mi" class:on=${() => active.get() === index} role="option" id=${optionId(index)} aria-selected=${() => String(active.get() === index)}
-    on:click=${() => choose(option)} on:mouseenter=${() => active.set(index)}>${RecordMark({ name: option.title })}<span class="link-opt"><span class="link-title">${option.title}</span>${option.subtitle
-      ? html`<span class="link-sub">${option.subtitle}</span>` : null}</span></button>`)}${createRow()}</div>`;
+    on:click=${() => choose(option)} on:mouseenter=${() => active.set(index)}>${RecordMark({ name: option.title })}<span class="link-opt"><span class="link-title">${highlighted(option.title, query.peek())}</span>${option.subtitle
+      ? html`<span class="link-sub">${highlighted(option.subtitle, query.peek())}</span>` : null}</span></button>`)}${createRow()}</div>`;
   const status = () => state.get() === 'loading' ? 'Searching' : state.get() === 'error' ? 'Could not search. Try again.' : state.get() === 'waiting' ? waiting
     : results.get().length ? '' : scope ? 'No matches for the other values on this form.' : 'No matches. Try another name.';
   input.value = typed;
