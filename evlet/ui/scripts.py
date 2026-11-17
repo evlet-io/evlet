@@ -48,6 +48,38 @@ def compile_scripts(registry):
     return scripts, roots
 
 
+def compile_extensions(registry, extensions):
+    """{model: ((Extend, its schema entry), ...)} in the order given (app install order); checked at start-up: the
+    model exists and is a document, each on_change names one of its fields ("field" or "table.field"), and the
+    script is a file beside the extension. Raises ValueError naming the extension."""
+    from ..declarations import Extend
+    result = {}
+    for extension in extensions:
+        if not (isinstance(extension, type) and issubclass(extension, Extend)):
+            raise ValueError(f'Register Extend classes in extensions=, not {extension!r}')
+        meta = extension.Meta
+        try:
+            model = registry.resolve(meta.model)
+        except (KeyError, ValueError):
+            raise ValueError(f'{extension.__name__}.Meta.model: there is no model {meta.model!r}') from None
+        if registry.root_of(model) is not model:
+            raise ValueError(f'{extension.__name__}.Meta.model: {model.__name__} is a Table row; extend its document')
+        for key in getattr(meta, 'on_change', {}):
+            table, _, name = key.rpartition('.')
+            owner = model.__tables__[table].child if table in model.__tables__ else model if not table else None
+            if owner is None or name not in getattr(owner, '__app_fields__', {}):
+                raise ValueError(f'{extension.__name__}.Meta.on_change: {model.__name__} has no field {key!r}')
+        entry = {}
+        if getattr(meta, 'script', None) is not None:
+            folder, path = located(extension, meta.script)
+            digest = fingerprint(folder)
+            registry.script_roots[digest] = folder
+            entry = {'url': f'{PREFIX}{digest}/{path}', **({'on_open': meta.on_open} if getattr(meta, 'on_open', None) else {}),
+                     **({'on_change': dict(meta.on_change)} if getattr(meta, 'on_change', None) else {})}
+        result.setdefault(model, []).append((extension, entry))
+    return {model: tuple(items) for model, items in result.items()}
+
+
 def located(model, script):
     """(folder, path) of a model's Meta.script; raises ValueError naming the model and the path."""
     where = f'{model.__name__}.Meta.script'

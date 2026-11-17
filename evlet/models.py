@@ -404,7 +404,7 @@ class ChildTable:
 
 
 class Registry:
-    def __init__(self, *models):
+    def __init__(self, *models, extensions=()):
         from .fields import Integer
         from .calc import CalcError, LIMITS, uses_finite, root_language
         self.children = []
@@ -541,9 +541,11 @@ class Registry:
         layouts, self.layout_warnings = compile_layouts(self)
         self.layouts = MappingProxyType(layouts)
         # Model scripts (Meta.script and the hooks that name its methods, evlet/ui/scripts.py), checked at start-up.
-        from .ui.scripts import compile_scripts
+        from .ui.scripts import compile_extensions, compile_scripts
         scripts, self.script_roots = compile_scripts(self)
         self.scripts = MappingProxyType(scripts)
+        # Additions apps make to another app's models (evlet.Extend), in app install order.
+        self.extensions = MappingProxyType(compile_extensions(self, extensions))
         # What a released record's stored results read, which a move out of the released set may not change.
         posted_reads = step('posted_reads')
         self.posted_reads = MappingProxyType({model: posted_reads(self, model, plans.get(model)) for model in models

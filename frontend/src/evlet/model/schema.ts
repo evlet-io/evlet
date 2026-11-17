@@ -159,6 +159,8 @@ export interface ModelSchema {
   record_layout?: RecordLayout;
   /** The model script (Meta.script): its address and the method run when a record opens. */
   script?: { url: string; on_open?: string };
+  /** Scripts other apps add (evlet.Extend), in app install order: their on_change hooks ("field" or "table.field"). */
+  extensions?: Array<{ url: string; on_open?: string; on_change?: Record<string, string> }>;
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };

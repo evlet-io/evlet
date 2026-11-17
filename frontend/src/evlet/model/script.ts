@@ -33,6 +33,11 @@ const LOOKS = new Set<string>(['strong', 'muted', 'success', 'warning', 'danger'
 /** How deep hooks may call each other through the changes they make. */
 export const MAX_DEPTH = 8;
 const hosts = new WeakMap<RecordStore, ScriptHost>();
+// Per record, shared by its model's script and the scripts of extensions: the hooks running now (outermost first),
+// and the hooks behind a value a hook set. An on_change a hook causes runs after it returns, so the chain travels
+// with the change, and no hook of any script runs again for its own change.
+type Chains = { stack: string[]; causes: WeakMap<Field, { value: unknown; chain: string[] }> };
+const chains = new WeakMap<RecordStore, Chains>();
 const owners = new WeakMap<object, ScriptHost>();
 let constructing: ScriptHost | null = null;
 
@@ -133,15 +138,19 @@ export class ScriptHost {
   private generation = 0;
   private views = new WeakMap<object, object>();
   private rows = new WeakMap<object, Row>();
-  // The hooks running now, outermost first, and the hooks behind a value a hook set (an on_change it causes runs
-  // after the hook returns, so the chain travels with the change).
-  private stack: string[] = [];
-  private causes = new WeakMap<Field, { value: unknown; chain: string[] }>();
+  private readonly chains: Chains;
   private warned = new Set<string>();
   private stop: (() => void) | null = null;
 
-  constructor(readonly store: RecordStore, private readonly page: ScriptPage) {
-    hosts.set(store, this);
+  /**
+   * The model's own script (Meta.script) draws and answers the UI hooks; an extension's (evlet.Extend, `extension`
+   * with its on_change map) only runs its on_change hooks and on_open, after the model's.
+   */
+  constructor(readonly store: RecordStore, private readonly page: ScriptPage, private readonly extension?: { url: string; on_change?: Record<string, string> }) {
+    if (!extension) hosts.set(store, this);
+    let shared = chains.get(store);
+    if (!shared) chains.set(store, shared = { stack: [], causes: new WeakMap() });
+    this.chains = shared;
     const api = page.api;
     this.apiView = Object.freeze({
       get: (model: string, id: string) => this.later(() => api.get(String(model), String(id)).then(response => response.data), null),
@@ -195,21 +204,22 @@ export class ScriptHost {
    * change) is not run again, and hooks nest at most MAX_DEPTH deep. A hook that throws, or whose promise
    * rejects, is logged with the model and method.
    */
-  run(method: string, args: unknown[], key = method, chain: string[] = this.stack): unknown {
+  run(method: string, args: unknown[], key = method, chain: string[] = this.chains.stack): unknown {
     const instance = this.instance;
     if (this.dead || !instance) return undefined;
     const fn = (instance as unknown as Record<string, unknown>)[method];
     if (typeof fn !== 'function') { this.warn(`has no method ${method}`); return undefined; }
+    key = `${this.extension?.url ?? ''}|${key}`;
     if (chain.includes(key)) return undefined;
     if (chain.length >= MAX_DEPTH) { this.warn(`stopped ${method}: hooks nested more than ${MAX_DEPTH} deep`); return undefined; }
-    const outer = this.stack;
-    this.stack = [...chain, key];
+    const outer = this.chains.stack;
+    this.chains.stack = [...chain, key];
     try {
       const result = fn.apply(instance, args);
       if (result && typeof (result as Promise<unknown>).then === 'function') (result as Promise<unknown>).then(undefined, error => this.report(method, error));
       return result;
     } catch (error) { this.report(method, error); return undefined; }
-    finally { this.stack = outer; }
+    finally { this.chains.stack = outer; }
   }
 
   /** The (field, row) a field hook gets; row only for a field of a Table row. */
@@ -259,7 +269,13 @@ export class ScriptHost {
           if (!live()) return;
           const why = untrack(() => host.blocked(field));
           if (why) throw new Error(`${host.model}.${field.name} cannot be set: ${why}`);
-          if (host.stack.length) host.causes.set(field, { value, chain: host.stack });
+          const { stack, causes } = host.chains;
+          if (stack.length) {
+            const cause = { value, chain: stack };
+            causes.set(field, cause);
+            // Every script watching the field reads it in this flush; a later change is nobody's.
+            queueMicrotask(() => { if (causes.get(field) === cause) causes.delete(field); });
+          }
           field.set(value);
         },
         warn(text: unknown) { if (live()) field.note.set(text === null || text === undefined || text === '' ? null : String(text)); },
@@ -315,13 +331,12 @@ export class ScriptHost {
 
   private watchRow(row: Row) {
     for (const field of row.fields.values()) {
-      const method = field.meta.script?.on_change;
+      const method = this.extension ? this.extension.on_change?.[[...row.path, field.name].join('.')] : field.meta.script?.on_change;
       if (!method) continue;
       runWithOwner(row.owner, () => {
         let first = true;
         effect(() => {
-          const value = field.value.get(), cause = this.causes.get(field);
-          this.causes.delete(field);
+          const value = field.value.get(), cause = this.chains.causes.get(field);
           if (first) { first = false; return; }
           // A change a hook made carries that hook's chain: no hook runs again for its own change.
           const chain = cause && Object.is(cause.value, value) ? cause.chain : [];

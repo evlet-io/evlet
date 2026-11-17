@@ -12,7 +12,7 @@ import { uid } from '../ui/core';
 import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Cell, type Readable } from '../reactive';
 import type { Route } from '../router';
 import { RecordStore, type Field, type Row, type Rules } from '../model/record';
-import { loadScript, ScriptHost } from '../model/script';
+import { loadScript, ScriptHost, type ScriptPage } from '../model/script';
 import type { FieldSchema } from '../model/schema';
 import { tooltip } from '../ui/tooltip';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
@@ -228,14 +228,20 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const has = (field: string) => store.root.fields.has(field);
   // The model script (Meta.script, model/script.ts), loaded when a record of the model opens. Its calls go through the
   // page's own paths; the record works the same without it, and a script that fails to load is only logged.
-  const script = model.script ? new ScriptHost(store, { api, locked: derive(() => !canWrite || locked.get()),
+  // Scripts other apps add to the model (evlet.Extend) start after it, in app install order.
+  const scriptPage: ScriptPage = { api, locked: derive(() => !canWrite || locked.get()),
     call: async (action, values) => { const ok = await store.runAction(action, values); if (ok) await followed(action); return ok; },
     move: (key, remark) => store.move(key, remark === undefined ? {} : { remark }), save: () => save(), reload: () => store.reload(),
-    toast: text => { toast(text); }, confirm: text => confirmText(text), open: (target, id) => void router.go('record', { model: target, id }) }) : null;
-  if (script && model.script) {
-    const { url, on_open } = model.script;
-    onCleanup(() => script.dispose());
-    void loadScript(url).then(Script => script.start(Script, on_open), error => console.error(`${name} script could not load`, error));
+    toast: text => { toast(text); }, confirm: text => confirmText(text), open: (target, id) => void router.go('record', { model: target, id }) };
+  const script = model.script ? new ScriptHost(store, scriptPage) : null;
+  const scripts = [...(script && model.script ? [{ entry: model.script, host: script }] : []),
+    ...(model.extensions ?? []).map(entry => ({ entry, host: new ScriptHost(store, scriptPage, entry) }))];
+  if (scripts.length) {
+    onCleanup(() => scripts.forEach(item => item.host.dispose()));
+    void Promise.allSettled(scripts.map(item => loadScript(item.entry.url))).then(results => results.forEach((result, at) => {
+      if (result.status === 'fulfilled') scripts[at].host.start(result.value, scripts[at].entry.on_open);
+      else console.error(`${name} script ${scripts[at].entry.url} could not load`, result.reason);
+    }));
   }
   const sequence = sequenceField(model), numbered = numberField(model);
   const stateValue = state ? () => String(store.field(state.field).value.get() ?? '') : () => '';

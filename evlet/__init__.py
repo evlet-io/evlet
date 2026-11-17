@@ -11,7 +11,7 @@ from .fields import (Boolean, Currency, CurrentUser, Date, DateTime, Decimal, Du
 from .migrations import (AddField, AddIndex, AddTable, AlterField, CreateModel, DropField, Migration, MigrationPlan, Recompute,
                          RenameField, RetireField, RunData, SchemaError)
 from .models import Model, Registry, ValidationError, Child
-from .declarations import Option, Ref, Table, Query, action, depends
+from .declarations import Extend, Option, Ref, Table, Query, action, depends
 from .sequences import Naming, Sequence, Series
 from .statemanager import State, release, state, validate
 
@@ -60,7 +60,7 @@ from .auth import Security
 __all__ += ["AppDefinition", "Instance", "Schedule", "Security"]
 from .routing import ApiScope, ControlsAccess, Docs, Frontend, Host, Request, Response
 __all__ += ["ApiScope", "ControlsAccess", "Docs", "Frontend", "Host", "Request", "Response"]
-__all__ += ["Child", "Table", "Option", "Ref", "Query", "action", "validate", "depends", "release", "state"]
+__all__ += ["Child", "Extend", "Table", "Option", "Ref", "Query", "action", "validate", "depends", "release", "state"]
 from .forms import Chart, Report, Column
 __all__ += ["Chart", "Report", "Column"]
 

@@ -30,7 +30,8 @@ production ready, but the rules below hold from 0.3 on.
   browser API a script gets: the `evlet` global, `evlet.Model` with `model`, `id`, `is_new`,
   `state`, `field`, `table`, `call`, `move`, `save`, `reload`, `api` and `ui`, the field, table
   and row views, and the hook arguments ([model-scripts.md](model-scripts.md)). This is the only
-  public part of `frontend/`.
+  public part of `frontend/`. `Extend` with `Meta.model`, `script`, `on_change` and `on_open`, and
+  `AppDefinition(extensions=)`, add checks and script hooks to another app's model.
 - **Field keywords.** The keywords every field takes (`required`, `default`, `label`,
   `help_text`, `visible_if` and the rest), which are defined once on the field base class.
 - **States and moves.** `State(*steps, rules=(), default=, show=)`, `State.Step(key, label,

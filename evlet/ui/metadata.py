@@ -822,6 +822,7 @@ def ui_schema(registry):
     return {'version': 1, 'ui_version': 1, 'models': [
         {'name': name, **view_for(model), **({'record_layout': registry.layouts[model]} if model in getattr(registry, 'layouts', {}) else {}),
          **({'script': registry.scripts[model]} if model in getattr(registry, 'scripts', {}) else {}),
+         **({'extensions': [entry for _, entry in registry.extensions[model] if entry]} if any(entry for _, entry in getattr(registry, 'extensions', {}).get(model, ())) else {}),
          'fields': [field_schema(field) for field in model.__app_fields__.values()],
          **({'api': 'read'} if api.get(model) == 'read' else {}), **behavior(model, registry)}
         for name, model in registry.models.items() if api.get(model, 'full') is not None

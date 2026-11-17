@@ -1510,7 +1510,9 @@ def validate_tree(context, all_drafts, internal, prior, errors, targets=None):
                 errors[prefix + name] = 'Add at least one row' if table.min_rows == 1 else f'Add at least {table.min_rows} rows'
         if not errors:
             from .statemanager import check_item
-            errors.update({prefix + key: value for key, value in check_item(item).items()})
+            # The model's own @validate checks, then those apps added with evlet.Extend, in install order.
+            extra = [check for extension, _ in context._business.registry.extensions.get(item._definition, ()) for check in extension.checks()]
+            errors.update({prefix + key: value for key, value in check_item(item, extra).items()})
     if errors: raise ValidationError(errors)
 
 

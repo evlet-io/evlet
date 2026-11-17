@@ -107,18 +107,19 @@ def configure(model):
                     raise ValueError(f'{model.__name__}: rule {rule.key!r} asks for {name!r}, which is not a field of the model')
 
 
-def check_item(item):
+def check_item(item, extra=()):
     """Run the @validate hooks of one draft (a document, a Table row or a form) with it read only, as the last
-    check of a settle; returns its errors. Assigning raises."""
+    check of a settle, then `extra` checks (those an evlet.Extend adds); returns its errors. Assigning raises."""
     from .models import ValidationError
     names = [name for kind, _, name in getattr(item._definition, '__hooks__', ()) if kind == 'validate']
-    if not names:
+    checks = [getattr(item._definition, name) for name in names] + list(extra)
+    if not checks:
         return {}
     readonly = item._readonly
     object.__setattr__(item, '_readonly', True)
     try:
-        for name in names:
-            getattr(item._definition, name)(item)
+        for check in checks:
+            check(item)
     except ValidationError as exc:
         return dict(exc.errors)
     except ValueError as exc:
