@@ -57,6 +57,23 @@ export function linkScope(field: Field): LinkScope | null {
   return scope;
 }
 
+/**
+ * What the search route needs to know about the form a Link is on (GET /api/<target>/search, evlet/search.py):
+ * `link` names the Link (`<model>.<field>`, a Table's row model included) and `values` holds the current value
+ * of every form path its filters and its option read ({"parent.company": "…"}). The server applies the filters
+ * as declared with these values; empty values are left out. Reads values reactively.
+ */
+export function linkContext(field: Field): { link: string; values: Record<string, unknown> } {
+  const paths = new Set<string>(field.meta.inputs ?? []);
+  for (const value of Object.values(filtersOf(field.row, field.name) ?? {})) { const path = refPath(value); if (path) paths.add(path); }
+  const values: Record<string, unknown> = {};
+  for (const path of paths) {
+    const current = fieldAt(field.row, path)?.value.get();
+    if (!isEmpty(current)) values[path] = current;
+  }
+  return { link: `${field.row.model.name}.${field.name}`, values };
+}
+
 /** The Link fields whose filters read `changed`: on its row, and `parent.<name>` on the rows of its tables. */
 export function dependentsOf(changed: Field): Field[] {
   const found: Field[] = [];

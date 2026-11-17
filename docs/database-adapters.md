@@ -67,7 +67,9 @@ entry_id = connection.run(qb.insert('evlet_activity', model=name, record_id=reco
 - Empty values: `qb.is_null`, `qb.not_null`.
 - Lists and subqueries: `qb.in_(column, values_or_query)`, `qb.not_in`. An empty list matches no row.
 - Text: `qb.contains` (matching case), `qb.contains_ci` (ignoring case), `qb.excludes_ci`
-  (empty or not containing, ignoring case), `qb.starts_with`, `qb.ends_with` (both matching case).
+  (empty or not containing, ignoring case), `qb.starts_with`, `qb.ends_with` (both matching case),
+  `qb.subsequence_ci` (the text's characters in that order, ignoring case; record search's prefilter).
+  Wildcards in the text match only themselves.
 - Logic: `qb.and_`, `qb.or_`, `qb.not_`, `qb.exists`, `qb.not_exists`, `qb.TRUE`, `qb.FALSE`.
 - Hierarchies: `qb.in_tree(column, table, parent, roots, include_roots=...)`, the rows at or
   below some roots following a parent link (team row scopes). A cycle stops the walk.

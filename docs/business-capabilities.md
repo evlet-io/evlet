@@ -223,7 +223,9 @@ the other values on this form." The message never shows a title or field the rol
 The schema sends each Link's filters in `behavior.<field>.filters` (`{"$expr": "ref", "args":
 ["company"]}` for a `Ref`), also for models with no other rules. When the filters read a field
 the role cannot read, it sends `filters_blocked: true` instead and only the server applies them.
-The browser form uses the filters as [ui.md](ui.md#link-filters) describes.
+The browser form uses the filters as [ui.md](ui.md#link-filters) describes. The Link dropdown sends
+only the form values the filters read, and the search route applies the filters on the server
+([model-engine.md](model-engine.md#link-filters-with-form-values)).
 
 A scope on the signed-in user pairs with `default=CurrentUser`, which fills a field from that
 user when a record is created without a value: the username in a `Text` field, the account id

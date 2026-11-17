@@ -3,7 +3,7 @@
 from datetime import date
 
 from evlet import (Boolean, Chart, Child, Count, Currency, Date, DateTime, Decimal, Hierarchy, Html, Integer, Link, LongText, Main, Model, Naming,
-                   Activity, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, TableSection, Text,
+                   Activity, Option, Ref, Registry, Related, RichText, Rule, Section, Select, Series, State, Sum, Table, TableSection, Text,
                    ValidationError, action, state)
 from evlet.calc import F
 
@@ -18,7 +18,11 @@ class Customer(Model):
         # The record title (Link pickers, lists, search) is the customer's name.
         title_field = 'customer_name'
         list_fields = ('customer_name', 'email', 'active')
+        # Link dropdowns, record pickers and the search bar match the name and the email fuzzily, ranked:
+        # "zms" finds Zayed Medical Supplies, and part of an email address finds its customer.
         search_fields = ('customer_name', 'email')
+        # Every customer option shows the email below the name (a Link's own option= replaces it).
+        option = Option(subtext=F('email'))
         # flow='columns': down the left column (name, email, active), then the right (currency); the Tab key goes
         # the same way, and notes, full width, sits below both columns. A layout of sections only: the first one is
         # the record page's primary area.
@@ -74,7 +78,11 @@ class Invoice(Model):
     customer = Link(Customer, required=True)
     # Only projects of the invoice's customer. Changing the customer clears a project of another one,
     # with a note under the field; the server names the mismatch if one is saved anyway.
-    project = Link('project', filters={'customer': Ref('customer')}, help_text="One of this customer's projects.")
+    # Below each project, what was invoiced to this invoice's customer on it: a Sum over invoices keyed by the
+    # form's customer, built in the search query. "Create new project" fills in the customer.
+    project = Link('project', filters={'customer': Ref('customer')}, help_text="One of this customer's projects.",
+                   option=Option(subtext=('Invoiced to this customer: ', Sum('total', model='invoice', link='project',
+                                                                             where={'customer': Ref('customer')}))))
     # help_text reads under the input; tooltip sits behind a ? icon at its right end.
     reference = Text(required=True, unique=True, max_length=40, label='Customer reference',
                      help_text="The customer's reference for this invoice.",
@@ -116,7 +124,8 @@ class Payment(Model):
         # instead of keeping them for later (docs/ui.md, Unsaved changes).
         autosave = False
 
-    invoice = Link(Invoice, required=True)
+    # Each invoice option shows its customer (through the Link, with its title) and total.
+    invoice = Link(Invoice, required=True, option=Option(subtext=(F('customer'), ' · ', F('total'))))
     reference = Text(required=True, unique=True, max_length=40)
     # The currency is a field on the payment itself.
     currency = Select(CURRENCIES, required=True, default='AED')

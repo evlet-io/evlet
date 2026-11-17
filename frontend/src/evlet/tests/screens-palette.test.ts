@@ -30,7 +30,7 @@ describe('command palette', () => {
     expect(palette()).toBeNull();
   });
 
-  it('searches records through each model’s list search, remembers the search and opens the record', async () => {
+  it('searches records through each model’s search route, remembers the search and opens the record', async () => {
     const { sent } = start(routes());
     await until(() => expect(document.querySelector('.app')).not.toBeNull());
     click(document.querySelector('.top-search .ts-search'));
@@ -38,7 +38,7 @@ describe('command palette', () => {
     await until(() => expect([...palette()!.querySelectorAll('.pal-sec[aria-label="Records"] .pal-it .lbl')].map(text)).toEqual(['Zayed Medical Supplies', 'Bayan Medical']));
     // Only models with search fields are searched, five results each.
     const searched = requests(sent, 'GET', /q=medical/).map(item => new URL(item.url, 'http://x'));
-    expect(searched.map(url => url.pathname).sort()).toEqual(['/api/contact', '/api/customer', '/api/order', '/api/product', '/api/quote']);
+    expect(searched.map(url => url.pathname).sort()).toEqual(['/api/contact/search', '/api/customer/search', '/api/order/search', '/api/product/search', '/api/quote/search']);
     expect(searched.every(url => url.searchParams.get('limit') === '5')).toBe(true);
     press(input(), 'Enter');
     await until(() => expect(location.pathname).toBe('/app/customer/000000000000s'));

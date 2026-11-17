@@ -510,6 +510,13 @@ class Compiler:
             return f'instr(lower({column}), lower({self.expression(item.text)})) > 0'
         if item.kind == 'excludes_ci':
             return f'({column} IS NULL OR instr(lower({column}), lower({self.expression(item.text)})) = 0)'
+        if item.kind == 'subsequence_ci':
+            # LIKE '%a%b%c%' with %, _ and the escape character escaped in each character. The pattern is a
+            # bound value, so only text built here reaches LIKE.
+            if not isinstance(item.text, qb.Value) or not isinstance(item.text.value, str):
+                raise ValueError('subsequence_ci takes a text value')
+            pattern = '%' + ''.join(('\\' + character if character in '%_\\' else character) + '%' for character in item.text.value.lower())
+            return f"lower({column}) LIKE {self.expression(qb.Value(pattern))} ESCAPE '\\'"
         if item.kind == 'starts_with':
             first = self.expression(item.text)
             return f'substr({column}, 1, length({first})) = {self.expression(item.text)}'

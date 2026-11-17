@@ -36,6 +36,8 @@ export interface FieldSchema {
   /** Full width in the form, from a Controls layout. */
   wide?: boolean;
   target?: string;
+  /** A Link's form paths its Option reads (Ref in where=); the dropdown sends their values with each search. */
+  inputs?: string[];
   default?: unknown;
   default_kind?: string;
   stored?: boolean;

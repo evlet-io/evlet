@@ -542,6 +542,16 @@ No value, or `null`: no link and no arrow. It is display only. The record's rout
 account, tenant and row, so a record the person can't see shows the page's normal 404 or 403. Pass
 `goto: false` to `FieldControl` to leave it out.
 
+`LinkSource.search(meta, text, filters, context)` finds the options. `apiLinks` asks the search route
+(`api.search(model, { q, link, values, limit })`, `GET /api/{model}/search`); on a form, `context` names
+the Link (`<model>.<field>`) and holds the form values its filters and option read
+(`linkContext(field)` in `model/links.ts`), so the server applies the filters and builds each option's
+subtext. Each option is a `LinkOption` (`id`, `title`, `subtitle`): the dropdown shows the title with the
+subtitle below it, smaller and muted. `apiLinks(api, schema, { quickCreate })` adds **Create new**:
+`canCreate(meta)` is true when the target is in the schema with `permissions.create`, is not a child
+table's model and is not read-only, and `create(meta, text, values)` runs the app's quick form
+(`app/quick-create.ts`). A LinkSource without `create` offers no Create new.
+
 ### Stat cards
 
 `StatCard` shows one number in a thin card, about 60 px high: a small muted label over the value
@@ -956,7 +966,8 @@ page in a new browser tab.
 | `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields that are not `column=False` |
 | `column=False` on a field | Out of the list's default columns and the Table grid's default columns (it starts hidden in the Columns menu, and Reset columns hides it again); still on the form and the row editor, and still read for each row, for example as a currency source |
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |
-| `Meta.search_fields` | The list search box and record search in the palette |
+| `Meta.search_fields` | The list search box; Link dropdowns, record pickers and the palette search the title and these fields fuzzily, ranked ([model-engine.md](model-engine.md#record-search-and-link-options)) |
+| `Meta.option`, `Link(option=)` | Each Link option's title and the muted subtext line below it, built on the server |
 | `Meta.layout` | The record page in two zones, from `record_layout` in the schema: every block marked `main` (`Main` groups of fields, a titled one under a small heading, and `Main` Tables) drawn open first, in order, never collapsing; then every other block (sections, `TableSection`s, Related lists, Html and charts) as "more information" rows that start closed. Without a main block the first section is the main zone. Readable fields the layout leaves out follow under Other, and Tables it leaves out after it; the row editor follows the same rules over the row model's layout ([ui.md](ui.md#record-layouts)) |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
 | `Meta.list_tabs`, `Meta.list_tab` | The list's tabs: All and one per value of a State, Select or Link field (the State without `list_tabs`, none with `list_tabs = None`), with counts from `GET /api/{model}/list_tabs`, and the tab the list opens on (`"all"` by default). A Link shows its 8 most used values, labelled by title ([ui.md](ui.md#list-tabs)) |

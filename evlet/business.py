@@ -888,6 +888,9 @@ class Business:
                 status, result, headers = self.saved_answer(tx, user, model, record.id)
                 self.remember_create(tx, retry, record.id)
             return status, result, [*headers, (b'location', f'/api/{parts[2]}/{record.id}'.encode())]
+        if len(parts) == 4 and parts[3] == 'search':
+            from .search import route
+            return route(self, scope, user, model)
         if len(parts) == 4 and parts[3] in ('aggregate', 'measures', 'list_tabs') or len(parts) == 5 and parts[4] == 'measures':
             from .measures import route
             return route(self, scope, user, model, parts)

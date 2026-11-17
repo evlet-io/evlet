@@ -45,17 +45,26 @@ function backend() {
     const url = new URL(String(input), 'http://127.0.0.1');
     sent.push({ method: init.method ?? 'GET', url: String(input), headers: {}, body: undefined });
     const name = url.pathname.split('/')[2];
-    const filters = JSON.parse(url.searchParams.get('filters') ?? '{}') as Record<string, unknown>;
+    let filters = JSON.parse(url.searchParams.get('filters') ?? '{}') as Record<string, unknown>;
+    // The search route applies the Link's declared filters with the form values it was sent, by path.
+    const searching = url.pathname.endsWith('/search');
+    if (searching && url.searchParams.get('link')) {
+      const [source, field] = url.searchParams.get('link')!.split('.');
+      const values = JSON.parse(url.searchParams.get('values') ?? '{}') as Record<string, unknown>;
+      const declared = schema.models.find(item => item.name === source)!.behavior![field].filters!;
+      filters = Object.fromEntries(Object.entries(declared).map(([key, value]) => [key, (value as { $expr?: string; args?: string[] })?.$expr === 'ref' ? values[(value as { args: string[] }).args[0]] : value]));
+    }
     const items = (records[name] ?? []).filter(item => Object.entries(filters).every(([key, value]) =>
       key === 'id__in' ? (value as string[]).includes(item.id as string) : item[key] === value));
-    return new Response(JSON.stringify({ items, total: items.length, limit: 20, offset: 0 }), { status: 200, headers: { 'content-type': 'application/json' } });
+    const body = searching ? { items: items.map(item => ({ id: item.id, title: item.title })) } : { items, total: items.length, limit: 20, offset: 0 };
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   const api = createClient({ fetch: fetch as typeof globalThis.fetch });
   const store = new RecordStore({ api, schema, model: 'visit' });
   return { store, api, sent };
 }
 
-const lists = (sent: Sent[]) => sent.map(item => decodeURIComponent(item.url)).filter(url => url.includes('filters='));
+const lists = (sent: Sent[]) => sent.map(item => decodeURIComponent(item.url)).filter(url => url.includes('filters=') || url.includes('/search'));
 
 let store: RecordStore | null = null;
 afterEach(() => { store?.dispose(); store = null; cleanup(); setLinkSource(null); });
@@ -154,7 +163,8 @@ describe('the Link picker', () => {
     await new Promise(resolve => setTimeout(resolve, 0));
     const options = [...document.querySelectorAll('[role="option"]')].map(option => option.textContent);
     expect(options).toEqual(['HHill office', 'SShared office']);
-    expect(lists(made.sent).at(-1)).toBe('/api/branch?limit=8&offset=0&filters={"company":"c-summit"}');
+    // The search names the Link and sends the form value its filter reads; the server applies the filter.
+    expect(lists(made.sent).at(-1)).toBe('/api/branch/search?link=visit.branch&limit=8&values={"company":"c-summit"}');
   });
 
   it('asks for the referenced field first when it is empty', async () => {
@@ -180,5 +190,6 @@ describe('the Link picker', () => {
     host.querySelector<HTMLButtonElement>('.in-link')!.click();
     await new Promise(resolve => setTimeout(resolve, 0));
     expect([...document.querySelectorAll('[role="option"]')].map(option => option.textContent)).toEqual(['PPort office', 'DDock office']);
+    expect(lists(made.sent).at(-1)).toBe('/api/branch/search?link=visit_stop.branch&limit=8&values={"parent.company":"c-harbor"}');
   });
 });
