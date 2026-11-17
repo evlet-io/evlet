@@ -165,6 +165,7 @@ describe('ChildTable over a record store', () => {
       host.querySelector<HTMLButtonElement>('thead [role="checkbox"]')!.click();
       expect(host.querySelector('.g-selinfo')!.textContent).toBe('4 selected');
       [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Delete'))!.click();
+      document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
       expect(lines.rows.peek()).toHaveLength(0);
       // Empty again: the header and the Add row placeholder, no total line.
       expect(host.querySelector('.g-empty')).toBeNull();

@@ -18,7 +18,7 @@ import { BaseField, currencyFor, currencyPlaces, displayValue, FieldControl, fie
 import { moneyChild } from './money';
 import { lookOf, scriptControl, scriptTip } from '../model/script';
 import { kindOf } from './kinds';
-import { openPopover, toast } from './layers';
+import { DialogFooter, openModal, openPopover, toast } from './layers';
 import { dragList } from './draglist';
 import { arrange, byKey, ColumnsMenu, emptyPrefs, gridPrefs, pinnedKeys, pinTracker, resizeHandle, virtualWindow, type TablePrefs } from './table';
 import { commitWithin } from './shortcuts';
@@ -604,7 +604,20 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   /** The selected section rows (selected as s:<key>), in order. A section's checkbox selects the section alone. */
   const selectedSections = () => table.sections.get().filter(section => selection.get().has(`s:${section.key}`));
   const duplicateSelected = () => duplicate(untrack(selectedRows), untrack(selectedSections).map(section => section.key));
-  const deleteSelected = () => remove(untrack(selectedRows), untrack(selectedSections).map(section => section.key));
+  // After a delete the focus stays in the table: on its first cell, or on Add row once it has no rows.
+  const keepFocus = () => {
+    const first = untrack(() => rows.get())[0], col = untrack(() => columns.get())[0]?.key;
+    if (first && col) moveActive({ key: first.key, col }); else after()?.focus();
+  };
+  // Deleting the selection asks first (its main action has the focus, so Enter answers); Undo in the toast still brings rows back.
+  const deleteSelected = () => {
+    const list = untrack(selectedRows), sectionKeys = untrack(selectedSections).map(section => section.key);
+    if (readOnly.peek() || (!list.length && !sectionKeys.length)) return;
+    const back = document.activeElement as HTMLElement | null;
+    openModal({ title: `Delete ${counted(list.length, sectionKeys.length)}?`, icon: 'trash-2', tint: 'rose', narrow: true,
+      body: () => html`<p>${list.length && !sectionKeys.length ? 'You can undo this from the message that follows.' : 'A deleted section keeps its lines.'}</p>`,
+      footer: close => DialogFooter({ cancel: () => { close(); back?.focus(); }, submit: { label: 'Delete', variant: 'danger', onClick: () => { close(); remove(list, sectionKeys); keepFocus(); } } }) });
+  };
   const toggle = (key: string, on: boolean) => { const next = new Set(selection.peek()); if (on) next.add(key); else next.delete(key); selection.set(next); };
 
   // ---------- views ----------
@@ -933,6 +946,9 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // ---------- keyboard ----------
 
   grid.addEventListener('keydown', event => {
+    // With rows selected, Enter (outside a cell being edited and the row editor) is Delete, which asks first.
+    if (event.key === 'Enter' && !event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && !editing.peek() && expanded.peek() === null
+      && untrack(() => selection.get().size) > 0 && !readOnly.peek()) { event.preventDefault(); event.stopPropagation(); deleteSelected(); return; }
     const td = (event.target as Element).closest?.('td[data-col]') as HTMLElement | null;
     const tr = td?.closest('tr[data-key]') as HTMLElement | null;
     const spot: Spot = td && tr ? { key: tr.dataset.key!, col: td.dataset.col! } : null;

@@ -85,9 +85,9 @@ describe('go to the linked record', () => {
     expect(arrow.getAttribute('aria-label')).toBe('Open Harbor Trading');
     expect(arrow.querySelector('.link-go-hint')?.textContent).toBe('Open Harbor Trading');
     expect(arrow.querySelector('svg')?.outerHTML).toContain('M7 7h10v10');
-    // The arrow is its own focusable link, not inside the picker's button.
+    // The arrow is its own link, not inside the picker's button, and for the mouse only: Tab never stops on it.
     expect(button.contains(arrow)).toBe(false);
-    expect(arrow.tabIndex).toBe(0);
+    expect(arrow.tabIndex).toBe(-1);
     // A click on the field still edits it.
     click(button);
     expect(document.querySelector('.link-pop')).not.toBeNull();

@@ -143,8 +143,12 @@ scrolls with it.
 
 A record page has no tabs (removed in 0.4): every record uses the [compact record page](#compact-record-page).
 Its content comes first; Activity is in the side column, which a narrow window opens as a drawer.
-On a wide page a round button on the side column's edge folds it away and brings it back, with the
-same look and movement as the sidebar's collapse button; the choice is kept per user in the browser
+The side column folds before the sidebar: at 1380 px and under it is a drawer, and the sidebar
+becomes one at 1220 px, so as the window narrows (or zooms in) the page gives up its right edge
+first, and the column stays folded once the sidebar has left. On a wide page a round button on
+the side column's edge folds it away; folded, a button named after it ("Activity", or
+"Attachments") at the end of the breadcrumb row brings it back, the same button that opens the
+drawer in a narrow window. The choice is kept per user in the browser
 (`evlet.<username>.sideCollapsed`), like the sidebar's.
 
 Two options change this per model:
@@ -1042,7 +1046,16 @@ empty table lands on Add row, where Enter adds a row. Inside, Tab and Shift+Tab 
 editable cells, Tab past the last cell reaches Add row, and Shift+Tab before the first leaves the
 table. The other controls stay reachable from the cells: ← from a row's first cell focuses its
 checkbox (Tab then reaches its move and Edit buttons, → comes back), and ↑ from the first row
-focuses Select all, from where Shift+Tab reaches Focus and Columns (↓ comes back).
+focuses Select all, from where Shift+Tab reaches the table bar's Focus and Columns (↓ comes back). On a
+record page the Focus and Columns buttons by the table's title are for the mouse and take no Tab stop,
+as does a Link field's ↗ arrow; Tab goes from field to field.
+
+With rows selected, Enter in the table (not while a cell is being edited) is Delete. Delete, by key or
+by the button, asks first: the dialog's Delete has the focus, so a second Enter confirms, and the
+toast that follows has Undo.
+
+Search results (a Link's dropdown and the records in ⌘K search) mark the part the typed text matches
+with a light accent tint: the text itself, or else its characters in order, as the search ranks them.
 
 ### Focus on new forms
 

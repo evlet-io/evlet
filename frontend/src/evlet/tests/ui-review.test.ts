@@ -15,7 +15,11 @@ afterEach(() => { vi.useRealTimers(); cleanup(); });
 const flush = () => new Promise(resolve => setTimeout(resolve, 0));
 const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('tbody tr[data-key]')];
 const lastToast = () => [...document.querySelectorAll('.toast')].pop()!;
-const deleteSelected = (host: Element) => [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Delete'))!.click();
+const deleteSelected = (host: Element) => {
+  [...host.querySelectorAll<HTMLButtonElement>('.g-bar button')].find(button => button.textContent!.includes('Delete'))!.click();
+  // Delete asks first; its main action confirms.
+  document.querySelector<HTMLButtonElement>('.modal-wrap [data-primary]')!.click();
+};
 
 describe('unchanged values are not written', () => {
   it('a date-time with seconds survives Enter without a change', () => {

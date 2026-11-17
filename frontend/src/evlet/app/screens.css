@@ -184,10 +184,12 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
   align-self:start;justify-self:start;margin-left:-12px;transition:margin-left .2s ease}
 .doc:not(.doc-narrow):not(.no-side):not(.side-left):has(>.doc-side-edge)>.doc-main{grid-column:1;grid-row:1}
 .doc:not(.doc-narrow):not(.no-side):not(.side-left):has(>.doc-side-edge)>.doc-side{grid-column:2;grid-row:1}
-/* Folded, the column is a slim rail (as the collapsed sidebar is), with the button on its edge. */
-.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left){grid-template-columns:minmax(0,1fr) 24px}
-.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left)>.doc-side{padding:0;overflow:hidden}
-.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left)>.doc-side>*{display:none}
+/* Folded, the column leaves the page and a button that names it ("Activity", at the end of the breadcrumb row, as
+   on a narrow frame) brings it back. */
+.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left){grid-template-columns:minmax(0,1fr)}
+.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left)>.doc-side,
+.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left)>.doc-side-edge{display:none}
+.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left) .ev-side-toggle{display:grid}
 /* A narrow record frame (DocFrame's doc-narrow: a side panel, or a window of about 980 px and under, after the sidebar
    drawer of ui/styles.css) keeps its side column out of the main column's way. The button at the end of the breadcrumb
    row (in a side panel, of its top line) opens it as a drawer on the right. The page and the panel share these rules. */
