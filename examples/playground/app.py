@@ -138,7 +138,7 @@ def project_overview(context, project: RecordId):
     """One project at a glance: its status, progress, budget and how many of its tasks are done."""
     record = context.get(Project, project)
     tasks = getattr(record, 'tasks', ())
-    return {'project': record.title, 'status': record.docstate, 'progress': record.progress, 'budget': getattr(record, 'budget', None),
+    return {'project': record.title, 'status': record.docstate, 'progress': record.progress, 'budget': record.get('budget'),
             'tasks': len(tasks), 'done': sum(1 for task in tasks if task.done)}
 
 

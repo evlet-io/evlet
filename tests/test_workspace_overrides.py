@@ -47,7 +47,7 @@ def test_reorder_hide_rename_and_add(app):
         {'key': 'deals', 'label': 'Pipeline', 'items': [
             {'key': 'model:deal:large_deals', 'label': 'Big deals'},
             {'key': 'model:client'},                                   # moved here from Clients
-            {'key': 'slip:quick_deal', 'hidden': True},
+            {'key': 'api:test.quick_deal', 'hidden': True},
             {'shortcut': {'model': 'deal', 'filters': {'docstate': 'won'}, 'label': 'Won deals'}},
         ]},
         {'key': 'reports', 'hidden': True},
@@ -208,7 +208,7 @@ def test_overrides_never_widen_access(app):
     ('sales', {'groups': [{'key': 'deals', 'items': [{'shortcut': {'model': 'client', 'filters': {'missing': 1}, 'label': 'M'}}]}]},
      {'groups.0.items.0.shortcut': "Workspace 'sales', group 'deals', item Shortcut(model='client', filters={'missing': 1}, label='M'): filters missing: Unknown field: missing"}),
     ('sales', {'groups': [{'key': 'deals', 'items': [{'shortcut': {'model': 'client', 'colour': 'red'}}]}]},
-     {'groups.0.items.0.shortcut': 'Send model, view, filters, label, report, slip or url, as text (filters as JSON)'}),
+     {'groups.0.items.0.shortcut': 'Send model, view, filters, label, report, api or url, as text (filters as JSON)'}),
     ('mine', {'custom': True, 'label': 'X', 'groups': [{'key': 'a', 'label': 'A', 'items': [{'key': 'model:client'}]}]},
      {'groups.0.items.0.key': 'A new workspace holds shortcuts only'}),
 ])
