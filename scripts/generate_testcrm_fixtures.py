@@ -270,9 +270,14 @@ def record(app, out):
     sara = Scenario(app, 'sara')
     lead = ids(sara, 'lead', full_name='Anjali Varma')
     sara.record_page('lead', lead)
-    converted = sara.write('POST', f'/api/lead/{lead}/actions/convert', {'title': 'Pharmacy chain ERP', 'expected_close': '2026-12-15'},
-                           read=f'/api/lead/{lead}')
+    # Convert has inputs: sent without them it answers its prompt, whose submit runs it (the ticket is named here).
+    opened = sara.write('POST', f'/api/lead/{lead}/actions/convert', {}, read=f'/api/lead/{lead}')
+    prompt = opened['body']['_outcome']['prompt']
+    ticket, prompt['ticket'] = prompt['ticket'], 'fixture-convert-ticket'
+    converted = sara.call('POST', f'/api/_prompts/{ticket}/submit', {'values': {'title': 'Pharmacy chain ERP', 'expected_close': '2026-12-15'}})
     assert converted['status'] == 200, converted
+    sara.phases[-1][key('POST', '/api/_prompts/fixture-convert-ticket/submit')] = converted
+    sara.phases.append({})
     sara.record_page('lead', lead)
     out['sara_convert'] = sara.dump()
 

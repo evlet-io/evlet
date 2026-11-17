@@ -8,7 +8,7 @@ import { html, type Child } from '../dom';
 import { effect } from '../reactive';
 import { ApiError, ConflictError, ValidationError, type FieldErrors } from '../api';
 import { RecordStore, type Row } from '../model/record';
-import { SchemaIndex, type ModelSchema } from '../model/schema';
+import { SchemaIndex, type FieldSchema, type ModelSchema } from '../model/schema';
 import { autofocusForm, initialFocusField } from '../ui/autofocus';
 import { ChildTable } from '../ui/childtable';
 import { fieldFor } from '../ui/fields';
@@ -88,56 +88,97 @@ function payload(row: Row): Record<string, unknown> {
 
 /** Show a prompt. Resolves with its submit's outcome (after following it), or null when it was closed. */
 export async function openPrompt(ctx: AppContext, surface: PromptSurface): Promise<Outcome | null> {
-  const index = new SchemaIndex({ ...ctx.schema.schema, models: [...ctx.schema.schema.models, ...surface.models] });
-  const store = new RecordStore({ api: ctx.api, schema: index, model: surface.name, user: ctx.user });
-  await store.create(surface.values);
-  const model = index.model(surface.name) as ScreenModel;
+  let outcome: Outcome | null = null;
+  const sent = await sheet(ctx, { models: surface.models, name: surface.name, values: surface.values, errors: surface.errors,
+    title: surface.source?.title ? `${surface.title} · ${surface.source.title}` : surface.title, primary: surface.primary,
+    changed: surface.source ? 'The record changed after this opened. Close it and open it again.' : null,
+    check: values => ctx.api.prompt<{ values: Record<string, any> }>(surface.ticket, 'check', values),
+    send: async values => { outcome = await ctx.api.prompt<Outcome>(surface.ticket, 'submit', values); } });
+  if (!sent) return null;
+  if (!(await follow(ctx, outcome, surface.title))) toast(`${surface.title} done`, { icon: 'check' });
+  return outcome;
+}
+
+/**
+ * A form of a few fields in the same modal: what a move asks for (its remark and fields) or an action's typed
+ * arguments. `run` answers null when done, a message, or field errors by name. Empty values are not sent.
+ */
+export function openForm(ctx: AppContext, options: { title: string; primary?: string; fields: FieldSchema[];
+  run: (values: Record<string, unknown>) => Promise<string | Record<string, string> | null> }): Promise<boolean> {
+  const name = '_form';
+  const fields = options.fields.map(meta => ({ ...meta, hidden: false }));
+  const model = { name, label: options.title, plural: options.title, title_field: 'id', list_fields: [], search_fields: [], fields, layout: [],
+    children: [], actions: [], permissions: { create: true, update: true, delete: false } } as unknown as ModelSchema;
+  return sheet(ctx, { models: [model], name, title: options.title, primary: options.primary ?? options.title, narrow: true,
+    values: Object.fromEntries(fields.filter(meta => meta.default !== undefined).map(meta => [meta.name, meta.default])),
+    send: async values => {
+      const problem = await options.run(Object.fromEntries(Object.entries(values).filter(([key, value]) =>
+        key !== 'children' && value !== null && value !== undefined && value !== '')));
+      if (typeof problem === 'string') throw new ApiError(problem, 0, 'response');
+      if (problem) throw new ValidationError('Validation failed', 422, 'validation', problem);
+    } });
+}
+
+interface SheetOptions {
+  models: ModelSchema[]; name: string; title: string; primary: string; values: Record<string, any>; errors?: FieldErrors;
+  narrow?: boolean; changed?: string | null;
+  /** Asks the server what it decides, for string computes the browser cannot run. */
+  check?: (values: Record<string, unknown>) => Promise<{ values: Record<string, any> }>;
+  /** Sends the values; rejects with an ApiError (a ValidationError for field errors) when refused. */
+  send: (values: Record<string, unknown>) => Promise<void>;
+}
+
+/** The modal on the record engine. Resolves true once sent, false when closed. */
+async function sheet(ctx: AppContext, options: SheetOptions): Promise<boolean> {
+  const index = new SchemaIndex({ ...ctx.schema.schema, models: [...ctx.schema.schema.models, ...options.models] });
+  const store = new RecordStore({ api: ctx.api, schema: index, model: options.name, user: ctx.user });
+  await store.create(options.values);
+  const model = index.model(options.name) as ScreenModel;
   const groups = sections(model);
-  const plain = !model.calculation?.plan && model.fields.some(meta => meta.compute);
-  if (Object.keys(surface.errors).length) store.showErrors(surface.errors);
+  if (options.errors && Object.keys(options.errors).length) store.showErrors(options.errors);
 
   // Without a finite plan (string computes), the server calculates: ask it after each change, newest answer wins.
   let asked = 0;
-  if (plain) effect(() => {
+  const check = options.check;
+  if (check && !model.calculation?.plan && model.fields.some(meta => meta.compute)) effect(() => {
     if (!store.editVersion.get()) return;
     const mine = ++asked;
-    void ctx.api.prompt<{ values: Record<string, any> }>(surface.ticket, 'check', payload(store.root)).then(result => {
+    void check(payload(store.root)).then(result => {
       if (mine !== asked) return;
       for (const [name, field] of store.root.fields) if (field.calculated) field.value.set(result.values[name] ?? null);
     }, () => {});
   });
 
-  const group = (label: string): Child => {
-    const found = groups.find(item => item.label === label);
-    if (!found) return null;
+  const group = (found: (typeof groups)[number], titled: boolean): Child => {
     const grid = flowGrid(found.fields.map(meta => ({ node: fieldFor({ field: store.field(meta.name), links: ctx.links }),
       wide: Boolean(meta.wide ?? meta.type === 'longtext') })), found.flow);
-    return html`${found.heading || !found.main ? html`<h3 class="prompt-group">${label}</h3>` : null}<div class="ev-cmp-grid">${grid}</div>`;
+    return html`${titled && (found.heading || !found.main) ? html`<h3 class="prompt-group">${found.label}</h3>` : null}<div class="ev-cmp-grid">${grid}</div>`;
   };
   const table = (name: string): Child => {
     const child = (model.children ?? []).find(item => item.name === name);
     return child ? html`<div class="prompt-table">${ChildTable({ table: store.table(name), title: child.label, icon: 'rows-3', links: ctx.links })}</div>` : null;
   };
-  const blocks = model.record_layout?.blocks ?? [];
-  const body = () => blocks.map(block => block.kind === 'table' ? table(block.name) : block.kind === 'section' ? group(block.label) : null);
+  const blocks = model.record_layout?.blocks;
+  const body = () => blocks ? blocks.map(block => block.kind === 'table' ? table(block.name)
+    : block.kind === 'section' ? (found => found ? group(found, true) : null)(groups.find(item => item.label === block.label)) : null)
+    : groups.map(found => group(found, false));
 
   return new Promise(resolve => {
     let settled = false, busy = false;
-    const finish = (outcome: Outcome | null) => { if (!settled) { settled = true; store.dispose(); resolve(outcome); } };
+    const finish = (sent: boolean) => { if (!settled) { settled = true; store.dispose(); resolve(sent); } };
     const submit = async (close: () => void) => {
       if (busy || !commitTyped()) return;
       busy = true;
       store.formError.set(null);
       try {
         await store.idle();
-        const outcome = await ctx.api.prompt<Outcome>(surface.ticket, 'submit', payload(store.root));
-        // Settled before closing: closing alone means the prompt was set aside.
-        finish(outcome);
+        await options.send(payload(store.root));
+        // Settled before closing: closing alone means the form was set aside.
+        finish(true);
         close();
-        if (!(await follow(ctx, outcome, surface.title))) toast(`${surface.title} done`, { icon: 'check' });
       } catch (error) {
         if (error instanceof ValidationError) store.showErrors(error.fields);
-        else if (error instanceof ConflictError) store.formError.set(surface.source ? 'The record changed after this opened. Close it and open it again.' : error.message);
+        else if (error instanceof ConflictError) store.formError.set(options.changed ?? error.message);
         else store.formError.set(error instanceof ApiError ? error.message : 'This could not be submitted');
       } finally { busy = false; }
     };
@@ -148,15 +189,14 @@ export async function openPrompt(ctx: AppContext, surface: PromptSurface): Promi
         footer: close => DialogFooter({ cancel: close, submit: { label: 'Discard', variant: 'danger', onClick: () => { close(); closeSheet(); } } }) });
       return false;
     };
-    const title = surface.source?.title ? `${surface.title} · ${surface.source.title}` : surface.title;
-    closeSheet = openModal({ title, icon: 'file-text', tint: 'blue', className: 'prompt', confirmClose, onClose: () => finish(null),
-      onSubmit: () => void submit(closeSheet),
+    closeSheet = openModal({ title: options.title, icon: 'file-text', tint: 'blue', className: 'prompt', narrow: options.narrow, confirmClose,
+      onClose: () => finish(false), onSubmit: () => void submit(closeSheet),
       body: () => [body(), html`<p class="ev-error full" role="alert" hidden=${() => !store.formError.get()}>${() => store.formError.get() ?? ''}</p>`],
-      footer: close => DialogFooter({ note: 'Nothing is saved until you submit this.', cancel: () => { if (confirmClose()) close(); },
-        submit: { label: surface.primary, onClick: () => void submit(close) } }) });
+      footer: close => DialogFooter({ note: options.narrow ? '' : 'Nothing is saved until you submit this.', cancel: () => { if (confirmClose()) close(); },
+        submit: { label: options.primary, onClick: () => void submit(close) } }) });
     // The field Meta.focus names, else the first field that can be filled in, takes the focus.
-    const sheet = [...document.querySelectorAll<HTMLElement>('.modal.prompt')].pop();
-    if (sheet) autofocusForm(sheet, () => initialFocusField({ name: surface.name, focus: (model as { focus?: string }).focus },
+    const opened = [...document.querySelectorAll<HTMLElement>('.modal.prompt')].pop();
+    if (opened) autofocusForm(opened, () => initialFocusField({ name: options.name, focus: (model as { focus?: string }).focus },
       groups.map(item => ({ fields: item.fields.map(meta => store.field(meta.name)) }))));
   });
 }

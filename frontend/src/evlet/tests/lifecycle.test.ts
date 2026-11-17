@@ -29,6 +29,7 @@ describe('document lifecycle contract', () => {
     const { host, sent } = start([...routes(f.confirmed), ['POST', /\/api\/order\/0000000000001\/moves\/confirmed_to_draft$/, f.reopened]], '/app/order/0000000000001');
     await until(() => expect(byText(host, '.doc-head button', 'Reopen')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Reopen'));
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
     const dialog = document.querySelector('.modal')!;
     expect(text(dialog.querySelector('.fld label')).replace('*', '').trim()).toBe('Remark');
     click(byText(dialog, '.modal-f button', 'Reopen'));

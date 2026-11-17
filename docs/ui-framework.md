@@ -237,14 +237,14 @@ await record.save();                       // the server's answer replaces the d
   `_key`, at any depth) and the rest in `formError`. `revert()` and `reload()` discard the
   draft. `runAction()` and `move()` require a clean record. `preview()` asks the server to
   evaluate the draft for plans it does not ship.
-- A model with `Meta.derives` lists them in its schema as `derives` (only names the role can read).
+- A model with `derived=True` fields or Tables lists them in its schema as `derives` (only names the role can read).
   Each change to the draft (a field set, a row added, removed or moved) restarts a 600 ms timer
   (`PREVIEW_PAUSE_MS`); when the person pauses, `refreshDerived()` sends the draft to
   `POST /api/_draft/{model}`, the same route and permission checks as any preview, and shows what
   `derive()` set: derived fields, `"table.field"` values on rows (matched by id or `_key`) and the
   rows of a derived Table. Derived fields are never editable, never an unsaved change and never sent.
   An answer that a later change overtook is dropped, and only one answer per pause is shown. A model
-  without `Meta.derives` never asks, and formulas the browser runs need no request.
+  without derived values never asks, and formulas the browser runs need no request.
 - `formatMoney('25200')` is `AED 25,200.00` (exact, half up). Money and numbers take decimal
   strings or safe integers only; a JavaScript fraction or text that is not a plain decimal
   shows `Invalid amount`. `formatDate('2026-11-01')` is `01-11-2026`; impossible dates show
@@ -313,7 +313,7 @@ a lock hint says why ("Locked when Stage is won"), a calculated value shows its 
 ("from product") until the user edits it. Typed text is parsed per type (DD-MM-YYYY dates,
 GST date-times, exact decimals, `1h 30m` durations) and a wrong value stays in the input with
 a message that says how to fix it. `localField()` makes the same cells for forms that are not
-records, such as action dialogs.
+records, such as small forms that are not records.
 
 ### Rich text
 
@@ -877,7 +877,7 @@ not part of the build.
 | `recents.ts` | The history button on the right of the top bar, left of notifications: this session's recent records, newest first, with the model and when each was opened |
 | `docs.ts` | The Docs landing page after sign-in |
 | `list-page.ts` | List page and board per model |
-| `record-page.ts` | Record (doc) view, new records, action and move dialogs |
+| `record-page.ts` | Record (doc) view and new records; moves and actions open their forms through `prompts.ts` |
 | `prompts.ts` | Prompts ([prompts.md](prompts.md)): the prompt modal on the record engine, `openService()` and `follow()` for outcomes |
 | `report-page.ts` | Reports ([reports.md](reports.md)): the index, one report's filters, rows, totals, chart, Export and Print |
 | `palette.ts` | Command palette (Cmd or Ctrl K), with the Explorer button at the end of its field |
@@ -964,7 +964,7 @@ page in a new browser tab.
 | `Meta.autosave` | `True` (default): leaving a record with unsaved edits keeps them for later instead of asking to discard them; `False` keeps the leave prompt ([ui.md](ui.md#unsaved-changes)) |
 | `Table(...)` | Its own block, never a field: in the main zone (`Main('lines')`, or every Table of a model without `Meta.layout`) or as a row of more information (`TableSection`), always with its title bar, total line and totals (ChildTable, paging in over 100 rows) |
 | `compute=`, `initial=`, `applies_when`, `required_when`, `locked_when` | Calculated hints with the rule, initial-value hints, hidden, required and locked fields with the reason |
-| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens a dialog that checks them first. An action that returns a Prompt opens it; an `Outcome` is followed (a toast, a record, a new record to review) |
+| `@action` (arguments or `inputs`) | Header buttons; an action with inputs opens the prompt the server answers for them, and a move's remark and asked fields open in the same modal (`openForm`). An action that returns a Prompt opens it; an `Outcome` is followed (a toast, a record, a new record to review) |
 | `Prompt` ([prompts.md](prompts.md)) | A modal built from the record engine when an action or an `@api` shortcut returns it; it calculates in the browser and submits through its ticket. `Outcome(new=...)` opens New filled in, with a note |
 | `State` with rules | List tabs per state unless `Meta.list_tabs` names another field (counts from `GET /api/{model}/list_tabs`), a board when `Meta.board` names the State, a header status badge (`show="badge"`, the default) or the stage bar (`show="bar"`) or neither (`show="none"`), move buttons; the badge and the bar offer only the moves this person may take now (`allowed` in `_moves`), the rest are plain text; blocked moves stay visible and say why (`_moves`). With a state tab chosen, the board shows that one column; tabs by another field narrow the cards and keep every column. A board move offers Undo only when a declared move leads back for this role; a move that asks for values is made from the record, whose dialog asks for them |
 | Locked steps, `versioned=False` | Lock banner; only the declared fields stay editable; lines lock |

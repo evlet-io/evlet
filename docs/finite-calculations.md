@@ -467,9 +467,11 @@ All ordinary writes settle the document in the existing transaction:
   `_row_ids` maps them to new IDs.
 * Clients send source fields only. A submitted calculated value, even an equal one, is
   `COMPUTED_FIELD_WRITE`. Actions cannot assign calculated fields either.
-* A document's `derive()` runs before calculations on every write and preview, so formulas
-  read the values and rows it builds. Its fields and Tables (`Meta.derives`) are refused to
-  clients with `DERIVED_FIELD_WRITE` ([model-engine.md](model-engine.md#derived-values)).
+* A document's `derive()` runs on every write and preview after the formulas that read nothing it
+  sets and before those that do, so it reads final line amounts and formulas read the values and
+  rows it builds; reading a formula that depends on them inside `derive()` is an error. Its
+  `derived=True` fields and Tables are refused to clients with `DERIVED_FIELD_WRITE`
+  ([model-engine.md](model-engine.md#derived-values)).
 * Removing a row removes its subtree and needs delete permission on every descendant.
 * A client may pin the plan it previewed with `"_calculation": {"model_schema_hash": ...}`
   in POST/PATCH bodies (or `"calculation"` in `/api/_draft`). A different active plan is

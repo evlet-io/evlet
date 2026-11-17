@@ -391,10 +391,10 @@ def check_retire_alter_and_run_data(make):
     app = application(database)
     Leave = decimal_days.models['leaveapplication']
     with app.business.context(ADMIN) as context:
-        assert context.get(Leave, leave).days == '3.0'
+        assert context.get(Leave, leave)['days'] == '3.0'
         assert (context.get(Leave, leave).docstate, context.get(Leave, leave).reason) == ('confirmed', 'Annual')
         half = context.create(Leave, employee='Mariam', days='1.5')['id']
-        assert context.get(Leave, half).days == '1.5'
+        assert context.get(Leave, half)['days'] == '1.5'
 
     # Split one field into two and retire the old one; its column and values stay.
     split = people_models(days=Decimal(scale=1, default='0'), split=True)

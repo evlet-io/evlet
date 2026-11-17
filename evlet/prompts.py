@@ -81,6 +81,30 @@ def is_prompt(value):
     return isinstance(value, Prompt) or isinstance(value, type) and issubclass(value, Prompt) and value is not Prompt
 
 
+def inputs_prompt(model, name):
+    """The prompt an action's inputs={...} make: the inputs as its fields, its label as title and button; its
+    submit() runs the action with them, with every check."""
+    import copy
+    cached = model.__dict__.get('__inputs_prompts__', {})
+    if name in cached:
+        return cached[name]
+    declaration = getattr(model, name).__action__
+    fields = {}
+    for key, field in declaration['inputs'].items():
+        fields[key] = copy.copy(field)
+        fields[key].name = ''
+
+    def submit(self):
+        result = self.context.action(model, self.source.id, name, **{key: getattr(self, key) for key in fields})
+        return {'data': {'job': result['_job']}} if '_job' in result else result.get('_outcome')
+    meta = type('Meta', (), {'title': declaration['label'], 'primary': declaration['label']})
+    prompt = type(f'{model.__name__}{name.title().replace("_", "")}', (Prompt,),
+                  {'__module__': model.__module__, '__qualname__': f'{model.__qualname__}.{name}.inputs', 'Meta': meta,
+                   'submit': submit, **fields})
+    model.__inputs_prompts__ = {**cached, name: prompt}
+    return prompt
+
+
 def prompt_id(prompt):
     return f'{prompt.__module__}.{prompt.__qualname__}'
 
@@ -337,7 +361,7 @@ def surface(business, user, ticket, prompt, draft, model, record, errors, states
 def check_origin(business, context, origin, model, record_id):
     """The presenting action or endpoint, checked again on the source as it is now."""
     from .documents import load_draft
-    from .guards import Guards, check_guard
+    from .guards import action_available
     user = context.user
     kind, _, name = origin.partition(':')
     if kind == 'api':
@@ -352,8 +376,7 @@ def check_origin(business, context, origin, model, record_id):
         raise AccessError(403, 'Action is unavailable')
     record = business.policy.record(context._tx, user, model, record_id, 'update')
     saved, _ = load_draft(context, model, record_id, {})
-    guard = business.registry.guards.get(model, {}).get(name)
-    check_guard(context, Guards(context, model, saved._values, lambda: saved), guard, declaration['label'], 'action')
+    action_available(context, model, method, declaration, saved)
     return record
 
 

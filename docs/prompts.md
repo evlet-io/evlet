@@ -84,6 +84,15 @@ def quick_invoice(context):
     return QuickInvoice
 ```
 
+## Action inputs and move forms
+
+`@action('Rename', inputs={'new_name': Text(required=True)})` stays as a shorthand for a prompt. Over HTTP, the
+action sent without its inputs answers an anonymous prompt with those fields (titled and labelled with the
+action's label), and that prompt's `submit()` runs the action with them, with every check. Sent with its inputs
+(`{"new_name": "..."}`), the action runs at once, as does `record.rename(new_name=...)` in Python. A move's
+remark and the fields it asks for, and an action's typed arguments, open in the same modal
+(`openForm` in `prompts.ts`); `ActionDialog` is gone.
+
 ## Outcome
 
 `Outcome` is the one result type of actions and prompts:

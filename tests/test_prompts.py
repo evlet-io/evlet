@@ -17,6 +17,10 @@ class Customer(Model):
     permissions = ALL
     customer_name = Text(required=True)
 
+    @action('Rename', inputs={'new_name': Text(required=True, max_length=60)})
+    def rename(self, new_name):
+        self.customer_name = new_name
+
 
 class Quotation(Model):
     permissions = ALL
@@ -416,3 +420,24 @@ def test_tools_get_the_prompt_and_answer_it_by_ticket(app):
     status, done, _ = c('POST', '/api/_tools/execute', {'tool': 'answer_prompt', 'arguments': {'ticket': prompt['ticket'], 'values': values}})
     assert status == 200 and done['result']['open']['model'] == 'customerorder'
     assert read(app, Quotation, quotation_id).docstate == 'partial'
+
+
+def test_action_inputs_open_as_a_prompt_over_http(app):
+    with app.business.context(ADMIN) as context:
+        customer = context.create(Customer, customer_name='Acme')
+        # Trusted Python passes the inputs directly.
+        customer.rename(new_name='Acme Trading')
+        assert customer.customer_name == 'Acme Trading'
+    c = client(app)
+    url = f'/api/customer/{customer.id}'
+    status, opened, _ = c('POST', f'{url}/actions/rename', {}, headers={b'if-match': c('GET', url)[2][b'etag']})
+    assert status == 200, opened
+    prompt = opened['_outcome']['prompt']
+    assert prompt['title'] == prompt['primary'] == 'Rename' and opened['customer_name'] == 'Acme Trading'
+    assert [field['name'] for field in prompt['models'][0]['fields']] == ['new_name']
+    status, result, _ = c('POST', f"/api/_prompts/{prompt['ticket']}/submit", {'values': {}})
+    assert status == 422 and 'new_name' in result['fields']
+    assert c('POST', f"/api/_prompts/{prompt['ticket']}/submit", {'values': {'new_name': 'Acme LLC'}})[0] == 200
+    assert c('GET', url)[1]['customer_name'] == 'Acme LLC'
+    # Values sent with the action run it at once, as before.
+    assert c('POST', f'{url}/actions/rename', {'new_name': 'Acme'}, headers={b'if-match': c('GET', url)[2][b'etag']})[1]['customer_name'] == 'Acme'
