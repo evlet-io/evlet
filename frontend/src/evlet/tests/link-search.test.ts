@@ -6,6 +6,7 @@ import { RecordStore } from '../model/record';
 import { SchemaIndex, type AppSchema, type FieldSchema, type ModelSchema } from '../model/schema';
 import { quickCreate, quickCreateFields, quickCreateValues } from '../app/quick-create';
 import { apiLinks, BaseField, setLinkSource } from '../ui/fields';
+import { matchRanges } from '../ui/core';
 import { cleanup, key, render } from './ui-helpers';
 import type { Sent } from './server';
 
@@ -76,6 +77,34 @@ describe('the Link dropdown over the search route', () => {
     expect(document.querySelector('.link-create')).toBeNull();
     options()[0].dispatchEvent(new MouseEvent('click', { bubbles: true }));
     expect(store.field('item').value.peek()).toBe('i-box');
+  });
+
+  it('marks where the typed text matches, in the title and the subtext', async () => {
+    const made = backend();
+    store = made.store;
+    setLinkSource(apiLinks(made.api, made.index));
+    await store.create({ group: 'g-pack', warehouse: 'w-dubai' });
+    const host = render(() => BaseField({ field: store!.field('item') }));
+    await open(host);
+    const input = document.querySelector<HTMLInputElement>('.link-search input')!;
+    input.value = 'bx';
+    input.dispatchEvent(new Event('input'));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    // The characters in order, each in its own mark; the text and its order are unchanged.
+    expect([...options()[0].querySelectorAll('.link-title mark.hit')].map(mark => mark.textContent)).toEqual(['B', 'x']);
+    expect(options()[0].querySelector('.link-title')!.textContent).toBe('Box 40 x 40');
+    expect(options()[0].querySelector('.link-sub mark.hit')!.textContent).toBe('b');
+    expect(options()[1].querySelector('mark')).toBeNull();
+  });
+
+  it('finds the match ranges as the search ranks them: the text itself first, else its characters in order, shortest stretch', () => {
+    expect(matchRanges('Box 40 x 40', '40')).toEqual([[4, 6]]);
+    expect(matchRanges('Box 40 x 40', 'BOX')).toEqual([[0, 3]]);
+    expect(matchRanges('Project Alpha', 'prj')).toEqual([[0, 2], [3, 4]]);
+    expect(matchRanges('a b ab', 'ab')).toEqual([[4, 6]]);
+    expect(matchRanges('Packing tape', 'p t')).toEqual([[0, 1], [8, 9]]);
+    expect(matchRanges('Packing tape', 'zz')).toEqual([]);
+    expect(matchRanges('Packing tape', '  ')).toEqual([]);
   });
 
   it('offers "Create new" last, with the typed text and the filter values, and selects what was created', async () => {

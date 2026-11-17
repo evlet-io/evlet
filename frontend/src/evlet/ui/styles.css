@@ -1212,9 +1212,12 @@ th:hover>.rz::after{background:var(--border-strong)}
 .link-list{display:flex;flex-direction:column;max-height:260px;overflow-y:auto}
 .link-list .mi{gap:9px}
 .link-list .mi .muted{margin-left:auto;font-size:12px}
-.link-opt{display:flex;flex-direction:column;min-width:0;line-height:1.3}
+.link-list .mi:has(.link-sub){height:auto;min-height:32px;padding-block:6px}
+.link-opt{display:flex;flex-direction:column;gap:2px;min-width:0;line-height:1.3}
 .link-title,.link-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .link-sub{font-size:12px;color:var(--fg-3)}
+/* The part of a search result the typed text matches: a light accent tint, the text's own colour. */
+mark.hit{background:color-mix(in srgb,var(--accent) 15%,transparent);color:inherit;border-radius:2px}
 .link-create{color:var(--accent)}
 .link-status{font-size:12px;padding:0 4px}
 .link-status:empty{display:none}

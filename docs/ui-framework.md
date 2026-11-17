@@ -299,7 +299,7 @@ mark only.
 | `table.ts` | DataTable and the column, resize and virtual-window helpers |
 | `childtable.ts` | ChildTable over a record store `Table` |
 | `split.ts` | SplitView: a main area and a resizable side panel |
-| `doc.ts` | DocFrame (page or panel variant, responsive to its own width: DOC_NARROW, docWidthClasses), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
+| `doc.ts` | DocFrame (page or panel variant, responsive to its own width: DOC_NARROW, docWidthClasses; `narrowWhen` adds a media query under which it is narrow anyway), DocHeader, MoveButton, StatusBadge, StatusFlow, Tabs, TabPanel, SideBlock, LockBanner |
 | `list.ts` | PageHeader, Toolbar, Filters, ListSummary, BulkBar, Board, BoardCard |
 | `theme.ts` | `applyTheme`, `resolveTheme`, `systemScheme`, `currentTheme`, `THEMES`, `isTheme` ([Themes](#themes)) |
 | `time.ts` | `RelativeTime`, `relativeTime`, `exactTime`, `zoneLabel`, `RELATIVE_STEPS`, `minuteClock` ([Relative times](#relative-times)) |
