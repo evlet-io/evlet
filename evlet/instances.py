@@ -98,12 +98,14 @@ class AppDefinition:
     preferences: type | None = None
     connectors: tuple = ()
     workspaces: tuple = ()
+    # Additions to other apps' models (evlet.Extend), applied in app install order.
+    extensions: tuple = ()
 
     def __post_init__(self):
         # Python pages were removed in 0.4. Older app scaffolds still pass views=() and that keeps working.
         if tuple(self.views) or self.ui is not None:
             raise ValueError('Python pages (views and ui) were removed in Evlet 0.4: delete them from AppDefinition')
-        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes', 'connectors', 'workspaces'):
+        for name in ('models', 'views', 'children', 'attachments', 'migrations', 'tasks', 'schedules', 'reports', 'apis', 'frontends', 'api_scopes', 'connectors', 'workspaces', 'extensions'):
             object.__setattr__(self, name, tuple(getattr(self, name)))
         object.__setattr__(self, 'permissions', dict(self.permissions))
         from .auth import PORTAL, RESERVED_ROLES, ROLE_ID, ROLES
@@ -365,7 +367,8 @@ def build_instance(config, path, packages, *, port=8000, database_path=None, sto
     from .builds import prepare
     pinned, manifest = prepare(path.parent.parent, packages)
     definitions = load_definitions(pinned, modules=manifest['modules'])
-    registry = Registry(*(model for _, definition in definitions for model in definition.models))
+    registry = Registry(*(model for _, definition in definitions for model in definition.models),
+                        extensions=tuple(extension for _, definition in definitions for extension in definition.extensions))
     registry._freeze_ui = True
     database_path = database_path or path / 'data/database.sqlite3'
     migrations = migration_plan(definitions, database_path)

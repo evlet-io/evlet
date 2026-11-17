@@ -471,3 +471,54 @@ def check_rules(field, rules):
         if rule.key in keys:
             raise ValueError(f'Two rules have the key {rule.key!r}; give one its own key=')
         keys.add(rule.key)
+
+
+class Extend:
+    """Additions one app makes to a model of another (docs/model-scripts.md#extending-a-model-from-another-app).
+
+        class AcmeQuotation(Extend):
+            @validate
+            def po_needed(self): ...
+
+            class Meta:
+                model = "quotation"
+                script = "acme_quotation.js"
+                on_change = {"customer": "check_blacklist"}
+                on_open = "opened"
+
+    Additive only: @validate checks that run after the model's own, on_change hooks on existing fields ("field" or
+    "table.field") and its own script. It cannot add, remove or change fields, formulas, states, actions or the
+    model's hooks. Register it with AppDefinition(extensions=(...)); the registry checks the names at start-up."""
+
+    OPTIONS = ('model', 'script', 'on_change', 'on_open')
+
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        meta = vars(cls).get('Meta')
+        if meta is None or not isinstance(getattr(meta, 'model', None), str):
+            raise ValueError(f'{cls.__name__}: name the model it extends, Meta.model = "quotation"')
+        unknown = sorted(key for key in vars(meta) if not key.startswith('_') and key not in Extend.OPTIONS)
+        if unknown:
+            raise ValueError(f'{cls.__name__}.Meta supports {", ".join(Extend.OPTIONS)}, not {", ".join(unknown)}')
+        for name, value in vars(cls).items():
+            if name.startswith('__') or name == 'Meta':
+                continue
+            if not (inspect.isfunction(value) and any(kind == 'validate' for kind, _ in getattr(value, '__evlet_hook__', ()))):
+                raise ValueError(f'{cls.__name__}.{name}: an Extend adds only @validate checks and script hooks; it cannot add '
+                                 'or change fields, formulas, states, actions or other methods')
+        on_change = getattr(meta, 'on_change', {})
+        if not isinstance(on_change, dict) or not all(isinstance(key, str) for key in on_change):
+            raise ValueError(f'{cls.__name__}.Meta.on_change maps field names to script methods, {{"customer": "check_blacklist"}}')
+        from .fields import script_method
+        for key, method in on_change.items():
+            script_method(method, f'{cls.__name__}.Meta.on_change[{key!r}]')
+        if getattr(meta, 'on_open', None) is not None:
+            script_method(meta.on_open, f'{cls.__name__}.Meta.on_open')
+        if (on_change or getattr(meta, 'on_open', None)) and getattr(meta, 'script', None) is None:
+            raise ValueError(f'{cls.__name__}: its hooks name methods of a script; declare Meta.script')
+
+    @classmethod
+    def checks(cls):
+        """Its @validate methods, in declaration order."""
+        return tuple(value for value in vars(cls).values()
+                     if inspect.isfunction(value) and any(kind == 'validate' for kind, _ in getattr(value, '__evlet_hook__', ())))

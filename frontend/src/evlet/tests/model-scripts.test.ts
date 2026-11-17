@@ -137,6 +137,28 @@ describe('model scripts', () => {
     await expect(host.apiView.get('quote', 'x')).resolves.toBe(null);
   });
 
+  it('runs an extension\'s hooks after the model\'s, and no script re-runs for a change another made', async () => {
+    const { store } = await open();
+    class Acme extends evlet.Model {
+      check(item: any) { calls.push(['acme', item.value]); item.set('blocked'); }
+      line(item: any, row: any) { calls.push(['acme line', item.value, row.index]); }
+      opened() { calls.push(['acme opened']); }
+    }
+    const extension = new ScriptHost(store, { api: store.api, locked: cell(false) } as unknown as ScriptPage,
+      { url: '/assets/scripts/x/acme.js', on_change: { customer: 'check', 'lines.qty': 'line' } });
+    extension.start(Acme as any, 'opened');
+    stops.push(() => extension.dispose());
+    expect(calls.pop()).toEqual(['acme opened']);
+    calls.length = 0;
+    store.field('customer').set('acme');
+    // The model's hook first; each script's change to customer is the other's to ignore, so nothing loops.
+    expect(calls).toEqual([['customer_changed', 'customer', 'acme', undefined], ['acme', 'acme!']]);
+    expect(store.field('customer').value.peek()).toBe('blocked');
+    calls.length = 0;
+    store.table('lines').add({}).field('qty').set('3');
+    expect(calls).toEqual([['qty_changed', 'qty', '3', 0], ['acme line', '3', 0]]);
+  });
+
   it('loads a script once per address, after setting the evlet global', async () => {
     const load = vi.fn(async () => ({ default: Quote }));
     setScriptImporter(load);

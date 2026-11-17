@@ -151,3 +151,36 @@ Hook arguments: `on_change(field, row)`, `tooltip(field, row)`, `look(field, row
   form keeps working.
 
 The Playground's Employee shows each hook (`examples/playground/employee.js`).
+
+## Extending a model from another app
+
+An app can add checks and browser behaviour to another app's model without changing it:
+
+```python
+from evlet import Extend, ValidationError, validate
+
+
+class AcmeQuotation(Extend):
+    @validate
+    def po_needed(self):
+        if self.total > 10000 and not self.customer_po:
+            raise ValidationError({'customer_po': 'Orders over 10,000 need a PO number'})
+
+    class Meta:
+        model = "quotation"                 # or "sales.Quotation"
+        script = "acme_quotation.js"        # beside this module
+        on_change = {"customer": "check_blacklist", "lines.qty": "qty_changed"}
+        on_open = "opened"
+```
+
+- Register it with `AppDefinition(extensions=(AcmeQuotation,))`. A flat app's `Extend` classes are
+  found like its models.
+- It is additive only: extra `@validate` checks, `on_change` hooks on existing fields (`"field"`,
+  or `"table.field"` for a Table's rows), and its own script with `on_open`. Its class body holds
+  `@validate` methods and `Meta`, nothing else: it cannot add, remove or change fields, formulas,
+  states, actions or the model's own hooks.
+- Order: the model first, then extensions in app install order, for `@validate` checks, `on_open`
+  and every `on_change`.
+- Its script is its own class on the same record, with the same browser API. It cannot replace the
+  model's script, and the rule against loops spans both: no script runs again for a change it made.
+- A model, field or script that does not exist fails at start-up, naming the extension.

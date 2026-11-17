@@ -192,3 +192,146 @@ def test_plain_models_have_no_script_and_their_schema_is_unchanged():
     assert 'script' not in entry and registry.scripts == {} and registry.script_roots == {}
     assert entry['fields'][0]['tooltip'] == 'Shown behind a ? icon' and 'look' not in entry['fields'][0]
     assert Path(__file__).name  # the module itself declares no script
+
+
+# Extending a model from another app (evlet.Extend): additive @validate checks and script hooks.
+
+EXTENDS = '''
+from evlet import Extend, ValidationError, validate
+
+
+class First(Extend):
+    @validate
+    def po_needed(self):
+        ORDER.append('first')
+        if self.customer == 'Acme' and not self.notes:
+            raise ValidationError({'notes': 'Acme needs a PO number'})
+
+    class Meta:
+        model = 'quote'
+        script = 'acme.js'
+        on_change = {'customer': 'check_blacklist', 'lines.qty': 'qty_seen'}
+        on_open = 'opened'
+
+
+class Second(Extend):
+    @validate
+    def last(self):
+        ORDER.append('second')
+
+    class Meta:
+        model = 'quote'
+'''
+
+
+def extended(tmp_path):
+    own = "\n    @validate\n    def own(self):\n        ORDER.append('own')\n\n    class Meta:"
+    source = 'from evlet import validate\nORDER = []\n' + QUOTE.replace('\n    class Meta:', own, 1)
+    module, _ = models(tmp_path, source + EXTENDS, {'quote.js': '', 'acme.js': 'export default class Acme extends evlet.Model {}\n'})
+    return module
+
+
+def test_extensions_run_after_the_model_in_install_order_and_add_their_script(tmp_path):
+    module = extended(tmp_path)
+    registry = Registry(module.Quote, extensions=(module.First, module.Second))
+    entry = next(item for item in registry.ui_schema()['models'] if item['name'] == 'quote')
+    # The model's own script, then each extension's that has one; the extension's hooks travel with its script.
+    assert entry['script']['url'].endswith('/quote.js')
+    assert [item['url'].rsplit('/', 1)[1] for item in entry['extensions']] == ['acme.js']
+    assert entry['extensions'][0]['on_change'] == {'customer': 'check_blacklist', 'lines.qty': 'qty_seen'}
+    assert entry['extensions'][0]['on_open'] == 'opened'
+    app = start(Database(tmp_path / 'db.sqlite3', registry))
+    try:
+        from test_business import client
+        c = client(app)
+        module.ORDER.clear()
+        status, body, _ = c('POST', '/api/quote', {'customer': 'Acme'})
+        assert status == 422 and body['fields']['notes'] == 'Acme needs a PO number'
+        assert module.ORDER == ['own', 'first']
+        module.ORDER.clear()
+        assert c('POST', '/api/quote', {'customer': 'Acme', 'notes': 'PO 7'})[0] == 201
+        assert module.ORDER == ['own', 'first', 'second']
+        # The extension's script is served like the model's.
+        assert http(app, 'GET', entry['extensions'][0]['url'])[0] == 200
+    finally:
+        app.database.close()
+
+
+def test_without_the_extension_the_model_is_as_it_was(tmp_path):
+    module = extended(tmp_path)
+    registry = Registry(module.Quote)
+    assert 'extensions' not in next(item for item in registry.ui_schema()['models'] if item['name'] == 'quote')
+    assert registry.extensions == {}
+
+
+@pytest.mark.parametrize('change, message', [
+    (("model = 'quote'\n        script", "model = 'invoice'\n        script"), r"First.Meta.model: there is no model 'invoice'"),
+    (("'lines.qty': 'qty_seen'", "'lines.price': 'qty_seen'"), r"First.Meta.on_change: Quote has no field 'lines.price'"),
+    (("'customer': 'check_blacklist'", "'client': 'check_blacklist'"), r"First.Meta.on_change: Quote has no field 'client'"),
+    (("script = 'acme.js'", "script = 'other.js'"), r'First.Meta.script: other.js is not a file'),
+    (("model = 'quote'\n        script", "model = 'quote_lines'\n        script"), r'Line is a Table row; extend its document'),
+])
+def test_names_that_do_not_exist_fail_at_start_up(tmp_path, change, message):
+    module, _ = models(tmp_path, QUOTE + EXTENDS.replace(*change).replace('ORDER.append', 'print'),
+                       {'quote.js': '', 'acme.js': ''})
+    with pytest.raises(ValueError, match=message):
+        Registry(module.Quote, extensions=(module.First,))
+
+
+@pytest.mark.parametrize('body, message', [
+    ("    title = Text()\n", 'First.title: an Extend adds only @validate checks and script hooks'),
+    ("    def helper(self):\n        pass\n", 'First.helper: an Extend adds only'),
+    ("    class Meta:\n        model = 'quote'\n        layout = ()\n", r'First.Meta supports model, script, on_change, on_open, not layout'),
+    ("    class Meta:\n        model = 'quote'\n        on_open = 'opened'\n", 'its hooks name methods of a script; declare Meta.script'),
+    ("    pass\n", 'name the model it extends'),
+])
+def test_an_extension_only_adds(body, message):
+    from evlet import Extend
+    namespace = {'Extend': Extend, 'Text': Text}
+    source = 'class First(Extend):\n' + body + ("    class Meta:\n        model = 'quote'\n" if 'Meta' not in body and body.strip() != 'pass' else '')
+    with pytest.raises(ValueError, match=message):
+        exec(source, namespace)
+
+
+def test_a_flat_app_extends_another_apps_model_in_install_order(tmp_path):
+    from evlet.cli.app import create_app
+    from evlet.cli.instance import create_instance
+    from evlet.cli.install import install
+    from evlet.instances import load_runtime
+    project = tmp_path / 'project'
+    (project / 'apps').mkdir(parents=True)
+    (project / 'instances').mkdir()
+    create_app(project, 'sales')
+    acme = create_app(project, 'acme')
+    # The extending app needs no model of its own.
+    (acme / 'models/item.py').unlink()
+    (acme / 'models/extend.py').write_text(textwrap.dedent('''
+        from evlet import Extend, ValidationError, validate
+
+
+        class AcmeItem(Extend):
+            @validate
+            def no_blanks(self):
+                if self.title.startswith(' '):
+                    raise ValidationError({'title': 'Acme titles start with a letter'})
+
+            class Meta:
+                model = 'sales.SalesItem'
+                script = 'acme_item.js'
+                on_change = {'title': 'title_changed'}
+        '''))
+    (acme / 'models/acme_item.js').write_text('export default class AcmeItem extends evlet.Model {}\n')
+    create_instance(project, 'acme')
+    install(project, 'acme', app_name='sales', trust=True)
+    install(project, 'acme', app_name='acme', trust=True)
+    app = load_runtime(project, 'acme')
+    try:
+        model = app.database.registry.resolve('sales.SalesItem')
+        (extension, entry), = app.database.registry.extensions[model]
+        assert extension.__name__ == 'AcmeItem' and entry['on_change'] == {'title': 'title_changed'}
+        assert entry['url'].endswith('/acme_item.js')
+    finally:
+        app.database.close()
+        for name in list(sys.modules):
+            if name.split('.')[0] in ('sales', 'acme'):
+                del sys.modules[name]

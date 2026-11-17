@@ -17,6 +17,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   opens; the CSP is unchanged, no build step or Node is involved, and the server never depends on it. A missing
   file, a hook on a model without a script, or a script on a Table row fails at start-up
   ([docs/model-scripts.md](docs/model-scripts.md)). The Playground's Employee shows each hook.
+- **Extend another app's model.** `class AcmeQuotation(Extend)` with `Meta.model = "quotation"`, registered with
+  `AppDefinition(extensions=(...))` (a flat app's are found like its models), adds `@validate` checks that run
+  after the model's own, `on_change` hooks on existing fields (`Meta.on_change = {"customer": "check_blacklist"}`)
+  and its own script with `on_open`, in app install order. It cannot add or change fields, formulas, states,
+  actions or the model's hooks; unknown names fail at start-up
+  ([docs/model-scripts.md](docs/model-scripts.md#extending-a-model-from-another-app)).
 
 ### Changed
 
