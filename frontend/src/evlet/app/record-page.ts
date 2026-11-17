@@ -12,6 +12,7 @@ import { uid } from '../ui/core';
 import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Cell, type Readable } from '../reactive';
 import type { Route } from '../router';
 import { RecordStore, type Field, type Row, type Rules } from '../model/record';
+import { loadScript, ScriptHost } from '../model/script';
 import type { FieldSchema } from '../model/schema';
 import { tooltip } from '../ui/tooltip';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
@@ -71,6 +72,17 @@ function gate(field: Field, locked: Readable<boolean>, canWrite: boolean): Field
  * sidebar after it, the way the page reads, and it stays folded once the sidebar has left.
  */
 export const SIDE_DRAWER = '(max-width: 1380px)';
+
+/** Ask a model script's yes-or-no question (this.ui.confirm); resolves true for OK. */
+function confirmText(text: string): Promise<boolean> {
+  return new Promise(resolve => {
+    let answered = false;
+    const answer = (value: boolean, done: () => void) => { answered = true; resolve(value); done(); };
+    openModal({ title: text, icon: 'info', narrow: true, body: () => null,
+      footer: done => DialogFooter({ cancel: () => answer(false, done), submit: { label: 'OK', variant: 'primary', onClick: () => answer(true, done) } }),
+      onClose: () => { if (!answered) resolve(false); } });
+  });
+}
 
 /** Ask before discarding unsaved changes; resolves true to leave. */
 export function confirmDiscard(reason?: string): Promise<boolean> {
@@ -221,6 +233,17 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     return found;
   };
   const has = (field: string) => store.root.fields.has(field);
+  // The model script (Meta.script, model/script.ts), loaded when a record of the model opens. Its calls go through the
+  // page's own paths; the record works the same without it, and a script that fails to load is only logged.
+  const script = model.script ? new ScriptHost(store, { api, locked: derive(() => !canWrite || locked.get()),
+    call: async (action, values) => { const ok = await store.runAction(action, values); if (ok) await followed(action); return ok; },
+    move: (key, remark) => store.move(key, remark === undefined ? {} : { remark }), save: () => save(), reload: () => store.reload(),
+    toast: text => { toast(text); }, confirm: text => confirmText(text), open: (target, id) => void router.go('record', { model: target, id }) }) : null;
+  if (script && model.script) {
+    const { url, on_open } = model.script;
+    onCleanup(() => script.dispose());
+    void loadScript(url).then(Script => script.start(Script, on_open), error => console.error(`${name} script could not load`, error));
+  }
   const sequence = sequenceField(model), numbered = numberField(model);
   const stateValue = state ? () => String(store.field(state.field).value.get() ?? '') : () => '';
   // One record view for the page and a list's side panel, responsive to its width (DocFrame), with Meta.panel hiding
@@ -736,6 +759,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // A #field address (/app/invoice/7#due) opens that field's section and focuses it.
   const fromHash = () => { let target = ''; try { target = decodeURIComponent(location.hash.slice(1)); } catch { /* not a field name */ } if (target && has(target)) revealField(frame, target); };
   if (!panel) { queueMicrotask(fromHash); window.addEventListener('hashchange', fromHash); onCleanup(() => window.removeEventListener('hashchange', fromHash)); }
+  /** A block the model script draws (Main(custom=...) or Section(..., custom=...)); empty without a script. */
+  const customBlock = (block: Extract<LayoutBlock, { kind: 'custom' }>) => html`<div class="ev-script-block" data-block=${block.name}>${script ? script.mount(block.custom, el => [el]) : null}</div>`;
   /** A group of the main zone: open, with a small heading when it has a title (Main(title=...)). */
   const mainGrid = (title: string | null, grid: Child) => html`${title ? html`<h3 class="ev-cmp-mh">${title}</h3>` : null}<div class="ev-cmp-grid">${grid}</div>`;
   const lockedText = () => model.fields.some(field => (field as any).versioned === false) ? `Locked. Lines can’t change while it is ${stepLabel(model, stateValue()).toLowerCase()}.` : 'Locked. Lines can’t change now.';
@@ -826,8 +851,9 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const grid = (fields: FieldLike[], flow?: 'rows' | 'columns') => isNew
       ? flowGrid(fields.map(field => ({ node: fieldFor({ field, links: ctx.links }), wide: Boolean(field.meta.wide ?? field.meta.type === 'longtext') })), flow)
       : FieldGrid(fields, { links: ctx.links, flow });
-    const mainParts = blocks.filter(block => (block.kind === 'section' || block.kind === 'table') && block.main).map(block => block.kind === 'section'
+    const mainParts = blocks.filter(block => (block.kind === 'section' || block.kind === 'table' || block.kind === 'custom') && block.main).map(block => block.kind === 'section'
       ? (section => mainGrid(section?.heading ? block.label : null, grid(fieldsOf(block.label), section?.flow)))(all.find(group => group.label === block.label))
+      : block.kind === 'custom' ? customBlock(block)
       : compactTable(tables.find(child => child.name === (block as { name: string }).name)!, true));
     const rows: Node[] = [];
     let index = 0;
@@ -879,6 +905,10 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
         }
         case 'chart':
           rows.push(MoreRow({ title: block.name ?? block.label ?? 'Chart', folds, start: false, summary: () => '', none: 'A chart', body: () => MeasureChart(ctx, block, blockRecord) }));
+          break;
+        case 'custom':
+          rows.push(MoreRow({ title: block.label, folds, eager: true, start: folds.start(block.collapsible === false ? false : block.collapsed === true, position, []),
+            summary: () => '', body: () => customBlock(block) }));
           break;
       }
     }

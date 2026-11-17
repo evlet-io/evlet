@@ -5,6 +5,9 @@ import type { CurrencyDisplay } from './format';
 
 export type Expression = Record<string, unknown> | null;
 
+/** How a value looks (look= on a field, or what a script's look method returns). */
+export type Look = 'strong' | 'muted' | 'success' | 'warning' | 'danger';
+
 export interface FieldSchema {
   name: string;
   type: string;
@@ -18,6 +21,10 @@ export interface FieldSchema {
   help_fields?: string[];
   /** Text behind a ? icon at the right end of the input. */
   tooltip?: string;
+  /** The model script's methods for this field (docs/model-scripts.md). */
+  script?: { on_change?: string; tooltip?: string; look?: string; control?: string };
+  /** A fixed look for the value. */
+  look?: Look;
   placeholder?: string;
   /** A unit shown after the input, such as % or days. */
   suffix?: string;
@@ -150,6 +157,8 @@ export interface ModelSchema {
   /** Every block of the record page in drawing order (Meta.layout). Absent from older servers: the first section is the
    * main zone, the other sections follow, and every Table joins the main zone. */
   record_layout?: RecordLayout;
+  /** The model script (Meta.script): its address and the method run when a record opens. */
+  script?: { url: string; on_open?: string };
   children?: ChildSchema[];
   actions?: ActionSchema[];
   permissions?: { create: boolean; update: boolean; delete: boolean };
@@ -179,6 +188,7 @@ export type LayoutBlock = { name?: string } & (
   | { kind: 'table'; name: string; main?: boolean; collapsible?: boolean; collapsed?: boolean | 'empty' }
   | { kind: 'related'; model: string; link: string; label: string; filters: LayoutCondition[]; fields: string[]; limit: number; order: string[] }
   | { kind: 'html'; html: string }
+  | { kind: 'custom'; name: string; label: string; custom: string; main?: boolean; collapsible?: boolean; collapsed?: boolean | 'empty' }
   | { kind: 'chart'; type: 'bar' | 'line' | 'stat'; model: string; link: string; x: string | null; y: string[]; label: string | null; filters: LayoutCondition[] });
 
 /** The record layout: blocks marked main are the main zone, drawn open first (without one, the first section is),

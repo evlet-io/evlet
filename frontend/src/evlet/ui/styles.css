@@ -1481,3 +1481,11 @@ mark.hit{background:color-mix(in srgb,var(--accent) 15%,transparent);color:inher
 .money-img{display:inline;height:.8em;width:auto;vertical-align:baseline;user-select:all}
 .money-img.tint{object-position:-9999px 0;background:currentColor;-webkit-mask:var(--money-mask) center/contain no-repeat;mask:var(--money-mask) center/contain no-repeat}
 .in-box>.money-img{height:1em}
+/* Model scripts (model/script.ts): a field's look (look= or a script's look method), multi-line script tooltips, drawn blocks. */
+[data-look=strong]{font-weight:650}
+[data-look=muted] :is(input,.fval,.g-cv-v),td[data-look=muted]{color:var(--fg-3)}
+[data-look=success] :is(input,.fval,.g-cv-v),td[data-look=success]{color:var(--t-green)}
+[data-look=warning] :is(input,.fval,.g-cv-v),td[data-look=warning]{color:var(--t-amber)}
+[data-look=danger] :is(input,.fval,.g-cv-v),td[data-look=danger]{color:var(--t-rose)}
+.tip{white-space:pre}
+.ev-script{display:block;min-width:0}

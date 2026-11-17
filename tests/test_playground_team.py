@@ -87,7 +87,7 @@ def test_the_employee_record_layout_lists_and_charts_the_team_each_viewer_may_re
     # The main zone: two groups of fields (the second under its Team heading) and the Skills table; then more information.
     assert [(block['kind'], block['name'], block['main']) for block in blocks[:4]] == [
         ('section', 'Employee', True), ('section', 'Team', True), ('table', 'skills', True), ('table', 'skill_levels', False)]
-    assert [block['kind'] for block in blocks[4:]] == ['html', 'chart', 'chart', 'related', 'related']
+    assert [block['kind'] for block in blocks[4:]] == ['html', 'chart', 'chart', 'related', 'related', 'custom']
     assert next(group for group in entry['layout'] if group['label'] == 'Team').get('heading') is True
     # Nothing brings the automatic Related rows or side block back (the record page leaves them out).
     assert 'side_blocks' not in entry

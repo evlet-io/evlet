@@ -6,8 +6,22 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **Model scripts.** `Meta.script = "quotation.js"` names one plain JavaScript file next to the model, and the
+  model names which of its methods runs where: a field's `on_change=`, `tooltip=Js("method")`, `look=` (a fixed
+  `"strong"`, `"muted"`, `"success"`, `"warning"` or `"danger"`, or `Js("method")`) and `control=` (the input,
+  in forms and table cells), `Main(custom=)` and `Section("Title", custom=)` blocks, and `Meta.on_open`. The script
+  extends `evlet.Model` and reaches the record only through a small API (`this.field`, `this.table`, `this.call`,
+  `this.move`, `this.save`, `this.api`, `this.ui`). It loads from a hashed `/assets/scripts/` address when a record
+  opens; the CSP is unchanged, no build step or Node is involved, and the server never depends on it. A missing
+  file, a hook on a model without a script, or a script on a Table row fails at start-up
+  ([docs/model-scripts.md](docs/model-scripts.md)). The Playground's Employee shows each hook.
+
 ### Changed
 
+- **The README no longer asks for Node to build app TS/JS extensions**: there are none to build; app browser
+  behaviour is a model script.
 - Two-line options in a Link dropdown get room between their title and subtext.
 - Search results in a Link dropdown and ⌘K mark the part the typed text matches with a light tint.
 - Tab from the field before a child table goes straight to its first cell. The ↗ arrow on a Link
