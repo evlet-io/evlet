@@ -51,6 +51,11 @@ production ready, but the rules below hold from 0.3 on.
 - **No `evlet.ui` page names.** The Python page API was removed in 0.4 without a
   deprecation release, by owner decision, since the browser never rendered it
   ([CHANGELOG.md](../CHANGELOG.md)). `evlet.ui.metadata` stays internal.
+- **Removed in 0.4.11.** `Effect`, `Swap`, `Negate` and `Meta.effects` (post in `@release`, reverse in
+  `@release.exit`), `Slip`, `Dialog` and their `/api/_slips` and `/api/_dialogs` routes (use `Prompt`), the
+  manual Release (`POST /api/{model}/{id}/release`, `Context.release()`, the `release` operation), legacy
+  `Action(...)` and `actions=`, and `Meta.derives` (`derived=True` on the field) went without a deprecation
+  release, by owner decision, since Evlet has no users yet ([CHANGELOG.md](../CHANGELOG.md)).
 
 - **Record times.** Record details carry `_audit` (`created_at`, `created_by`, `modified_at`,
   `modified_by`), and the column names `evlet_created_at`, `evlet_created_by`, `evlet_modified_at`

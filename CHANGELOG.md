@@ -4,9 +4,9 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.11 (17-11-2026)
 
-### Upgrading
+### Upgrading to 0.4.11
 
 - **`@release` runs on every move into the released set** (the steps declared `release=True`), and
   `@release.exit` on every move out of it, whether or not the content changed: they are the posting
