@@ -294,11 +294,13 @@ def test_the_administrator_passes_every_role_permission_check(tmp_path):
     assert owner('GET', '/api/customer')[1]['total'] == 0
     listing = builtin('GET', '/api/customer')[1]
     assert listing['total'] == 1 and listing['items'][0]['email'] == 'a@example.test'
-    assert builtin('PATCH', f"/api/customer/{created['id']}", {'email': 'b@example.test'})[0] == 200
+    # Customer is a document (it has actions), so a write names the revision it read.
+    revision = lambda: {b'if-match': builtin('GET', f"/api/customer/{created['id']}")[2][b'etag']}
+    assert builtin('PATCH', f"/api/customer/{created['id']}", {'email': 'b@example.test'}, headers=revision())[0] == 200
     # Data rules still apply.
-    status, _, _ = builtin('PATCH', f"/api/customer/{created['id']}", {'customer_name': ''})
+    status, _, _ = builtin('PATCH', f"/api/customer/{created['id']}", {'customer_name': ''}, headers=revision())
     assert status == 422
-    assert builtin('DELETE', f"/api/customer/{created['id']}")[0] == 204
+    assert builtin('DELETE', f"/api/customer/{created['id']}", headers=revision())[0] == 204
     # It opens Controls like any admin.
     assert builtin('GET', '/api/_controls/state')[0] == 200
 
