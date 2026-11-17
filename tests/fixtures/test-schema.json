@@ -157,7 +157,28 @@
           "read_only": true,
           "default_kind": "none"
         }
-      ]
+      ],
+      "document_version": 1,
+      "resource": "customer",
+      "behavior": {
+        "customer_name": {},
+        "email": {},
+        "active": {},
+        "currency": {},
+        "notes": {},
+        "name": {},
+        "title": {}
+      },
+      "order": [
+        "customer_name",
+        "email",
+        "active",
+        "currency",
+        "notes",
+        "name",
+        "title"
+      ],
+      "sources": {}
     },
     {
       "name": "invoice",

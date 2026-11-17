@@ -267,6 +267,27 @@
           "locked_when": null
         }
       ],
+      "document_version": 1,
+      "resource": "customer",
+      "behavior": {
+        "customer_name": {},
+        "email": {},
+        "active": {},
+        "currency": {},
+        "notes": {},
+        "name": {},
+        "title": {}
+      },
+      "order": [
+        "customer_name",
+        "email",
+        "active",
+        "currency",
+        "notes",
+        "name",
+        "title"
+      ],
+      "sources": {},
       "permissions": {
         "create": true,
         "update": true,
@@ -277,7 +298,15 @@
       "actions": [
         {
           "name": "award_points",
-          "label": "Award 10 points"
+          "label": "Award 10 points",
+          "roles": [
+            "admin",
+            "editor"
+          ],
+          "guarded": false,
+          "available_when": null,
+          "arguments": [],
+          "inputs": []
         }
       ],
       "attachments": false,
@@ -857,7 +886,15 @@
       "actions": [
         {
           "name": "post",
-          "label": "Post to ledger"
+          "label": "Post to ledger",
+          "roles": [
+            "admin",
+            "editor"
+          ],
+          "guarded": false,
+          "available_when": null,
+          "arguments": [],
+          "inputs": []
         }
       ],
       "attachments": false,
@@ -1904,10 +1941,6 @@
       ],
       "actions": [
         {
-          "name": "refresh_progress",
-          "label": "Recalculate progress"
-        },
-        {
           "name": "plan",
           "label": "Plan project",
           "roles": [
@@ -1930,6 +1963,18 @@
               }
             ]
           },
+          "arguments": [],
+          "inputs": []
+        },
+        {
+          "name": "refresh_progress",
+          "label": "Recalculate progress",
+          "roles": [
+            "admin",
+            "editor"
+          ],
+          "guarded": false,
+          "available_when": null,
           "arguments": [],
           "inputs": []
         }

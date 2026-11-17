@@ -701,18 +701,16 @@ def test_the_playground_awards_points_into_a_ledger_and_its_balance_cache(tmp_pa
     status, customer, _ = admin('POST', '/api/customer', {'customer_name': 'Acme'})
     assert status == 201, customer
     for _ in range(2):
-        status, payload, _ = admin('POST', f"/api/customer/{customer['id']}/actions/award_points", {})
+        etag = admin('GET', f"/api/customer/{customer['id']}")[2][b'etag']
+        status, payload, _ = admin('POST', f"/api/customer/{customer['id']}/actions/award_points", {}, headers={b'if-match': etag})
         assert status == 200, payload
     assert [(row.points, row.reason) for row in app.database.list(Movement)] == [(10, 'Awarded from the customer page')] * 2
     assert [row.points for row in app.database.list(Balance)] == [20]
     assert admin('GET', '/api/pointmove')[0] == 404
 
 
-def test_applications_refuse_attachments_and_actions_on_ledger_models(tmp_path):
-    from evlet import Action
+def test_applications_refuse_attachments_on_ledger_models(tmp_path):
     database = Database(tmp_path / 'refused.sqlite3', Registry(*MODELS))
     auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False)
     with pytest.raises(ValueError, match='PointMove is a ledger model: it has no attachments'):
         Application(database, auth=auth, attachments=(PointMove,))
-    with pytest.raises(ValueError, match='PointMove is a ledger model: it has no actions'):
-        Application(database, auth=auth, actions=(Action(PointMove, 'touch', 'Touch', lambda tx, user, row: None),))

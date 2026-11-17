@@ -13,12 +13,12 @@ is /about/, and a missing page gets site/404.html. That host serves nothing else
 import os
 from pathlib import Path
 
-from evlet import (AI, Action, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
-                   Policy, RecordId, Rule, Security, Sum, Task, ValidationError, own_customer, set_currency_display)
+from evlet import (AI, ApiScope, AppDefinition, Application, ChildTable, DevSignIn, EventStore, Frontend, Host, JobQueue, LocalAuth,
+                   Policy, RecordId, Rule, Security, Sum, Task, own_customer, set_currency_display)
 from evlet import api
 from evlet.routing import resolve_routes
 from evlet.services import Endpoint
-from .models import Customer, Invoice, LedgerEntry, PointBalance, PointMove, Project, ProjectTask, registry
+from .models import Customer, Invoice, PointBalance, PointMove, Project, ProjectTask, registry
 from .migrate import configured_database
 from .settings import ProjectPreferences, ProjectSettings
 from .prints import PRINTS, REPORTS as PRINTED_REPORTS
@@ -44,31 +44,6 @@ def playground_routes(port=8000):
     hosts = (Host('portal.localhost', root=portal, also_on_primary=True), Host('site.localhost', root='playground.site'))
     return resolve_routes([('playground', definition)], None, {'hosts': hosts},
                           port=port, roots={'playground': Path(__file__).parent})
-
-
-def post_invoice(tx, user, invoice):
-    """Post to ledger: the only writer of ledger entries, since LedgerEntry has Meta.api = "read". An
-    invoice or entry dated in a closed period (Controls, Periods) is refused with the lock date."""
-    if invoice.posting_date is None:
-        raise ValidationError({'posting_date': 'Set the posting date before posting'})
-    if tx.count(LedgerEntry, filters={'invoice': invoice.id}):
-        raise ValidationError({'_form': 'This invoice is posted already'})
-    tx.create(LedgerEntry, invoice=invoice.id, customer=invoice.customer, posting_date=invoice.posting_date,
-              amount=invoice.total, memo=invoice.reference)
-    tx.update(Invoice, invoice.id, status='sent')
-
-
-def award_points(tx, user, customer):
-    """Award points: one movement in the points ledger and the customer's total in the balance cache, in the
-    same transaction. The lock keeps two awards for one customer from reading the same total."""
-    from datetime import date
-    tx.lock(('points', customer.id))
-    tx.create(PointMove, customer=customer.id, on_date=date.today(), reason='Awarded from the customer page', points=10)
-    [balance] = tx.list(PointBalance, filters={'customer': customer.id}) or [None]
-    if balance is None:
-        tx.create(PointBalance, customer=customer.id, points=10)
-    else:
-        tx.update(PointBalance, balance.id, points=balance.points + 10)
 
 
 def create_app():
@@ -164,17 +139,8 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=N
     policy = Policy(registry, rules=PORTAL_RULES)
     jobs = JobQueue(database, (Task('project_progress', refresh_progress), Task('rebuild_points', rebuild_points, resumable=True)),
                     tenant=tenant, events=events, policy=policy)
-    def queue_progress(tx, user, project):
-        return jobs.enqueue(tx, 'project_progress', {'project_id': project.id}, user=user, target=(Project, project.id))
-    def queue_rebuild(tx, user, customer):
-        # Rebuilds every customer's balance; Controls > Jobs shows its progress.
-        return jobs.enqueue(tx, 'rebuild_points', {}, user=user)
     app = Application(database, name="Evlet Playground", playground=True, auth=auth, policy=policy, routes=routes,
                       storage=storage, jobs=jobs, events=events, children=(ChildTable(Project, 'tasks', ProjectTask, 'project', 'Tasks'),),
-                      actions=(Action(Project, 'refresh_progress', 'Recalculate progress', queue_progress),
-                               Action(Invoice, 'post', 'Post to ledger', post_invoice),
-                               Action(Customer, 'award_points', 'Award 10 points', award_points),
-                               Action(Customer, 'rebuild_points', 'Rebuild all points balances', queue_rebuild, roles=('admin',))),
                       attachments=(Project,), reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS,
                       workspaces=WORKSPACES)
     # Settings > Projects: people who can read projects see it; editors and admins change it.

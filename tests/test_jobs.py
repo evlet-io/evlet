@@ -166,9 +166,11 @@ def test_worker_wakes_for_a_due_schedule_and_an_expired_lease(secured):
 def test_actor_permission_rechecked_and_status_hidden(secured):
     c = client(secured, 'editor')
     project = c('POST', '/api/project', {'title': 'Job', 'children': {'tasks': [{'title': 'Done', 'done': True}]}})[1]
-    status, response, _ = c('POST', f"/api/project/{project['id']}/actions/refresh_progress", {})
-    assert status == 202
-    job_id = response['job']['id']
+    etag = c('GET', f"/api/project/{project['id']}")[2][b'etag']
+    status, response, _ = c('POST', f"/api/project/{project['id']}/actions/refresh_progress", {}, headers={b'if-match': etag})
+    # A document's action answers its record, with the queued job as _job.
+    assert status == 200
+    job_id = response['_job']['id']
     assert c('GET', f'/api/_jobs/{job_id}')[1]['state'] == 'queued'
     viewer = client(secured, 'viewer')
     assert viewer('GET', f'/api/_jobs/{job_id}')[0] == 404
@@ -181,10 +183,11 @@ def test_actor_permission_rechecked_and_status_hidden(secured):
 def test_project_job_updates_and_publishes_only_after_success(secured):
     c = client(secured)
     project = c('POST', '/api/project', {'title': 'Job', 'children': {'tasks': [{'title': 'Done', 'done': True}, {'title': 'Pending'}]}})[1]
-    response = c('POST', f"/api/project/{project['id']}/actions/refresh_progress", {})[1]
+    etag = c('GET', f"/api/project/{project['id']}")[2][b'etag']
+    response = c('POST', f"/api/project/{project['id']}/actions/refresh_progress", {}, headers={b'if-match': etag})[1]
     assert secured.business.jobs.run_one()
     assert secured.database.get(Project, project['id']).progress == 50
-    job = c('GET', f"/api/_jobs/{response['job']['id']}")[1]
+    job = c('GET', f"/api/_jobs/{response['_job']['id']}")[1]
     assert job['state'] == 'succeeded' and 'payload' not in job and 'actor' not in job
 
 

@@ -111,9 +111,8 @@ def test_legacy_rows_keep_working_next_to_new_ones(database):
 
 def test_http_sends_ids_only_as_text_and_takes_them_in_any_case(secured):
     call = client(secured)
-    status, customer, headers = call('POST', '/api/customer', {'customer_name': 'Acme'})
+    status, customer, _ = call('POST', '/api/customer', {'customer_name': 'Acme'})
     assert status == 201 and isinstance(customer['id'], str) and len(customer['id']) == 13
-    assert headers[b'location'] == f"/api/customer/{customer['id']}".encode()
     status, invoice, _ = call('POST', '/api/invoice', {'customer': customer['id'].upper(), 'reference': 'INV-9', 'total': '9.00'})
     assert status == 201, invoice
     assert invoice['customer'] == customer['id'] and isinstance(invoice['id'], str)

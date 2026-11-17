@@ -8,7 +8,7 @@ from urllib.parse import urlencode
 
 import pytest
 
-from evlet import Action, Application, ChildTable, Database, LocalAuth, Policy, Rule, ValidationError
+from evlet import Application, ChildTable, Database, LocalAuth, Policy, Rule, ValidationError
 from evlet.auth import password_hash
 from examples.playground.app import create_app
 from examples.playground.models import Customer, Invoice, Project, ProjectTask, registry
@@ -214,8 +214,9 @@ def test_model_field_row_rules_apply_to_list_count_search_detail_writes_and_link
         assert c('GET', '/api/customer?' + urlencode(query))[0] == 403
     assert c('GET', f'/api/invoice/{invoice.id}')[1]['customer'] is None
     assert c('POST', '/api/invoice', {'customer': str(hidden.id), 'reference': 'Forbidden', 'total': '1.00'})[0] == 404
-    assert c('PATCH', f'/api/customer/{visible.id}', {'notes': 'override'})[0] == 403
-    assert c('PATCH', f'/api/customer/{visible.id}', {'active': False})[0] == 404
+    etag = {b'if-match': c('GET', f'/api/customer/{visible.id}')[2][b'etag']}
+    assert c('PATCH', f'/api/customer/{visible.id}', {'notes': 'override'}, headers=etag)[0] == 403
+    assert c('PATCH', f'/api/customer/{visible.id}', {'active': False}, headers=etag)[0] == 404
     assert db.get(Customer, visible.id).active is True
     assert c('POST', '/api/customer', {'customer_name': 'Outside scope', 'active': False})[0] == 404
     assert db.count(Customer) == 2
@@ -253,19 +254,6 @@ def test_atomic_children_ownership_replacement_and_action_workflow(secured):
     assert c('DELETE', path)[0] == 409 and secured.database.count(ProjectTask, filters={'project': pid}) == len(tasks)
 
 
-def test_action_transaction_rolls_back_all_writes(secured):
-    def fail(tx, user, project):
-        tx.update(Project, project.id, progress=99)
-        tx.create(ProjectTask, project=project.id, title='Will roll back')
-        raise ValidationError({'_form': 'Rejected'})
-    secured.business.actions[Project, 'fail'] = Action(Project, 'fail', 'Fail', fail)
-    project = secured.database.create(Project, title='Atomic')
-    c = client(secured)
-    assert c('POST', f'/api/project/{project.id}/actions/fail')[0] == 422
-    assert secured.database.get(Project, project.id).progress == 0
-    assert secured.database.count(ProjectTask) == 0
-
-
 def test_private_attachment_authorization_download_cleanup_and_bounds(secured):
     c = client(secured)
     project = c('POST', '/api/project', {'title': 'Files'})[1]
@@ -295,8 +283,6 @@ def test_private_attachment_authorization_download_cleanup_and_bounds(secured):
 def test_rule_configuration_and_layout_validation(secured):
     with pytest.raises(ValueError):
         Policy(registry, rules={('editor', Customer): Rule(read_fields=('missing',))})
-    with pytest.raises(ValueError):
-        Application(secured.database, actions=(Action(Project, 'a', 'A', lambda *args: None),))
     with pytest.raises(ValueError):
         LocalAuth(secured.database, origins=['http://example.test'], secure_cookies=False)
 

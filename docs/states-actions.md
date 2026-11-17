@@ -491,8 +491,7 @@ Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.u
   with 409. Downloads still work.
 * A role that cannot read the State field gets `This record is locked` (and `This record is
   locked and cannot be deleted`) without the state's name.
-* Raw database writes (`Session.create` and `Session.update`, including legacy `Action`
-  handlers) may create a record in the default state and may send the saved state back, but
+* Raw database writes (`Session.create` and `Session.update`) may create a record in the default state and may send the saved state back, but
   any other State change raises an error unless it runs inside `tx.maintenance()` for an
   audited repair. Use `context.move()` or a model action instead.
 
@@ -580,10 +579,6 @@ def record_payment(self, amount): ...
   ([jobs-realtime.md](jobs-realtime.md#queue-a-job-from-an-action)).
 * `POST /api/{model}/{id}/actions/{name}` takes the inputs as its JSON body and requires
   `If-Match`. `context.action(Model, id, "name", **inputs)` does the same from Python.
-* Actions registered with `Action(...)` on `Application` keep working unchanged. They run
-  as trusted code with the transaction and are not limited by a State lock, but they cannot
-  change the State itself outside `tx.maintenance()`. To change the State and write other
-  rows in one transaction, declare a rule and a `@state` hook that uses `self.context.session`.
 * An action changes Table rows through the draft: `self.lines[0].qty = 3` edits a row, and
   assigning a list replaces the rows, so `self.lines = [*self.lines, {"qty": "1", "rate": "2"}]`
   adds one. Rows already in the list keep their IDs; a dict is a new row, cleaned and

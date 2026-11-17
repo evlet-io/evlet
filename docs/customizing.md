@@ -71,20 +71,21 @@ Model permissions still apply to every record request.
 
 ## Actions
 
-After adding and migrating the `done` field, replace `notes/actions/__init__.py`:
+After adding and migrating the `done` field, add an action to the model in `notes/models`:
 
 ```python
-from evlet import Action
-from ..models import NotesItem
+from evlet import action
 
-def mark_done(tx, user, record):
-    tx.update(NotesItem, record.id, done=True)
-
-actions = (Action(NotesItem, 'mark_done', 'Mark done', mark_done),)
+class NotesItem(Model):
+    ...
+    @action("Mark done")
+    def mark_done(self):
+        self.done = True
 ```
 
-The generated record screen shows the action to permitted users. The handler runs
-inside a transaction and uses its `tx` session. Raise `ValidationError` for a
+The generated record screen shows the action to permitted users. The method runs
+inside a transaction; it changes the record through `self` and other rows through
+`self.context.session`. Raise `ValidationError` for a
 business rule failure. Keep external side effects out of the database transaction
 unless you have a separate idempotency design.
 

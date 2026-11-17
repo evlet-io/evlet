@@ -36,7 +36,7 @@ def test_events_never_include_hidden_rows_fields_or_deleted_scoped_ids(secured):
     page = viewer('GET', '/api/_events?cursor=0')[1]
     assert page['items'] == [{'model': 'customer', 'id': visible['id'], 'deleted': False}]
     assert 'secret' not in json.dumps(page) and 'hidden' not in json.dumps(page)
-    c('DELETE', f"/api/customer/{visible['id']}")
+    assert c('DELETE', f"/api/customer/{visible['id']}", headers={b'if-match': c('GET', f"/api/customer/{visible['id']}")[2][b'etag']})[0] == 204
     assert viewer('GET', '/api/_events?cursor=' + page['cursor'])[1]['items'] == []
     assert c('GET', '/api/_events?cursor=' + page['cursor'])[1]['items'][0]['deleted'] is True
 
