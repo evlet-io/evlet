@@ -78,7 +78,16 @@ All API routes except session discovery, setup, and login require a session. Hea
 is public and returns no record data. Mutations require `X-Evlet-Request: 1`, and
 authenticated mutations also require `X-CSRF-Token` from session discovery or login.
 The server checks Host and Origin against its configured origins, rejects cross-site
-fetches, and does not enable CORS. This follows the
+requests (`Sec-Fetch-Site: cross-site`), and does not enable CORS. The one cross-site
+request it accepts is a top-level page load: a link to a browser page (not `/api/`, `/_/`
+or `/_dev/`) opened from another site, an email or a search result, sent as `GET` or
+`HEAD` with `Sec-Fetch-Mode: navigate` and `Sec-Fetch-Dest: document` (or no
+`Sec-Fetch-Dest`). It returns only the page shell. Frames, fetches, form posts and every
+other method stay rejected, and the page's own `/api` calls are same-origin. The
+`SameSite=Strict` session cookie doesn't come with that first page load; the page then
+asks `/api/auth/session` with it, and a page that needs a session on the server, such as
+Controls, sends the visitor to `/login?next=...`, which returns them to the page once the
+session is found or they sign in. This follows the
 [OWASP CSRF guidance](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html)
 for custom headers, session-bound tokens, and cookie protections.
 

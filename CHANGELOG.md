@@ -4,6 +4,17 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **Links from other sites open the page.** A link to an Evlet page from an email, a chat, a search
+  result or another website answered 403 `Cross-site request rejected`. A top-level page load
+  (`GET`/`HEAD`, `Sec-Fetch-Mode: navigate`, `Sec-Fetch-Dest: document`) of a browser page now gets
+  the page, and the visitor signs in there if their session cookie didn't come with the link. `/api/`,
+  frames, fetches and every write stay rejected cross-site
+  ([docs/business-capabilities.md](docs/business-capabilities.md)).
+
 ## 0.4.11 (17-11-2026)
 
 ### Upgrading to 0.4.11

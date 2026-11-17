@@ -37,6 +37,49 @@ PATHS = (
 )
 
 
+# A link on another site, an email or a search result: the browser's top-level navigation headers.
+LINK = {b'sec-fetch-site': b'cross-site', b'sec-fetch-mode': b'navigate', b'sec-fetch-dest': b'document', b'x-evlet-request': b''}
+
+
+@pytest.mark.skipif(not (STATIC / 'index.html').is_file(), reason='Build browser assets before checking static serving')
+def test_links_from_other_sites_open_pages(secured):
+    for path in ('/app/customer', '/app/customer/12', '/login', '/docs'):
+        status, payload, headers = http(secured, 'GET', path, headers=LINK)
+        assert status == 200 and b'<div id="evlet-app">' in payload, path
+        assert b"frame-ancestors 'none'" in headers[b'content-security-policy']
+    # Older browsers send no Sec-Fetch-Dest; HEAD is a page load without the body.
+    without_dest = {key: value for key, value in LINK.items() if key != b'sec-fetch-dest'}
+    assert http(secured, 'GET', '/app/customer', headers=without_dest)[0] == 200
+    status, payload, _ = http(secured, 'HEAD', '/app/customer', headers=LINK)
+    assert status == 200 and payload == b''
+    # The SameSite=Strict session cookie doesn't come with that navigation: pages that need a session
+    # send the visitor to sign in and back.
+    assert http(secured, 'GET', '/controls/users', headers=LINK)[2][b'location'] == b'/login?next=/controls/users'
+    assert http(secured, 'GET', '/', headers=LINK)[0] == 200
+
+
+def test_other_sites_still_cannot_read_frame_or_write(secured):
+    rejected = {'error': 'Cross-site request rejected'}
+    # Data stays behind the cross-site check, even for a navigation straight to an API path.
+    for path in ('/api/customer', '/api/auth/session', '/api/schema'):
+        assert http(secured, 'GET', path, headers=LINK)[:2] == (403, rejected), path
+    # Frames, fetches and subresources are not top-level navigations.
+    for changed in ({b'sec-fetch-dest': b'iframe'}, {b'sec-fetch-dest': b'frame'}, {b'sec-fetch-dest': b'embed'},
+                    {b'sec-fetch-dest': b'empty', b'sec-fetch-mode': b'cors'}, {b'sec-fetch-mode': b'no-cors'},
+                    {b'sec-fetch-mode': b'nested-navigate'}, {b'sec-fetch-mode': None}):
+        headers = {key: value for key, value in {**LINK, **changed}.items() if value is not None}
+        assert http(secured, 'GET', '/app/customer', headers=headers)[:2] == (403, rejected), changed
+    # Writes are refused whatever their navigation headers say, a cross-site form post included.
+    for method, path in (('POST', '/app/customer'), ('POST', '/api/auth/login'), ('POST', '/api/customer'), ('PUT', '/app/customer'),
+                         ('DELETE', '/api/customer/12')):
+        status, payload, _ = http(secured, method, path, {'username': 'admin'}, headers={**LINK, b'x-evlet-request': b'1'})
+        assert (status, payload) == (403, rejected), (method, path)
+    # The other checks still apply to links: an unknown host or a repeated navigation header is refused.
+    assert http(secured, 'GET', '/app/customer', headers={**LINK, b'host': b'evil.example'})[0] == 403
+    status, _, _ = http(secured, 'GET', '/app/customer', headers={**LINK, b'Sec-Fetch-Dest': b'iframe'})
+    assert status == 403
+
+
 @pytest.mark.skipif(not (STATIC / 'index.html').is_file(), reason='Build browser assets before checking static serving')
 def test_without_routes_py_every_browser_path_is_served_as_before(secured):
     secured.business.forms.reports['tickets'] = object()
