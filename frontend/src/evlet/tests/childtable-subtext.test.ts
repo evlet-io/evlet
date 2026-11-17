@@ -2,7 +2,7 @@
 // as a small subtext line under a Table row's cell and as the help under a form field. It follows the values with no
 // request, and reads empty while a named value is empty. Plain help text stays out of the cells.
 import { afterEach, describe, expect, it } from 'vitest';
-import { cell } from '../reactive';
+import { cell, effect, scope } from '../reactive';
 import { ChildTable } from '../ui/childtable';
 import { BaseField, helpParts, helpTextOf, type LinkSource } from '../ui/fields';
 import { RecordStore } from '../model/record';
@@ -61,6 +61,19 @@ describe('a Table cell subtext', () => {
     expect(first.textContent).toBe('per Piece for Autumn');
     // The value still reads above it, in the same cell.
     expect(first.closest('td')!.querySelector('.g-cv-v')!.textContent).toContain('4.00');
+  });
+
+  it('re-runs only when a field it names changes', async () => {
+    const store = await order();
+    const row = store.table('lines').rows.peek()[0], help = helpTextOf(row.field('rate'));
+    let runs = 0;
+    const dispose = scope(() => effect(() => { help(); runs += 1; }));
+    row.field('qty').set('7');
+    row.field('rate').set('5.00');
+    expect(runs).toBe(1);
+    row.field('uom').set('piece');
+    expect(runs).toBe(2);
+    dispose();
   });
 
   it('leaves plain help text out of the cells', async () => {

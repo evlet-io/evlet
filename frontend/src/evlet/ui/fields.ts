@@ -306,16 +306,20 @@ export function helpParts(text: string): (string | { ref: string })[] {
   return parts;
 }
 
+const parsedHelp = new WeakMap<FieldSchema, (string | { ref: string })[]>();
+
 /**
  * A field's help text as it reads now: each {field} filled in with that field's value as the record shows it (a
  * choice's label, a Link's title, a number at its scale) and {parent.field} with a value of the record that owns the
- * row. Follows the values as they change, with no request. Empty while a named value is empty or unknown, so
+ * row. Reads only the fields it names, so it re-runs when one of those changes and for no other edit, with no request. Empty while a named value is empty or unknown, so
  * "per {uom}" never reads "per ". Plain help text reads as it is.
  */
 export function helpTextOf(field: FieldLike, links: LinkSource | null = defaultLinks): () => string {
   const text = field.meta.help_text ?? '';
   if (!field.meta.help_fields?.length) return () => text.replace(/\{\{/g, '{').replace(/\}\}/g, '}');
-  const parts = helpParts(text), row = field instanceof Field ? field.row : null;
+  // Parsed once per field schema, so every row of a table shares one template.
+  const parts = parsedHelp.get(field.meta) ?? parsedHelp.set(field.meta, helpParts(text)).get(field.meta)!;
+  const row = field instanceof Field ? field.row : null;
   const source = (ref: string): Field | undefined => ref.startsWith('parent.') ? row?.parent?.fields.get(ref.slice(7)) : row?.fields.get(ref);
   const shown = (target: Field): string => {
     const value = target.value.get();
