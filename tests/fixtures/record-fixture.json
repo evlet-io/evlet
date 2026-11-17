@@ -67,7 +67,13 @@
       }
     ],
     "_locked": false,
-    "_actions": [],
+    "_actions": [
+      {
+        "name": "plan",
+        "label": "Plan project",
+        "allowed": true
+      }
+    ],
     "_activity": {
       "count": 1,
       "open_follow_ups": 0

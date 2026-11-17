@@ -163,6 +163,12 @@ class Project(Model):
     brief = RichText(label='Brief', help_text='Goals, scope and links, with formatting.')
     notes = LongText()
 
+    @action('Plan project', available_when=F('docstate') == 'planned')
+    def plan(self):
+        """Opens Plan a project (examples/playground/prompts.py); the prompt's submit() writes."""
+        from .prompts import PlanProject
+        return PlanProject
+
     @state('done')
     def complete(self):
         """Completing needs every task done. It reads them in the move's own transaction."""

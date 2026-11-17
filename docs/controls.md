@@ -104,7 +104,7 @@ message and changes nothing, so rename that account first.
   sessions and personal preferences work as for anyone. Sign-in lockout applies too;
   `evlet users set-password` and `evlet users reset-two-step` recover it.
 - **Unlimited control.** It passes every role check: every model, row and field whatever the
-  admin rules in the app files say, every action, move, report, print design and slip, and every
+  admin rules in the app files say, every action, move, prompt, report and print design, and every
   Controls page. It does not skip data rules: validation, read-only fields, state rules, period
   locks, foreign keys and transactions apply, its requests go through the normal authenticated
   routes and the audit log names it. API keys it creates still narrow it, and the Controls
@@ -590,7 +590,7 @@ The override of a declared or automatic workspace:
    {"key": "deals", "label": "Pipeline", "items": [
      {"key": "model:deal:large_deals", "label": "Big deals"},
      {"key": "model:client"},
-     {"key": "slip:quick_deal", "hidden": true},
+     {"key": "api:sales.quick_deal", "hidden": true},
      {"shortcut": {"model": "deal", "filters": {"docstate": "won"}, "label": "Won deals"}}]},
    {"key": "reports", "hidden": true},
    {"key": "later", "label": "Later", "items": [{"shortcut": {"url": "/docs", "label": "Docs"}}]}]}
@@ -603,7 +603,7 @@ The override of a declared or automatic workspace:
   group moves there. `hidden` hides a group or an item, `label` renames it.
 - `{"key": ...}` names a declared item by its key; for an automatic workspace, any `model:<name>` or
   `report:<name>` of its app. `{"shortcut": {...}}` adds one with the arguments of `Shortcut`
-  (`model`, `view`, `filters`, `label`, `report`, `slip`, `url`), checked exactly like a declared
+  (`model`, `view`, `filters`, `label`, `report`, `api`, `url`), checked exactly like a declared
   one. Its key must not be one the workspace already has.
 - A new workspace is `{"custom": true, "label": ..., "icon": ..., "groups": [...]}` under a new key
   (lowercase letters, digits and underscores). It holds shortcuts only and lists after the declared
@@ -611,7 +611,7 @@ The override of a declared or automatic workspace:
 - Sending `{}` for a declared workspace resets it.
 
 Permission filtering runs after the override, so an override never widens access: a shortcut to a
-model, report or slip a role can't use, or with filters on a field it can't read, stays hidden for
+model, report or endpoint a role can't use, or with filters on a field it can't read, stays hidden for
 that role, and groups and workspaces left empty are hidden. A saved override that no longer
 validates after an app update is left out (the workspace shows as declared) and listed in `problems`
 and under Needs attention until it is fixed or reset.

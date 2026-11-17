@@ -20,7 +20,7 @@ import { RecentsButton } from './recents';
 import { rememberAppPage } from './last-page';
 import { rootModels } from './meta';
 import { activeShortcut, chosenWorkspace, homeWorkspace, modelCounts, workspaceNav, workspacesVersion, type NavSection, type NavShortcut, type Workspace } from './workspaces';
-import { presentSlip } from './slips';
+import { openService } from './prompts';
 import { customizeAccess, openWorkspaceEditor } from './workspace-editor';
 import { openExplorer } from './explorer';
 import { SHELL_ICONS } from './nav-icons';
@@ -96,8 +96,8 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
     const active = () => here.get()?.item.key === item.key && here.get()?.workspace.key === current.get()?.key;
     // The kind's icon (app/nav-icons.ts), small and muted, in place of a dot; blue on the active row.
     const inside = [Icon(item.icon, { size: 'sm', className: 'nav-ic' }), html`<span class="lbl">${item.label}</span>`, countOf(item)];
-    // A menu slip opens over the page; an http(s) address opens in a new tab.
-    const link = (item.slip ? html`<button type="button" class="nav-item nav-sc" data-kind=${item.kind} on:click=${() => void presentSlip(item.slip!)}>${inside}</button>`
+    // An endpoint's prompt opens over the page; an http(s) address opens in a new tab.
+    const link = (item.api ? html`<button type="button" class="nav-item nav-sc" data-kind=${item.kind} on:click=${() => void openService(item.api!)}>${inside}</button>`
       : item.external ? html`<a class="nav-item nav-sc" data-kind=${item.kind} href=${item.href} target="_blank" rel="noopener external">${inside}</a>`
       : html`<a class="nav-item nav-sc" data-kind=${item.kind} class:active=${active} aria-current=${() => active() ? 'page' : null} href=${item.href}>${inside}</a>`) as HTMLElement;
     tooltip(link, () => collapsed.get() ? item.label : null, 'right');
@@ -140,7 +140,7 @@ export function Shell(ctx: AppContext, view: () => Child): HTMLElement {
   // left-aligned, with one row per workspace (the current one checked), then Customize for people with access.
   const pickWorkspace = (workspace: Workspace) => {
     // The workspace is chosen once its first page is open: until then the old page would pick its own workspace back.
-    const first = workspace.sections.flatMap(entry => entry.items).find(item => item.href && !item.slip && !item.external);
+    const first = workspace.sections.flatMap(entry => entry.items).find(item => item.href && !item.api && !item.external);
     if (first) void router.navigate(first.href).then(opened => { if (opened) chosen.set(workspace.key); });
     else chosen.set(workspace.key);
   };

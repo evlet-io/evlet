@@ -134,8 +134,9 @@ def test_read_only_connector_and_viewer_cannot_dispatch_mutations(live_connector
     result = invoke(reader, 'create_record', {'model': 'customer', 'values': {'customer_name': 'Blocked'}})['result']
     assert result['isError'] and result['structuredContent']['status'] == 403
     viewer = MCPServer(signed(live_connector, role='viewer'), allow_writes=True); initialize(viewer)
-    # call_service is offered for the Playground's read-only service; each service keeps its own permission.
-    assert all(tool['annotations']['readOnlyHint'] or tool['name'] == 'call_service' for tool in viewer.available())
+    # call_service is offered for the Playground's read-only service, and answer_prompt for what services return;
+    # each keeps its own permission.
+    assert all(tool['annotations']['readOnlyHint'] or tool['name'] in ('call_service', 'answer_prompt') for tool in viewer.available())
     result = invoke(viewer, 'create_record', {'model': 'customer', 'values': {'customer_name': 'Blocked'}})['result']
     assert result['isError'] and result['structuredContent']['status'] == 403
     for value in ('../auth/users', 'customer/1', '_jobs', 'project?limit=100', 'project%2F1'):

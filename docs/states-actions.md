@@ -272,7 +272,7 @@ replaces a base's hook by defining a method of the same name. Each is a method t
 
 | Hook | Runs | `self` |
 | --- | --- | --- |
-| `@validate` | every save (create, update, move) and every draft preview, on documents, `Table` rows and forms (Dialog, Slip, Report filters) | read only; assigning raises |
+| `@validate` | every save (create, update, move) and every draft preview, on documents, `Table` rows and forms (Prompt, Report filters) | read only; assigning raises |
 | `@state("a", "b")` | when a move enters one of the states | the draft; `self.context.session` is open |
 | `@state.exit("a")` | when a move leaves one of the states | the draft; `self.context.session` is open |
 | `@release` | on every move into the released set: from a step that is not `release=True` to one that is ([Releases](#releases-and-versions)) | the draft, with `self.release.number` and `self.release.previous`; the session is open |
@@ -442,7 +442,7 @@ Versioned content is what a version hashes: every stored field and row except th
 ## Ordinary writes and locks
 
 Ordinary writes are HTTP create, update and delete, `Context.create`, `Context.update`,
-`Context.delete`, and dialogs and services that write through `Context`.
+`Context.delete`, bound records' `save()` and `delete()`, and prompts and services that write through `Context`.
 
 * Create may leave the State out or send its default. Any other value is a field error:
   `A new record starts as draft; use its rules to change it`.
@@ -588,8 +588,9 @@ def record_payment(self, amount): ...
   assigning a list replaces the rows, so `self.lines = [*self.lines, {"qty": "1", "rate": "2"}]`
   adds one. Rows already in the list keep their IDs; a dict is a new row, cleaned and
   calculated like submitted rows; rows left out are deleted.
-* An action may return `present(SomeSlip, source=self, values={...})`. The detail carries it as
-  `_outcome`, and the record view presents that slip next. See [slips.md](slips.md).
+* An action may return a `Prompt` (the form it opens) or an `Outcome`. The answer carries it as
+  `_outcome`; an action that returns a prompt writes nothing, and the prompt's `submit()` writes. In Python,
+  `context.get(...)` returns a bound record whose actions and rules are methods. See [prompts.md](prompts.md).
 * A hook or action that raises something other than a validation error rolls everything back
   and answers 500 `Internal server error`, without its message.
 

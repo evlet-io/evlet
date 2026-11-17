@@ -135,6 +135,12 @@ TOOLS = (
     Tool('run_action', 'Execute one registered permitted action on a record. It may modify records or enqueue work.',
          {'model': MODEL, 'id': RECORD, 'action': MODEL}, ('model', 'id', 'action'), kind='write', group='action', label='Running {action} on {model} {id}',
          content=True),
+    Tool('answer_prompt', "Fill in and submit the form (a prompt) that run_action or call_service returned under prompt, by its "
+         "ticket: values by field name, Table rows under children with each row's _key. step=check asks what the server "
+         'decides (calculations, errors) without submitting. A ticket is used once.',
+         {'ticket': {'type': 'string', 'pattern': '^[A-Za-z0-9_-]{8,64}$'}, 'values': {'type': 'object'},
+          'step': {'type': 'string', 'enum': ['check', 'submit']}},
+         ('ticket',), kind='write', group='action', label='Answering a form', content=True),
     Tool('call_service', 'Call a business service from list_services with its arguments.',
          {'service': {'type': 'string', 'pattern': '^[A-Za-z][A-Za-z0-9_.]{0,200}$'}, 'arguments': {'type': 'object'}}, ('service',),
          kind='write', group='action', label='Running {service}', content=True),
@@ -323,8 +329,7 @@ class Tools:
         writes = writes and (access is None or access.write)
         schema = self.business.schema(user)
         operations = {name for entry in schema['models'] for name, allowed in entry['permissions'].items() if allowed}
-        # Dialogs are listed with actions in the schema, but they are forms, not tool calls.
-        actions = any(not action.get('dialog') for entry in schema['models'] for action in entry.get('actions') or ())
+        actions = any(entry.get('actions') for entry in schema['models'])
         # A State with rules, on a model this role may change.
         states = any((entry.get('state') or {}).get('rules') and entry['permissions'].get('update') for entry in schema['models'])
         files = any(entry.get('attachments') for entry in schema['models'])
@@ -342,7 +347,8 @@ class Tools:
                 continue
             if tool.name in ('create_record', 'update_record', 'delete_record') and tool.name.split('_')[0] not in operations:
                 continue
-            if tool.name == 'run_action' and not actions or tool.name == 'change_state' and not states:
+            if tool.name == 'run_action' and not actions or tool.name == 'change_state' and not states \
+                    or tool.name == 'answer_prompt' and not (actions or services):
                 continue
             if tool.name in ('list_files', 'read_file') and not files or tool.name == 'record_history' and not activities:
                 continue
@@ -507,6 +513,13 @@ class Tools:
                 raise ConnectorError(404, 'Service not found')
             return self.approved(user, origin, tool, values, run_id, client, {'service': endpoint.name, 'arguments': values.get('arguments', {})},
                                  lambda: self.call_service(request, endpoint, values.get('arguments', {})))
+        if name == 'answer_prompt':
+            # The prompt's own routes check the ticket, its user and the presenting action again.
+            route, body = f"/api/_prompts/{values['ticket']}/", {'values': values.get('values', {})}
+            if values.get('step') == 'check':
+                return request('POST', route + 'check', body)[0]
+            return self.approved(user, origin, tool, values, run_id, client, {'form': values['ticket'][:8], 'values': body['values']},
+                                 lambda: request('POST', route + 'submit', body)[0])
         path = '/api/' + values['model']
         if name == 'list_records':
             query = {key: values[key] for key in ('limit', 'offset', 'order_by') if key in values}
@@ -692,7 +705,7 @@ class Tools:
             return
         entry = self.model_entry(user, values['model'])
         if tool.name == 'run_action':
-            allowed = any(action['name'] == values['action'] and not action.get('dialog') for action in entry.get('actions') or ())
+            allowed = any(action['name'] == values['action'] for action in entry.get('actions') or ())
         elif tool.name == 'change_state':
             # The record's _moves say which moves this role has now, and why one is blocked.
             move = next((item for item in (record or {}).get('_moves') or () if item['key'] == values['rule']), None)

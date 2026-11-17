@@ -216,9 +216,8 @@ Three Boolean expressions describe when an editable field applies, is required, 
 locked. They are the way forward; the legacy strings `visible_if`, `required_if` and
 `read_only_if` keep working for legacy documents.
 
-Slips, report filters and dialogs do not run finite expressions yet. Declaring `F(...)` in a
-`compute`, `initial` or rule on one of them is refused when the class is defined, with a message
-that names the field; use the string rules there for now.
+Prompts and report filters run finite expressions too: a form without storage gets its plan when it is
+first used, and the browser calculates a prompt with it as it does a record ([prompts.md](prompts.md)).
 
 ```python
 class Deal(Model):
@@ -460,7 +459,7 @@ rows, plus one per Link target model for permission checks, whatever the row cou
 
 All ordinary writes settle the document in the existing transaction:
 
-* Routes, `@action`, dialogs and services write through `Context`, which loads the whole
+* Routes, `@action`, prompts and services write through `Context`, which loads the whole
   tree, merges permitted source changes, settles, validates and persists parent before
   child. Any failure rolls back everything.
 * Nested rows use the same `children` envelope at every depth, as full lists or change sets
@@ -491,7 +490,7 @@ calculations read, but not `initial`, `required_when` or `locked_when`, which ne
 a saved result. Adding an unrelated field or changing a default, label or text
 limit does not change it. Writing a document saved under other formulas is a 409
 `SCHEMA_VERSION_MISMATCH` until the client resubmits with
-`"_calculation": {"model_schema_hash": <active>, "recalculate": true}`. Actions, dialogs
+`"_calculation": {"model_schema_hash": <active>, "recalculate": true}`. Actions, prompts
 and services that write such a document get the same 409; recalculate it through the
 route first. Formula changes never backfill stored totals on their own; use the `Recompute`
 migration operation ([model-engine.md](model-engine.md#recalculating-stored-values)) to

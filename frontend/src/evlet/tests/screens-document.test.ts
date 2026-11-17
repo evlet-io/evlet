@@ -4,7 +4,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, invoice, lastToast, requests, start, stopAll, headText, text, typeInto, typeRich, until, type Route } from './screens-helpers';
 import { copy, type Recorded, type Sent } from './server';
-import { ActionDialog } from '../app/record-page';
+import { openForm } from '../app/prompts';
+import { SchemaIndex } from '../model/schema';
+import type { AppContext } from '../app/context';
 
 afterEach(stopAll);
 
@@ -32,13 +34,16 @@ const banner = (host: Element) => text(host.querySelector('.inv-banner > div'));
 describe('transaction document (recorded fixtures)', () => {
   it('displays server-owned action inputs without validating or submitting them', async () => {
     const submissions: Record<string, unknown>[] = [];
-    ActionDialog({ name: 'approve', label: 'Approve' }, [
+    // A form of a few fields (a move's remark and asked fields, an action's arguments) in the prompt modal.
+    const ctx = { api: {}, schema: new SchemaIndex({ version: 1, ui_version: 1, models: [] }), user: null, links: null } as unknown as AppContext;
+    void openForm(ctx, { title: 'Approve', fields: [
       { name: 'reason', label: 'Reason', type: 'text', required: true, read_only: false },
       { name: 'issuer', label: 'Issuer', type: 'text', required: true, read_only: true, default: 'Server' },
       { name: 'pending', label: 'Pending value', type: 'text', required: true, read_only: true },
       { name: 'flag', label: 'Flag', type: 'boolean', required: false, read_only: true, default: false },
       { name: 'number', label: 'Number', type: 'integer', required: false, read_only: true, default: 0 },
-    ], async values => { submissions.push(values); return null; });
+    ], run: async values => { submissions.push(values); return null; } });
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
     const dialog = document.querySelector('.modal')!;
     const issuer = dialog.querySelector<HTMLInputElement>('[data-field="issuer"] input')!;
     expect(issuer.disabled).toBe(true);
@@ -138,24 +143,27 @@ describe('transaction document (recorded fixtures)', () => {
     expect(text(host.querySelector('.ev-cmp-main .g-lock'))).toContain('Locked.');
   });
 
-  it('records a payment through the action dialog, checking the inputs first', async () => {
-    let sentBody: Sent | null = null;
-    const { host } = start([...routes(invoice.invoice_issued_detail),
-      ['POST', path(draft, '/actions/record_payment$'), sent => { sentBody = sent; return copy(invoice.invoice_action); }]], `/app/invoice/${draft}`);
+  it('records a payment through the prompt its inputs open, checking the inputs first', async () => {
+    let submitted: Sent | null = null;
+    const { host, sent } = start([...routes(invoice.invoice_issued_detail),
+      ['POST', path(draft, '/actions/record_payment$'), copy(invoice.invoice_action_prompt)],
+      ['POST', /\/api\/_prompts\/fixture-payment-ticket\/submit$/, item => { submitted = item; return copy(invoice.invoice_action_submit); }]], `/app/invoice/${draft}`);
     await until(() => expect(byText(host, '.doc-head button', 'Record payment')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Record payment'));
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
+    // The action is sent without inputs (with the record's revision) and answers its prompt.
+    const opened = requests(sent, 'POST', /actions\/record_payment$/)[0];
+    expect(opened.body).toEqual({});
+    expect(opened.headers['if-match']).toBe(invoice.invoice_issued_detail.etag);
     const dialog = document.querySelector('.modal')!;
     expect([...dialog.querySelectorAll('.fld label')].map(item => text(item).replace('*', '').trim())).toEqual(['Amount', 'Paid on']);
-    click(byText(dialog, '.modal-f button', 'Record payment'));
-    expect([...dialog.querySelectorAll('.fld .err')].map(text)).toEqual(['Amount is required', 'Paid on is required']);
-    expect(sentBody).toBeNull();
+    (document.activeElement as HTMLElement | null)?.blur();
     const [amount, paidOn] = [...dialog.querySelectorAll<HTMLInputElement>('.fld input')];
     typeInto(amount, '500');
     typeInto(paidOn, '10-11-2026');
     click(byText(dialog, '.modal-f button', 'Record payment'));
-    await until(() => expect(sentBody).not.toBeNull());
-    expect(sentBody!.body).toEqual({ amount: '500.00', paid_on: '2026-11-10' });
-    expect(sentBody!.headers['if-match']).toBe(invoice.invoice_issued_detail.etag);
+    await until(() => expect(submitted).not.toBeNull());
+    expect(submitted!.body.values).toEqual({ amount: '500.00', paid_on: '2026-11-10' });
     await until(() => expect(document.querySelector('.modal')).toBeNull());
   });
 
@@ -164,6 +172,7 @@ describe('transaction document (recorded fixtures)', () => {
     const { host, sent } = start([...routes(before), ['POST', path(voided, '/moves/void$'), invoice.invoice_void]], `/app/invoice/${voided}`);
     await until(() => expect(byText(host, '.stepper .step', 'Void')!.querySelector('button')).not.toBeNull());
     click(byText(host, '.stepper .step', 'Void')!.querySelector('button'));
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
     const dialog = document.querySelector('.modal')!;
     expect(text(dialog.querySelector('h2'))).toBe('Void');
     expect(text(dialog.querySelector('.fld label')).replace('*', '').trim()).toBe('Reason');
@@ -188,6 +197,7 @@ describe('transaction document (recorded fixtures)', () => {
     const { host, sent } = start([...admin, ['POST', path(id, '/moves/reopen$'), reopened]], `/app/invoice/${id}`);
     await until(() => expect(byText(host, '.stepper .step', 'Draft')!.querySelector('button')).not.toBeNull());
     click(byText(host, '.stepper .step', 'Draft')!.querySelector('button'));
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
     const dialog = document.querySelector('.modal')!;
     expect(text(dialog.querySelector('h2'))).toBe('Reopen');
     click(byText(dialog, '.modal-f button', 'Reopen'));

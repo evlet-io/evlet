@@ -96,8 +96,8 @@ points upward; every module must be in the map.
 | 1 | `core` | Pure definitions | adapter, qb, identity, fields, models, declarations, expressions, calc, reactivity, currencies, richtext, naming, indexes, query, audit, sections, periods |
 | 2 | `access` | Who may do what | auth, permissions |
 | 3 | `data` | SQL, files, migrations | database, sqlite, migrations, ledger, writes, storage, object_storage, secrets, sequences, images |
-| 4 | `engine` | Document behaviour | documents, statemanager, guards, activity, measures, unsaved, mentions, meaning |
-| 5 | `web` | HTTP application and routes | app, runtime, routing, business, forms, slips, workspaces, services, events, jobs, framework, devlink, discovery |
+| 4 | `engine` | Document behaviour | documents, statemanager, guards, activity, measures, unsaved, mentions, meaning, prompts |
+| 5 | `web` | HTTP application and routes | app, runtime, routing, business, forms, workspaces, services, events, jobs, framework, devlink, discovery |
 | 6 | `admin` | Controls and settings | controls, controls_export, controls_system, customization, settings, printing |
 | 7 | `ai` | Eva, MCP, tools | eva, tools, mcp, connector, connectors, assistants, mailboxes |
 | 8 | `site` | Sites, apps, deployment | instances, packages, builds, deployment, tenancy, serverless |

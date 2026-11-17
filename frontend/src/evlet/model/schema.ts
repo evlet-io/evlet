@@ -69,7 +69,7 @@ export interface ChildSchema { name: string; model: string; label: string; link:
 
 /** A section row in a record's children: {id, section}. It has none of the row fields. */
 export const isSectionRow = (item: Record<string, unknown>) => typeof item.section === 'string' && Object.keys(item).every(key => key === 'id' || key === 'section' || key === '_key');
-export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }>; dialog?: boolean }
+export interface ActionSchema { name: string; label: string; arguments?: Array<{ name: string; type: string; required: boolean; default?: unknown }> }
 
 /** A State (docs/states-actions.md): its steps in order and the rules between them, keyed for the move route. */
 export interface StateSchema {
@@ -153,8 +153,6 @@ export interface ModelSchema {
   child_only?: boolean;
   calculation?: CalculationSchema;
   state?: StateSchema;
-  /** Slips the role may present from a record of this model. */
-  slips?: SlipSchema[];
   /** Print designs the role may print a record of this model with, the default first. */
   prints?: PrintSchema[];
   /**
@@ -185,10 +183,8 @@ export interface RecordLayout { blocks: LayoutBlock[] }
 /** A print design (evlet.PrintDesign) the role may print with; the PDF comes from the server. */
 export interface PrintSchema { name: string; title: string; default: boolean }
 
-/** A slip (evlet.Slip) the role may present; its fields come from the slip's own routes. */
-export interface SlipSchema { name: string; label: string; hand_in_label: string }
 
-export interface AppSchema { version: number; ui_version: number; models: ModelSchema[]; /** Menu slips (menu = True), presented from browser code. */ slips?: SlipSchema[];
+export interface AppSchema { version: number; ui_version: number; models: ModelSchema[];
   /** Reports the role may run (evlet.Report), with their filters, columns and view settings. */ reports?: ReportSchema[];
   /** Present when the app has print designs; available is false without the server's print extra. */ printing?: { available: boolean };
   /** How the currency codes the site changed are shown (Controls, Currencies); other codes show as 'AED 25,200.00'. */
@@ -212,12 +208,12 @@ export interface WorkspaceSchema {
 /** A titled group of a workspace's sidebar; never empty. */
 export interface WorkspaceGroup { key: string; label: string; icon: string | null; items: WorkspaceItem[] }
 
-/** One sidebar entry. The key is stable: model:<name>[:<label or view>], report:<name>, slip:<name> or url:<label>. */
+/** One sidebar entry. The key is stable: model:<name>[:<label or view>], report:<name>, api:<endpoint> or url:<label>. */
 export type WorkspaceItem =
   | { key: string; kind: 'model'; label: string; model: string; view: 'list' | 'board';
       /** Conditions in the list address form (?f=), or null for the whole list. */ filters: unknown[] | null }
   | { key: string; kind: 'report'; label: string; report: string }
-  | { key: string; kind: 'slip'; label: string; slip: string }
+  | { key: string; kind: 'api'; label: string; api: string }
   | { key: string; kind: 'url'; label: string; url: string };
 
 /** A report column: its type, and for a link column the model its values open. */

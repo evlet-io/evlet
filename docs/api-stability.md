@@ -21,7 +21,7 @@ production ready, but the rules below hold from 0.3 on.
   migrations, permissions (`Policy`, `Rule`, `own_customer`, `SCOPES`), the state manager
   (`State` with `State.Step`, `State.Rule` and `State.Remark`, the hooks `validate`, `state`,
   `state.exit` and `release`, and `action`), form sections and record layouts (`Section`,
-  `Main`, `TableSection`, `Html`, and `Related` and `Chart` as layout blocks), slips, measures, settings, connectors,
+  `Main`, `TableSection`, `Html`, and `Related` and `Chart` as layout blocks), prompts (`Prompt`, `Outcome`), measures, settings, connectors,
   storage, jobs, routing and the application classes. Import them from `evlet`, not from the
   module that defines them. `AppDefinition(views=())` stays accepted for apps scaffolded
   before 0.4; a non-empty `views` or a `ui` registry is refused.
@@ -146,11 +146,17 @@ production ready, but the rules below hold from 0.3 on.
   `GET /api/{model}/_images/{image id}`, PNG, JPEG, GIF and WebP only, `copy=` fixed at `False`, and the
   `ValueError` for a `Meta.image` that names no Image field.
 
-- **Form focus.** `Meta.focus` on a model and the `focus` option on a `Slip`: one visible, writable,
-  stored field (not calculated, hidden, read only, a `Table` or a `Sequence`), checked with a
-  `ValueError` at registration or application start. The `focus` key on a model's `/api/schema` entry
-  (left out when unset or unreadable for the role) and on a slip surface (left out when unset). It is
-  display only ([ui.md](ui.md#where-the-cursor-starts), [slips.md](slips.md)).
+- **Form focus.** `Meta.focus` on a model or a `Prompt`: one visible, writable, stored field (not
+  calculated, hidden, read only, a `Table` or a `Sequence`), checked with a `ValueError` at registration,
+  application start or when a prompt is first shown. The `focus` key on a model's `/api/schema` entry
+  (left out when unset or unreadable for the role) and on a prompt's model (left out when unset). It is
+  display only ([ui.md](ui.md#where-the-cursor-starts), [prompts.md](prompts.md)).
+
+- **Prompts and bound records.** `Prompt` (`Meta.title`, `primary`, `layout`, `focus`, `load()`,
+  `submit()`), `Outcome(message, open=, new=, data=)`, the `_outcome` key of an action's answer
+  (`{"prompt": {...}}` with a ticket), `/api/_prompts/{ticket}/check` and `/submit`, and the bound records
+  `Context.get`, `create` and `list` return, with their action, rule, `save`, `delete`, `move`, `reload`
+  and `get` methods ([prompts.md](prompts.md)).
 
 - **Section rows.** `Table(..., sections=True)` (a boolean, `ValueError` otherwise, and when the row
   model has a field named `section` or `derive()` builds the Table); `self.lines.sections()` as
@@ -182,7 +188,7 @@ production ready, but the rules below hold from 0.3 on.
 - **Workspaces.** `Workspace`, `NavGroup` and `Shortcut` with their arguments, discovery of an app
   package's `workspaces.py`, `Application(workspaces=...)` and `AppDefinition(workspaces=...)`, the
   key scheme, and the `workspaces` entry of `/api/schema` with its item kinds (`model`, `report`,
-  `slip`, `url`) and `source` values. The report catalog's `source_kind` (`"ledger"`, `"model"` or
+  `api`, `url`) and `source` values. The report catalog's `source_kind` (`"ledger"`, `"model"` or
   null) is public too ([ui.md](ui.md#workspaces), [reports.md](reports.md)). So are the workspace
   override routes (`/api/_controls/workspaces`), their value format, the `custom` source and the
   role flag `customize_workspaces`, with their answers to people without access: 404, or 403 for

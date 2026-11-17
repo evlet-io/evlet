@@ -23,7 +23,7 @@ from .migrate import configured_database
 from .settings import ProjectPreferences, ProjectSettings
 from .prints import PRINTS, REPORTS as PRINTED_REPORTS
 from .reports import REPORTS
-from .slips import SLIPS
+from .prompts import quick_invoice
 from .workspaces import WORKSPACES
 
 portal = Frontend('portal', kind='static', dist='portal', path='/portal', title='Customer portal', auth='portal', api=('playground.portal',))
@@ -138,12 +138,13 @@ def project_overview(context, project: RecordId):
     """One project at a glance: its status, progress, budget and how many of its tasks are done."""
     record = context.get(Project, project)
     tasks = getattr(record, 'tasks', ())
-    return {'project': record.title, 'status': record.docstate, 'progress': record.progress, 'budget': getattr(record, 'budget', None),
+    return {'project': record.title, 'status': record.docstate, 'progress': record.progress, 'budget': record.get('budget'),
             'tasks': len(tasks), 'done': sum(1 for task in tasks if task.done)}
 
 
 # Business services offered to AI assistants through the Tool Engine (list_services and call_service).
-SERVICES = (Endpoint('playground.project_overview', project_overview, 'GET', (Project, 'read'), tool=True),)
+SERVICES = (Endpoint('playground.project_overview', project_overview, 'GET', (Project, 'read'), tool=True),
+            Endpoint('playground.quick_invoice', quick_invoice, 'POST', (Invoice, 'create')))
 
 
 # A placeholder image symbol for the demo: a plain coin drawn for Evlet, not any currency's real symbol.
@@ -174,7 +175,7 @@ def build_app(database, auth, *, storage=None, tenant='local', routes=None, ai=N
                                Action(Invoice, 'post', 'Post to ledger', post_invoice),
                                Action(Customer, 'award_points', 'Award 10 points', award_points),
                                Action(Customer, 'rebuild_points', 'Rebuild all points balances', queue_rebuild, roles=('admin',))),
-                      attachments=(Project,), slips=SLIPS, reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS,
+                      attachments=(Project,), reports=(*REPORTS, *PRINTED_REPORTS), apis=SERVICES, ai=ai, prints=PRINTS,
                       workspaces=WORKSPACES)
     # Settings > Projects: people who can read projects see it; editors and admins change it.
     app.business.settings.register('projects', ProjectSettings, ProjectPreferences, (Project,))

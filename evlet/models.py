@@ -137,20 +137,6 @@ def declared_hooks(cls, name, meta, fields, tables, row):
     return tuple(derives)
 
 
-def refuse_finite_expressions(name, fields, tables, prefix=''):
-    """Slips, Report filter forms and Dialogs run the string rules and have no finite plan yet, so a finite
-    expression on them (F(...) in compute, initial or a *_when rule) would be ignored or fail when the form is
-    checked. Refuse it when the form is declared, naming the field, including fields of its table rows."""
-    from .calc import uses_finite
-    for key, field in fields.items():
-        if uses_finite(field):
-            raise ValueError(f"{name}.{prefix}{key}: dialogs, reports and slips do not run finite expressions yet; "
-                             "use the string rules visible_if, required_if, read_only_if and compute='...' for now")
-    for key, table in tables.items():
-        child = table.child
-        refuse_finite_expressions(name, child.__app_fields__, child.__tables__, f'{prefix}{key}.')
-
-
 class ModelType(type):
     def __new__(mcls, name, bases, namespace):
         fields = {}
@@ -218,8 +204,6 @@ class ModelType(type):
         if getattr(cls, '__transient__', False) and any(getattr(table, 'sections', False) for table in tables.values()):
             raise ValueError(f'{name}: section rows (Table(..., sections=True)) are for Tables of saved records, '
                              'not dialogs, reports or slips')
-        if getattr(cls, '__transient__', False):
-            refuse_finite_expressions(name, fields, tables)
         cls.__sources__ = MappingProxyType(sources)
         from .declarations import State
         states = [key for key, value in fields.items() if isinstance(value, State)]
@@ -317,6 +301,9 @@ class Model(metaclass=ModelType):
         # Instance fields have no descriptor on the shared class.
         if name.startswith('x_') and name in self.__declared_fields__:
             return self._values.get(name)
+        state = type(self).__declared_fields__.get(type(self).__state__) if type(self).__state__ else None
+        if name in ('save', 'delete', 'move', 'reload') or state is not None and name in {rule.key for rule in state.rules}:
+            raise ValueError('Get the record through a context to run its actions')
         raise AttributeError(name)
 
     def __setattr__(self, name, value):
@@ -563,7 +550,17 @@ class Registry:
         return result
 
     def plan_for(self, model):
-        """The finite plan governing a model's document, or None for legacy calculation."""
+        """The finite plan governing a model's document, or None for legacy calculation. A form without storage
+        (a Prompt, Report filters) gets its plan on first use."""
+        if getattr(model, '__transient__', False):
+            forms = self.__dict__.setdefault('_form_plans', {})
+            if model not in forms:
+                from .calc import compile_plan
+                from .reactivity import graph
+                resolve_sources(self, model)
+                graph(self, model)
+                forms[model] = compile_plan(self, model)
+            return forms[model]
         return self.plans.get(self.root_of(model))
 
     def derive_split(self, model):
@@ -583,6 +580,8 @@ class Registry:
         return cache[model]
 
     def name_for(self, model):
+        if vars(model).get('__form_name__'):
+            return model.__form_name__
         name = storage_name(model)
         if self.models.get(name) is not model:
             raise ValueError("Model does not belong to this registry")

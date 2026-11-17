@@ -249,7 +249,6 @@ def describe(packages):
         'reports': [getattr(report, '__resource_id__', report.__name__) for _, definition in definitions for report in definition.reports],
         'report_definitions': [{**form_metadata(report, name), 'autorun': report.autorun, 'permissions': report.permissions,
                                 'columns': [vars(column) for column in report.columns]} for name, report in forms.reports.items()],
-        'dialogs': [{**form_metadata(dialog, name), 'source': registry.name_for(model), 'resource': getattr(model, '__resource_id__', registry.name_for(model)) + '.' + name} for (model, name), dialog in forms.dialogs.items()],
         'client': registry.ui_schema(),
         'policies': [{'role': role, 'model': registry.name_for(model), 'operations': rule.operations,
                       'read_fields': rule.read_fields, 'write_fields': rule.write_fields,

@@ -217,6 +217,10 @@ def _activity(connection):
                 value['ops'] = ['activity' if op == 'journal' else op for op in value['ops']]
                 connection.run(qb.update('evlet_overrides', value=json.dumps(value, sort_keys=True)).where(kind='perm', key=row['key']))
 
+def _prompt_tickets(connection):
+    from .prompts import ensure_tickets
+    ensure_tickets(connection)
+
 STEPS = (
     FrameworkStep('0001_startup_tables', 'Adopt the framework tables that Evlet 0.2.0 and earlier create and extend at startup.'),
     FrameworkStep('0002_tool_calls', 'Move the MCP call log into evlet_tool_calls and drop evlet_mcp_calls.', _tool_calls),
@@ -246,6 +250,8 @@ STEPS = (
     FrameworkStep('0016_activity', 'Rename the record history from journal to activity: evlet_journal and its hashed '
                   'models table, index and append-only triggers, and the journal permission operation of stored overrides.',
                   _activity),
+    FrameworkStep('0017_prompt_tickets', 'Add evlet_prompt_tickets, the single-use tickets of prompts shown over HTTP, '
+                  'and drop evlet_operations, the receipts of the removed dialogs and slips.', _prompt_tickets),
 )
 
 LEDGER = TableDefinition('evlet_framework_migrations', (

@@ -6,7 +6,7 @@ from evlet import (Action, Boolean, Child, Currency, Database, Date, Decimal, In
                    State, Table, Text, ValidationError, action, state, validate)
 from evlet.auth import AccessError, User
 from evlet.calc import F
-from evlet.forms import Dialog
+from evlet import Prompt
 from finite_fixtures import FiniteMeta
 from test_business import client
 from test_rules_types import ALL, add_user, start
@@ -84,13 +84,25 @@ class Invoice(Model):
     def hidden_check(self):
         self.remarks = 'checked'
 
-    class Rename(Dialog):
-        action = 'rename'
-        new_name = Text(required=True)
+    @action('Rename')
+    def rename(self):
+        return Rename
 
-        def submit(self, source):
-            self.context.update(Invoice, source.id, title=self.new_name)
-            return {'renamed': True}
+
+class Rename(Prompt):
+    new_name = Text(required=True)
+
+    def submit(self):
+        self.source.title = self.new_name
+        self.source.save()
+        return {'renamed': True}
+
+
+def rename(c, record_id, url, new_name):
+    """Open Rename on the invoice and submit it through its ticket."""
+    status, body, _ = c('POST', f'{url}/actions/rename', {}, headers=etag(c, url))
+    assert status == 200, body
+    return c('POST', f"/api/_prompts/{body['_outcome']['prompt']['ticket']}/submit", {'values': {'new_name': new_name}})
 
 
 MODELS = (Customer, Invoice)
@@ -312,8 +324,7 @@ def check_locked_records_refuse_ordinary_writes_at_every_depth(invoices):
             context.update(Invoice, record['id'], title='Python')
         with pytest.raises(AccessError):
             context.delete(Invoice, record['id'])
-    dialog = f"/api/_dialogs/invoice/{record['id']}/rename/submit"
-    status, body, _ = c('POST', dialog, {'key': 'rename-once', 'values': {'new_name': 'Dialog'}}, headers=etag(c, url))
+    status, body, _ = rename(c, record['id'], url, 'Prompt')
     assert status == 422 and body['fields'] == {'title': locked}
     assert c('GET', url)[1]['title'] == 'Invoice'
 
@@ -325,9 +336,8 @@ def test_locked_records_refuse_ordinary_writes_at_every_depth(invoices):
 def test_draft_records_stay_editable_and_deletable(invoices):
     app, c, customer = invoices
     record, url = new_invoice(c, customer)
-    dialog = f"/api/_dialogs/invoice/{record['id']}/rename/submit"
-    assert c('POST', dialog, {'key': 'rename-draft', 'values': {'new_name': 'Dialog'}}, headers=etag(c, url))[0] == 200
-    assert c('GET', url)[1]['title'] == 'Dialog'
+    assert rename(c, record['id'], url, 'Prompt')[0] == 200
+    assert c('GET', url)[1]['title'] == 'Prompt'
     assert c('DELETE', url, headers=etag(c, url))[0] == 204
 
 
@@ -376,7 +386,7 @@ def test_details_show_moves_and_actions_per_role_without_leaks(invoices):
     assert {item['name']: item for item in admin_view['_actions']}['record_payment'] == {
         'name': 'record_payment', 'label': 'Record payment', 'allowed': False, 'reason': 'The condition for this action is not met'}
     assert {item['name']: item['allowed'] for item in admin_view['_actions']} == {
-        'record_payment': False, 'change_reference': True, 'hidden_check': True}
+        'record_payment': False, 'change_reference': True, 'hidden_check': True, 'rename': True}
     # The editor cannot read `secret`, which the Issue guard and Hidden check read: the reasons are generic.
     editor_view = editor('GET', url)[1]
     assert 'secret' not in editor_view

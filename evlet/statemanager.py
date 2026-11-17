@@ -88,6 +88,18 @@ def configure(model):
             any(set(rule.sources) & set(field.releases) and rule.to not in field.releases for rule in field.rules):
         raise ValueError(f'{model.__name__} declares @release without @release.exit; a rule leaves the released set, '
                          'so declare @release.exit to reverse what @release does')
+    if not getattr(model, '__transient__', False) and not getattr(model, '__row__', False):
+        # A bound record answers fields, actions, rules and these methods by name, so each name means one thing.
+        owners = {}
+        actions = [name for name in dir(model) if not name.startswith('_') and hasattr(getattr(model, name, None), '__action__')]
+        for kind, names in (('field', [*model.__declared_fields__, *model.__tables__]), ('action', actions),
+                            ('rule', [rule.key for rule in field.rules] if field is not None else []),
+                            ('record method', ('save', 'delete', 'move', 'reload', 'get'))):
+            for name in names:
+                if name in owners and owners[name] != kind:
+                    raise ValueError(f'{model.__name__}: the {owners[name]} {name!r} and the {kind} {name!r} share a name; '
+                                     'fields, actions, rule keys and save, delete, move, reload and get must be distinct')
+                owners[name] = kind
     if field is not None:
         for rule in field.rules:
             for name in rule.ask:

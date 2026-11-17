@@ -93,14 +93,14 @@ def test_reference_app_full_public_flow(project):
     assert order['total'] == '6.75' and order['children']['items'][0]['description'] == 'Reference item'
     source = c('GET', '/api/salesorder/' + str(order['id']))
     headers = {b'if-match': source[2][b'etag']}
-    base = '/api/_dialogs/salesorder/' + str(order['id']) + '/create_work_orders'
-    dialog = c('POST', base + '/load', {}, headers=headers)
-    assert dialog[0] == 200, dialog
-    row = dialog[1]['values']['children']['items'][0]
-    submission = {'key': 'plan-once', 'values': {'children': {'items': [{'_key': row['_key'], 'selected': True, 'qty': '2', 'bom': bom}]}}}
-    planned = c('POST', base + '/submit', submission, headers=headers)
+    opened = c('POST', '/api/salesorder/' + str(order['id']) + '/actions/create_work_orders', {}, headers=headers)
+    assert opened[0] == 200, opened
+    prompt = opened[1]['_outcome']['prompt']
+    row = prompt['values']['children']['items'][0]
+    submission = {'values': {'children': {'items': [{'_key': row['_key'], 'selected': True, 'qty': '2', 'bom': bom}]}}}
+    planned = c('POST', f"/api/_prompts/{prompt['ticket']}/submit", submission)
     assert planned[0] == 200, planned[1]
-    assert c('POST', base + '/submit', submission, headers=headers)[1] == planned[1]
+    assert c('POST', f"/api/_prompts/{prompt['ticket']}/submit", submission)[1] == planned[1]
     assert c('GET', '/api/workorder')[1]['total'] == 1
     assert c('GET', '/api/salesorder/' + str(order['id']))[2][b'etag'] == headers[b'if-match']
     # The order's key fields and its work orders, listed through the declared relation.
@@ -208,12 +208,14 @@ def test_reference_app_full_public_flow(project):
 
     # Both requests start with the same source revision and one remaining unit.
     from concurrent.futures import ThreadPoolExecutor
-    remaining_dialog = c('POST', base + '/load', {}, headers=headers)[1]
-    remaining_row = remaining_dialog['values']['children']['items'][0]
-    def plan_one(key):
-        return c('POST', base + '/submit', {'key': key, 'values': {'children': {'items': [{'_key': remaining_row['_key'], 'selected': True, 'qty': '1', 'bom': bom}]}}}, headers=headers)[0]
+    action = '/api/salesorder/' + str(order['id']) + '/actions/create_work_orders'
+    prompts = [c('POST', action, {}, headers=headers)[1]['_outcome']['prompt'] for _ in range(2)]
+    def plan_one(prompt):
+        row = prompt['values']['children']['items'][0]
+        return c('POST', f"/api/_prompts/{prompt['ticket']}/submit",
+                 {'values': {'children': {'items': [{'_key': row['_key'], 'selected': True, 'qty': '1', 'bom': bom}]}}})[0]
     with ThreadPoolExecutor(max_workers=2) as pool:
-        statuses = list(pool.map(plan_one, ['concurrent-a', 'concurrent-b']))
+        statuses = list(pool.map(plan_one, prompts))
     assert sorted(statuses) == [200, 422]
     assert c('GET', '/api/workorder')[1]['total'] == 2
 

@@ -209,6 +209,12 @@ def dispatch(business, scope, body, user):
     with business.context(user, readonly=endpoint.method == 'GET') as context:
         with trusted():
             result = endpoint.function(context, **arguments)
+        from .prompts import is_prompt, outcome_of
+        if is_prompt(result):
+            # A prompt without a record: the ticket names this endpoint, checked again on submit.
+            if endpoint.method != 'POST':
+                raise ValueError('An @api function that returns a Prompt uses POST')
+            result = outcome_of(business, context, result, origin='api:' + endpoint.name)
         encoded = json.dumps(result, allow_nan=False)
         if len(encoded.encode()) > 1024 * 1024: raise ValueError('Endpoint result exceeds 1 MiB')
     return 200, result, []

@@ -43,7 +43,7 @@ needed to create or serve Python-only apps. App-owned native TS/JS extensions
 need Node 24 when building their assets.
 
 The [declarative app guide](docs/amendment-v2.md) covers flat app packages,
-owned child tables, reactive fields, dialogs, reports, services and native additions.
+owned child tables, reactive fields, prompts, reports, services and native additions.
 [Finite calculations](docs/finite-calculations.md) describe the finite-v1 formula
 language, nested owned tables and the shared Python/browser calculation engine.
 [States, moves and model actions](docs/states-actions.md) describe document states,
@@ -70,7 +70,7 @@ For virtual environment setup and each step explained, read
   database queries, accounts, child rows, actions and private attachments.
 - [UI guide](docs/ui.md): the browser interface and its routes.
 - [Reports](docs/reports.md): filters, typed rows, totals, a chart, CSV export and print, in the browser and for Eva.
-- [Slips](docs/slips.md): forms presented from code that save nothing until handed in.
+- [Prompts](docs/prompts.md): the form an action opens, and bound records in Python.
 - [Routing](docs/routing.md): frontends, reserved paths, `routes.py` and `evlet routes`.
 - [API stability](docs/api-stability.md): the names apps can rely on, deprecations and what is internal.
 - [UI framework](docs/ui-framework.md): Evlet's own browser framework and components.

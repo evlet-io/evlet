@@ -78,7 +78,7 @@ targets, resource collisions, invalid fields/expressions, dependency cycles,
 invalid service signatures and cron expressions fail before activation.
 
 `.evlet/builds/HASH/manifest.json` is private server output. It includes resolved
-models/storage, client expression structures, policy references, dialogs,
+models/storage, client expression structures, policy references,
 reports, endpoints, schedules, native descriptors and file hashes. The build
 fingerprint includes framework/compiler identity, Python version, app sources
 and installed declared dependency versions. Source copies and native assets
@@ -227,7 +227,7 @@ route, which sets the parent link itself and ignores a client-supplied one.
 
 ## Dialogs and reports
 
-A nested `Dialog` exposes one source action without a second empty method.
+An action returns the `Prompt` it opens (`CreateWorkOrders`); its `submit()` writes.
 Implement `load(source)`, optional `@validate` checks and `submit(source)`. Fields and
 tables are transient, with no business SQL tables. `parent` in a dialog row is
 the dialog; `source` is the authorized persisted source snapshot. Load/evaluate

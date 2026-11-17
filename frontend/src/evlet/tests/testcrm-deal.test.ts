@@ -145,6 +145,7 @@ describe('testCRM: a deal and its lines', () => {
     run.skip(1);
     // Mark lost asks for the reason in a small dialog and sends it with the move.
     click(button(host, 'Mark lost'));
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
     const dialog = document.querySelector('.modal')!;
     expect(text(dialog.querySelector('h2'))).toBe('Mark lost');
     typeInto(dialog.querySelector('input')!, 'Budget moved');
@@ -178,6 +179,7 @@ describe('testCRM: a deal and its lines', () => {
     const { host } = run.start(`/app/lead/${id}`);
     await until(() => expect(button(host, 'Mark lost')).not.toBeNull());
     click(button(host, 'Mark lost'));
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
     const dialog = document.querySelector('.modal')!;
     const submit = () => click(byText(dialog, '.modal-f button', 'Mark lost'));
     // Required in the target state: checked in the dialog before anything is sent.
@@ -206,6 +208,7 @@ describe('testCRM: lead actions', () => {
     const { host } = run.start(`/app/lead/${id}`);
     await until(() => expect(button(host, 'Convert to deal')).not.toBeNull());
     click(button(host, 'Convert to deal'));
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
     const dialog = document.querySelector('.modal')!;
     const [title, close] = [...dialog.querySelectorAll<HTMLInputElement>('.fld input')];
     typeInto(title, 'Pharmacy chain ERP');
@@ -214,8 +217,10 @@ describe('testCRM: lead actions', () => {
     close.value = '15-12-2026';
     close.dispatchEvent(new Event('input', { bubbles: true }));
     click(byText(dialog, '.modal-f button', 'Convert to deal'));
-    await until(() => expect(run.writes).toHaveLength(1));
-    expect(run.writes[0].body).toEqual({ title: 'Pharmacy chain ERP', expected_close: '2026-12-15' });
+    // The action was sent without inputs and answered its prompt; the prompt's submit carries them.
+    await until(() => expect(run.writes).toHaveLength(2));
+    expect(run.writes[0].body).toEqual({});
+    expect(run.writes[1].body).toEqual({ values: { title: 'Pharmacy chain ERP', expected_close: '2026-12-15' } });
     await until(() => expect(document.querySelector('.modal')).toBeNull());
     expect(run.misses).toEqual([]);
   });

@@ -683,7 +683,7 @@ def report_context(context, report, filters):
             break
         allowed = {column.name for column in report.columns}
         for row in result['rows']:
-            values = row if isinstance(row, dict) else row.to_dict()
+            values = row if isinstance(row, dict) else row._detail if hasattr(row, '_detail') else row.to_dict()
             rows.append({column.name: python_value(types[column.type](), values.get(column.name)) for column in report.columns
                          if column.name in allowed})
         offset += len(result['rows'])

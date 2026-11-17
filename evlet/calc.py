@@ -732,7 +732,8 @@ def compile_plan(registry, root, *, force=False):
     def walk(model, path, owners, parent_model):
         if len(path) > LIMITS['table_depth']:
             raise CalcError('CALCULATION_LIMIT_EXCEEDED', f'{root.__name__}: owned tables nest deeper than {LIMITS["table_depth"]}')
-        children = {name: owned[model, name] for name in model.__tables__}
+        # A form's Tables (a Prompt's rows) are their declared Child classes; a record's are the registry's.
+        children = {name: owned.get((model, name)) or model.__tables__[name].child for name in model.__tables__}
         tables[path] = (model, parent_model, children)
         for name, child in children.items():
             walk(child, path + (name,), owners, model)

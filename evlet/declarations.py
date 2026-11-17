@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from types import MappingProxyType
 import copy
+import functools
 import inspect
 import re
 
@@ -189,9 +190,15 @@ def action(function=None, *, label=None, roles=('admin', 'editor'), inputs=None,
                       and parameter.kind in (parameter.POSITIONAL_OR_KEYWORD, parameter.KEYWORD_ONLY)}
             if needed - set(inputs) or (set(inputs) - names and not variadic):
                 raise ValueError(f'{method.__name__} must take exactly its declared inputs as keyword arguments')
-        method.__action__ = {'label': label or method.__name__.replace('_', ' ').title(), 'roles': roles,
-                             'inputs': inputs, 'available_when': available_when}
-        return method
+        @functools.wraps(method)
+        def run(self, *args, **kwargs):
+            # A record built by hand or read through a Session has no context to check the action with.
+            if not hasattr(self, '_definition'):
+                raise ValueError('Get the record through a context to run its actions')
+            return method(self, *args, **kwargs)
+        run.__action__ = {'label': label or method.__name__.replace('_', ' ').title(), 'roles': roles,
+                          'inputs': inputs, 'available_when': available_when}
+        return run
     return decorate(function) if function is not None else decorate
 
 

@@ -1,5 +1,5 @@
 // Declared workspaces (docs/ui.md, Workspaces): the sidebar maps /api/schema's `workspaces` to its sections and
-// shortcuts, with board views and filters in the list address, slips presented over the page, custom workspaces
+// shortcuts, with board views and filters in the list address, endpoint prompts opened over the page, custom workspaces
 // from the site's overrides, and the active shortcut chosen by the address. Also the Explorer's Ledger reports,
 // the navigation icons (app/nav-icons.ts) and the top bar: history beside the bell, the breadcrumb above the page title, search and the Explorer in one box.
 import { afterEach, describe, expect, it } from 'vitest';
@@ -23,7 +23,6 @@ function declared(): any {
   const schema = copy(invoice.schema);
   const reports = copy(screen.report_schema).body.reports;
   schema.body.reports = [...reports, { ...reports[0], name: 'Balances', label: 'Balances', model: null, source_kind: 'ledger', group: '' }];
-  schema.body.slips = [{ hand_in_label: 'Quick customer', label: 'Quick customer', name: 'quick_customer' }];
   const customer = schema.body.models.find((model: any) => model.name === 'customer');
   customer.fields.push({ name: 'vip', type: 'boolean', label: 'VIP', required: false, read_only: false, hidden: false, operators: ['eq', 'isnull'] });
   schema.body.workspaces = [
@@ -36,7 +35,7 @@ function declared(): any {
       { key: 'people', label: 'Customers', icon: null, items: [
         { key: 'model:customer', kind: 'model', label: 'Customers', model: 'customer', view: 'list', filters: null },
         { key: 'model:customer:vip', kind: 'model', label: 'VIP customers', model: 'customer', view: 'list', filters: [['vip', 'eq', true]] },
-        { key: 'slip:quick_customer', kind: 'slip', label: 'Quick customer', slip: 'quick_customer' },
+        { key: 'api:app.quick_customer', kind: 'api', label: 'Quick customer', api: 'app.quick_customer' },
       ] },
     ] },
     { key: 'reports', label: 'Reports', icon: 'chart-column', app: 'app', source: 'declared', groups: [
@@ -65,7 +64,7 @@ const routes = (schema = declared()): Route[] => [
 ];
 
 describe('workspaceNav from declared workspaces', () => {
-  it('maps groups and items to sections and shortcuts, with views, filters, slips and addresses', () => {
+  it('maps groups and items to sections and shortcuts, with views, filters, endpoints and addresses', () => {
     const nav = workspaceNav(declared().body as AppSchema, links);
     expect(nav.workspaces.map(workspace => [workspace.key, workspace.label, workspace.icon, workspace.source])).toEqual([
       ['billing', 'Billing', 'receipt', 'declared'], ['reports', 'Reports', 'chart-column', 'declared'], ['desk', 'My desk', 'layers', 'custom']]);
@@ -77,9 +76,9 @@ describe('workspaceNav from declared workspaces', () => {
       // An equality on the list tabs field opens that tab.
       ['model:invoice:issued', '/app/invoice?tab=issued', null],
     ]);
-    // A Boolean equality goes in ?f= as the filter rows write it back; a slip has no address.
-    expect(billing.sections[1].items.map(item => [item.label, item.href, item.slip ?? null])).toEqual([
-      ['Customers', '/app/customer', null], ['VIP customers', `/app/customer?${new URLSearchParams({ f: '[["vip","yes",null]]' })}`, null], ['Quick customer', '', 'quick_customer']]);
+    // A Boolean equality goes in ?f= as the filter rows write it back; an endpoint shortcut has no address.
+    expect(billing.sections[1].items.map(item => [item.label, item.href, item.api ?? null])).toEqual([
+      ['Customers', '/app/customer', null], ['VIP customers', `/app/customer?${new URLSearchParams({ f: '[["vip","yes",null]]' })}`, null], ['Quick customer', '', 'app.quick_customer']]);
     expect(reports.sections[0].items.map(item => [item.href, Boolean(item.external)])).toEqual([['/reports/CustomerRates', false], ['/docs', false], ['https://example.com/help', true]]);
   });
 
@@ -153,7 +152,7 @@ describe('the sidebar with declared workspaces', () => {
     click(byText(host, '.nav-sc', 'Board'));
     await until(() => expect(location.search).toBe('?view=board'));
     await until(() => expect(text(host.querySelector('.nav-sc.active .lbl'))).toBe('Board'));
-    // The slip is a button.
+    // The endpoint shortcut is a button.
     expect(byText(host, '.nav-sc', 'Quick customer')!.tagName).toBe('BUTTON');
 
     click(host.querySelector('.app-switch'));
@@ -277,11 +276,11 @@ describe('the sidebar with declared workspaces', () => {
     await until(() => expect(text(host.querySelector('.app-switch .as-text b'))).toBe('Invoices'));
   });
 
-  it('presents a menu slip from its shortcut', async () => {
+  it('opens the prompt an endpoint returns from its shortcut', async () => {
     const { host, sent } = start(routes(), '/app/customer');
     await until(() => expect(byText(host, '.nav-sc', 'Quick customer')).toBeTruthy());
     click(byText(host, '.nav-sc', 'Quick customer'));
-    await until(() => expect(requests(sent, 'POST', /\/api\/_slips\/quick_customer/).length).toBeGreaterThan(0));
+    await until(() => expect(requests(sent, 'POST', /\/api\/_services\/app\.quick_customer$/).length).toBeGreaterThan(0));
   });
 
   it('offers Customize in the switcher to people who may customize workspaces', async () => {
@@ -343,14 +342,14 @@ describe('the Explorer ledger reports', () => {
 describe('the navigation icons', () => {
   it('maps each kind to one icon of the icon set, and the shell and Explorer views too', () => {
     const kinds = Object.keys(KIND_ICONS) as ShortcutKind[];
-    expect(kinds).toEqual(['list', 'board', 'report', 'dashboard', 'slip', 'link']);
+    expect(kinds).toEqual(['list', 'board', 'report', 'dashboard', 'prompt', 'link']);
     // One icon per kind, never shared between kinds.
     expect(new Set(Object.values(KIND_ICONS)).size).toBe(kinds.length);
     for (const name of [...Object.values(KIND_ICONS), ...Object.values(SHELL_ICONS), ...Object.values(EXPLORER_ICONS)]) expect(ICONS[name], name).toBeDefined();
     expect(kindOf({ kind: 'model', view: 'list' })).toBe('list');
     expect(kindOf({ kind: 'model', view: 'board' })).toBe('board');
     expect(kindOf({ kind: 'report' })).toBe('report');
-    expect(kindOf({ kind: 'slip' })).toBe('slip');
+    expect(kindOf({ kind: 'api' })).toBe('prompt');
     expect(kindOf({ kind: 'url' })).toBe('link');
     // The editor's added shortcuts have no kind, only a spec.
     expect(kindOf({ model: 'task', view: 'board' })).toBe('board');
@@ -361,7 +360,7 @@ describe('the navigation icons', () => {
     const nav = workspaceNav(declared().body as AppSchema, links);
     const icons = nav.workspaces.slice(0, 2).map(workspace => workspace.sections.map(section => section.items.map(item => [item.kind, item.icon])));
     expect(icons).toEqual([
-      [[['list', 'list'], ['board', 'square-kanban'], ['list', 'list']], [['list', 'list'], ['list', 'list'], ['slip', 'sticky-note']]],
+      [[['list', 'list'], ['board', 'square-kanban'], ['list', 'list']], [['list', 'list'], ['list', 'list'], ['prompt', 'sticky-note']]],
       [[['report', 'chart-column'], ['link', 'link'], ['link', 'link']]],
     ]);
     // Group icons stay as declared.
@@ -372,7 +371,7 @@ describe('the navigation icons', () => {
     const { host } = start(routes(), '/app/invoice?tab=issued');
     await until(() => expect(host.querySelector('.nav-sc.active')).not.toBeNull());
     const rows = [...host.querySelectorAll<HTMLElement>('.nav-sc')];
-    expect(rows.map(row => row.getAttribute('data-kind'))).toEqual(['list', 'board', 'list', 'list', 'list', 'slip']);
+    expect(rows.map(row => row.getAttribute('data-kind'))).toEqual(['list', 'board', 'list', 'list', 'list', 'prompt']);
     for (const row of rows) {
       // The icon comes first, in place of the dot bullet.
       expect(row.firstElementChild!.classList.contains('nav-ic')).toBe(true);
@@ -405,7 +404,7 @@ describe('the navigation icons', () => {
     click(document.querySelector('.ws-pop .ws-edit'));
     await until(() => expect(document.querySelectorAll('.wse-item').length).toBe(6));
     const kinds = [...document.querySelectorAll('.wse-item .wse-kind')].map(icon => icon.innerHTML);
-    expect(kinds).toEqual(['list', 'board', 'list', 'list', 'list', 'slip'].map(kind => Icon(KIND_ICONS[kind as ShortcutKind]).innerHTML));
+    expect(kinds).toEqual(['list', 'board', 'list', 'list', 'list', 'prompt'].map(kind => Icon(KIND_ICONS[kind as ShortcutKind]).innerHTML));
     expect(document.querySelector('.wse-modal [aria-label*="icon" i]')).toBeNull();
   });
 });

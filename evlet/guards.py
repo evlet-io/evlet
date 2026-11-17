@@ -317,12 +317,17 @@ def check_guard(context, guards, guard, label, noun):
         raise AccessError(409, f'{label} is not available: {reason[0].lower()}{reason[1:]}')
 
 
-def action_arguments(context, model, method, declaration, arguments, saved):
-    """Check availability on the saved record, then validate and clean the inputs of a model action."""
-    from .documents import typed_arguments
+def action_available(context, model, method, declaration, saved):
+    """Raise 409 unless the action's available_when holds on the saved record."""
     if saved is not None:
         guard = context._business.registry.guards.get(model, {}).get(method.__name__)
         check_guard(context, Guards(context, model, saved._values, lambda: saved), guard, declaration['label'], 'action')
+
+
+def action_arguments(context, model, method, declaration, arguments, saved):
+    """Check availability on the saved record, then validate and clean the inputs of a model action."""
+    from .documents import typed_arguments
+    action_available(context, model, method, declaration, saved)
     inputs = declaration.get('inputs')
     if inputs is None:
         return typed_arguments(method, arguments or {}, skip=1)

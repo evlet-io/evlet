@@ -24,8 +24,8 @@ The previous SolidJS interface and the Vue regression harness have been removed.
   files.
 - Reports ([reports.md](reports.md)): filters, typed rows, totals, a chart, Export and Print at
   `/reports/<name>`, listed in the sidebar and in the Explorer.
-- Slips ([slips.md](slips.md)): forms presented from a record, an action, another slip or browser
-  code, checked on the server and handed in to a handler or turned into a record.
+- Prompts ([prompts.md](prompts.md)): the form an action (or an `@api` shortcut) opens, built from the
+  record engine, calculated in the browser and submitted once through a ticket.
 - Printing ([printing.md](printing.md)): Print in a record's More menu for roles that may print the
   model, when the server has the print extra. It opens a drawer with the server's PDF in the browser's
   own viewer, a choice of design, Download, and File a copy on records that keep attachments.
@@ -73,13 +73,13 @@ registry is built with a `ValueError` that names the model and the field, such a
 `/api/schema` carries it as `"focus": "customer"` on the model entry, only when it is set. Like
 `key_fields`, it is left out for a role that cannot read the field. It is display only and never a
 permission. Without it, or when this role cannot edit the field, the browser puts the cursor in the
-first editable field. Slips take the same option as `focus = "field"` ([slips.md](slips.md)).
+first editable field. Prompts take the same option as `Meta.focus` ([prompts.md](prompts.md)).
 
 ### Record title row
 
 A record opens with one title row under the breadcrumb: the model's icon on a tinted square tile (a
 person's avatar for a person model), the title, and the status badges on the title's line. On the
-right, centred on the row, are up to two outline buttons (the model's actions and slips, then Ask
+right, centred on the row, are up to two outline buttons (the model's actions, then Ask
 Eva), the main move as a solid split button, and More. The split button runs the first move this
 person may take now; its chevron lists the other moves, and with one move there is no chevron. A
 model without a State or lifecycle has no split button. Everything that does not fit, Print and the
@@ -542,7 +542,6 @@ can declare none, one or several. `/api/schema` gives each role its own view of 
 # apps/projects/workspaces.py
 from evlet import NavGroup, Shortcut, Workspace
 from .reports import SalesByCustomer
-from .slips import QuickInvoice
 
 PROJECTS = Workspace('Projects', icon='kanban', groups=(
     NavGroup('Projects', icon='kanban', items=(
@@ -552,7 +551,7 @@ PROJECTS = Workspace('Projects', icon='kanban', groups=(
     )),
     NavGroup('More', items=(
         Shortcut(report=SalesByCustomer),                            # a report
-        Shortcut(slip=QuickInvoice),                                 # a slip without a source
+        Shortcut(api='projects.quick_invoice', label='Quick invoice'),  # an @api prompt
         Shortcut(url='/reports', label='All reports'),               # an app path or http(s) address
     )),
 ))
@@ -582,15 +581,15 @@ the message names both and where each comes from (`app tasks (AppDefinition)`,
     `filters` is a filter object (`{'docstate__in': ['planned', 'active']}`) or a list of conditions,
     the forms a list request takes; it needs a `label`.
   - `Shortcut(report=SalesByCustomer)` or `Shortcut(report='SalesByCustomer')`: a registered report.
-  - `Shortcut(slip=QuickInvoice)` or `Shortcut(slip='quick_invoice')`: a registered slip without a
-    `source` (a slip with one opens from its record).
+  - `Shortcut(api='projects.quick_invoice', label='Quick invoice')`: an `@api` endpoint whose prompt
+    opens over the page ([prompts.md](prompts.md)). It needs a label.
   - `Shortcut(url='/reports', label='All reports')`: an app path starting with `/`, or an `http` or
     `https` address. `javascript:`, `data:` and every other scheme are refused. It needs a label.
-  - `label` replaces the model's plural name, the report's or the slip's title.
+  - `label` replaces the model's plural name, or the report's title.
 - `icon` is an icon name from the browser's set, such as `receipt` or `users`.
 
 **Checked when the application is built.** Each problem fails with a message that names the
-workspace, the group and the item: an unknown model, report or slip; a child table, a ledger model
+workspace, the group and the item: an unknown model, report or endpoint; a child table, a ledger model
 or a model with `Meta.api = None`; a board for a model without `Meta.board`; a view other than list
 or board; filters on unknown fields, with operators the field does not take, with values the field
 refuses or on fields of linked records (the same checks a list request makes); a URL that is not an
@@ -604,11 +603,11 @@ items with one key in a workspace.
 | Workspace | `key`, or the label as above. An automatic workspace has its app's name (`app` for an application built by hand) |
 | Group | The label in lowercase with underscores, unique in its workspace |
 | Model item | `model:<name>`; a shortcut with a label, view or filters adds `:<label>` (or `:<view>` without a label): `model:task:open_tasks`, `model:project:board` |
-| Report, slip, URL | `report:<name>`, `slip:<name>`, `url:<label>` |
+| Report, endpoint, URL | `report:<name>`, `api:<endpoint>`, `url:<label>` |
 
 **Each role sees only what it can open.** An item is left out when the role can't read the model,
 can't read the State a board follows, can't filter on a field the shortcut's filters name, can't run
-the report or can't present the slip. A group left with no items is hidden, and so is a workspace
+the report or can't call the endpoint. A group left with no items is hidden, and so is a workspace
 left with no groups. URL items always show; the page they open checks access itself.
 
 **An app that declares no workspace** gets one automatic workspace, keyed by the app's name and
@@ -626,7 +625,7 @@ those without a group first).
         "filters": [["done", "eq", false]]}]},
      {"key": "more", "label": "More", "icon": null, "items": [
        {"key": "report:SalesByCustomer", "kind": "report", "label": "Sales by customer", "report": "SalesByCustomer"},
-       {"key": "slip:quick_invoice", "kind": "slip", "label": "Quick invoice", "slip": "quick_invoice"},
+       {"key": "api:projects.quick_invoice", "kind": "api", "label": "Quick invoice", "api": "projects.quick_invoice"},
        {"key": "url:all_reports", "kind": "url", "label": "All reports", "url": "/reports"}]}]}
 ]
 ```
@@ -650,7 +649,6 @@ interface does not show them (owner decision 3 in [handoff-plan.md](internal/han
 
 | Python API | Status |
 | --- | --- |
-| The older record-bound forms (`dialog: true` actions) | Run through their existing routes. Use [slips](slips.md) for forms |
 | Account management | `/api/auth/users` routes are unchanged. `/settings/accounts` shows a notice |
 
 ## Build and run
@@ -769,8 +767,8 @@ The sidebar has three levels: workspace, section, shortcut. It starts directly w
 one) and each item a shortcut. A model item opens its list, with `view=board` for a board and its
 filters in the list address: an equality on the field of the list tabs (`Meta.list_tabs`) opens that
 tab, and the rest go in `?f=` in the form the list's filter rows write back (a Boolean equality is
-"is yes" or "is no", a Select equality is "in"). A report item opens its page, a slip item presents the
-slip over the page (`presentSlip`), and a URL item opens its address (an http(s) address in a new tab).
+"is yes" or "is no", a Select equality is "in"). A report item opens its page, an endpoint item opens the
+prompt it returns over the page (`openService`), and a URL item opens its address (an http(s) address in a new tab).
 A shortcut opens exactly what it names. A model item without a tab of its own, on a list whose default
 tab (`Meta.list_tab`) is not All, says `?tab=all`, so clicking "Projects" opens the plain list on All,
 not on the default tab. Only a shortcut that declares `view` or `filters` applies them. The list keeps
@@ -798,7 +796,7 @@ workspace named after the application), with **Documents** (models with a State 
 **Records** (the others) and **Reports** (the app's reports) sections. Both feed one shape:
 
 ```ts
-{ workspaces: [{ key, label, icon, source?, sections: [{ key, label, icon, count?, items: [{ key, label, href, kind, icon, model?, slip?, external? }] }] }] }
+{ workspaces: [{ key, label, icon, source?, sections: [{ key, label, icon, count?, items: [{ key, label, href, kind, icon, model?, api?, external? }] }] }] }
 ```
 
 ### Customizing workspaces
@@ -814,7 +812,7 @@ opens a dialog on the current workspace (a picker switches to another):
 - Each name is an input: renaming a workspace, group or item sends only names that differ from the
   declared ones. Each item shows its kind's icon; there is no icon to choose per item.
 - **Add shortcut** in a group adds a list (with List or Board and optional filters as JSON), a
-  report, a slip or an address, with an optional label (needed for an address). **Add group** adds a
+  report or an address, with an optional label (needed for an address). **Add group** adds a
   group, and **New workspace** starts a custom workspace whose key comes from its name.
 - **Save** sends the whole override with `PUT /api/_controls/workspaces/<key>`, or resets when
   nothing differs from the declared workspace. The server checks everything again; a 422 shows each
@@ -831,7 +829,7 @@ A shortcut's icon comes from what it opens, never from the item, so every list l
 app has nothing to set. `app/nav-icons.ts` is the one map; the sidebar, the collapsed sidebar, the
 workspace editor, the Explorer cards and the search palette all read it. Group and workspace icons
 stay as declared. Every name is in the browser's icon set (`ui/icon-data.ts`); where the ideal icon
-is missing, the closest one stands in (a slip uses `sticky-note`, a dashboard `activity`).
+is missing, the closest one stands in (a prompt uses `sticky-note`, a dashboard `activity`).
 
 | Kind | Icon | Used for |
 | --- | --- | --- |
@@ -839,7 +837,7 @@ is missing, the closest one stands in (a slip uses `sticky-note`, a dashboard `a
 | Board | `square-kanban` | A model's board (`view='board'`) |
 | Report | `chart-column` | A report, and Explorer report cards |
 | Dashboard | `activity` | Dashboards, when there are any |
-| Slip | `sticky-note` | A slip opened over the page |
+| Prompt | `sticky-note` | An endpoint's prompt opened over the page |
 | Link | `link` | An app path or an http(s) address |
 
 | Shell element | Icon |
@@ -1037,7 +1035,7 @@ showing why, and screen readers read them. A record page has no tabs.
 
 ### Focus on new forms
 
-A new record (the full page `/app/<model>/new` and the side panel) and a slip focus their first
+A new record (the full page `/app/<model>/new` and the side panel) and a prompt focus their first
 editable field when they open, so typing can start at once. The field is the first one in screen
 order that shows and can be edited: read-only, calculated, hidden and locked fields are skipped, and
 so are the fields of a closed row. The main zone comes first, then the sections in the order the
@@ -1051,7 +1049,7 @@ layout shows them. The rules:
   change.
 
 The choice goes through `initialFocusField(model, layout)` in `ui/autofocus.ts`. A model's
-`Meta.focus` (or a slip's `focus`) wins when that field shows and can be edited in an open section;
+`Meta.focus` (on a model or a prompt) wins when that field shows and can be edited in an open section;
 otherwise the first such field gets the focus, as above.
 
 A focused field shows a solid 1 px accent border, with no glow; a field with an error keeps its rose
@@ -1185,7 +1183,7 @@ does (⌘S and ⇧⌘D on a Mac, Ctrl+S and Ctrl+Shift+D elsewhere).
 | Keys | Where | What it does |
 |---|---|---|
 | Mod+S | Record form, new or saved | Save, as the Save (or Create) button does: the same checks, errors and jump to the first error. With nothing changed it does nothing. It works while typing in a field or the rich text editor, and never opens the browser's Save Page |
-| Mod+S | Dialog | The main action: Confirm, Save, Run, Hand in for a slip |
+| Mod+S | Dialog | The main action: Confirm, Save, Run, the primary button of a prompt |
 | Mod+Shift+D | Saved record | Delete: opens the usual confirmation. Only where the record's More menu has Delete (the role may delete, the record is not locked or posted) |
 | Mod+Shift+D | New record | Discard it and go back to the list, asking first when something was typed |
 | Mod+Shift+D | Dialog | Cancel, as Esc does |
@@ -1215,7 +1213,7 @@ does (⌘S and ⇧⌘D on a Mac, Ctrl+S and Ctrl+Shift+D elsewhere).
 - **A held key acts once.** Key repeat never saves, deletes, duplicates or opens a second record.
 - **Dialogs.** A dialog without a field (a confirm, the unsaved-changes prompt) focuses its main
   action, so Enter answers it. A dialog that asks for input (an action's inputs, a move's values, a
-  slip) focuses its first field, and Mod+S submits it. Focus stays in the dialog and goes back to
+  prompt) focuses its first field, and Mod+S submits it. Focus stays in the dialog and goes back to
   what opened it.
 - **Delete always asks.** Mod+Shift+D only opens the confirmation, with Delete focused. Deleting takes
   a second, separate key: Enter or Mod+S. An arrow key moves to Cancel.

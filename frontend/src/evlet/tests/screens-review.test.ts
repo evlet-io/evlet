@@ -193,14 +193,6 @@ describe('board totals and counts from the server', () => {
 });
 
 describe('record view', () => {
-  it('hides dialog actions, which this screen cannot open', async () => {
-    const schema = copy(screen.schema);
-    schema.body.models.find((model: any) => model.name === 'order').actions.push({ name: 'reschedule', label: 'Reschedule', dialog: true });
-    const { host } = start([['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema], ...orderRecord()], '/app/order/0000000000001');
-    await until(() => expect(byText(host, '.doc-head button', 'Close')).not.toBeNull());
-    expect(byText(host, '.doc-head button', 'Reschedule')).toBeNull();
-  });
-
   it('takes create link values only for fields the role can see and write', async () => {
     const schema = copy(screen.schema);
     const order = schema.body.models.find((model: any) => model.name === 'order');

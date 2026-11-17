@@ -35,7 +35,7 @@ import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowsText, va
 import type { LayoutBlock } from '../model/schema';
 import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
 import { filterFields } from './filters';
-import { presentSlip, takePrefill } from './slips';
+import { follow, openForm, takePrefill, type Outcome } from './prompts';
 import { openEvaPanel } from '../eva/chat';
 import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden, keepCreateAttempts, discardKeptChanges } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
@@ -44,7 +44,7 @@ import { SCREEN_KEYS, useShortcuts } from './shortcuts';
 import { dropDuplicate, duplicateAllowed, duplicateOf, holdDuplicate, takeDuplicate, type DuplicateCopy } from './duplicate';
 import { ariaKeys, commitTyped, formatKeys, withShortcut } from '../ui/shortcuts';
 
-const RESERVED = new Set(['tab', 'slip']);
+const RESERVED = new Set(['tab']);
 // A reactive part inside a list of children (arrays are read once; a template hole stays live).
 const live = (render: () => Child) => html`${render}`;
 
@@ -150,7 +150,7 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
   const route = router.route.peek()?.query ?? {};
   // In a side panel the address is the list's: its own keys are not values for a new record.
   const query = panel ? Object.fromEntries(Object.entries(route).filter(([key]) => !LIST_KEYS.includes(key))) : route;
-  // Values a slip handed over for review (outcome becomes, review): shown as a new record, not saved.
+  // Values an outcome handed over for review (Outcome(new=...)): shown as a new record, not saved.
   const prefill = isNew ? takePrefill(name) : null;
   // A copy of a saved record (More > Duplicate), held in memory for this new record.
   const duplicate = isNew ? taken?.duplicate ?? (handed ? null : takeDuplicate(name)) : null;
@@ -166,8 +166,6 @@ export function RecordPage(ctx: AppContext, name: string, idText: string, panel?
       } else await store.open(id!);
       if (!alive) return;
       status.set('ready');
-      // A link such as /app/customer/4?slip=start_project presents that slip from the record.
-      if (!isNew && query.slip && (model.slips ?? []).some(slip => slip.name === query.slip)) void presentSlip(query.slip, { source: { model: name, id: id! } });
     } catch (error) {
       if (!alive) return;
       if (error instanceof ApiError && (error.kind === 'not_found' || error.kind === 'forbidden')) status.set('missing');
@@ -194,7 +192,7 @@ function missing(ctx: AppContext, model: ScreenModel, panel?: PanelHost): HTMLEl
       : Button({ label: `Open ${model.plural.toLowerCase()}`, onClick: () => void ctx.router.go('list', { model: model.name }) }) })}</div>` as HTMLElement;
 }
 
-interface ViewOptions { isNew: boolean; extras: Readable<DetailExtras>; detail: Readable<RecordData | null>; query: Record<string, string>; /** The slip that filled this new record. */ prefill?: string | null;
+interface ViewOptions { isNew: boolean; extras: Readable<DetailExtras>; detail: Readable<RecordData | null>; query: Record<string, string>; /** What filled this new record (an outcome's new=...). */ prefill?: string | null;
   /** The saved record this new one copies (Duplicate). */ duplicate?: DuplicateCopy | null;
   /** Shown in a list's side panel: the narrow layout. */ panel?: PanelHost; /** A new record: what held the focus when it was asked for. */ focusedAtOpen?: Element | null }
 
@@ -343,11 +341,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const asked = askedFields(model, move);
     const inputs = moveInputs(model, move);
     if (inputs.length) {
-      ActionDialog({ name: move.key, label } as ActionMeta, inputs, async values => {
+      void openForm(ctx, { title: label, fields: inputs, run: async values => {
         if (await store.move(move.key, values)) { moved(to, label); return null; }
         const errors = Object.fromEntries(asked.map(meta => [meta.name, store.field(meta.name).error.peek()]).filter(([, error]) => error));
-        return Object.keys(errors).length ? errors : store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`;
-      });
+        return Object.keys(errors).length ? errors as Record<string, string> : store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`;
+      } });
       return;
     }
     const ok = await store.move(move.key);
@@ -359,8 +357,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const allowed = extras.get()._actions;
     // A detail lists the actions this role may run; without it, the schema's actions are the ones.
     const list: ActionMeta[] = allowed ? allowed.map(item => ({ ...declared.find(action => action.name === item.name), name: item.name, label: item.label })) : declared;
-    // Dialog actions (Python forms) have no screen here yet, so they are not offered.
-    return list.filter(action => !action.dialog);
+    return list;
   };
   const actionBlocked = (action: ActionMeta): string | null => {
     if (isNew) return 'Save the record first';
@@ -371,26 +368,28 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const runAction = (action: ActionMeta) => {
     const inputs = actionInputs(action);
     if (!inputs.length) {
-      void store.runAction(action.name).then(ok => { if (!ok || !presentNext()) toast(ok ? `${action.label} done` : store.formError.peek() ?? `${action.label} did not run`, { icon: ok ? 'check' : 'info' }); });
+      void store.runAction(action.name).then(async ok => {
+        if (!ok) { toast(store.formError.peek() ?? `${action.label} did not run`, { icon: 'info' }); return; }
+        if (!(await followed(action.label))) toast(`${action.label} done`, { icon: 'check' });
+      });
       return;
     }
-    ActionDialog(action, inputs, async values => {
+    void openForm(ctx, { title: action.label, fields: inputs, run: async values => {
       const ok = await store.runAction(action.name, values);
-      if (ok && !presentNext()) toast(`${action.label} done`);
+      if (ok && !(await followed(action.label))) toast(`${action.label} done`);
       return ok ? null : store.formError.peek() ?? store.conflict.peek()?.message ?? `${action.label} did not run`;
-    });
+    } });
   };
-  // An action may answer with a slip to present next: return present(Slip, ...) in Python.
-  const presentNext = () => {
-    const next = (store.outcome as { present?: { slip: string; source?: { model: string; id: string } | null; values?: Record<string, unknown> } } | null)?.present;
-    if (next) void presentSlip(next.slip, { source: next.source, values: next.values });
-    return Boolean(next);
+  // An action may answer with an Outcome or a Prompt (app/prompts.ts); a prompt's submit may change this record.
+  const followed = async (label: string) => {
+    const outcome = store.outcome as Outcome | null;
+    if (outcome?.prompt) {
+      const done = await follow(ctx, outcome, label);
+      void store.reload().catch(() => {});
+      return done;
+    }
+    return follow(ctx, outcome, label);
   };
-  const slipBlocked = (): string | null => isNew ? 'Save the record first' : store.dirty.get() ? 'Save or discard your changes first' : null;
-  const openSlip = (slip: string) => void presentSlip(slip, { source: { model: name, id: store.id! } }).then(outcome => {
-    // The handler may have changed this record; a document or a record it opened is another page.
-    if (outcome && !outcome.document && !outcome.open) void store.reload().catch(() => {});
-  });
   const remove = () => openModal({ title: `Delete ${titleText.peek()}?`, icon: 'trash-2', tint: 'rose', narrow: true,
     body: () => html`<p>This can’t be undone.</p>`,
     footer: close => DialogFooter({ cancel: close, submit: { label: 'Delete', variant: 'danger', icon: 'trash-2', onClick: async () => {
@@ -424,7 +423,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   };
 
   // The header's buttons. The State's moves make one split button: the primary move (else the first this person may
-  // take) on it, the others behind its chevron. Actions, slips and Ask Eva are outline
+  // take) on it, the others behind its chevron. Actions and Ask Eva are outline
   // buttons before it, as many as fit (OUTLINE_BUTTONS, one in a side panel); the rest, Print and the record's
   // own items (Copy link, Duplicate, Delete...) are in More.
   type HeaderEntry = MoveEntry;
@@ -432,7 +431,6 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     primary: move.primary, blocked: () => blockedMove(move.to), run: () => void runMove(move.to) }));
   const outlineEntries = (): HeaderEntry[] => [
     ...actions().map(action => ({ label: action.label, icon: actionIcon(action), allowed: true, blocked: () => actionBlocked(action), run: () => runAction(action) })),
-    ...(model.slips ?? []).map(slip => ({ label: slip.label, icon: 'file-text', allowed: true, blocked: slipBlocked, run: () => openSlip(slip.name) })),
   ];
   const askEvaNow = () => openEvaPanel(ctx, ctx.eva, { name, label: model.label }, store.id!, titleText.peek());
   /** Outline buttons in the title row: two on the page, one in a side panel; the rest join More. */
@@ -1052,7 +1050,6 @@ export function moveInputs(model: ScreenModel, move: DetailMove): FieldSchema[] 
   return [...remark, ...askedFields(model, move).map(meta => ({ ...meta, read_only: false, required: Boolean(meta.required || meta.required_when), applies_when: null, required_when: null, locked_when: null }))];
 }
 
-// ---------- action dialog ----------
 
 /** A move's icon, read from where it goes: a final rose step crosses, Resume plays, On hold pauses, Complete checks. */
 export function moveIcon(model: ScreenModel, to: string): string {
@@ -1081,43 +1078,11 @@ function actionIcon(action: ActionMeta): string {
 
 const ARGUMENT_TYPES: Record<string, string> = { str: 'text', int: 'integer', bool: 'boolean', float: 'decimal' };
 
+/** An action's typed arguments, asked here. An action with inputs={...} answers its own prompt (evlet/prompts.py). */
 function actionInputs(action: ActionMeta): FieldSchema[] {
-  if (action.inputs?.length) return action.inputs;
+  if (action.inputs?.length) return [];
   return (action.arguments ?? []).map(argument => ({ name: argument.name, type: ARGUMENT_TYPES[argument.type] ?? 'text', label: humanize(argument.name),
     required: argument.required, read_only: false, default: argument.default }) as FieldSchema);
-}
-
-/** Small dialog that collects an action's (or a move's) inputs, checks them in place and runs it. `run`
- * answers null when done, a message, or field errors by input name. */
-export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (values: Record<string, unknown>) => Promise<string | Record<string, string> | null>) {
-  const fields = inputs.map(meta => localField(meta, meta.default ?? (meta.type === 'boolean' ? false : null), { required: meta.required && !meta.read_only }));
-  const controls = fields.map(field => fieldFor({ field, full: true }));
-  const note = cell<string>('');
-  let busy = false;
-  const submit = async (close: () => void) => {
-    // Commit editable inputs only: server-owned values are displayed but never validated or sent here.
-    const writable = fields.filter(field => field.editable.peek());
-    for (const input of controls.filter((_, index) => fields[index].editable.peek()).flatMap(element => [...element.querySelectorAll('input, textarea')])) input.dispatchEvent(new Event('change'));
-    if (writable.some(field => field.error.peek())) return;
-    let valid = true;
-    for (const field of writable) {
-      const value = field.value.peek();
-      if (field.meta.required && (value === null || value === undefined || value === '')) { field.error.set(`${field.meta.label} is required`); valid = false; }
-    }
-    if (!valid || busy) return;
-    busy = true;
-    const values = Object.fromEntries(writable.filter(field => field.value.peek() !== null && field.value.peek() !== '').map(field => [field.meta.name, field.value.peek()]));
-    const problem = await run(values);
-    busy = false;
-    if (typeof problem === 'string') { note.set(problem); return; }
-    if (problem) { for (const field of fields) if (problem[field.meta.name]) field.error.set(problem[field.meta.name]); return; }
-    close();
-  };
-  let closeDialog = () => {};
-  closeDialog = openModal({ title: action.label, icon: 'zap', tint: 'blue', narrow: true, onSubmit: () => void submit(closeDialog),
-    body: () => [...controls, html`<p class="ev-error" role="alert" hidden=${() => !note.get()}>${() => note.get()}</p>`],
-    footer: close => DialogFooter({ cancel: close, submit: { label: action.label, onClick: () => void submit(close) } }) });
-  return closeDialog;
 }
 
 // ---------- side column ----------

@@ -1,4 +1,4 @@
-// Autofocus for forms that start empty: a new record (full page or side panel) and a slip. The first
+// Autofocus for forms that start empty: a new record (full page or side panel) and a prompt. The first
 // field that can take a value (or the field Meta.focus names) gets the focus, so typing can start at once. initialFocusField() is the
 // one place that chooses it; autofocusForm() focuses it once the form shows, and only on a device with
 // a mouse or trackpad (on a phone the focus would open the on-screen keyboard), and only when the person
@@ -13,7 +13,7 @@ export interface FocusSection { fields: FieldLike[]; open?: boolean }
 
 /**
  * The name of the field a new form focuses first, or null for none. The model's own choice (Meta.focus, or a
- * slip's focus) wins when that field shows and can be edited in an open section of `layout`; otherwise the
+ * prompt's Meta.focus) wins when that field shows and can be edited in an open section of `layout`; otherwise the
  * first field, in screen order, that shows and can be edited. Read-only, calculated, hidden and locked fields
  * are skipped, and so are the fields of a closed section.
  */

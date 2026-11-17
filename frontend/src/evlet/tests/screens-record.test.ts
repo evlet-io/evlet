@@ -176,6 +176,7 @@ describe('generated record view', () => {
     const { host, sent } = start([...orderRoutes(), ['POST', /\/api\/order\/0000000000001\/actions\/close$/, recorded.action]], '/app/order/0000000000001');
     await until(() => expect(byText(host, '.doc-head button', 'Close')).not.toBeNull());
     click(byText(host, '.doc-head button', 'Close'));
+    await until(() => expect(document.querySelector('.modal.prompt')).not.toBeNull());
     const dialog = document.querySelector('.modal')!;
     expect(text(dialog.querySelector('h2'))).toBe('Close');
     typeInto(dialog.querySelector('input')!, 'Signed off');

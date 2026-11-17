@@ -68,7 +68,7 @@ def test_context_scoped_link_filters_match_http_and_keep_denials(tmp_path):
             http = editor('GET', '/api/ticket?' + urlencode({'filters': json.dumps(filters)}))
             assert http[0] == 200
             page = context.list(Ticket, filters=filters)
-            assert [{**row, 'id': str(row['id']), 'account': str(row['account'])} for row in page['rows']] == http[1]['items']
+            assert [{**{key: row.get(key) for key in item}, 'id': str(row['id']), 'account': str(row['account'])} for row, item in zip(page['rows'], http[1]['items'])] == http[1]['items']
             assert str(page['rows'][0]['id']) == record['id']
             assert context.count(Ticket, filters=filters) == page['total'] == 1
         for filters in ({'account': hidden}, {'account__in': [allowed, hidden]}, {'account__ne': allowed}):

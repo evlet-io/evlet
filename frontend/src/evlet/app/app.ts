@@ -28,7 +28,7 @@ import { RecordPage } from './record-page';
 import { ReportPage, ReportsPage, reportsOf } from './report-page';
 import { applyMe, chooseTheme, loadMe, PAGES as SETTINGS_PAGES, SettingsView, showCodes, type Me } from './settings';
 import { Shell } from './shell';
-import { useSlips } from './slips';
+import { usePrompts } from './prompts';
 import { evaStatus, type EvaStatus } from '../eva/client';
 import { EvaPage } from '../eva/chat';
 import { instanceKey, LocalUnsaved } from './unsaved';
@@ -99,7 +99,7 @@ export function App(options: AppOptions): Node {
     };
     session.set(current);
     context.set(ctx);
-    useSlips(ctx);
+    usePrompts(ctx);
     error.set('');
     phase.set('ready');
     const now = router.route.peek();

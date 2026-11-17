@@ -244,9 +244,9 @@ def test_tables_without_sections_refuse_section_rows(app):
 
 
 def test_forms_cannot_hold_sections():
-    from evlet import Dialog
+    from evlet import Prompt
     with pytest.raises(ValueError, match='Tables of saved records'):
-        class Ask(Dialog):
+        class Ask(Prompt):
             class Row(Child):
                 note = Text()
             rows = Table(Row, sections=True)

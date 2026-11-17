@@ -21,17 +21,18 @@ MAX_URL = 2000
 
 @dataclass(frozen=True, repr=False)
 class Shortcut:
-    """One sidebar entry. Name exactly one target: a model (with an optional view and filters), a report, a slip or a URL."""
+    """One sidebar entry. Name exactly one target: a model (with an optional view and filters), a report, an @api
+    endpoint whose Prompt opens (api='app.quick_expense', with a label) or a URL."""
     model: object = None
     view: str | None = None
     filters: object = None
     label: str | None = None
     report: object = field(default=None, kw_only=True)
-    slip: object = field(default=None, kw_only=True)
+    api: str | None = field(default=None, kw_only=True)
     url: str | None = field(default=None, kw_only=True)
 
     def __repr__(self):
-        shown = [f'{name}={_shown(getattr(self, name))}' for name in ('model', 'view', 'filters', 'label', 'report', 'slip', 'url')
+        shown = [f'{name}={_shown(getattr(self, name))}' for name in ('model', 'view', 'filters', 'label', 'report', 'api', 'url')
                  if getattr(self, name) is not None]
         return f'Shortcut({", ".join(shown)})'
 
@@ -125,9 +126,9 @@ def check_item(item, where):
         return
     if not isinstance(item, Shortcut):
         raise ValueError(f'{where}: an item is a model name or a Shortcut')
-    targets = [name for name in ('model', 'report', 'slip', 'url') if getattr(item, name) is not None]
+    targets = [name for name in ('model', 'report', 'api', 'url') if getattr(item, name) is not None]
     if len(targets) != 1:
-        raise ValueError(f'{where}: name exactly one of model, report, slip or url')
+        raise ValueError(f'{where}: name exactly one of model, report, api or url')
     if item.label is not None:
         _label(item.label, where)
     if targets[0] != 'model' and (item.view is not None or item.filters is not None):
@@ -148,7 +149,9 @@ def check_item(item, where):
             raise ValueError(f'{where}: a URL is an app path starting with / or an http(s) address')
         if item.label is None:
             raise ValueError(f'{where}: a URL shortcut needs a label')
-    for name in ('model', 'report', 'slip'):
+    if item.api is not None and (not isinstance(item.api, str) or item.label is None):
+        raise ValueError(f'{where}: an api shortcut names an @api endpoint and needs a label')
+    for name in ('model', 'report'):
         value = getattr(item, name)
         if value is not None and not isinstance(value, (str, type)):
             raise ValueError(f'{where}: {name} takes a name or the class')
@@ -223,7 +226,7 @@ class Workspaces:
         return groups
 
     def item(self, item, where):
-        """An item in its plain form, checked against the models, reports and slips of this application."""
+        """An item in its plain form, checked against the models, reports and endpoints of this application."""
         if isinstance(item, str):
             return model_item(self.model(item, where))
         if item.model is not None:
@@ -238,16 +241,10 @@ class Workspaces:
             if name not in reports:
                 raise ValueError(f'{where}: unknown report {name!r}; register it with the application')
             return {'key': f'report:{name}', 'kind': 'report', 'label': item.label, 'report': name}
-        if item.slip is not None:
-            from .slips import slip_name
-            slips = getattr(getattr(self.business, 'slips', None), 'slips', {})
-            name = slip_name(item.slip) if isinstance(item.slip, type) else item.slip
-            if name not in slips:
-                raise ValueError(f'{where}: unknown slip {name!r}; register it with the application')
-            if slips[name].__source__ is not None:
-                raise ValueError(f'{where}: this slip is presented from a {slips[name].__source__.__name__} record; '
-                                 'only a slip without a source can be a workspace item')
-            return {'key': f'slip:{name}', 'kind': 'slip', 'label': item.label, 'slip': name}
+        if item.api is not None:
+            if not any(endpoint.name == item.api for endpoint in getattr(self.business, 'apis', ())):
+                raise ValueError(f'{where}: unknown endpoint {item.api!r}; register it with the application')
+            return {'key': f'api:{item.api}', 'kind': 'api', 'label': item.label.strip(), 'api': item.api}
         return {'key': f'url:{slug(item.label)}', 'kind': 'url', 'label': item.label.strip(), 'url': item.url}
 
     def model(self, value, where):
@@ -414,10 +411,10 @@ class Workspaces:
                     ikey = spec['key']
                 else:
                     shortcut = spec['shortcut']
-                    allowed = {'model', 'view', 'filters', 'label', 'report', 'slip', 'url'}
+                    allowed = {'model', 'view', 'filters', 'label', 'report', 'api', 'url'}
                     if not isinstance(shortcut, dict) or set(shortcut) - allowed or any(
                             name in shortcut and not isinstance(shortcut[name], str) for name in allowed - {'filters'}):
-                        errors[ipath + '.shortcut'] = 'Send model, view, filters, label, report, slip or url, as text (filters as JSON)'
+                        errors[ipath + '.shortcut'] = 'Send model, view, filters, label, report, api or url, as text (filters as JSON)'
                         continue
                     try:
                         made = Shortcut(**shortcut)
@@ -487,8 +484,7 @@ class Context:
         self.models = {entry['name']: entry for entry in result['models'] if not entry['child_only']}
         self.order = list(self.models)
         self.reports = {entry['name']: entry for entry in result.get('reports', ())}
-        slips = getattr(business, 'slips', None)
-        self.slips = {name: slip for name, slip in getattr(slips, 'slips', {}).items() if slips.allowed(user, slip)}
+        self.apis = {endpoint.name: endpoint for endpoint in getattr(business, 'apis', ())}
 
     def item(self, item):
         kind = item['kind']
@@ -507,9 +503,10 @@ class Context:
         if kind == 'report':
             entry = self.reports.get(item['report'])
             return None if entry is None else {**item, 'label': item['label'] or entry['label']}
-        if kind == 'slip':
-            slip = self.slips.get(item['slip'])
-            return None if slip is None else {**item, 'label': item['label'] or self.business.slips.entry(item['slip'], slip)['label']}
+        if kind == 'api':
+            endpoint = self.apis.get(item['api'])
+            model = None if endpoint is None else self.business.registry.resolve(endpoint.permission[0])
+            return dict(item) if model is not None and self.business.policy.allows(self.user, model, endpoint.permission[1]) else None
         return dict(item)
 
     def automatic(self, plan):
