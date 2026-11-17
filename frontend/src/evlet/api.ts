@@ -88,6 +88,9 @@ export type RecordData = Record<string, unknown> & {
 };
 export interface DraftResult { values: Record<string, unknown>; errors: FieldErrors; states: Record<string, string>; revision: unknown }
 /** filters: an object of "field__operator" keys, or a list of [field, operator, value] conditions and child groups (docs/ui.md, Filters). */
+export interface SearchQuery { q?: string; link?: string; values?: Record<string, unknown>; limit?: number }
+/** One option of a search: the record's id, its title and an optional muted line below it. */
+export interface SearchOption { id: string; title: string; subtext?: string }
 export interface ListQuery { limit?: number; offset?: number; filters?: Record<string, unknown> | unknown[]; orderBy?: string; q?: string }
 
 const NAME = /^[A-Za-z][A-Za-z0-9_]*$/;
@@ -241,6 +244,19 @@ export class ApiClient {
       order_by: query.orderBy && query.orderBy !== '-id' ? query.orderBy : undefined, q: query.q,
     } });
     return data;
+  }
+
+  /**
+   * Options to choose from (GET /api/<model>/search): ranked by the typed text when the model declares
+   * Meta.search_fields, with each option's title and subtext. `link` (`<model>.<field>`) and `values` (the
+   * form values its filters and option read, by path) search for that Link: its filters apply on the server.
+   */
+  async search(model: string, query: SearchQuery = {}): Promise<SearchOption[]> {
+    const { data } = await this.request<{ items: SearchOption[] }>('GET', `${modelPath(model)}/search`, { query: {
+      q: query.q || undefined, link: query.link, limit: query.limit,
+      values: query.values && Object.keys(query.values).length ? JSON.stringify(query.values) : undefined,
+    } });
+    return data.items;
   }
 
   async get(model: string, id: string, signal?: AbortSignal) { return this.request<RecordData>('GET', recordPath(model, id), { signal }); }

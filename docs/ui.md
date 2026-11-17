@@ -1254,8 +1254,10 @@ open Controls. Portal users see the times only. See
 A Link with `filters` ([business-capabilities.md](business-capabilities.md#link-filters)) is
 handled in the form with the values the person has entered, saved or not:
 
-- The picker lists only records that fit, by sending the filters to the list route. While a field
-  the filters read is empty, it lists nothing and says "Choose Company first.".
+- The picker lists only records that fit: it names the Link and sends the form values its filters
+  read to the search route, which applies the filters on the server
+  ([model-engine.md](model-engine.md#link-filters-with-form-values)). While a field the filters read
+  is empty, it lists nothing and says "Choose Company first.".
 - When a field changes, every Link whose filters read it is checked again: on the same row, and
   `Ref("parent.<field>")` Links on the rows of its tables. A value that still fits is kept. One that
   no longer fits is cleared, with a note under the field (a tooltip in a table cell) such as
@@ -1265,6 +1267,29 @@ handled in the form with the values the person has entered, saved or not:
   field permissions apply. When it cannot tell, the value stays and the save reports it.
 
 The server still checks every Link on preview and save; the form only avoids keeping a stale value.
+
+### Link dropdown
+
+A Link's dropdown is a search box over a list of options, from `GET /api/{model}/search`
+([model-engine.md](model-engine.md#record-search-and-link-options)):
+
+- **Matching.** A target with `Meta.search_fields` is matched in its title and those fields, fuzzily
+  and ranked on the server: whole value, then start, then a word's start, then inside a word, then the
+  characters in order. Other targets match the text as the list's search box does.
+- **Each option** shows the record's mark and title, and below it, smaller and muted, its subtext when
+  it has one: what the Link's `option=` or the target's `Meta.option` declares ("In stock: 12 box"),
+  or the search field that matched (a barcode). Long lines end with an ellipsis.
+- **Create new.** When the person may create the target (its `permissions.create`, not read-only, not
+  a child table), the last option is **Create new <field> "<typed text>"** (without text, **Create new
+  <field>**). The arrow keys reach it after the results and Enter or a click opens it. It opens a small
+  form for the target in a dialog, **New <model>**: its title field filled with the typed text, the
+  fields the Link's filters name filled with the form's values (a new project for the invoice's
+  customer), and its required fields without a default; at most eight fields. **Create <model>** saves
+  through the usual create route, with every check, and the Link selects the new record. Cancel, Esc or
+  the close button leaves the Link as it was. Errors show under the fields as on the record page.
+
+The search bar (the palette's **Records**) uses the same route for each model with search fields,
+five options each, with the subtext under each title.
 
 ### List card
 

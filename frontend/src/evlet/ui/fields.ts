@@ -11,7 +11,7 @@ import { CellCache } from '../cache';
 import { cell, derive, effect, onCleanup, untrack, type Cell, type Readable } from '../reactive';
 import type { ApiClient, RecordData } from '../api';
 import { Field, sameValue, type Outcome, type RecordStore, type Rules } from '../model/record';
-import { linkScope } from '../model/links';
+import { linkContext, linkScope } from '../model/links';
 import type { FieldSchema, SchemaIndex } from '../model/schema';
 import { Chip, Icon, IconButton, RecordMark, StatusPill, Switch } from './base';
 import { tintFor, TINTS, uid, type Prop, type Tint } from './core';
@@ -90,10 +90,18 @@ const isEmpty = (value: unknown) => value === null || value === undefined || val
 // ---------- links ----------
 
 export interface LinkOption { id: string; title: string; subtitle?: string }
+/** The form a Link's dropdown searches for: the Link (`<model>.<field>`) and the form values it reads, by path. */
+export interface LinkContext { link: string; values: Record<string, unknown> }
 /** Where Link fields find records and their titles. */
 export interface LinkSource {
-  /** Records to choose from; `filters` are the Link's filters with the form's current values. */
-  search(meta: FieldSchema, query: string, filters?: Record<string, unknown>): Promise<LinkOption[]>;
+  /** Records to choose from; `filters` are the Link's filters with the form's current values. With `context`, the
+   * server applies the Link's filters itself and builds each option's subtext (evlet/search.py). */
+  search(meta: FieldSchema, query: string, filters?: Record<string, unknown>, context?: LinkContext): Promise<LinkOption[]>;
+  /** Whether the dropdown offers "Create new <Model>": this person may create the target. Absent: never. */
+  canCreate?(meta: FieldSchema): boolean;
+  /** Open the quick-create form for the target with `text` in its title and the Link's filter values filled in;
+   * resolves with the saved record, or null when it was closed. */
+  create?(meta: FieldSchema, text: string, values: Record<string, unknown>): Promise<LinkOption | null>;
   /** The title of a record, as a cell that fills in once it is read. */
   title(model: string, id: string): Readable<string | null>;
   remember?(model: string, id: string, title: string): void;
@@ -118,7 +126,9 @@ type LinkApi = ApiClient & { reading?(model: string, id: string): Promise<{ data
  */
 export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
   /** The record page's URL (the app's router); href() answers it only for models this role's schema has. */
-  recordHref?: (model: string, id: string) => string } = {}): LinkSource {
+  recordHref?: (model: string, id: string) => string;
+  /** The quick-create form (the app's); without it, Links offer no "Create new". */
+  quickCreate?: (model: string, text: string, values: Record<string, unknown>) => Promise<{ id: string; title: string } | null> } = {}): LinkSource {
   const titles = new CellCache<string | null>(null, 512, 256 * 1024);
   let wanted = new Map<string, Set<string>>();
   const records = new CellCache<RecordData | null>(null, 64, 2 * 1024 * 1024);
@@ -181,10 +191,20 @@ export function apiLinks(api: LinkApi, schema: SchemaIndex, options: {
     }
   };
   return {
-    async search(meta, query, filters) {
-      const page = await api.list(meta.target!, { q: query || undefined, limit: 8, filters });
-      return page.items.map(item => ({ id: item.id as string, title: titleOf(meta.target!, item) }));
+    async search(meta, query, _filters, context) {
+      // The search route ranks, filters (with the form's values) and builds each option's subtext on the server.
+      const found = await api.search(meta.target!, { q: query, limit: 8, link: context?.link, values: context?.values });
+      return found.map(item => ({ id: item.id, title: item.title, subtitle: item.subtext }));
     },
+    canCreate: options.quickCreate ? meta => {
+      const target = meta.target && schema.has(meta.target) ? schema.model(meta.target) : null;
+      return Boolean(target && !target.child_only && target.api !== 'read' && target.permissions?.create);
+    } : undefined,
+    create: options.quickCreate ? async (meta, text, values) => {
+      const made = await options.quickCreate!(meta.target!, text, values);
+      if (made) remember(meta.target!, made.id, made.title);
+      return made;
+    } : undefined,
     title(model, id) {
       const key = `${model}:${id}`;
       let title = titles.peek(key);
@@ -644,7 +664,7 @@ function LinkControl(field: FieldLike, id: string, options: ControlOptions): Con
     if (option && meta.target) links?.remember?.(meta.target, option.id, option.title);
     if (writeValue(field, option ? option.id : null)) options.onCommit?.();
   };
-  const open = (typed = '') => openPopover(button, close => LinkSearch(field, links, option => { close(); choose(option); }, typed),
+  const open = (typed = '') => openPopover(button, close => LinkSearch(field, links, option => { close(); choose(option); }, typed, () => close()),
     { role: 'dialog', label: `Choose ${meta.label}`, className: 'link-pop', align: 'left' });
   button.addEventListener('click', () => open());
   button.addEventListener('keydown', event => {
@@ -682,37 +702,65 @@ export function LinkGo(field: FieldLike, links: LinkSource | null = defaultLinks
     class="link-go-hint" aria-hidden="true">${hint}</span></a>`) };
 }
 
-function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option: LinkOption | null) => void, typed = ''): Node {
+/**
+ * The Link dropdown: a search box, the options (title, with the subtext in a muted line below it) and, when the
+ * LinkSource says this person may create the target, "Create new <label>" as the last option. On a form, the
+ * search names the Link and sends the form values it reads, so the server applies its filters (evlet/search.py).
+ */
+function LinkSearch(field: FieldLike, links: LinkSource | null, choose: (option: LinkOption | null) => void, typed = '', dismiss: () => void = () => {}): Node {
   const meta = field.meta, query = cell(typed), results = cell<LinkOption[]>([]), active = cell(0), state = cell<'loading' | 'ready' | 'error' | 'waiting'>('loading');
   const listId = uid('lb');
   // Only records that fit the Link's filters, read with the form's current values (Ref('company')).
   const scope = field instanceof Field ? untrack(() => linkScope(field)) : null;
+  const context = field instanceof Field ? untrack(() => linkContext(field)) : undefined;
   const waiting = scope?.missing.length ? `Choose ${scope.missing.map(source => source.label).join(' and ')} first.` : '';
+  const creatable = Boolean(links?.create && links.canCreate?.(meta)) && !waiting;
+  // The options arrow keys visit: the results, then "Create new" when it is offered.
+  const count = () => results.get().length + (creatable && state.get() !== 'loading' ? 1 : 0);
   let asked = 0;
   const search = async (text: string) => {
     const mine = ++asked;
     if (waiting) { results.set([]); state.set('waiting'); return; }
     state.set('loading');
     try {
-      const found = links ? await links.search(meta, text, scope && Object.keys(scope.filters).length ? scope.filters : undefined) : [];
+      const found = links ? await links.search(meta, text, scope && Object.keys(scope.filters).length ? scope.filters : undefined, context) : [];
       if (mine !== asked) return;
       results.set(found); active.set(0); state.set('ready');
     } catch { if (mine === asked) state.set('error'); }
   };
+  const create = async () => {
+    const text = query.peek().trim();
+    dismiss();
+    // The new record starts with the typed text as its title and the values the Link's filters ask for.
+    const made = await links!.create!(meta, text, scope?.filters ?? {});
+    if (made) choose(made);
+  };
+  const pick = (index: number) => {
+    const option = results.peek()[index];
+    if (option) choose(option);
+    else if (creatable && index === results.peek().length) void create();
+  };
   const optionId = (index: number) => `${listId}-${index}`;
   const input = html`<input class="input" role="combobox" aria-expanded="true" aria-controls=${listId} aria-autocomplete="list"
-    aria-activedescendant=${() => results.get().length ? optionId(active.get()) : null} placeholder=${`Search ${meta.label.toLowerCase()}`}
+    aria-activedescendant=${() => count() ? optionId(active.get()) : null} placeholder=${`Search ${meta.label.toLowerCase()}`}
     aria-label=${`Search ${meta.label}`} autocomplete="off"
     on:input=${(event: Event) => { query.set((event.target as HTMLInputElement).value); search(query.peek()); }}
     on:keydown=${(event: KeyboardEvent) => {
-      const count = results.peek().length;
-      if (event.key === 'ArrowDown' && count) { event.preventDefault(); active.set((active.peek() + 1) % count); }
-      else if (event.key === 'ArrowUp' && count) { event.preventDefault(); active.set((active.peek() - 1 + count) % count); }
-      else if (event.key === 'Enter') { event.preventDefault(); const option = results.peek()[active.peek()]; if (option) choose(option); }
+      const total = untrack(count);
+      if (event.key === 'ArrowDown' && total) { event.preventDefault(); active.set((active.peek() + 1) % total); }
+      else if (event.key === 'ArrowUp' && total) { event.preventDefault(); active.set((active.peek() - 1 + total) % total); }
+      else if (event.key === 'Enter') { event.preventDefault(); if (total) pick(active.peek()); }
     }}>` as HTMLInputElement;
+  const createLabel = () => query.get().trim() ? `Create new ${meta.label.toLowerCase()} “${query.get().trim()}”` : `Create new ${meta.label.toLowerCase()}`;
+  const createRow = () => when(() => creatable && state.get() !== 'loading', () => {
+    const index = () => results.get().length;
+    return html`<button type="button" tabindex="-1" class="mi link-create" class:on=${() => active.get() === index()} role="option" id=${() => optionId(index())}
+      aria-selected=${() => String(active.get() === index())} on:click=${() => void create()} on:mouseenter=${() => active.set(index())}>${Icon('plus', { size: 'sm' })}<span>${createLabel}</span></button>`;
+  });
   const list = html`<div class="link-list" role="listbox" id=${listId} aria-label=${meta.label}>${() => results.get().map((option, index) => html`<button type="button" tabindex="-1"
     class="mi" class:on=${() => active.get() === index} role="option" id=${optionId(index)} aria-selected=${() => String(active.get() === index)}
-    on:click=${() => choose(option)} on:mouseenter=${() => active.set(index)}>${RecordMark({ name: option.title })}<span>${option.title}</span>${option.subtitle ? html`<span class="muted">${option.subtitle}</span>` : null}</button>`)}</div>`;
+    on:click=${() => choose(option)} on:mouseenter=${() => active.set(index)}>${RecordMark({ name: option.title })}<span class="link-opt"><span class="link-title">${option.title}</span>${option.subtitle
+      ? html`<span class="link-sub">${option.subtitle}</span>` : null}</span></button>`)}${createRow()}</div>`;
   const status = () => state.get() === 'loading' ? 'Searching' : state.get() === 'error' ? 'Could not search. Try again.' : state.get() === 'waiting' ? waiting
     : results.get().length ? '' : scope ? 'No matches for the other values on this form.' : 'No matches. Try another name.';
   input.value = typed;

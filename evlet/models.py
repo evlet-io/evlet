@@ -137,6 +137,26 @@ def declared_hooks(cls, name, meta, fields, tables, row):
     return tuple(derives)
 
 
+def check_search_meta(name, meta, fields):
+    """Meta.search_fields and Meta.option, checked when the class is defined. view_for() checks the rest when the
+    app builds its schema (each search field must be a visible short text field)."""
+    if meta is None:
+        return
+    search = getattr(meta, 'search_fields', None)
+    if search is not None:
+        if not isinstance(search, (tuple, list)) or len(search) > 8 or len(set(search)) != len(search) \
+                or any(type(item) is not str or item not in fields for item in search):
+            raise ValueError(f'{name}.Meta.search_fields: name up to eight distinct fields of {name}, such as ("code", "email"), '
+                             f'not {search!r}')
+    option = getattr(meta, 'option', None)
+    if option is not None:
+        from .declarations import Option
+        if not isinstance(option, Option):
+            raise ValueError(f'{name}.Meta.option takes an Option(title=, subtext=, hook=)')
+        if option.refs():
+            raise ValueError(f'{name}.Meta.option: Ref() reads the form a Link is on; declare it in that Link\'s option=')
+
+
 class ModelType(type):
     def __new__(mcls, name, bases, namespace):
         fields = {}
@@ -232,6 +252,7 @@ class ModelType(type):
             raise ValueError(f'{name}.Meta.image: name an Image field of {name}, not {image!r}'
                              + (f' (it has {", ".join(images)})' if images else '; it declares none'))
         cls.__image__ = image
+        check_search_meta(name, meta if 'Meta' in namespace else None, fields)
         if ledger:
             cls.__append_only__, cls.__timestamps__, cls.__indexes__ = ledger_options
         elif getattr(cls, '__row__', False) and '__internal_fields__' not in namespace and 'evlet_position' not in fields:
@@ -640,6 +661,34 @@ def check_currency_source(model, field):
                          f'({field.currency} is not one on {owner.__name__})')
 
 
+def check_option(registry, model, option, where):
+    """The fields an Option reads exist: F("field") or F("link.field") on model, and each aggregate's related
+    model, its Link back to model, its field and its where= fields (evlet/search.py)."""
+    from .calc import Expr
+    for part in (*(option.title or ()), *(option.subtext or ())):
+        if isinstance(part, str):
+            continue
+        if isinstance(part, Expr):
+            name, _, rest = part.meta['name'].partition('.')
+            field = model.__fields__.get(name)
+            if field is None or rest and not isinstance(field, Link):
+                raise ValueError(f'{where}: {model.__name__} has no {"Link " if rest else ""}field {name}')
+            if rest:
+                target = registry.resolve(field.target)
+                if rest not in target.__fields__:
+                    raise ValueError(f'{where}: {target.__name__} has no field {rest}')
+            continue
+        related = registry.resolve(part.model)
+        link = related.__fields__.get(part.link)
+        if not isinstance(link, Link) or registry.resolve(link.target) is not model:
+            raise ValueError(f'{where}: {related.__name__}.{part.link} must be a Link to {model.__name__}')
+        for name in (*([part.field] if part.field else []), *(part.where or {})):
+            if name not in related.__fields__ or not related.__fields__[name].stored:
+                raise ValueError(f'{where}: {related.__name__} has no stored field {name}')
+        if part.function == 'sum' and getattr(related.__fields__[part.field], 'sql_type', '') != 'INTEGER':
+            raise ValueError(f'{where}: Sum needs a number field; {part.field} is a {related.__fields__[part.field].kind} field')
+
+
 def resolve_sources(registry, definition):
     from .query import SqlQuery
     for field in definition.__declared_fields__.values():
@@ -647,6 +696,8 @@ def resolve_sources(registry, definition):
             field.target = registry.resolve(field.target)
             for name in field.filters:
                 if name not in field.target.__fields__: raise ValueError('Link filters must name stored target fields')
+            if field.option is not None:
+                check_option(registry, field.target, field.option, f'{definition.__name__}.{field.name}: option')
         elif field.filters: raise ValueError('Selection filters require a Link field')
         if field.fetch:
             link_name, target_name = field.fetch.split('.')
@@ -662,4 +713,7 @@ def resolve_sources(registry, definition):
             if set(source.fields) - set(target.__fields__): raise ValueError('Query output names must be stored target fields')
             source.fields = {name: target.__fields__[name] for name in source.fields}
             for name in source.filters: SqlQuery(registry, target).where({name: None})
+    option = getattr(getattr(definition, 'Meta', None), 'option', None)
+    if option is not None:
+        check_option(registry, definition, option, f'{definition.__name__}.Meta.option')
     for table in definition.__tables__.values(): resolve_sources(registry, table.child)

@@ -6,6 +6,40 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Search and Link options
+
+- **Fuzzy, ranked record search.** A model with `Meta.search_fields` is searched in its title and those
+  fields by Link dropdowns, record pickers and the search bar: whole value, then start, then a word's
+  start, then inside a word, then the characters in order. A new route, `GET /api/{model}/search`,
+  serves all three with the role's row scope and readable fields
+  ([docs/model-engine.md](docs/model-engine.md#record-search-and-link-options)). Limits are in
+  [docs/performance.md](docs/performance.md#record-search).
+- **Link filters on the server.** The dropdown sends the Link's name and only the form values its
+  `Ref` filters read; the server applies the filters as declared.
+- **`Option`** (`from evlet import Option`): what a Link option shows, title and a muted subtext below
+  it, declared as text, `F("field")`, `F("link.field")` and `Count`, `Sum`, `Min` or `Max` over a related
+  model, keyed by form values with `Ref`. Set it on `Link(..., option=)` or the target's `Meta.option`;
+  `hook=` runs trusted code for the rest.
+- **Create new from a Link.** The dropdown's last option, for people who may create the target, opens a
+  quick form with the typed text in its title and the filter values filled in; the Link selects the new
+  record.
+- The Playground shows each: customers by name or email with the email below, invoice options with their
+  customer and total, and projects with what was invoiced to the invoice's customer.
+
+### Upgrading
+
+- **`Meta.search_fields` is checked when the class is defined**: up to eight distinct names of the
+  model's fields. A typo now fails at import instead of when the schema is built.
+- **Search results change order** for models with `Meta.search_fields`: Link dropdowns, record pickers
+  and the search bar now rank fuzzy matches instead of listing text matches in list order. To keep the
+  old behaviour for a model, remove `Meta.search_fields` (its default search fields still serve the
+  list's search box). The list's own search box is unchanged.
+- **Custom `LinkSource`s** (`frontend/src/evlet/ui/fields.ts`): `search()` gets a fourth argument,
+  the Link's context; `canCreate()` and `create()` are new and optional. Front ends that call
+  `apiLinks(api, schema)` need nothing; pass `{ quickCreate }` to offer Create new.
+- Apps that tested the Link dropdown or the palette against `GET /api/{model}?q=` should expect
+  `GET /api/{model}/search` instead.
+
 ### Fixed
 
 - **Mod+S (⌘S or Ctrl+S) while a child table cell or the record's title is being edited** commits

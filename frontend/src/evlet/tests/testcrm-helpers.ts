@@ -4,7 +4,7 @@
 // Requests the recording does not have are kept in `misses` and answered 404, so a test can show them.
 import fixture from './testcrm-fixture.json';
 import { start, type Route } from './screens-helpers';
-import type { Recorded, Sent } from './server';
+import { listUrlOf, optionsOf, type Recorded, type Sent } from './server';
 
 type Phase = Record<string, Recorded | { schema: string }>;
 const data = fixture as unknown as Record<string, Phase[]> & { schemas: Record<string, Recorded>; ids: Record<string, string> };
@@ -62,6 +62,9 @@ export function scenario(name: string, { signedIn = true } = {}) {
     if (key === 'GET /api/_inbox/count') return { status: 200, body: { unread: 0 }, etag: null };
     if (sent.method === 'GET') {
       for (let at = phase; at >= 0; at--) if (phases[at][key]) return answer(phases[at][key]);
+      // The search route, answered from the list search the recordings made.
+      const asList = listUrlOf(sent.url), listKey = asList && keyOf('GET', asList);
+      if (listKey) for (let at = phase; at >= 0; at--) if (phases[at][listKey]) return optionsOf(answer(phases[at][listKey]));
       const listed = batch(sent.url);
       if (listed) return listed;
       misses.push(key);

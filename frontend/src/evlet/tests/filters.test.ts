@@ -199,7 +199,7 @@ describe('the filter builder on a list', () => {
     await until(() => expect(location.search).toBe(''));
   });
 
-  it('adds records to a link "in" filter through the record picker, which searches the list route', async () => {
+  it('adds records to a link "in" filter through the record picker, which searches the search route', async () => {
     const { host, sent } = start([...routes(), ['GET', /\/api\/customer\?/, screen.customers_page1]], '/app/item');
     await until(() => expect(host.querySelectorAll('tbody tr[data-key]')).toHaveLength(2));
     click(byText(host, '.ph-actions button', /^Filter/));
@@ -217,8 +217,8 @@ describe('the filter builder on a list', () => {
     // The picker empties itself after each record; the chosen records show as chips in the row.
     expect(text(host.querySelector('.fb-list .in-link'))).toBe('Choose default customer');
     expect([...host.querySelectorAll('.fb-list .filter-chip')].map(text)).toEqual(['Al Sahra Trading', 'Bayan Medical']);
-    // The search went through the customer list route, which applies the person's permissions.
-    expect(sent.some(item => /\/api\/customer\?/.test(item.url) && !/id__in/.test(decodeURIComponent(item.url)))).toBe(true);
+    // The search went through the customer search route, which applies the person's permissions.
+    expect(sent.some(item => /\/api\/customer\/search\?/.test(item.url))).toBe(true);
   });
 
   it('opens a shared link with its filters, and the condition decides the value input', async () => {

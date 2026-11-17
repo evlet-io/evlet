@@ -15,7 +15,7 @@ LAYERS = {
     'access': 'auth permissions',
     'data': 'database sqlite migrations ledger writes storage object_storage secrets sequences images',
     'engine': 'documents statemanager guards activity measures unsaved mentions meaning prompts',
-    'web': 'app runtime oidc routing business forms workspaces services events jobs framework devlink discovery',
+    'web': 'app runtime oidc routing business forms workspaces services events jobs framework devlink discovery search',
     'admin': 'controls controls_export controls_system customization settings printing',
     'ai': 'eva tools mcp connector connectors assistants mailboxes',
     'site': 'instances packages builds deployment tenancy serverless',

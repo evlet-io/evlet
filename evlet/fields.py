@@ -625,9 +625,14 @@ class Link(Integer):
     the 13-character text id in JSON (evlet/identity.py). Writes accept either form."""
     kind = "link"
 
-    def __init__(self, target, **kwargs):
+    def __init__(self, target, *, option=None, **kwargs):
         super().__init__(minimum=1, **kwargs)
         self.target = target
+        # What each choice shows in the dropdown (title and subtext); without it, the target's Meta.option.
+        from .declarations import Option
+        if option is not None and not isinstance(option, Option):
+            raise ValueError('option= takes an Option(title=, subtext=, hook=)')
+        self.option = option
 
     @property
     def ledger_target(self):

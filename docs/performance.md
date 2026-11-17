@@ -484,6 +484,49 @@ The 1,000-line edit in the browser is near the 16 ms budget and over it in some 
 8.8 ms in jsdom; the development build keeps its checks on. Scrolling at 60 fps was not
 measured: the pane gave no frame timing while it was hidden.
 
+## Record search
+
+`GET /api/{model}/search` ([model-engine.md](model-engine.md#record-search-and-link-options)) serves
+Link dropdowns, record pickers and the search bar. For a model with `Meta.search_fields` it runs one
+SQL query that reads **at most 200 candidates** (`CANDIDATES` in `evlet/search.py`): rows whose
+title or a readable search field holds the typed characters in order (`lower(column) LIKE
+'%b%o%x%'`, the pattern a bound value with `%`, `_` and `\` escaped), within the Link's filters and
+the role's row scope, starts-with matches first, then text matches, then the rest. Python ranks those
+candidates and keeps `limit` (at most 20). Building the options adds one query for their columns, one
+per `F("link.field")` hop and one grouped query per aggregate part, each over at most 20 ids.
+
+Limits:
+
+- **A scan.** A `LIKE` that starts with `%` cannot use an index, so a fuzzy search reads every row of
+  the model the filters and scope leave, in each searched column (up to nine: the title and eight
+  search fields). Its cost grows with the table, not with the result. Filters on indexed columns and
+  row scopes narrow it first.
+- **Bounded ranking.** When more than 200 rows match, the 200 kept are the starts-with matches first,
+  then the text matches, each in id order; a weaker match beyond them is not ranked. Type more to narrow.
+- **Case.** SQLite's `lower()` folds ASCII letters only, so for other scripts case must match.
+- **Text.** At most 100 characters; spaces are ignored for the in-order match.
+- **Models without `Meta.search_fields`** keep the list's search: the text inside a default search
+  field, in the list's order, which stops at `limit` rows and stays fast at any size.
+
+### Local results, 17-11-2026
+
+`.venv/bin/python scripts/benchmark_search.py 100000`: 100,000 records of a model with a title and
+two search fields, three random words per title, through the HTTP route with an admin session, 20
+requests each, on a MacBook (Apple silicon):
+
+| Search | p50 | p95 |
+|---|---|---|
+| Fuzzy, common text (`box`) | 62.3 ms | 64.8 ms |
+| Fuzzy, characters in order (`bxtp`) | 56.6 ms | 59.9 ms |
+| Fuzzy, no match (`qzx`) | 53.4 ms | 57.3 ms |
+| Fuzzy, a barcode | 60.0 ms | 64.8 ms |
+| Model without search fields (`box`) | 0.7 ms | 0.8 ms |
+| Empty text (first 8 in list order) | 0.7 ms | 0.7 ms |
+
+About 0.6 ms per 1,000 records scanned. Keep fuzzy search for masters (items, customers, accounts)
+up to a few hundred thousand rows; for a larger table, leave `Meta.search_fields` out, or narrow the
+Link with filters on indexed fields.
+
 ## Current SQLite capacity roadmap
 
 SQLite is the supported backend. The older PostgreSQL measurements are historical; no
