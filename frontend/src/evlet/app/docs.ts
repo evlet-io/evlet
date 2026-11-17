@@ -9,7 +9,8 @@ import { copyText, toast } from '../ui/layers';
 import { PageHeader } from '../ui/list';
 import type { AppContext } from './context';
 import { identity, rootModels, stepLabel, type DetailMove, type ScreenModel } from './meta';
-import { ActionDialog, LockBanner, moveIcon, moveInputs, MovesButton, StageBar, stateBadgeLook, type MoveEntry } from './record-page';
+import { openForm } from './prompts';
+import { LockBanner, moveIcon, moveInputs, MovesButton, StageBar, stateBadgeLook, type MoveEntry } from './record-page';
 import type { FieldSchema } from '../model/schema';
 import { chooseTheme } from './settings';
 import { cell, effect, type Cell } from '../reactive';
@@ -83,7 +84,7 @@ class Project(Model):
 
 // ---------- State display ----------
 // Live examples of how a State shows, drawn with the record page's own pieces (stateBadgeLook, StageBar, LockBanner,
-// MovesButton, moveInputs and ActionDialog in record-page.ts) over small in-memory schemas, each next to the Python
+// MovesButton and moveInputs in record-page.ts, openForm in prompts.ts) over small in-memory schemas, each next to the Python
 // that declares it. Nothing here calls the server. tests/test_docs_state_snippets.py runs every STATE_CODE snippet.
 
 const STATE_CODE = {
@@ -222,7 +223,7 @@ const badge = (model: ScreenModel, value: () => string, moves?: () => DetailMove
 /** A record's header, cut down: the title, the State badge when shown, and the move button. */
 const header = (title: string, status: Child, actions: Child) => html`<div class="ev-doc-head"><strong>${title}</strong>${status}<span class="grow"></span>${actions}</div>`;
 
-function StateDisplay(): Child {
+function StateDisplay(ctx: AppContext): Child {
   // 1. Badge: a live deal. Click the badge to move it; the menu offers only the moves allowed now.
   const badgeValue = cell('qualified', { name: 'docs.badge' });
   const badgeMoves = () => sampleMoves(DEAL, badgeValue.get());
@@ -245,7 +246,7 @@ function StateDisplay(): Child {
   // 8. The Mark lost move takes a required remark and asks for the competitor.
   const lose = sampleMoves(DEAL, 'negotiation').find(move => move.key === 'lose')!;
   const loseInputs = moveInputs(DEAL, lose);
-  const openLose = () => ActionDialog({ name: lose.key, label: lose.label } as any, loseInputs, async () => { notSaved(); return null; });
+  const openLose = () => void openForm(ctx, { title: lose.label, fields: loseInputs, run: async () => { notSaved(); return null; } });
   const cancelled = () => ({ title: 'Void on 13-11-2026 by Sam Lee.', reason: 'Reason: Sent twice. ' });
   // 5. The version marker: what the detail sends as _version, drawn as status badges. Records don't show it yet.
   const version = (v: { number: number | null; released: boolean }) => v.number === null ? marker('Not released yet', 'slate', 'Version')
@@ -355,7 +356,7 @@ const TOPICS: Topic[] = [
   </article>` },
   { id: 'state', title: 'Rules and actions', render: () => html`<article class="ev-doc-article">
     ${section('The model decides; the screen explains', p('Calculated values show their rule. Rules hide and clear fields, make them required, or lock them, and say why in place. The browser evaluates the same finite rules as the server, and the server checks every write again.'), code(rulesCode))}
-    ${section('Moves and actions', p('A State changes only through its moves. A move that is not allowed stays visible, dims and says why. Actions with inputs open a small dialog that checks its values before it runs. Server actions keep their normal role, record and field checks.'))}
+    ${section('Moves and actions', p('A State changes only through its moves. A move that is not allowed stays visible, dims and says why. Actions with inputs open their form, a prompt, which checks its values before it runs. Server actions keep their normal role, record and field checks.'))}
     ${section('Saving', p('Values save one at a time when you leave them, with Undo. Lines are saved together with Save. If the record changed since you opened it, your draft stays and you can reload. Leaving a record before Save never saves it: your unsaved changes are kept for you to restore or discard when you come back, and a new record waits in this browser.'))}
     ${section('Prompts', p('An action is the button; a Prompt is the form it opens; its submit() is the callback. A prompt has the fields, Tables, formulas and rules of a model and saves nothing by itself. It calculates in the browser as people type, and submit() runs on the server in one transaction, through a single-use ticket. See docs/prompts.md.'), code(promptCode))}
   </article>` },

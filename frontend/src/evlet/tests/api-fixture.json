@@ -4809,10 +4809,6 @@
      "name": "sara"
     }
    },
-   "_calculation": {
-    "language": "finite-v1",
-    "model_schema_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201"
-   },
    "_deletable": false,
    "_locked": true,
    "_moves": [
@@ -4885,12 +4881,220 @@
   "etag": "\"b546712c55b21972eba8635566ce5b18721030ccbf66e13b7a2f7d471bc9cf77\"",
   "status": 200
  },
+ "invoice_action_prompt": {
+  "body": {
+   "_actions": [
+    {
+     "allowed": true,
+     "label": "Record payment",
+     "name": "record_payment"
+    }
+   ],
+   "_activity": {
+    "count": 5,
+    "open_follow_ups": 0
+   },
+   "_audit": {
+    "created_at": "2026-11-04T08:28:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "sara"
+    },
+    "modified_at": "2026-11-04T08:35:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "sara"
+    }
+   },
+   "_calculation": {
+    "language": "finite-v1",
+    "model_schema_hash": "sha256:0a537abdeec13fc0f92196829ea52b59e0fecf3dedce188b72138f60eb221201"
+   },
+   "_deletable": false,
+   "_locked": true,
+   "_moves": [
+    {
+     "allowed": false,
+     "key": "mark_paid",
+     "label": "Mark paid",
+     "reason": "Your role cannot use this move",
+     "to": "paid"
+    },
+    {
+     "allowed": false,
+     "key": "reopen",
+     "label": "Reopen",
+     "reason": "Your role cannot use this move",
+     "remark": {
+      "label": null,
+      "mode": "required",
+      "required": true
+     },
+     "to": "draft"
+    },
+    {
+     "allowed": true,
+     "key": "void",
+     "label": "Void",
+     "remark": {
+      "label": "Reason",
+      "mode": "required",
+      "required": true
+     },
+     "to": "void"
+    }
+   ],
+   "_outcome": {
+    "prompt": {
+     "errors": {},
+     "models": [
+      {
+       "actions": [],
+       "autosave": false,
+       "behavior": {
+        "amount": {},
+        "paid_on": {}
+       },
+       "children": [],
+       "fields": [
+        {
+         "default_kind": "none",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Amount",
+         "maximum": null,
+         "minimum": null,
+         "name": "amount",
+         "placeholder": "",
+         "read_only": false,
+         "required": true,
+         "scale": 6,
+         "stored": true,
+         "type": "currency",
+         "unique": false
+        },
+        {
+         "default_kind": "none",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Paid on",
+         "name": "paid_on",
+         "placeholder": "",
+         "read_only": false,
+         "required": true,
+         "stored": true,
+         "type": "date",
+         "unique": false
+        }
+       ],
+       "label": "Record payment",
+       "layout": [
+        {
+         "collapsed": false,
+         "collapsible": false,
+         "fields": [
+          "amount",
+          "paid_on"
+         ],
+         "flow": "rows",
+         "label": "Details",
+         "main": true
+        }
+       ],
+       "list_fields": [],
+       "name": "_prompt.invoice_record_payment",
+       "permissions": {
+        "create": true,
+        "delete": false,
+        "update": true
+       },
+       "plural": "Record payment",
+       "record_layout": {
+        "blocks": [
+         {
+          "kind": "section",
+          "label": "Details",
+          "main": true,
+          "name": "Details"
+         }
+        ]
+       },
+       "search_fields": [],
+       "title_field": "id"
+      }
+     ],
+     "name": "_prompt.invoice_record_payment",
+     "primary": "Record payment",
+     "source": {
+      "id": "0000000000003",
+      "model": "invoice",
+      "title": "INV-2026-00003"
+     },
+     "states": {
+      "amount": "required-input",
+      "paid_on": "required-input"
+     },
+     "ticket": "fixture-payment-ticket",
+     "title": "Record payment",
+     "values": {
+      "_sources": {},
+      "amount": null,
+      "children": {},
+      "paid_on": null
+     }
+    }
+   },
+   "_version": {
+    "number": 0,
+    "released": true,
+    "state": "issued"
+   },
+   "children": {
+    "lines": [
+     {
+      "amount": "2500.00",
+      "id": "0000000000005",
+      "item": "Support hours",
+      "qty": "10.0000",
+      "rate": "250.00"
+     },
+     {
+      "amount": "180.00",
+      "id": "0000000000006",
+      "item": "Licence",
+      "qty": "2.0000",
+      "rate": "90.00"
+     }
+    ]
+   },
+   "customer": "0000000000001",
+   "docstate": "issued",
+   "due_on": "2026-12-01",
+   "id": "0000000000003",
+   "name": null,
+   "number": "INV-2026-00003",
+   "outstanding": "2680.00",
+   "posting_date": "2026-11-01",
+   "remarks": "",
+   "title": "INV-2026-00003",
+   "total": "2680.00"
+  },
+  "etag": "\"a70986fc388560a5e7b0eb8fc2487bc4f8b4fc184ba586b414d716e8565101cd\"",
+  "status": 200
+ },
+ "invoice_action_submit": {
+  "body": {},
+  "etag": null,
+  "status": 200
+ },
  "invoice_activity": {
   "body": {
    "items": [
     {
      "actor": null,
-     "at": "2026-11-16T23:28:48.629Z",
+     "at": "2026-11-16T23:54:21.927Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -4902,7 +5106,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.627Z",
+     "at": "2026-11-16T23:54:21.925Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -4914,7 +5118,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.624Z",
+     "at": "2026-11-16T23:54:21.921Z",
      "data": {
       "follow_up": 16,
       "text": "Balance due by the end of the month"
@@ -4924,7 +5128,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.622Z",
+     "at": "2026-11-16T23:54:21.917Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -4936,7 +5140,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.619Z",
+     "at": "2026-11-16T23:54:21.913Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -4945,7 +5149,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.601Z",
+     "at": "2026-11-16T23:54:21.887Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -4960,7 +5164,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.590Z",
+     "at": "2026-11-16T23:54:21.859Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -4970,7 +5174,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.589Z",
+     "at": "2026-11-16T23:54:21.859Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -4993,7 +5197,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.576Z",
+     "at": "2026-11-16T23:54:21.841Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5005,7 +5209,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.561Z",
+     "at": "2026-11-16T23:54:21.823Z",
      "data": {
       "fields": {
        "total": {
@@ -5067,7 +5271,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.546Z",
+     "at": "2026-11-16T23:54:21.806Z",
      "data": {
       "fields": {
        "customer": {
@@ -5117,7 +5321,7 @@
  "invoice_activity_follow_up": {
   "body": {
    "actor": 2,
-   "at": "2026-11-16T23:28:48.622Z",
+   "at": "2026-11-16T23:54:21.917Z",
    "data": {
     "assignee": 2,
     "due": "2026-11-15",
@@ -5133,7 +5337,7 @@
  "invoice_activity_follow_up_done": {
   "body": {
    "actor": 2,
-   "at": "2026-11-16T23:28:48.624Z",
+   "at": "2026-11-16T23:54:21.921Z",
    "data": {
     "follow_up": 16,
     "text": "Balance due by the end of the month"
@@ -5147,7 +5351,7 @@
  "invoice_activity_note": {
   "body": {
    "actor": 2,
-   "at": "2026-11-16T23:28:48.619Z",
+   "at": "2026-11-16T23:54:21.913Z",
    "data": {
     "text": "Customer asked for a copy by email"
    },
@@ -5331,7 +5535,7 @@
    "items": [
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.576Z",
+     "at": "2026-11-16T23:54:21.841Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -5343,7 +5547,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.561Z",
+     "at": "2026-11-16T23:54:21.823Z",
      "data": {
       "fields": {
        "total": {
@@ -5405,7 +5609,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.546Z",
+     "at": "2026-11-16T23:54:21.806Z",
      "data": {
       "fields": {
        "customer": {
@@ -8373,7 +8577,7 @@
    "items": [
     {
      "actor": null,
-     "at": "2026-11-16T23:28:48.629Z",
+     "at": "2026-11-16T23:54:21.927Z",
      "data": {
       "direction": "out",
       "party": null,
@@ -8385,7 +8589,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.627Z",
+     "at": "2026-11-16T23:54:21.925Z",
      "data": {
       "assignee": null,
       "due": "2026-11-30",
@@ -8397,7 +8601,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.624Z",
+     "at": "2026-11-16T23:54:21.921Z",
      "data": {
       "follow_up": 16,
       "text": "Balance due by the end of the month"
@@ -8407,7 +8611,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.622Z",
+     "at": "2026-11-16T23:54:21.917Z",
      "data": {
       "assignee": 2,
       "due": "2026-11-15",
@@ -8419,7 +8623,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.619Z",
+     "at": "2026-11-16T23:54:21.913Z",
      "data": {
       "text": "Customer asked for a copy by email"
      },
@@ -8428,7 +8632,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.601Z",
+     "at": "2026-11-16T23:54:21.887Z",
      "data": {
       "action": "record_payment",
       "fields": {
@@ -8443,7 +8647,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.590Z",
+     "at": "2026-11-16T23:54:21.859Z",
      "data": {
       "field": "number",
       "number": "INV-2026-00003"
@@ -8453,7 +8657,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.589Z",
+     "at": "2026-11-16T23:54:21.859Z",
      "data": {
       "fields": {
        "outstanding": {
@@ -8476,7 +8680,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.576Z",
+     "at": "2026-11-16T23:54:21.841Z",
      "data": {
       "action": "added",
       "id": 1,
@@ -8488,7 +8692,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.561Z",
+     "at": "2026-11-16T23:54:21.823Z",
      "data": {
       "fields": {
        "total": {
@@ -8550,7 +8754,7 @@
     },
     {
      "actor": 2,
-     "at": "2026-11-16T23:28:48.546Z",
+     "at": "2026-11-16T23:54:21.806Z",
      "data": {
       "fields": {
        "customer": {

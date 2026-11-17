@@ -14,7 +14,7 @@ from .declarations import Ref
 from .fields import CurrentUser, MISSING, Link
 from .identity import RecordId
 from .naming import drop_echoes
-from .permissions import CHUNK, Policy, Rule, trusted
+from .permissions import CALLER, CHUNK, Policy, Rule, trusted
 from .models import ASSIGNED_ID, ValidationError, refuse_id
 from .query import SqlQuery
 from .reactivity import evaluate, graph, round_field, plans
@@ -1877,9 +1877,15 @@ def operate(context, model, record_id, values, *, action=None, arguments=None, m
         declaration = getattr(method, '__action__', None)
         if declaration is None or not has_role(user, declaration['roles']):
             raise AccessError(403, 'Action is unavailable')
-        arguments = guards.action_arguments(context, model, method, declaration, arguments, before)
-        with trusted(), handler_context(context, draft):
-            outcome = method(draft, **arguments)
+        if declaration['inputs'] and not arguments and CALLER.get():
+            # Over HTTP an action with inputs answers its form first: a prompt whose submit() runs the action.
+            from .prompts import inputs_prompt
+            guards.action_available(context, model, method, declaration, before)
+            outcome = inputs_prompt(model, action)
+        else:
+            arguments = guards.action_arguments(context, model, method, declaration, arguments, before)
+            with trusted(), handler_context(context, draft):
+                outcome = method(draft, **arguments)
         from .prompts import is_prompt
         if is_prompt(outcome):
             # An action that returns a prompt is checked and writes nothing: the prompt's submit() writes.

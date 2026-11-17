@@ -337,7 +337,12 @@ def documents(out, folder):
     # The draft is issued and paid in part.
     keep('invoice_issued', write('POST', url, '/moves/issue', {}))
     keep('invoice_issued_detail', editor('GET', url))
-    keep('invoice_action', write('POST', url, '/actions/record_payment', {'amount': '500.00', 'paid_on': '2026-11-10'}))
+    # Record payment has inputs: sent without them, it answers its prompt; the prompt's submit runs it.
+    opened = keep('invoice_action_prompt', write('POST', url, '/actions/record_payment', {}))
+    ticket = opened['_outcome']['prompt']['ticket']
+    opened['_outcome']['prompt']['ticket'] = 'fixture-payment-ticket'
+    keep('invoice_action_submit', editor('POST', f'/api/_prompts/{ticket}/submit', {'values': {'amount': '500.00', 'paid_on': '2026-11-10'}}))
+    keep('invoice_action', editor('GET', url))
     payment = admin('POST', '/api/payment', {'invoice': int(url.rsplit('/', 1)[1]), 'amount': '500.00', 'paid_on': '2026-11-10'})[1]
     keep('invoice_payment', editor('GET', f"/api/payment/{payment['id']}"))
     keep('invoice_customer', editor('GET', f'/api/customer/{customer}'))

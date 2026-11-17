@@ -77,6 +77,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   `move`, `reload` or `get`, fails when the class is created: rename one.
 - **Trusted Python writes read-only fields** through `context.update` and bound records (HTTP callers still
   cannot), and calling an `@action` on a record built by hand raises `Get the record through a context`.
+- **Action inputs open as a prompt.** Over HTTP an action with `inputs={...}` sent without them answers
+  `_outcome.prompt`, an anonymous prompt whose submit runs the action; sent with them it runs as before. The
+  browser's action and move dialogs (`ActionDialog`) are the prompt modal now.
 - **Prompts and report filters run finite expressions.** The refusal of `F(...)` on transient forms is gone.
 
 ### Fixed

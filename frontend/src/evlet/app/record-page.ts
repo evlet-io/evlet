@@ -35,7 +35,7 @@ import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowsText, va
 import type { LayoutBlock } from '../model/schema';
 import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
 import { filterFields } from './filters';
-import { follow, takePrefill, type Outcome } from './prompts';
+import { follow, openForm, takePrefill, type Outcome } from './prompts';
 import { openEvaPanel } from '../eva/chat';
 import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden, keepCreateAttempts, discardKeptChanges } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
@@ -341,11 +341,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
     const asked = askedFields(model, move);
     const inputs = moveInputs(model, move);
     if (inputs.length) {
-      ActionDialog({ name: move.key, label } as ActionMeta, inputs, async values => {
+      void openForm(ctx, { title: label, fields: inputs, run: async values => {
         if (await store.move(move.key, values)) { moved(to, label); return null; }
         const errors = Object.fromEntries(asked.map(meta => [meta.name, store.field(meta.name).error.peek()]).filter(([, error]) => error));
-        return Object.keys(errors).length ? errors : store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`;
-      });
+        return Object.keys(errors).length ? errors as Record<string, string> : store.formError.peek() ?? store.conflict.peek()?.message ?? `${label} did not run`;
+      } });
       return;
     }
     const ok = await store.move(move.key);
@@ -374,11 +374,11 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       });
       return;
     }
-    ActionDialog(action, inputs, async values => {
+    void openForm(ctx, { title: action.label, fields: inputs, run: async values => {
       const ok = await store.runAction(action.name, values);
       if (ok && !(await followed(action.label))) toast(`${action.label} done`);
       return ok ? null : store.formError.peek() ?? store.conflict.peek()?.message ?? `${action.label} did not run`;
-    });
+    } });
   };
   // An action may answer with an Outcome or a Prompt (app/prompts.ts); a prompt's submit may change this record.
   const followed = async (label: string) => {
@@ -1050,7 +1050,6 @@ export function moveInputs(model: ScreenModel, move: DetailMove): FieldSchema[] 
   return [...remark, ...askedFields(model, move).map(meta => ({ ...meta, read_only: false, required: Boolean(meta.required || meta.required_when), applies_when: null, required_when: null, locked_when: null }))];
 }
 
-// ---------- action dialog ----------
 
 /** A move's icon, read from where it goes: a final rose step crosses, Resume plays, On hold pauses, Complete checks. */
 export function moveIcon(model: ScreenModel, to: string): string {
@@ -1079,43 +1078,11 @@ function actionIcon(action: ActionMeta): string {
 
 const ARGUMENT_TYPES: Record<string, string> = { str: 'text', int: 'integer', bool: 'boolean', float: 'decimal' };
 
+/** An action's typed arguments, asked here. An action with inputs={...} answers its own prompt (evlet/prompts.py). */
 function actionInputs(action: ActionMeta): FieldSchema[] {
-  if (action.inputs?.length) return action.inputs;
+  if (action.inputs?.length) return [];
   return (action.arguments ?? []).map(argument => ({ name: argument.name, type: ARGUMENT_TYPES[argument.type] ?? 'text', label: humanize(argument.name),
     required: argument.required, read_only: false, default: argument.default }) as FieldSchema);
-}
-
-/** Small dialog that collects an action's (or a move's) inputs, checks them in place and runs it. `run`
- * answers null when done, a message, or field errors by input name. */
-export function ActionDialog(action: ActionMeta, inputs: FieldSchema[], run: (values: Record<string, unknown>) => Promise<string | Record<string, string> | null>) {
-  const fields = inputs.map(meta => localField(meta, meta.default ?? (meta.type === 'boolean' ? false : null), { required: meta.required && !meta.read_only }));
-  const controls = fields.map(field => fieldFor({ field, full: true }));
-  const note = cell<string>('');
-  let busy = false;
-  const submit = async (close: () => void) => {
-    // Commit editable inputs only: server-owned values are displayed but never validated or sent here.
-    const writable = fields.filter(field => field.editable.peek());
-    for (const input of controls.filter((_, index) => fields[index].editable.peek()).flatMap(element => [...element.querySelectorAll('input, textarea')])) input.dispatchEvent(new Event('change'));
-    if (writable.some(field => field.error.peek())) return;
-    let valid = true;
-    for (const field of writable) {
-      const value = field.value.peek();
-      if (field.meta.required && (value === null || value === undefined || value === '')) { field.error.set(`${field.meta.label} is required`); valid = false; }
-    }
-    if (!valid || busy) return;
-    busy = true;
-    const values = Object.fromEntries(writable.filter(field => field.value.peek() !== null && field.value.peek() !== '').map(field => [field.meta.name, field.value.peek()]));
-    const problem = await run(values);
-    busy = false;
-    if (typeof problem === 'string') { note.set(problem); return; }
-    if (problem) { for (const field of fields) if (problem[field.meta.name]) field.error.set(problem[field.meta.name]); return; }
-    close();
-  };
-  let closeDialog = () => {};
-  closeDialog = openModal({ title: action.label, icon: 'zap', tint: 'blue', narrow: true, onSubmit: () => void submit(closeDialog),
-    body: () => [...controls, html`<p class="ev-error" role="alert" hidden=${() => !note.get()}>${() => note.get()}</p>`],
-    footer: close => DialogFooter({ cancel: close, submit: { label: action.label, onClick: () => void submit(close) } }) });
-  return closeDialog;
 }
 
 // ---------- side column ----------
