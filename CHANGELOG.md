@@ -4,7 +4,14 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.13 (17-11-2026)
+
+### Upgrading to 0.4.13
+
+- **Nothing to change.** No migrations and no public API removed; apps on 0.4.12 run as they are.
+- **Deleting selected table rows now asks first** (by button, or by Enter while rows are selected). A
+  frontend test that clicks Delete must confirm the dialog too.
+- **Model scripts and extensions are opt-in**: `Meta.script` and `Extend` change nothing until an app uses them.
 
 ### Added
 
