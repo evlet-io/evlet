@@ -4,7 +4,28 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.12 (17-11-2026)
+
+### Upgrading to 0.4.12
+
+- **`Meta.search_fields` is checked when the class is defined**: up to eight distinct names of the
+  model's fields. A typo now fails at import instead of when the schema is built.
+- **Search results change order** for models with `Meta.search_fields`: Link dropdowns, record pickers
+  and the search bar now rank fuzzy matches instead of listing text matches in list order. To keep the
+  old behaviour for a model, remove `Meta.search_fields` (its default search fields still serve the
+  list's search box). The list's own search box is unchanged.
+- **Custom `LinkSource`s** (`frontend/src/evlet/ui/fields.ts`): `search()` gets a fourth argument,
+  the Link's context; `canCreate()` and `create()` are new and optional. Front ends that call
+  `apiLinks(api, schema)` need nothing; pass `{ quickCreate }` to offer Create new.
+- Apps that tested the Link dropdown or the palette against `GET /api/{model}?q=` should expect
+  `GET /api/{model}/search` instead.
+
+- **Braces in `help_text` now name fields.** A help text with a literal `{` or `}` fails when its class
+  is defined; write `{{` and `}}`. A help text whose braces name a field that does not exist fails with
+  the model, field and name.
+- **To show a subtext under a Table cell,** name the row's fields in the field's existing `help_text`,
+  such as `rate = Currency(..., help_text='per {uom}')`. No new attribute, migration or frontend change is
+  needed; plain help text keeps showing only in the row editor and on forms.
 
 ### Search and Link options
 
@@ -25,20 +46,6 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   record.
 - The Playground shows each: customers by name or email with the email below, invoice options with their
   customer and total, and projects with what was invoiced to the invoice's customer.
-
-### Upgrading
-
-- **`Meta.search_fields` is checked when the class is defined**: up to eight distinct names of the
-  model's fields. A typo now fails at import instead of when the schema is built.
-- **Search results change order** for models with `Meta.search_fields`: Link dropdowns, record pickers
-  and the search bar now rank fuzzy matches instead of listing text matches in list order. To keep the
-  old behaviour for a model, remove `Meta.search_fields` (its default search fields still serve the
-  list's search box). The list's own search box is unchanged.
-- **Custom `LinkSource`s** (`frontend/src/evlet/ui/fields.ts`): `search()` gets a fourth argument,
-  the Link's context; `canCreate()` and `create()` are new and optional. Front ends that call
-  `apiLinks(api, schema)` need nothing; pass `{ quickCreate }` to offer Create new.
-- Apps that tested the Link dropdown or the palette against `GET /api/{model}?q=` should expect
-  `GET /api/{model}/search` instead.
 
 ### Fixed
 
@@ -65,15 +72,6 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   checked when the class is defined, and the schema lists them in `help_fields`
   ([docs/model-engine.md](docs/model-engine.md#reactive-help-text)). The Playground's Quick invoice now
   has lines with item, unit, quantity and rate.
-
-### Upgrading
-
-- **Braces in `help_text` now name fields.** A help text with a literal `{` or `}` fails when its class
-  is defined; write `{{` and `}}`. A help text whose braces name a field that does not exist fails with
-  the model, field and name.
-- **To show a subtext under a Table cell,** name the row's fields in the field's existing `help_text`,
-  such as `rate = Currency(..., help_text='per {uom}')`. No new attribute, migration or frontend change is
-  needed; plain help text keeps showing only in the row editor and on forms.
 
 ## 0.4.11 (17-11-2026)
 
