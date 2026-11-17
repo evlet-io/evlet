@@ -4,6 +4,75 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## 0.4.12 (17-11-2026)
+
+### Upgrading to 0.4.12
+
+- **`Meta.search_fields` is checked when the class is defined**: up to eight distinct names of the
+  model's fields. A typo now fails at import instead of when the schema is built.
+- **Search results change order** for models with `Meta.search_fields`: Link dropdowns, record pickers
+  and the search bar now rank fuzzy matches instead of listing text matches in list order. To keep the
+  old behaviour for a model, remove `Meta.search_fields` (its default search fields still serve the
+  list's search box). The list's own search box is unchanged.
+- **Custom `LinkSource`s** (`frontend/src/evlet/ui/fields.ts`): `search()` gets a fourth argument,
+  the Link's context; `canCreate()` and `create()` are new and optional. Front ends that call
+  `apiLinks(api, schema)` need nothing; pass `{ quickCreate }` to offer Create new.
+- Apps that tested the Link dropdown or the palette against `GET /api/{model}?q=` should expect
+  `GET /api/{model}/search` instead.
+
+- **Braces in `help_text` now name fields.** A help text with a literal `{` or `}` fails when its class
+  is defined; write `{{` and `}}`. A help text whose braces name a field that does not exist fails with
+  the model, field and name.
+- **To show a subtext under a Table cell,** name the row's fields in the field's existing `help_text`,
+  such as `rate = Currency(..., help_text='per {uom}')`. No new attribute, migration or frontend change is
+  needed; plain help text keeps showing only in the row editor and on forms.
+
+### Search and Link options
+
+- **Fuzzy, ranked record search.** A model with `Meta.search_fields` is searched in its title and those
+  fields by Link dropdowns, record pickers and the search bar: whole value, then start, then a word's
+  start, then inside a word, then the characters in order. A new route, `GET /api/{model}/search`,
+  serves all three with the role's row scope and readable fields
+  ([docs/model-engine.md](docs/model-engine.md#record-search-and-link-options)). Limits are in
+  [docs/performance.md](docs/performance.md#record-search).
+- **Link filters on the server.** The dropdown sends the Link's name and only the form values its
+  `Ref` filters read; the server applies the filters as declared.
+- **`Option`** (`from evlet import Option`): what a Link option shows, title and a muted subtext below
+  it, declared as text, `F("field")`, `F("link.field")` and `Count`, `Sum`, `Min` or `Max` over a related
+  model, keyed by form values with `Ref`. Set it on `Link(..., option=)` or the target's `Meta.option`;
+  `hook=` runs trusted code for the rest.
+- **Create new from a Link.** The dropdown's last option, for people who may create the target, opens a
+  quick form with the typed text in its title and the filter values filled in; the Link selects the new
+  record.
+- The Playground shows each: customers by name or email with the email below, invoice options with their
+  customer and total, and projects with what was invoiced to the invoice's customer.
+
+### Fixed
+
+- **Mod+S (⌘S or Ctrl+S) while a child table cell or the record's title is being edited** commits
+  that value first, as leaving it would, so the save includes it and the cell shows it. Text that
+  can't be read still stops the save with the field's error, as in a parent field.
+- **A child table's Link cell shows its ↗ go-to arrow on hover** while the table is not being
+  edited, as a Link field does: nudged, with the "Open <name>" hint. It stays out of the Tab order.
+- **Tab into a child table takes one stop.** Tab from the field before it starts editing its first
+  editable cell (Shift+Tab from after it, its last), or lands on Add row when it has no rows. Row
+  selection and the column controls are reached from the cells with ← and ↑
+  ([docs/ui.md](docs/ui.md#field-and-tab-order)).
+
+### Added
+
+- **The record's side column (activity and attachments) folds to its edge** from a round button
+  like the sidebar's collapse button, and the choice is remembered per user.
+
+- **Reactive help text and Table row subtext.** `help_text` may name fields in braces: `{uom}` on the
+  same record or row, `{parent.currency}` on the record that owns a Table row. The browser fills them in as
+  the values change, with no request; a choice reads by its label and a Link by its record's title. In a
+  child table such a help text shows as a small grey line under the cell's value (`help_text='per {uom}'`
+  reads "per Box"), and the row keeps its height; plain help text stays in the row editor. Names are
+  checked when the class is defined, and the schema lists them in `help_fields`
+  ([docs/model-engine.md](docs/model-engine.md#reactive-help-text)). The Playground's Quick invoice now
+  has lines with item, unit, quantity and rate.
+
 ## 0.4.11 (17-11-2026)
 
 ### Upgrading to 0.4.11

@@ -177,6 +177,17 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
    and scrolls on its own. Stacked under the main column (narrow windows, phones) it scrolls with it. */
 .view>.ev-record .doc:not(.no-side)>.doc-side{position:sticky;top:0;align-self:start;height:calc(100vh - var(--topbar-h));height:calc(100dvh - var(--topbar-h));
   overflow-y:auto;overscroll-behavior:contain}
+/* A wide record frame folds its side column to its edge (app/record-page.ts), from a round button on that edge that
+   looks and moves like the sidebar's (.side-edge, ui/styles.css). It stays in view as the page scrolls. */
+.doc>.doc-side-edge{display:none}
+.doc:not(.doc-narrow):not(.no-side):not(.side-left)>.doc-side-edge{display:grid;position:sticky;left:auto;bottom:auto;top:16px;grid-column:2;grid-row:1;
+  align-self:start;justify-self:start;margin-left:-12px;transition:margin-left .2s ease}
+.doc:not(.doc-narrow):not(.no-side):not(.side-left):has(>.doc-side-edge)>.doc-main{grid-column:1;grid-row:1}
+.doc:not(.doc-narrow):not(.no-side):not(.side-left):has(>.doc-side-edge)>.doc-side{grid-column:2;grid-row:1}
+/* Folded, the column is a slim rail (as the collapsed sidebar is), with the button on its edge. */
+.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left){grid-template-columns:minmax(0,1fr) 24px}
+.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left)>.doc-side{padding:0;overflow:hidden}
+.doc.side-collapsed:not(.doc-narrow):not(.no-side):not(.side-left)>.doc-side>*{display:none}
 /* A narrow record frame (DocFrame's doc-narrow: a side panel, or a window of about 980 px and under, after the sidebar
    drawer of ui/styles.css) keeps its side column out of the main column's way. The button at the end of the breadcrumb
    row (in a side panel, of its top line) opens it as a drawer on the right. The page and the panel share these rules. */
@@ -252,7 +263,9 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .modal.prompt { width: min(820px, 100%); }
 .prompt .prompt-group { margin: 10px 0 4px; font-size: 11.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--fg-3); }
 .prompt .prompt-group:first-child { margin-top: 0; }
-.prompt .prompt-table { margin-top: 12px; }
+.prompt .prompt-table { margin-top: 12px; grid-column: 1 / -1; min-width: 0; }
+/* The fields block spans the dialog too, so a Table never pushes it into a sliver of the two-column grid. */
+.prompt .modal-b > .ev-cmp-grid { grid-column: 1 / -1; min-width: 0; }
 .prompt .ev-error { margin-top: 8px; }
 
 /* ---------- the filter side panel, docked beside the list ---------- */

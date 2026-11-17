@@ -79,6 +79,42 @@ def _expr(op, left, *right):
     return operand(op, left, *right)
 
 
+_TEMPLATE = re.compile(r'\{\{|\}\}|\{([^{}]*)\}|[{}]')
+_REFERENCE = re.compile(r'(parent\.)?[A-Za-z_][A-Za-z0-9_]*')
+
+
+def help_references(text):
+    """The fields a help text names: "per {uom}" -> ('uom',), "in {parent.currency}" -> ('parent.currency',).
+    {{ and }} are literal braces. A help text without references is plain text. Raises ValueError on a
+    stray brace or a reference that is not a field name (docs/model-engine.md#reactive-help-text)."""
+    found = []
+    for match in _TEMPLATE.finditer(text):
+        token = match.group(0)
+        if token in ('{{', '}}'):
+            continue
+        name = match.group(1)
+        if name is None:
+            raise ValueError(f'help_text {text!r} has a stray {token!r}; write {token * 2} for a literal brace')
+        if not _REFERENCE.fullmatch(name):
+            raise ValueError(f'help_text {text!r}: {{{name}}} must name a field, as {{uom}} or {{parent.currency}}')
+        if name not in found:
+            found.append(name)
+    return tuple(found)
+
+
+def check_help_references(model, field, fields, parent=None):
+    """A help text's references name fields of its model, and parent. ones fields of the record that owns its
+    Table (`parent` is that model; None when the model is checked on its own, which leaves parent. ones for the
+    Table check). Raises ValueError naming the model, field and missing name."""
+    for name in help_references(field.help_text):
+        if name.startswith('parent.') and parent is None:
+            continue
+        owner, key, known = (parent, name[7:], parent.__app_fields__) if name.startswith('parent.') else (model, name, fields)
+        if key not in known:
+            raise ValueError(f'{model.__name__}.{field.name}: help_text names {{{name}}}, but {owner.__name__} has no field {key!r}'
+                             + (' (parent. names a field of the record that owns the Table)' if owner is parent else ''))
+
+
 def _finite_option(value, name):
     """initial= and rule options take a finite expression or a field, never text or a callable."""
     from .calc import Expr
@@ -120,7 +156,9 @@ class Field:
             raise ValueError("Field help, tooltip, placeholder and suffix must be text; a suffix has at most 20 characters")
         if type(hidden) is not bool or type(read_only) is not bool:
             raise ValueError("hidden and read_only must be booleans")
-        # help_text shows under the input; tooltip behind a ? icon at its right end.
+        # help_text shows under the input; tooltip behind a ? icon at its right end. {field} and {parent.field}
+        # in help_text are filled in the browser from the record's values (checked again when the model is built).
+        help_references(help_text)
         self.label, self.help_text, self.tooltip, self.placeholder, self.suffix = label, help_text, tooltip, placeholder, suffix
         self.hidden, self.read_only = hidden, read_only
         # Whether the field shows when a list opens the record in its side panel. Display only: the full page
@@ -625,9 +663,14 @@ class Link(Integer):
     the 13-character text id in JSON (evlet/identity.py). Writes accept either form."""
     kind = "link"
 
-    def __init__(self, target, **kwargs):
+    def __init__(self, target, *, option=None, **kwargs):
         super().__init__(minimum=1, **kwargs)
         self.target = target
+        # What each choice shows in the dropdown (title and subtext); without it, the target's Meta.option.
+        from .declarations import Option
+        if option is not None and not isinstance(option, Option):
+            raise ValueError('option= takes an Option(title=, subtext=, hook=)')
+        self.option = option
 
     @property
     def ledger_target(self):

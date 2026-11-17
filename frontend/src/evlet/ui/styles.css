@@ -965,6 +965,11 @@ th:hover>.rz::after{background:var(--border-strong)}
 .rz:hover::after,.resizing .rz:hover::after{background:var(--accent)}
 .grid.resizing,.dt.resizing{cursor:col-resize;user-select:none}
 .g-ph{color:var(--fg-3)}
+/* A cell's subtext: its field's reactive help text ("per Box") under the value, inside the same 35px row. */
+.g-cv{display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:15px}
+.g-cv-v,.g-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-sub{font-size:11px;line-height:13px;font-weight:400;color:var(--fg-3)}
+.g-sub[hidden]{display:none}
 .g tr.g-xrow td{padding:0;height:auto;background:var(--bg-subtle);white-space:normal;overflow:visible}
 .g-x{position:sticky;left:0;width:var(--gw,100%);padding:12px 14px 14px;box-shadow:inset 3px 0 0 var(--accent);animation:slidein .18s ease}
 .g-x-h{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}
@@ -1181,6 +1186,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .in-link-box{position:relative;min-width:0;--link-at:11px}
 .fld .in-link-box{--link-at:15px}
 .g td.editing .in-link-box{--link-at:10px}
+.g td .g-go{--link-at:0px;display:flex;align-items:center;min-width:0}
 .link-go{position:absolute;left:var(--link-at);top:50%;width:20px;height:20px;margin-top:-10px;display:grid;place-items:center;border-radius:var(--r-sm);
   color:var(--accent);background:var(--surface);opacity:0;pointer-events:none;transition:opacity .15s ease}
 .link-go>svg{color:inherit;transition:transform .15s ease}
@@ -1206,6 +1212,10 @@ th:hover>.rz::after{background:var(--border-strong)}
 .link-list{display:flex;flex-direction:column;max-height:260px;overflow-y:auto}
 .link-list .mi{gap:9px}
 .link-list .mi .muted{margin-left:auto;font-size:12px}
+.link-opt{display:flex;flex-direction:column;min-width:0;line-height:1.3}
+.link-title,.link-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.link-sub{font-size:12px;color:var(--fg-3)}
+.link-create{color:var(--accent)}
 .link-status{font-size:12px;padding:0 4px}
 .link-status:empty{display:none}
 .link-search hr{border:0;border-top:1px solid var(--divider);margin:2px 0}

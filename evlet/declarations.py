@@ -117,6 +117,67 @@ class ReactiveQuery:
 Query = ReactiveQuery
 
 
+# Parts of an Option: literal text, F("field") or F("link.field") of the option's record, and a per-record
+# Count, Sum, Min or Max over a related model (model= and link=), whose where= is {field: value or Ref("path")}.
+OPTION_FUNCTIONS = ('count', 'sum', 'min', 'max')
+MAX_OPTION_PARTS, MAX_OPTION_LITERAL = 8, 200
+
+
+class Option:
+    """What a record shows as an option in Link dropdowns, record pickers and the search bar: its title and
+    a muted subtext line below it, built in the search query (evlet/search.py, docs/model-engine.md).
+
+        Option(subtext=("In stock: ", Sum("qty", model=StockMove, link="item", where={"warehouse": Ref("warehouse")}),
+                        " ", F("stock_uom")))
+
+    title and subtext are one part or a tuple of parts, joined as text. A Ref in where= reads the form the
+    Link is on, so it is allowed only in a Link's own option=, not in Meta.option. hook(context, options, values)
+    is trusted app code for what the parts can't say: it gets the options read for this person (dicts with id,
+    title, subtext and record) and the Link's form values ({path: value}), and returns them with title or
+    subtext changed."""
+    __slots__ = ('title', 'subtext', 'hook')
+
+    def __init__(self, *, title=None, subtext=None, hook=None):
+        if title is None and subtext is None and hook is None:
+            raise ValueError('Option() takes title=, subtext= or hook=')
+        if hook is not None and not callable(hook):
+            raise ValueError('Option(hook=) takes a function (context, options, values)')
+        self.title, self.subtext, self.hook = _option_parts(title, 'title'), _option_parts(subtext, 'subtext'), hook
+
+    def __repr__(self):
+        return f'Option(title={self.title!r}, subtext={self.subtext!r}, hook={self.hook!r})'
+
+    def refs(self):
+        """The form paths the option reads (Ref values in where=)."""
+        from .calc import Expr
+        return tuple(dict.fromkeys(value.path for part in (*(self.title or ()), *(self.subtext or ())) if not isinstance(part, (str, Expr))
+                                   for value in (part.where or {}).values() if isinstance(value, Ref)))
+
+
+def _option_parts(value, what):
+    if value is None:
+        return None
+    parts = value if isinstance(value, tuple) else (value,)
+    if not parts or len(parts) > MAX_OPTION_PARTS:
+        raise ValueError(f'Option {what}= takes 1 to {MAX_OPTION_PARTS} parts')
+    from .calc import Expr
+    for part in parts:
+        if isinstance(part, str):
+            if len(part) > MAX_OPTION_LITERAL:
+                raise ValueError(f'Option {what}: literal text has at most {MAX_OPTION_LITERAL} characters')
+        elif isinstance(part, Expr):
+            if part.op != 'ref' or part.meta.get('scope') != 'self' or part.meta['name'].count('.') > 1:
+                raise ValueError(f'Option {what}: use F("field") or F("link.field"), not {part.op} expressions')
+        elif getattr(part, 'function', None) in OPTION_FUNCTIONS and getattr(part, 'model', None) is not None:
+            where = part.where or {}
+            if not isinstance(where, dict) or any(not isinstance(key, str) or isinstance(item, (dict, list, tuple, set))
+                                                 for key, item in where.items()):
+                raise ValueError(f'Option {what}: where= of {type(part).__name__} is {{field: value or Ref("path")}}')
+        else:
+            raise ValueError(f'Option {what}: use text, F("field"), or Count, Sum, Min or Max with model= and link=, not {part!r}')
+    return parts
+
+
 def depends(*paths):
     for path in paths:
         Ref(path.replace('.*.', '.'))

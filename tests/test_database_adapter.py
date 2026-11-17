@@ -396,6 +396,10 @@ def test_text_matching_and_case(people):
     assert names(connection, person.where(qb.starts_with('given', 'ch'))) == []
     assert names(connection, person.where(qb.starts_with('given', '_'))) == []
     assert names(connection, person.where(qb.contains('given', "%_'"))) == []
+    # The characters in order, ignoring case; LIKE wildcards in the text match only themselves.
+    assert names(connection, person.where(qb.subsequence_ci('given', 'AA'))) == ['Aisha', 'dana']
+    assert names(connection, person.where(qb.subsequence_ci('given', 'bll'))) == ['Bilal']
+    assert names(connection, person.where(qb.subsequence_ci('given', '%_'))) == []
 
 
 def test_joins_subqueries_and_exists(people):

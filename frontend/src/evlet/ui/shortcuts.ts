@@ -72,16 +72,31 @@ export function isTyping(element: Element | null = document.activeElement): bool
   return !['button', 'checkbox', 'radio', 'submit', 'reset', 'range', 'color', 'file'].includes((element as HTMLInputElement).type);
 }
 
+const committers = new WeakMap<Element, () => boolean | undefined>();
+
+/**
+ * Let a control that commits by hand (commitOn: 'manual') commit when a shortcut saves while the
+ * focus is inside `host`: `commit` writes what is being edited, as leaving it would, and returns
+ * false when it could not be read (the control then shows the error and keeps the focus), or
+ * undefined when nothing is being edited there, so the focused input commits as usual.
+ */
+export function commitWithin(host: Element, commit: () => boolean | undefined) { committers.set(host, commit); }
+
 /**
  * Commit what is typed in the focused input before a shortcut saves (fields commit on change).
  * False only when that commit failed: a field's change handler cancels the change event when the
  * typed text could not be read or broke a rule (ui/fields.ts), so the field now shows that error.
- * Any other focused control (a select, tags, an image, a link picker, a cell that commits by hand)
- * is not committed here, and a stale error it shows (one the server sent) does not block the save:
+ * A control that commits by hand registers itself (commitWithin) and is committed through that.
+ * Any other focused control (a select, tags, an image, a link picker) is not committed here, and a stale error it shows (one the server sent) does not block the save:
  * as with the Save button, the save runs and the server answers again.
  */
 export function commitTyped(): boolean {
   const active = document.activeElement;
+  // A control that commits by hand (a child table's cell, an inline value) commits as leaving it would.
+  for (let at: Element | null = active; at; at = at.parentElement) {
+    const done = committers.get(at)?.();
+    if (done !== undefined) return done;
+  }
   if (!((active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) && isTyping(active))) return true;
   return active.dispatchEvent(new Event('change', { bubbles: true, cancelable: true }));
 }

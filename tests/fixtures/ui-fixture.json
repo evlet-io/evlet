@@ -467,6 +467,9 @@
           "placeholder": "",
           "hidden": false,
           "read_only": false,
+          "inputs": [
+            "customer"
+          ],
           "default_kind": "none",
           "stored": true,
           "operators": [

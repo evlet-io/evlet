@@ -295,6 +295,43 @@ reference = Text(help_text="The number printed on the invoice.",
                  tooltip="Use the customer's purchase order number if they ask for one.")
 ```
 
+### Reactive help text
+
+`help_text` may name fields in braces. The browser fills them in from the record's values as they
+change, with no request: `{uom}` is a field of the same record or Table row, and on a Table row
+`{parent.currency}` is a field of the record that owns the Table. A value reads as the record shows it:
+a choice by its label (`box` reads `Box`), a Link by its record's title, a number at its scale. While
+any named value is empty the help text reads empty, so `"per {uom}"` never shows `"per "`. `{{` and `}}`
+are literal braces.
+
+```python
+class Line(Child):
+    item = Link(Item, required=True)
+    uom = Select(['nos', 'box'], default='nos', label='Unit')
+    rate = Currency(currency='AED', help_text='per {uom}')        # "per Box" under each row's rate
+    note = Text(help_text='For {parent.customer}')                 # the owning record's customer, by title
+
+class Order(Model):
+    customer = Link(Customer)
+    lines = Table(Line)
+    total = Currency(currency='AED', compute=lines.sum('rate'), help_text='Invoiced to {customer}')
+```
+
+**Subtext in Table rows.** A help text that names fields shows in a child table as a small grey line
+under the cell's value, filled in from that row; the row keeps its 35 px height. A plain help text
+says the same thing on every row, so the grid leaves it out and the row editor shows it under the
+input, as forms do. On a form, both kinds read under the input.
+
+**Checked when the class is defined.** A stray brace, a name that is not a field name, `{uom}` when the
+model has no field `uom`, `{parent.x}` on a model that is not a Table row, and `{parent.x}` when the
+record that owns the Table (checked when its class declares the `Table`) has no field `x` raise
+`ValueError` naming the model and field. Controls checks help text it saves the same way. The schema
+lists the names in `help_fields` (`["uom", "parent.currency"]`); a plain help text has none.
+
+There is no Python-computed help text: everything a description needs is a value already in the
+browser, and a request per keystroke would make the line lag behind what people type. A text that
+needs server data belongs in a `fetch=` or calculated field, which the template can then name.
+
 Every field takes `suffix=` (at most 20 characters), a unit the forms show in a box after the
 input and after the value at rest, such as `"%"` or `"days"`. It is display metadata only, like
 `prefix` on a UI control. `Percent` fields always show `%`; a `Decimal` with `suffix="%"` looks
@@ -870,6 +907,131 @@ both databases.
 
 Only trusted Python code gets long lists. HTTP lists and aggregates, `Context`, Eva, tools,
 MCP and Connector keep the limit of 100 values per `in` or `nin`.
+
+## Record search and Link options
+
+Link dropdowns, record pickers (a filter's `in` list) and the search bar find records through one
+route, `GET /api/{model}/search`. Three declarations shape what they find and show.
+
+### Search fields
+
+`Meta.search_fields` names up to eight fields to search besides the title. It is checked when the
+class is defined (each name must be a field of the model; the schema check later requires visible
+short text fields):
+
+```python
+class Item(Model):
+    class Meta:
+        search_fields = ("item_code", "barcode")
+```
+
+A model that declares it is searched fuzzily in its title **and** those fields. "bx" finds
+"Box 40 x 40"; the code or barcode finds its item. Results are ranked:
+
+1. the whole value equals the text;
+2. a value starts with it;
+3. a word in a value starts with it;
+4. the text appears inside a word;
+5. the characters appear in order, the tightest span first.
+
+Within a tier the title comes before the other fields, then shorter values, then the title in
+alphabetical order. When the best match is in a field other than the title and the option has no
+declared subtext, that value shows as the subtext (the barcode that matched). Case is ignored.
+Spaces in the text are ignored for the in-order match, so "red box" also finds "Red large box".
+
+A model **without** `Meta.search_fields` is searched as before: the typed text must appear in one of
+its default search fields (the list's search box), in the list's default order.
+
+Permissions apply as everywhere: the role's row scope (and tenant) on the model, and a search field
+the role cannot read is neither searched nor shown. A model the role cannot read answers 403.
+
+### Link filters with form values
+
+A Link's `filters` ([business-capabilities.md](business-capabilities.md#link-filters)) already take
+values from the form with `Ref`: `Ref("item")` reads a field of the same row, `Ref("parent.customer")`
+the parent of a Table row. Plain strings stay literal values (`{"status": "active"}`), so existing
+filters keep their meaning:
+
+```python
+class Order(Model):
+    customer = Link(Customer)
+    warehouse = Link(Warehouse)
+
+    class Line(Child):
+        item = Link(Item)
+        uom = Link(ItemUnit, filters={"item": Ref("item"), "active": True})
+        project = Link(Project, filters={"customer": Ref("parent.customer")})
+```
+
+When the dropdown opens, the browser sends the Link's name (`link=order_line.uom`) and only the form
+values its filters and its option read, by path (`values={"item": "…"}`). The server applies the
+filters as declared: each literal as written, each `Ref` with the value sent for its path. It accepts
+only those paths, each readable by the role on that form; values are checked as values of the filtered
+field and bound as SQL parameters. A `Ref` the form left empty matches nothing (the dropdown says
+"Choose Item first."). A `Ref` to a field the role cannot read is skipped, as before, and the save
+still checks the Link.
+
+### What each option shows
+
+`Option` declares an option's title and a muted line below it, the subtext, without Python. Declare it
+on a Link (`option=`), or on the target's `Meta.option` for every Link to it; a Link's own wins.
+
+```python
+from evlet import Option, Ref, Sum
+from evlet.calc import F
+
+class Customer(Model):
+    class Meta:
+        option = Option(subtext=F("email"))
+
+class Line(Child):
+    item = Link(Item, option=Option(subtext=(
+        "In stock: ", Sum("qty", model=StockMove, link="item", where={"warehouse": Ref("parent.warehouse")}),
+        " ", F("stock_uom"))))
+```
+
+`title=` and `subtext=` take one part or a tuple of up to eight, joined as text:
+
+| Part | Shows |
+|---|---|
+| `"text"` | Literal text, up to 200 characters. |
+| `F("field")` | A field of the option's record. A Link field shows the linked record's title. |
+| `F("link.field")` | A field of the record a Link points to (one hop). |
+| `Count(Model, link=...)`, `Sum("field", model=..., link=...)`, `Min`, `Max` | An aggregate over the related records whose `link` points to the option. `where=` is `{field: value or Ref("path")}`; a `Ref` reads the form, so it is allowed only in a Link's `option=`. A sum or count of no records shows 0. |
+
+The parts compile to parameterized queries through the query builder: one query for the options' own
+columns, one per `F("link.field")` hop and one grouped query per aggregate, each keyed by the options'
+ids and each with the role's row scope on its model. Python joins the parts, so an exact decimal keeps
+its value ("12", "12.5"; trailing zeros are dropped). Field names are checked when the registry is
+built. When a part reads a field or model the role cannot read, or a form value that is empty, the
+option shows no subtext rather than part of one. Literal text alone never shows: without a value
+there is no subtext.
+
+`hook=` is trusted app code for what the parts cannot say. It runs after the parts with a read-only
+context, the options (dicts with `id`, `title`, `subtext` and the `record`) and the Link's form values,
+and returns them with `title` or `subtext` changed:
+
+```python
+def with_reorder(context, options, values):
+    for option in options:
+        if option["record"].reorder_level:
+            option["subtext"] = f"Reorder at {option['record'].reorder_level}"
+    return options
+
+item = Link(Item, option=Option(hook=with_reorder))
+```
+
+Like actions, a hook is trusted code: it decides what it shows, so keep it to fields the people who
+use the Link may see.
+
+### The search route
+
+`GET /api/{model}/search?q=<text>&link=<model>.<field>&values=<json>&limit=<1-20>` answers
+`{"items": [{"id", "title", "subtext"?}]}`, at most `limit` (default 8). `q` has at most 100
+characters. `link` names a Link to `{model}` on a model or a Table's row model (`order_lines.item`)
+that the role can read; `values` are allowed only with it. An unknown parameter, Link or path is a
+422. The search bar calls it without `link` for each model with search fields, five options each.
+Limits are in [performance.md](performance.md#record-search).
 
 ## HTTP API
 

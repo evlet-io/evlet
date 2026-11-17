@@ -143,6 +143,9 @@ scrolls with it.
 
 A record page has no tabs (removed in 0.4): every record uses the [compact record page](#compact-record-page).
 Its content comes first; Activity is in the side column, which a narrow window opens as a drawer.
+On a wide page a round button on the side column's edge folds it away and brings it back, with the
+same look and movement as the sidebar's collapse button; the choice is kept per user in the browser
+(`evlet.<username>.sideCollapsed`), like the sidebar's.
 
 Two options change this per model:
 
@@ -1033,6 +1036,14 @@ The DOM order of a form is its visual order, and nothing uses a positive `tabind
 Tab skips values that can't change (read only, locked or calculated); a click still focuses them,
 showing why, and screen readers read them. A record page has no tabs.
 
+A child table is one Tab stop. Tab from the field before it starts editing its first editable cell
+(Shift+Tab from the field after it, its last), past the table's bar, header and row controls; an
+empty table lands on Add row, where Enter adds a row. Inside, Tab and Shift+Tab move between
+editable cells, Tab past the last cell reaches Add row, and Shift+Tab before the first leaves the
+table. The other controls stay reachable from the cells: ← from a row's first cell focuses its
+checkbox (Tab then reaches its move and Edit buttons, → comes back), and ↑ from the first row
+focuses Select all, from where Shift+Tab reaches Focus and Columns (↓ comes back).
+
 ### Focus on new forms
 
 A new record (the full page `/app/<model>/new` and the side panel) and a prompt focus their first
@@ -1200,8 +1211,8 @@ does (⌘S and ⇧⌘D on a Mac, Ctrl+S and Ctrl+Shift+D elsewhere).
 - **Duplicate is Alt+Shift+D.** Like Alt+N it is read from the physical key, because Option+Shift+D
   on a Mac types a character.
 - **Plain keys stay out of the way.** C, / and ? never fire while typing in a field. Mod+S does.
-- **Mod+S commits what is typed first.** In a text field it commits the typing, as leaving the field
-  would. Only when that commit fails (the text can't be read, or a required field is empty) does Mod+S
+- **Mod+S commits what is typed first.** In a text field, a child table cell being edited or the
+  title being edited in place, it commits the typing, as leaving it would, and the save includes it. Only when that commit fails (the text can't be read, or a required field is empty) does Mod+S
   stop: the field shows its error, a "Not saved. Check the highlighted values." message appears, and
   the focus stays in the field. On any other control (a select, tags, an image, a link picker) a
   stale error from the server does not stop it: the save runs, as with the Save button, and the
@@ -1243,8 +1254,10 @@ open Controls. Portal users see the times only. See
 A Link with `filters` ([business-capabilities.md](business-capabilities.md#link-filters)) is
 handled in the form with the values the person has entered, saved or not:
 
-- The picker lists only records that fit, by sending the filters to the list route. While a field
-  the filters read is empty, it lists nothing and says "Choose Company first.".
+- The picker lists only records that fit: it names the Link and sends the form values its filters
+  read to the search route, which applies the filters on the server
+  ([model-engine.md](model-engine.md#link-filters-with-form-values)). While a field the filters read
+  is empty, it lists nothing and says "Choose Company first.".
 - When a field changes, every Link whose filters read it is checked again: on the same row, and
   `Ref("parent.<field>")` Links on the rows of its tables. A value that still fits is kept. One that
   no longer fits is cleared, with a note under the field (a tooltip in a table cell) such as
@@ -1254,6 +1267,29 @@ handled in the form with the values the person has entered, saved or not:
   field permissions apply. When it cannot tell, the value stays and the save reports it.
 
 The server still checks every Link on preview and save; the form only avoids keeping a stale value.
+
+### Link dropdown
+
+A Link's dropdown is a search box over a list of options, from `GET /api/{model}/search`
+([model-engine.md](model-engine.md#record-search-and-link-options)):
+
+- **Matching.** A target with `Meta.search_fields` is matched in its title and those fields, fuzzily
+  and ranked on the server: whole value, then start, then a word's start, then inside a word, then the
+  characters in order. Other targets match the text as the list's search box does.
+- **Each option** shows the record's mark and title, and below it, smaller and muted, its subtext when
+  it has one: what the Link's `option=` or the target's `Meta.option` declares ("In stock: 12 box"),
+  or the search field that matched (a barcode). Long lines end with an ellipsis.
+- **Create new.** When the person may create the target (its `permissions.create`, not read-only, not
+  a child table), the last option is **Create new <field> "<typed text>"** (without text, **Create new
+  <field>**). The arrow keys reach it after the results and Enter or a click opens it. It opens a small
+  form for the target in a dialog, **New <model>**: its title field filled with the typed text, the
+  fields the Link's filters name filled with the form's values (a new project for the invoice's
+  customer), and its required fields without a default; at most eight fields. **Create <model>** saves
+  through the usual create route, with every check, and the Link selects the new record. Cancel, Esc or
+  the close button leaves the Link as it was. Errors show under the fields as on the record page.
+
+The search bar (the palette's **Records**) uses the same route for each model with search fields,
+five options each, with the subtext under each title.
 
 ### List card
 

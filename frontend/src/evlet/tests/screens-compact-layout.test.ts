@@ -106,6 +106,35 @@ describe('a compact record page', () => {
     await until(() => expect(doc.classList.contains('side-open')).toBe(false));
   });
 
+  it('folds the side column to its edge from a round button like the sidebar\'s, remembered per user', async () => {
+    localStorage.clear();
+    const opened = async () => {
+      const { host } = start(withSchema(shipmentSchema({ attachments: true })), `/app/shipment/${shipment}`, { storage: localStorage });
+      await until(() => expect(host.querySelector('.doc > .doc-side-edge')).not.toBeNull());
+      return host;
+    };
+    let host = await opened();
+    const doc = host.querySelector('.doc')!, edge = host.querySelector<HTMLButtonElement>('.doc > .doc-side-edge')!;
+    // The sidebar's edge button look (side-edge), on the side column's edge, controlling it.
+    expect(edge.classList.contains('side-edge')).toBe(true);
+    expect(edge.getAttribute('aria-controls')).toBe(host.querySelector('.doc-side')!.id);
+    expect(edge.getAttribute('aria-expanded')).toBe('true');
+    expect(edge.getAttribute('aria-label')).toMatch(/^Collapse (attachments|activity)/);
+    expect(doc.classList.contains('side-collapsed')).toBe(false);
+    edge.click();
+    expect(doc.classList.contains('side-collapsed')).toBe(true);
+    expect(edge.getAttribute('aria-expanded')).toBe('false');
+    expect(edge.getAttribute('aria-label')).toMatch(/^Expand (attachments|activity)/);
+    expect(Object.entries(localStorage).find(([name]) => name.endsWith('.sideCollapsed'))?.[1]).toBe('true');
+    // Another record page (after a reload, say) opens folded.
+    stopAll();
+    host = await opened();
+    expect(host.querySelector('.doc')!.classList.contains('side-collapsed')).toBe(true);
+    host.querySelector<HTMLButtonElement>('.doc > .doc-side-edge')!.click();
+    expect(host.querySelector('.doc')!.classList.contains('side-collapsed')).toBe(false);
+    localStorage.clear();
+  });
+
   it('shows the selection on the table title line: the count, Duplicate and Delete, with the row placeholder below', async () => {
     const { host } = await start(routes, `/app/shipment/${shipment}`);
     await until(() => expect(host.querySelector('.ev-cmp-table tbody tr[data-key]')).not.toBeNull());

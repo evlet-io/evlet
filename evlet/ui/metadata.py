@@ -24,7 +24,7 @@ def plural_for(label):
 
 OPEN_IN = ('page', 'panel')
 # The options a model's Meta may declare; each is public (docs/api-stability.md).
-META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'layout',
+META_OPTIONS = frozenset(('label', 'plural', 'description', 'title_field', 'list_fields', 'search_fields', 'option', 'layout',
                           'calculation_language', 'numeric_profile', 'measures', 'key_fields', 'relations', 'attachments',
                           'activity', 'naming', 'mail', 'title', 'open_in', 'api', 'period', 'period_scope', 'autosave',
                           'status', 'board', 'list_tabs', 'list_tab', 'summary', 'side_blocks', 'panel', 'panel_summary', 'ledger', 'append_only', 'timestamps', 'indexes',
@@ -752,9 +752,20 @@ def currency_schema(field):
     return {'currency': source['code']} if 'code' in source else {'currency_source': source}
 
 
+def help_schema(field):
+    """help_fields: the fields a reactive help text names ("per {uom}" -> ["uom"]). The browser fills them in from the
+    record's values as they change, and a Table row shows it as subtext under the cell (docs/model-engine.md)."""
+    from ..fields import help_references
+    try:
+        names = help_references(field.help_text)
+    except ValueError:
+        return {}
+    return {'help_fields': list(names)} if names else {}
+
+
 def field_schema(field):
     result = {**field.metadata(), 'label': field.label or label_for(field.name),
-              'help_text': field.help_text, **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
+              'help_text': field.help_text, **help_schema(field), **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
               **({'suffix': field.suffix} if field.suffix else {}),
               # Integer(grouping=False): shown without thousands separators (display only).
               **({'grouping': False} if getattr(field, 'grouping', True) is False else {}),
@@ -768,6 +779,8 @@ def field_schema(field):
               # Left out of the default list and Table columns (display only).
               **({'column': False} if getattr(field, 'column', True) is False else {}),
               **({'sequence': field.schema()} if field.kind == 'sequence' else {}),
+              # The form paths a Link's Option reads (Ref in where=): the dropdown sends their values (evlet/search.py).
+              **({'inputs': list(field.option.refs())} if getattr(field, 'option', None) is not None and field.option.refs() else {}),
               'default_kind': 'none' if field.default is MISSING else 'reference' if isinstance(field.default, Ref) else 'user' if field.default is CurrentUser
               else 'callable' if callable(field.default) else 'static'}
     if result['default_kind'] == 'static':

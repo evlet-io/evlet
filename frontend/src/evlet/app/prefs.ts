@@ -1,4 +1,4 @@
-// Per-user preferences (docs/ui-design/README.md section 10): sidebar, density, list or
+// Per-user preferences (docs/ui-design/README.md section 10): sidebar, record side column, density, list or
 // board, column widths and quick access. Recent records and recent searches belong to the
 // signed-in session: they stay in memory and go when the user signs out.
 //
@@ -75,6 +75,8 @@ export class Prefs {
   }
 
   get collapsed() { return this.cell('collapsed', false); }
+  /** The record's side column (attachments and activity) folded to its edge on a wide page. */
+  get sideCollapsed() { return this.cell('sideCollapsed', false); }
   get density() { return this.cell<Density>('density', 'comfortable'); }
   /** This session's recent searches (memory only). */
   get recentSearches() { return this.memory<string[]>('recentQ', []); }

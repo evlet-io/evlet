@@ -2,10 +2,11 @@
 
 from datetime import date
 
-from evlet import Child, Currency, Date, Decimal, Link, Main, Outcome, Prompt, Table, Text, ValidationError, validate
+from evlet import Child, Currency, Date, Decimal, Link, Main, Outcome, Prompt, Select, Table, Text, ValidationError, validate
 from evlet.calc import F
 
-from .models import Customer, Invoice
+from .items import UNITS
+from .models import Customer, Invoice, Item
 
 
 class PlanProject(Prompt):
@@ -56,9 +57,19 @@ class QuickInvoice(Prompt):
 
     customer = Link(Customer, required=True, filters={'active': True})
     reference = Text(required=True, max_length=40)
-    hours = Decimal(scale=1, minimum='0.1', required=True)
-    rate = Currency(currency='AED', minimum='0.01', default='350.00')
-    total = Currency(currency='AED', compute=F('hours') * F('rate'))
+
+    class Line(Child):
+        item = Link(Item, required=True)
+        uom = Select(UNITS, required=True, default='nos', label='Unit')
+        qty = Decimal(scale=2, minimum='0.01', default='1', label='Quantity')
+        # Help text that names a field reads under the rate in each row ("per Box"), filled in as the unit changes.
+        # {parent.reference} would name a field of the quick invoice itself.
+        rate = Currency(currency='AED', minimum='0', default='0.00', help_text='per {uom}')
+        amount = Currency(currency='AED', compute=F('qty') * F('rate'))
+
+    lines = Table(Line, required=True)
+    # The same help text template works on a form field: it follows the customer picked above.
+    total = Currency(currency='AED', compute=lines.sum('amount'), help_text='Invoiced to {customer}')
 
     def submit(self):
         return Outcome(new=(Invoice, {'customer': self.customer, 'reference': self.reference,

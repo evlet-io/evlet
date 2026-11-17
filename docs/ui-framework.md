@@ -287,7 +287,7 @@ mark only.
 | `base.ts` | Icon, IconTile, Button, IconButton, LinkButton, AddChip, Checkbox, Switch, SegmentedControl, Key, Chip, CountBadge, StatusPill, Avatar, RecordMark, Divider, ProgressBar, ScoreBars, EmptyState, InfoNote, StateBanner, StatCard (also exported as Stat), Sparkline, SummaryStrip, FilterChip, SearchInput, QuickAddInput |
 | `tooltip.ts` | `tooltip(element, text)`: one page-wide tooltip on hover and focus, never on touch |
 | `layers.ts` | `openPopover`, `Menu`, `MenuButton`, `SplitButton` (a main button with a chevron for the alternatives), `openModal`, `openDrawer`, `toast` (with Undo), `copyText`, `DialogFooter`, `primaryAction(panel)`: the footer's main action, which a dialog without a field focuses and Mod+S presses; the arrow keys move between footer actions and Mod+Shift+D cancels |
-| `shortcuts.ts` | `isMac`, `keyMatches(event, 'Mod+S')`, `formatKeys(combo)` (⌘S or Ctrl+S), `withShortcut(label, combo)` for tooltips, `ariaKeys(combo)` for `aria-keyshortcuts`, `isTyping`, `commitTyped` ([keyboard shortcuts](ui.md#keyboard-shortcuts)) |
+| `shortcuts.ts` | `isMac`, `keyMatches(event, 'Mod+S')`, `formatKeys(combo)` (⌘S or Ctrl+S), `withShortcut(label, combo)` for tooltips, `ariaKeys(combo)` for `aria-keyshortcuts`, `isTyping`, `commitTyped`, `commitWithin(host, commit)` for a control that commits by hand ([keyboard shortcuts](ui.md#keyboard-shortcuts)) |
 | `../app/shortcuts.ts` | `useShortcuts({ root, inner, area, actions, help })`: a screen binds Save, Delete, New and Duplicate; one document listener runs the action of the screen holding the focus. `openShortcutSheet(everywhere)` is the ? sheet |
 | `../app/duplicate.ts` | `duplicateOf(model, row, from)`: what More > Duplicate copies of a saved record (writable, visible, stored fields and every table's rows without ids; not the name, number, State, calculated or unique fields, nor fields and tables with `copy: false`); `duplicateAllowed(model)` reads `duplicate: false`; `holdDuplicate` and `takeDuplicate` hand it in memory to the next new record of the model ([Duplicate](ui.md#duplicate)) |
 | `fields.ts`, `kinds.ts` | BaseField and one component per field type (RichTextField and RichTextView for rich text), `FieldControl`, `displayValue`, `localField`, Link search, the Select control, `currencyFor` and `currencyIn` |
@@ -462,7 +462,10 @@ search boxes focus the same way; child table cells show the active cell's 2 px a
 Buttons and other controls keep the page-wide `:focus-visible` outline, a solid 2 px accent line. The label is
 14 px, weight 500, 6 px above the input, and the required `*` is the accent blue (its
 `required_when` tooltip stays). `help_text` reads under the input in grey and is linked with
-`aria-describedby`; an error replaces it while there is one. A field with `tooltip` gets a ? icon
+`aria-describedby`; an error replaces it while there is one. A help text that names fields (`"per {uom}"`,
+`help_fields` in the schema) is filled in from the record as it changes (`helpTextOf(field, links)`), and a
+child table cell shows it as a small subtext line under the value (`.g-sub`, inside the 35 px row)
+([model-engine.md](model-engine.md#reactive-help-text)). A field with `tooltip` gets a ? icon
 at the right end of the input (before a Select's or Link's chevron, between the input and a unit
 box) that shows the text on hover and focus. Compact places keep their sizes: the record side
 panel (`.fields`), child table cells, list filters and quick add. IBM Plex Sans is the font everywhere.
@@ -541,6 +544,16 @@ person's `/api/schema` (the server leaves out models the role cannot read) or is
 No value, or `null`: no link and no arrow. It is display only. The record's route still checks the
 account, tenant and row, so a record the person can't see shows the page's normal 404 or 403. Pass
 `goto: false` to `FieldControl` to leave it out.
+
+`LinkSource.search(meta, text, filters, context)` finds the options. `apiLinks` asks the search route
+(`api.search(model, { q, link, values, limit })`, `GET /api/{model}/search`); on a form, `context` names
+the Link (`<model>.<field>`) and holds the form values its filters and option read
+(`linkContext(field)` in `model/links.ts`), so the server applies the filters and builds each option's
+subtext. Each option is a `LinkOption` (`id`, `title`, `subtitle`): the dropdown shows the title with the
+subtitle below it, smaller and muted. `apiLinks(api, schema, { quickCreate })` adds **Create new**:
+`canCreate(meta)` is true when the target is in the schema with `permissions.create`, is not a child
+table's model and is not read-only, and `create(meta, text, values)` runs the app's quick form
+(`app/quick-create.ts`). A LinkSource without `create` offers no Create new.
 
 ### Stat cards
 
@@ -956,7 +969,8 @@ page in a new browser tab.
 | `Meta.list_fields` | List columns (up to eight, without `id`); without it the first eight visible fields that are not `column=False` |
 | `column=False` on a field | Out of the list's default columns and the Table grid's default columns (it starts hidden in the Columns menu, and Reset columns hides it again); still on the form and the row editor, and still read for each row, for example as a currency source |
 | `Meta.title_field` | The record title (edited in place) and the pinned first list column |
-| `Meta.search_fields` | The list search box and record search in the palette |
+| `Meta.search_fields` | The list search box; Link dropdowns, record pickers and the palette search the title and these fields fuzzily, ranked ([model-engine.md](model-engine.md#record-search-and-link-options)) |
+| `Meta.option`, `Link(option=)` | Each Link option's title and the muted subtext line below it, built on the server |
 | `Meta.layout` | The record page in two zones, from `record_layout` in the schema: every block marked `main` (`Main` groups of fields, a titled one under a small heading, and `Main` Tables) drawn open first, in order, never collapsing; then every other block (sections, `TableSection`s, Related lists, Html and charts) as "more information" rows that start closed. Without a main block the first section is the main zone. Readable fields the layout leaves out follow under Other, and Tables it leaves out after it; the row editor follows the same rules over the row model's layout ([ui.md](ui.md#record-layouts)) |
 | `Meta.open_in` | `"page"` (default) opens a record from the list on its own page; `"panel"` opens it in a side panel beside the narrowed list. The Controls list view and the person's layout menu can change it (see [Side panel](#side-panel)) |
 | `Meta.list_tabs`, `Meta.list_tab` | The list's tabs: All and one per value of a State, Select or Link field (the State without `list_tabs`, none with `list_tabs = None`), with counts from `GET /api/{model}/list_tabs`, and the tab the list opens on (`"all"` by default). A Link shows its 8 most used values, labelled by title ([ui.md](ui.md#list-tabs)) |

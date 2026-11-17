@@ -166,7 +166,8 @@ class Between(Condition):
 
 @dataclass(frozen=True, eq=False)
 class Text(Condition):
-    """Text matching: 'contains', 'contains_ci' (ignoring case), 'excludes_ci', 'starts_with' and 'ends_with'."""
+    """Text matching: 'contains', 'contains_ci' (ignoring case), 'excludes_ci', 'starts_with', 'ends_with' and
+    'subsequence_ci' (the characters in order, ignoring case)."""
     kind: str
     expression: Expression
     text: Expression
@@ -524,6 +525,12 @@ def contains_ci(column, text):
 def excludes_ci(column, text):
     """The column is empty or does not contain the text, ignoring case."""
     return Text('excludes_ci', _left(column), expression(text))
+
+
+def subsequence_ci(column, text):
+    """Every character of the text appears in the column in the same order, ignoring case: "inv" matches
+    "Invoice" and "In review". The fuzzy prefilter of record search (evlet/search.py)."""
+    return Text('subsequence_ci', _left(column), expression(text))
 
 
 def starts_with(column, text):

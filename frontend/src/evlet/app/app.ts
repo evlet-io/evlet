@@ -14,6 +14,7 @@ import { setCurrencyDecimals, setCurrencyDisplays } from '../model/format';
 import { Button, EmptyState } from '../ui/base';
 import { apiLinks, setLinkSource } from '../ui/fields';
 import { closeDialogs, closePopover, DialogFooter, openModal } from '../ui/layers';
+import { quickCreate } from './quick-create';
 import { AppClient } from './client';
 import { docsOn, goSettings, newPageState, settingsHref, type AppContext, type AppRouter } from './context';
 import { DocsPage } from './docs';
@@ -86,7 +87,9 @@ export function App(options: AppOptions): Node {
     unsaved.signedIn();
     unsaved.purge(settings?.unsaved?.limits);
     applyMe(settings);
-    const links = apiLinks(api, schema, { recordHref: (model, id) => router.href('record', { model, id }) });
+    const links = apiLinks(api, schema, { recordHref: (model, id) => router.href('record', { model, id }),
+      // "Create new" in Link dropdowns opens the target's quick form (app/quick-create.ts).
+      quickCreate: (model, text, values) => quickCreate({ api, schema, user: current.user }, model, text, values) });
     setLinkSource(links);
     const ctx: AppContext = {
       api, router, schema, session: current, user: current.user!, prefs, unsaved, links, dev: Boolean(options.dev), libraryHref: options.libraryHref ?? '/evlet.html',

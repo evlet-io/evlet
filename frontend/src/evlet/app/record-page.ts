@@ -13,6 +13,7 @@ import { cell, derive, effect, onCleanup, runWithOwner, untrack, type Cell, type
 import type { Route } from '../router';
 import { RecordStore, type Field, type Row, type Rules } from '../model/record';
 import type { FieldSchema } from '../model/schema';
+import { tooltip } from '../ui/tooltip';
 import { Avatar, Button, Chip, EmptyState, Icon, IconButton, InfoNote, RecordMark, StateBanner, SummaryStrip, type StatProps } from '../ui/base';
 import { ChildTable, type ChildTableControls } from '../ui/childtable';
 import { DocFrame, DocHeader, flowFromState, MoveButton, SideBlock, StatusBadge, StatusFlow, type BadgeLook } from '../ui/doc';
@@ -942,6 +943,14 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   if (side) {
     const aside = frame.querySelector<HTMLElement>(':scope > .doc-side');
     if (aside) { aside.id = sideId; aside.tabIndex = -1; }
+    // On a wide frame the side column folds to its edge and back, from a round button on that edge, as the
+    // sidebar does (app/shell.ts); the choice is kept per user. A narrow frame uses the drawer button instead.
+    const folded = prefs.sideCollapsed;
+    const edge = html`<button type="button" class="side-edge doc-side-edge" aria-controls=${sideId} aria-expanded=${() => String(!folded.get())}
+      aria-label=${() => `${folded.get() ? 'Expand' : 'Collapse'} ${sideWhat}`} on:click=${() => folded.set(!folded.peek())}
+      ref=${(el: HTMLElement) => tooltip(el, () => folded.get() ? 'Expand' : 'Collapse')}>${() => Icon(folded.get() ? 'chevron-left' : 'chevron-right', { size: 'xs' })}</button>` as HTMLElement;
+    frame.append(edge);
+    effect(() => { frame.classList.toggle('side-collapsed', folded.get()); });
     const scrim = html`<div class="scrim ev-side-drawer-scrim" class:show=${sideOpen} on:click=${() => sideOpen.set(false)}></div>` as HTMLElement;
     frame.append(scrim);
     effect(() => { frame.classList.toggle('side-open', sideOpen.get()); if (sideOpen.get()) untrack(() => aside?.focus({ preventScroll: true })); });

@@ -155,6 +155,39 @@ describe('record form shortcuts', () => {
     expect(requests(sent, 'POST', /customer$/)).toHaveLength(0);
   });
 
+  it('Mod+S while a child table cell is being edited commits the cell first, then saves the typed value', async () => {
+    const { host, sent } = start(orderRoutes(), '/app/order/0000000000001?tab=t-lines');
+    await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
+    const qty = cellOf(rowsIn(host)[1], 'qty');
+    click(qty);
+    const input = qty.querySelector('input')!;
+    expect(document.activeElement).toBe(input);
+    input.value = '7';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    // No Enter, no blur: the shortcut itself commits the cell.
+    expect(key(input, 's', mod(false)).defaultPrevented).toBe(true);
+    await until(() => expect(requests(sent, 'PATCH', /order\/0000000000001$/)).toHaveLength(1));
+    expect(JSON.stringify(requests(sent, 'PATCH', /order\/0000000000001$/)[0].body)).toMatch(/"qty":"7(\.0+)?"/);
+    // The cell shows the committed value and is no longer being edited.
+    expect(cellOf(rowsIn(host)[1], 'qty').classList.contains('editing')).toBe(false);
+  });
+
+  it('Mod+S while a child table cell holds text that cannot be read does not save, and keeps editing it', async () => {
+    const { host, sent } = start(orderRoutes(), '/app/order/0000000000001?tab=t-lines');
+    await until(() => expect(rowsIn(host).length).toBeGreaterThan(5));
+    const qty = cellOf(rowsIn(host)[1], 'qty');
+    click(qty);
+    const input = qty.querySelector('input')!;
+    input.value = 'lots';
+    key(input, 's', mod(false));
+    await until(() => expect(lastToast()).toBe('Not saved. Check the highlighted values.'));
+    expect(qty.classList.contains('editing')).toBe(true);
+    expect(qty.getAttribute('aria-invalid')).toBe('true');
+    expect(document.activeElement).toBe(input);
+    await new Promise(resolve => setTimeout(resolve, 20));
+    expect(requests(sent, 'PATCH', /order/)).toHaveLength(0);
+  });
+
   it('Mod+Shift+D opens the delete confirmation with Delete focused; the arrows reach Cancel, which closes it', async () => {
     platform('MacIntel');
     const { host, sent } = start(orderRoutes(), '/app/order/0000000000001');

@@ -12,6 +12,7 @@ import { flowGrid, FoldSection, type Flow, type Folds, type FoldStart } from './
 import { displayValue, FieldControl, FieldHints, LinkGo, recordOf, siblingsOf, type Control, type FieldLike, type LinkSource } from './fields';
 import { kindOf } from './kinds';
 import { toast } from './layers';
+import { commitWithin } from './shortcuts';
 import { tooltip } from './tooltip';
 
 export type Save = () => Promise<boolean> | boolean;
@@ -190,6 +191,13 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
       const go = props.display ? null : LinkGo(field, props.links ?? undefined);
       return when(field.editable, () => go ? html`<div class="in-link-box iv-go">${at}${go.arrow()}</div>` : at, () => readOnly);
     })}</div>` as HTMLElement;
+  // Mod+S while the value is being edited writes it first, so the record's save includes it.
+  commitWithin(wrapper, () => {
+    if (!editing.peek()) return undefined;
+    if (!control?.commit()) return false;
+    stop(true);
+    return true;
+  });
   return wrapper;
 }
 
