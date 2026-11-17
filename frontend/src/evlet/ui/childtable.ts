@@ -14,12 +14,13 @@ import type { Field, Row, Table, TableSection } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Button, Checkbox, Icon, IconButton, IconTile, Key } from './base';
 import { read, textOf, uid, type Prop, type Tint } from './core';
-import { BaseField, currencyFor, currencyPlaces, displayValue, FieldControl, fieldFor, moneyMeta, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
+import { BaseField, currencyFor, currencyPlaces, displayValue, FieldControl, fieldFor, LinkGo, moneyMeta, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
 import { moneyChild } from './money';
 import { kindOf } from './kinds';
 import { openPopover, toast } from './layers';
 import { dragList } from './draglist';
 import { arrange, byKey, ColumnsMenu, emptyPrefs, gridPrefs, pinnedKeys, pinTracker, resizeHandle, virtualWindow, type TablePrefs } from './table';
+import { commitWithin } from './shortcuts';
 import { tooltip } from './tooltip';
 
 const ROW = 35, HEADER = 34;
@@ -192,9 +193,26 @@ const valueText = (value: FieldLike | Prop<Child>): Child => {
   return read(value as Prop<Child>) ?? '';
 };
 
+// The Tab key being pressed now, so a table can tell focus that Tab brought in from a click. `from` is
+// the table or popover the focus was in: the cell input it left may be gone by the time the focus moves.
+let tabbing: { back: boolean; from: Element | null } | null = null;
+let tracking = false;
+function trackTab() {
+  if (tracking || typeof document === 'undefined') return;
+  tracking = true;
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Tab' || event.altKey || event.ctrlKey || event.metaKey) return;
+    tabbing = { back: event.shiftKey, from: document.activeElement?.closest('.grid, .pop') ?? null };
+    setTimeout(() => { tabbing = null; });
+  }, true);
+  // One Tab moves the focus once: after that focus move (tables see it first, as it bubbles up) it is spent.
+  document.addEventListener('focusin', () => { tabbing = null; });
+}
+
 /** Lines of a record: an editable grid with live totals that locks with the record. */
 export function ChildTable(props: ChildTableProps): HTMLElement {
   const { table } = props, model = table.model, record = table.owner.record;
+  trackTab();
   const prefs = props.prefs ?? cell(props.columns ? emptyPrefs() : gridPrefs(model.fields), { name: `${table.name} (columns)` });
   const metas = new Map(model.fields.map(meta => [meta.name, meta]));
   const allColumns: ChildColumn[] = (props.columns ?? model.fields.filter(meta => !meta.hidden).map(meta => meta.name)).map(name => {
@@ -460,6 +478,38 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     focusCell(spot);
   };
 
+  // The first (or, going back, the last) editable cell of the table.
+  const edge = (direction: 1 | -1): Spot => {
+    const list = untrack(() => rows.get()), cols = untrack(() => columns.get()).map(column => column.key);
+    const ordered = direction === 1 ? list : [...list].reverse(), keys = direction === 1 ? cols : [...cols].reverse();
+    for (const row of ordered) for (const col of keys) if (editable(row, col)) return { key: row.key, col };
+    return null;
+  };
+  // Tab into the table from outside lands on its first editable cell (Shift Tab from after it, on its
+  // last), or on Add row while it has no rows: the bar, the header and the row controls are reached
+  // from the cells with the arrow keys, not one Tab stop each (docs/ui.md#field-and-tab-order).
+  const enter = (back: boolean): boolean => {
+    if (untrack(() => expanded.get()) !== null) return false;
+    const spot = edge(back ? -1 : 1);
+    if (spot) return startEdit(spot);
+    const add = after();
+    if (add) { add.focus(); return true; }
+    const first = untrack(() => rows.get())[0], col = untrack(() => columns.get())[0]?.key;
+    if (first && col) { moveActive({ key: first.key, col }); return true; }
+    return false;
+  };
+  // Leave the table for the control before it (back) or after it, past its bar and row controls.
+  const leave = (back: boolean): boolean => {
+    const all = [...document.querySelectorAll<HTMLElement>('a[href],button,input,select,textarea,[tabindex],[contenteditable="true"]')]
+      .filter(element => !grid.contains(element) && element.tabIndex >= 0 && !(element as HTMLButtonElement).disabled
+        && !element.closest('[hidden],[inert],.pop') && (typeof element.checkVisibility !== 'function' || element.checkVisibility()));
+    const target = back ? all.filter(element => element.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_FOLLOWING).at(-1)
+      : all.find(element => element.compareDocumentPosition(grid) & Node.DOCUMENT_POSITION_PRECEDING);
+    if (!target) return false;
+    target.focus();
+    return true;
+  };
+
   // ---------- rows ----------
 
   // A row's own values and its rows of rows, as new rows for table.add().
@@ -572,8 +622,13 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   const cellView = (row: Row, column: () => ChildColumn, rowEdit: () => string | null, rowActive: () => string | null, rowSpot: () => string | null) => {
     const key = column().key, field = row.field(key), meta = field.meta, kind = kindOf(meta.type);
     const canEdit = () => !column().calculated && !readOnly.get() && field.editable.get();
-    // A read-only Link cell opens its record; an editable one edits on click and shows the arrow while editing.
-    const shown = meta.type === 'link' ? () => when(canEdit, () => displayValue(field, { links: props.links, empty: '' }), () => displayValue(field, { links: props.links, empty: '', open: true }))
+    // A read-only Link cell opens its record; an editable one edits on click and, as a Link field does,
+    // shows the ↗ arrow over the record's mark while hovered (and while editing).
+    const linkAt = () => {
+      const value = displayValue(field, { links: props.links, empty: '' }), go = LinkGo(field, props.links ?? undefined, { tabbable: false });
+      return go ? html`<div class="in-link-box g-go">${value}${go.arrow()}</div>` : value;
+    };
+    const shown = meta.type === 'link' ? () => when(canEdit, linkAt, () => displayValue(field, { links: props.links, empty: '', open: true }))
       : RICH.has(meta.type) ? () => displayValue(field, { links: props.links, empty: '' }) : () => textOf(() => kind.format(field.value.get(), meta));
     const blank = () => { const value = field.value.get(); return value === null || value === undefined || value === ''; };
     // Read as a live child, so opening or closing the row editor swaps the placeholder in or out.
@@ -881,11 +936,12 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
         event.preventDefault();
         if (!commit()) { refocus(); return; }
         const next = step(editingNow, event.shiftKey ? -1 : 1);
-        // Past the last cell, Tab leaves the table for Add row.
+        // Past the last cell, Tab leaves the table for Add row; before the first, Shift Tab leaves it.
         const out = !next && !event.shiftKey ? after() : null;
         stopEdit(!next && !out);
         if (next) startEdit(next);
-        else out?.focus();
+        else if (out) out.focus();
+        else leave(event.shiftKey);
         return;
       }
       if (event.key === 'Enter' && !event.shiftKey && !(event.target as Element).matches('textarea')) {
@@ -908,6 +964,21 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     if (expanded.peek() && event.altKey && (event.key === 'ArrowUp' || event.key === 'ArrowDown') && (event.target as Element).closest?.('.g-ed-main')) {
       event.preventDefault(); stepEditor(event.key === 'ArrowUp' ? -1 : 1); return;
     }
+    const target = event.target as Element;
+    // Shift Tab from Add row goes back to the last editable cell.
+    if (event.key === 'Tab' && event.shiftKey && !event.altKey && !event.ctrlKey && !event.metaKey && target === after()) {
+      const last = edge(-1);
+      if (last) { event.preventDefault(); startEdit(last); }
+      return;
+    }
+    // From a row's controls (its checkbox, its Edit button), → goes back to its first cell; ↓ from the header's checkbox to the first row.
+    const ctl = target.closest?.('.g-ctl');
+    if (ctl && (target.matches('.g-exp') || target.matches('[role="checkbox"]'))) {
+      const key = (ctl.closest('tr[data-key]') as HTMLElement | null)?.dataset.key ?? (event.key === 'ArrowDown' && ctl.closest('thead') ? untrack(() => rows.get())[0]?.key : undefined);
+      const col = untrack(() => columns.get())[0]?.key;
+      if (key && col && (event.key === 'ArrowRight' || (event.key === 'ArrowDown' && ctl.closest('thead')))) { event.preventDefault(); moveActive({ key, col }); }
+      return;
+    }
     if (!spot) return;
     const row = untrack(() => rows.get()).find(item => item.key === spot.key)!;
     const cols = untrack(() => columns.get()).map(column => column.key), at = cols.indexOf(spot.col);
@@ -918,11 +989,20 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       ArrowDown: below(spot), ArrowUp: below(spot, -1),
       Home: { key: spot.key, col: cols[0] }, End: { key: spot.key, col: cols[cols.length - 1] },
     };
+    // ← from the first column reaches the row's controls (select, move, edit); ↑ from the first row the header's Select all.
+    const rowCtl = (tr?.querySelector('.g-ctl [role="checkbox"]') ?? tr?.querySelector('.g-ctl .g-exp')) as HTMLElement | null | undefined;
+    const allCtl = grid.querySelector<HTMLElement>('thead .g-ctl [role="checkbox"]');
+    if (event.key === 'ArrowLeft' && at === 0 && rowCtl) { event.preventDefault(); rowCtl.focus(); return; }
+    if (event.key === 'ArrowUp' && !moves.ArrowUp && allCtl) { event.preventDefault(); allCtl.focus(); return; }
     if (event.key in moves) { event.preventDefault(); moveActive(moves[event.key]); return; }
-    // Tab and Shift Tab edit the next editable cell; past the last one the browser moves on.
+    // Tab and Shift Tab edit the next editable cell; past the last one Tab goes to Add row, and Shift Tab
+    // before the first leaves the table, past its row controls.
     if (event.key === 'Tab' && !event.altKey && !event.ctrlKey && !event.metaKey) {
       const next = step(spot, event.shiftKey ? -1 : 1);
-      if (next) { event.preventDefault(); startEdit(next); }
+      if (next) { event.preventDefault(); startEdit(next); return; }
+      const out = event.shiftKey ? null : after();
+      if (out) { event.preventDefault(); out.focus(); return; }
+      if (leave(event.shiftKey)) event.preventDefault();
       return;
     }
     // Enter on a cell a choice just committed goes to the cell below, as it does while editing.
@@ -944,6 +1024,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     const td = (event.target as Element).closest?.('td[data-col]') as HTMLElement | null;
     const tr = td?.closest('tr[data-key]') as HTMLElement | null;
     if (!td || !tr || td.classList.contains('editing')) return;
+    // The ↗ arrow of a Link cell opens its record; it does not start editing the cell.
+    if ((event.target as Element).closest?.('.link-go')) return;
     const spot = { key: tr.dataset.key!, col: td.dataset.col! };
     landed = null;
     // With the row editor open, a row's title opens that row (and the open row's closes the editor).
@@ -953,7 +1035,14 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   });
   // A cell that takes the focus (a click, a tap) becomes the active cell, so the active cell and
   // the focus never part. While a cell is being edited, the click that follows decides.
+  // Focus that Tab brings in from outside the table goes to its first (or last) editable cell.
   grid.addEventListener('focusin', event => {
+    const from = tabbing?.from;
+    if (tabbing && !(from && (from === grid || grid.contains(from) || from.matches('.pop')))) {
+      const back = tabbing.back;
+      tabbing = null;
+      if (enter(back)) return;
+    }
     const td = event.target as HTMLElement;
     if (editing.peek() || !td.matches?.('td[data-col]')) return;
     const tr = td.closest('tr[data-key]') as HTMLElement | null;
@@ -971,6 +1060,13 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       // A cell that can't be left keeps the focus while it stays in the table.
       else if (now && grid.contains(now)) refocus();
     });
+  });
+  // Mod+S while a cell is being edited commits it first, as leaving it would (ui/shortcuts.ts, commitTyped).
+  commitWithin(grid, () => {
+    if (!editing.peek()) return undefined;
+    if (!commit()) { refocus(); return false; }
+    stopEdit();
+    return true;
   });
   // A row that disappears (removed, or the record reloaded) cannot stay selected or open.
   effect(() => {

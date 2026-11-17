@@ -670,14 +670,15 @@ function LinkControl(field: FieldLike, id: string, options: ControlOptions): Con
  * The ↗ arrow that opens a Link's record. It sits after the field's edit button in an `.in-link-box`, over the
  * record's mark, and shows (nudged up and right, with an Open hint) while the box is hovered or the arrow focused.
  * Null when the LinkSource gives no record pages; the arrow is left out while there is no value or the person
- * can't open the target model. The record's route still checks every permission.
+ * can't open the target model. The record's route still checks every permission. `tabbable: false` keeps the
+ * arrow out of the Tab order (a child table's cell, which Tab moves between as a grid).
  */
-export function LinkGo(field: FieldLike, links: LinkSource | null = defaultLinks): { href: Readable<string | null>; arrow: () => Node } | null {
+export function LinkGo(field: FieldLike, links: LinkSource | null = defaultLinks, options: { tabbable?: boolean } = {}): { href: Readable<string | null>; arrow: () => Node } | null {
   const meta = field.meta, href = linkHref(meta, () => field.value.get(), links);
   if (!href) return null;
   const title = () => { const value = field.value.get(); return isEmpty(value) ? '' : links!.title(meta.target!, String(value)).get() ?? ''; };
   const hint = () => `Open ${title() || meta.label.toLowerCase()}`;
-  return { href, arrow: () => when(() => href.get() !== null, () => html`<a class="link-go" href=${() => href.get()} aria-label=${hint}>${Icon('arrow-up-right', { size: 'sm' })}<span
+  return { href, arrow: () => when(() => href.get() !== null, () => html`<a class="link-go" href=${() => href.get()} aria-label=${hint} tabindex=${options.tabbable === false ? '-1' : null}>${Icon('arrow-up-right', { size: 'sm' })}<span
     class="link-go-hint" aria-hidden="true">${hint}</span></a>`) };
 }
 

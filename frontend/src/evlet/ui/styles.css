@@ -1181,6 +1181,7 @@ th:hover>.rz::after{background:var(--border-strong)}
 .in-link-box{position:relative;min-width:0;--link-at:11px}
 .fld .in-link-box{--link-at:15px}
 .g td.editing .in-link-box{--link-at:10px}
+.g td .g-go{--link-at:0px;display:flex;align-items:center;min-width:0}
 .link-go{position:absolute;left:var(--link-at);top:50%;width:20px;height:20px;margin-top:-10px;display:grid;place-items:center;border-radius:var(--r-sm);
   color:var(--accent);background:var(--surface);opacity:0;pointer-events:none;transition:opacity .15s ease}
 .link-go>svg{color:inherit;transition:transform .15s ease}

@@ -143,6 +143,9 @@ scrolls with it.
 
 A record page has no tabs (removed in 0.4): every record uses the [compact record page](#compact-record-page).
 Its content comes first; Activity is in the side column, which a narrow window opens as a drawer.
+On a wide page a round button on the side column's edge folds it away and brings it back, with the
+same look and movement as the sidebar's collapse button; the choice is kept per user in the browser
+(`evlet.<username>.sideCollapsed`), like the sidebar's.
 
 Two options change this per model:
 
@@ -1033,6 +1036,14 @@ The DOM order of a form is its visual order, and nothing uses a positive `tabind
 Tab skips values that can't change (read only, locked or calculated); a click still focuses them,
 showing why, and screen readers read them. A record page has no tabs.
 
+A child table is one Tab stop. Tab from the field before it starts editing its first editable cell
+(Shift+Tab from the field after it, its last), past the table's bar, header and row controls; an
+empty table lands on Add row, where Enter adds a row. Inside, Tab and Shift+Tab move between
+editable cells, Tab past the last cell reaches Add row, and Shift+Tab before the first leaves the
+table. The other controls stay reachable from the cells: ← from a row's first cell focuses its
+checkbox (Tab then reaches its move and Edit buttons, → comes back), and ↑ from the first row
+focuses Select all, from where Shift+Tab reaches Focus and Columns (↓ comes back).
+
 ### Focus on new forms
 
 A new record (the full page `/app/<model>/new` and the side panel) and a prompt focus their first
@@ -1200,8 +1211,8 @@ does (⌘S and ⇧⌘D on a Mac, Ctrl+S and Ctrl+Shift+D elsewhere).
 - **Duplicate is Alt+Shift+D.** Like Alt+N it is read from the physical key, because Option+Shift+D
   on a Mac types a character.
 - **Plain keys stay out of the way.** C, / and ? never fire while typing in a field. Mod+S does.
-- **Mod+S commits what is typed first.** In a text field it commits the typing, as leaving the field
-  would. Only when that commit fails (the text can't be read, or a required field is empty) does Mod+S
+- **Mod+S commits what is typed first.** In a text field, a child table cell being edited or the
+  title being edited in place, it commits the typing, as leaving it would, and the save includes it. Only when that commit fails (the text can't be read, or a required field is empty) does Mod+S
   stop: the field shows its error, a "Not saved. Check the highlighted values." message appears, and
   the focus stays in the field. On any other control (a select, tags, an image, a link picker) a
   stale error from the server does not stop it: the save runs, as with the Save button, and the

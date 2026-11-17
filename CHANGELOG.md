@@ -4,6 +4,25 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Fixed
+
+- **Mod+S (⌘S or Ctrl+S) while a child table cell or the record's title is being edited** commits
+  that value first, as leaving it would, so the save includes it and the cell shows it. Text that
+  can't be read still stops the save with the field's error, as in a parent field.
+- **A child table's Link cell shows its ↗ go-to arrow on hover** while the table is not being
+  edited, as a Link field does: nudged, with the "Open <name>" hint. It stays out of the Tab order.
+- **Tab into a child table takes one stop.** Tab from the field before it starts editing its first
+  editable cell (Shift+Tab from after it, its last), or lands on Add row when it has no rows. Row
+  selection and the column controls are reached from the cells with ← and ↑
+  ([docs/ui.md](docs/ui.md#field-and-tab-order)).
+
+### Added
+
+- **The record's side column (activity and attachments) folds to its edge** from a round button
+  like the sidebar's collapse button, and the choice is remembered per user.
+
 ## 0.4.11 (17-11-2026)
 
 ### Upgrading to 0.4.11
