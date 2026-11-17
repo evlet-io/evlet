@@ -4,7 +4,7 @@ import re
 from dataclasses import dataclass
 from types import MappingProxyType
 
-from .fields import ACTIVE, Field, Image, Link, MISSING, RULES, Reference, active_layer
+from .fields import ACTIVE, Field, Image, Link, MISSING, RULES, Reference, active_layer, check_help_references, help_references
 from .declarations import STATE_FIELD, Table, ReactiveQuery, DEFAULT_TABLE_ROWS
 from .identity import RecordId
 from .naming import standard
@@ -283,6 +283,18 @@ class ModelType(type):
             quoted = ', '.join(f'"{field}"' for field in clashes)
             raise ValueError(f'{owned}: {quoted} {"is" if len(clashes) == 1 else "are"} reserved on documents '
                              f'({", ".join(sorted(reserved))}); rename the field')
+        # Reactive help text: {field} names a field of this model; {parent.field} one of the record that owns a
+        # row's Table, checked here for every Table this class declares.
+        row = getattr(cls, '__row__', False)
+        for field in fields.values():
+            check_help_references(cls, field, fields)
+            if not row and any(ref.startswith('parent.') for ref in help_references(field.help_text)):
+                raise ValueError(f'{name}.{field.name}: help_text names a parent. field, but {name} is not a Table row '
+                                 '(only Child rows have a parent record)')
+        for table in tables.values():
+            if isinstance(table.child, type) and issubclass(table.child, Model):
+                for field in table.child.__app_fields__.values():
+                    check_help_references(table.child, field, table.child.__app_fields__, parent=cls)
         return cls
 
     # The fields of a model: those its class declares, plus the instance fields (x_) of the database in

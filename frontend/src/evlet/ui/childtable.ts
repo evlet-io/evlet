@@ -14,7 +14,7 @@ import type { Field, Row, Table, TableSection } from '../model/record';
 import type { FieldSchema } from '../model/schema';
 import { Button, Checkbox, Icon, IconButton, IconTile, Key } from './base';
 import { read, textOf, uid, type Prop, type Tint } from './core';
-import { BaseField, currencyFor, currencyPlaces, displayValue, FieldControl, fieldFor, LinkGo, moneyMeta, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
+import { BaseField, currencyFor, currencyPlaces, displayValue, FieldControl, fieldFor, helpTextOf, LinkGo, moneyMeta, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
 import { moneyChild } from './money';
 import { kindOf } from './kinds';
 import { openPopover, toast } from './layers';
@@ -632,7 +632,12 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
       : RICH.has(meta.type) ? () => displayValue(field, { links: props.links, empty: '' }) : () => textOf(() => kind.format(field.value.get(), meta));
     const blank = () => { const value = field.value.get(); return value === null || value === undefined || value === ''; };
     // Read as a live child, so opening or closing the row editor swaps the placeholder in or out.
-    const display = () => () => expanded.get() !== null && blank() ? html`<span class="g-ph">${meta.placeholder || meta.label}</span>` : untrack(shown);
+    const value = () => expanded.get() !== null && blank() ? html`<span class="g-ph">${meta.placeholder || meta.label}</span>` : untrack(shown);
+    // Help text that names fields ("per {uom}") reads as a small line under the value, filled in from this row as it
+    // changes; the row keeps its height. Plain help text says the same on every row, so only the row editor shows it.
+    const sub = meta.help_fields?.length ? helpTextOf(field, props.links) : null;
+    const display = sub ? () => html`<span class="g-cv"><span class="g-cv-v">${value}</span><span class="g-sub" hidden=${() => !sub()}>${sub}</span></span>`
+      : () => value;
     const td = html`<td role="gridcell" data-col=${key} class=${`num${column().align === 'right' ? ' r' : ''}`} class:ed=${canEdit} class:calc=${() => !canEdit()}
       class:stk=${isPinned(column)} class:s2=${isLastPin(column)} style:left=${pinStyle(column)} class:editing=${() => rowEdit() === key} class:active=${() => rowSpot() === key}
       class:invalid=${() => Boolean(field.error.get())} class:noted=${() => !field.error.get() && Boolean(field.note.get())} aria-invalid=${() => field.error.get() ? 'true' : null} aria-readonly=${() => canEdit() ? null : 'true'}

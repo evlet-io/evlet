@@ -13,6 +13,9 @@ export interface FieldSchema {
   read_only: boolean;
   hidden?: boolean;
   help_text?: string;
+  /** The fields help_text names, as "per {uom}" names uom ({parent.currency}: a field of the record that owns a
+   * Table row). The browser fills them in as the values change; a Table row shows such help as subtext. */
+  help_fields?: string[];
   /** Text behind a ? icon at the right end of the input. */
   tooltip?: string;
   placeholder?: string;

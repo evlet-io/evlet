@@ -312,6 +312,53 @@ export function currencyCodeIn(meta: FieldSchema, value: (name: string) => unkno
   return code(links.record(source.model, String(id)).get()?.[source.field]);
 }
 
+// ---------- reactive help text ----------
+
+/** A help text's parts: text, and the field names it puts in braces ({uom}, {parent.currency}). {{ and }} are braces. */
+export function helpParts(text: string): (string | { ref: string })[] {
+  const parts: (string | { ref: string })[] = [];
+  let plain = '';
+  for (const match of text.matchAll(/\{\{|\}\}|\{([^{}]*)\}|[^{}]+|[{}]/g)) {
+    if (match[1] !== undefined) { if (plain) parts.push(plain); plain = ''; parts.push({ ref: match[1].trim() }); }
+    else plain += match[0] === '{{' ? '{' : match[0] === '}}' ? '}' : match[0];
+  }
+  if (plain) parts.push(plain);
+  return parts;
+}
+
+const parsedHelp = new WeakMap<FieldSchema, (string | { ref: string })[]>();
+
+/**
+ * A field's help text as it reads now: each {field} filled in with that field's value as the record shows it (a
+ * choice's label, a Link's title, a number at its scale) and {parent.field} with a value of the record that owns the
+ * row. Reads only the fields it names, so it re-runs when one of those changes and for no other edit, with no request. Empty while a named value is empty or unknown, so
+ * "per {uom}" never reads "per ". Plain help text reads as it is.
+ */
+export function helpTextOf(field: FieldLike, links: LinkSource | null = defaultLinks): () => string {
+  const text = field.meta.help_text ?? '';
+  if (!field.meta.help_fields?.length) return () => text.replace(/\{\{/g, '{').replace(/\}\}/g, '}');
+  // Parsed once per field schema, so every row of a table shares one template.
+  const parts = parsedHelp.get(field.meta) ?? parsedHelp.set(field.meta, helpParts(text)).get(field.meta)!;
+  const row = field instanceof Field ? field.row : null;
+  const source = (ref: string): Field | undefined => ref.startsWith('parent.') ? row?.parent?.fields.get(ref.slice(7)) : row?.fields.get(ref);
+  const shown = (target: Field): string => {
+    const value = target.value.get();
+    if (isEmpty(value)) return '';
+    if (target.meta.type === 'link' && target.meta.target) return links?.title(target.meta.target, String(value)).get() ?? '';
+    return kindOf(target.meta.type).format(value, target.meta);
+  };
+  return () => {
+    let out = '';
+    for (const part of parts) {
+      if (typeof part === 'string') { out += part; continue; }
+      const target = source(part.ref), value = target ? shown(target) : '';
+      if (!value) return '';
+      out += value;
+    }
+    return out;
+  };
+}
+
 // ---------- display at rest ----------
 
 /** A field's value as it reads at rest: pills for states, chips for tags, record titles for links. */
@@ -911,6 +958,7 @@ export function BaseField(props: FieldProps): HTMLElement {
   const { field } = props, meta = field.meta, id = uid('f'), errorId = `${id}-err`, helpId = `${id}-help`, noteId = `${id}-note`;
   const label = props.label ?? meta.label;
   const note = () => field.error.get() ? '' : field.note?.get() ?? '';
+  const help = meta.help_text ? helpTextOf(field, props.links) : null;
   const describedBy = [errorId, field.note ? noteId : '', meta.help_text ? helpId : ''].filter(Boolean).join(' ');
   const control = FieldControl(field, { id, describedBy, links: props.links, onCommit: props.onCommit });
   const star = html`<span class="req" aria-hidden="true">*</span>` as HTMLElement;
@@ -920,8 +968,8 @@ export function BaseField(props: FieldProps): HTMLElement {
     hidden=${() => !field.rules.get().applies} data-field=${meta.name}>
     <label for=${labelled ? id : null} id=${`${id}-label`}>${label}${when(() => field.rules.get().required && !field.calculated, () => star)}${FieldHints(field)}${props.hint ?? null}</label>
     ${meta.tooltip ? withTip(control.element, meta.tooltip, meta.label) : control.element}<span class="err" id=${errorId} role="alert">${() => field.error.get() ?? ''}</span>${field.note
-      ? html`<span class="fld-note" id=${noteId} role="status" hidden=${() => !note()}>${note}</span>` : null}${meta.help_text
-      ? html`<span class="fld-help" id=${helpId} hidden=${() => Boolean(field.error.get())}>${meta.help_text}</span>` : null}</div>` as HTMLElement;
+      ? html`<span class="fld-note" id=${noteId} role="status" hidden=${() => !note()}>${note}</span>` : null}${help
+      ? html`<span class="fld-help" id=${helpId} hidden=${() => Boolean(field.error.get()) || !help()}>${help}</span>` : null}</div>` as HTMLElement;
 }
 
 // The ? icon at the right end of a control: inside an input's box, before a select's or link's

@@ -11,13 +11,13 @@ import json
 import re
 from threading import Lock
 import time
-from types import MappingProxyType
+from types import MappingProxyType, SimpleNamespace
 
 from . import qb
 from .auth import AccessError
 from .naming import form_hidden
 from .declarations import Ref
-from .fields import (ACTIVE, MISSING, Boolean, Currency, CurrentUser, Date, Decimal, Integer, Layer, Link, LongText, Select,
+from .fields import (ACTIVE, check_help_references, help_references, MISSING, Boolean, Currency, CurrentUser, Date, Decimal, Integer, Layer, Link, LongText, Select,
                      Text, active_layer)
 from .adapter import Column, DatabaseError, TableDefinition
 from .statemanager import State
@@ -257,6 +257,8 @@ class Customization:
                 text = text.strip()
                 if prop == 'label' and not text:
                     raise ValueError("A label can't be empty.")
+                if prop == 'help_text':
+                    self.check_help(model, name, text)
                 out[prop] = text
         for prop in ('hidden', 'required', 'read_only'):
             if prop in value:
@@ -554,7 +556,7 @@ class Customization:
 
     def merge(self, entry, model, readable, writable):
         """Merged field, layout and list values for one model entry of /api/schema."""
-        from .ui.metadata import field_schema
+        from .ui.metadata import field_schema, help_schema
         for name, field in model.__declared_fields__.items():
             if getattr(field, 'instance', None) and name in readable:
                 entry['fields'].append({**field_schema(field), 'read_only': name not in writable, 'stored': True, 'compute': None,
@@ -567,6 +569,10 @@ class Customization:
             for prop in ('label', 'help_text', 'tooltip', 'placeholder', 'hidden', 'required'):
                 if prop in changed:
                     field[prop] = changed[prop]
+            if 'help_text' in changed:
+                # The fields the new help text names, as field_schema states them for models.py help.
+                field.pop('help_fields', None)
+                field.update(help_schema(SimpleNamespace(help_text=changed['help_text'])))
             if 'default' in changed:
                 field['default'], field['default_kind'] = changed['default'], 'static'
             if 'options_add' in changed or 'options_hidden' in changed:
@@ -642,6 +648,17 @@ class Customization:
         """A copy of the database (Database.backup), or None when its operator backs it up."""
         return self.business.database.backup()
 
+    def check_help(self, model, name, text):
+        """Help text from Controls may name fields as models.py does ({uom}, {parent.currency} on a Table row)."""
+        probe = SimpleNamespace(name=name, help_text=text)
+        check_help_references(model, probe, model.__declared_fields__)
+        parents = [child.parent for child in self.registry.children if child.model is model]
+        for ref in help_references(text):
+            if ref.startswith('parent.') and not parents:
+                raise ValueError(f'{{{ref}}}: only a Table row has a parent record.')
+        for parent in parents:
+            check_help_references(model, probe, model.__declared_fields__, parent=parent)
+
     def check_new(self, model, body):
         if not isinstance(body, dict) or set(body) - {'name', 'type', 'label', 'help_text', 'tooltip', 'required', 'default', 'options', 'target'}:
             raise ValidationError({'_form': 'Use name, type, label, help_text, tooltip, required, default, options and target.'})
@@ -665,6 +682,11 @@ class Customization:
         help_text = body.get('help_text', '')
         if not isinstance(help_text, str) or len(help_text) > 200:
             errors['help_text'] = 'Use at most 200 characters.'
+        else:
+            try:
+                self.check_help(model, name, help_text.strip())
+            except ValueError as error:
+                errors['help_text'] = str(error)
         tooltip = body.get('tooltip', '')
         if not isinstance(tooltip, str) or len(tooltip) > 200:
             errors['tooltip'] = 'Use at most 200 characters.'
