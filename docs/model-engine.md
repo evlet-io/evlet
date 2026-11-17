@@ -295,6 +295,43 @@ reference = Text(help_text="The number printed on the invoice.",
                  tooltip="Use the customer's purchase order number if they ask for one.")
 ```
 
+### Reactive help text
+
+`help_text` may name fields in braces. The browser fills them in from the record's values as they
+change, with no request: `{uom}` is a field of the same record or Table row, and on a Table row
+`{parent.currency}` is a field of the record that owns the Table. A value reads as the record shows it:
+a choice by its label (`box` reads `Box`), a Link by its record's title, a number at its scale. While
+any named value is empty the help text reads empty, so `"per {uom}"` never shows `"per "`. `{{` and `}}`
+are literal braces.
+
+```python
+class Line(Child):
+    item = Link(Item, required=True)
+    uom = Select(['nos', 'box'], default='nos', label='Unit')
+    rate = Currency(currency='AED', help_text='per {uom}')        # "per Box" under each row's rate
+    note = Text(help_text='For {parent.customer}')                 # the owning record's customer, by title
+
+class Order(Model):
+    customer = Link(Customer)
+    lines = Table(Line)
+    total = Currency(currency='AED', compute=lines.sum('rate'), help_text='Invoiced to {customer}')
+```
+
+**Subtext in Table rows.** A help text that names fields shows in a child table as a small grey line
+under the cell's value, filled in from that row; the row keeps its 35 px height. A plain help text
+says the same thing on every row, so the grid leaves it out and the row editor shows it under the
+input, as forms do. On a form, both kinds read under the input.
+
+**Checked when the class is defined.** A stray brace, a name that is not a field name, `{uom}` when the
+model has no field `uom`, `{parent.x}` on a model that is not a Table row, and `{parent.x}` when the
+record that owns the Table (checked when its class declares the `Table`) has no field `x` raise
+`ValueError` naming the model and field. Controls checks help text it saves the same way. The schema
+lists the names in `help_fields` (`["uom", "parent.currency"]`); a plain help text has none.
+
+There is no Python-computed help text: everything a description needs is a value already in the
+browser, and a request per keystroke would make the line lag behind what people type. A text that
+needs server data belongs in a `fetch=` or calculated field, which the template can then name.
+
 Every field takes `suffix=` (at most 20 characters), a unit the forms show in a box after the
 input and after the value at rest, such as `"%"` or `"days"`. It is display metadata only, like
 `prefix` on a UI control. `Percent` fields always show `%`; a `Decimal` with `suffix="%"` looks

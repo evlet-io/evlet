@@ -752,9 +752,20 @@ def currency_schema(field):
     return {'currency': source['code']} if 'code' in source else {'currency_source': source}
 
 
+def help_schema(field):
+    """help_fields: the fields a reactive help text names ("per {uom}" -> ["uom"]). The browser fills them in from the
+    record's values as they change, and a Table row shows it as subtext under the cell (docs/model-engine.md)."""
+    from ..fields import help_references
+    try:
+        names = help_references(field.help_text)
+    except ValueError:
+        return {}
+    return {'help_fields': list(names)} if names else {}
+
+
 def field_schema(field):
     result = {**field.metadata(), 'label': field.label or label_for(field.name),
-              'help_text': field.help_text, **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
+              'help_text': field.help_text, **help_schema(field), **({'tooltip': field.tooltip} if field.tooltip else {}), 'placeholder': field.placeholder,
               **({'suffix': field.suffix} if field.suffix else {}),
               # Integer(grouping=False): shown without thousands separators (display only).
               **({'grouping': False} if getattr(field, 'grouping', True) is False else {}),

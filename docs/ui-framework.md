@@ -462,7 +462,10 @@ search boxes focus the same way; child table cells show the active cell's 2 px a
 Buttons and other controls keep the page-wide `:focus-visible` outline, a solid 2 px accent line. The label is
 14 px, weight 500, 6 px above the input, and the required `*` is the accent blue (its
 `required_when` tooltip stays). `help_text` reads under the input in grey and is linked with
-`aria-describedby`; an error replaces it while there is one. A field with `tooltip` gets a ? icon
+`aria-describedby`; an error replaces it while there is one. A help text that names fields (`"per {uom}"`,
+`help_fields` in the schema) is filled in from the record as it changes (`helpTextOf(field, links)`), and a
+child table cell shows it as a small subtext line under the value (`.g-sub`, inside the 35 px row)
+([model-engine.md](model-engine.md#reactive-help-text)). A field with `tooltip` gets a ? icon
 at the right end of the input (before a Select's or Link's chevron, between the input and a unit
 box) that shows the text on hover and focus. Compact places keep their sizes: the record side
 panel (`.fields`), child table cells, list filters and quick add. IBM Plex Sans is the font everywhere.

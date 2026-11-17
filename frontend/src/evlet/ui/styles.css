@@ -965,6 +965,11 @@ th:hover>.rz::after{background:var(--border-strong)}
 .rz:hover::after,.resizing .rz:hover::after{background:var(--accent)}
 .grid.resizing,.dt.resizing{cursor:col-resize;user-select:none}
 .g-ph{color:var(--fg-3)}
+/* A cell's subtext: its field's reactive help text ("per Box") under the value, inside the same 35px row. */
+.g-cv{display:flex;flex-direction:column;justify-content:center;min-width:0;line-height:15px}
+.g-cv-v,.g-sub{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.g-sub{font-size:11px;line-height:13px;font-weight:400;color:var(--fg-3)}
+.g-sub[hidden]{display:none}
 .g tr.g-xrow td{padding:0;height:auto;background:var(--bg-subtle);white-space:normal;overflow:visible}
 .g-x{position:sticky;left:0;width:var(--gw,100%);padding:12px 14px 14px;box-shadow:inset 3px 0 0 var(--accent);animation:slidein .18s ease}
 .g-x-h{display:flex;align-items:center;gap:6px;margin-bottom:10px;flex-wrap:wrap}

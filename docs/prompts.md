@@ -208,4 +208,5 @@ back and moves the quotation by `reopen_part` or `reopen_all`. In Python: `quota
 ...})`.
 
 The Playground shows **Plan project** (an action on a planned project) and **Quick invoice** (an `@api` prompt
-in the Sales workspace that opens a new invoice to review), in `examples/playground/prompts.py`.
+in the Sales workspace that opens a new invoice to review; its lines show the rate's help text
+`'per {uom}'` as subtext under each rate), in `examples/playground/prompts.py`.
