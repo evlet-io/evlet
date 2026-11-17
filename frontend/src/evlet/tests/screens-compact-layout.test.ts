@@ -87,8 +87,9 @@ describe('a compact record page', () => {
     const row = host.querySelector('.ev-crumb-row')!;
     expect(row.lastElementChild!.classList.contains('ev-side-toggle')).toBe(true);
     const button = row.querySelector<HTMLButtonElement>('.ev-side-toggle button')!;
-    // The panel-right icon: the shell's sidebar toggle mirrored, for the column on the right.
-    expect(button.innerHTML).toBe((await import('../ui/base')).Icon('panel-right', { size: 'sm' }).outerHTML);
+    // The panel-right icon (the shell's sidebar toggle mirrored, for the column on the right) and the column's name.
+    expect(button.querySelector('svg')!.innerHTML).toContain('M15 3v18');
+    expect(button.textContent!.trim()).toMatch(/^(Activity|Attachments)$/);
     const aside = host.querySelector<HTMLElement>('.doc-side')!;
     expect(button.getAttribute('aria-controls')).toBe(aside.id);
     expect(button.getAttribute('aria-pressed')).toBe('false');
@@ -126,12 +127,13 @@ describe('a compact record page', () => {
     expect(edge.getAttribute('aria-expanded')).toBe('false');
     expect(edge.getAttribute('aria-label')).toMatch(/^Expand (attachments|activity)/);
     expect(Object.entries(localStorage).find(([name]) => name.endsWith('.sideCollapsed'))?.[1]).toBe('true');
-    // Another record page (after a reload, say) opens folded.
+    // Another record page (after a reload, say) opens folded. Folded, the named button by the breadcrumb unfolds it.
     stopAll();
     host = await opened();
     expect(host.querySelector('.doc')!.classList.contains('side-collapsed')).toBe(true);
-    host.querySelector<HTMLButtonElement>('.doc > .doc-side-edge')!.click();
+    host.querySelector<HTMLButtonElement>('.ev-crumb-row .ev-side-toggle button')!.click();
     expect(host.querySelector('.doc')!.classList.contains('side-collapsed')).toBe(false);
+    expect(host.querySelector('.doc')!.classList.contains('side-open')).toBe(false);
     localStorage.clear();
   });
 

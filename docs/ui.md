@@ -143,8 +143,12 @@ scrolls with it.
 
 A record page has no tabs (removed in 0.4): every record uses the [compact record page](#compact-record-page).
 Its content comes first; Activity is in the side column, which a narrow window opens as a drawer.
-On a wide page a round button on the side column's edge folds it away and brings it back, with the
-same look and movement as the sidebar's collapse button; the choice is kept per user in the browser
+The side column folds before the sidebar: at 1380 px and under it is a drawer, and the sidebar
+becomes one at 1220 px, so as the window narrows (or zooms in) the page gives up its right edge
+first, and the column stays folded once the sidebar has left. On a wide page a round button on
+the side column's edge folds it away; folded, a button named after it ("Activity", or
+"Attachments") at the end of the breadcrumb row brings it back, the same button that opens the
+drawer in a narrow window. The choice is kept per user in the browser
 (`evlet.<username>.sideCollapsed`), like the sidebar's.
 
 Two options change this per model:

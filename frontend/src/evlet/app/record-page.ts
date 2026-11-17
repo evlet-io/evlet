@@ -65,6 +65,13 @@ function gate(field: Field, locked: Readable<boolean>, canWrite: boolean): Field
   }) as FieldLike;
 }
 
+/**
+ * Under this window width a record page's side column (attachments, activity) is a drawer. It is wider than
+ * NAV_DRAWER (app/shell.ts), so as the window narrows (or zooms in) the side column folds first and the app's
+ * sidebar after it, the way the page reads, and it stays folded once the sidebar has left.
+ */
+export const SIDE_DRAWER = '(max-width: 1380px)';
+
 /** Ask before discarding unsaved changes; resolves true to leave. */
 export function confirmDiscard(reason?: string): Promise<boolean> {
   return new Promise(resolve => {
@@ -927,15 +934,28 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const sideOpen = cell(false, { name: `${name} side drawer` });
   const sideId = uid('ev-side');
   const sideWhat = [model.attachments && files ? 'attachments' : null, activity && tabShown('activity') ? 'activity' : null].filter(Boolean).join(' and ') || 'side panel';
-  const sideToggle = side ? html`<span class="ev-side-toggle">${IconButton({ icon: 'panel-right', tip: () => `${sideOpen.get() ? 'Hide' : 'Show'} ${sideWhat}`,
-    active: sideOpen, onClick: () => sideOpen.set(!sideOpen.peek()) })}</span>` as HTMLElement : null;
+  // On a page the button names what it opens ("Activity"); a side panel's top line has room for the icon only.
+  const sideName = activity && tabShown('activity') ? 'Activity' : model.attachments && files ? 'Attachments' : 'Details';
+  const sideTip = () => `${sideOpen.get() ? 'Hide' : 'Show'} ${sideWhat}`;
+  // A narrow frame opens the column as a drawer; a wide one whose column was folded unfolds it.
+  const toggleSide = () => {
+    if (!frame.classList.contains('doc-narrow') && prefs.sideCollapsed.peek()) prefs.sideCollapsed.set(false);
+    else sideOpen.set(!sideOpen.peek());
+  };
+  const sideButton = (): HTMLElement => {
+    if (panel) return IconButton({ icon: 'panel-right', tip: sideTip, active: sideOpen, onClick: toggleSide });
+    const button = Button({ icon: 'panel-right', label: sideName, variant: 'ghost', size: 'small', tip: sideTip, onClick: toggleSide });
+    effect(() => { button.setAttribute('aria-pressed', String(sideOpen.get())); button.classList.toggle('on', sideOpen.get()); });
+    return button;
+  };
+  const sideToggle = side ? html`<span class="ev-side-toggle">${sideButton()}</span>` as HTMLElement : null;
   sideToggle?.firstElementChild?.setAttribute('aria-controls', sideId);
   const crumbRow = panel ? null : html`<div class="ev-crumb-row">${ctx.crumbBar?.() ?? null}${sideToggle}</div>`;
   if (panel) headTools.append(html`${panelTools(sideToggle)}`);
   // The footer under the form: who made and changed it, the record ID and its link. A side panel shows it when its
   // Record info block is on.
   const footer = isNew || (shows && !shows.block('info')) ? null : RecordFooter(ctx, model, String(store.id));
-  const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page',
+  const frame = DocFrame({ tint: look.tint, density: prefs.density, sidePosition: 'right', variant: panel ? 'panel' : 'page', narrowWhen: panel ? undefined : SIDE_DRAWER,
     main: [panel ? html`<div class="ev-panel-head">${panelBar()}${header}</div>` : [crumbRow, header], UnsavedBar(ctx, model, store, { isNew, draft: !options.duplicate, onSettled: () => focusFirst() }),
     options.prefill ? StateBanner({ tone: 'info', title: `Filled in from ${options.prefill}.`, text: `Nothing is saved until you select Create.` }) : null,
     options.duplicate ? StateBanner({ tone: 'info', icon: 'copy', title: `Copied from ${options.duplicate.from}.`, text: ['Nothing is saved until you select Create.',
