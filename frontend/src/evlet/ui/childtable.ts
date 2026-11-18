@@ -257,6 +257,13 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // A column's sum shows once: in the total line while that column shows, under the table only when it doesn't. An empty
   // table shows no totals at all: its header and Add row placeholder only.
   const summaryShown = derive(() => rows.get().length === 0 ? [] : summary.filter(item => !item.column || !columns.get().some(column => column.key === item.column)));
+  // Table(totals=...): the owner's fields as a stack, in the declared order, in place of the inferred totals. A field
+  // the person may edit is edited in its line; one whose applies_when is false has no line.
+  const declared = (table.meta.totals ?? []).map(name => table.owner.fields.get(name)).filter((field): field is Field => Boolean(field));
+  const totalLine = (field: Field, last: boolean) => html`<div class="g-tl" class:gt=${last} class:invalid=${() => Boolean(field.error.get())}
+    hidden=${() => !field.rules.get().applies} data-field=${field.name}><span>${field.label}</span>${when(() => field.editable.get(),
+      () => FieldControl(field, { label: field.label, links: props.links }).element, () => html`<b class="num">${displayValue(field, { links: props.links })}</b>`)}<span
+      class="err" role="alert">${() => field.error.get() ?? ''}</span></div>`;
 
   const rows = table.rows;
   const selection = cell(new Set<string>(), { name: `${table.name} (selection)` });
@@ -920,7 +927,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     </div>
     <div class="g-under">${when(locked, () => derived && !read(props.lockedText ?? '') ? null : html`<span class="g-lock">${Icon('lock', { size: 'xs' })}${() => read(props.lockedText ?? 'Locked. Lines can’t change after the record is issued.')}</span>`,
       () => html`<span class="muted hide-sm g-keys">${Key('Tab')} next cell · ${Key('Enter')} cell below · ${Key('Esc')} cancel</span>`)}
-      <span class="grow"></span>${when(() => summaryShown.get().length > 0, () => html`<div class="g-sum">${each(summaryShown, item => item.label, item => html`<div class:gt=${Boolean(item().grand)}><span>${item().label}</span><b class="num">${item().value}</b></div>`)}</div>`)}</div>
+      <span class="grow"></span>${declared.length ? when(() => rows.get().length > 0, () => html`<div class="g-totals">${declared.map((field, index) => totalLine(field, index === declared.length - 1))}</div>`)
+        : when(() => summaryShown.get().length > 0, () => html`<div class="g-sum">${each(summaryShown, item => item.label, item => html`<div class:gt=${Boolean(item().grand)}><span>${item().label}</span><b class="num">${item().value}</b></div>`)}</div>`)}</div>
     ${props.heading?.footer ? when(focused, () => html`<div class="g-foot">${props.heading!.footer!()}</div>`) : null}
   </div>` as HTMLElement;
   scroller = grid.querySelector('.g-scroll') as HTMLElement;

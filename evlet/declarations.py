@@ -28,9 +28,11 @@ DEFAULT_TABLE_ROWS = 100
 class Table:
     """Owned rows. `min_rows` is checked on save (`required=True` means at least one row);
     `max_rows` (default 100, at most 1,000) bounds the collection in both runtimes. `sections=True` lets
-    the Table hold section rows: headings that group the rows below them (evlet/sections.py)."""
+    the Table hold section rows: headings that group the rows below them (evlet/sections.py). `totals` names
+    fields of the owning model shown under the table, in order (checked when the model is defined)."""
     def __init__(self, child, *, required=False, min_rows=None, max_rows=DEFAULT_TABLE_ROWS, label=None,
-                 storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False, derived=False):
+                 storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False, derived=False,
+                 totals=()):
         for name, value in (('min_rows', min_rows), ('max_rows', max_rows)):
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f'Table {name} must be a nonnegative integer')
@@ -62,6 +64,9 @@ class Table:
         if type(derived) is not bool:
             raise ValueError('Table derived must be True or False')
         self.derived = derived
+        if not isinstance(totals, (tuple, list)) or not all(type(name) is str for name in totals):
+            raise ValueError('Table totals must be a tuple of field names of the owning model')
+        self.totals = tuple(totals)
         if sections and 'section' in {*getattr(child, '__declared_fields__', {}), *getattr(child, '__tables__', {})}:
             # {"section": label} marks a section row, so the rows cannot have a field of that name.
             raise ValueError('A Table with sections=True needs a row model without a field named section')

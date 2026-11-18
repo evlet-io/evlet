@@ -77,7 +77,9 @@ export interface ChildSchema { name: string; model: string; label: string; link:
   /** Table(sections=True): the rows may include section rows {id, section}, headings that group the rows below them. */
   sections?: boolean
   /** Row fields each section row sums over its own rows. Absent: a section shows no sums. */
-  section_sums?: string[] }
+  section_sums?: string[]
+  /** Table(totals=...): fields of the owning record shown under the table, in order, in place of the inferred totals. */
+  totals?: string[] }
 
 /** A section row in a record's children: {id, section}. It has none of the row fields. */
 export const isSectionRow = (item: Record<string, unknown>) => typeof item.section === 'string' && Object.keys(item).every(key => key === 'id' || key === 'section' || key === '_key');

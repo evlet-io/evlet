@@ -164,7 +164,8 @@ export function keyFields(model: ScreenModel): FieldSchema[] {
 export function sections(model: ScreenModel): Array<{ label: string; fields: FieldSchema[]; collapsible?: boolean; collapsed?: boolean | 'empty'; flow?: 'rows' | 'columns';
   /** Section(description=...). */ description?: string; /** A group of the main zone. */ main?: boolean; /** Main(title=...). */ heading?: boolean }> {
   const layout = model.layout?.length ? model.layout : [{ label: 'Details', fields: visible(model).map(field => field.name) }];
-  const seen = new Set<string>();
+  // A field in a Table's totals (Table(totals=...)) shows under that table, so it counts as placed.
+  const seen = new Set<string>((model.children ?? []).flatMap(child => child.totals ?? []));
   const result = layout.map(section => ({ label: section.label, collapsible: section.collapsible, collapsed: section.collapsed, flow: section.flow,
     description: 'description' in section ? section.description : undefined, main: 'main' in section ? section.main : undefined,
     heading: 'heading' in section ? section.heading : undefined, fields: section.fields.map(name => fieldOf(model, name))

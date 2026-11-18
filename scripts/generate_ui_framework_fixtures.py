@@ -15,7 +15,7 @@ from tempfile import TemporaryDirectory
 
 from evlet import (Application, Database, LocalAuth, Registry, Model, Child, Table, Decimal, Currency, Integer, Text,
                    Date, Link, Rule, ValidationError, Select, action, Email, LongText, Attachments, Boolean, Count,
-                   MultiSelect, Naming, Reference, Related, Sequence, Series, State, Sum, AppSettings, UserPreferences, Prompt, Outcome,
+                   MultiSelect, Naming, Percent, Reference, Related, Sequence, Series, State, Sum, AppSettings, UserPreferences, Prompt, Outcome,
                    Report, Column, Chart, Count, Html, Main, Ref, Section, TableSection, release, state, validate)
 from evlet.calc import D, F, round, days
 from evlet.identity import sequential_ids
@@ -832,12 +832,84 @@ def record_zones(folder):
     return out
 
 
+class BillLine(Child):
+    item = Text()
+    qty = Decimal(default=1, minimum='0')
+    rate = Currency(default=0)
+    amount = Currency(compute=round(F('qty') * F('rate'), 2))
+
+
+class Bill(Model):
+    """Declared totals under a table: a typed discount, a line that applies only when shipped, a total to lock."""
+    permissions = ALL
+    title = Text(default='bill')
+    shipped = Boolean(default=False)
+    approved = Boolean(default=False)
+    lines = Table(BillLine, totals=('net_total', 'discount_percent', 'discount', 'freight', 'grand_total'))
+    net_total = Currency(compute=lines.sum('amount'), label='Net total')
+    discount_percent = Percent(default='0', label='Discount %', locked_when=F('approved') == True)  # noqa: E712
+    discount = Currency(compute=round(F('net_total') * F('discount_percent') / 100, 2))
+    freight = Currency(default=0, applies_when=F('shipped') == True)  # noqa: E712
+    grand_total = Currency(compute=F('net_total') - F('discount'), label='Grand total')
+
+    @action('Quick bill')
+    def quick_bill(self):
+        return QuickBill
+
+
+class QuickLine(Child):
+    item = Text()
+    amount = Currency(default=0)
+
+
+class QuickBill(Prompt):
+    class Meta:
+        title = 'Quick bill'
+    lines = Table(QuickLine, totals=('net_total', 'discount_percent', 'grand_total'))
+    net_total = Currency(compute=lines.sum('amount'), label='Net total')
+    discount_percent = Percent(default='0', label='Discount %')
+    grand_total = Currency(compute=F('net_total') * (100 - F('discount_percent')) / 100, label='Grand total')
+
+    def submit(self):
+        return Outcome('Billed')
+
+
+def record_totals(folder):
+    """Table(totals=...): the schema, a bill with two lines, and the prompt its action opens."""
+    database = Database(folder / 'totals.sqlite3', Registry(Bill))
+    auth = LocalAuth(database, origins=('http://127.0.0.1:8000',), secure_cookies=False, allow_setup=True)
+    app = Application(database, auth=auth)
+    app.initialize()
+    http(app, 'POST', '/api/auth/setup', {'username': 'owner', 'password': PASSWORD})
+    status, data, headers = http(app, 'POST', '/api/auth/login', {'username': 'owner', 'password': PASSWORD})
+    cookie, csrf = headers[b'set-cookie'].decode().split(';')[0], data['csrf']
+    admin = lambda method, path, body=None, **kwargs: http(app, method, path, body, cookie=cookie, csrf=csrf, **kwargs)  # noqa: E731
+    out = {}
+
+    def keep(name, response):
+        status, payload, headers = response
+        out[name] = {'status': status, 'body': payload, 'etag': headers.get(b'etag', b'').decode() or None}
+        return payload
+
+    keep('totals_session', admin('GET', '/api/auth/session'))['csrf'] = 'fixture-csrf-token'
+    keep('totals_schema', admin('GET', '/api/schema'))
+    rows = [{'_key': 'a', 'item': 'Survey', 'qty': '2', 'rate': '100.00'}, {'_key': 'b', 'item': 'Report', 'qty': '1', 'rate': '50.00'}]
+    bill = admin('POST', '/api/bill', {'title': 'Harbour works', 'children': {'lines': rows}})[1]
+    keep('totals_bill', admin('GET', f"/api/bill/{bill['id']}"))
+    keep('totals_empty', admin('GET', f"/api/bill/{admin('POST', '/api/bill', {'title': 'Empty'})[1]['id']}"))
+    revision = {b'if-match': out['totals_bill']['etag'].encode()}
+    opened = keep('totals_prompt', admin('POST', f"/api/bill/{bill['id']}/actions/quick_bill", {}, headers=revision))
+    opened['_outcome']['prompt']['ticket'] = 'fixture-totals-ticket'
+    database.close()
+    return out
+
+
 def generate():
     """Both fixtures, recorded from fresh databases. Ids count up per table so the recording is stable."""
     with TemporaryDirectory() as directory, sequential_ids(), fixed_times():
         return {OUTPUT.name: record_api(Path(directory)), SCREENS.name: {**record_screens(Path(directory)), **record_prompts(Path(directory)), **record_reports(Path(directory)),
                                                                           **record_layouts(Path(directory)), **record_compact(Path(directory)),
-                                                                          **record_zones(Path(directory))}}
+                                                                          **record_zones(Path(directory)), **record_totals(Path(directory))}}
 
 
 def main():

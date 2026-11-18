@@ -493,7 +493,7 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 /* The table title's tools: Focus and Columns, subtle square icon buttons. */
 .ev-cmp-tools{display:inline-flex;gap:2px;margin-left:4px}
 .ev-cmp-th{align-items:center}
-.ev-cmp-table .g-under:not(:has(.g-sum)):not(:has(.g-lock)){display:none}
+.ev-cmp-table .g-under:not(:has(.g-sum)):not(:has(.g-totals)):not(:has(.g-lock)){display:none}
 .ev-cmp-table.is-empty>.grid{display:none}
 .ev-cmp-table .grid{box-shadow:none}
 .ev-cmp-table table.g{font-size:13.5px}

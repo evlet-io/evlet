@@ -467,6 +467,8 @@ class Business:
                                   **dict(zip(('min_rows', 'max_rows'), row_bounds(self, child))),
                                   # Table(copy=False): Duplicate leaves these rows out of the new record (display only).
                                   **({'copy': False} if getattr(getattr(model, '__tables__', {}).get(child.name), 'copy', True) is False else {}),
+                                  # Table(totals=...): the owner's fields shown under the table, in order (docs/ui.md).
+                                  **({'totals': list(totals)} if (totals := getattr(getattr(model, '__tables__', {}).get(child.name), 'totals', ())) else {}),
                                   # Table(sections=True): rows may include section rows {"id", "section"}; each shows the sums
                                   # of its rows for the fields the total line sums (computed by the client, never stored).
                                   **({'sections': True, 'section_sums': list(total_fields(model, child.name))}

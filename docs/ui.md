@@ -330,7 +330,7 @@ class Employee(Model):
 | Block | Zone | What it shows |
 |---|---|---|
 | `Main(fields, title=None)` | main | A group of fields. With a title it shows a small heading. |
-| `Main('table_name')` | main | One Table, with its title bar (title, row count, Add, Focus, Columns), total line and totals. |
+| `Main('table_name')` | main | One Table, with its title bar (title, row count, Add, Focus, Columns), total line and totals: the inferred ones, or the fields its `totals=` declares. |
 | `Section(title, fields, *, collapsible=True, collapsed=True, flow='rows', panel=True, description=None)` | more information | Fields. `collapsed` is `True` (closed, the default), `False` (open) or `'empty'` (closed while every field is empty). `('Title', fields)` is a section that can't collapse, so it starts open. |
 | `TableSection('table_name', *, collapsible=True, collapsed=True, panel=True)` | more information | One Table, with the same title bar. `'empty'` is closed while the table has no rows. A Table name on its own is `TableSection(name)`. |
 | `Related(model, link=None, *, label, filters, fields, limit, order)` | more information | Records of `model` whose Link `link` points to this record, `limit` a page (default 5, at most 20), with a pager and **View all**. |
@@ -346,6 +346,18 @@ class Employee(Model):
   `TableSection` under its own label. On a new record a row of more information that holds a required
   field starts open. A layout need not name the title, name or State, which the header shows; left
   out, they still go to Other, where a new record fills them in.
+- **Totals under a table.** Without `totals=`, the totals under a table are inferred: the parent's sums over its
+  columns (a sum shows there only while its column is hidden) and the parent fields calculated only from those sums.
+  `Table(Line, totals=("net_total", "discount_percent", "grand_total"))` replaces them with the named fields of the
+  record, as a right-aligned stack in that order: label on the left, value on the right, the last line emphasized
+  as the grand total. A calculated, read-only or locked field is a read-only value, formatted as in the form; a
+  field the person may edit is edited in its line with its usual control, shows its error there, and recalculates
+  the lines below it as it is typed. Tab reaches the stack after the table. A field whose `applies_when` is false
+  has no line, and a table with no rows shows no totals. A declared field keeps its line even while its column's
+  sum shows in the total line, which stays as it is. The stack is the same in `Main('lines')`, a `TableSection`,
+  a Prompt's table and the side panel, and takes the full width on a phone. A field in a table's totals counts as
+  placed: it is not in Details or Other, and a block that names it again is ignored with a layout warning
+  (a Prompt refuses the layout), so the field shows once.
 - **Names.** Every area keeps a stable name, its `name` in the schema, for `Meta.panel` and Controls: a
   section, and a `Main` with a title, by its title; the first untitled `Main` by the model's label and
   each later untitled one by the label and its number ("Employee 2"); a Table by its field name; a
