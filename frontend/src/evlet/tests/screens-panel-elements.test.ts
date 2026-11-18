@@ -33,7 +33,7 @@ const routes = (panel?: PanelSchema): Route[] => [
 
 const panel = (host: Element) => host.querySelector<HTMLElement>('.ev-panel')!;
 /** The record's parts besides its sections: the primary area's tables, then the "more information" rows that are not sections. */
-const rows = (root: Element) => [...root.querySelectorAll('.ev-more-row')].map(node => node.getAttribute('data-section'));
+const rows = (root: Element) => [...root.querySelectorAll('.ev-more-row, .ev-rel')].map(node => node.getAttribute('data-section'));
 const mainTables = (root: Element) => [...root.querySelectorAll('.ev-cmp-main .ev-cmp-th h3')].map(text);
 /** The layout's sections shown: Invoice (the primary area) when it has fields, and Amounts as a row. */
 const sections = (root: Element) => [...(root.querySelector('.ev-cmp-main [data-field]') ? ['Invoice'] : []), ...rows(root).filter(title => title === 'Amounts')];

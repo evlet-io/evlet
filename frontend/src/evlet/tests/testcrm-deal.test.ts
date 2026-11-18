@@ -26,7 +26,7 @@ const field = (host: Element, name: string) => host.querySelector<HTMLElement>(`
 // A saved record's title is edited in the header, not in the Details form.
 const heading = (host: Element) => host.querySelector<HTMLElement>('.doc-head .doc-title');
 /** Open a "more information" row by its title. */
-const openRow = (host: Element, title: string) => click(host.querySelector(`.ev-more-row[data-section="${title}"] .ev-more-toggle`));
+const openRow = (host: Element, title: string) => click(host.querySelector(`[data-section="${title}"] :is(.ev-more-toggle, .ev-rel-toggle)`));
 
 function edit(cell: HTMLElement, value: string) {
   click(cell);
@@ -108,8 +108,8 @@ describe('testCRM: a deal and its lines', () => {
     expect(text(host.querySelector('.inv-banner > div'))).toBe('Won and locked. Only lost reason and next step can change.');
     expect(run.writes.map(write => `${write.method} ${new URL(write.url, 'http://x').pathname}`)).toEqual([`POST /api/deal/${id}/moves/negotiation`, `POST /api/deal/${id}/moves/won`]);
     expect(run.writes.every(write => write.headers['if-match'] && JSON.stringify(write.body) === '{}')).toBe(true);
-    // The win created a kick-off task: the Related row counts it again after the move.
-    await until(() => expect(text(host.querySelector('.ev-more-row[data-section="Related"] .ev-more-sum'))).toContain('Tasks: 2'));
+    // The win created a kick-off task: the Related section counts it again after the move.
+    await until(() => expect([...host.querySelectorAll('.ev-rel-chip')].map(chip => chip.getAttribute('aria-label')).join(' · ')).toContain('Tasks: 2'));
     expect(text(host.querySelector('.ev-cmp-main .g-lock'))).toBe('Locked. Lines can’t change while it is won.');
     expect(host.querySelector('.doc-main [aria-label="Add row"], .doc-main .g-add')).toBeNull();
     openRow(host, 'Related');

@@ -90,7 +90,7 @@ changes one discovered relation:
 In `Meta.relations`, `Related` names its Link and takes no `filters` or `fields`. The same class
 is also a record layout block in `Meta.layout`, where `link` may be left out and `filters`, `fields`
 and `limit` shape one list on the record page; see [ui.md](ui.md#record-layouts). A model whose
-layout declares a `Related` block no longer shows the automatic Related row unless
+layout declares a `Related` block no longer shows the automatic Related section unless
 `Meta.side_blocks` names `related`; the relations stay in the schema and the related
 route.
 
@@ -128,6 +128,17 @@ follow the rule of the list route's `order_by`: a field the caller cannot read, 
 Link to a model on which the caller has a row scope, is skipped, because ordering by
 it would reveal values the caller cannot see. The order falls back to `-id` when
 nothing is left. Unknown or hidden relations answer 404.
+
+**Counting related records.** `GET /api/{model}/{id}/related`, without a name, counts
+every relation the caller can see in one read of one snapshot:
+
+```json
+{"counts": {"payment.invoice": 3, "task.deal": 0}}
+```
+
+It takes no query parameters (422 otherwise). The owning record must be readable
+(otherwise 404), and each count follows the other model's row scope, as `total` does
+above. It only reads: no writes, and nothing for background jobs.
 
 The list route also works: `GET /api/payment?filters={"invoice": 7}` (URL encoded).
 It is refused with 403 when the caller has a row scope on the invoice model, because

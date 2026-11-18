@@ -18,18 +18,19 @@ const heading = (host: Element) => host.querySelector<HTMLElement>('.doc-head .d
 const rowsIn = (host: Element) => [...host.querySelectorAll<HTMLElement>('.grid tbody tr[data-key]')];
 const cellOf = (row: Element, col: string) => [...row.querySelectorAll<HTMLElement>('td[data-col]')].find(td => td.dataset.col === col)!;
 /** Open a "more information" row by its title. */
-const openRow = (host: Element, title: string) => click(host.querySelector(`.ev-more-row[data-section="${title}"] .ev-more-toggle`));
+const openRow = (host: Element, title: string) => click(host.querySelector(`[data-section="${title}"] :is(.ev-more-toggle, .ev-rel-toggle)`));
 
 describe('generated record view', () => {
   const customerRoutes = (orders: number, quotes = 0): Route[] => {
     const page = (total: number) => ({ status: 200, etag: null, body: { items: [], total, limit: 10, offset: 0 } });
     return [...adminRoutes(), ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
-      ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders)], ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page(quotes)]];
+      ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders)], ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page(quotes)],
+      ['GET', /\/api\/customer\/0000000000001\/related$/, { status: 200, etag: null, body: { counts: { 'order.customer': orders, 'quote.customer': quotes } } }]];
   };
 
   it('shows an empty related list as one line, without a table of headers or a 0', async () => {
     const { host } = start(customerRoutes(0), '/app/customer/0000000000001');
-    await until(() => expect(host.querySelector('.ev-more-row[data-section="Related"]')).not.toBeNull());
+    await until(() => expect(host.querySelector('.ev-rel')).not.toBeNull());
     openRow(host, 'Related');
     await until(() => expect(text(host.querySelector('.ev-related[aria-label="Orders"] .ev-related-empty'))).toBe('No orders yet.'));
     expect(host.querySelector('.ev-related[aria-label="Orders"] table')).toBeNull();
@@ -524,7 +525,8 @@ describe('each fact shows once on the record page', () => {
     Object.assign(schema.body.models.find((model: { name: string }) => model.name === 'customer'), patch);
     const page = (total: number) => ({ status: 200, etag: null, body: { items: [], total, limit: 10, offset: 0 } });
     return [['GET', /\/api\/auth\/session$/, recorded.session], ['GET', /\/api\/schema$/, schema], ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
-      ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders)], ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page(quotes)]];
+      ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders)], ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page(quotes)],
+      ['GET', /\/api\/customer\/0000000000001\/related$/, { status: 200, etag: null, body: { counts: { 'order.customer': orders, 'quote.customer': quotes } } }]];
   };
 
   it('E4: the footer leaves out the times it does not have', async () => {
@@ -536,12 +538,12 @@ describe('each fact shows once on the record page', () => {
     expect(text(host.querySelector('.ev-rec-foot .ev-rf-id .mono'))).toBe('0000000000001');
   });
 
-  it('E5: the Related row counts each relation while closed and lists them all when open', async () => {
+  it('E5: the Related section counts each relation while closed and lists them all when open', async () => {
     const { host } = start(customer(2, 0), '/app/customer/0000000000001');
-    await until(() => expect(text(host.querySelector('.ev-more-row[data-section="Related"] .ev-more-sum'))).toBe('Orders: 2 · Quotes: 0'));
+    await until(() => expect([...host.querySelectorAll('.ev-rel-chip')].map(chip => chip.getAttribute('aria-label')).join(' · ')).toBe('Orders: 2 · Quotes: 0'));
     openRow(host, 'Related');
     await until(() => expect(text(host.querySelector('.ev-related[aria-label="Quotes"] .ev-related-empty'))).toBe('No quotes yet.'));
-    // Related is a row of the record, never a side block.
+    // Related is a section of the record, never a side block.
     expect(blocks(host)).not.toContain('Related');
   });
 

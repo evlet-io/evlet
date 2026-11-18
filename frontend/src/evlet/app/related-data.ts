@@ -1,11 +1,12 @@
-// A record's related records, one page of five per relation, loaded only when something shows them:
-// the side panel's Related block or a Related tab section, once it scrolls into view. One page per
-// relation serves both, so its count costs no request of its own, and pages stay loaded while the
-// record is open, so switching tabs does not ask again. A save of the record reloads the pages
-// already shown, since an action or a move may add or remove related records.
+// A record's related records. The Related section's chips show how many records each relation holds: one read
+// counts them all (GET /api/{model}/{id}/related), once the section first scrolls into view. A relation's rows come a
+// page of five at a time, only when its list shows (the section is open, or a Related tab section is in view); a
+// page's total then replaces the count. Pages stay loaded while the record is open, so switching tabs does not ask
+// again. A save of the record reloads the counts and the pages already shown, since an action or a move may add or
+// remove related records.
 
 import type { RecordData } from '../api';
-import { batch, cell, effect, onCleanup, untrack, type Cell, type Readable } from '../reactive';
+import { batch, cell, derive, effect, onCleanup, untrack, type Cell, type Readable } from '../reactive';
 import type { RelationSchema } from './meta';
 
 /** Rows a relation shows at a time. */
@@ -17,6 +18,9 @@ export interface RelatedPage {
   total: Cell<number | null>;
   offset: Cell<number>;
   problem: Cell<string>;
+  /** How many records the relation holds: the page's total once a page loaded, else the counted number; null while
+   * neither has come. */
+  count: Readable<number | null>;
   /** Loads the first page unless a page was asked for already. */
   ensure(): void;
   /** Loads the page that starts at `offset`. */
@@ -24,15 +28,34 @@ export interface RelatedPage {
 }
 
 type Fetch = (relation: string, page: { limit: number; offset: number }) => Promise<{ items: RecordData[]; total: number }>;
+type FetchCounts = () => Promise<Record<string, number>>;
+
+export interface RelatedPages {
+  (name: string): RelatedPage;
+  /** Counts every relation in one read, unless they were asked for already. */
+  ensureCounts(): void;
+  /** Whether the counts could not be read. */
+  countsFailed: Readable<boolean>;
+}
 
 /** The pages of one record's relations; `version` changes after each save (the record's etag). */
-export function relatedPages(relations: RelationSchema[], fetch: Fetch, version: Readable<unknown>, problemText: (error: unknown) => string): (name: string) => RelatedPage {
+export function relatedPages(relations: RelationSchema[], fetch: Fetch, version: Readable<unknown>, problemText: (error: unknown) => string, fetchCounts?: FetchCounts): RelatedPages {
   const pages = new Map<string, RelatedPage & { started: boolean }>();
+  const counted = cell<Record<string, number> | null>(null), countsFailed = cell(false);
+  let countsStarted = false, countTicket = 0;
+  const loadCounts = () => {
+    if (!fetchCounts) return;
+    countsStarted = true;
+    const ticket = ++countTicket;
+    void fetchCounts().then(counts => { if (ticket === countTicket) batch(() => { counted.set(counts); countsFailed.set(false); }); },
+      () => { if (ticket === countTicket) countsFailed.set(true); });
+  };
   for (const relation of relations) {
     const rows = cell<RecordData[]>([]), total = cell<number | null>(null), offset = cell(0), problem = cell('');
+    const count = derive(() => total.get() ?? counted.get()?.[relation.name] ?? null);
     let asked = 0;
     const page = {
-      rows, total, offset, problem, started: false,
+      rows, total, offset, problem, count, started: false,
       ensure() { if (!page.started) page.load(0); },
       load(start: number) {
         page.started = true;
@@ -52,9 +75,12 @@ export function relatedPages(relations: RelationSchema[], fetch: Fetch, version:
   effect(() => {
     version.get();
     if (first) { first = false; return; }
-    untrack(() => { for (const page of pages.values()) if (page.started) page.load(page.offset.peek()); });
+    untrack(() => {
+      if (countsStarted) loadCounts();
+      for (const page of pages.values()) if (page.started) page.load(page.offset.peek());
+    });
   });
-  return name => pages.get(name)!;
+  return Object.assign((name: string) => pages.get(name)!, { ensureCounts() { if (!countsStarted) loadCounts(); }, countsFailed });
 }
 
 /** Runs `show` once `element` first scrolls into view; at once where IntersectionObserver is missing. */

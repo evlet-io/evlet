@@ -526,6 +526,30 @@ tr.ev-report-sub td{background:var(--bg-subtle);font-weight:550}
 .ev-more-body .ev-related>.panel-h{padding:0 0 6px;border:0;justify-content:flex-end}
 .ev-more-body .ev-related>.panel-h:not(:has(.ev-view-all)){display:none}
 .ev-more-body .ev-related>.panel-h h3,.ev-more-body .ev-related>.panel-h .num{display:none}
+/* Related: a section after more information with the same grey heading. Closed, a chip per relation with a count
+   badge (a placeholder until the counts come); open, each relation's records under its own small heading. */
+.ev-rel-label{padding:0}
+.ev-rel-toggle{display:flex;align-items:center;gap:6px;width:100%;padding:8px var(--cmp-pad);font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit;text-align:left}
+.ev-rel-toggle:hover{color:var(--fg-2)}
+.ev-rel-toggle:focus-visible{outline-offset:-2px;border-radius:0}
+.ev-rel.closed .ev-more-chev{transform:rotate(-90deg)}
+.ev-rel-chips{display:flex;flex-wrap:wrap;gap:8px;margin:0;padding:12px var(--cmp-pad);list-style:none}
+.ev-rel-chips[hidden],.ev-rel-body[hidden]{display:none}
+.ev-rel-chip{display:inline-flex;align-items:center;gap:8px;height:28px;padding:0 4px 0 10px;border:1px solid var(--border);border-radius:var(--r-sm);background:var(--surface);font:inherit;font-size:13px;color:var(--fg-2);cursor:pointer}
+.ev-rel-chip:hover{border-color:var(--border-strong);color:var(--fg)}
+.ev-rel-n{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:var(--r-sm);background:var(--bg-muted);color:var(--fg);font-size:12px;font-weight:600}
+.ev-rel-chip.is-zero{color:var(--fg-3)}
+.ev-rel-chip.is-zero .ev-rel-n{color:var(--fg-4);font-weight:500}
+.ev-rel-n .ev-sk.ev-sk-val{width:10px;height:8px;background:var(--border-strong)}
+.ev-rel-body{padding:4px var(--cmp-pad) 8px}
+.ev-rel-body .ev-related{border:0;margin:0;box-shadow:none;background:var(--surface);border-radius:0}
+.ev-rel-body .ev-related+.ev-related{border-top:1px solid var(--divider)}
+.ev-rel-body .ev-related>.panel-h{padding:10px 0 6px;border:0;background:transparent}
+.ev-rel-body .ev-related>.panel-h h3{font-size:13px}
+.ev-rel-body .ev-related-empty{padding:0 0 10px}
+/* A value on its way (a card's derived number, a count): a short pulsing bar. */
+.ev-sk.ev-sk-val{display:inline-block;width:56px;height:12px;vertical-align:middle}
+@media print{.ev-rel-chips,.ev-rel-body[hidden]{display:none!important}}
 .ev-more-body .ev-report-chart{border:0;box-shadow:none;background:var(--surface)}
 /* Activity in the side column: the note box stays small until it is used. */
 .ev-cmp-activity .timeline{max-height:420px;overflow:auto}

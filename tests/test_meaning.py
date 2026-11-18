@@ -234,7 +234,15 @@ def check_related(app):
     assert viewer('GET', f'/api/invoice/{invoice}/related/audit.invoice')[0] == 404
     assert admin('GET', f'/api/invoice/{invoice}/related/audit.invoice')[0] == 200
     assert admin('GET', f'/api/invoice/{invoice}/related/nothing')[0] == 404
-    assert admin('GET', f'/api/invoice/{invoice}/related')[0] == 404
+    # Without a name, one read counts every relation the role can see, under its row scope.
+    counts = f'/api/invoice/{invoice}/related'
+    status, body, _ = admin('GET', counts)
+    assert status == 200 and body['counts']['payment.invoice'] == 3 and body['counts']['audit.invoice'] == 0
+    assert editor('GET', counts)[1]['counts']['payment.invoice'] == 2
+    assert viewer('GET', counts)[1]['counts'] == {'payment.invoice': 3}
+    assert admin('GET', counts + '?limit=5')[0] == 422
+    assert admin('POST', counts, {})[0] == 405
+    assert admin('GET', '/api/invoice/999/related')[0] == 404
     assert admin('GET', base + '?limit=0')[0] == 422
     assert admin('GET', base + '?sort=amount')[0] == 422
     assert admin('POST', base, {})[0] == 405
@@ -261,6 +269,7 @@ def test_related_records_need_a_readable_owning_record(tmp_path):
     admin('POST', '/api/entry', {'account': hidden, 'memo': 'x'})
     # The account is outside the editor's scope, so its related entries are not listed.
     assert editor('GET', f'/api/account/{hidden}/related/entry.account')[0] == 404
+    assert editor('GET', f'/api/account/{hidden}/related')[0] == 404
     # Filtering entries by a scoped Link stays refused, as before.
     assert editor('GET', '/api/entry?filters=' + quote(json.dumps({'account': hidden})))[0] == 403
     mine = editor('POST', '/api/account', {'title': 'Mine', 'owner': 2})[1]['id']

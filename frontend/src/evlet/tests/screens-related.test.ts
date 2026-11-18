@@ -1,6 +1,7 @@
-// Related records on a record page: nothing is asked for until the Related row of "more information" shows, one page
-// of five per relation serves its counts and its lists, a small pager steps through the rest, and View all opens the
-// related list filtered to this record.
+// Related records on a record page: a section after more information. Its chips name each relation at once; one read
+// counts them all once the section shows, with a placeholder in each badge until then. Opened, each relation lists a
+// page of five when its list shows, a small pager steps through the rest, and View all opens the related list
+// filtered to this record.
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { adminRoutes, click, recorded, requests, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import type { Sent } from './server';
@@ -27,35 +28,60 @@ const page = (items: unknown[]) => (sent: Sent) => {
   const limit = Number(query.get('limit')), offset = Number(query.get('offset') ?? 0);
   return { status: 200, etag: null, body: { items: items.slice(offset, offset + limit), total: items.length, limit, offset } };
 };
-const routes = (count = 12): Route[] => [...adminRoutes(), ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
+const counted = (count: number) => ({ status: 200, etag: null, body: { counts: { 'order.customer': count, 'quote.customer': 0 } } });
+const routes = (count = 12, counts: Route[2] = counted(count)): Route[] => [...adminRoutes(), ['GET', /\/api\/customer\/0000000000001$/, { ...recorded.customer, status: 200 }],
+  ['GET', /\/api\/customer\/0000000000001\/related$/, counts],
   ['GET', /\/api\/customer\/0000000000001\/related\/order\.customer/, page(orders.slice(0, count))],
   ['GET', /\/api\/customer\/0000000000001\/related\/quote\.customer/, page([])],
   ['GET', /\/api\/order\?/, screen.orders_open]];
 const related = (sent: Sent[]) => requests(sent, 'GET', /\/related\//).map(item => item.url.replace(/^.*\/related\//, ''));
 const section = (host: Element) => host.querySelector('.ev-related[aria-label="Orders"]')!;
 const titles = (host: Element) => [...section(host).querySelectorAll('.ev-row-link')].map(text);
-const relatedRow = (host: Element) => host.querySelector<HTMLElement>('.ev-more-row[data-section="Related"]');
-/** Open the Related row (it starts closed). */
+const relatedRow = (host: Element) => host.querySelector<HTMLElement>('.ev-rel[data-section="Related"]');
+const counts = (sent: Sent[]) => requests(sent, 'GET', /\/related$/).length;
+const chips = (host: Element) => [...host.querySelectorAll('.ev-rel-chip')].map(chip => chip.getAttribute('aria-label'));
+/** Open the Related section (it starts closed). */
 async function openRelated(host: Element) {
   await until(() => expect(relatedRow(host)).not.toBeNull());
-  click(relatedRow(host)!.querySelector('.ev-more-toggle'));
+  click(relatedRow(host)!.querySelector('.ev-rel-toggle'));
 }
 
 describe('related records on a record page', () => {
-  it('asks for nothing until the Related row shows, then one page of five per relation, kept when it opens', async () => {
+  it('names the relations at once, counts them in one read once the section shows, and lists rows only when opened', async () => {
     vi.stubGlobal('IntersectionObserver', FakeObserver);
     const { host, sent } = start(routes(), '/app/customer/0000000000001');
     await until(() => expect(relatedRow(host)).not.toBeNull());
-    expect(related(sent)).toEqual([]);
+    // A grey section heading, as more information has, after it; closed, a chip per relation with a placeholder badge.
+    expect(relatedRow(host)!.querySelector('h2.ev-more-label .ev-rel-toggle')?.getAttribute('aria-expanded')).toBe('false');
+    expect(chips(host)).toEqual(['Orders: loading', 'Quotes: loading']);
+    expect(relatedRow(host)!.querySelectorAll('.ev-rel-n .ev-sk')).toHaveLength(2);
+    expect(counts(sent)).toBe(0);
     scrollIntoView();
-    // Closed, the row counts what each relation holds.
-    await until(() => expect(text(relatedRow(host)!.querySelector('.ev-more-sum'))).toBe('Orders: 12 · Quotes: 0'));
-    expect(related(sent).sort()).toEqual(['order.customer?limit=5&offset=0', 'quote.customer?limit=5&offset=0']);
-    // Opened, it shows the pages already loaded: no request when it opens or scrolls into view.
-    click(relatedRow(host)!.querySelector('.ev-more-toggle'));
+    await until(() => expect(chips(host)).toEqual(['Orders: 12', 'Quotes: 0']));
+    expect([...host.querySelectorAll('.ev-rel-n')].map(text)).toEqual(['12', '0']);
+    expect(host.querySelector('.ev-rel-chip.is-zero')?.getAttribute('aria-label')).toBe('Quotes: 0');
+    // One read for every count, and no rows yet.
+    expect(counts(sent)).toBe(1);
+    expect(related(sent)).toEqual([]);
+    // Opened, each relation asks for its first page once its list shows.
+    click(relatedRow(host)!.querySelector('.ev-rel-toggle'));
+    expect(relatedRow(host)!.querySelector('.ev-rel-chips')!.hasAttribute('hidden')).toBe(true);
     scrollIntoView();
     await until(() => expect(titles(host)).toEqual(['Order 1', 'Order 2', 'Order 3', 'Order 4', 'Order 5']));
-    expect(related(sent)).toHaveLength(2);
+    expect(related(sent).sort()).toEqual(['order.customer?limit=5&offset=0', 'quote.customer?limit=5&offset=0']);
+    expect(counts(sent)).toBe(1);
+  });
+
+  it('opens the section from a chip, and shows a dash when the counts cannot be read', async () => {
+    const { host } = start(routes(12, { status: 500, etag: null, body: { error: 'Broken' } }), '/app/customer/0000000000001');
+    await until(() => expect(chips(host)).toEqual(['Orders: not loaded', 'Quotes: not loaded']));
+    expect([...host.querySelectorAll('.ev-rel-n')].map(text)).toEqual(['–', '–']);
+    click(host.querySelector('.ev-rel-chip'));
+    expect(relatedRow(host)!.querySelector('.ev-rel-toggle')!.getAttribute('aria-expanded')).toBe('true');
+    // The page's total stands in for the count it could not read.
+    await until(() => expect(titles(host)).toHaveLength(5));
+    click(relatedRow(host)!.querySelector('.ev-rel-toggle'));
+    await until(() => expect(chips(host)[0]).toBe('Orders: 12'));
   });
 
   it('disconnects hidden related observers when leaving a record', async () => {
@@ -135,5 +161,21 @@ describe('related records on a record page', () => {
     version.set('"2"');
     await Promise.resolve();
     expect(asked).toEqual(['a@5', 'a@5']);
+  });
+
+  it('reloads the counts after a save once they were read, and not before', async () => {
+    let reads = 0;
+    const version = cell('"1"');
+    const pages = relatedPages([{ name: 'a', label: 'A', model: 'x', link: 'y', limit: 10 }], async () => ({ items: [], total: 0 }), version, () => 'Not loaded.',
+      async () => ({ a: ++reads }));
+    version.set('"2"');
+    await Promise.resolve();
+    expect(reads).toBe(0);
+    pages.ensureCounts();
+    pages.ensureCounts();
+    await until(() => expect(pages('a').count.peek()).toBe(1));
+    version.set('"3"');
+    await until(() => expect(pages('a').count.peek()).toBe(2));
+    expect(reads).toBe(2);
   });
 });
