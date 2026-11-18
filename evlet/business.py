@@ -1504,7 +1504,12 @@ class Business:
         return [item for item in relation.order if allowed(item.lstrip('-'))] or ['-id']
 
     def related(self, scope, user, model, record_id, path):
-        """GET /api/{model}/{id}/related/{name}: one page of the records whose Link points to a readable record."""
+        """GET /api/{model}/{id}/related/{name}: one page of the records whose Link points to a readable record.
+
+        GET /api/{model}/{id}/related, without a name, counts each visible relation's records in one read.
+        """
+        if not path:
+            return self.related_counts(scope, user, model, record_id)
         relation = next((item for item in self.visible_relations(user, model) if len(path) == 1 and item.name == path[0]), None)
         if relation is None:
             raise AccessError(404, 'Relation not found')
@@ -1535,6 +1540,22 @@ class Business:
             total = connection.run(qb.select(table, qb.count()).where(*where)).value()
             items = self.policy.serialize_many(tx, user, rows)
         return 200, {'items': items, 'total': total, 'limit': limit, 'offset': offset}, []
+
+    def related_counts(self, scope, user, model, record_id):
+        """How many records each relation the role can see holds for this record: one snapshot, reads only."""
+        if scope.get('query_string', b''):
+            raise ValidationError({'query': 'Counts take no query parameters'})
+        counts = {}
+        with self.database._connection() as connection:
+            connection.snapshot()
+            tx = Session(connection, self.registry)
+            self.policy.record(tx, user, model, record_id)
+            for relation in self.visible_relations(user, model):
+                source = relation.source
+                where = [item for item in (self.policy.scope(user, source), qb.eq(f'record.{relation.link}', record_id)) if not qb.always(item)]
+                table = qb.table(self.registry.name_for(source), 'record')
+                counts[relation.name] = connection.run(qb.select(table, qb.count()).where(*where)).value()
+        return 200, {'counts': counts}, []
 
     def page(self, scope, user, model):
         self.policy.require(user, model, 'read')

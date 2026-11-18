@@ -138,6 +138,11 @@ export class AppClient extends ApiClient {
     return (await this.request<Page<RecordData>>('GET', `/api/${model}/${id}/related/${relation}`, { query: page })).data;
   }
 
+  /** How many records each relation this role can see holds for the record, in one read. */
+  async relatedCounts(model: string, id: string) {
+    return (await this.request<{ counts: Record<string, number> }>('GET', `/api/${model}/${id}/related`)).data.counts;
+  }
+
   /** One page of the record's activity, newest first (docs/activity.md), with the names of its actors and assignees. */
   async activity(model: string, id: string, page: { limit?: number; offset?: number } = {}) {
     return (await this.request<ActivityPage>('GET', `/api/${model}/${id}/activity`, { query: page })).data;

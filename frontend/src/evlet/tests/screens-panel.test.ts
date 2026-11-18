@@ -72,7 +72,7 @@ describe('records in a side panel beside the list', () => {
     // Related), and its side column (Attachments, Activity) behind the drawer button on the title row.
     expect(panel(host)!.querySelector('[role="tablist"]')).toBeNull();
     await until(() => expect(text(panel(host)!.querySelector('.ev-cmp-main .ev-cmp-th h3'))).toBe('Lines'));
-    expect([...panel(host)!.querySelectorAll('.ev-more-row')].map(item => text(item.querySelector('.ev-more-toggle')))).toEqual(['Amounts', 'Related']);
+    expect([...panel(host)!.querySelectorAll('.ev-more-row, .ev-rel')].map(item => text(item.querySelector(':is(.ev-more-toggle, .ev-rel-toggle)')))).toEqual(['Amounts', 'Related']);
     const aside = panel(host)!.querySelector('.doc > .doc-side')!;
     expect(panel(host)!.querySelector('.doc-tools .ev-side-toggle button')!.getAttribute('aria-controls')).toBe(aside.id);
     await until(() => expect([...aside.querySelectorAll('.side-sec h4')].map(text)).toEqual(['Attachments', 'Activity']));

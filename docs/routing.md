@@ -132,7 +132,7 @@ hosts = (Host("portal.acme.com", root=customer_portal),)
   | `GET/POST /api/<model>`, `GET/PATCH/DELETE /api/<model>/<id>` | the model in `models` |
   | `POST /api/<model>/<id>/actions/<name>`, `.../moves/<key>` | `(Model, "<name>")` or `(Model, "<rule key>")` in `actions` |
   | `/api/<model>/measures`, `/api/<model>/aggregate`, `/api/<model>/<id>/measures` | `"measures"` in `extras` |
-  | `/api/<model>/<id>/related/...` | `"related"` in `extras` |
+  | `/api/<model>/<id>/related` and `/related/...` | `"related"` in `extras` |
   | `/api/<model>/<id>/lines/...` | `"lines"` in `extras` |
   | `/api/<model>/<id>/attachments...` | `"attachments"` in `extras` |
   | `POST /api/_draft/<model>` | `"drafts"` in `extras` |

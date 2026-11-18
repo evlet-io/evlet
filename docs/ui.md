@@ -97,8 +97,14 @@ The form of a saved record leaves out what the header and the cards or strip sho
 record number nothing can edit (the breadcrumb, or in a side panel the subtitle, shows it), and the cards' or
 strip's fields. While a side panel hides the cards or strip (`Meta.panel_summary = False`), the form keeps their
 fields. So a section left with only such fields, such as Other holding the number, does not show. A new record's
-form keeps everything. Related records are a row of "more information"
-that counts each relation while closed and lists every one when open. A slim footer under the form has
+form keeps everything. Related records are a section of their own after "more information", under the
+same grey heading. Closed, each relation is a chip with its name and a small count badge (no add button);
+the names come from the schema at once, and the badges show a placeholder until one read counts every relation
+(`GET /api/{model}/{id}/related`, docs/meaning.md), sent once the section first scrolls into view. A chip opens
+the section at its relation; open, each relation lists a page of five once its list shows. The record's own
+values always paint first: the per-record measures of the key cards or summary strip are asked for after that,
+and each such card shows a pulsing placeholder until its number comes, as a card with a linked record does
+until its title comes. Counts and measures only read; a save asks for them again. A slim footer under the form has
 Created and Modified (who and when), the record ID with a copy button, and a Copy link button for the
 record's address; More has Copy link and Copy record ID too, and More > Duplicate starts a copy
 ([below](#duplicate)). The side column is 370 px wide.
@@ -157,7 +163,7 @@ Two options change this per model:
 class Project(Model):
     class Meta:
         summary = False                              # no summary strip
-        side_blocks = ('related', 'files')           # keep the automatic Related row and the attachments
+        side_blocks = ('related', 'files')           # keep the automatic Related section and the attachments
 ```
 
 `side_blocks` takes `key_fields`, `related`, `files` and `info`, each once. On the record page `files`
@@ -223,7 +229,7 @@ matter in the panel, `Meta.panel` names what to keep, in order, and hides everyt
 
 ```python
     class Meta:
-        panel = ('Ticket', 'related', 'info')   # a section, the Related row and Record info
+        panel = ('Ticket', 'related', 'info')   # a section, the Related section and Record info
 ```
 
 Names are section titles, field names, `Table` field names, the record's parts (`activity`,
@@ -360,7 +366,7 @@ class Employee(Model):
   `Tab` and `Meta.tabs` still fail with their message.
 - **No tabs.** `Tab`, `Meta.tabs` and `Meta.default_tab` were removed in 0.4. Using them fails when the
   model is defined, with a message pointing to `Main` and `Section`. Activity is in the side column;
-  Related is a row of more information.
+  Related is a section after more information.
 - **`link`** is the other model's Link field to this one. Leave it out when there is exactly one.
 - **Filters** use the list filter syntax on the other model's own fields, as a dict
   (`{'status__ne': 'done'}`) or a list of conditions. `Ref('field')` compares with a field of this
@@ -374,7 +380,7 @@ class Employee(Model):
   the class is defined; anything else outside the list is dropped. Record values are always
   inserted as text, never as markup. `{{` and `}}` are literal braces. It is the app's own trusted
   text: never put user-entered HTML in it.
-- **The automatic Related row** turns off for a model whose layout declares a `Related` block. Name
+- **The automatic Related section** turns off for a model whose layout declares a `Related` block. Name
   `related` in `Meta.side_blocks` to keep it. A model without Related blocks keeps it, as before.
 - **Permissions.** Related rows come from `GET /api/{model}` with the block's filters and
   `[link, "eq", <record id>]`, and charts from `GET /api/{model}/aggregate`, so row scopes, field
@@ -529,12 +535,12 @@ Step colours come from `State.Step(color=...)`; a final step coloured `rose` rea
 badge wraps with the title in the side panel and on a phone; the bar scrolls sideways there.
 See [states-actions.md](states-actions.md#how-a-state-and-a-status-show).
 
-Related records (`Meta.relations`) show in the Related row of "more information": closed, it counts the
-records of each relation; open, it has a short table per relation. Nothing is asked for when a
-record opens: a relation's records load when the Related row first scrolls into view (at once in a
-browser without IntersectionObserver). One server page of five records serves both the count and the
-table, and it stays loaded while the record is open; a save of the record reloads the pages already
-shown. Each section shows five rows; with more, a small pager under it reads "1–5 of 12" with previous and
+Related records (`Meta.relations`) show in the Related section after "more information": closed, a chip
+per relation with its count; open, a short table per relation. Nothing is asked for when a record opens:
+the counts come from one read when the section first scrolls into view (at once in a browser without
+IntersectionObserver), and a relation's records load when its table first shows. A loaded page's total
+then stands in for the count. Pages stay loaded while the record is open; a save of the record reloads
+the counts and the pages already shown. Each section shows five rows; with more, a small pager under it reads "1–5 of 12" with previous and
 next, each a server page (`limit` and `offset`). **View all** in the section's heading opens the
 related model's list filtered to this record (`?f=[["customer","eq","<id>"]]`), shown as a
 filter that can be removed. It is left out when the role cannot filter that list on the link.

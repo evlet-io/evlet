@@ -31,7 +31,7 @@ const routes = (model?: (model: any) => void): Route[] => [
   ['GET', /\/api\/site\?/, { status: 200, etag: null, body: { items: [screen.layout_site_detail.body], total: 1, limit: 50, offset: 0 } }],
 ];
 
-const rows = (host: Element) => [...host.querySelectorAll('.ev-more-row')].map(row => text(row.querySelector('.ev-more-toggle')));
+const rows = (host: Element) => [...host.querySelectorAll('.ev-more-row, .ev-rel')].map(row => text(row.querySelector(':is(.ev-more-toggle, .ev-rel-toggle)')));
 
 /** Open the record and every "more information" row, which start closed. */
 async function open(path = `/app/site/${site}`, model?: (model: any) => void) {

@@ -35,7 +35,7 @@ import { cellView } from './list-page';
 import { blockFilters, declaresRelated, HtmlContent, MeasureChart, RelatedRecords, type BlockRecord } from './record-blocks';
 import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowsText, valueText } from './record-compact';
 import type { LayoutBlock } from '../model/schema';
-import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage } from './related-data';
+import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage, type RelatedPages } from './related-data';
 import { filterFields } from './filters';
 import { follow, openForm, takePrefill, type Outcome } from './prompts';
 import { openEvaPanel } from '../eva/chat';
@@ -676,25 +676,29 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   // Meta.cards replace the summary strip (an empty tuple shows no cards).
   const cardNames = model.cards;
   const measuredCards = perRecord.some(measure => cardNames?.includes(measure.name));
-  if (perRecord.length && !isNew && (cardNames ? measuredCards : model.summary !== false)) effect(() => { options.detail.get(); void api.recordMeasures(name, store.id!).then(values => recordMeasures.set(values), () => recordMeasures.set(null)); });
+  if (perRecord.length && !isNew && (cardNames ? measuredCards : model.summary !== false)) effect(() => {
+    // The record's own values paint first; the cards' derived numbers are asked for after, and read only.
+    options.detail.get();
+    afterPaint(() => void api.recordMeasures(name, store.id!).then(values => recordMeasures.set(values), () => recordMeasures.set(null)));
+  });
   const stats: StatProps[] = summaryFields(model, new Set(factFields.map(meta => meta.name))).filter(meta => has(meta.name)).map(meta => ({
     label: meta.label, value: () => {
       const value = view(meta.name).value.get();
-      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
+      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? Pending();
       return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(meta.name), ctx.links)(), currencyPlaces(view(meta.name), ctx.links)()) : formatOf(meta, value);
     },
     empty: 'Not set',
     note: view(meta.name).calculated ? 'Calculated' : undefined,
   }));
-  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' });
+  if (model.summary !== false) for (const measure of perRecord) if (stats.length < 4) stats.push({ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : Pending() });
   const cardStats = (cardNames ?? []).flatMap((card): StatProps[] => {
     const measure = perRecord.find(item => item.name === card);
-    if (measure) return [{ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : '…' }];
+    if (measure) return [{ label: measureLabel(measure), value: () => recordMeasures.get() ? measureView(ctx.schema, model, measure, recordMeasures.get()!.values[measure.name], recordMeasures.get()!.currencies) : Pending() }];
     const meta = fieldOf(model, card);
     if (!meta || !has(card)) return [];
     return [{ label: meta.label, empty: 'Not set', value: () => {
       const value = view(card).value.get();
-      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? '…';
+      if (meta.type === 'link' && meta.target && value) return ctx.links.title(meta.target, String(value)).get() ?? Pending();
       return meta.type === 'currency' ? displayOf(meta, value, currencyFor(view(card), ctx.links)(), currencyPlaces(view(card), ctx.links)()) : formatOf(meta, value);
     } }];
   });
@@ -714,7 +718,7 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
   const relatedShown = !ownRelated || (model.side_blocks ?? []).includes('related');
   // Nothing is asked for until a Related row shows (related-data.ts).
   const related = relatedPages(relations, (relation, page) => ctx.api.related(model.name, store.id!, relation, page), store.etag,
-    error => error instanceof ApiError ? error.message : 'Not loaded.');
+    error => error instanceof ApiError ? error.message : 'Not loaded.', () => ctx.api.relatedCounts(model.name, store.id!));
 
   // What a block reads of this record: saved values for filters, shown values for Html, and the etag to reload on.
   const blockRecord: BlockRecord = {
@@ -918,19 +922,14 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
           break;
       }
     }
-    // Related records the layout does not list.
-    if (relations.length && relatedShown && tabShown('related')) {
-      const row = MoreRow({ title: 'Related', folds, start: false, none: 'Loading…',
-        summary: () => relations.map(relation => { const count = related(relation.name).total.get(); return count === null ? '' : `${relation.label}: ${count}`; }).filter(Boolean).join(' · '),
-        body: () => Related(ctx, model, store.id!, relations, related) });
-      whenVisible(row, () => relations.forEach(relation => related(relation.name).ensure()));
-      rows.push(row);
-    }
+    // Related records the layout does not list: a section of its own after more information.
+    const relatedGroup = relations.length && relatedShown && tabShown('related') ? RelatedSection(ctx, model, store.id!, relations, related, folds) : null;
     // The stage bar and the key cards above one white card: the state banner strip, the primary area, then more
     // information.
     return [flow, summary, html`<div class="ev-cmp-card">${lifecycle ? live(lifecycle) : null}
       <section class="ev-cmp-main" aria-label=${model.label}>${mainParts}</section>
-      ${rows.length ? html`<div class="ev-more" role="group" aria-labelledby=${`ev-more-${name}`}><h2 class="ev-more-label" id=${`ev-more-${name}`}>More information</h2>${rows}</div>` : null}</div>`];
+      ${rows.length ? html`<div class="ev-more" role="group" aria-labelledby=${`ev-more-${name}`}><h2 class="ev-more-label" id=${`ev-more-${name}`}>More information</h2>${rows}</div>` : null}
+      ${relatedGroup}</div>`];
   };
 
   // ---------- save bar ----------
@@ -1280,6 +1279,56 @@ function relatedNoun(label: string, target: ScreenModel) {
 function viewAllHref(ctx: AppContext, target: ScreenModel, link: string, id: string) {
   if (!filterFields(ctx.schema, target).some(field => field.key === link)) return null;
   return ctx.router.href('list', { model: target.name }, { f: JSON.stringify([[link, 'eq', id]]) });
+}
+
+/**
+ * Related, a section after more information with the same grey heading. Closed, each relation is a chip with its
+ * name and a count badge; the names come from the schema at once, and the counts from one read once the section
+ * first scrolls into view (a placeholder until then). Open, it lists each relation's records. A chip opens the
+ * section at its relation.
+ */
+function RelatedSection(ctx: AppContext, model: ScreenModel, id: string, relations: NonNullable<ScreenModel['relations']>, related: RelatedPages, folds: Folds): HTMLElement {
+  const title = 'Related';
+  const open = folds.open(title, false);
+  const drawn = cell(untrack(() => open.get()));
+  effect(() => { if (open.get()) drawn.set(true); });
+  const head = uid('ev-rel-h'), body = uid('ev-rel');
+  const openAt = (label: string) => {
+    folds.toggle(title, true);
+    queueMicrotask(() => group.querySelector<HTMLElement>(`.ev-related[aria-label="${CSS.escape(label)}"]`)?.scrollIntoView?.({ block: 'nearest' }));
+  };
+  const chips = relations.map(relation => {
+    const { count } = related(relation.name);
+    const badge = () => {
+      const value = count.get();
+      if (value !== null) return String(value);
+      return related.countsFailed.get() ? html`<span title="Not loaded">–</span>` : Pending();
+    };
+    return html`<li><button type="button" class="ev-rel-chip" class:is-zero=${() => count.get() === 0} on:click=${() => openAt(relation.label)}
+      aria-label=${() => `${relation.label}: ${count.get() ?? (related.countsFailed.get() ? 'not loaded' : 'loading')}`}>
+      <span class="ev-rel-name">${relation.label}</span><span class="ev-rel-n num" aria-hidden="true">${badge}</span></button></li>`;
+  });
+  const group = html`<section class="ev-more ev-rel" class:closed=${() => !open.get()} aria-labelledby=${head} data-section=${title}
+    on:ev-reveal=${() => folds.reveal(title)}>
+    <h2 class="ev-more-label ev-rel-label"><button type="button" class="ev-rel-toggle" id=${head} aria-expanded=${() => String(open.get())} aria-controls=${body}
+      on:click=${() => folds.toggle(title, !untrack(() => open.get()))}>${Icon('chevron-down', { size: 'xs', className: 'ev-more-chev' })}<span>${title}</span></button></h2>
+    <ul class="ev-rel-chips" hidden=${() => open.get()} aria-label=${`${title} records`}>${chips}</ul>
+    <div class="ev-rel-body" id=${body} hidden=${() => !open.get()}>${when(() => drawn.get(), () => Related(ctx, model, id, relations, related))}</div></section>` as HTMLElement;
+  whenVisible(group, () => related.ensureCounts());
+  return group;
+}
+
+/** A value on its way: a pulsing placeholder, read as "Loading". */
+function Pending(): Child {
+  return html`<span class="ev-sk ev-sk-val" aria-hidden="true"></span><span class="sr-only">Loading</span>`;
+}
+
+/** Runs `run` after the next frame paints, so what the record shows comes before what loads after it. */
+function afterPaint(run: () => void) {
+  if (typeof requestAnimationFrame === 'undefined') { queueMicrotask(run); return; }
+  let alive = true;
+  onCleanup(() => { alive = false; });
+  requestAnimationFrame(() => setTimeout(() => { if (alive) run(); }, 0));
 }
 
 function Related(ctx: AppContext, model: ScreenModel, id: string, relations: NonNullable<ScreenModel['relations']>, related: (name: string) => RelatedPage): Child {
