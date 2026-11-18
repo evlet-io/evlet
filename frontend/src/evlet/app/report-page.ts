@@ -143,7 +143,7 @@ export function ReportPage(ctx: AppContext, name: string): HTMLElement {
           const value = result.values[key];
           if (value !== undefined && (field.calculated || field.meta.read_only || !touched.has(key))) field.value.set(value);
           const rule: Rule = result.rules?.[key] ?? {};
-          field.rules.set({ applies: rule.visible ?? true, required: rule.required ?? field.meta.required, locked: rule.read_only ?? false });
+          field.rules.set({ applies: rule.visible ?? true, required: rule.required ?? field.meta.required, locked: rule.read_only ?? false, visible: rule.visible ?? true });
           field.error.set(result.errors[key] ?? (touched.has(key) && result.states[key] === 'required-input' ? 'This field is required' : null));
         }
         const others = Object.entries(result.errors).filter(([key]) => !fields.has(key)).map(([key, message]) => key === '_form' ? message : `${humanize(key)}: ${message}`);

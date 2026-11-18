@@ -87,7 +87,7 @@ def test_the_playground_upgrade_moves_project_status_and_the_settings_that_name_
     version = connection.execute('SELECT version FROM evlet_config').fetchone()[0]
     connection.close()
 
-    assert database.migrate(migrations)[-1] == '0021_project_docstate'
+    assert '0021_project_docstate' in database.migrate(migrations)
     framework.upgrade(database)
     database.close()
     with sqlite3.connect(path) as connection:

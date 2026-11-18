@@ -843,7 +843,8 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
       button.tabIndex = -1;
       return button;
     })()}</span>` : null;
-    return html`<div class="ev-cmp-table" class:is-empty=${empty} data-table-block=${child.name}>
+    // Hidden while the Table's applies_when or visible_when is false (a save removes rows that do not apply).
+    return html`<div class="ev-cmp-table" class:is-empty=${empty} hidden=${() => !table.rules.get().visible} data-table-block=${child.name}>
       ${withTitle ? html`<div class="ev-cmp-th"><h3>${child.label}</h3><span class="muted num ev-cmp-count">${() => String(count())}</span>${selectionBar()}<span class="grow"></span>${tools}</div>`
         : toolsOut ? (toolsOut.set([selectionBar(), tools]), null) : html`<div class="ev-cmp-th ev-cmp-th-tools">${selectionBar()}<span class="grow"></span>${tools}</div>`}
       ${when(empty, () => html`<div class="ev-cmp-empty"><span>${`No ${child.label.toLowerCase()} yet.`}</span></div>`)}
@@ -887,9 +888,12 @@ function RecordView(ctx: AppContext, model: ScreenModel, store: RecordStore, opt
           const collapsed = block.collapsible === false ? false : block.collapsed ?? true;
           const start = folds.start(collapsed === 'empty' ? untrack(() => table.rows.get().length) === 0 : collapsed, position, []);
           // Drawn while closed too, so print shows its rows.
-          rows.push(MoreRow({ title: child.label, folds, start, wide: true, eager: true,
+          const more = MoreRow({ title: child.label, folds, start, wide: true, eager: true,
             description: child.read_only ? derivedText() : undefined, tools: () => tools.get(),
-            summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false, tools) }));
+            summary: () => rowsText(table.rows.get().length), none: 'No rows', body: () => compactTable(child, false, tools) });
+          // The whole row hides with its Table's rules.
+          effect(() => { more.hidden = !table.rules.get().visible; });
+          rows.push(more);
           break;
         }
         case 'related': {

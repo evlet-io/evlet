@@ -156,7 +156,8 @@ async function sheet(ctx: AppContext, options: SheetOptions): Promise<boolean> {
   };
   const table = (name: string): Child => {
     const child = (model.children ?? []).find(item => item.name === name);
-    return child ? html`<div class="prompt-table">${ChildTable({ table: store.table(name), title: child.label, icon: 'rows-3', links: ctx.links })}</div>` : null;
+    // Hidden while the Table's applies_when or visible_when is false, as on a record.
+    return child ? html`<div class="prompt-table" hidden=${() => !store.table(name).rules.get().visible}>${ChildTable({ table: store.table(name), title: child.label, icon: 'rows-3', links: ctx.links })}</div>` : null;
   };
   const blocks = model.record_layout?.blocks;
   const body = () => blocks ? blocks.map(block => block.kind === 'table' ? table(block.name)

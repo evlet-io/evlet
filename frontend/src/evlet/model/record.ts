@@ -24,12 +24,14 @@ import { currencyDecimalsTable, todayGst } from './format';
 import { Session } from './session';
 import { isCalculated, isSectionRow, SchemaIndex, type AppSchema, type ChildSchema, type FieldSchema, type ModelSchema } from './schema';
 
-export type Rules = { applies: boolean; required: boolean; locked: boolean };
+// visible: whether the field shows (it applies and its visible_when is not false). A hidden field keeps its value.
+export type Rules = { applies: boolean; required: boolean; locked: boolean; visible: boolean };
+export type TableRules = { applies: boolean; visible: boolean };
 export type Outcome = { state: 'ready' } | { state: 'pending' | 'error'; code: string };
 const READY: Outcome = { state: 'ready' };
 const KEY = /^[A-Za-z0-9_-]{1,64}$/;
 const NUMERIC = new Set(['decimal', 'currency', 'integer', 'percent', 'duration']);
-const sameRules = (a: Rules, b: Rules) => a.applies === b.applies && a.required === b.required && a.locked === b.locked;
+const sameRules = (a: Rules, b: Rules) => a.applies === b.applies && a.required === b.required && a.locked === b.locked && a.visible === b.visible;
 const sameOutcome = (a: Outcome, b: Outcome) => a.state === b.state && (a as any).code === (b as any).code;
 /** How long the person must pause before the form asks the server for derived values. */
 export const PREVIEW_PAUSE_MS = 600;
@@ -70,7 +72,7 @@ export class Field {
   readonly error: Cell<string | null>;
   /** Why the form changed this value itself, such as "Cleared because Company changed". */
   readonly note: Cell<string | null>;
-  /** applies_when, required_when and locked_when as they stand now. */
+  /** applies_when, required_when, locked_when and visible_when as they stand now. */
   readonly rules: Cell<Rules>;
   /** For calculated fields: ready, or pending/error with a code such as COMPUTE_INPUT_MISSING. */
   readonly result: Cell<Outcome>;
@@ -88,7 +90,7 @@ export class Field {
     this.server = cell(value, { name: `${name} (saved)` });
     this.error = cell<string | null>(null, { name: `${name} (error)` });
     this.note = cell<string | null>(null, { name: `${name} (note)` });
-    this.rules = cell<Rules>({ applies: true, required: meta.required, locked: false }, { name: `${name} (rules)`, equals: sameRules });
+    this.rules = cell<Rules>({ applies: true, required: meta.required, locked: false, visible: true }, { name: `${name} (rules)`, equals: sameRules });
     this.result = cell<Outcome>(READY, { name: `${name} (result)`, equals: sameOutcome });
     this.calculated = isCalculated(meta);
     this.derived = derived;
@@ -236,6 +238,8 @@ export class Table {
   readonly total = cell(0);
   readonly partial = cell(false);
   readonly error = cell<string | null>(null);
+  /** The Table's applies_when and visible_when as they stand now: hidden unless visible; rows that do not apply are removed on save. */
+  readonly rules = cell<TableRules>({ applies: true, visible: true }, { equals: (a, b) => a.applies === b.applies && a.visible === b.visible });
   /** Saved rows in server order. */
   saved: Row[] = [];
   // Rows a partial response left out, kept by id so the page that brings them back reuses them.

@@ -106,9 +106,9 @@ describe('BaseField', () => {
     const field = localField({ name: 'reason', type: 'text', label: 'Reason' }, null);
     const host = render(() => BaseField({ field }));
     const root = host.querySelector<HTMLElement>('.fld')!;
-    field.rules.set({ applies: false, required: false, locked: false });
+    field.rules.set({ applies: false, required: false, locked: false, visible: false });
     expect(root.hidden).toBe(true);
-    field.rules.set({ applies: true, required: false, locked: true });
+    field.rules.set({ applies: true, required: false, locked: true, visible: true });
     expect(root.hidden).toBe(false);
     expect(host.querySelector('input')!.disabled).toBe(true);
     expect(host.querySelector('.ff-hint')!.textContent).toBe('locked');

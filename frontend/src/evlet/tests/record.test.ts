@@ -5,7 +5,7 @@ import { buildChanges } from '../model/changes';
 import { PREVIEW_PAUSE_MS, RecordStore, sameValue, STALE_FORMULAS } from '../model/record';
 import { CalcError } from '../model/finite';
 import type { AppSchema } from '../model/schema';
-import { copy, id, responses, server, type Sent } from './server';
+import { copy, id, responses, server, withTableRules, type Sent } from './server';
 
 const schema = responses.schema.body as AppSchema;
 const stores: RecordStore[] = [];
@@ -125,6 +125,42 @@ describe('opening a record', () => {
   });
 });
 
+describe('visible_when and Table rules', () => {
+  it('hide a field and a Table live: the field keeps its value, the Table reads as empty while it does not apply', async () => {
+    const stub = server([
+      ['GET', /\/api\/order\/0000000000001$/, 'detail'],
+      ['GET', /\/api\/order\/0000000000001\/lines\/lines\?limit=100&offset=100$/, 'lines_page'],
+      ['GET', /\/api\/customer\/0000000000001$/, { ...responses.customer, status: 200 }],
+      ['GET', /\/api\/product\/0000000000001$/, { ...responses.product, status: 200 }],
+    ]);
+    const store = new RecordStore({ api: createClient({ fetch: stub.fetch }), schema: withTableRules(schema), model: 'order', today: () => '2026-11-01' });
+    stores.push(store);
+    await store.open(id(1));
+    await store.idle();
+    const remark = store.field('remark'), lines = store.table('lines');
+    expect(remark.rules.peek()).toEqual({ applies: true, required: false, locked: false, visible: true });
+    expect(lines.rules.peek()).toEqual({ applies: true, visible: true });
+    remark.set('Call first');
+    store.field('stage').set('won');
+    // Hidden, but its value stays and is sent with the save.
+    expect(remark.rules.peek().visible).toBe(false);
+    expect(remark.value.peek()).toBe('Call first');
+    expect(buildChanges(store.root)).toMatchObject({ remark: 'Call first', stage: 'won' });
+    expect(lines.rules.peek()).toEqual({ applies: true, visible: true });
+    expect(store.field('total').value.peek()).toBe('300.00');
+    store.field('stage').set('lost');
+    expect(lines.rules.peek()).toEqual({ applies: false, visible: false });
+    // The rows stay in the draft until the save removes them; calculations already read the Table as empty.
+    expect(lines.rows.peek()).toHaveLength(120);
+    expect(store.field('total').value.peek()).toBe('0.00');
+    expect(store.field('line_count').value.peek()).toBe(0);
+    store.field('stage').set('open');
+    expect(lines.rules.peek()).toEqual({ applies: true, visible: true });
+    expect(remark.rules.peek().visible).toBe(true);
+    expect(store.field('total').value.peek()).toBe('300.00');
+  });
+});
+
 describe('editing', () => {
   it('a quantity edit recalculates its amount and the total, and notifies only those readers', async () => {
     const { store } = backend();
@@ -191,9 +227,9 @@ describe('editing', () => {
     const { store } = backend();
     await store.open(id(1));
     const reason = store.field('reason'), remark = store.field('remark');
-    expect(reason.rules.peek()).toEqual({ applies: false, required: false, locked: false });
+    expect(reason.rules.peek()).toEqual({ applies: false, required: false, locked: false, visible: false });
     store.field('stage').set('lost');
-    expect(reason.rules.peek()).toEqual({ applies: true, required: true, locked: false });
+    expect(reason.rules.peek()).toEqual({ applies: true, required: true, locked: false, visible: true });
     expect(reason.editable.peek()).toBe(true);
     store.field('stage').set('won');
     // The server checks locked_when on the record as saved (stage open), so remark stays editable until saved.

@@ -489,7 +489,9 @@ def is_finite(field):
     return isinstance(field.compute, Expr)
 
 
-KINDS = ('initial', 'applies_when', 'required_when', 'locked_when')
+KINDS = ('initial', 'applies_when', 'required_when', 'locked_when', 'visible_when')
+# A Table's rules, on the row that owns it: plan entries with 'table': True and the Table's name as 'field'.
+TABLE_RULES = ('applies_when', 'visible_when')
 # Field kinds that finite expressions cannot read or produce.
 OPAQUE = ('tags', 'multiselect', 'reference', 'time', 'richtext', 'image')
 
@@ -507,6 +509,16 @@ def options(field):
 def uses_finite(field):
     """Whether a field makes its document a finite-v1 document (finite compute, initial or a rule)."""
     return bool(options(field))
+
+
+def table_options(table):
+    """(kind, expression) rules a Table declares: applies_when, then visible_when."""
+    result = []
+    for kind in TABLE_RULES:
+        value = getattr(table, kind, None)
+        if value is not None:
+            result.append((kind, value if isinstance(value, Expr) else lift(value)))
+    return result
 
 
 def node_name(entry):
@@ -738,7 +750,8 @@ def compile_plan(registry, root, *, force=False):
         for name, child in children.items():
             walk(child, path + (name,), owners, model)
     walk(root, (), (), None)
-    finite = any(uses_finite(field) for model, _, _ in tables.values() for field in model.__declared_fields__.values())
+    finite = any(uses_finite(field) for model, _, _ in tables.values() for field in model.__declared_fields__.values()) \
+        or any(table_options(table) for model, _, _ in tables.values() for table in model.__tables__.values())
     if not finite and language is None and not force:
         return None
     # A plan forced for guards over a legacy root reads legacy calculated and queried fields as saved values.
@@ -797,6 +810,18 @@ def compile_plan(registry, root, *, force=False):
                             item['reads'] += money['reads']
                         item['currency'] = money
                 fields.append(item)
+        for name, table in model.__tables__.items():
+            for option, source in table_options(table):
+                context = _Context(model, path, parent_model, children, registry=registry)
+                label = name + ':' + option
+                ir, kind, reads = compile_expression(source, context, label)
+                if kind != 'boolean':
+                    raise CalcError('COMPUTE_TYPE_ERROR', f'{address(path, label)}: {option} must be a Boolean expression, not {kind}')
+                if any(scope in ('member', 'membership') and read_table == name for scope, read_table, _ in reads):
+                    raise CalcError('MODEL_DEPENDENCY_CYCLE', f'{address(path, label)}: a Table\'s {option} cannot read its own rows')
+                fields.append({'target': address(path, label), 'path': list(path), 'field': name, 'kind': option, 'table': True,
+                               'result_type': kind, 'target_type': 'table', 'scale': None, 'stored': True, 'rounding': None,
+                               'expression': ir, 'reads': [list(read) for read in reads]})
         lookups = {}
         for item in fields:
             for scope, model_name, name in item['reads']:
@@ -904,14 +929,20 @@ def template_order(fields):
     writers, own = {}, {}
     for kind in (None, 'initial', 'applies_when'):
         for field in fields:
-            if field.get('kind') == kind:
+            if field.get('kind') == kind and not field.get('table'):
                 writers[address(tuple(field['path']), field['field'])] = field['target']
+    # A Table that does not apply reads as empty, so what reads its rows follows its applies_when.
+    gates = {(tuple(field['path']), field['field']): field['target'] for field in fields
+             if field.get('table') and field['kind'] == 'applies_when'}
     for field in fields:
-        own.setdefault(address(tuple(field['path']), field['field']), {})[field.get('kind')] = field['target']
+        if not field.get('table'):
+            own.setdefault(address(tuple(field['path']), field['field']), {})[field.get('kind')] = field['target']
     edges = {}
     for field in fields:
         reads = {writers[read] for read in template_reads(field) if read in writers}
-        mine = own[address(tuple(field['path']), field['field'])]
+        reads.update(gates[tuple(field['path']), table] for scope, table, _ in field['reads']
+                     if scope in ('member', 'membership') and (tuple(field['path']), table) in gates)
+        mine = {} if field.get('table') else own[address(tuple(field['path']), field['field'])]
         if field.get('kind') == 'applies_when' and 'initial' in mine:
             reads.add(mine['initial'])
         if field.get('kind') == 'initial' and 'locked_when' in mine:
@@ -1282,7 +1313,7 @@ MISSING_VALUE = object()
 def same_value(values, field, value):
     """Whether setting a source leaves it unchanged; objects and lists always count as a change."""
     return field in values and not isinstance(value, (dict, list)) and type(values[field]) is type(value) and values[field] == value
-RULES = ('applies_when', 'required_when', 'locked_when')
+RULES = ('applies_when', 'required_when', 'locked_when', 'visible_when')
 
 class Row:
     __slots__ = ('handle', 'path', 'values', 'parent', 'children', 'id', 'key', 'label', 'order', 'created')
@@ -1308,6 +1339,9 @@ class Scope:
         return self.document.result(target, field)
 
     def members(self, table):
+        # A Table whose applies_when is false reads as empty; a save removes its rows.
+        if self.document.decided(self.row, table, 'applies_when', True) is False:
+            return []
         return [Scope(self.document, self.row, member, self.at, self.misses) for member in self.row.children.get(table, ())]
 
     def address(self, field):
@@ -1484,13 +1518,16 @@ class Document:
             for position, field in self.templates.get(row.path, ()):
                 node = (handle, node_name(field))
                 # applies_when also runs when its own field changes, so a value set while it does not apply is cleared.
-                inputs = {(handle, field['field'])} if field.get('kind') == 'applies_when' else set()
+                inputs = {(handle, field['field'])} if field.get('kind') == 'applies_when' and not field.get('table') else set()
                 for scope, table, name in field['reads']:
                     if scope == 'self':
                         inputs.add((handle, name))
                     elif scope == 'parent' and row.parent is not None:
                         inputs.add((row.parent.handle, name))
-                    elif scope == 'membership':
+                    elif scope in ('membership', 'member') and (row.path, table + ':applies_when') in self.entries:
+                        # A Table that does not apply reads as empty, so its readers follow its applies_when.
+                        inputs.add((handle, table + ':applies_when'))
+                    if scope == 'membership':
                         inputs.add((handle, '#' + table))
                     elif scope == 'member':
                         inputs.update((member.handle, name) for member in row.children.get(table, ()))
@@ -1602,7 +1639,8 @@ class Document:
                 self.armed.discard(node)
                 if outcome.state == 'ready' and not self.locked(row, field['field']):
                     value = wire(outcome.value, wire_scale(field))
-            elif kind == 'applies_when' and outcome.state == 'ready' and outcome.value is False and row.values.get(target[1]) is not None \
+            elif kind == 'applies_when' and not field.get('table') and outcome.state == 'ready' and outcome.value is False \
+                    and row.values.get(target[1]) is not None \
                     and self.locks.get(row.handle, {}).get(field['field'], False) is False:
                 # A field locked on the saved row keeps its value; the server refuses the write instead.
                 value = None
@@ -1850,20 +1888,33 @@ class Document:
         return field in saved and saved[field] is not False
 
     def rule_states(self, handle):
-        """{field: {applies, required, locked}} for fields of this row that declare rules.
+        """{field: {applies, required, locked, visible}} for fields of this row that declare rules.
 
         Undecided rules (pending, error or null) fail closed: the field applies, is required and is locked.
+        visible is whether the field shows: it applies and its visible_when is not false (undecided shows it).
         A saved row's lock is decided on the row as loaded, so one write cannot unlock and change a field;
         a new row has no saved state and nothing on it is locked.
         """
         row = self._row(handle)
         states = {}
         for _, entry in self.templates.get(row.path, ()):
-            if entry.get('kind') in RULES and entry['field'] not in states:
+            if entry.get('kind') in RULES and not entry.get('table') and entry['field'] not in states:
                 name = entry['field']
                 applies = self.decided(row, name, 'applies_when', True) is not False
                 required = bool(self.schema[row.path]['fields'][name]['required'] or self.decided(row, name, 'required_when', True))
-                states[name] = {'applies': applies, 'required': applies and required, 'locked': self.locked(row, name)}
+                states[name] = {'applies': applies, 'required': applies and required, 'locked': self.locked(row, name),
+                                'visible': applies and self.decided(row, name, 'visible_when', True) is not False}
+        return dict(sorted(states.items()))
+
+    def table_states(self, handle):
+        """{table: {applies, visible}} for the Tables of this row that declare rules. Undecided shows and keeps them."""
+        row = self._row(handle)
+        states = {}
+        for _, entry in self.templates.get(row.path, ()):
+            if entry.get('table') and entry['field'] not in states:
+                name = entry['field']
+                applies = self.decided(row, name, 'applies_when', True) is not False
+                states[name] = {'applies': applies, 'visible': applies and self.decided(row, name, 'visible_when', True) is not False}
         return dict(sorted(states.items()))
 
     def find(self, label):

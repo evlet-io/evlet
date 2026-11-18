@@ -1216,6 +1216,8 @@ def settle(context, draft, *, complete, previous=None, kept=False, checks=True):
         if kept:
             plan = registry.kept_plans[registry.root_of(draft._definition)]
         finite_settle(context, plan, draft, errors, states, complete, previous, kept)
+        # Rows of a Table that does not apply were removed, so they are not checked either.
+        all_drafts = list(walk(draft))
     else:
         compute_legacy(context, draft, all_drafts, errors, states, complete, kept)
     if not checks:
@@ -1661,8 +1663,22 @@ def finite_settle(context, plan, draft, errors, states, complete, previous=None,
             if decided is None and policy.expression_allowed(user, item._definition, name, 'locked_when'):
                 state['message'] = LOCKED_PENDING
         object.__setattr__(item, '_rules', rules)
+        if not kept:
+            # A Table that does not apply keeps no rows: the calculations above already read it as empty.
+            for name, state in document.table_states(row.handle).items():
+                if not state['applies'] and (item._rows.get(name) or getattr(item, '_sections', {}).get(name)):
+                    for found in (errors, states):
+                        for key in [key for key in found if key.startswith(prefix + name + '.')]:
+                            del found[key]
+                    if sections.enabled(item._definition, name):
+                        item._sections[name] = []
+                        item._rows[name] = sections.TableRows([], [])
+                    else:
+                        item._rows[name] = []
         for field in fields.get(row.path, ()):
             name = field['field']
+            if field.get('table'):
+                continue
             if field.get('kind') in ('initial', 'applies_when'):
                 # Engine-written values: an initial suggestion or a field cleared because it does not apply.
                 value, current = row.values.get(name), item._values.get(name)

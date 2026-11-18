@@ -44,7 +44,7 @@ export function layoutFocusOrder<S extends { label: string }>(sections: readonly
 function takesFocus(field: FieldLike): boolean {
   const meta = field.meta;
   if (meta.hidden || meta.read_only || field.calculated || (meta.compute !== null && meta.compute !== undefined)) return false;
-  return untrack(() => field.editable.get() && field.rules.get().applies);
+  return untrack(() => field.editable.get() && field.rules.get().visible);
 }
 
 // The control that takes typing inside a field block. Never the ? tooltip or a rich text toolbar button.
