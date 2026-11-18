@@ -523,9 +523,10 @@ export function FieldControl(field: FieldLike, options: ControlOptions = {}): Co
   }
 
   if (kind.control === 'switch') {
+    // Just the switch: its on and off says Yes or No, so no text beside it (aria-checked tells screen readers).
     const element = Switch({ on: () => field.value.get() === true, id, describedBy: options.describedBy, disabled, ariaLabel: options.label ?? meta.label,
-      label: () => field.value.get() === true ? 'Yes' : 'No',
       onChange: next => { if (writeValue(field, next)) done(); } });
+    element.classList.add('sw-only');
     return { element, commit: () => true, focus: () => element.focus() };
   }
 

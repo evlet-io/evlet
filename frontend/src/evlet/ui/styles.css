@@ -811,6 +811,14 @@ dd.editing .input,.ff-v .input{width:100%}
 .sw i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--knob);box-shadow:var(--shadow-xs);transition:transform .15s}
 .sw.on{background:var(--accent)}
 .sw.on i{transform:translateX(12px)}
+/* A switch on its own (a Boolean field): as wide as the switch, and the focus ring goes round the switch, not a box. */
+.sw-wrap.sw-only{align-self:flex-start;gap:0;padding:0;border-radius:9px;min-height:30px}
+.sw-wrap.sw-only:focus-visible{outline:none}
+.sw-wrap.sw-only:focus-visible .sw{outline:2px solid var(--accent);outline-offset:2px}
+.sw-wrap.sw-only:disabled{cursor:not-allowed}
+.sw-wrap.sw-only:disabled .sw{opacity:.5}
+.iv-sw{display:flex;flex-direction:column;align-items:flex-start;gap:3px}
+.iv-sw[aria-busy="true"]{opacity:.6}
 
 /* ---------- layout control ---------- */
 .fab{position:fixed;right:calc(20px + env(safe-area-inset-right,0px));bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:35;display:flex;flex-direction:column;align-items:flex-end;gap:10px}

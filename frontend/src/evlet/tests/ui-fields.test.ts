@@ -123,6 +123,8 @@ describe('BaseField', () => {
     expect(host.querySelector('img')).toBeNull();
     expect(host.textContent).toContain(XSS);
     expect(host.querySelector('[data-field="boolean"] [role="switch"]')).not.toBeNull();
+    // A Boolean is just its switch: no Yes or No beside it.
+    expect(host.querySelector('[data-field="boolean"] [role="switch"]')!.textContent).toBe('');
     expect(host.querySelector('[data-field="select"] button.in-select[aria-haspopup="listbox"]')).not.toBeNull();
     expect(host.querySelector('select')).toBeNull();
     expect(host.querySelector('[data-field="state"]')!.textContent).toContain('changes through moves');
