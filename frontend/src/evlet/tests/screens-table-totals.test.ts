@@ -3,6 +3,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { byText, click, screen, start, stopAll, text, until, type Route } from './screens-helpers';
 import { change } from './ui-helpers';
+import { sections, type ScreenModel } from '../app/meta';
 
 afterEach(stopAll);
 
@@ -88,5 +89,16 @@ describe('declared totals under a table', () => {
     expect(lines(sheet).map(([label]) => label)).toEqual(['Net total', 'Discount %', 'Grand total']);
     expect(line(sheet, 'grand_total').classList.contains('gt')).toBe(true);
     expect(sheet.querySelectorAll('.ff[data-field="discount_percent"], .fld[data-field="discount_percent"]')).toHaveLength(0);
+  });
+
+  it('places the totals fields as usual for a role that cannot read the table', () => {
+    const bill = (screen.totals_schema.body.models as ScreenModel[]).find(model => model.name === 'bill')!;
+    const placed = (model: ScreenModel) => sections(model).map(section => [section.label, section.fields.map(field => field.name)]);
+    // A block that names a totals field keeps it for that role; the browser drops it while the table shows.
+    const named = { ...bill, layout: [...bill.layout!, { label: 'Money', fields: ['discount_percent'] }] } as ScreenModel;
+    expect(placed(named)).toEqual([['Details', ['title', 'shipped', 'approved']]]);
+    // Without the table (the role cannot read its rows), the field shows where the block puts it, the rest under Other.
+    expect(placed({ ...named, children: [] })).toEqual([['Details', ['title', 'shipped', 'approved']], ['Money', ['discount_percent']],
+      ['Other', ['net_total', 'discount', 'freight', 'grand_total']]]);
   });
 });

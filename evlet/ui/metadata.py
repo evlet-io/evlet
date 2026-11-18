@@ -199,6 +199,7 @@ def layout_blocks(model, layout, visible, label):
     # A field in a Table's totals shows under that Table (Table(totals=...)), so it counts as placed.
     totals = {field: table for table, item in known.items() for field in getattr(item, 'totals', ()) if field in visible}
     placed.update(totals)
+    kept_totals = set()
 
     def warn(item, text):
         warnings.append(f'{where}: {item!r} {text}; it is ignored')
@@ -228,7 +229,13 @@ def layout_blocks(model, layout, visible, label):
             if type(name) is str and name in known:
                 warn(item, f'names the Table {name!r} among its fields; give it its own block')
             elif type(name) is str and name in totals:
-                warn(item, f'names {name!r}, which shows in the totals of the Table {totals[name]!r}')
+                # Kept in the group, so a role that cannot read the Table still sees it here (the browser drops it
+                # while the Table shows).
+                warn(item, f'names {name!r}, which shows in the totals of the Table {totals[name]!r} '
+                           '(only a role that cannot read that Table sees it here)')
+                if name not in kept_totals:
+                    kept_totals.add(name)
+                    kept.append(name)
             elif type(name) is not str or name not in visible:
                 warn(item, f'names {name!r}, which is not a visible field of {model.__name__}')
             elif name in placed:

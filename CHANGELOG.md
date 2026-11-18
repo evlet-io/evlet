@@ -12,7 +12,8 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   names fields of the owning model to show under the table, in that order, in place of the inferred totals:
   a read-only value for a calculated or locked field, the usual control for one people edit (the lines below
   recalculate as it is typed), no line while `applies_when` is false, the last line as the grand total. The
-  fields count as placed, so they leave Details and Other; a layout block that names one is warned about. The
+  fields count as placed, so they leave Details and Other; a layout block that names one is warned about. A role
+  that cannot read the table sees them where the layout would otherwise put them. The
   schema's `children` entry carries `"totals"`. A Table without `totals=` is unchanged
   ([docs/ui.md](docs/ui.md#record-layouts)). The Playground's Quick invoice shows a discount stack.
 

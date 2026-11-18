@@ -357,7 +357,8 @@ class Employee(Model):
   sum shows in the total line, which stays as it is. The stack is the same in `Main('lines')`, a `TableSection`,
   a Prompt's table and the side panel, and takes the full width on a phone. A field in a table's totals counts as
   placed: it is not in Details or Other, and a block that names it again is ignored with a layout warning
-  (a Prompt refuses the layout), so the field shows once.
+  (a Prompt refuses the layout), so the field shows once. A role that cannot read the table still sees the
+  fields it may read: in the block that names them, else under Other.
 - **Names.** Every area keeps a stable name, its `name` in the schema, for `Meta.panel` and Controls: a
   section, and a `Main` with a title, by its title; the first untitled `Main` by the model's label and
   each later untitled one by the label and its number ("Employee 2"); a Table by its field name; a

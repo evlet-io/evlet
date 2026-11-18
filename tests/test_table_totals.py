@@ -8,7 +8,7 @@ from evlet.prompts import schema as prompt_schema
 from evlet.ui.metadata import view_for
 from test_business import client
 from test_meaning import serve
-from test_rules_types import ALL
+from test_rules_types import ALL, add_user
 
 
 class Line(Child):
@@ -66,8 +66,38 @@ def test_a_totals_field_counts_as_placed_and_a_block_naming_it_is_warned_about()
     registry = Registry(quotation(layout=(Main(('customer',)), Main('lines'), Section('Money', ('discount_percent',)))))
     model = registry.models['quotation']
     (_, text), = [item for item in registry.layout_warnings if item[0] is model]
-    assert "names 'discount_percent', which shows in the totals of the Table 'lines'; it is ignored" in text
-    assert [(group['label'], group['fields']) for group in view_for(model)['layout']] == [('Quotation', ['customer'])]
+    assert "names 'discount_percent', which shows in the totals of the Table 'lines'" in text and text.endswith('it is ignored')
+    # The block keeps it for a role that cannot read the Table; the browser drops it while the Table shows.
+    assert [(group['label'], group['fields']) for group in view_for(model)['layout']] == [('Quotation', ['customer']), ('Money', ['discount_percent'])]
+
+
+def test_a_role_that_cannot_read_the_table_gets_its_totals_where_the_layout_places_them(tmp_path):
+    class Secret(Child):
+        permissions = {'admin': ALL['admin']}
+        amount = Currency(currency='AED', default='0')
+
+    class Deal(Model):
+        permissions = ALL
+        customer = Text()
+        lines = Table(Secret, totals=('net_total', 'discount_percent'))
+        net_total = Currency(currency='AED', compute=lines.sum('amount'))
+        discount_percent = Percent(default='0')
+
+        class Meta:
+            layout = (Main(('customer',)), Section('Money', ('discount_percent',)))
+    app = serve(Database(tmp_path / 'roles.sqlite3', Registry(Deal)))
+
+    def deal(c):
+        return next(item for item in c('GET', '/api/schema')[1]['models'] if item['name'] == 'deal')
+    admin, viewer = deal(client(app)), deal(add_user(app, 'viewer'))
+    assert admin['children'][0]['totals'] == ['net_total', 'discount_percent']
+    # The viewer cannot read the lines: no Table, so no totals to place them in. The discount still reaches it, in
+    # the block that names it (a field no block names goes to Other in the browser). The sum over rows it cannot
+    # read is cut, as always.
+    assert viewer['children'] == []
+    names = {field['name'] for field in viewer['fields']}
+    assert 'discount_percent' in names and 'net_total' not in names
+    assert [(group['label'], group['fields']) for group in viewer['layout']] == [('Deal', ['customer']), ('Money', ['discount_percent'])]
 
 
 class Bill(Prompt):
