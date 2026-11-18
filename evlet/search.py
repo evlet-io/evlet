@@ -8,8 +8,10 @@ query reads at most CANDIDATES records whose searched text holds the typed chara
 '%b%x%' prefilter, qb.subsequence_ci), prefix matches first, then text matches, then the rest. Python ranks
 that bounded set: the whole value, then a value starting with the text, then a word starting with it, then the
 text inside a word, then the characters in order with the tightest span; the title before the other fields,
-shorter values first. A model without Meta.search_fields is searched as the list's search box searches it
-(the text in its default search fields), in the list's default order.
+shorter values first. The model's own text fields the option shows with F("field") are searched too, so what
+a dropdown shows can be typed; they rank after every match in the title and Meta.search_fields. A model
+without Meta.search_fields is searched as the list's search box searches it (the text in its default search
+fields and the option's fields), in the list's default order.
 
 Link context. link=<model>.<field> names the Link the dropdown belongs to, on a model or a Table's row model.
 Its filters= apply as declared: a literal value as it is, a Ref("path") with the value the form sent in
@@ -36,7 +38,7 @@ from .auth import AccessError
 from .calc import Expr
 from .database import Session
 from .declarations import Ref
-from .fields import Boolean, Link, RichText
+from .fields import Boolean, Link, RichText, Text
 from .identity import RecordId
 from .models import ValidationError
 
@@ -77,12 +79,14 @@ def route(business, scope, user, model):
     declared = getattr(getattr(model, 'Meta', None), 'search_fields', None)
     with business.database._connection() as connection:
         connection.snapshot()
+        shown = [name for name in shown_fields(model, option) if name in readable]
         if text and declared is not None:
             columns = [name for name in dict.fromkeys((title, *declared)) if name != 'id' and name in readable]
-            found = ranked(connection, model, table, where, columns, text, limit)
+            found = ranked(connection, model, table, where, columns, text, limit,
+                           extra=[name for name in shown if name not in columns])
         else:
             if text:
-                searched = [name for name in view['search_fields'] if name in readable]
+                searched = list(dict.fromkeys(name for name in (*view['search_fields'], *shown) if name in readable))
                 where.append(compiler.where({}, text, search_fields=searched))
                 where = [item for item in where if not qb.always(item)]
             order = compiler.ordering(business.controls.custom.default_order(policy, user, model).split(','))
@@ -171,15 +175,28 @@ def link_filters(business, user, source, field, values):
 
 # ---------- matching ----------
 
-def ranked(connection, model, table, where, columns, text, limit):
-    """[(id, matched column or None)]: the best `limit` of at most CANDIDATES records holding the text's characters in order."""
+def shown_fields(model, option):
+    """The model's own text fields an option shows with F("field"), searched too: what a dropdown shows can be typed."""
+    if option is None:
+        return []
+    parts = (*(option.title or ()), *(option.subtext or ()))
+    names = (part.meta['name'] for part in parts if isinstance(part, Expr) and part.op == 'ref')
+    return list(dict.fromkeys(name for name in names if '.' not in name and isinstance(model.__fields__.get(name), Text)
+                              and not isinstance(model.__fields__[name], (Link, RichText))))
+
+
+def ranked(connection, model, table, where, columns, text, limit, extra=()):
+    """[(id, matched column or None)]: the best `limit` of at most CANDIDATES records holding the text's characters in order.
+    extra columns (fields the option shows) match too, ranked after every match in columns."""
     if not columns:
         return []
+    primary = len(columns)
+    columns = [*columns, *extra]
     squeezed = ''.join(text.split())
     stored = [qb.col(f'record.{name}_text' if isinstance(model.__fields__[name], RichText) else f'record.{name}') for name in columns]
     match = qb.or_(*(qb.subsequence_ci(column, squeezed) for column in stored))
-    first = qb.when((qb.or_(*(qb.starts_with(qb.lower(column), text.lower()) for column in stored)), 0),
-                    (qb.or_(*(qb.contains_ci(column, text) for column in stored)), 1), otherwise=2)
+    first = qb.when((qb.or_(*(qb.starts_with(qb.lower(column), text.lower()) for column in stored[:primary])), 0),
+                    (qb.or_(*(qb.contains_ci(column, text) for column in stored[:primary])), 1), otherwise=2)
     rows = connection.run(qb.select(table, 'record.id', *stored).where(*where, match).order_by(qb.asc(first), 'record.id')
                           .limit(CANDIDATES)).all()
     scored = []
@@ -187,6 +204,8 @@ def ranked(connection, model, table, where, columns, text, limit):
         best = None
         for at, (name, value) in enumerate(zip(columns, tuple(row)[1:])):
             score = rank(value, text, squeezed)
+            if score is not None and at >= primary:
+                score = (score[0] + 5, score[1])
             if score is not None and (best is None or (score[0], at, score[1]) < best[:3]):
                 best = (score[0], at, score[1], name)
         if best is not None:
