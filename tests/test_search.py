@@ -163,7 +163,8 @@ def test_link_filters_take_form_values(world):
     _, admin, ids, registry = world
     line = 'order_lines'
     link = f'{line}.item'
-    assert titles(ask(admin, 'item', 'box', link=link, values={'parent.group': ids['Tools']})) == ['Inbox tray', 'Black ox']
+    # The line's option shows the unit, so items whose unit is box follow the title matches.
+    assert titles(ask(admin, 'item', 'box', link=link, values={'parent.group': ids['Tools']})) == ['Inbox tray', 'Black ox', 'Cable', 'Under_score']
     # A Ref the form left empty matches nothing.
     assert titles(ask(admin, 'item', 'box', link=link)) == []
     # Only the paths the Link reads, and only Links to this model.
@@ -255,3 +256,35 @@ def test_declarations_are_checked():
         class Odd(Model):
             item = Link(Item, option=Option(subtext=F('colour')))
         Registry(Group, Item, Odd)
+
+
+class Product(Model):
+    class Meta:
+        title_field = 'title'
+        search_fields = ('code',)
+        option = Option(subtext=(F('code'), ' · ', F('valuation'), ' · ', F('group')))
+
+    permissions = {'admin': Rule(ALL), 'viewer': Rule(('read',), read_fields=('title', 'code', 'group'))}
+    title = Text(required=True)
+    code = Text(default='')
+    valuation = Select(['fifo', 'average'], default='fifo')
+    group = Link(Group)
+
+
+def test_searches_the_fields_the_option_shows_after_declared_ones(tmp_path):
+    registry = Registry(Group, Product)
+    app = start(Database(tmp_path / 'db.sqlite3', registry))
+    admin = client(app)
+    group = admin('POST', '/api/group', {'title': 'Average joes'})[1]['id']
+    for title, code, valuation in (('Bolt', 'BOLT-1', 'fifo'), ('Nut', 'AVG-2', 'fifo'), ('Washer', 'W-3', 'average')):
+        assert admin('POST', '/api/product', {'title': title, 'code': code, 'valuation': valuation, 'group': group})[0] == 201
+    status, body, _ = ask(admin, 'product', 'fifo')
+    assert status == 200 and [item['title'] for item in body['items']] == ['Bolt', 'Nut']
+    assert body['items'][0]['subtext'] == 'BOLT-1 · fifo · Average joes'
+    # A title or declared-field match ranks before a match in a field the option shows.
+    assert titles(ask(admin, 'product', 'av')) == ['Nut', 'Washer']
+    # A Link part is not searched: "joes" is only in the linked group's title.
+    assert titles(ask(admin, 'product', 'joes')) == []
+    # A field the role can't read is not searched.
+    viewer = add_user(app, 'viewer')
+    assert titles(ask(viewer, 'product', 'fifo')) == []

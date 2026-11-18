@@ -939,8 +939,13 @@ alphabetical order. When the best match is in a field other than the title and t
 declared subtext, that value shows as the subtext (the barcode that matched). Case is ignored.
 Spaces in the text are ignored for the in-order match, so "red box" also finds "Red large box".
 
+The model's own text fields the option shows with `F("field")` (a Select, Email or other short text,
+not a Link path or an aggregate) are searched too, so whatever a dropdown shows can be typed. With
+`Option(subtext=(F("code"), " · ", F("valuation")))`, typing "fifo" finds the items valued FIFO.
+Those matches rank after every match in the title and `Meta.search_fields`.
+
 A model **without** `Meta.search_fields` is searched as before: the typed text must appear in one of
-its default search fields (the list's search box), in the list's default order.
+its default search fields (the list's search box) or the option's fields, in the list's default order.
 
 Permissions apply as everywhere: the role's row scope (and tenant) on the model, and a search field
 the role cannot read is neither searched nor shown. A model the role cannot read answers 403.

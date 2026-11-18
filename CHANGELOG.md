@@ -4,6 +4,14 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
+## Unreleased
+
+### Changed
+
+- Link dropdowns, record pickers and the search bar also search the model's own text fields the
+  option shows with `F("field")`, so typing what the subtext says finds the record ("fifo" in
+  `code · valuation`). Those matches rank after the title and `Meta.search_fields`.
+
 ## 0.4.13 (17-11-2026)
 
 ### Upgrading to 0.4.13
