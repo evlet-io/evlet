@@ -5,11 +5,11 @@
 
 import { html, when, type Child } from '../dom';
 import { batch, cell, onCleanup, untrack } from '../reactive';
-import { Button, Icon } from './base';
+import { Button, Icon, Switch } from './base';
 import { uid } from './core';
 import { phrase, labeller } from './explain';
 import { flowGrid, FoldSection, type Flow, type Folds, type FoldStart } from './fold';
-import { displayValue, FieldControl, FieldHints, LinkGo, recordOf, siblingsOf, type Control, type FieldLike, type LinkSource } from './fields';
+import { displayValue, FieldControl, FieldHints, LinkGo, recordOf, siblingsOf, writeValue, type Control, type FieldLike, type LinkSource } from './fields';
 import { kindOf } from './kinds';
 import { toast } from './layers';
 import { commitWithin } from './shortcuts';
@@ -165,6 +165,26 @@ export function InlineValue(props: InlineValueProps): HTMLElement {
   };
 
   onCleanup(() => { document.removeEventListener('focusin', away, true); document.removeEventListener('mousedown', away, true); });
+  // A Boolean is its switch, at rest and while editing: no text, no edit button, no input box. Flipping it
+  // saves at once, with Undo; a value that can't change shows the switch disabled, with the reason on hover.
+  if (kind.control === 'switch' && !field.calculated && !props.display) {
+    const toggle = Switch({ on: () => field.value.get() === true, ariaLabel: props.labelledBy ? undefined : meta.label,
+      // Not while its own save runs (the record reads as locked then): a disabled button would drop the focus.
+      disabled: () => !field.editable.get() && !busy.get(),
+      onChange: next => {
+        if (busy.peek()) return;
+        before = untrack(() => field.value.get());
+        conflict.set(false);
+        if (writeValue(field, next)) void finish(false);
+      } });
+    toggle.classList.add('sw-only');
+    if (props.labelledBy) toggle.setAttribute('aria-labelledby', props.labelledBy);
+    const box = html`<div class="iv iv-sw" data-field=${meta.name} aria-busy=${() => busy.get() ? 'true' : null}>${toggle}${when(() => Boolean(field.error.get()),
+      () => html`<span class="err-inline" role="alert">${() => field.error.get()}</span>`)}${when(conflict,
+      () => Button({ label: 'Reload', icon: 'rotate-ccw', size: 'small', onClick: () => { void reload(); } }))}</div>` as HTMLElement;
+    tooltip(box, () => field.editable.get() || busy.get() ? '' : lockReason(field));
+    return box;
+  }
   const wrapper = html`<div class="iv" data-field=${meta.name}
     on:keydown=${(event: KeyboardEvent) => {
       if (!editing.peek()) return;

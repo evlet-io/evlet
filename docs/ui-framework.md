@@ -661,7 +661,11 @@ mount(document.querySelector('#app')!, () => DocFrame({
   date-time keeps its seconds. A refused save keeps the input open with the server's message;
   a conflict says "Someone else changed this record. Reload to see their changes." and offers
   Reload, which reads the record again and keeps the typed value to save again. A saved value
-  confirms with a toast that has Undo.
+  confirms with a toast that has Undo. A Boolean is just its switch, at rest and while editing:
+  no Yes or No text, no edit button and no input box. Click, Space or Enter flips it and saves at
+  once (with Undo); the focus ring goes round the switch. A value that can't change shows the
+  switch disabled, with the reason on hover. A Boolean in a form or a table cell editor is the
+  same bare switch; a table cell at rest still reads Yes or No.
 - **ChildTable** binds to a record `Table`: click or Enter edits a cell, Tab and Shift Tab move
   across editable cells and wrap rows (from a cell being edited or not; past the last cell Tab
   goes on to the Add row placeholder), Enter moves down (in a new last row, after typing, Enter adds the next row), Esc cancels, arrow keys move between cells. One cell is
