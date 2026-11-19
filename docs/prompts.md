@@ -66,7 +66,8 @@ the prompt and its rows. `Meta` takes `title` (the class name by default), `prim
 (`Main`, `Section`, `TableSection`, as on a model; [ui.md](ui.md)), `focus`, and `script` and `on_open` for a
 [model script](model-scripts.md#in-a-prompt) (the Playground's Plan project marks a long task with one). A wrong layout or focus fails
 when the prompt is first shown. `load(self, source)` fills it before the person sees it; read-only fields are
-filled there. A Table that `load()` fills takes no new rows.
+filled there. A Table that `load()` fills takes no new rows: the open response gives it `max_rows` at the rows it
+has, so the modal offers no Add row, Enter on its last cell adds none and Duplicate copies none.
 
 ## Shown when returned
 

@@ -554,7 +554,8 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   /** Copies of the selected rows, without their ids, directly after the last one selected. A selected section comes
    * with its lines, and the copies then go after the lines of the section the last selected item is in. */
   const duplicate = (list: Row[], sectionKeys: string[] = []) => {
-    if (readOnly.peek() || (!list.length && !sectionKeys.length)) return;
+    // A copy is a new row: not past max_rows (a prompt Table load() filled takes none).
+    if (readOnly.peek() || (!list.length && !sectionKeys.length) || (list.length > 0 && !canAdd.peek())) return;
     const seq = sequence(), picked = new Set<Row>(list), whole = new Set(sectionKeys);
     const copied: Token[] = [];
     let current: string | null = null, last = -1;
@@ -721,7 +722,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
     expanded.set(list[at].key);
   };
   const insertBelow = (row: Row) => {
-    if (readOnly.peek()) return;
+    if (!canAdd.peek()) return;
     const added = table.add();
     table.move(added, untrack(() => rows.get()).indexOf(row) + 1);
     expanded.set(added.key);

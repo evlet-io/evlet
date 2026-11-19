@@ -35,6 +35,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 - **A prompt's fields are readable on a phone.** Its field grid stayed four columns (68 px each at 390 px wide, a
   date showing one character), because the rules that narrow it belong to the record page. It now narrows with the
   dialog's own width, at the same steps.
+- **A prompt Table that `load()` filled offers no Add row.** The modal still showed Add row, Enter on the last cell
+  added a blank row and Duplicate copied one, and submit then refused it (422). The open response now gives such a
+  table `max_rows` at its rows, and Duplicate and Insert below respect `max_rows` like Add row.
 
 ## 0.4.13 (17-11-2026)
 

@@ -367,9 +367,14 @@ def surface(business, user, ticket, prompt, draft, model, record, errors, states
         readable = business.policy.fields(user, model)
         title = getattr(record, field, None) if field in readable else None
         source = {'model': business.registry.name_for(model), 'id': record.id, 'title': str(title or record.id)}
+    models = schema(business.registry, prompt, name)
+    # A Table that load() (or the starting values) filled takes no new rows (form_draft): the grid offers none.
+    for child in models[0]['children']:
+        if draft._rows.get(child['name']):
+            child['max_rows'] = len(draft._rows[child['name']])
     return {'ticket': ticket, 'name': name, 'title': option(prompt, 'title') or prompt.__name__,
             'primary': option(prompt, 'primary') or 'Submit', 'source': source,
-            'models': schema(business.registry, prompt, name), 'values': draft_values(draft), 'errors': errors, 'states': states}
+            'models': models, 'values': draft_values(draft), 'errors': errors, 'states': states}
 
 
 def check_origin(business, context, origin, model, record_id):
