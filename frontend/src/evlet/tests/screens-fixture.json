@@ -7278,13 +7278,15 @@
    "discount_percent": "0.00",
    "freight": null,
    "grand_total": "250.00",
+   "handling": "0.00",
+   "hide_lines": false,
    "id": "0000000000001",
    "name": null,
    "net_total": "250.00",
    "shipped": false,
    "title": "Harbour works"
   },
-  "etag": "\"e614e544690a7b99dc4c506fac518c18a486473703351cd875fbee865357e8f7\"",
+  "etag": "\"2c752051ad89fed88a225919d836add09b112f7e519cd567f448ceca9a55c79a\"",
   "status": 200
  },
  "totals_empty": {
@@ -7309,13 +7311,15 @@
    "discount_percent": "0.00",
    "freight": null,
    "grand_total": "0.00",
+   "handling": "0.00",
+   "hide_lines": false,
    "id": "0000000000002",
    "name": null,
    "net_total": "0.00",
    "shipped": false,
    "title": "Empty"
   },
-  "etag": "\"8f5aabccfe0ed4d176c8fdd5c4b007bfc5512e68f4f8a8a10b78f8aaaa0902b5\"",
+  "etag": "\"0bf501d9c9133516e23ec204b52372ef323b74b469a90b057c863762c59e2004\"",
   "status": 200
  },
  "totals_prompt": {
@@ -7334,7 +7338,7 @@
    },
    "_calculation": {
     "language": "finite-v1",
-    "model_schema_hash": "sha256:70961fa2c9f372873a7ccf3203566d4fcc603725f1b462466c9b4a074e4fd8b0"
+    "model_schema_hash": "sha256:4bdc5af83f2e3610f37ae7a70d97773d7bcd08638d32e84afd01a34f7ed34c1c"
    },
    "_outcome": {
     "prompt": {
@@ -7760,13 +7764,15 @@
    "discount_percent": "0.00",
    "freight": null,
    "grand_total": "250.00",
+   "handling": "0.00",
+   "hide_lines": false,
    "id": "0000000000001",
    "name": null,
    "net_total": "250.00",
    "shipped": false,
    "title": "Harbour works"
   },
-  "etag": "\"e614e544690a7b99dc4c506fac518c18a486473703351cd875fbee865357e8f7\"",
+  "etag": "\"2c752051ad89fed88a225919d836add09b112f7e519cd567f448ceca9a55c79a\"",
   "status": 200
  },
  "totals_schema": {
@@ -7827,6 +7833,8 @@
       "grand_total": {
        "finite": true
       },
+      "handling": {},
+      "hide_lines": {},
       "name": {},
       "net_total": {
        "finite": true
@@ -7842,7 +7850,7 @@
        "net_total": "local_universal"
       },
       "language": "finite-v1",
-      "model_schema_hash": "sha256:70961fa2c9f372873a7ccf3203566d4fcc603725f1b462466c9b4a074e4fd8b0",
+      "model_schema_hash": "sha256:4bdc5af83f2e3610f37ae7a70d97773d7bcd08638d32e84afd01a34f7ed34c1c",
       "numeric_profile": "finite40-hu18-v1",
       "plan": {
        "compiler_version": "evlet-finite-1",
@@ -8051,6 +8059,39 @@
         },
         {
          "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "shipped",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "boolean",
+            "value": true
+           }
+          ]
+         },
+         "field": "handling",
+         "kind": "visible_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "shipped"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "handling:visible_when",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
           "$expr": "sub",
           "args": [
            {
@@ -8085,6 +8126,40 @@
          "stored": true,
          "target": "grand_total",
          "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "hide_lines",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "boolean",
+            "value": false
+           }
+          ]
+         },
+         "field": "lines",
+         "kind": "visible_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "hide_lines"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "table": true,
+         "target": "lines:visible_when",
+         "target_type": "table"
         }
        ],
        "language": "finite-v1",
@@ -8099,11 +8174,11 @@
         "graph_nodes": 50000,
         "table_depth": 8
        },
-       "model_schema_hash": "sha256:e5a23d1d6ee78f457c8bcd160398c325293f21c54d4dbf4f03b553255627b1a4",
+       "model_schema_hash": "sha256:6574dc0d2ccea636591736bf86f8eed4c06f49d0a9de516becf6d5293e06998b",
        "numeric_profile": "finite40-hu18-v1",
        "plan_version": 1,
        "root_resource": "bill",
-       "source_plan_hash": "sha256:70961fa2c9f372873a7ccf3203566d4fcc603725f1b462466c9b4a074e4fd8b0",
+       "source_plan_hash": "sha256:4bdc5af83f2e3610f37ae7a70d97773d7bcd08638d32e84afd01a34f7ed34c1c",
        "tables": {
         "$root": {
          "fields": {
@@ -8167,6 +8242,32 @@
            "scale": 6,
            "stored": true,
            "type": "decimal"
+          },
+          "handling": {
+           "computed": false,
+           "default": {
+            "value": "0"
+           },
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 6,
+           "stored": true,
+           "type": "decimal"
+          },
+          "hide_lines": {
+           "computed": false,
+           "default": {
+            "value": false
+           },
+           "kind": "boolean",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "boolean"
           },
           "name": {
            "computed": false,
@@ -8301,6 +8402,7 @@
         "discount_percent",
         "discount",
         "freight",
+        "handling",
         "grand_total"
        ]
       }
@@ -8338,7 +8440,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8363,7 +8466,8 @@
        "required_when": null,
        "stored": true,
        "type": "boolean",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8388,7 +8492,34 @@
        "required_when": null,
        "stored": true,
        "type": "boolean",
-       "unique": false
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": false,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Hide lines",
+       "locked_when": null,
+       "name": "hide_lines",
+       "operators": [
+        "eq",
+        "ne",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "boolean",
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8428,7 +8559,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8477,7 +8609,8 @@
        "scale": 2,
        "stored": true,
        "type": "percent",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8545,7 +8678,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": {
@@ -8594,7 +8728,58 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Handling",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "handling",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 6,
+       "stored": true,
+       "type": "currency",
+       "unique": false,
+       "visible_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "shipped",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "boolean",
+          "value": true
+         }
+        ]
+       }
       },
       {
        "applies_when": null,
@@ -8642,7 +8827,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8673,7 +8859,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": true
+       "unique": true,
+       "visible_when": null
       }
      ],
      "label": "Bill",
@@ -8684,7 +8871,8 @@
        "fields": [
         "title",
         "shipped",
-        "approved"
+        "approved",
+        "hide_lines"
        ],
        "flow": "rows",
        "label": "Details",
@@ -8696,7 +8884,7 @@
       "title",
       "shipped",
       "approved",
-      "net_total"
+      "hide_lines"
      ],
      "name": "bill",
      "open_in": "page",
@@ -8704,10 +8892,12 @@
       "title",
       "shipped",
       "approved",
+      "hide_lines",
       "net_total",
       "discount_percent",
       "discount",
       "freight",
+      "handling",
       "grand_total",
       "name",
       "lines.item",
@@ -8790,7 +8980,8 @@
        "required_when": null,
        "stored": true,
        "type": "text",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8825,7 +9016,8 @@
        "scale": 4,
        "stored": true,
        "type": "decimal",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8860,7 +9052,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       },
       {
        "applies_when": null,
@@ -8918,7 +9111,8 @@
        "scale": 6,
        "stored": true,
        "type": "currency",
-       "unique": false
+       "unique": false,
+       "visible_when": null
       }
      ],
      "label": "Bill line",

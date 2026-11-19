@@ -355,8 +355,8 @@ class Employee(Model):
   record, as a right-aligned stack in that order: label on the left, value on the right, the last line emphasized
   as the grand total. A calculated, read-only or locked field is a read-only value, formatted as in the form; a
   field the person may edit is edited in its line with its usual control, shows its error there, and recalculates
-  the lines below it as it is typed. Tab reaches the stack after the table. A field whose `applies_when` is false
-  has no line, and a table with no rows shows no totals. A declared field keeps its line even while its column's
+  the lines below it as it is typed. Tab reaches the stack after the table. A field whose `applies_when` or `visible_when` is
+  false has no line, and a table with no rows, or hidden by its own `applies_when` or `visible_when`, shows no totals. A declared field keeps its line even while its column's
   sum shows in the total line, which stays as it is. The stack is the same in `Main('lines')`, a `TableSection`,
   a Prompt's table and the side panel, and takes the full width on a phone. A field in a table's totals counts as
   placed: it is not in Details or Other, and a block that names it again is ignored with a layout warning

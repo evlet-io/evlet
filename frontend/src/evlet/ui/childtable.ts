@@ -258,10 +258,10 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
   // table shows no totals at all: its header and Add row placeholder only.
   const summaryShown = derive(() => rows.get().length === 0 ? [] : summary.filter(item => !item.column || !columns.get().some(column => column.key === item.column)));
   // Table(totals=...): the owner's fields as a stack, in the declared order, in place of the inferred totals. A field
-  // the person may edit is edited in its line; one whose applies_when is false has no line.
+  // the person may edit is edited in its line; one hidden by its applies_when or visible_when has no line.
   const declared = (table.meta.totals ?? []).map(name => table.owner.fields.get(name)).filter((field): field is Field => Boolean(field));
   const totalLine = (field: Field, last: boolean) => html`<div class="g-tl" class:gt=${last} class:invalid=${() => Boolean(field.error.get())}
-    hidden=${() => !field.rules.get().applies} data-field=${field.name}><span>${field.label}</span>${when(() => field.editable.get(),
+    hidden=${() => !field.rules.get().visible} data-field=${field.name}><span>${field.label}</span>${when(() => field.editable.get(),
       () => FieldControl(field, { label: field.label, links: props.links }).element, () => html`<b class="num">${displayValue(field, { links: props.links })}</b>`)}<span
       class="err" role="alert">${() => field.error.get() ?? ''}</span></div>`;
 

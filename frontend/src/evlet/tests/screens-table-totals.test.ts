@@ -37,7 +37,7 @@ describe('declared totals under a table', () => {
     expect(line(host, 'grand_total').classList.contains('gt')).toBe(true);
     expect(host.querySelectorAll('.g-sum')).toHaveLength(0);
     // Each shows once: not among the record's fields, not under Other.
-    for (const name of ['net_total', 'discount_percent', 'discount', 'freight', 'grand_total'])
+    for (const name of ['net_total', 'discount_percent', 'discount', 'freight', 'handling', 'grand_total'])
       expect(host.querySelectorAll(`[data-field="${name}"]:not(.g-tl)`)).toHaveLength(0);
     expect(host.querySelector('.ev-more-row[data-section="Other"]')).toBeNull();
     // The total line under the columns stays as it is.
@@ -51,18 +51,21 @@ describe('declared totals under a table', () => {
     await until(() => expect(lines(host).slice(2)).toEqual([['Discount', 'AED 25.00'], ['Grand total', 'AED 225.00']]));
   });
 
-  it('adds and drops a line as its applies_when turns', async () => {
+  it('adds and drops lines as their applies_when and visible_when turn', async () => {
     // A new bill: nothing is saved while the switches change. Its first row brings the totals.
     const { host } = start(routes, '/app/bill/new');
     await until(() => expect(host.querySelector('[data-table-block="lines"] .g-addrow')).not.toBeNull());
     click(host.querySelector('[data-table-block="lines"] .g-addrow'));
     await until(() => expect(host.querySelector('.g-totals')).not.toBeNull());
     expect(line(host, 'freight').hidden).toBe(true);
+    expect(line(host, 'handling').hidden).toBe(true);
     click(switchOf(host, 'shipped'));
     await until(() => expect(line(host, 'freight').hidden).toBe(false));
-    expect(lines(host).map(([label]) => label)).toEqual(['Net total', 'Discount %', 'Discount', 'Freight', 'Grand total']);
+    expect(line(host, 'handling').hidden).toBe(false);
+    expect(lines(host).map(([label]) => label)).toEqual(['Net total', 'Discount %', 'Discount', 'Freight', 'Handling', 'Grand total']);
     click(switchOf(host, 'shipped'));
     await until(() => expect(line(host, 'freight').hidden).toBe(true));
+    expect(line(host, 'handling').hidden).toBe(true);
   });
 
   it('shows a locked field as a read-only line', async () => {
@@ -71,6 +74,23 @@ describe('declared totals under a table', () => {
     click(switchOf(host, 'approved'));
     await until(() => expect(line(host, 'discount_percent').querySelector('input')).toBeNull());
     expect(text(line(host, 'discount_percent').querySelector('b'))).toBe('0.00%');
+  });
+
+  it('shows no totals stack while the table is hidden by its rule', async () => {
+    // A new bill: nothing is saved while the switch changes.
+    const { host } = start(routes, '/app/bill/new');
+    await until(() => expect(host.querySelector('[data-table-block="lines"] .g-addrow')).not.toBeNull());
+    click(host.querySelector('[data-table-block="lines"] .g-addrow'));
+    await until(() => expect(host.querySelector('.g-totals')).not.toBeNull());
+    const block = () => host.querySelector<HTMLElement>('[data-table-block="lines"]')!;
+    expect(block().hidden).toBe(false);
+    click(switchOf(host, 'hide_lines'));
+    // The whole block hides, its totals stack with it; the totals fields show nowhere else.
+    await until(() => expect(block().hidden).toBe(true));
+    expect(block().contains(host.querySelector('.g-totals'))).toBe(true);
+    expect(host.querySelectorAll('[data-field="grand_total"]:not(.g-tl)')).toHaveLength(0);
+    click(switchOf(host, 'hide_lines'));
+    await until(() => expect(block().hidden).toBe(false));
   });
 
   it('shows no totals while the table has no rows', async () => {
@@ -96,9 +116,9 @@ describe('declared totals under a table', () => {
     const placed = (model: ScreenModel) => sections(model).map(section => [section.label, section.fields.map(field => field.name)]);
     // A block that names a totals field keeps it for that role; the browser drops it while the table shows.
     const named = { ...bill, layout: [...bill.layout!, { label: 'Money', fields: ['discount_percent'] }] } as ScreenModel;
-    expect(placed(named)).toEqual([['Details', ['title', 'shipped', 'approved']]]);
+    expect(placed(named)).toEqual([['Details', ['title', 'shipped', 'approved', 'hide_lines']]]);
     // Without the table (the role cannot read its rows), the field shows where the block puts it, the rest under Other.
-    expect(placed({ ...named, children: [] })).toEqual([['Details', ['title', 'shipped', 'approved']], ['Money', ['discount_percent']],
-      ['Other', ['net_total', 'discount', 'freight', 'grand_total']]]);
+    expect(placed({ ...named, children: [] })).toEqual([['Details', ['title', 'shipped', 'approved', 'hide_lines']], ['Money', ['discount_percent']],
+      ['Other', ['net_total', 'discount', 'freight', 'handling', 'grand_total']]]);
   });
 });

@@ -840,16 +840,21 @@ class BillLine(Child):
 
 
 class Bill(Model):
-    """Declared totals under a table: a typed discount, a line that applies only when shipped, a total to lock."""
+    """Declared totals under a table: a typed discount, lines that apply or show only when shipped, a total to lock,
+    and a Table that can be hidden."""
     permissions = ALL
     title = Text(default='bill')
     shipped = Boolean(default=False)
     approved = Boolean(default=False)
-    lines = Table(BillLine, totals=('net_total', 'discount_percent', 'discount', 'freight', 'grand_total'))
+    hide_lines = Boolean(default=False, label='Hide lines')
+    # A Table hidden by its visible_when shows no totals stack; handling's line follows its own visible_when.
+    lines = Table(BillLine, visible_when=F('hide_lines') == False,  # noqa: E712
+                  totals=('net_total', 'discount_percent', 'discount', 'freight', 'handling', 'grand_total'))
     net_total = Currency(compute=lines.sum('amount'), label='Net total')
     discount_percent = Percent(default='0', label='Discount %', locked_when=F('approved') == True)  # noqa: E712
     discount = Currency(compute=round(F('net_total') * F('discount_percent') / 100, 2))
     freight = Currency(default=0, applies_when=F('shipped') == True)  # noqa: E712
+    handling = Currency(default=0, visible_when=F('shipped') == True)  # noqa: E712
     grand_total = Currency(compute=F('net_total') - F('discount'), label='Grand total')
 
     @action('Quick bill')
