@@ -29,6 +29,9 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   input now counts as changed only when its value after the write differs from the saved one, and a value the
   caller sent always stays, in the browser and on the server (API, MCP, Eva, imports)
   ([docs/finite-calculations.md](docs/finite-calculations.md)).
+- **Keys typed in a script control in a table cell reach it.** The grid started its own edit and swallowed the
+  first key, so typing 25 gave 5. While the focus is inside a control drawn by `control=`, its keys are its own; the
+  grid keeps Tab and Shift Tab ([docs/model-scripts.md](docs/model-scripts.md#control)).
 
 ## 0.4.13 (17-11-2026)
 

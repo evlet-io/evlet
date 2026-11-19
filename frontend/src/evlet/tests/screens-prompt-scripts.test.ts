@@ -91,7 +91,7 @@ describe('a model script in a prompt', () => {
     expect(tipText()).toBe('Visit\nPick a weekday');
   });
 
-  it('draws a control and a look on a Table row, in the grid and in the row editor', async () => {
+  it('draws a control and a look on a Table row, in the grid and in the row editor, and keys stay in the control', async () => {
     await open();
     await until(() => expect(instance).not.toBeNull());
     click(byText(sheet()!, '.prompt-table button', /Add row/));
@@ -99,7 +99,21 @@ describe('a model script in a prompt', () => {
     await until(() => expect(cell()?.shadowRoot?.querySelector('input')).not.toBeNull());
     expect(log).toContainEqual(['control', 0]);
     expect(sheet()!.querySelector('td[data-col="hours"]')!.getAttribute('data-look')).toBe('danger');
+    // Adding the row starts its first cell, a drawn one, in its own control rather than the grid's editor.
     const input = cell()!.shadowRoot!.querySelector('input')!;
+    expect(cell()!.shadowRoot!.activeElement).toBe(input);
+    expect(sheet()!.querySelector('td.editing')).toBeNull();
+    // Two characters typed into the control's input both belong to it: the grid neither starts its own edit nor eats one.
+    for (const key of ['2', '5']) {
+      const event = new KeyboardEvent('keydown', { key, bubbles: true, composed: true, cancelable: true });
+      input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+    }
+    expect(sheet()!.querySelector('td.editing')).toBeNull();
+    // Tab still moves on: the grid keeps it.
+    const tab = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, composed: true, cancelable: true });
+    input.dispatchEvent(tab);
+    expect(tab.defaultPrevented).toBe(true);
     input.value = '25';
     input.dispatchEvent(new Event('change'));
     // The row editor draws the same control, from the same script.

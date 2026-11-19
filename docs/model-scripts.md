@@ -92,6 +92,11 @@ changes.
 draw in, inside a shadow root (its CSS stays inside; the theme variables still reach it), and may
 return a cleanup function.
 
+In a table cell (on a document or a prompt), keys typed while the focus is inside the control
+belong to it: the grid keeps only Tab and Shift+Tab, which move to the next or previous cell. A
+click inside it stays there, and moving to the cell (Tab, Add row, Enter) focuses the control's
+first input, select, textarea or button. A script needs no `stopPropagation`.
+
 ```js
 qty_input(el, field, row) {
   const input = document.createElement('input');
