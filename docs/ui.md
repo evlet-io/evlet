@@ -40,9 +40,10 @@ A field declared `column=False` (a currency source, say) starts hidden in a chil
 Columns menu and is left out of a list's default columns; the form still shows it
 ([model-engine.md](model-engine.md#more-field-types)).
 
-Values the record fills itself (`derived=True`) show while the person edits: once they pause
-for 600 ms the form asks the server for a preview (`POST /api/_draft/{model}`) and shows what
-`derive()` set, without making it an unsaved change. Formulas (`compute=`) show at once without
+Values the record fills itself (`derived=True`) show while the person edits: as soon as an edit
+is committed (a field left, Enter, an option picked; never on each keystroke) the form asks the
+server for a preview (`POST /api/_draft/{model}`) and shows what `derive()` set, without making
+it an unsaved change. There is no pause to wait for. Formulas (`compute=`) show at once without
 a request.
 
 A Table the record fills itself (`derived=True`, [model-engine.md](model-engine.md#derived-values))

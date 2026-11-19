@@ -17,6 +17,10 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Derived values show without the 600 ms pause.** The form changes the draft only when an edit is committed, so
+  the pause before `POST /api/_draft` guarded nothing and delayed every derived value. The preview now goes at once:
+  changes in one turn of the event loop as one request, at most one in flight, and once more when it returns if the
+  draft moved meanwhile; a stale answer is still dropped. `PREVIEW_PAUSE_MS` is gone (an internal name).
 - Link dropdowns, record pickers and the search bar also search the model's own text fields the
   option shows with `F("field")`, so typing what the subtext says finds the record ("fifo" in
   `code · valuation`). Those matches rank after the title and `Meta.search_fields`.
