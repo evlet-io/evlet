@@ -4,7 +4,30 @@ Evlet is pre-1.0 and not production ready. From 0.3, a public name or argument t
 removed or changed keeps working with a `DeprecationWarning` for at least one minor release
 first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what to change.
 
-## Unreleased
+## 0.4.14 (19-11-2026)
+
+### Upgrading to 0.4.14
+
+- **No migrations and no public API removed.** Apps on 0.4.13 run as they are; the new options change nothing
+  until an app uses them. (The Playground adds its own migration `0022_expenses` for its Expense example.)
+- **`initial=` suggestions no longer overwrite what the caller set.** A suggestion now refills only after a write
+  that changes one of its inputs, never over a value sent in the same write, and no longer on a save that changed
+  something else. An app or test that relied on a suggestion re-firing on any save, or replacing a value sent on
+  create, must now set that value itself or make the field a `compute=`.
+- **Rule states carry `visible`.** `Document.rule_states()` / `ruleStates()` and a field's `rules` cell now hold
+  `{applies, required, locked, visible}`. Tests that compare a rule state dict exactly, or frontend code that sets
+  a field's `rules` cell itself, add `visible` (true unless `visible_when` is false).
+- **New refusals, only for the new options:** `visible_when` with `required=True`, `required_when`, `hidden=True`
+  or `visible_if`; `Table(applies_when=...)` with `required`/`min_rows` or `derived=True`; `Table(visible_when=...)`
+  with `required`/`min_rows`; `Table(totals=...)` naming an unknown, hidden or Table name, or a field twice.
+- **Derived-value preview has no pause.** `PREVIEW_PAUSE_MS` is gone from `model/record.ts`. A frontend test that
+  advanced fake timers by 600 ms to wait for `POST /api/_draft` should await the request instead.
+- **A hook on a Prompt** (`on_change=`, `Js(...)`, `look=Js`, `control=`) now asks for `Meta.script` by name
+  instead of being refused outright; a test matching the old message needs the new one.
+- **Record page changes visible to UI tests:** Related is a section of count chips, its rows loaded only when it
+  opens (`GET /api/{model}/{id}/related` counts first), and a Boolean on the record page is just its switch, with
+  no Yes/No text or pencil. Frontend tests that clicked the old Related rows or read "Yes" from a Boolean value
+  need updating.
 
 ### Added
 
@@ -34,6 +57,12 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ### Changed
 
+- **Related is a section of count chips.** After More information, each relation is a chip with a count badge; the
+  counts come from one read, `GET /api/{model}/{id}/related` (row scope applied, only relations the role can see),
+  sent when the section first scrolls into view, and rows load only when a relation's list shows. Number cards show
+  a placeholder until their measures arrive after the record paints ([docs/ui.md](docs/ui.md)).
+- **A Boolean on the record page is just its switch**, at rest and while editing: click, Space or Enter flips and
+  saves it, with Undo; read only shows it disabled. Forms and table cell editors draw the same bare switch.
 - **Derived values show without the 600 ms pause.** The form changes the draft only when an edit is committed, so
   the pause before `POST /api/_draft` guarded nothing and delayed every derived value. The preview now goes at once:
   changes in one turn of the event loop as one request, at most one in flight, and once more when it returns if the
