@@ -37,7 +37,7 @@ import { CardRow, fieldsSummary, imageSource, MoreRow, RecordImage, rowsText, va
 import type { LayoutBlock } from '../model/schema';
 import { RELATED_PAGE, rangeText, relatedPages, whenVisible, type RelatedPage, type RelatedPages } from './related-data';
 import { filterFields } from './filters';
-import { follow, openForm, takePrefill, type Outcome } from './prompts';
+import { confirmText, follow, openForm, takePrefill, type Outcome } from './prompts';
 import { openEvaPanel } from '../eva/chat';
 import { KEPT, keepChanges, keepsUnsaved, keepWhenHidden, keepCreateAttempts, discardKeptChanges } from './unsaved';
 import { UnsavedBar } from './unsaved-bar';
@@ -72,17 +72,6 @@ function gate(field: Field, locked: Readable<boolean>, canWrite: boolean): Field
  * sidebar after it, the way the page reads, and it stays folded once the sidebar has left.
  */
 export const SIDE_DRAWER = '(max-width: 1380px)';
-
-/** Ask a model script's yes-or-no question (this.ui.confirm); resolves true for OK. */
-function confirmText(text: string): Promise<boolean> {
-  return new Promise(resolve => {
-    let answered = false;
-    const answer = (value: boolean, done: () => void) => { answered = true; resolve(value); done(); };
-    openModal({ title: text, icon: 'info', narrow: true, body: () => null,
-      footer: done => DialogFooter({ cancel: () => answer(false, done), submit: { label: 'OK', variant: 'primary', onClick: () => answer(true, done) } }),
-      onClose: () => { if (!answered) resolve(false); } });
-  });
-}
 
 /** Ask before discarding unsaved changes; resolves true to leave. */
 export function confirmDiscard(reason?: string): Promise<boolean> {

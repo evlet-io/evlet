@@ -6,6 +6,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
 
 ## Unreleased
 
+### Added
+
+- **Model scripts in prompts.** A Prompt takes `Meta.script` and `Meta.on_open`, and its fields and its Table rows'
+  fields take `on_change=`, `tooltip=Js(...)`, `look=Js(...)` and `control=`, as on a model. A hook on a prompt
+  without `Meta.script` now fails naming the field, instead of every hook being refused. The open response carries
+  the script, the modal runs it over the prompt's form (`id` null, `is_new` true; `call`, `move`, `save` and
+  `reload` reject), and closing the modal makes its views inert. Custom blocks stay unsupported in a prompt
+  ([docs/model-scripts.md](docs/model-scripts.md#in-a-prompt)).
+
 ### Changed
 
 - Link dropdowns, record pickers and the search bar also search the model's own text fields the

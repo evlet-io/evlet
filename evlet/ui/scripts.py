@@ -16,7 +16,7 @@ def compile_scripts(registry):
     """({model: {'url', 'on_open'?}}, {hash: folder}) for the documents that declare Meta.script.
 
     Checked at start-up: the file exists and ends in .js; a script belongs to a document, not to a Table row (ledger
-    models and prompts refuse Meta.script when defined); every hook (a field's on_change, tooltip=Js, look=Js and control, Meta.on_open and a
+    models refuse Meta.script when defined, and a prompt's is checked then too, prompt_script); every hook (a field's on_change, tooltip=Js, look=Js and control, Meta.on_open and a
     custom layout block) is on a document with a script. Raises ValueError naming the model."""
     from ..fields import script_method
     roots, scripts, uses = {}, {}, {}
@@ -80,6 +80,18 @@ def compile_extensions(registry, extensions):
     return {model: tuple(items) for model, items in result.items()}
 
 
+# Script folders of prompts, which are not in a registry: a prompt names its script when its class is defined.
+PROMPT_ROOTS = {}
+
+
+def prompt_script(prompt, script, on_open):
+    """A prompt's Meta.script as the open response carries it; raises ValueError naming the prompt and the path."""
+    folder, path = located(prompt, script)
+    digest = fingerprint(folder)
+    PROMPT_ROOTS[digest] = folder
+    return {'url': f'{PREFIX}{digest}/{path}', **({'on_open': on_open} if on_open else {})}
+
+
 def located(model, script):
     """(folder, path) of a model's Meta.script; raises ValueError naming the model and the path."""
     where = f'{model.__name__}.Meta.script'
@@ -107,7 +119,7 @@ def script_response(registry, path):
     """GET /assets/scripts/<hash>/<path>: a .js file of a script folder, or None (404)."""
     from .serving import TYPES, _file, page
     digest, _, rest = path.removeprefix(PREFIX).partition('/')
-    folder = getattr(registry, 'script_roots', {}).get(digest)
+    folder = getattr(registry, 'script_roots', {}).get(digest) or PROMPT_ROOTS.get(digest)
     parts = PurePosixPath(rest).parts
     if folder is None or not rest.endswith('.js') or '\\' in rest or any(part == '..' or part.startswith('.') for part in parts):
         return None

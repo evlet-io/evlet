@@ -5,9 +5,10 @@
 // docs/prompts.md.
 
 import { html, type Child } from '../dom';
-import { effect } from '../reactive';
+import { cell, effect } from '../reactive';
 import { ApiError, ConflictError, ValidationError, type FieldErrors } from '../api';
 import { RecordStore, type Row } from '../model/record';
+import { loadScript, ScriptHost, type ScriptPage } from '../model/script';
 import { SchemaIndex, type FieldSchema, type ModelSchema } from '../model/schema';
 import { autofocusForm, initialFocusField } from '../ui/autofocus';
 import { ChildTable } from '../ui/childtable';
@@ -128,6 +129,24 @@ interface SheetOptions {
   send: (values: Record<string, unknown>) => Promise<void>;
 }
 
+/** Ask a model script's yes-or-no question (this.ui.confirm); resolves true for OK. */
+export function confirmText(text: string): Promise<boolean> {
+  return new Promise(resolve => {
+    let answered = false;
+    const answer = (value: boolean, done: () => void) => { answered = true; resolve(value); done(); };
+    openModal({ title: text, icon: 'info', narrow: true, body: () => null,
+      footer: done => DialogFooter({ cancel: () => answer(false, done), submit: { label: 'OK', variant: 'primary', onClick: () => answer(true, done) } }),
+      onClose: () => { if (!answered) resolve(false); } });
+  });
+}
+
+/** What a prompt's model script may do: a prompt has no saved record, so call, move, save and reload reject. */
+function promptPage(ctx: AppContext): ScriptPage {
+  const none = () => Promise.reject(new Error('A prompt has no saved record: call, move, save and reload work on a record page'));
+  return { api: ctx.api, locked: cell(false), call: none, move: none, save: none, reload: none, toast: text => { toast(text); },
+    confirm: confirmText, open: (model, id) => void ctx.router.go('record', { model, id }) };
+}
+
 /** The modal on the record engine. Resolves true once sent, false when closed. */
 async function sheet(ctx: AppContext, options: SheetOptions): Promise<boolean> {
   const index = new SchemaIndex({ ...ctx.schema.schema, models: [...ctx.schema.schema.models, ...options.models] });
@@ -135,6 +154,13 @@ async function sheet(ctx: AppContext, options: SheetOptions): Promise<boolean> {
   await store.create(options.values);
   const model = index.model(options.name) as ScreenModel;
   const groups = sections(model);
+  // The prompt's model script (Meta.script), loaded as on a record page once the values from load() are in. Closing
+  // the modal makes its views inert; it never submits or closes the prompt.
+  const script = model.script ? new ScriptHost(store, promptPage(ctx)) : null;
+  if (script && model.script) {
+    const { url, on_open } = model.script;
+    void loadScript(url).then(Script => script.start(Script, on_open), error => console.error(`${options.name} script could not load`, error));
+  }
   if (options.errors && Object.keys(options.errors).length) store.showErrors(options.errors);
 
   // Without a finite plan (string computes), the server calculates: ask it after each change, newest answer wins.
@@ -165,7 +191,7 @@ async function sheet(ctx: AppContext, options: SheetOptions): Promise<boolean> {
 
   return new Promise(resolve => {
     let settled = false, busy = false;
-    const finish = (sent: boolean) => { if (!settled) { settled = true; store.dispose(); resolve(sent); } };
+    const finish = (sent: boolean) => { if (!settled) { settled = true; script?.dispose(); store.dispose(); resolve(sent); } };
     const submit = async (close: () => void) => {
       if (busy || !commitTyped()) return;
       busy = true;
