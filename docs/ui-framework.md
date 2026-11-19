@@ -733,7 +733,10 @@ mount(document.querySelector('#app')!, () => DocFrame({
   handle, so rows and sections still reorder by touch. The footer and the totals under it come from the parent's calculated
   sums over the table (`total = lines.sum("amount")`). A column's sum shows once: in the total line while
   the column shows, and under the table only while it is hidden; totals built from those sums (a grand
-  total) stay under the table. Only rows in view are in the DOM.
+  total) stay under the table. A table whose schema entry has `totals` (`Table(totals=...)`) shows those fields
+  of the parent instead, as a stack (`.g-totals`, one `.g-tl[data-field]` line each, the last `.gt`): each is a
+  read-only value or, while `field.editable` holds, its `FieldControl` with its error, and is hidden while its
+  applies rule is false. Only rows in view are in the DOM.
 - **DataTable** sorts (exact for decimals), resizes (double click resets), reorders columns
   (drag a header, or Alt and an arrow, within the pinned or the scrolling range), pins columns on
   the left (`pinned`, default 1, or the saved range), selects rows, moves with the arrow keys and

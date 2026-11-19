@@ -342,7 +342,8 @@ def schema(registry, prompt, name):
         'behavior': {key: {kind: {item: rule(value) for item, value in entry.items()} if kind == 'filters' else rule(entry)
                            for kind, entry in value.items()} for key, value in plans(prompt).items()},
         'children': [{'name': table, 'model': declared.child.__form_name__, 'label': declared.label or table.replace('_', ' ').capitalize(),
-                      'row_changes': True, 'min_rows': declared.min_rows, 'max_rows': min(declared.max_rows, 100)}
+                      'row_changes': True, 'min_rows': declared.min_rows, 'max_rows': min(declared.max_rows, 100),
+                      **({'totals': list(declared.totals)} if declared.totals else {})}
                      for table, declared in prompt.__tables__.items()],
         'permissions': {'create': True, 'update': True, 'delete': False}, 'actions': [], 'autosave': False,
         **({'focus': option(prompt, 'focus')} if option(prompt, 'focus') else {}),

@@ -157,6 +157,24 @@ def check_search_meta(name, meta, fields):
             raise ValueError(f'{name}.Meta.option: Ref() reads the form a Link is on; declare it in that Link\'s option=')
 
 
+def check_totals(name, fields, tables):
+    """Table(totals=...): each name is a shown field of the owning model, listed once, under one Table."""
+    owners = {}
+    for table_name, table in tables.items():
+        for field in getattr(table, 'totals', ()):
+            where = f'{name}.{table_name}: totals names {field!r}'
+            if field in tables:
+                raise ValueError(f'{where}, which is a Table; name fields of {name}')
+            if field not in fields:
+                raise ValueError(f'{where}, which is not a field of {name}')
+            if fields[field].hidden:
+                raise ValueError(f'{where}, which is hidden=True; a total shows on the form')
+            if field in owners:
+                raise ValueError(f'{where} twice' if owners[field] == table_name
+                                 else f'{where}, which is already in the totals of {owners[field]}')
+            owners[field] = table_name
+
+
 class ModelType(type):
     def __new__(mcls, name, bases, namespace):
         fields = {}
@@ -221,6 +239,7 @@ class ModelType(type):
         cls.__app_fields__ = MappingProxyType(fields)
         cls.__app_stored__ = MappingProxyType({key: value for key, value in fields.items() if value.stored})
         cls.__tables__ = MappingProxyType(tables)
+        check_totals(name, fields, tables)
         if getattr(cls, '__transient__', False) and any(getattr(table, 'sections', False) for table in tables.values()):
             raise ValueError(f'{name}: section rows (Table(..., sections=True)) are for Tables of saved records, '
                              'not dialogs, reports or slips')

@@ -32,10 +32,11 @@ class Table:
 
     `applies_when` and `visible_when` are finite Booleans on the record that owns the rows, as on a field:
     while applies_when is false the Table is hidden, calculations read it as empty and a save removes
-    its rows; while visible_when is false it is only hidden (docs/finite-calculations.md#field-rules)."""
+    its rows; while visible_when is false it is only hidden (docs/finite-calculations.md#field-rules).
+    `totals` names fields of the owning model shown under the table, in order (checked when the model is defined)."""
     def __init__(self, child, *, required=False, min_rows=None, max_rows=DEFAULT_TABLE_ROWS, label=None,
                  storage_name=None, owner_field='evlet_owner', panel=True, copy=True, sections=False, derived=False,
-                 applies_when=None, visible_when=None):
+                 applies_when=None, visible_when=None, totals=()):
         for name, value in (('min_rows', min_rows), ('max_rows', max_rows)):
             if value is not None and (type(value) is not int or value < 0):
                 raise ValueError(f'Table {name} must be a nonnegative integer')
@@ -67,6 +68,9 @@ class Table:
         if type(derived) is not bool:
             raise ValueError('Table derived must be True or False')
         self.derived = derived
+        if not isinstance(totals, (tuple, list)) or not all(type(name) is str for name in totals):
+            raise ValueError('Table totals must be a tuple of field names of the owning model')
+        self.totals = tuple(totals)
         from .fields import _finite_option
         self.applies_when = _finite_option(applies_when, 'applies_when')
         self.visible_when = _finite_option(visible_when, 'visible_when')

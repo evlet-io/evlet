@@ -196,6 +196,10 @@ def layout_blocks(model, layout, visible, label):
     where = f'{model.__name__}.Meta.layout'
     known = getattr(model, '__tables__', {})
     warnings, blocks, placed, names = [], [], set(), set()
+    # A field in a Table's totals shows under that Table (Table(totals=...)), so it counts as placed.
+    totals = {field: table for table, item in known.items() for field in getattr(item, 'totals', ()) if field in visible}
+    placed.update(totals)
+    kept_totals = set()
 
     def warn(item, text):
         warnings.append(f'{where}: {item!r} {text}; it is ignored')
@@ -224,6 +228,14 @@ def layout_blocks(model, layout, visible, label):
         for name in listed:
             if type(name) is str and name in known:
                 warn(item, f'names the Table {name!r} among its fields; give it its own block')
+            elif type(name) is str and name in totals:
+                # Kept in the group, so a role that cannot read the Table still sees it here (the browser drops it
+                # while the Table shows).
+                warn(item, f'names {name!r}, which shows in the totals of the Table {totals[name]!r} '
+                           '(only a role that cannot read that Table sees it here)')
+                if name not in kept_totals:
+                    kept_totals.add(name)
+                    kept.append(name)
             elif type(name) is not str or name not in visible:
                 warn(item, f'names {name!r}, which is not a visible field of {model.__name__}')
             elif name in placed:
@@ -270,8 +282,9 @@ def layout_blocks(model, layout, visible, label):
             raise ValueError(f'{where}: Tab was removed, record pages have no tabs; use Main(...) and Section(...)')
     for block in (layout or ())[MAX_BLOCKS:]:
         warn(block, f'is past the limit of {MAX_BLOCKS} blocks')
+    details = (('Details', shown),) if (shown := tuple(name for name in visible if name not in totals)) else ()
     main_group = {'collapsible': False, 'collapsed': False, 'flow': 'rows', 'main': True}
-    for block in (('Details', tuple(visible)),) if layout is None else layout[:MAX_BLOCKS]:
+    for block in details if layout is None else layout[:MAX_BLOCKS]:
         say = lambda text, block=block: warn(block, text)
         if isinstance(block, Main):
             for key in block.unknown:

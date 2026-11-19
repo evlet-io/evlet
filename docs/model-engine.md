@@ -551,6 +551,13 @@ Currency field's scale belongs to the framework and checksums as 2, and saved do
 calculation version, so they stay editable after the move (also when a formula reads the Link its
 currency comes through, such as `customer` for `currency='customer.currency'`).
 
+`Table(Line, totals=("net_total", "discount_percent", "discount_amount", "tax_total", "grand_total"))`
+names fields of the model that owns the table, in display order, to show as a stack under it: a
+document's Net total, Discount, Tax and Grand total ([ui.md](ui.md#record-layouts)). They are
+ordinary fields: nothing new is stored and no calculation changes. Defining the model fails, naming
+the model, the table and the field, when a name is not a field of that model, is a Table, is
+`hidden=True`, is listed twice, or is already in the totals of another Table.
+
 `Percent` and `Duration` work as numbers in finite expressions; `Phone` works as text.
 `Time`, `Tags` and references cannot be used in calculations.
 

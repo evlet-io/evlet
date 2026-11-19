@@ -2,7 +2,7 @@
 
 from datetime import date
 
-from evlet import Child, Currency, Date, Decimal, Js, Link, Main, Outcome, Prompt, Select, Table, Text, ValidationError, validate
+from evlet import Child, Currency, Date, Decimal, Js, Link, Main, Outcome, Percent, Prompt, Select, Table, Text, ValidationError, validate
 from evlet.calc import F
 
 from .items import UNITS
@@ -69,13 +69,18 @@ class QuickInvoice(Prompt):
         rate = Currency(currency='AED', minimum='0', default='0.00', help_text='per {uom}')
         amount = Currency(currency='AED', compute=F('qty') * F('rate'))
 
-    lines = Table(Line, required=True)
+    # totals= puts these fields under the lines, in this order: the discount is typed in its line and the
+    # lines below it follow at once. The last line reads as the grand total.
+    lines = Table(Line, required=True, totals=('total', 'discount_percent', 'discount', 'grand_total'))
     # The same help text template works on a form field: it follows the customer picked above.
-    total = Currency(currency='AED', compute=lines.sum('amount'), help_text='Invoiced to {customer}')
+    total = Currency(currency='AED', compute=lines.sum('amount'), label='Net total', help_text='Invoiced to {customer}')
+    discount_percent = Percent(default='0', label='Discount %')
+    discount = Currency(currency='AED', compute=F('total') * F('discount_percent') / 100)
+    grand_total = Currency(currency='AED', compute=F('total') - F('discount'), label='Grand total')
 
     def submit(self):
         return Outcome(new=(Invoice, {'customer': self.customer, 'reference': self.reference,
-                                      'posting_date': date.today(), 'total': self.total}))
+                                      'posting_date': date.today(), 'total': self.grand_total}))
 
 
 def quick_invoice(context):

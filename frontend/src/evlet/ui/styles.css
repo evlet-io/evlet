@@ -996,6 +996,17 @@ th:hover>.rz::after{background:var(--border-strong)}
 .g-sum span{font-size:11.5px;color:var(--fg-3)}
 .g-sum b{font-size:13px;font-weight:600}
 .g-sum .gt b{font-size:15px}
+.g-totals{display:flex;flex-direction:column;gap:6px;min-width:min(320px,100%)}
+.g-tl{display:grid;grid-template-columns:1fr minmax(0,160px);gap:2px 16px;align-items:center}
+.g-tl[hidden]{display:none}
+.g-tl>span:first-child{color:var(--fg-3)}
+.g-tl>b{font-weight:600;text-align:right;font-size:13px}
+.g-tl .input{height:28px;text-align:right}
+.g-tl .err{grid-column:1/-1;text-align:right;color:var(--t-rose);display:none}
+.g-tl.invalid .err{display:block}
+.g-tl.gt{border-top:1px solid var(--border);padding-top:6px}
+.g-tl.gt>span:first-child{color:var(--fg);font-weight:600}
+.g-tl.gt>b{font-size:15px}
 .g td.g-empty{height:auto;padding:28px 0}
 .g-empty-in{display:flex;flex-direction:column;align-items:center;gap:8px;color:var(--fg-3);position:sticky;left:0;width:var(--gw,100%)}
 .cols-pop{width:284px}
@@ -1044,7 +1055,7 @@ th:hover>.rz::after{background:var(--border-strong)}
   .stat-card.has-ic .stat-ic{display:none}
   .stat-card.has-ic .stat-dot{display:inline-block}
   .fs-g{grid-template-columns:1fr}
-  .g-sum{width:100%;justify-content:flex-end}
+  .g-sum,.g-totals{width:100%;justify-content:flex-end}
   .g-x-f .fld.wide{grid-column:1/-1}
   .fab-btn span:not(.fab-n){display:none}
   .table-wrap{max-height:none}

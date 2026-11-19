@@ -7241,6 +7241,1979 @@
   "etag": null,
   "status": 201
  },
+ "totals_bill": {
+  "body": {
+   "_audit": {
+    "created_at": "2026-11-04T10:07:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T10:07:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "owner"
+    }
+   },
+   "approved": false,
+   "children": {
+    "lines": [
+     {
+      "amount": "200.00",
+      "id": "0000000000001",
+      "item": "Survey",
+      "qty": "2.0000",
+      "rate": "100.00"
+     },
+     {
+      "amount": "50.00",
+      "id": "0000000000002",
+      "item": "Report",
+      "qty": "1.0000",
+      "rate": "50.00"
+     }
+    ]
+   },
+   "discount": "0.00",
+   "discount_percent": "0.00",
+   "freight": null,
+   "grand_total": "250.00",
+   "handling": "0.00",
+   "hide_lines": false,
+   "id": "0000000000001",
+   "name": null,
+   "net_total": "250.00",
+   "shipped": false,
+   "title": "Harbour works"
+  },
+  "etag": "\"2c752051ad89fed88a225919d836add09b112f7e519cd567f448ceca9a55c79a\"",
+  "status": 200
+ },
+ "totals_empty": {
+  "body": {
+   "_audit": {
+    "created_at": "2026-11-04T10:10:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T10:10:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "owner"
+    }
+   },
+   "approved": false,
+   "children": {
+    "lines": []
+   },
+   "discount": "0.00",
+   "discount_percent": "0.00",
+   "freight": null,
+   "grand_total": "0.00",
+   "handling": "0.00",
+   "hide_lines": false,
+   "id": "0000000000002",
+   "name": null,
+   "net_total": "0.00",
+   "shipped": false,
+   "title": "Empty"
+  },
+  "etag": "\"0bf501d9c9133516e23ec204b52372ef323b74b469a90b057c863762c59e2004\"",
+  "status": 200
+ },
+ "totals_prompt": {
+  "body": {
+   "_audit": {
+    "created_at": "2026-11-04T10:07:00.000Z",
+    "created_by": {
+     "id": 2,
+     "name": "owner"
+    },
+    "modified_at": "2026-11-04T10:07:00.000Z",
+    "modified_by": {
+     "id": 2,
+     "name": "owner"
+    }
+   },
+   "_calculation": {
+    "language": "finite-v1",
+    "model_schema_hash": "sha256:4bdc5af83f2e3610f37ae7a70d97773d7bcd08638d32e84afd01a34f7ed34c1c"
+   },
+   "_outcome": {
+    "prompt": {
+     "errors": {},
+     "models": [
+      {
+       "actions": [],
+       "autosave": false,
+       "behavior": {
+        "discount_percent": {},
+        "grand_total": {
+         "finite": true
+        },
+        "net_total": {
+         "finite": true
+        }
+       },
+       "calculation": {
+        "capabilities": {},
+        "language": "finite-v1",
+        "model_schema_hash": "sha256:2f300dd1e21376336fb7dfc4360c0374ae780bb1d64718043da359c277723b36",
+        "numeric_profile": "finite40-hu18-v1",
+        "plan": {
+         "compiler_version": "evlet-finite-1",
+         "expression_version": 1,
+         "fields": [
+          {
+           "expression": {
+            "$expr": "aggregate",
+            "field": "amount",
+            "kind": "sum",
+            "table": "lines",
+            "where": null
+           },
+           "field": "net_total",
+           "path": [],
+           "reads": [
+            [
+             "membership",
+             "lines",
+             null
+            ],
+            [
+             "member",
+             "lines",
+             "amount"
+            ]
+           ],
+           "result_type": "decimal",
+           "rounding": "half_up",
+           "scale": 6,
+           "stored": true,
+           "target": "net_total",
+           "target_type": "currency"
+          },
+          {
+           "expression": {
+            "$expr": "div",
+            "args": [
+             {
+              "$expr": "mul",
+              "args": [
+               {
+                "$expr": "ref",
+                "field": "net_total",
+                "scope": "self"
+               },
+               {
+                "$expr": "sub",
+                "args": [
+                 {
+                  "$expr": "literal",
+                  "type": "decimal",
+                  "value": "100"
+                 },
+                 {
+                  "$expr": "ref",
+                  "field": "discount_percent",
+                  "scope": "self"
+                 }
+                ]
+               }
+              ]
+             },
+             {
+              "$expr": "literal",
+              "type": "decimal",
+              "value": "100"
+             }
+            ]
+           },
+           "field": "grand_total",
+           "path": [],
+           "reads": [
+            [
+             "self",
+             null,
+             "net_total"
+            ],
+            [
+             "self",
+             null,
+             "discount_percent"
+            ]
+           ],
+           "result_type": "decimal",
+           "rounding": "half_up",
+           "scale": 6,
+           "stored": true,
+           "target": "grand_total",
+           "target_type": "currency"
+          }
+         ],
+         "language": "finite-v1",
+         "limits": {
+          "collection_rows": 1000,
+          "decimal_text": 128,
+          "document_rows": 5000,
+          "evaluation_steps": 1000000,
+          "expression_depth": 32,
+          "expression_nodes": 128,
+          "graph_edges": 250000,
+          "graph_nodes": 50000,
+          "table_depth": 8
+         },
+         "model_schema_hash": "sha256:2f300dd1e21376336fb7dfc4360c0374ae780bb1d64718043da359c277723b36",
+         "numeric_profile": "finite40-hu18-v1",
+         "plan_version": 1,
+         "root_resource": "_prompt.quick_bill",
+         "tables": {
+          "$root": {
+           "fields": {
+            "discount_percent": {
+             "computed": false,
+             "default": {
+              "value": "0"
+             },
+             "kind": "percent",
+             "maximum": "100",
+             "minimum": "0",
+             "required": false,
+             "scale": 2,
+             "stored": true,
+             "type": "decimal"
+            },
+            "grand_total": {
+             "computed": true,
+             "default": null,
+             "kind": "currency",
+             "maximum": null,
+             "minimum": null,
+             "required": false,
+             "scale": 6,
+             "stored": true,
+             "type": "decimal"
+            },
+            "net_total": {
+             "computed": true,
+             "default": null,
+             "kind": "currency",
+             "maximum": null,
+             "minimum": null,
+             "required": false,
+             "scale": 6,
+             "stored": true,
+             "type": "decimal"
+            }
+           },
+           "model": "_prompt.quick_bill",
+           "path": [],
+           "tables": [
+            "lines"
+           ]
+          },
+          "lines[*]": {
+           "fields": {
+            "amount": {
+             "computed": false,
+             "default": {
+              "value": "0"
+             },
+             "kind": "currency",
+             "maximum": null,
+             "minimum": null,
+             "required": false,
+             "scale": 6,
+             "stored": true,
+             "type": "decimal"
+            },
+            "item": {
+             "computed": false,
+             "default": null,
+             "kind": "text",
+             "maximum": null,
+             "minimum": null,
+             "required": false,
+             "scale": null,
+             "stored": true,
+             "type": "text"
+            }
+           },
+           "max_rows": 100,
+           "min_rows": 0,
+           "model": "_prompt.quick_bill.lines",
+           "path": [
+            "lines"
+           ],
+           "tables": []
+          }
+         }
+        }
+       },
+       "children": [
+        {
+         "label": "Lines",
+         "max_rows": 100,
+         "min_rows": 0,
+         "model": "_prompt.quick_bill.lines",
+         "name": "lines",
+         "row_changes": true,
+         "totals": [
+          "net_total",
+          "discount_percent",
+          "grand_total"
+         ]
+        }
+       ],
+       "fields": [
+        {
+         "default_kind": "none",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Net total",
+         "maximum": null,
+         "minimum": null,
+         "name": "net_total",
+         "placeholder": "",
+         "read_only": true,
+         "required": false,
+         "scale": 6,
+         "stored": true,
+         "type": "currency",
+         "unique": false
+        },
+        {
+         "default": "0.00",
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Discount %",
+         "maximum": "100",
+         "minimum": "0",
+         "name": "discount_percent",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "scale": 2,
+         "stored": true,
+         "type": "percent",
+         "unique": false
+        },
+        {
+         "default_kind": "none",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Grand total",
+         "maximum": null,
+         "minimum": null,
+         "name": "grand_total",
+         "placeholder": "",
+         "read_only": true,
+         "required": false,
+         "scale": 6,
+         "stored": true,
+         "type": "currency",
+         "unique": false
+        }
+       ],
+       "label": "Quick bill",
+       "layout": [],
+       "list_fields": [],
+       "name": "_prompt.quick_bill",
+       "permissions": {
+        "create": true,
+        "delete": false,
+        "update": true
+       },
+       "plural": "Quick bill",
+       "record_layout": {
+        "blocks": [
+         {
+          "kind": "table",
+          "main": true,
+          "name": "lines"
+         }
+        ]
+       },
+       "search_fields": [],
+       "title_field": "id"
+      },
+      {
+       "actions": [],
+       "autosave": false,
+       "behavior": {
+        "amount": {},
+        "item": {}
+       },
+       "child_only": true,
+       "children": [],
+       "fields": [
+        {
+         "default_kind": "none",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Item",
+         "max_length": 255,
+         "name": "item",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "stored": true,
+         "type": "text",
+         "unique": false
+        },
+        {
+         "default": "0.00",
+         "default_kind": "static",
+         "help_text": "",
+         "hidden": false,
+         "index": false,
+         "label": "Amount",
+         "maximum": null,
+         "minimum": null,
+         "name": "amount",
+         "placeholder": "",
+         "read_only": false,
+         "required": false,
+         "scale": 6,
+         "stored": true,
+         "type": "currency",
+         "unique": false
+        }
+       ],
+       "label": "QuickLine",
+       "layout": [
+        {
+         "collapsed": false,
+         "collapsible": false,
+         "fields": [
+          "item",
+          "amount"
+         ],
+         "flow": "rows",
+         "label": "Details",
+         "main": true
+        }
+       ],
+       "list_fields": [],
+       "name": "_prompt.quick_bill.lines",
+       "permissions": {
+        "create": true,
+        "delete": false,
+        "update": true
+       },
+       "plural": "QuickLine",
+       "record_layout": {
+        "blocks": [
+         {
+          "kind": "section",
+          "label": "Details",
+          "main": true,
+          "name": "Details"
+         }
+        ]
+       },
+       "search_fields": [],
+       "title_field": "id"
+      }
+     ],
+     "name": "_prompt.quick_bill",
+     "primary": "Submit",
+     "source": {
+      "id": "0000000000001",
+      "model": "bill",
+      "title": "Harbour works"
+     },
+     "states": {},
+     "ticket": "fixture-totals-ticket",
+     "title": "Quick bill",
+     "values": {
+      "_sources": {},
+      "children": {},
+      "discount_percent": "0.00",
+      "grand_total": "0.00",
+      "net_total": "0.00"
+     }
+    }
+   },
+   "approved": false,
+   "children": {
+    "lines": [
+     {
+      "amount": "200.00",
+      "id": "0000000000001",
+      "item": "Survey",
+      "qty": "2.0000",
+      "rate": "100.00"
+     },
+     {
+      "amount": "50.00",
+      "id": "0000000000002",
+      "item": "Report",
+      "qty": "1.0000",
+      "rate": "50.00"
+     }
+    ]
+   },
+   "discount": "0.00",
+   "discount_percent": "0.00",
+   "freight": null,
+   "grand_total": "250.00",
+   "handling": "0.00",
+   "hide_lines": false,
+   "id": "0000000000001",
+   "name": null,
+   "net_total": "250.00",
+   "shipped": false,
+   "title": "Harbour works"
+  },
+  "etag": "\"2c752051ad89fed88a225919d836add09b112f7e519cd567f448ceca9a55c79a\"",
+  "status": 200
+ },
+ "totals_schema": {
+  "body": {
+   "currency_decimals": {
+    "BHD": 3,
+    "BIF": 0,
+    "CLF": 4,
+    "CLP": 0,
+    "DJF": 0,
+    "GNF": 0,
+    "IQD": 3,
+    "ISK": 0,
+    "JOD": 3,
+    "JPY": 0,
+    "KMF": 0,
+    "KRW": 0,
+    "KWD": 3,
+    "LYD": 3,
+    "OMR": 3,
+    "PYG": 0,
+    "RWF": 0,
+    "TND": 3,
+    "UGX": 0,
+    "UYI": 0,
+    "UYW": 4,
+    "VND": 0,
+    "VUV": 0,
+    "XAF": 0,
+    "XOF": 0,
+    "XPF": 0
+   },
+   "models": [
+    {
+     "actions": [
+      {
+       "arguments": [],
+       "available_when": null,
+       "guarded": false,
+       "inputs": [],
+       "label": "Quick bill",
+       "name": "quick_bill",
+       "roles": [
+        "admin",
+        "editor"
+       ]
+      }
+     ],
+     "attachments": false,
+     "autosave": true,
+     "behavior": {
+      "approved": {},
+      "discount": {
+       "finite": true
+      },
+      "discount_percent": {},
+      "freight": {},
+      "grand_total": {
+       "finite": true
+      },
+      "handling": {},
+      "hide_lines": {},
+      "name": {},
+      "net_total": {
+       "finite": true
+      },
+      "shipped": {},
+      "title": {}
+     },
+     "calculation": {
+      "capabilities": {
+       "discount": "local_universal",
+       "grand_total": "local_universal",
+       "lines[*].amount": "local_universal",
+       "net_total": "local_universal"
+      },
+      "language": "finite-v1",
+      "model_schema_hash": "sha256:4bdc5af83f2e3610f37ae7a70d97773d7bcd08638d32e84afd01a34f7ed34c1c",
+      "numeric_profile": "finite40-hu18-v1",
+      "plan": {
+       "compiler_version": "evlet-finite-1",
+       "expression_version": 1,
+       "fields": [
+        {
+         "expression": {
+          "$expr": "round",
+          "args": [
+           {
+            "$expr": "mul",
+            "args": [
+             {
+              "$expr": "ref",
+              "field": "qty",
+              "scope": "self"
+             },
+             {
+              "$expr": "ref",
+              "field": "rate",
+              "scope": "self"
+             }
+            ]
+           },
+           {
+            "$expr": "literal",
+            "type": "integer",
+            "value": 2
+           }
+          ]
+         },
+         "field": "amount",
+         "path": [
+          "lines"
+         ],
+         "reads": [
+          [
+           "self",
+           null,
+           "qty"
+          ],
+          [
+           "self",
+           null,
+           "rate"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 6,
+         "stored": true,
+         "target": "lines[*].amount",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "aggregate",
+          "field": "amount",
+          "kind": "sum",
+          "table": "lines",
+          "where": null
+         },
+         "field": "net_total",
+         "path": [],
+         "reads": [
+          [
+           "membership",
+           "lines",
+           null
+          ],
+          [
+           "member",
+           "lines",
+           "amount"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 6,
+         "stored": true,
+         "target": "net_total",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "approved",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "boolean",
+            "value": true
+           }
+          ]
+         },
+         "field": "discount_percent",
+         "kind": "locked_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "approved"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "discount_percent:locked_when",
+         "target_type": "percent"
+        },
+        {
+         "expression": {
+          "$expr": "round",
+          "args": [
+           {
+            "$expr": "div",
+            "args": [
+             {
+              "$expr": "mul",
+              "args": [
+               {
+                "$expr": "ref",
+                "field": "net_total",
+                "scope": "self"
+               },
+               {
+                "$expr": "ref",
+                "field": "discount_percent",
+                "scope": "self"
+               }
+              ]
+             },
+             {
+              "$expr": "literal",
+              "type": "decimal",
+              "value": "100"
+             }
+            ]
+           },
+           {
+            "$expr": "literal",
+            "type": "integer",
+            "value": 2
+           }
+          ]
+         },
+         "field": "discount",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "net_total"
+          ],
+          [
+           "self",
+           null,
+           "discount_percent"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 6,
+         "stored": true,
+         "target": "discount",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "shipped",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "boolean",
+            "value": true
+           }
+          ]
+         },
+         "field": "freight",
+         "kind": "applies_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "shipped"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "freight:applies_when",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "shipped",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "boolean",
+            "value": true
+           }
+          ]
+         },
+         "field": "handling",
+         "kind": "visible_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "shipped"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "target": "handling:visible_when",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "sub",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "net_total",
+            "scope": "self"
+           },
+           {
+            "$expr": "ref",
+            "field": "discount",
+            "scope": "self"
+           }
+          ]
+         },
+         "field": "grand_total",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "net_total"
+          ],
+          [
+           "self",
+           null,
+           "discount"
+          ]
+         ],
+         "result_type": "decimal",
+         "rounding": "half_up",
+         "scale": 6,
+         "stored": true,
+         "target": "grand_total",
+         "target_type": "currency"
+        },
+        {
+         "expression": {
+          "$expr": "eq",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "hide_lines",
+            "scope": "self"
+           },
+           {
+            "$expr": "literal",
+            "type": "boolean",
+            "value": false
+           }
+          ]
+         },
+         "field": "lines",
+         "kind": "visible_when",
+         "path": [],
+         "reads": [
+          [
+           "self",
+           null,
+           "hide_lines"
+          ]
+         ],
+         "result_type": "boolean",
+         "rounding": null,
+         "scale": null,
+         "stored": true,
+         "table": true,
+         "target": "lines:visible_when",
+         "target_type": "table"
+        }
+       ],
+       "language": "finite-v1",
+       "limits": {
+        "collection_rows": 1000,
+        "decimal_text": 128,
+        "document_rows": 5000,
+        "evaluation_steps": 1000000,
+        "expression_depth": 32,
+        "expression_nodes": 128,
+        "graph_edges": 250000,
+        "graph_nodes": 50000,
+        "table_depth": 8
+       },
+       "model_schema_hash": "sha256:6574dc0d2ccea636591736bf86f8eed4c06f49d0a9de516becf6d5293e06998b",
+       "numeric_profile": "finite40-hu18-v1",
+       "plan_version": 1,
+       "root_resource": "bill",
+       "source_plan_hash": "sha256:4bdc5af83f2e3610f37ae7a70d97773d7bcd08638d32e84afd01a34f7ed34c1c",
+       "tables": {
+        "$root": {
+         "fields": {
+          "approved": {
+           "computed": false,
+           "default": {
+            "value": false
+           },
+           "kind": "boolean",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "boolean"
+          },
+          "discount": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 6,
+           "stored": true,
+           "type": "decimal"
+          },
+          "discount_percent": {
+           "computed": false,
+           "default": {
+            "value": "0"
+           },
+           "kind": "percent",
+           "maximum": "100",
+           "minimum": "0",
+           "required": false,
+           "scale": 2,
+           "stored": true,
+           "type": "decimal"
+          },
+          "freight": {
+           "computed": false,
+           "default": {
+            "value": "0"
+           },
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 6,
+           "stored": true,
+           "type": "decimal"
+          },
+          "grand_total": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 6,
+           "stored": true,
+           "type": "decimal"
+          },
+          "handling": {
+           "computed": false,
+           "default": {
+            "value": "0"
+           },
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 6,
+           "stored": true,
+           "type": "decimal"
+          },
+          "hide_lines": {
+           "computed": false,
+           "default": {
+            "value": false
+           },
+           "kind": "boolean",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "boolean"
+          },
+          "name": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "net_total": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 6,
+           "stored": true,
+           "type": "decimal"
+          },
+          "shipped": {
+           "computed": false,
+           "default": {
+            "value": false
+           },
+           "kind": "boolean",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "boolean"
+          },
+          "title": {
+           "computed": false,
+           "default": {
+            "value": "bill"
+           },
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          }
+         },
+         "model": "bill",
+         "path": [],
+         "tables": [
+          "lines"
+         ]
+        },
+        "lines[*]": {
+         "fields": {
+          "amount": {
+           "computed": true,
+           "default": null,
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 6,
+           "stored": true,
+           "type": "decimal"
+          },
+          "item": {
+           "computed": false,
+           "default": null,
+           "kind": "text",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": null,
+           "stored": true,
+           "type": "text"
+          },
+          "qty": {
+           "computed": false,
+           "default": {
+            "value": "1"
+           },
+           "kind": "decimal",
+           "maximum": null,
+           "minimum": "0",
+           "required": false,
+           "scale": 4,
+           "stored": true,
+           "type": "decimal"
+          },
+          "rate": {
+           "computed": false,
+           "default": {
+            "value": "0"
+           },
+           "kind": "currency",
+           "maximum": null,
+           "minimum": null,
+           "required": false,
+           "scale": 6,
+           "stored": true,
+           "type": "decimal"
+          }
+         },
+         "max_rows": 100,
+         "min_rows": 0,
+         "model": "bill_lines",
+         "path": [
+          "lines"
+         ],
+         "tables": []
+        }
+       }
+      }
+     },
+     "child_only": false,
+     "children": [
+      {
+       "filterable": true,
+       "label": "Lines",
+       "link": "evlet_owner",
+       "max_rows": 100,
+       "min_rows": 0,
+       "model": "bill_lines",
+       "name": "lines",
+       "row_changes": true,
+       "totals": [
+        "net_total",
+        "discount_percent",
+        "discount",
+        "freight",
+        "handling",
+        "grand_total"
+       ]
+      }
+     ],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "bill",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Title",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "title",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": false,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Shipped",
+       "locked_when": null,
+       "name": "shipped",
+       "operators": [
+        "eq",
+        "ne",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "boolean",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": false,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Approved",
+       "locked_when": null,
+       "name": "approved",
+       "operators": [
+        "eq",
+        "ne",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "boolean",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": false,
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Hide lines",
+       "locked_when": null,
+       "name": "hide_lines",
+       "operators": [
+        "eq",
+        "ne",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "boolean",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "aggregate",
+        "field": "amount",
+        "kind": "sum",
+        "table": "lines",
+        "where": null
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Net total",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "net_total",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 6,
+       "stored": true,
+       "type": "currency",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Discount %",
+       "locked_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "approved",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "boolean",
+          "value": true
+         }
+        ]
+       },
+       "maximum": "100",
+       "minimum": "0",
+       "name": "discount_percent",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 2,
+       "stored": true,
+       "type": "percent",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "round",
+        "args": [
+         {
+          "$expr": "div",
+          "args": [
+           {
+            "$expr": "mul",
+            "args": [
+             {
+              "$expr": "ref",
+              "field": "net_total",
+              "scope": "self"
+             },
+             {
+              "$expr": "ref",
+              "field": "discount_percent",
+              "scope": "self"
+             }
+            ]
+           },
+           {
+            "$expr": "literal",
+            "type": "decimal",
+            "value": "100"
+           }
+          ]
+         },
+         {
+          "$expr": "literal",
+          "type": "integer",
+          "value": 2
+         }
+        ]
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Discount",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "discount",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 6,
+       "stored": true,
+       "type": "currency",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "shipped",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "boolean",
+          "value": true
+         }
+        ]
+       },
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Freight",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "freight",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 6,
+       "stored": true,
+       "type": "currency",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Handling",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "handling",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 6,
+       "stored": true,
+       "type": "currency",
+       "unique": false,
+       "visible_when": {
+        "$expr": "eq",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "shipped",
+          "scope": "self"
+         },
+         {
+          "$expr": "literal",
+          "type": "boolean",
+          "value": true
+         }
+        ]
+       }
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "sub",
+        "args": [
+         {
+          "$expr": "ref",
+          "field": "net_total",
+          "scope": "self"
+         },
+         {
+          "$expr": "ref",
+          "field": "discount",
+          "scope": "self"
+         }
+        ]
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Grand total",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "grand_total",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 6,
+       "stored": true,
+       "type": "currency",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": true,
+       "index": false,
+       "initial": null,
+       "label": "Name",
+       "locked_when": null,
+       "max_length": 140,
+       "name": "name",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": true,
+       "visible_when": null
+      }
+     ],
+     "label": "Bill",
+     "layout": [
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "title",
+        "shipped",
+        "approved",
+        "hide_lines"
+       ],
+       "flow": "rows",
+       "label": "Details",
+       "main": true
+      }
+     ],
+     "list_fields": [
+      "id",
+      "title",
+      "shipped",
+      "approved",
+      "hide_lines"
+     ],
+     "name": "bill",
+     "open_in": "page",
+     "order": [
+      "title",
+      "shipped",
+      "approved",
+      "hide_lines",
+      "net_total",
+      "discount_percent",
+      "discount",
+      "freight",
+      "handling",
+      "grand_total",
+      "name",
+      "lines.item",
+      "lines.qty",
+      "lines.rate",
+      "lines.amount"
+     ],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Bills",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       },
+       {
+        "kind": "table",
+        "main": true,
+        "name": "lines"
+       }
+      ]
+     },
+     "resource": "bill",
+     "search_fields": [
+      "title",
+      "name"
+     ],
+     "sources": {},
+     "title_field": "title"
+    },
+    {
+     "actions": [],
+     "attachments": false,
+     "autosave": true,
+     "behavior": {
+      "amount": {
+       "finite": true
+      },
+      "item": {},
+      "qty": {},
+      "rate": {}
+     },
+     "child_only": true,
+     "children": [],
+     "description": "",
+     "document_version": 1,
+     "fields": [
+      {
+       "applies_when": null,
+       "compute": null,
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Item",
+       "locked_when": null,
+       "max_length": 255,
+       "name": "item",
+       "operators": [
+        "eq",
+        "ne",
+        "in",
+        "nin",
+        "contains",
+        "icontains",
+        "nicontains",
+        "startswith",
+        "isnull"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "stored": true,
+       "type": "text",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "1.0000",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Qty",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": "0",
+       "name": "qty",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": null,
+       "default": "0.00",
+       "default_kind": "static",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Rate",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "rate",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": false,
+       "required": false,
+       "required_when": null,
+       "scale": 6,
+       "stored": true,
+       "type": "currency",
+       "unique": false,
+       "visible_when": null
+      },
+      {
+       "applies_when": null,
+       "compute": {
+        "$expr": "round",
+        "args": [
+         {
+          "$expr": "mul",
+          "args": [
+           {
+            "$expr": "ref",
+            "field": "qty",
+            "scope": "self"
+           },
+           {
+            "$expr": "ref",
+            "field": "rate",
+            "scope": "self"
+           }
+          ]
+         },
+         {
+          "$expr": "literal",
+          "type": "integer",
+          "value": 2
+         }
+        ]
+       },
+       "default_kind": "none",
+       "help_text": "",
+       "hidden": false,
+       "index": false,
+       "initial": null,
+       "label": "Amount",
+       "locked_when": null,
+       "maximum": null,
+       "minimum": null,
+       "name": "amount",
+       "operators": [
+        "eq",
+        "ne",
+        "gt",
+        "gte",
+        "lt",
+        "lte",
+        "between",
+        "isnull",
+        "in",
+        "nin"
+       ],
+       "placeholder": "",
+       "read_only": true,
+       "required": false,
+       "required_when": null,
+       "scale": 6,
+       "stored": true,
+       "type": "currency",
+       "unique": false,
+       "visible_when": null
+      }
+     ],
+     "label": "Bill line",
+     "layout": [
+      {
+       "collapsed": false,
+       "collapsible": false,
+       "fields": [
+        "item",
+        "qty",
+        "rate",
+        "amount"
+       ],
+       "flow": "rows",
+       "label": "Details",
+       "main": true
+      }
+     ],
+     "list_fields": [
+      "id",
+      "item",
+      "qty",
+      "rate",
+      "amount"
+     ],
+     "name": "bill_lines",
+     "open_in": "page",
+     "order": [],
+     "permissions": {
+      "create": true,
+      "delete": true,
+      "update": true
+     },
+     "plural": "Bill lines",
+     "record_layout": {
+      "blocks": [
+       {
+        "kind": "section",
+        "label": "Details",
+        "main": true,
+        "name": "Details"
+       }
+      ]
+     },
+     "resource": "Bill.lines",
+     "search_fields": [
+      "item"
+     ],
+     "sources": {},
+     "title_field": "item"
+    }
+   ],
+   "ui_version": 1,
+   "version": 1,
+   "workspaces": [
+    {
+     "app": "app",
+     "groups": [
+      {
+       "icon": null,
+       "items": [
+        {
+         "filters": null,
+         "key": "model:bill",
+         "kind": "model",
+         "label": "Bills",
+         "model": "bill",
+         "view": "list"
+        }
+       ],
+       "key": "documents",
+       "label": "Documents"
+      }
+     ],
+     "icon": "layers",
+     "key": "app",
+     "label": "Evlet",
+     "source": "automatic"
+    }
+   ]
+  },
+  "etag": null,
+  "status": 200
+ },
+ "totals_session": {
+  "body": {
+   "application": {
+    "docs": "/docs",
+    "name": "Evlet",
+    "playground": false
+   },
+   "csrf": "fixture-csrf-token",
+   "user": {
+    "id": 2,
+    "role": "admin",
+    "username": "owner"
+   }
+  },
+  "etag": null,
+  "status": 200
+ },
  "viewer_contact_detail": {
   "body": {
    "_audit": {
