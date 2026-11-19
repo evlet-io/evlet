@@ -7788,6 +7788,331 @@
      "tables": []
     }
    }
+  },
+  "suggest": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "coalesce",
+      "args": [
+       {
+        "$expr": "hop",
+        "field": "customer",
+        "steps": [
+         [
+          "customer",
+          "rate",
+          "decimal"
+         ]
+        ]
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "0"
+       }
+      ]
+     },
+     "field": "price",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "rate"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 2,
+     "stored": true,
+     "target": "price",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "hop",
+      "field": "customer",
+      "steps": [
+       [
+        "customer",
+        "rate",
+        "decimal"
+       ]
+      ]
+     },
+     "field": "direct",
+     "kind": "initial",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "rate"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 2,
+     "stored": true,
+     "target": "direct:initial",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "ref",
+      "field": "price",
+      "scope": "self"
+     },
+     "field": "via_calc",
+     "kind": "initial",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "price"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 2,
+     "stored": true,
+     "target": "via_calc:initial",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "hop",
+      "field": "customer",
+      "steps": [
+       [
+        "customer",
+        "region",
+        "link"
+       ]
+      ]
+     },
+     "field": "region",
+     "kind": "initial",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "customer"
+      ],
+      [
+       "lookup",
+       "customer",
+       "region"
+      ]
+     ],
+     "result_type": "link",
+     "rounding": null,
+     "scale": 0,
+     "stored": true,
+     "target": "region:initial",
+     "target_type": "link"
+    },
+    {
+     "expression": {
+      "$expr": "coalesce",
+      "args": [
+       {
+        "$expr": "hop",
+        "field": "region",
+        "steps": [
+         [
+          "region",
+          "grace",
+          "decimal"
+         ]
+        ]
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "1"
+       }
+      ]
+     },
+     "field": "grace",
+     "kind": "initial",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "region"
+      ],
+      [
+       "lookup",
+       "region",
+       "grace"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 0,
+     "stored": true,
+     "target": "grace:initial",
+     "target_type": "integer"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 1000,
+    "decimal_text": 128,
+    "document_rows": 5000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:cb485d6d373d122de2c6b3bc74f4cc405d82093736db96608ec3d43b2f047787",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "suggest",
+   "tables": {
+    "$root": {
+     "fields": {
+      "customer": {
+       "computed": false,
+       "default": null,
+       "kind": "link",
+       "maximum": null,
+       "minimum": "1",
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "link"
+      },
+      "direct": {
+       "computed": false,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "grace": {
+       "computed": false,
+       "default": null,
+       "kind": "integer",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "note": {
+       "computed": false,
+       "default": {
+        "value": ""
+       },
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "price": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      },
+      "region": {
+       "computed": false,
+       "default": null,
+       "kind": "link",
+       "maximum": null,
+       "minimum": "1",
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "link"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "via_calc": {
+       "computed": false,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 2,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "lookups": [
+      {
+       "fields": [
+        "rate",
+        "region"
+       ],
+       "model": "customer"
+      },
+      {
+       "fields": [
+        "grace"
+       ],
+       "model": "region"
+      }
+     ],
+     "model": "suggest",
+     "path": [],
+     "tables": []
+    }
+   }
   }
  },
  "scenarios": [
@@ -17821,6 +18146,433 @@
       "rate": "2.0005",
       "shared": "-2.00",
       "suggested": "4.001"
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "customer": 7,
+    "direct": "35",
+    "grace": 2,
+    "id": 6,
+    "region": 3,
+    "via_calc": "35"
+   },
+   "model": "suggest",
+   "name": "suggest-saved",
+   "steps": [
+    {
+     "changed": [
+      "direct:initial",
+      "grace:initial",
+      "price",
+      "region:initial",
+      "via_calc:initial"
+     ],
+     "requests": [
+      [
+       "customer",
+       "0000000000007",
+       [
+        "rate",
+        "region"
+       ]
+      ],
+      [
+       "region",
+       "0000000000003",
+       [
+        "grace"
+       ]
+      ]
+     ],
+     "rules": {},
+     "snapshot": {
+      "_states": {
+       "price": {
+        "causes": [
+         "@customer.0000000000007.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "customer": 7,
+      "direct": "35",
+      "grace": 2,
+      "id": 6,
+      "price": null,
+      "region": 3,
+      "via_calc": "35"
+     }
+    },
+    {
+     "changed": [
+      "direct:initial",
+      "price",
+      "region:initial",
+      "via_calc:initial"
+     ],
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "rate": "36",
+       "region": 3
+      }
+     ],
+     "requests": [
+      [
+       "region",
+       "0000000000003",
+       [
+        "grace"
+       ]
+      ]
+     ],
+     "rules": {},
+     "snapshot": {
+      "customer": 7,
+      "direct": "35",
+      "grace": 2,
+      "id": 6,
+      "price": "36.00",
+      "region": 3,
+      "via_calc": "35"
+     }
+    },
+    {
+     "changed": [
+      "grace:initial"
+     ],
+     "command": [
+      "lookup",
+      "region",
+      3,
+      {
+       "grace": 5
+      }
+     ],
+     "requests": [],
+     "rules": {},
+     "snapshot": {
+      "customer": 7,
+      "direct": "35",
+      "grace": 2,
+      "id": 6,
+      "price": "36.00",
+      "region": 3,
+      "via_calc": "35"
+     }
+    },
+    {
+     "changed": [],
+     "command": [
+      "set",
+      "",
+      "note",
+      "later"
+     ],
+     "requests": [],
+     "rules": {},
+     "snapshot": {
+      "customer": 7,
+      "direct": "35",
+      "grace": 2,
+      "id": 6,
+      "note": "later",
+      "price": "36.00",
+      "region": 3,
+      "via_calc": "35"
+     }
+    },
+    {
+     "changed": [
+      "direct:initial",
+      "price",
+      "region:initial",
+      "via_calc:initial"
+     ],
+     "command": [
+      "set",
+      "",
+      "customer",
+      8
+     ],
+     "requests": [
+      [
+       "customer",
+       "0000000000008",
+       [
+        "rate",
+        "region"
+       ]
+      ]
+     ],
+     "rules": {},
+     "snapshot": {
+      "_states": {
+       "price": {
+        "causes": [
+         "@customer.0000000000008.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "customer": 8,
+      "direct": "35",
+      "grace": 2,
+      "id": 6,
+      "note": "later",
+      "price": null,
+      "region": 3,
+      "via_calc": "35"
+     }
+    },
+    {
+     "changed": [
+      "direct",
+      "direct:initial",
+      "grace:initial",
+      "price",
+      "region",
+      "region:initial",
+      "via_calc",
+      "via_calc:initial"
+     ],
+     "command": [
+      "lookup",
+      "customer",
+      8,
+      {
+       "rate": "40",
+       "region": 4
+      }
+     ],
+     "requests": [
+      [
+       "region",
+       "0000000000004",
+       [
+        "grace"
+       ]
+      ]
+     ],
+     "rules": {},
+     "snapshot": {
+      "customer": 8,
+      "direct": "40.00",
+      "grace": 2,
+      "id": 6,
+      "note": "later",
+      "price": "40.00",
+      "region": 4,
+      "via_calc": "40.00"
+     }
+    },
+    {
+     "changed": [
+      "grace",
+      "grace:initial"
+     ],
+     "command": [
+      "lookup",
+      "region",
+      4,
+      {
+       "grace": 6
+      }
+     ],
+     "requests": [],
+     "rules": {},
+     "snapshot": {
+      "customer": 8,
+      "direct": "40.00",
+      "grace": "6",
+      "id": 6,
+      "note": "later",
+      "price": "40.00",
+      "region": 4,
+      "via_calc": "40.00"
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "customer": 7,
+    "direct": "30",
+    "grace": 9,
+    "via_calc": "30"
+   },
+   "model": "suggest",
+   "name": "suggest-created",
+   "steps": [
+    {
+     "changed": [
+      "direct:initial",
+      "grace:initial",
+      "price",
+      "region:initial",
+      "via_calc:initial"
+     ],
+     "requests": [
+      [
+       "customer",
+       "0000000000007",
+       [
+        "rate",
+        "region"
+       ]
+      ]
+     ],
+     "rules": {},
+     "snapshot": {
+      "_states": {
+       "price": {
+        "causes": [
+         "@customer.0000000000007.rate"
+        ],
+        "code": "COMPUTE_INPUT_MISSING",
+        "state": "pending"
+       }
+      },
+      "customer": 7,
+      "direct": "30",
+      "grace": 9,
+      "note": "",
+      "price": null,
+      "via_calc": "30"
+     }
+    },
+    {
+     "changed": [
+      "direct:initial",
+      "grace:initial",
+      "price",
+      "region",
+      "region:initial",
+      "via_calc:initial"
+     ],
+     "command": [
+      "lookup",
+      "customer",
+      7,
+      {
+       "rate": "36",
+       "region": 3
+      }
+     ],
+     "requests": [
+      [
+       "region",
+       "0000000000003",
+       [
+        "grace"
+       ]
+      ]
+     ],
+     "rules": {},
+     "snapshot": {
+      "customer": 7,
+      "direct": "30",
+      "grace": 9,
+      "note": "",
+      "price": "36.00",
+      "region": 3,
+      "via_calc": "30"
+     }
+    },
+    {
+     "changed": [
+      "grace:initial"
+     ],
+     "command": [
+      "lookup",
+      "region",
+      3,
+      {
+       "grace": 5
+      }
+     ],
+     "requests": [],
+     "rules": {},
+     "snapshot": {
+      "customer": 7,
+      "direct": "30",
+      "grace": 9,
+      "note": "",
+      "price": "36.00",
+      "region": 3,
+      "via_calc": "30"
+     }
+    },
+    {
+     "changed": [],
+     "command": [
+      "set",
+      "",
+      "note",
+      "x"
+     ],
+     "requests": [],
+     "rules": {},
+     "snapshot": {
+      "customer": 7,
+      "direct": "30",
+      "grace": 9,
+      "note": "x",
+      "price": "36.00",
+      "region": 3,
+      "via_calc": "30"
+     }
+    },
+    {
+     "changed": [
+      "grace",
+      "grace:initial"
+     ],
+     "command": [
+      "set",
+      "",
+      "region",
+      null
+     ],
+     "requests": [],
+     "rules": {},
+     "snapshot": {
+      "customer": 7,
+      "direct": "30",
+      "grace": "1",
+      "note": "x",
+      "price": "36.00",
+      "region": null,
+      "via_calc": "30"
+     }
+    },
+    {
+     "changed": [],
+     "command": [
+      "lookup",
+      "region",
+      3,
+      {
+       "grace": 7
+      }
+     ],
+     "requests": [],
+     "rules": {},
+     "snapshot": {
+      "customer": 7,
+      "direct": "30",
+      "grace": "1",
+      "note": "x",
+      "price": "36.00",
+      "region": null,
+      "via_calc": "30"
      }
     }
    ]

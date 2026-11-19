@@ -191,7 +191,12 @@ class Invoice(Model):
 
 * On create, and whenever an input the expression reads changes in a write, the engine sets
   the field from the expression, unless the caller supplied that field in the same write.
-  Sending an input with the value it already has is not a change.
+  An input has changed only when its value after the write differs from the saved one: sending
+  it with the value it already has is not a change, and neither is a calculated input that is
+  only worked out again (on a save of other fields, or when a linked record's values arrive).
+  A value the caller sent always stays, whatever fires after it in that write, including a
+  suggestion through a Link that is itself suggested (`mode` from `company`, `company` from
+  `customer`).
 * A later edit by the user is kept until an input changes again. The field stays editable;
   the suggestion is not a binding.
 * Inputs are the document's own fields, `parent.x`, collections and calculated fields. A

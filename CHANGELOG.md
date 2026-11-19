@@ -21,6 +21,15 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   option shows with `F("field")`, so typing what the subtext says finds the record ("fifo" in
   `code · valuation`). Those matches rank after the title and `Meta.search_fields`.
 
+### Fixed
+
+- **A suggestion (`initial=`) no longer overwrites what the caller set.** One that reads a calculated field fired
+  on any save (a rate typed under manual pricing was replaced when only a note changed) and over a value sent on
+  create; one that reads through a Link that is itself suggested replaced a value sent in the same create. An
+  input now counts as changed only when its value after the write differs from the saved one, and a value the
+  caller sent always stays, in the browser and on the server (API, MCP, Eva, imports)
+  ([docs/finite-calculations.md](docs/finite-calculations.md)).
+
 ## 0.4.13 (17-11-2026)
 
 ### Upgrading to 0.4.13

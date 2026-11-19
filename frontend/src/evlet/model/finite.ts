@@ -475,7 +475,8 @@ export class FiniteDocument {
   private steps: Array<{node: Node; handle: string; name: string; row: Row; field: any; inputs: Set<Node>; target: Node; meta: any}> = [];
   observers = new Map<Node, Array<(result: Result) => void>>();
   ruleObservers = new Map<string, Array<(states: Record<string, RuleState>) => void>>();
-  // Initial suggestions waiting to be written, and fields the host set in the current write (touched).
+  // Initial suggestions waiting to be written, and the fields the host set in its last write (touched); host
+  // inputs that arrive after a write (lookups, today) never override what it set.
   armed = new Set<Node>();
   touched = new Set<Node>();
   // Lock results of the document as loaded (handle -> field -> true, false or null when undecided).
@@ -517,7 +518,6 @@ export class FiniteDocument {
     this.bind();
     const created = new Set([...this.deps.keys()].filter(node => this.rows.get(nodeParts(node)[0])!.created && node.endsWith(':initial')));
     this.settle(new Set(), new Set(this.deps.keys()), this.touched, created);
-    this.touched = new Set();
     this.takeLocks();
     this.revision = 1;
   }
@@ -675,15 +675,17 @@ export class FiniteDocument {
     return this.today === null || this.today === undefined ? pending('COMPUTE_INPUT_MISSING', ['@today']) : sourceValue({type: 'date'}, this.today, '@today');
   }
 
-  // An initial is armed when its row is new or a document input it reads changed (host inputs such as
-  // lookups and today() do not arm it). A field touched in this write disarms it. An armed initial writes
-  // its first ready result unless the field is locked. applies_when clears its field.
+  // An initial is armed when its row is new or an input it reads changed through a write: a value the host set,
+  // a row added or removed, or an initial written, and what follows from those. A result that is new, or moved
+  // only by a host input (a lookup, today()), does not arm it. A field touched in the last write disarms it. An
+  // armed initial writes its first ready result unless the field is locked. applies_when clears its field.
   private settle(changed: Set<Node>, fresh: Set<Node>, touched: Set<Node> = new Set(), arm: Set<Node> = new Set()) {
     const budget = new Budget(this.budget), updated = new Set<Node>();
+    const written = new Set([...changed].filter(node => !node.startsWith('@')));
     let evaluated = 0, skipped = 0;
     for (const {node, handle, name, row, field, inputs, target, meta} of this.steps) {
       if (field.kind === 'initial') {
-        if (arm.has(node) || anyChanged(inputs, changed, true)) this.armed.add(node);
+        if (arm.has(node) || anyChanged(inputs, written, false)) this.armed.add(node);
         if (touched.has(target)) this.armed.delete(node);
       }
       if (!fresh.has(node) && !anyChanged(inputs, changed, false)) { skipped++; continue; }
@@ -700,7 +702,10 @@ export class FiniteDocument {
       if (scope.misses.size) this.misses.set(node, scope.misses); else this.misses.delete(node);
       evaluated++;
       this.counts.set(node, (this.counts.get(node) || 0) + 1);
-      if (!same(outcome, this.results.get(node))) { this.results.set(node, outcome); changed.add(node); updated.add(node); }
+      if (!same(outcome, this.results.get(node))) {
+        this.results.set(node, outcome); changed.add(node); updated.add(node);
+        if (anyChanged(inputs, written, false)) written.add(node);
+      }
       let value: unknown = undefined, write = false;
       if (field.kind === 'initial' && this.armed.has(node) && outcome.state !== 'pending') {
         this.armed.delete(node);
@@ -714,6 +719,7 @@ export class FiniteDocument {
         row.values[field.field] = value;
         changed.add(target);
         updated.add(target);
+        written.add(target);
       }
     }
     this.trace = {evaluated, skipped, steps: budget.steps, changed: [...updated].map(node => this.address(node)).sort()};
@@ -878,7 +884,9 @@ export class FiniteDocument {
       for (const node of old.keys()) if (!live.has(node)) { this.results.delete(node); this.counts.delete(node); this.misses.delete(node); }
       for (const node of live.keys()) if (!old.has(node)) fresh.add(node);
     }
-    const updated = this.settle(new Set([...batch.sources, ...batch.membership]), fresh, batch.touched,
+    // A write (a value set, a row changed) replaces the touched fields; host inputs alone keep the last write's.
+    if (batch.touched.size || batch.structure || [...batch.sources].some((key: string) => !key.startsWith('@'))) this.touched = batch.touched;
+    const updated = this.settle(new Set([...batch.sources, ...batch.membership]), fresh, this.touched,
       new Set([...fresh].filter(node => node.endsWith(':initial'))));
     if (!updated.size && !batch.sources.size && !batch.structure) return [];
     if (batch.structure || [...batch.sources].some((key: string) => !key.startsWith('@'))) this.pristine = false;
