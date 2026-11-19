@@ -218,7 +218,7 @@ one batch, exactly as a browser session does, so both decide the same way.
 ## Field rules
 
 Three Boolean expressions describe when an editable field applies, is required, or is
-locked. They are the way forward; the legacy strings `visible_if`, `required_if` and
+locked, and a fourth, `visible_when`, when it shows. They are the way forward; the legacy strings `visible_if`, `required_if` and
 `read_only_if` keep working for legacy documents.
 
 Prompts and report filters run finite expressions too: a form without storage gets its plan when it is
@@ -229,6 +229,7 @@ class Deal(Model):
     stage = Select(("open", "won", "lost"), default="open")
     lost_reason = Text(applies_when=F("stage") == "lost", required_when=F("stage") == "lost")
     discount = Percent(locked_when=F("stage") == "won")
+    card_ref = Text(visible_when=F("payment") == "card")
 ```
 
 The server enforces them on every create and update, including `Context` writes and model
@@ -239,6 +240,11 @@ actions. Legacy `ChildTable` rows do not run finite rules or calculations, so re
   value is stored as null. The engine clears it as soon as the rule turns false, so
   calculations that read it see null in the browser and on the server.
 * **required_when** true: an empty value is the field error `This field is required`.
+* **visible_when** false: the field is hidden in the form, and nothing else changes. Its value
+  is kept, sent and saved as usual, its validator runs on it, and calculations read it. It is
+  display only, **not a permission boundary**: the value still travels with the record in the
+  API and in the browser. To keep a value from a role, leave it out of the role's
+  `read_fields` or `write_fields` ([permissions.md](permissions.md)).
 * **locked_when** true: a changed value is the field error `This field is locked and cannot be
   changed now`. Only the caller's changes count (request body, `Context` values, action
   handlers); values the engine writes do not, with one exception: a write whose change makes a
@@ -260,15 +266,55 @@ Undecided rules fail closed:
 | `applies_when` | the field applies; nothing is cleared |
 | `required_when` | the field is required |
 | `locked_when` | the field is locked |
+| `visible_when` | the field shows |
 
 So `required_when=F("amount") > 1000` makes the field required while `amount` is empty.
 Use `coalesce(F("amount"), 0) > 1000` when an empty value should not require it. A pending
 lock explains itself (`This field is locked until the values its lock rule reads are filled
 in`) only to a role that can read every input of the rule.
 
-Rules cannot be declared on calculated fields. `applies_when` cannot be combined with
-`required=True` (use `required_when`), `required_when` with `required_if`, or `locked_when`
-with `read_only_if`. A rule must be Boolean (`COMPUTE_TYPE_ERROR` otherwise).
+Rules cannot be declared on calculated fields, except `visible_when`, which only hides a
+result. `applies_when` cannot be combined with `required=True` (use `required_when`),
+`required_when` with `required_if`, or `locked_when` with `read_only_if`. A rule must be
+Boolean (`COMPUTE_TYPE_ERROR` otherwise).
+
+`visible_when` would hide a value people may have to enter, so a field that has it cannot be
+`required=True` or have `required_when`: the field definition raises `A required field must stay
+visible...`. Use `applies_when` with `required_when` for a value that is asked for only while it
+shows. `hidden=True` with `visible_when` (never shown) and `visible_when` with `visible_if` are
+refused too. With `applies_when` it is allowed: the field shows while both are true, and is
+cleared only by `applies_when`.
+
+### Table rules
+
+A `Table` takes `applies_when` and `visible_when` too, decided on the record (or row) that owns
+it:
+
+```python
+class Claim(Model):
+    payment = Select(("cash", "card", "split"), default="cash")
+    splits = Table(PayLine, applies_when=F("payment") == "split")
+    extras = Table(PayLine, visible_when=F("payment") != "cash")
+    split_total = Currency(compute=splits.sum("amount"))
+```
+
+* **applies_when** false: the whole Table block is hidden, calculations read the Table as
+  empty (`split_total` is 0 in the browser and on the server), and a save removes its rows,
+  saved ones included, just as a field that does not apply is stored empty. The browser keeps
+  the rows in the open draft until it is saved, so setting `payment` back before saving brings
+  them back. Rows of a Table that does not apply are not validated. On a locked or posted record
+  the saved rows are kept. Rows saved before the rule was added stay until the record is next
+  saved; meanwhile calculations (and `Recompute`) read the Table as empty.
+* **visible_when** false: the Table block is hidden and its rows are kept, saved and calculated
+  as usual. Display only, like a field's.
+
+An undecided rule shows and keeps the Table. A Table rule cannot read its own rows
+(`MODEL_DEPENDENCY_CYCLE`); it may read the owner's fields, `parent.` fields, Link paths and
+other Tables. A Table with `applies_when` cannot require rows (`required=True` or `min_rows`),
+nor can one with `visible_when`, and a `derived=True` Table takes no `applies_when` (derive()
+builds its rows). The shipped plan carries a Table rule only when the role can read its rows and
+every input; an `applies_when` the role cannot read keeps the plan on the server, so the browser
+never shows totals that differ from the save.
 
 ### Order and cycles
 
@@ -566,8 +612,10 @@ is calculated`, not the general "One or more values are invalid".
 `FiniteDocument` session offers `set`, `addRow`, `removeRow`, `reorder`, nested `batch`,
 `observe`, `snapshot` and `dispose`, plus the host inputs `setToday`, `setLookups` and
 `lookupRequests`.
-`ruleStates(handle)` returns `{field: {applies, required, locked}}` for a row's fields that
-declare rules, already resolved with the undecided rules above, and `observeRules(handle,
+`ruleStates(handle)` returns `{field: {applies, required, locked, visible}}` for a row's fields
+that declare rules, already resolved with the undecided rules above (`visible` is whether the
+field shows: it applies and its `visible_when` is not false), and `tableStates(handle)` returns
+`{table: {applies, visible}}` for the row's Tables that declare rules. `observeRules(handle,
 listener)` calls the listener after each batch that changes one of them. A field the host sets
 in a batch, or supplies with a new row, is touched for that batch: its suggestion does not
 replace it. Values supplied when a session is created count as touched for new rows only.
@@ -591,7 +639,7 @@ currency sources) before it uses it. It does not hash the plan again: the plan a
 `model_schema_hash` come from the server in one response, a save sends the hash back, and the
 server refuses a save whose hash differs from its own plan.
 
-Python's `evlet.calc.Document` has the same commands, host inputs and `rule_states` in snake_case,
+Python's `evlet.calc.Document` has the same commands, host inputs, `rule_states` and `table_states` in snake_case,
 plus `replace_rows`, which the server uses to apply a saved table. Observation (`observe`,
 `observeRules`) and `dispose` are browser-only, since the server settles a document once and
 reads its snapshot.

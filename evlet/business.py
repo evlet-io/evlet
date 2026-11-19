@@ -57,10 +57,11 @@ class Action:
     roles: tuple = ('admin', 'editor')
 
 
-RULES = ('applies_when', 'required_when', 'locked_when')
+RULES = ('applies_when', 'required_when', 'locked_when', 'visible_when')
 # Rows a detail response embeds per owned collection; larger collections are paged through lines().
 EMBEDDED_ROWS = ROW_LIMIT
-EMPTY_EXPRESSIONS = {'compute': None, 'initial': None, 'applies_when': None, 'required_when': None, 'locked_when': None}
+EMPTY_EXPRESSIONS = {'compute': None, 'initial': None, 'applies_when': None, 'required_when': None, 'locked_when': None,
+                     'visible_when': None}
 
 
 @dataclass(frozen=True)
@@ -1122,7 +1123,7 @@ class Business:
             item = owners[item].parent
         result = {}
         for entry in plan['fields']:
-            if entry['path'] != path:
+            if entry['path'] != path or entry.get('table'):
                 continue
             kind = entry.get('kind') or 'compute'
             if kind in RULES and not self.policy.expression_allowed(user, model, entry['field'], kind):
@@ -1151,6 +1152,15 @@ class Business:
         capabilities, local, withheld, intermediates = {}, True, set(), {}
         for field in plan['fields']:
             target = models.get(tuple(field['path']))
+            if field.get('table'):
+                # A Table's rule ships when its rows and every input it reads are readable. applies_when empties the
+                # Table for calculations, so withholding it would make the preview disagree: then no plan is shipped.
+                rows = models.get(tuple(field['path']) + (field['field'],))
+                shown = rows is not None and self.policy.allows(user, rows, 'read') and target is not None and self.policy.allows(user, target, 'read')
+                if not shown or not self.policy.expression_allowed(user, target, field['field'], field['kind']):
+                    withheld.add(field['target'])
+                    local = local and (not shown or field['kind'] != 'applies_when')
+                continue
             if field.get('kind'):
                 # Rules and initial suggestions over inputs this role cannot read are left out of the shipped
                 # plan (the server still applies them). Leaving out one that writes a value would make the

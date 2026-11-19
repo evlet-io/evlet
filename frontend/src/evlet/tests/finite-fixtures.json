@@ -1403,6 +1403,438 @@
     }
    }
   },
+  "claim": {
+   "compiler_version": "evlet-finite-1",
+   "expression_version": 1,
+   "fields": [
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "kind",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "card"
+       }
+      ]
+     },
+     "field": "card_ref",
+     "kind": "visible_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "kind"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "card_ref:visible_when",
+     "target_type": "text"
+    },
+    {
+     "expression": {
+      "$expr": "ne",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "kind",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "cash"
+       }
+      ]
+     },
+     "field": "memo",
+     "kind": "applies_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "kind"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "memo:applies_when",
+     "target_type": "text"
+    },
+    {
+     "expression": {
+      "$expr": "gt",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "limit",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "decimal",
+        "value": "10"
+       }
+      ]
+     },
+     "field": "memo",
+     "kind": "visible_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "limit"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "target": "memo:visible_when",
+     "target_type": "text"
+    },
+    {
+     "expression": {
+      "$expr": "eq",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "kind",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "split"
+       }
+      ]
+     },
+     "field": "splits",
+     "kind": "applies_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "kind"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "table": true,
+     "target": "splits:applies_when",
+     "target_type": "table"
+    },
+    {
+     "expression": {
+      "$expr": "aggregate",
+      "field": "amount",
+      "kind": "sum",
+      "table": "splits",
+      "where": null
+     },
+     "field": "split_total",
+     "path": [],
+     "reads": [
+      [
+       "membership",
+       "splits",
+       null
+      ],
+      [
+       "member",
+       "splits",
+       "amount"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 4,
+     "stored": true,
+     "target": "split_total",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "aggregate",
+      "field": null,
+      "kind": "count",
+      "table": "splits",
+      "where": null
+     },
+     "field": "split_count",
+     "path": [],
+     "reads": [
+      [
+       "membership",
+       "splits",
+       null
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_up",
+     "scale": 0,
+     "stored": true,
+     "target": "split_count",
+     "target_type": "integer"
+    },
+    {
+     "expression": {
+      "$expr": "aggregate",
+      "field": "amount",
+      "kind": "sum",
+      "table": "extras",
+      "where": null
+     },
+     "field": "extra_total",
+     "path": [],
+     "reads": [
+      [
+       "membership",
+       "extras",
+       null
+      ],
+      [
+       "member",
+       "extras",
+       "amount"
+      ]
+     ],
+     "result_type": "decimal",
+     "rounding": "half_even",
+     "scale": 4,
+     "stored": true,
+     "target": "extra_total",
+     "target_type": "decimal"
+    },
+    {
+     "expression": {
+      "$expr": "ne",
+      "args": [
+       {
+        "$expr": "ref",
+        "field": "kind",
+        "scope": "self"
+       },
+       {
+        "$expr": "literal",
+        "type": "text",
+        "value": "cash"
+       }
+      ]
+     },
+     "field": "extras",
+     "kind": "visible_when",
+     "path": [],
+     "reads": [
+      [
+       "self",
+       null,
+       "kind"
+      ]
+     ],
+     "result_type": "boolean",
+     "rounding": null,
+     "scale": null,
+     "stored": true,
+     "table": true,
+     "target": "extras:visible_when",
+     "target_type": "table"
+    }
+   ],
+   "language": "finite-v1",
+   "limits": {
+    "collection_rows": 1000,
+    "decimal_text": 128,
+    "document_rows": 5000,
+    "evaluation_steps": 1000000,
+    "expression_depth": 32,
+    "expression_nodes": 128,
+    "graph_edges": 250000,
+    "graph_nodes": 50000,
+    "table_depth": 8
+   },
+   "model_schema_hash": "sha256:3361f08b895dff76d3a0811dc2a27f6df90d8a86608c5a3bb610ca648c16f867",
+   "numeric_profile": "finite40-hu18-v1",
+   "plan_version": 1,
+   "root_resource": "claim",
+   "tables": {
+    "$root": {
+     "fields": {
+      "card_ref": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "extra_total": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      },
+      "kind": {
+       "computed": false,
+       "default": {
+        "value": "cash"
+       },
+       "kind": "select",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "limit": {
+       "computed": false,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      },
+      "memo": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "name": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      },
+      "split_count": {
+       "computed": true,
+       "default": null,
+       "kind": "integer",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 0,
+       "stored": true,
+       "type": "decimal"
+      },
+      "split_total": {
+       "computed": true,
+       "default": null,
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      },
+      "title": {
+       "computed": false,
+       "default": null,
+       "kind": "text",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": null,
+       "stored": true,
+       "type": "text"
+      }
+     },
+     "model": "claim",
+     "path": [],
+     "tables": [
+      "extras",
+      "splits"
+     ]
+    },
+    "extras[*]": {
+     "fields": {
+      "amount": {
+       "computed": false,
+       "default": {
+        "value": "0"
+       },
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "max_rows": 100,
+     "min_rows": 0,
+     "model": "claim_extras",
+     "path": [
+      "extras"
+     ],
+     "tables": []
+    },
+    "splits[*]": {
+     "fields": {
+      "amount": {
+       "computed": false,
+       "default": {
+        "value": "0"
+       },
+       "kind": "decimal",
+       "maximum": null,
+       "minimum": null,
+       "required": false,
+       "scale": 4,
+       "stored": true,
+       "type": "decimal"
+      }
+     },
+     "max_rows": 100,
+     "min_rows": 0,
+     "model": "claim_splits",
+     "path": [
+      "splits"
+     ],
+     "tables": []
+    }
+   }
+  },
   "cost": {
    "compiler_version": "evlet-finite-1",
    "expression_version": 1,
@@ -13853,27 +14285,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -13926,27 +14363,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -13993,27 +14435,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14063,27 +14510,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14135,27 +14587,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14207,27 +14664,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14289,27 +14751,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14361,27 +14828,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14437,27 +14909,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14507,27 +14984,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14584,27 +15066,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14658,27 +15145,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14737,27 +15229,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14812,27 +15309,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14893,27 +15395,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -14971,27 +15478,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -15051,27 +15563,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -15132,27 +15649,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -15220,27 +15742,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -15334,27 +15861,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -15450,27 +15982,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -15566,27 +16103,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -15690,27 +16232,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -15853,27 +16400,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -15929,27 +16481,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16005,27 +16562,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16081,27 +16643,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16155,27 +16722,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16231,27 +16803,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16307,27 +16884,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16419,27 +17001,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16494,27 +17081,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16570,27 +17162,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16639,27 +17236,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16712,27 +17314,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16793,27 +17400,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16869,27 +17481,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -16939,27 +17556,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -17009,27 +17631,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -17083,27 +17710,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -17157,27 +17789,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -17237,27 +17874,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -17314,27 +17956,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": false,
         "locked": false,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "remark": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -17398,27 +18045,32 @@
        "note": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "price": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        },
        "reason": {
         "applies": true,
         "locked": false,
-        "required": true
+        "required": true,
+        "visible": true
        },
        "remark": {
         "applies": false,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": false
        },
        "terms": {
         "applies": true,
         "locked": true,
-        "required": false
+        "required": false,
+        "visible": true
        }
       }
      },
@@ -17459,6 +18111,812 @@
       "stage": "lost",
       "terms": 60,
       "total": "153.00"
+     }
+    }
+   ]
+  },
+  {
+   "data": {
+    "card_ref": "R-1",
+    "children": {
+     "extras": [
+      {
+       "_key": "r0",
+       "amount": "1"
+      }
+     ],
+     "splits": [
+      {
+       "_key": "r0",
+       "amount": "4"
+      },
+      {
+       "_key": "r1",
+       "amount": "6"
+      }
+     ]
+    },
+    "kind": "split"
+   },
+   "model": "claim",
+   "name": "visible-and-table-rules",
+   "steps": [
+    {
+     "changed": [
+      "card_ref:visible_when",
+      "extra_total",
+      "extras:visible_when",
+      "memo:applies_when",
+      "memo:visible_when",
+      "split_count",
+      "split_total",
+      "splits:applies_when"
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": false
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": true,
+        "visible": true
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "4"
+        },
+        {
+         "_key": "r1",
+         "amount": "6"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "split",
+      "split_count": "2",
+      "split_total": "10.0000"
+     }
+    },
+    {
+     "changed": [
+      "card_ref:visible_when",
+      "split_count",
+      "split_total",
+      "splits:applies_when"
+     ],
+     "command": [
+      "set",
+      "",
+      "kind",
+      "card"
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": false,
+        "visible": false
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "4"
+        },
+        {
+         "_key": "r1",
+         "amount": "6"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "card",
+      "split_count": "0",
+      "split_total": "0.0000"
+     }
+    },
+    {
+     "changed": [],
+     "command": [
+      "set",
+      "",
+      "memo",
+      "note"
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": false,
+        "visible": false
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "4"
+        },
+        {
+         "_key": "r1",
+         "amount": "6"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "card",
+      "memo": "note",
+      "split_count": "0",
+      "split_total": "0.0000"
+     }
+    },
+    {
+     "changed": [
+      "memo:visible_when"
+     ],
+     "command": [
+      "set",
+      "",
+      "limit",
+      "20"
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": false,
+        "visible": false
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "4"
+        },
+        {
+         "_key": "r1",
+         "amount": "6"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "card",
+      "limit": "20",
+      "memo": "note",
+      "split_count": "0",
+      "split_total": "0.0000"
+     }
+    },
+    {
+     "changed": [],
+     "command": [
+      "add",
+      "",
+      "splits",
+      {
+       "_key": "n",
+       "amount": "5"
+      }
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": false,
+        "visible": false
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "4"
+        },
+        {
+         "_key": "r1",
+         "amount": "6"
+        },
+        {
+         "_key": "n",
+         "amount": "5"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "card",
+      "limit": "20",
+      "memo": "note",
+      "split_count": "0",
+      "split_total": "0.0000"
+     }
+    },
+    {
+     "changed": [],
+     "command": [
+      "set",
+      "splits.r0",
+      "amount",
+      "9"
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": false,
+        "visible": false
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "9"
+        },
+        {
+         "_key": "r1",
+         "amount": "6"
+        },
+        {
+         "_key": "n",
+         "amount": "5"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "card",
+      "limit": "20",
+      "memo": "note",
+      "split_count": "0",
+      "split_total": "0.0000"
+     }
+    },
+    {
+     "changed": [
+      "card_ref:visible_when",
+      "split_count",
+      "split_total",
+      "splits:applies_when"
+     ],
+     "command": [
+      "set",
+      "",
+      "kind",
+      "split"
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": false
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": true,
+        "visible": true
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "9"
+        },
+        {
+         "_key": "r1",
+         "amount": "6"
+        },
+        {
+         "_key": "n",
+         "amount": "5"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "split",
+      "limit": "20",
+      "memo": "note",
+      "split_count": "3",
+      "split_total": "20.0000"
+     }
+    },
+    {
+     "changed": [
+      "memo:visible_when"
+     ],
+     "command": [
+      "set",
+      "",
+      "limit",
+      null
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": false
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": true,
+        "visible": true
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "9"
+        },
+        {
+         "_key": "r1",
+         "amount": "6"
+        },
+        {
+         "_key": "n",
+         "amount": "5"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "split",
+      "limit": null,
+      "memo": "note",
+      "split_count": "3",
+      "split_total": "20.0000"
+     }
+    },
+    {
+     "changed": [
+      "split_count",
+      "split_total"
+     ],
+     "command": [
+      "remove",
+      "splits.r1"
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": false
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": true,
+        "visible": true
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "9"
+        },
+        {
+         "_key": "n",
+         "amount": "5"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "split",
+      "limit": null,
+      "memo": "note",
+      "split_count": "2",
+      "split_total": "14.0000"
+     }
+    },
+    {
+     "changed": [
+      "split_count",
+      "split_total",
+      "splits:applies_when"
+     ],
+     "command": [
+      "set",
+      "",
+      "kind",
+      null
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": false
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": false,
+        "visible": false
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "9"
+        },
+        {
+         "_key": "n",
+         "amount": "5"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": null,
+      "limit": null,
+      "memo": "note",
+      "split_count": "0",
+      "split_total": "0.0000"
+     }
+    },
+    {
+     "changed": [
+      "extras:visible_when",
+      "memo",
+      "memo:applies_when"
+     ],
+     "command": [
+      "set",
+      "",
+      "kind",
+      "cash"
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": false
+       },
+       "memo": {
+        "applies": false,
+        "locked": false,
+        "required": false,
+        "visible": false
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": false
+       },
+       "table:splits": {
+        "applies": false,
+        "visible": false
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "9"
+        },
+        {
+         "_key": "n",
+         "amount": "5"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "cash",
+      "limit": null,
+      "memo": null,
+      "split_count": "0",
+      "split_total": "0.0000"
+     }
+    },
+    {
+     "changed": [
+      "extras:visible_when",
+      "memo:applies_when",
+      "split_count",
+      "split_total",
+      "splits:applies_when"
+     ],
+     "command": [
+      "set",
+      "",
+      "kind",
+      "split"
+     ],
+     "requests": [],
+     "rules": {
+      "$root": {
+       "card_ref": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": false
+       },
+       "memo": {
+        "applies": true,
+        "locked": false,
+        "required": false,
+        "visible": true
+       },
+       "table:extras": {
+        "applies": true,
+        "visible": true
+       },
+       "table:splits": {
+        "applies": true,
+        "visible": true
+       }
+      }
+     },
+     "snapshot": {
+      "card_ref": "R-1",
+      "children": {
+       "extras": [
+        {
+         "_key": "r0",
+         "amount": "1"
+        }
+       ],
+       "splits": [
+        {
+         "_key": "r0",
+         "amount": "9"
+        },
+        {
+         "_key": "n",
+         "amount": "5"
+        }
+       ]
+      },
+      "extra_total": "1.0000",
+      "kind": "split",
+      "limit": null,
+      "memo": null,
+      "split_count": "2",
+      "split_total": "14.0000"
      }
     }
    ]

@@ -78,7 +78,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "status",
@@ -110,7 +111,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "total",
@@ -144,7 +146,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "name",
@@ -175,7 +178,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "document_version": 1,
@@ -325,7 +329,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "rate",
@@ -360,7 +365,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "amount",
@@ -394,7 +400,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         },
         {
           "name": "stock",
@@ -417,7 +424,8 @@
           "initial": null,
           "applies_when": null,
           "required_when": null,
-          "locked_when": null
+          "locked_when": null,
+          "visible_when": null
         }
       ],
       "document_version": 1,

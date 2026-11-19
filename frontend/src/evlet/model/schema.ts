@@ -58,6 +58,7 @@ export interface FieldSchema {
   applies_when?: Expression;
   required_when?: Expression;
   locked_when?: Expression;
+  visible_when?: Expression;
   /** What a list filter may use on the field (evlet/query.py); empty when it cannot be filtered. */
   operators?: string[];
   /** copy=False: Duplicate leaves this value out of the new record. Absent means it is copied. */

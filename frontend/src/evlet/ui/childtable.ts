@@ -760,7 +760,7 @@ export function ChildTable(props: ChildTableProps): HTMLElement {
           ${IconButton({ icon: 'chevron-right', tip: 'Next row', size: 'small', disabled: () => index() >= rows.get().length - 1, onClick: () => stepEditor(1) })}
           ${IconButton({ icon: 'x', tip: 'Close (Esc)', size: 'small', onClick: () => closeEditor() })}</div>
         <div class="g-ed-body">${form}
-          ${[...row.tables.values()].map(nested => html`<div class="g-x-nested">${ChildTable({ table: nested, locked: props.locked, links: props.links, height: 228,
+          ${[...row.tables.values()].map(nested => html`<div class="g-x-nested" hidden=${() => !nested.rules.get().visible}>${ChildTable({ table: nested, locked: props.locked, links: props.links, height: 228,
             lockedText: props.lockedText, icon: 'rows-3', tint: props.tint })}</div>`)}</div>
         <div class="g-ed-f">${when(() => !readOnly.get(), () => [
           Button({ icon: 'trash-2', label: 'Delete line', variant: 'ghost', size: 'small', className: 'g-ed-del', onClick: () => deleteLine(row) }),

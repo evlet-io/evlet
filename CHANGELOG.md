@@ -14,6 +14,14 @@ first ([docs/api-stability.md](docs/api-stability.md)). The notes below say what
   the script, the modal runs it over the prompt's form (`id` null, `is_new` true; `call`, `move`, `save` and
   `reload` reject), and closing the modal makes its views inert. Custom blocks stay unsupported in a prompt
   ([docs/model-scripts.md](docs/model-scripts.md#in-a-prompt)).
+- **`visible_when=` on fields.** A finite Boolean such as `F("payment") == "card"` that hides the field
+  while it is false, live in the browser. Display only: the value is kept, saved and validated as usual,
+  so it is not a permission boundary. An undecided rule shows the field. A required field (`required=True`
+  or `required_when`) cannot have it; use `applies_when` with `required_when` for that.
+- **`applies_when=` and `visible_when=` on `Table(...)`.** `visible_when` hides the whole Table block.
+  `applies_when` false hides it, calculations read it as empty, and a save removes its rows, as for a field
+  that does not apply. Passing either to `Table` raised `TypeError: unexpected keyword argument` before.
+  `Document.table_states` / `tableStates` report them; `rule_states` / `ruleStates` now include `visible`.
 
 ### Changed
 

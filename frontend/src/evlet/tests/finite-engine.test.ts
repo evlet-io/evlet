@@ -27,11 +27,13 @@ function sources(row: any): any {
   return result;
 }
 
-// Rule states of every row that declares rules, by row label.
+// Rule states of every row that declares rules, by row label; a Table's rules under "table:" + its name.
 function ruleMap(document: FiniteDocument) {
   const result: Record<string, any> = {};
   for (const [handle, row] of document.rows) {
-    const states = document.ruleStates(handle);
+    const tables = Object.entries(document.tableStates(handle)).map(([name, state]) => ['table:' + name, state] as const);
+    const all: Record<string, unknown> = {...document.ruleStates(handle), ...Object.fromEntries(tables)};
+    const states = Object.fromEntries(Object.keys(all).sort().map(key => [key, all[key]]));
     if (Object.keys(states).length) result[row.label.replace(/\.$/, '') || '$root'] = states;
   }
   return Object.fromEntries(Object.keys(result).sort().map(key => [key, result[key]]));
@@ -128,7 +130,7 @@ describe('finite-v1 browser evaluator against the Python plans', () => {
     const stop = document.observeRules(root, states => seen.push(states));
     document.batch(commands => { commands.set(root, 'stage', 'lost'); commands.set(root, 'price', '200'); });
     expect(seen).toHaveLength(1);
-    expect(seen[0].reason).toEqual({applies: true, required: true, locked: false});
+    expect(seen[0].reason).toEqual({applies: true, required: true, locked: false, visible: true});
     expect(seen[0].note.required).toBe(true);
     document.set(root, 'hours', 60);
     expect(seen).toHaveLength(1);

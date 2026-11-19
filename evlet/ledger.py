@@ -39,6 +39,7 @@ TIMESTAMP_FIELDS = ('created_at', 'modified_at')
 REFUSED_OPTIONS = {
     'compute': 'computed fields', 'query': 'query fields', 'fetch': 'fetched fields', 'initial': 'initial values',
     'applies_when': 'field rules', 'required_when': 'field rules', 'locked_when': 'field rules',
+    'visible_when': 'screen rules',
     'visible_if': 'screen rules', 'required_if': 'screen rules', 'read_only_if': 'screen rules',
     'help_text': 'screen text', 'tooltip': 'screen text', 'placeholder': 'screen text', 'suffix': 'screen text',
     'derived': 'derive()', 'hooks': 'model script hooks', 'look': 'screen looks',

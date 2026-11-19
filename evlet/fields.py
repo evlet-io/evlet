@@ -53,6 +53,8 @@ MAX_INTEGER = 2**63 - 1
 ROUNDING = ("half_up", "half_even")
 # Finite-v1 expression options a field may declare, besides compute=.
 RULES = ("applies_when", "required_when", "locked_when")
+# Display only: hides a field (or a Table) while false; its value is kept, saved and validated as usual.
+DISPLAY_RULES = ("visible_when",)
 
 
 def rounding_mode(value, default):
@@ -149,6 +151,20 @@ def _finite_option(value, name):
     raise ValueError(f"{name} takes a finite expression such as F('stage') == 'lost'")
 
 
+def check_visible_when(visible_when, *, required=False, required_when=None, hidden=False, visible_if=None):
+    """visible_when hides a value people may still need to enter, so it cannot be combined with what would ask
+    for that value while it is hidden. Use applies_when for a value that is required only when it shows."""
+    if visible_when is None:
+        return
+    if required or required_when is not None:
+        raise ValueError("A required field must stay visible, so it cannot have visible_when; use applies_when "
+                         "with required_when to hide it and ask for it only while it shows")
+    if hidden:
+        raise ValueError("A hidden field is never shown; drop visible_when or hidden=True")
+    if visible_if is not None:
+        raise ValueError("Use visible_when or visible_if, not both")
+
+
 class Field:
     kind = "field"
     sql_type = "TEXT"
@@ -163,7 +179,7 @@ class Field:
                  label=None, help_text="", tooltip="", placeholder="", suffix="", hidden=False, read_only=False,
                  compute=None, stored=True, query=None, fetch=None, filters=None,
                  visible_if=None, required_if=None, read_only_if=None,
-                 initial=None, applies_when=None, required_when=None, locked_when=None, versioned=True, tracking="value",
+                 initial=None, applies_when=None, required_when=None, locked_when=None, visible_when=None, versioned=True, tracking="value",
                  panel=True, copy=True, column=True, derived=False, on_change=None, look=None, control=None):
         if tracking not in ("value", "mask", "exclude"):
             raise ValueError("tracking is value, mask or exclude")
@@ -229,6 +245,8 @@ class Field:
         self.initial, self.applies_when = _finite_option(initial, "initial"), _finite_option(applies_when, "applies_when")
         self.required_when = _finite_option(required_when, "required_when")
         self.locked_when = _finite_option(locked_when, "locked_when")
+        self.visible_when = _finite_option(visible_when, "visible_when")
+        check_visible_when(visible_when, required=required, required_when=required_when, hidden=hidden, visible_if=visible_if)
         if initial is not None and (compute is not None or query is not None or fetch is not None or default is not MISSING):
             raise ValueError("initial= suggests a value; it cannot be combined with compute, default, fetch or query")
         if (compute is not None or query is not None) and any(getattr(self, key) is not None for key in RULES):

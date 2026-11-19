@@ -341,8 +341,10 @@ class Employee(Model):
 - **A Table is never a field.** It is always its own block, `Main('lines')` or `TableSection('lines')`.
   The form of 0.4.9, `Main(fields, 'lines', ...)`, still works: it reads as `Main(fields)` followed by
   `Main('lines')` for each Table named.
-- **Nothing is lost.** Every visible field shows somewhere; `hidden=True` keeps it out and `applies_when`
-  still hides one that does not apply. Fields no block names go, in declaration order, to one last
+- **Nothing is lost.** Every visible field shows somewhere; `hidden=True` keeps it out, `applies_when`
+  still hides one that does not apply, and `visible_when` hides one while it is false (keeping its value). A
+  Table's `applies_when` and `visible_when` hide its whole block, in the primary area or as a row of more
+  information ([finite-calculations.md](finite-calculations.md#table-rules)). Fields no block names go, in declaration order, to one last
   Section labelled Other (closed, like any section). Tables no block names follow it, each as a
   `TableSection` under its own label. On a new record a row of more information that holds a required
   field starts open. A layout need not name the title, name or State, which the header shows; left

@@ -383,8 +383,40 @@ class PointBalance(Model):
     points = Integer(required=True, default=0)
 
 
+class ExpenseSplit(Child):
+    person = Text(required=True, max_length=80)
+    amount = Currency(minimum='0', default='0.00', currency='AED')
+
+
+class ExpenseReceipt(Child):
+    reference = Text(required=True, max_length=40)
+    note = Text(max_length=120)
+
+
+class Expense(Model):
+    """An expense claim whose form follows its payment: field and Table rules (docs/finite-calculations.md#field-rules)."""
+    class Meta:
+        description = 'Expense claims: the form shows what the payment needs.'
+        list_fields = ('title', 'payment', 'amount')
+        layout = (Main(('title', 'amount', 'payment', 'card_last4', 'split_total')), Main('splits'), Main('receipts'))
+
+    permissions = {'admin': Rule(('read', 'create', 'update', 'delete')), 'editor': Rule(('read', 'create', 'update', 'delete')),
+                   'viewer': Rule(('read',))}
+    title = Text(required=True, max_length=120)
+    amount = Currency(minimum='0', default='0.00', currency='AED')
+    payment = Select(['cash', 'card', 'split'], required=True, default='cash')
+    # Shown only for a card payment. Display only: switching to cash hides it and keeps what was typed.
+    card_last4 = Text(max_length=4, label='Card (last 4)', visible_when=F('payment') == 'card')
+    # Only a split payment has people to split it between. Switching away hides the Table, the total reads it
+    # as empty, and saving removes its rows.
+    splits = Table(ExpenseSplit, label='Split between', applies_when=F('payment') == 'split')
+    split_total = Currency(currency='AED', compute=splits.sum('amount'), label='Split total')
+    # Receipts are asked for over 100; below that the Table is hidden and any receipts are kept.
+    receipts = Table(ExpenseReceipt, label='Receipts', visible_when=F('amount') > 100)
+
+
 # Items have about 200 fields and two child tables: the list filters at scale. Imported here so the
 # registry lists every Playground model; items.py links to customers by name, not by import.
 from .items import Item  # noqa: E402
 
-registry = Registry(Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item, Employee, PointMove, PointBalance, Recognition)
+registry = Registry(Customer, Invoice, Payment, LedgerEntry, Project, ProjectTask, Item, Employee, PointMove, PointBalance, Recognition, Expense)

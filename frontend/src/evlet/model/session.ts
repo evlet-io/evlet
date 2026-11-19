@@ -1,8 +1,8 @@
 // The calculation session of an open record: a FiniteDocument (the same finite-v1 evaluator
 // the server's fixtures check) bound to the record's cells.
 //
-// The session computes calculated fields, initial values and the applies/required/locked
-// rules. Its results flow into the field cells. It supplies today() and reads the Link
+// The session computes calculated fields, initial values and the applies/required/locked/visible
+// rules of fields and Tables. Its results flow into the field cells. It supplies today() and reads the Link
 // lookups it waits for (customer.credit_days) with GET /api/{model}/{id}.
 
 import { FiniteDocument, wire, wireScale, type CurrencyInput, type Result, type RuleState } from './finite';
@@ -182,6 +182,7 @@ export class Session {
     }
     const rules = (states: Record<string, RuleState>) => {
       for (const [name, state] of Object.entries(states)) row.fields.get(name)?.rules.set({ ...state });
+      for (const [name, state] of Object.entries(doc.tableStates(handle))) row.tables.get(name)?.rules.set({ ...state });
     };
     rules(doc.ruleStates(handle));
     doc.observeRules(handle, states => this.publish.push(() => rules(states)));
